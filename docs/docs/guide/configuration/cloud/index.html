@@ -393,7 +393,63 @@
   <span class="md-ellipsis">
     
   
-    Supported Platforms
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
   
 
     
@@ -534,6 +590,34 @@
     
   
     Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
   
 
     
@@ -1910,6 +1994,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../integrations/langchain/" class="md-nav__link">
         
   
@@ -2799,7 +2911,8 @@ lemonade<span class="w"> </span>run<span class="w"> </span>fireworks.kimi-k2p5
 <ul>
 <li><strong>Public name</strong> — <code>&lt;provider&gt;.&lt;cleaned_upstream_id&gt;</code> after stripping <code>accounts/&lt;x&gt;/models/</code> wrappers and deduplicating leading provider segments.</li>
 <li><strong>Capability labels</strong> — <code>vision</code>, <code>tool-calling</code>, <code>reasoning</code>, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.</li>
-<li><strong>Context window</strong> — from <code>context_length</code>, when reported.</li>
+<li><strong>Context window</strong> — from <code>context_length</code>, <code>max_context_length</code>, or provider-specific nested limits (such as <code>top_provider.context_length</code>), when reported.</li>
+<li><strong>Completion limit</strong> — maximum output/completion tokens (from <code>max_completion_tokens</code>, <code>max_output_tokens</code>, or <code>top_provider.max_completion_tokens</code>), surfaced as <code>max_output_tokens</code> and <code>max_completion_tokens</code> on <code>/v1/models</code> when reported.</li>
 <li><strong>Per-million-token cost</strong> — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Surfaced on <code>/v1/models</code> for display, and attached to <code>collection.router</code> decisions as illustrative <code>outputs.estimated_cost</code> (not a billing figure).</li>
 </ul>
 <p>Discovery runs at every cache build (server startup, install, auth) and is best-effort: an unreachable provider logs a warning and is skipped without blocking the rest of the catalog.</p>

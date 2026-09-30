@@ -391,7 +391,63 @@
   <span class="md-ellipsis">
     
   
-    Supported Platforms
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
   
 
     
@@ -532,6 +588,34 @@
     
   
     Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
   
 
     
@@ -1731,6 +1815,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../integrations/langchain/" class="md-nav__link">
         
   
@@ -2160,6 +2272,17 @@
   
     <nav class="md-nav" aria-label="Tools">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-tool-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared tool behavior
+      </span>
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#lemonade_list_models" class="md-nav__link">
@@ -2606,6 +2729,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#shared-tool-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared tool behavior
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#lemonade_list_models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2793,98 +2927,409 @@
 </tbody>
 </table>
 <h2 id="tools">Tools</h2>
-<p>All tools auto-load (and download, if missing) the requested model on first call, exactly like <code>POST /v1/chat/completions</code>. Errors are returned as MCP results with <code>"isError": true</code> rather than JSON-RPC errors, matching the spec's guidance for tool failures.</p>
-<h3 id="lemonade_list_models"><code>lemonade_list_models</code></h3>
-<p>Discover what's loaded, what's downloaded, and what's recommended. Call this first if you don't already know the exact model name to pass to the other tools — passing a wrong name may trigger a multi-GB download.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_list_models"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"include_available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"include_suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Returns a summary text block plus a JSON-stringified text block with <code>{loaded, available, suggested_to_pull, recommended_chat_model}</code>.</p>
-<h3 id="lemonade_chat"><code>lemonade_chat</code></h3>
-<p>Chat completion against any LLM in the registry.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_chat"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-1.7B-GGUF"</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">      </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"system"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"You are concise."</span><span class="p">},</span>
-<span class="w">      </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Summarize MCP in one line."</span><span class="p">}</span>
-<span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">"max_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"temperature"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.2</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Returns one text block with the assistant content. If the model emits tool calls, a second text block containing <code>tool_calls: &lt;json&gt;</code> is appended.</p>
-<p>Reasoning models (Qwen3, DeepSeek-R1, ...) have the <code>&lt;think&gt;</code> block disabled by default to keep small <code>max_tokens</code> budgets from being consumed by reasoning. Pass <code>"chat_template_kwargs": {"enable_thinking": true}</code> to opt back in.</p>
-<blockquote>
-<p><strong>Picking a portable model.</strong> The example above uses <code>Qwen3-1.7B-GGUF</code> because GGUF (llama.cpp) runs everywhere lemonade does — Windows, Linux/Docker, macOS, CPU and Vulkan/ROCm/Metal GPUs. Hybrid/NPU variants such as <code>*-Hybrid</code> (recipe <code>ryzenai-llm</code>, <strong>Windows + AMD RyzenAI</strong> only) or <code>*-FLM</code> (recipe <code>flm</code>, <strong>AMD Ryzen AI NPU</strong> only) are faster on supported hardware but unavailable on others. If your client picks one that isn't supported, the tool returns a structured error suggesting a portable alternative — prefer <code>lemonade_list_models</code> to discover what's actually available on the running server.</p>
-</blockquote>
-<h3 id="lemonade_transcribe_audio"><code>lemonade_transcribe_audio</code></h3>
-<p>Transcribe a local audio file with a Whisper-class model. Prefer <code>audio_path</code> (the server runs on the same machine as the caller); use <code>audio_base64</code> only when you genuinely have bytes in memory.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_transcribe_audio"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Whisper-Large-v3-Turbo"</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"audio_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"C:/clips/meeting.wav"</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"response_format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"verbose_json"</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Returns two text blocks: the bare transcript, followed by the full OpenAI-shaped response (for callers that need timestamps or segments).</p>
-<h3 id="lemonade_generate_image"><code>lemonade_generate_image</code></h3>
-<p>Generate one or more PNGs from a prompt. <strong>Prefer writing to disk</strong> via <code>output_path</code> (single image) or <code>output_dir</code> (one or more) — base64 image content blocks cost tens of thousands of tokens per image and some clients surface them as opaque resource URIs.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_generate_image"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SDXL-Turbo"</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"prompt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a lemon-shaped car driving across the moon"</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="s2">"512x512"</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"output_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemon-car.png"</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>When disk paths are provided, returns text block(s) with the absolute path(s). Otherwise, returns one inline image content block per image (<code>{"type":"image", "data":"&lt;base64&gt;", "mimeType":"image/png"}</code>).</p>
-<p><strong>Sandboxed disk writes.</strong> To prevent a cross-origin or unauthenticated caller from overwriting arbitrary files, <code>output_path</code> and <code>output_dir</code> are confined to a sandbox directory:</p>
+<h3 id="shared-tool-behavior">Shared tool behavior</h3>
 <ul>
-<li>Default: <code>&lt;cache_dir&gt;/mcp-images</code>.</li>
-<li>Override with the <code>LEMONADE_MCP_IMAGE_DIR</code> environment variable (absolute path).</li>
-<li>Relative paths resolve against the sandbox root; absolute paths must stay within it. Paths that escape the sandbox (via <code>..</code> or symlinks) are rejected.</li>
-<li><code>output_dir</code> writes use auto-generated, unique filenames (<code>image_&lt;token&gt;_&lt;i&gt;.png</code>), so concurrent callers never clobber one another's images — the returned <code>paths</code> tell you the exact names. Use <code>output_path</code> when you need an exact, caller-chosen filename (it is written as named, replacing any existing file at that path).</li>
+<li><strong>Model selection and downloads.</strong> For chat, transcription, and image tools, omitting <code>model</code> first reuses a compatible loaded model, then a compatible already-downloaded model. If neither exists, the tool returns <code>isError: true</code> unless <code>allow_download: true</code> is supplied, in which case the tool may use its default model. <code>lemonade_omni</code> follows the same local-first principle for already-downloaded Omni collections. Use <code>lemonade_list_models</code> instead of guessing hardware-specific model variants; it reflects what the running server supports, and unsupported-model errors point callers toward compatible alternatives.</li>
+<li><strong>Reasoning chat.</strong> <code>lemonade_chat</code> disables thinking by default so small <code>max_tokens</code> budgets are not consumed entirely by reasoning. Set <code>chat_template_kwargs.enable_thinking=true</code> to opt in. If a backend returns reasoning content but no normal content, the tool surfaces the reasoning text rather than an empty result.</li>
+<li><strong>Sandboxed media output.</strong> <code>lemonade_generate_image</code> and <code>lemonade_omni</code> confine disk writes to the shared MCP media sandbox. The default root is <code>&lt;cache_dir&gt;/mcp-images</code>; set <code>LEMONADE_MCP_IMAGE_DIR</code> to an absolute path to override it. Relative output paths are resolved against the sandbox root; absolute paths are accepted only if they resolve within it. Paths that escape the sandbox, including via <code>..</code> traversal or symlinks, are rejected. Directory output uses collision-resistant names such as <code>image_{token}_{index}.png</code> and <code>omni_{token}_{index}.{ext}</code>. <code>lemonade_generate_image</code> also supports <code>output_path</code>, which writes the exact caller-selected filename and may replace an existing file. Omitting disk output returns native MCP image/audio content blocks where applicable; disk output is preferred for clients that do not render native media blocks or when avoiding large inline base64 payloads.</li>
+<li><strong>Omni collections.</strong> <code>lemonade_omni</code> runs the server's collection orchestrator; see the <a href="../../dev/lemonade-omni/">Lemonade Omni documentation</a> for the collection model and component behavior.</li>
 </ul>
+<!--
+The tool reference below is generated from a live Lemonade server's `tools/list`
+response. Tool names, descriptions, input schemas, result contracts, and MCP
+annotations therefore have a single source of truth in the server registry instead
+of being copied into the docs.
+-->
+
+<!-- BEGIN GENERATED: mcp-tools -->
+<!-- Generated from live /mcp tools/list. Do not edit this region by hand. -->
+
+<h3 id="lemonade_list_models"><code>lemonade_list_models</code></h3>
+<p>List models known to the Lemonade server. ALWAYS call this first if you don't already know the exact model name to use for chat/transcribe/image — passing a wrong name may trigger a multi-GB download. Returns a summary text block plus a JSON block with <code>{loaded, available, suggested_to_pull, recommended_chat_model}</code>.</p>
+<p><strong>Returns</strong></p>
+<p>Success returns two <code>text</code> content blocks: a human-readable summary, then a JSON-stringified object with <code>loaded</code>, <code>available</code>, <code>suggested_to_pull</code>, and <code>recommended_chat_model</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th style="text-align: center;">Required</th>
+<th>Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include_available</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"boolean"}</code></td>
+<td>Include downloaded models in the <code>available</code> list.</td>
+</tr>
+<tr>
+<td><code>include_suggested</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"boolean"}</code></td>
+<td>Include suggested, not-yet-downloaded models in <code>suggested_to_pull</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lemonade_chat"><code>lemonade_chat</code></h3>
+<p>Chat completion against a locally hosted LLM. Pass a <code>messages</code> array (OpenAI chat format). <code>model</code> is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a <code>model</code> or <code>allow_download: true</code> (which downloads the default, Qwen3.5-4B-MTP-GGUF). Call <code>lemonade_list_models</code> first if you want to choose explicitly — a wrong name may trigger a multi-GB download.</p>
+<p><strong>Returns</strong></p>
+<p>Success returns one <code>text</code> content block with the assistant output. If the model emits tool calls, a second <code>text</code> block prefixed with <code>tool_calls:</code> contains the JSON tool-call array. If normal content is empty but reasoning content is present, the first block contains the reasoning fallback instead of an empty string.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th style="text-align: center;">Required</th>
+<th>Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allow_download</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"boolean"}</code></td>
+<td>Permit downloading the default model when none is loaded or downloaded. Defaults to false.</td>
+</tr>
+<tr>
+<td><code>chat_template_kwargs</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"object"}</code></td>
+<td>e.g. {"enable_thinking": true} to enable reasoning blocks; disabled by default</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"integer"}</code></td>
+<td>Maximum number of output tokens.</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td style="text-align: center;">yes</td>
+<td><code>{"items":{"type":"object"},"type":"array"}</code></td>
+<td>Conversation messages in OpenAI chat format.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional. Omit to auto-select a loaded/downloaded LLM; defaults to Qwen3.5-4B-MTP-GGUF only with allow_download=true.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"object"}</code></td>
+<td>OpenAI-compatible response format configuration.</td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"integer"}</code></td>
+<td>Optional random seed for reproducible sampling.</td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{}</code></td>
+<td>stop sequences (string or array)</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"number"}</code></td>
+<td>Sampling temperature.</td>
+</tr>
+<tr>
+<td><code>tool_choice</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{}</code></td>
+<td>auto | none | required | {type: function, ...}</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"items":{"type":"object"},"type":"array"}</code></td>
+<td>OpenAI-compatible tool definitions available to the model.</td>
+</tr>
+<tr>
+<td><code>top_p</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"number"}</code></td>
+<td>Nucleus sampling probability.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lemonade_transcribe_audio"><code>lemonade_transcribe_audio</code></h3>
+<p>Transcribe an audio clip with a Whisper-class model. The Lemonade MCP server always runs on the same machine as the caller, so prefer <code>audio_path</code> (an absolute path to a local audio file: wav, mp3, m4a, ogg, flac, webm). Use <code>audio_base64</code> only when you genuinely have audio bytes in memory. If both are provided, <code>audio_path</code> takes precedence. <code>model</code> is OPTIONAL: when omitted, the server reuses an already-loaded transcription model, else an already-downloaded one; if neither exists it asks you to pass a <code>model</code> or <code>allow_download: true</code> (which downloads the default, Whisper-Tiny).</p>
+<p><strong>Returns</strong></p>
+<p>Success returns two <code>text</code> content blocks: the transcript, then the JSON-stringified full transcription response, including timestamps or segments when provided by the backend.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th style="text-align: center;">Required</th>
+<th>Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allow_download</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"boolean"}</code></td>
+<td>Permit downloading the default model when none is loaded or downloaded. Defaults to false.</td>
+</tr>
+<tr>
+<td><code>audio_base64</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Base64-encoded audio data. Used when <code>audio_path</code> is not provided.</td>
+</tr>
+<tr>
+<td><code>audio_path</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Path to a local audio file. Preferred over <code>audio_base64</code>; absolute paths avoid working-directory ambiguity.</td>
+</tr>
+<tr>
+<td><code>filename</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Original audio filename, used as an input-format hint.</td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional source language hint.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional. Omit to auto-select a loaded/downloaded model; defaults to Whisper-Tiny only with allow_download=true.</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional text prompt to guide transcription.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"enum":["json","text","srt","verbose_json","vtt"],"type":"string"}</code></td>
+<td>Transcription response format.</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"number"}</code></td>
+<td>Sampling temperature for transcription.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lemonade_generate_image"><code>lemonade_generate_image</code></h3>
+<p>Generate one or more images from a text prompt. The Lemonade MCP server always runs on the same machine as the caller, so PREFER writing the result directly to disk by passing <code>output_path</code> (single image) or <code>output_dir</code> (one or more). When you do, the tool returns absolute file path(s) as text — no base64 round-trip and dramatically fewer tokens. Only omit both arguments when you genuinely need the image inline. For safety, disk writes are confined to a sandbox directory (&lt;cache_dir&gt;/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); paths outside it are rejected. <code>output_dir</code> writes get unique auto-generated filenames (so concurrent callers never clobber each other); use <code>output_path</code> when you need an exact name. <code>model</code> is OPTIONAL: when omitted, the server reuses an already-loaded image model, else an already-downloaded one; if neither exists it asks you to pass a <code>model</code> or <code>allow_download: true</code> (which downloads the default, SD-Turbo).</p>
+<p><strong>Returns</strong></p>
+<p>Without <code>output_path</code> or <code>output_dir</code>, success returns one native MCP <code>image</code> content block per generated PNG. With disk output, success returns a summary <code>text</code> block, optional per-image path blocks when multiple files are written, and a final JSON-stringified <code>paths</code> object in a <code>text</code> block.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th style="text-align: center;">Required</th>
+<th>Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allow_download</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"boolean"}</code></td>
+<td>Permit downloading the default model when none is loaded or downloaded. Defaults to false.</td>
+</tr>
+<tr>
+<td><code>cfg_scale</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"number"}</code></td>
+<td>Classifier-free guidance scale.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional. Omit to auto-select a loaded/downloaded image model; defaults to SD-Turbo only with allow_download=true.</td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"minimum":1,"type":"integer"}</code></td>
+<td>Number of images to generate.</td>
+</tr>
+<tr>
+<td><code>negative_prompt</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Text describing content to avoid in the generated image.</td>
+</tr>
+<tr>
+<td><code>output_dir</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Directory to write generated images into, inside the MCP image sandbox. Filenames are auto-generated and unique (image_{token}_{index}.png); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it.</td>
+</tr>
+<tr>
+<td><code>output_path</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Exact path of the PNG file to write, inside the MCP image sandbox (&lt;cache_dir&gt;/mcp-images or LEMONADE_MCP_IMAGE_DIR). Relative paths resolve against the sandbox root; absolute paths must stay within it. Written as named (overwrites if it already exists). Only valid when n == 1.</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td style="text-align: center;">yes</td>
+<td><code>{"type":"string"}</code></td>
+<td>Text prompt describing the image to generate.</td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"integer"}</code></td>
+<td>Optional random seed for reproducible generation.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Requested image size as WIDTHxHEIGHT, for example 512x512.</td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"integer"}</code></td>
+<td>Number of diffusion sampling steps.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="lemonade_omni"><code>lemonade_omni</code></h3>
-<p>One-shot multimodal turn against a <strong>Lemonade Omni collection</strong> (a model bundle that pairs a planner LLM with an image model, an image-edit model, and a TTS voice under a single <code>collection.omni</code> recipe — see <a href="../../dev/lemonade-omni/">the Omni docs</a>). The server runs the orchestrator's internal tool-calling loop, executes the collection's <code>generate_image</code> / <code>edit_image</code> / <code>text_to_speech</code> tools by routing to the bundled components, and returns the result as a text block plus native MCP <code>image</code> / <code>audio</code> content blocks — one per artifact, in the order they were produced.</p>
-<p><code>model</code> is <strong>optional</strong> and defaults to <code>LMX-Omni-5.5B-Lite</code> (smaller and faster). Pass <code>model</code> explicitly to opt into a larger collection (e.g. <code>LMX-Omni-52B-Halo</code> on capable hardware) or any other <code>collection.omni</code> model surfaced by <code>lemonade_list_models</code>. The collection is downloaded on first use and may be multi-GB.</p>
-<p>Use <code>lemonade_chat</code> instead when you only need plain-text LLM output and don't want the planner-loop overhead.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_omni"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">      </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Generate an image of a lemon car, then read out a one-line description."</span><span class="p">}</span>
-<span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">"output_dir"</span><span class="p">:</span><span class="w"> </span><span class="s2">"omni"</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
-<p><strong>Disk vs. inline output.</strong> A single Omni turn can produce both images and audio in arbitrary order. Pass an <code>output_dir</code> to write each artifact to disk under a unique auto-generated name (<code>omni_&lt;token&gt;_&lt;i&gt;.&lt;ext&gt;</code>) — the tool returns one text block per artifact with its absolute path, plus a JSON-stringified <code>paths</code> array. This is strongly preferred over inline base64 for the same reasons documented under <code>lemonade_generate_image</code> — and is the <strong>only</strong> way to get audio out on clients that don't render <code>audio</code> content blocks. Like <code>lemonade_generate_image</code>, <code>output_dir</code> is confined to the MCP image sandbox (see <strong>Sandboxed disk writes</strong> above): relative paths resolve against the sandbox root, paths escaping it are rejected, and unique filenames mean concurrent callers never clobber each other.</p>
-<p>When <code>output_dir</code> is omitted, artifacts are inlined as MCP content blocks: <code>{"type":"image", "data":"&lt;base64&gt;", "mimeType":"image/png"}</code> and <code>{"type":"audio", "data":"&lt;base64&gt;", "mimeType":"audio/mpeg"}</code>.</p>
-<p>If the planner emits app-defined tool calls (those you passed in via <code>tools</code>/<code>tool_choice</code>), an extra text block <code>tool_calls: &lt;json&gt;</code> is appended, matching <code>lemonade_chat</code>'s passthrough semantics.</p>
-<p>Passing a non-collection model (e.g. a plain LLM) returns <code>isError: true</code> with a hint to use <code>lemonade_chat</code>.</p>
+<p>Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP <code>image</code> / <code>audio</code> content blocks (one per artifact). <code>model</code> is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a <code>model</code> or <code>allow_download: true</code> (which downloads the default, <code>LMX-Omni-5.5B-Lite</code>). Pass <code>model='LMX-Omni-52B-Halo'</code> (or any other recipe='collection.omni' model from <code>lemonade_list_models</code>) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER <code>output_dir</code> to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use <code>lemonade_chat</code> instead.</p>
+<p><strong>Returns</strong></p>
+<p>Success always starts with one <code>text</code> block containing the final text. Artifacts follow in the order they were produced. Inline mode then appends one native MCP <code>image</code> or <code>audio</code> block per artifact. Disk mode instead appends one <code>text</code> block per artifact path in the same order, plus a final JSON-stringified <code>paths</code> object. If application tool calls are emitted, a final <code>text</code> block prefixed with <code>tool_calls:</code> is appended.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th style="text-align: center;">Required</th>
+<th>Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allow_download</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"boolean"}</code></td>
+<td>Permit downloading the default collection when none is downloaded. Defaults to false.</td>
+</tr>
+<tr>
+<td><code>chat_template_kwargs</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"object"}</code></td>
+<td>Additional chat-template arguments forwarded to the planner LLM.</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"integer"}</code></td>
+<td>Maximum number of planner output tokens.</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td style="text-align: center;">yes</td>
+<td><code>{"items":{"type":"object"},"type":"array"}</code></td>
+<td>Conversation messages in OpenAI chat format.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional. Omni collection name (recipe='collection.omni'). Omit to reuse a downloaded collection; defaults to LMX-Omni-5.5B-Lite only with allow_download=true.</td>
+</tr>
+<tr>
+<td><code>output_dir</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Directory to write produced artifacts into, inside the MCP image sandbox (&lt;cache_dir&gt;/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_{token}_{index}.{ext}); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"object"}</code></td>
+<td>OpenAI-compatible response format configuration for the planner.</td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"integer"}</code></td>
+<td>Optional random seed forwarded to the planner LLM.</td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{}</code></td>
+<td>stop sequences (string or array)</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"number"}</code></td>
+<td>Sampling temperature for the planner LLM.</td>
+</tr>
+<tr>
+<td><code>tool_choice</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{}</code></td>
+<td>auto | none | required | {type: function, ...}</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"items":{"type":"object"},"type":"array"}</code></td>
+<td>OpenAI-compatible application tool definitions passed to the planner.</td>
+</tr>
+<tr>
+<td><code>top_p</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"number"}</code></td>
+<td>Nucleus sampling probability for the planner LLM.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="lemonade_docs"><code>lemonade_docs</code></h3>
-<p>Read the server's own API reference. Call with no arguments to list the pages this server ships, then pass <code>page</code> to read one as markdown. The pages are bundled with the server, so they match the running version and work offline.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_docs"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"page"</span><span class="p">:</span><span class="w"> </span><span class="s2">"api/lemonade"</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>The listing returns a summary text block plus a JSON-stringified block with <code>{pages: [{id, title, bytes}]}</code>. <code>page</code> takes an <code>id</code> from that listing; unknown pages return <code>"isError": true</code>. The same content is available over HTTP at <a href=".././lemonade/#get-v1docs"><code>GET /v1/docs</code></a>.</p>
+<p>Read this server's own API reference. Call with no arguments to list the pages it ships, then pass <code>page</code> (an <code>id</code> from that list) to read one as markdown. The docs are bundled with the server, so they describe the version actually running and work offline. Use this before hand-writing requests against Lemonade endpoints.</p>
+<p><strong>Returns</strong></p>
+<p>With <code>page</code>, success returns one <code>text</code> block containing the raw bundled Markdown page. With no arguments, success normally returns a summary <code>text</code> block followed by a JSON-stringified <code>pages</code> object containing <code>id</code>, <code>title</code>, and <code>bytes</code> for each page; if no bundled documentation is installed, it returns one explanatory <code>text</code> block instead. Unknown pages return <code>isError: true</code> with one explanatory <code>text</code> block. The same bundled documentation is also available through <code>GET /v1/docs</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th style="text-align: center;">Required</th>
+<th>Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>page</code></td>
+<td style="text-align: center;">no</td>
+<td><code>{"type":"string"}</code></td>
+<td>Optional. Page id from the listing, e.g. 'api/lemonade'. Omit to list.</td>
+</tr>
+</tbody>
+</table>
+<!-- END GENERATED: mcp-tools -->
+
 <h2 id="error-model">Error model</h2>
 <table>
 <thead>

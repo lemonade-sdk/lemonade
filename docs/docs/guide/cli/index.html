@@ -393,7 +393,63 @@
   <span class="md-ellipsis">
     
   
-    Supported Platforms
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
   
 
     
@@ -534,6 +590,34 @@
     
   
     Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
   
 
     
@@ -2458,6 +2542,34 @@
     
   
     Interviewer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
   
 
     
@@ -4958,7 +5070,7 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 <tbody>
 <tr>
 <td><code>AGENT</code></td>
-<td>Agent name to launch. Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>, <code>pi</code>. If omitted, you will be prompted to select one.</td>
+<td>Agent name to launch. Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>, <code>pi</code>, <code>junie</code>. If omitted, you will be prompted to select one.</td>
 <td>No</td>
 </tr>
 <tr>
@@ -5010,10 +5122,11 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 - <code>--provider</code> is accepted only by <code>lemonade launch codex</code> and is passed directly to Codex as <code>model_provider</code>; provider resolution/errors are handled by Codex.
 - To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with <code>lemonade load &lt;model&gt; ... --save-options</code>, or with <code>lemonade config set</code>.
 - <code>--agent-args</code> is parsed and appended to the launched agent command.
-- Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>, <code>pi</code>
+- Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>, <code>pi</code>, <code>junie</code>
 - <code>opencode</code> uses an auto-managed config file at <code>~/.config/opencode/opencode.json</code>.
 - <code>pi</code> uses auto-managed config files at <code>~/.pi/agent/models.json</code> and <code>~/.pi/agent/settings.json</code>.
-- When no <code>--api-key</code> is provided, the generated <code>opencode</code> and <code>pi</code> providers use a default <code>apiKey</code> value of <code>lemonade</code>.</p>
+- <code>junie</code> uses an auto-managed custom model profile at <code>~/.junie/models/lemonade.json</code> (honors <code>JUNIE_HOME</code>) and is launched with <code>--model custom:lemonade</code>.
+- When no <code>--api-key</code> is provided, the generated <code>opencode</code>, <code>pi</code>, and <code>junie</code> providers use a default <code>apiKey</code> value of <code>lemonade</code>.</p>
 <p><strong>Examples:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Launch an agent with default model settings</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF
@@ -5023,6 +5136,9 @@ lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="
 
 <span class="c1"># Launch codex using a custom provider name from your Codex config.toml</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--provider<span class="w"> </span>my-provider
+
+<span class="c1"># Launch junie against a local model (writes the custom:lemonade profile)</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF
 
 <span class="c1"># Pass additional arguments directly to the agent</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"--approval-mode never"</span>

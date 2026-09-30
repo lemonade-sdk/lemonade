@@ -391,7 +391,63 @@
   <span class="md-ellipsis">
     
   
-    Supported Platforms
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
   
 
     
@@ -532,6 +588,34 @@
     
   
     Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
   
 
     
@@ -1731,6 +1815,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../integrations/langchain/" class="md-nav__link">
         
   
@@ -2652,10 +2764,11 @@ lemonade.exe backends install llamacpp:vulkan
 <p>Note: by default, <code>lemond backends install</code> will only install backends that are compatible with your current system. The <code>--force</code> option ignores these compatibility checks, which enables you to package on a VM and then deploy to a specific system.</p>
 </blockquote>
 <h4 id="limitations">Limitations</h4>
-<p>At the time of this writing:
--  <code>flm</code> is not available for packaging-time bundling <em>on Linux</em>.
-- <code>llamacpp:rocm</code> is not available for packaging-time bundling on any OS.
-- <code>vllm:rocm</code> is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its <code>gfx_target</code> with the deployment machine.</p>
+<p>At the time of this writing:</p>
+<ul>
+<li><code>llamacpp:rocm</code> with <code>rocm_channel</code> set to <code>nightly</code> selects a release asset for the packaging host's GPU family, so the host doing the packaging would need to share its GPU family with the deployment machine. The default <code>stable</code> channel has no such limitation.</li>
+<li><code>vllm:rocm</code> is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its <code>gfx_target</code> with the deployment machine.</li>
+</ul>
 <h3 id="installing-backends-at-install-time-or-runtime">Installing Backends at Install-Time or Runtime</h3>
 <p>You can install backends either during your app's installer or first-run flow, or later while the app is running. In both cases, start by calling <a href="../../api/lemonade/#get-v1system-info"><code>GET /v1/system-info</code></a> on the target machine. The response tells you which backends are supported on that specific system.</p>
 <p>This is useful when the correct backend depends on the user's hardware. For example, you can prefer <code>llamacpp:rocm</code> when ROCm is supported, and fall back to <code>llamacpp:vulkan</code> otherwise.</p>

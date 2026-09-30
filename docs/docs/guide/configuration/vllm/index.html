@@ -393,7 +393,63 @@
   <span class="md-ellipsis">
     
   
-    Supported Platforms
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
   
 
     
@@ -534,6 +590,34 @@
     
   
     Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
   
 
     
@@ -930,10 +1014,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#deploying-on-mi300x-gfx942-quickstart" class="md-nav__link">
+  <a href="#deploying-on-mi300x-gfx942" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Deploying on MI300X (gfx942) — quickstart
+        Deploying on MI300X (gfx942)
       </span>
     </span>
   </a>
@@ -1916,6 +2000,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../integrations/langchain/" class="md-nav__link">
         
   
@@ -2631,10 +2743,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#deploying-on-mi300x-gfx942-quickstart" class="md-nav__link">
+  <a href="#deploying-on-mi300x-gfx942" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Deploying on MI300X (gfx942) — quickstart
+        Deploying on MI300X (gfx942)
       </span>
     </span>
   </a>
@@ -2726,7 +2838,7 @@
 <li><strong>Concurrency and multi-GPU.</strong> Paged-attention KV cache, continuous batching, and chunked prefill scale aggregate throughput with in-flight request count; tensor and pipeline parallelism are supported across multiple GPUs.</li>
 </ol>
 <blockquote>
-<p><strong>Status: experimental.</strong> The backend has been validated on <strong>gfx1151 (Strix Halo)</strong> and <strong>gfx1150 (Strix Point)</strong>. Prebuilt wheels also exist for <code>gfx110X</code> (RDNA3) and <code>gfx120X</code> (RDNA4) but those targets have not been exercised end-to-end yet. <strong>gfx942 (AMD Instinct MI300X, CDNA3)</strong> is <strong>staged, not auto-installable yet</strong> — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official <code>-gfx942</code> release asset is published (see <a href="#deploying-on-mi300x-gfx942--quickstart">Deploying on MI300X</a>).</p>
+<p><strong>Status: experimental.</strong> The backend has been validated on <strong>gfx1151 (Strix Halo)</strong> and <strong>gfx1150 (Strix Point)</strong>. Prebuilt wheels also exist for <code>gfx110X</code> (RDNA3) and <code>gfx120X</code> (RDNA4) but those targets have not been exercised end-to-end yet. <strong>gfx942 (AMD Instinct MI300X, CDNA3)</strong> is <strong>staged, not auto-installable yet</strong> — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official <code>-gfx942</code> release asset is published (see <a href="#deploying-on-mi300x-gfx942">Deploying on MI300X</a>).</p>
 </blockquote>
 <h2 id="available-backend">Available Backend</h2>
 <h3 id="rocm">ROCm</h3>
@@ -2748,7 +2860,7 @@
 <p>The install fetches a per-GPU-target release (e.g. <code>…-gfx1151</code>, <code>…-gfx1150</code>) from <a href="https://github.com/lemonade-sdk/vllm-rocm/releases">lemonade-sdk/vllm-rocm</a>. The base version is pinned in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json"><code>backend_versions.json</code></a>; the <code>-{gfx_target}</code> suffix is appended at runtime from <code>SystemInfo::get_rocm_arch()</code>, so the default pin covers all RDNA/APU architectures on one line.</p>
 <h4 id="per-architecture-release-overrides">Per-architecture release overrides</h4>
 <p>Some GPU targets ride a different vLLM/ROCm wheel cadence than the default pin and cannot share a single release tag — CDNA-dcgpu (gfx942 / MI300X), for example, uses its own vLLM/ROCm release line, separate from the RDNA line (its official asset is not published yet — see the staged-status note above). For those, <code>backend_versions.json</code> carries an optional <code>vllm.rocm_arch_overrides</code> map keyed by asset family; the override base is resolved for the detected arch (falling back to the default pin otherwise) before the <code>-{gfx_target}</code> suffix is appended. An explicit <code>vllm.rocm_bin</code> pin (<code>latest</code> or a specific tag) still takes precedence over the builtin per-arch override — the override only replaces the <em>default</em> base. A pin that already carries a <code>-{gfx_target}</code> suffix must match the detected architecture: a cross-arch pin (for example a repo-wide <code>latest</code> that resolved to a suffixed RDNA tag, or an explicit tag for a different target) is <strong>rejected</strong> rather than installed against the wrong architecture line. Note that pinning <code>vllm.rocm_bin</code> to the exact default base tag is treated the same as leaving it unset (<code>builtin</code>) — the per-arch override still applies; set an explicit <em>non-default</em> tag to opt out of the override.</p>
-<h3 id="deploying-on-mi300x-gfx942-quickstart">Deploying on MI300X (gfx942) — quickstart</h3>
+<h3 id="deploying-on-mi300x-gfx942">Deploying on MI300X (gfx942)</h3>
 <blockquote>
 <p><strong>gfx942 is currently staged, not auto-installable.</strong> The resolver, per-arch release pinning,
 device-class launch policy, and FP8/MTP recipes are all in place, but gfx942 is intentionally

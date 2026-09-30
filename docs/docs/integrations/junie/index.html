@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/integrations/lemon-zest/">
+        <link rel="canonical" href="https://lemonade-server.ai/integrations/junie/">
       
       
-        <link rel="prev" href="../langchain/">
+        <link rel="prev" href="../interviewer/">
       
       
-        <link rel="next" href="../mindcraft/">
+        <link rel="next" href="../langchain/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Lemon Zest - Lemonade Server Documentation</title>
+        <title>Junie - Lemonade Server Documentation</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#lemon-zest" class="md-skip">
+        <a href="#junie" class="md-skip">
           Skip to content
         </a>
       
@@ -117,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Lemon Zest
+              Junie
             
           </span>
         </div>
@@ -1814,10 +1814,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../junie/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1833,6 +1860,115 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Prerequisites
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-junie-with-lemonade" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Launch Junie with Lemonade
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#use-case-1-first-time-user-discover-import-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use Case 1: First-time user (discover + import + launch)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#use-case-2-you-already-know-the-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use Case 2: You already know the model
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#passing-junie-arguments-with-agent-args" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Passing Junie arguments with <code>--agent-args</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How it works
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#switching-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Switching models
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-cli-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related CLI Docs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1870,37 +2006,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lemon Zest
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../lemon-zest/" class="md-nav__link">
         
   
   
@@ -1916,188 +2025,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#screenshots" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Screenshots
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Features
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Prerequisites
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Installation
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Installation">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux-snap" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux (Snap)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#linux-from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux (From Source)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Windows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#from-release" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        From Release
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        From Source
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#building-packages" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Building Packages
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Building Packages">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#keyboard-shortcuts" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Keyboard Shortcuts
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2707,28 +2634,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#screenshots" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Screenshots
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Features
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2740,127 +2645,76 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
+  <a href="#launch-junie-with-lemonade" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Installation
+        Launch Junie with Lemonade
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Installation">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux-snap" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux (Snap)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#linux-from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux (From Source)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Windows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#from-release" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        From Release
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        From Source
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#building-packages" class="md-nav__link">
+  <a href="#use-case-1-first-time-user-discover-import-launch" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Building Packages
+        Use Case 1: First-time user (discover + import + launch)
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Building Packages">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#keyboard-shortcuts" class="md-nav__link">
+  <a href="#use-case-2-you-already-know-the-model" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Keyboard Shortcuts
+        Use Case 2: You already know the model
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#passing-junie-arguments-with-agent-args" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Passing Junie arguments with <code>--agent-args</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How it works
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#switching-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Switching models
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-cli-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related CLI Docs
       </span>
     </span>
   </a>
@@ -2885,148 +2739,80 @@
   
 
 
-<h1 id="lemon-zest">Lemon Zest</h1>
-<p><a href="https://github.com/phqen1x/lemon-zest">Lemon Zest</a> is a local, AI-powered image editor for object removal and inpainting. Using <strong>Flux-2-Klein-4B</strong> on a <strong>Lemonade Server</strong>, it provides a near-instant "Magic Eraser" experience — all running on your own hardware.</p>
-<p><img alt="License" src="https://img.shields.io/badge/license-MIT-blue" /></p>
-<h2 id="screenshots">Screenshots</h2>
-<div align="center">
-   <br><em>Splash screen of Lemon Zest when you first open the application.</em></br>
-   <img src="https://github.com/Phqen1x/lemon-zest/blob/main/assets/Splash.png" alt="Splash screen of Lemon Zest when you first open the application." width="600"/>
-
-   <br><em>Lemon Zest inpainting selected regions of an image.</em></br>
-   <img src="https://github.com/Phqen1x/lemon-zest/blob/main/assets/Editing.png" alt="Lemon Zest inpainting selected regions of an image." width="600"/>
-</div>
-
-<h2 id="features">Features</h2>
-<ul>
-<li><strong>Multiple Selection Tools</strong> — Rectangle (R), Circle (C), Lasso (L), Brush (B), and Flood Fill (F) with adjustable tolerance</li>
-<li><strong>AI Inpainting</strong> — Remove objects or fill regions using a custom prompt, with adjustable strength and step count</li>
-<li><strong>Crop-to-Mask Optimization</strong> — Only the masked region is sent for inference, significantly reducing processing time</li>
-<li><strong>Superimpose</strong> — Blend external images onto your canvas with optional prompt-guided blending</li>
-<li><strong>Undo/Redo</strong> — Full history with up to 20 states (Ctrl+Z / Ctrl+Y)</li>
-<li><strong>Zoom &amp; Pan</strong> — Scroll wheel zoom with multiple preset levels (25%–400%)</li>
-<li><strong>Drag &amp; Drop</strong> — Load images by dragging them onto the window</li>
-<li><strong>Format Support</strong> — PNG, JPG, JPEG, BMP, and WebP</li>
-</ul>
+<h1 id="junie">Junie</h1>
+<p><a href="https://junie.jetbrains.com/">Junie</a> is JetBrains' coding agent, available both inside JetBrains IDEs and as a standalone CLI. With Lemonade, you can run the Junie CLI against local models through Lemonade's OpenAI-compatible API.</p>
+<p>This guide focuses on the most common launch flows.</p>
 <h2 id="prerequisites">Prerequisites</h2>
-<p>Lemon Zest requires a running <strong>Lemonade Server</strong> to perform inpainting. The server handles model loading and inference locally.</p>
 <ol>
-<li>Install <a href="https://github.com/lemonade-sdk/lemonade">Lemonade Server</a> following its documentation.</li>
-<li>Start the server:
-   <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>run<span class="w"> </span>Flux-2-Klein-4B
+<li>
+<p>Install the Junie CLI.</p>
+<p>macOS and Linux:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://junie.jetbrains.com/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
 </code></pre></div>
-   The server will listen on <code>http://localhost:13305</code>. The Flux model will be downloaded automatically on first launch.</li>
+<p>Windows:</p>
+<div class="highlight"><pre><span></span><code><span class="n">powershell</span> <span class="n">-NoProfile</span> <span class="n">-ExecutionPolicy</span> <span class="n">Bypass</span> <span class="n">-Command</span> <span class="s2">"iex (irm 'https://junie.jetbrains.com/install.ps1')"</span>
+</code></pre></div>
+<p>Both installers put a <code>junie</code> launcher in <code>~/.local/bin</code>. See the <a href="https://junie.jetbrains.com/docs/junie-cli.html">Junie CLI docs</a> for details.</p>
+</li>
+<li>
+<p>Make sure Lemonade Server is running (<code>lemond</code>).</p>
+</li>
 </ol>
-<blockquote>
-<p><strong>Note:</strong> The Lemonade Server must be running before you start Lemon Zest. The app will show a "Connecting to server..." overlay until the server is available.</p>
-</blockquote>
-<h2 id="installation">Installation</h2>
-<h3 id="linux-snap">Linux (Snap)</h3>
-<p>Install from the Snap Store:</p>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>snap<span class="w"> </span>install<span class="w"> </span>lemon-zest
+<h2 id="launch-junie-with-lemonade">Launch Junie with Lemonade</h2>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 </code></pre></div>
-<p>Or build the snap locally:</p>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>snap<span class="w"> </span>install<span class="w"> </span>snapcraft<span class="w"> </span>--classic
-snapcraft
-sudo<span class="w"> </span>snap<span class="w"> </span>install<span class="w"> </span>lemon-zest_*.snap<span class="w"> </span>--dangerous
+<p>Lemonade automatically writes a <a href="https://junie.jetbrains.com/docs/custom-llm-models.html">custom model profile</a> at <code>~/.junie/models/lemonade.json</code> pointing Junie at your local server, and starts Junie with <code>--model custom:lemonade</code>. If <code>JUNIE_HOME</code> is set, the profile is written under that directory instead.</p>
+<p>A custom model profile is one of Junie's supported ways to authenticate, so no JetBrains account or subscription is required for this flow.</p>
+<h2 id="use-case-1-first-time-user-discover-import-launch">Use Case 1: First-time user (discover + import + launch)</h2>
+<p>If you are not sure which model to use yet, start with:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>junie
 </code></pre></div>
-<h3 id="linux-from-source">Linux (From Source)</h3>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/phqen1x/lemon-zest.git
-<span class="nb">cd</span><span class="w"> </span>lemon-zest
-npm<span class="w"> </span>install
-npm<span class="w"> </span>start
-</code></pre></div>
-<h3 id="windows">Windows</h3>
-<h4 id="from-release">From Release</h4>
-<p>Download the latest installer (<code>.exe</code>) or portable build from the <a href="https://github.com/phqen1x/lemon-zest/releases">Releases</a> page.</p>
+<p>You will get an interactive menu where you can:</p>
 <ul>
-<li><strong>NSIS Installer</strong> — Standard Windows installer with custom install path</li>
-<li><strong>Portable</strong> — Standalone executable, no installation required</li>
+<li>Select a recipe to import and launch.</li>
+<li>Browse downloaded models.</li>
+<li>Browse recommended llama.cpp models (download may be required), then launch.</li>
 </ul>
-<h4 id="from-source">From Source</h4>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/phqen1x/lemon-zest.git
-<span class="nb">cd</span><span class="w"> </span>lemon-zest
-npm<span class="w"> </span>install
-npm<span class="w"> </span>start
+<p>All remote recipes in this flow are sourced from:
+<code>https://github.com/lemonade-sdk/recipes</code></p>
+<h2 id="use-case-2-you-already-know-the-model">Use Case 2: You already know the model</h2>
+<p>If you already downloaded a model or already imported the recipe, skip the interactive flow:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span>-m<span class="w"> </span>Qwen3.5-35B-A3B-GGUF
 </code></pre></div>
-<h2 id="building-packages">Building Packages</h2>
-<h3 id="linux">Linux</h3>
-<div class="highlight"><pre><span></span><code>npm<span class="w"> </span>install
-npx<span class="w"> </span>electron-builder<span class="w"> </span>--linux<span class="w"> </span>dir
+<p>Equivalent long form:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF
 </code></pre></div>
-<p>The unpacked app will be in <code>dist/linux-unpacked/</code>.</p>
-<h3 id="windows_1">Windows</h3>
-<div class="highlight"><pre><span></span><code>npm<span class="w"> </span>install
-npx<span class="w"> </span>electron-builder<span class="w"> </span>--win
+<p>When <code>--model</code> is provided, launch goes straight to starting the agent and loading that model.</p>
+<h2 id="passing-junie-arguments-with-agent-args">Passing Junie arguments with <code>--agent-args</code></h2>
+<p>You can pass any extra Junie CLI flags through Lemonade:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"--brave"</span>
 </code></pre></div>
-<p>This produces both an NSIS installer and a portable executable in <code>dist/</code>.</p>
-<h2 id="keyboard-shortcuts">Keyboard Shortcuts</h2>
-<table>
-<thead>
-<tr>
-<th>Shortcut</th>
-<th>Action</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>R</td>
-<td>Rectangle select</td>
-</tr>
-<tr>
-<td>C</td>
-<td>Circle select</td>
-</tr>
-<tr>
-<td>L</td>
-<td>Lasso select</td>
-</tr>
-<tr>
-<td>B</td>
-<td>Brush tool</td>
-</tr>
-<tr>
-<td>F</td>
-<td>Flood fill</td>
-</tr>
-<tr>
-<td>Ctrl + A</td>
-<td>Select all</td>
-</tr>
-<tr>
-<td>Ctrl + Z</td>
-<td>Undo</td>
-</tr>
-<tr>
-<td>Ctrl + Y</td>
-<td>Redo</td>
-</tr>
-<tr>
-<td>Ctrl + S</td>
-<td>Save As</td>
-</tr>
-<tr>
-<td>Ctrl + =</td>
-<td>Zoom in</td>
-</tr>
-<tr>
-<td>Ctrl + -</td>
-<td>Zoom out</td>
-</tr>
-<tr>
-<td>Ctrl + 0</td>
-<td>Reset zoom</td>
-</tr>
-<tr>
-<td>Escape</td>
-<td>Cancel inpainting</td>
-</tr>
-<tr>
-<td>F12</td>
-<td>Toggle DevTools</td>
-</tr>
-</tbody>
-</table>
+<p>If Junie supports a flag, you can pass it through <code>--agent-args</code>.</p>
+<h2 id="how-it-works">How it works</h2>
+<p>Junie discovers custom model profiles from <code>~/.junie/models/*.json</code>, where each file <em>is</em> one profile and the file name is the profile ID. <code>lemonade launch junie</code> writes a single file:</p>
+<p><strong><code>~/.junie/models/lemonade.json</code></strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"displayName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF (Lemonade)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"providerName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Lemonade"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"baseUrl"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://localhost:13305/v1/chat/completions"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"apiType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OpenAICompletion"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"maxContextLength"</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"apiKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><code>maxContextLength</code> comes from the model's configured <code>ctx_size</code>; change it with <code>lemonade load &lt;model&gt; --ctx-size N --save-options</code>.</p>
+<p>Lemonade rewrites this file on every launch, so hand edits to it are lost. Profiles in other files, such as <code>~/.junie/models/my-model.json</code>, are left untouched.</p>
+<h2 id="switching-models">Switching models</h2>
+<p>The <code>lemonade</code> profile always carries the model you launched with, so switch models by relaunching:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>junie<span class="w"> </span>--model<span class="w"> </span>Gemma-4-E2B-it-GGUF
+</code></pre></div>
+<h2 id="related-cli-docs">Related CLI Docs</h2>
+<p>For more launch examples and full option details, see:
+<a href="../../guide/cli/">docs/guide/cli.md</a></p>
+<p>For Junie product details, see the official docs:
+<a href="https://junie.jetbrains.com/docs/">https://junie.jetbrains.com/docs/</a></p>
 
 
 
@@ -3064,7 +2850,7 @@ npx<span class="w"> </span>electron-builder<span class="w"> </span>--win
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../langchain/" class="md-footer__link md-footer__link--prev" aria-label="Previous: LangChain">
+          <a href="../interviewer/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Interviewer">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -3074,20 +2860,20 @@ npx<span class="w"> </span>electron-builder<span class="w"> </span>--win
                 Previous
               </span>
               <div class="md-ellipsis">
-                LangChain
+                Interviewer
               </div>
             </div>
           </a>
         
         
           
-          <a href="../mindcraft/" class="md-footer__link md-footer__link--next" aria-label="Next: Mindcraft">
+          <a href="../langchain/" class="md-footer__link md-footer__link--next" aria-label="Next: LangChain">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Mindcraft
+                LangChain
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -10,6 +10,12 @@
         <loc>https://lemonade-server.ai/guide/install/</loc>
       </url>
       <url>
+        <loc>https://lemonade-server.ai/guide/install/windows/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/guide/install/linux/</loc>
+      </url>
+      <url>
         <loc>https://lemonade-server.ai/guide/install/ubuntu/</loc>
       </url>
       <url>
@@ -23,6 +29,9 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/guide/install/docker/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/guide/install/macos/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/guide/concepts/</loc>
@@ -131,6 +140,9 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/integrations/interviewer/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/junie/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/integrations/langchain/</loc>

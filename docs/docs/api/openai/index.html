@@ -391,7 +391,63 @@
   <span class="md-ellipsis">
     
   
-    Supported Platforms
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
   
 
     
@@ -532,6 +588,34 @@
     
   
     Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
   
 
     
@@ -1711,6 +1795,34 @@
     
   
     Interviewer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
   
 
     
@@ -5640,7 +5752,9 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 <li><code>recipe</code> - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
 <li><code>size</code> - Model size in GB (omitted for models without size information)</li>
 <li><code>max_context_window</code> - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.</li>
-<li><code>context_length</code> - Number of tokens the model can handle in one request. Uses the loaded value when the model is running and the configured <code>ctx_size</code> otherwise (omitted when neither is known).</li>
+<li><code>context_length</code> - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured <code>ctx_size</code>, or the discovered cloud provider context length otherwise (omitted when neither is known).</li>
+<li><code>max_output_tokens</code> - Optional integer indicating the maximum output tokens the model can generate in a single completion, when reported by cloud providers.</li>
+<li><code>max_completion_tokens</code> - Optional integer alias for <code>max_output_tokens</code> adhering to OpenAI convention, when reported by cloud providers.</li>
 <li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
 <li><code>update_available</code> - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. <code>false</code> otherwise.</li>
 <li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
@@ -5859,7 +5973,7 @@ can be corrected by hand.</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 </code></pre></div>
 <h3 id="response-format_8">Response format</h3>
-<p>Returns a single model object with the same fields as described in the <a href="#get-v1models">models list endpoint</a> above. For Omni collections (<code>recipe: "collection.omni"</code>), the object additionally carries <code>components</code> (ordered component names) and <code>models</code> (each component's full model object) — see the <a href="../../guide/configuration/custom-models/#share-a-collection-export-import-and-hugging-face">collection file documentation</a>.</p>
+<p>Returns a single model object with the same fields as described in the <a href="#get-v1models">models list endpoint</a> above. For Omni collections (<code>recipe: "collection.omni"</code>), the object additionally carries <code>components</code> (ordered component names) and <code>models</code> (each component's full model object) — see the <a href="../../guide/configuration/custom-models/#share-a-collection-between-machines">collection file documentation</a>.</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
