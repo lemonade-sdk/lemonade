@@ -552,25 +552,40 @@ jobs:
               "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m 'init benchmark history')"
           fi
           git worktree add bench-history "$HISTORY_BRANCH"
-          RUN_ID="${{ github.run_id }}"
-          shopt -s nullglob
-          for d in artifacts/bench-results-*; do
-            name="$(basename "$d")"
-            fork="${name#bench-results-}"
-            fork="${fork%-$RUN_ID}"
-            mkdir -p "bench-history/results/$fork"
-            # results are nested under <fork>/<model>/run-*.json — preserve that
-            find "$d" -name 'run-*.json' ! -name '*regression*' -print0 \
-              | while IFS= read -r -d '' f; do
-                  rel="${f#"$d"/}"           # e.g. ci/results/<fork>/<model>/run-X.json or <fork>/<model>/run-X.json
-                  rel="${rel#ci/results/}"
-                  rel="${rel#"$fork"/}"      # strip leading <fork>/ so we can re-root
-                  dest="bench-history/results/$fork/$rel"
-                  mkdir -p "$(dirname "$dest")"
-                  cp "$f" "$dest"
-                done
-            echo "$fork: $(find "bench-history/results/$fork" -name 'run-*.json' 2>/dev/null | wc -l) run file(s) in history"
-          done
+          # Copy every run file into bench-history/results/<fork_id>/<model>/,
+          # keyed by each file's OWN fork_id field (authoritative) rather than by
+          # parsing the bench-results-<fork>-<run_id> artifact folder name. The
+          # folder-name parsing silently dropped forks whose artifact layout did
+          # not match (e.g. single-fork runs), so a valid fork could vanish from
+          # the leaderboard. The model name is the run file's parent directory.
+          python3 - << 'PY'
+          import json, shutil
+          from pathlib import Path
+          dest_root = Path("bench-history/results")
+          counts = {}
+          for f in sorted(Path("artifacts").rglob("run-*.json")):
+            if "regression" in f.name:
+              continue
+            try:
+              data = json.loads(f.read_text())
+            except Exception as e:
+              print(f"  [skip] {f}: unreadable ({e})")
+              continue
+            fork = data.get("fork_id")
+            if not fork:
+              print(f"  [skip] {f}: no fork_id field")
+              continue
+            model = f.parent.name
+            dest = dest_root / fork / model / f.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(f, dest)
+            counts[fork] = counts.get(fork, 0) + 1
+          for fork in sorted(counts):
+            total = len(list((dest_root / fork).rglob("run-*.json")))
+            print(f"{fork}: +{counts[fork]} this run, {total} run file(s) in history")
+          if not counts:
+            print("WARNING: no run files found in artifacts/ — nothing merged")
+          PY
 
       - name: Aggregate leaderboard (full history)
         run: |

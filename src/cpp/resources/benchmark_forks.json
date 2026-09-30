@@ -109,7 +109,9 @@
       "arch": "gfx1151",
       "tracked": true,
       "enabled": true,
-      "notes": "Community llama.cpp fork perf-tuned for AMD Strix Halo (gfx1151). Ships standard llama-server binaries in the lemonade-sdk/llamacpp-rocm release layout (per-arch ROCm zips + one Vulkan zip, Linux only), so it drops into the llamacpp recipe as a ROCm binary swap — routed via `lemonade config set llamacpp.rocm_bin=<file> rocm_channel=nightly` and benched with --backend rocm. NO C++ change, same mechanism as llamacpp-amd-ecosystem-gfx11. Tracks the gfx1151 ROCm build only; the Vulkan build would duplicate llamacpp-upstream-vulkan. Tag scheme: sequential bNNNN from b1000. NOTE: intentionally NOT marked experimental — that would flip the driver to require_hot=False and pull ALL llamacpp models; leaving it off pins the run to the same hot model set the rocm forks bench (apples-to-apples, self-maintaining)."
+      "bench_scenarios": ["chat-short", "code-short", "context-32k"],
+      "ctx_size": 32768,
+      "notes": "Community llama.cpp fork perf-tuned for AMD Strix Halo (gfx1151). Ships standard llama-server binaries in the lemonade-sdk/llamacpp-rocm release layout (per-arch ROCm zips + one Vulkan zip, Linux only), so it drops into the llamacpp recipe as a ROCm binary swap — routed via `lemonade config set llamacpp.rocm_bin=<file> rocm_channel=nightly` and benched with --backend rocm. NO C++ change, same mechanism as llamacpp-amd-ecosystem-gfx11. Tracks the gfx1151 ROCm build only; the Vulkan build would duplicate llamacpp-upstream-vulkan. Tag scheme: sequential bNNNN from b1000. NOTE: intentionally NOT marked experimental — that would flip the driver to require_hot=False and pull ALL llamacpp models; leaving it off pins the run to the same hot model set the rocm forks bench (apples-to-apples, self-maintaining). Runs an extra context-32k long-context scenario (with ctx_size=32768 so the 32k prompt fits) to surface prefill/PP throughput — short scenarios can't, since PP is derived as input_tokens/TTFT and short prompts are dominated by fixed launch overhead. Heavier prefill: adds minutes + VRAM per model; scoped to halo-box only for now."
     }
   ]
 }

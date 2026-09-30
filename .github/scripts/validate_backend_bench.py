@@ -350,6 +350,14 @@ def run_bench(
     # lemond never reads one.
     bench_as = fork.get("install_as", backend)
 
+    # A fork may override the scenario set (e.g. to add a long-context prompt for
+    # prefill/PP measurement). Long-context scenarios are excluded by lemonade
+    # bench unless named explicitly AND need the model loaded with a matching
+    # window, so a fork opting into them must also set ctx_size — otherwise the
+    # big prompt overflows the default 4096 ctx and the backend returns HTTP 400.
+    scenarios = fork.get("bench_scenarios") or SCENARIOS
+    ctx_size = fork.get("ctx_size")
+
     cmd = [
         lemonade_bin,
         "bench",
@@ -357,7 +365,7 @@ def run_bench(
         "--backend",
         bench_as,
         "--scenarios",
-        *SCENARIOS,
+        *scenarios,
         "--runs",
         str(MEASUREMENT_RUNS),
         "--warmup",
@@ -367,6 +375,8 @@ def run_bench(
         "--output",
         str(output_file),
     ]
+    if ctx_size:
+        cmd += ["--ctx-size", str(ctx_size)]
     if compare_file and compare_file.exists():
         cmd += ["--compare", str(compare_file)]
 
