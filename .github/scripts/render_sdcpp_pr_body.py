@@ -104,6 +104,20 @@ def copy_images(records: list[dict[str, Any]], evidence_dir: Path) -> int:
     return copied
 
 
+def gpu_offload_cell(row: dict[str, Any]) -> str:
+    """Render the per-model GPU-offload verdict for the evidence table.
+
+    CPU legs (and any leg without a verified device banner) carry no verdict, so
+    they show N/A. GPU legs record PASS/FAIL from the server-log device banner.
+    """
+    verdict = str(row.get("gpu", "") or "").upper()
+    if verdict == "PASS":
+        return "PASS ✅"
+    if verdict == "FAIL":
+        return "FAIL ❌"
+    return "N/A"
+
+
 def seconds(row: dict[str, Any]) -> float:
     for key in ("request_elapsed_s", "elapsed_s"):
         try:
@@ -247,8 +261,8 @@ def render_body(
         "",
         "## Per-image validation evidence",
         "",
-        "| Backend | Model | Size | Time | Image |",
-        "|---|---|---:|---:|---|",
+        "| Backend | Model | Size | Time | GPU Offload | Image |",
+        "|---|---|---:|---:|:---:|---|",
     ]
 
     for row in sorted(
@@ -271,7 +285,10 @@ def render_body(
             image = f"`{row['error']}`"
         else:
             image = "missing image"
-        lines.append(f"| {label} | `{model}` | `{size}` | {elapsed} | {image} |")
+        gpu = gpu_offload_cell(row)
+        lines.append(
+            f"| {label} | `{model}` | `{size}` | {elapsed} | {gpu} | {image} |"
+        )
 
     lines += [
         "",

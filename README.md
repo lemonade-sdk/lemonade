@@ -317,7 +317,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td><code>rocm</code></td>
       <td>Supported AMD ROCm iGPU/dGPU families*</td>
-      <td>Linux</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>cpu</code></td>
