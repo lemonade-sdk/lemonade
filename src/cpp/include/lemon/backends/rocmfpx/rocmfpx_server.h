@@ -15,7 +15,6 @@ namespace backends {
 class RocmFpxServer : public LlamaCppServer {
 public:
     using LlamaCppServer::LlamaCppServer;
-    ~RocmFpxServer() override;
 
     void load(const std::string& model_name,
               const ModelInfo& model_info,
@@ -25,7 +24,7 @@ public:
 
 namespace rocmfpx {
 // llama-server's arguments for a model. `mmproj_path` and `draft_path` are ""
-// when the model has none; `mtp` marks a draft as an MTP head.
+// when the model has none; `mtp` turns on MTP drafting.
 std::vector<std::string> build_server_argv(const std::string& gguf_path,
                                            const std::string& mmproj_path,
                                            const std::string& draft_path,
