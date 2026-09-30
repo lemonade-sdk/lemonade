@@ -63,6 +63,10 @@ namespace lemon::backends {
     // Splits a pin, or nullopt when `pin` is not "<tag>@sha256:<64 hex digits>".
     std::optional<ContainerPin> parse_container_pin(const std::string& pin);
 
+    // A pin as people read it: "<tag>@<first 12 hex digits>", the short form
+    // Podman and Docker print. Returns `pin` unchanged when it is not a pin.
+    std::string short_container_pin(const std::string& pin);
+
     // Return the backend spec for recipes that use the standard BackendSpec flow.
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
