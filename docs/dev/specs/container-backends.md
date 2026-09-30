@@ -100,11 +100,11 @@ A container backend runs its server from an OCI image pinned by digest. Three pi
 
 #### `containers` Descriptor Field
 
-Each `BackendDescriptor` contains the information needed to install and launch that backend, organized in a standardized format. `BackendDescriptor` gets a new struct, `ContainerPolicy`, that holds a container backend's image repository, and the device nodes and Linux permissions its container gets:
+Each `BackendDescriptor` contains the information needed to install and launch that backend, organized in a standardized format. `BackendDescriptor` gets a new struct, `ContainerPolicy`, that holds a container backend's image, and the device nodes and Linux permissions its container gets:
 
 | Field | Required | Meaning | Adds to the run command |
 | --- | --- | --- | --- |
-| `repository` | Yes | Where the image is published. Only `docker.io/kyuz0/*` and `ghcr.io/peonist-ai/*` are allowed. | The image reference (see [Image](#image)) |
+| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*` and `ghcr.io/peonist-ai/*` are allowed. | The image reference (see [Image](#image)) |
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 | `ipc_host` | No, default `false` | Share the host's IPC namespace. | `--ipc=host` |
@@ -118,7 +118,7 @@ Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix 
 },
 /*containers*/ {
     {"rocm", {
-        /*repository*/        "ghcr.io/peonist-ai/halogen-flash-server",
+        /*image*/             "ghcr.io/peonist-ai/halogen-flash-server",
         /*devices*/           {"/dev/dri", "/dev/kfd"},
         /*cap_add*/           {},
         /*ipc_host*/          true,
@@ -213,7 +213,7 @@ When the container tool is Docker, `lemond` connects to the server at the contai
 
 ### Image
 
-The image is `<repository>@<digest>`, from `ContainerPolicy.repository` and the digest in the backend's pin (see [Version Pins](#version-pins)). Install pulls it, so a load never downloads anything.
+The image reference is `<image>@<digest>`, from `ContainerPolicy.image` and the digest in the backend's pin (see [Version Pins](#version-pins)). Install pulls it, so a load never downloads anything.
 
 ### Program
 
