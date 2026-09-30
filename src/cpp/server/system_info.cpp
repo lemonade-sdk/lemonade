@@ -698,6 +698,10 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
 }
 
 // Generic installation check
+static bool is_installed_state(const std::string& state) {
+    return state == "installed" || state == "update_available" || state == "update_required";
+}
+
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
     // CWSR fix is missing (a per-descriptor flag).
@@ -1614,9 +1618,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         if (supported && !skip_as_default) {
             const std::string effective_state =
                 recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
-            const bool locally_installed = effective_state == "installed"
-                || effective_state == "update_available"
-                || effective_state == "update_required";
+            const bool locally_installed = is_installed_state(effective_state);
             const bool overrides_uninstalled_default =
                 locally_installed && default_backend_installed.count(def.recipe) == 0;
             if (!recipes[def.recipe].contains("default_backend") || overrides_uninstalled_default) {
@@ -1764,12 +1766,12 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     return result.backends.empty() ? result.not_supported_error : "";
 }
 
-std::string SystemInfo::check_experimental_backend_installed(const std::string& recipe) {
+std::string SystemInfo::check_experimental_backend_installed(const std::string& recipe,
+                                                             const json& system_info) {
     const auto* desc = lemon::backends::descriptor_for(recipe);
     if (!desc) {
         return "";
     }
-    json system_info = SystemInfoCache::get_system_info_with_cache();
     if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
         return "";
     }
@@ -1785,7 +1787,7 @@ std::string SystemInfo::check_experimental_backend_installed(const std::string& 
         if (!labels || labels->tier != BackendTier::Experimental) {
             return "";
         }
-        if (state == "installed" || state == "update_available" || state == "update_required") {
+        if (is_installed_state(state)) {
             return "";
         }
         if (experimental_backend.empty()) {
