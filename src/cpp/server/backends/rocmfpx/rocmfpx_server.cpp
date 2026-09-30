@@ -12,12 +12,8 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include <algorithm>
-#include <filesystem>
 #include <stdexcept>
 #include <vector>
-
-namespace fs = std::filesystem;
 
 namespace lemon {
 namespace backends {
@@ -25,30 +21,6 @@ namespace backends {
 namespace {
 
 constexpr const char* kBackend = "rocm";
-
-// A split GGUF's shards, which llama-server opens from the first shard's
-// directory; a single-file GGUF alone.
-std::vector<std::string> gguf_files(const std::string& gguf_path) {
-    std::vector<std::string> files = {gguf_path};
-    const fs::path path(gguf_path);
-    std::string base;
-    int total = 0;
-    if (!is_gguf_shard_filename(path.filename().string(), &base, &total)) {
-        return files;
-    }
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(path.parent_path(), ec)) {
-        if (entry.path() != path &&
-            same_shard_family(entry.path().filename().string(), base, total)) {
-            files.push_back(entry.path().string());
-        }
-    }
-    return files;
-}
-
-bool has_label(const ModelInfo& info, const std::string& label) {
-    return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
-}
 
 class RocmFpxOps : public BackendOps {
 public:
@@ -112,7 +84,7 @@ std::vector<std::string> build_server_argv(const std::string& gguf_path,
     // The same defaults llamacpp gives its models, each yielding to a user's
     // own copy (see resolve_llamacpp_runtime_args).
     std::vector<utils::RuntimeArgDefault> defaults;
-    if (mtp && !draft_path.empty()) {
+    if (mtp) {
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
@@ -123,10 +95,6 @@ std::vector<std::string> build_server_argv(const std::string& gguf_path,
 }
 
 }  // namespace rocmfpx
-
-RocmFpxServer::~RocmFpxServer() {
-    unload();
-}
 
 void RocmFpxServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
@@ -152,11 +120,14 @@ void RocmFpxServer::load(const std::string& model_name,
     ServerCommand command;
     command.program = rocmfpx::descriptor.binary;
     command.args = rocmfpx::build_server_argv(gguf_path, mmproj_path, draft_path,
-                                              has_label(model_info, "mtp"), ctx_size, port_,
+                                              has_label(model_info.labels, "mtp"), ctx_size, port_,
                                               rocmfpx_args);
-    command.model_files = gguf_files(gguf_path);
-    command.model_files.push_back(mmproj_path);
-    command.model_files.push_back(draft_path);
+    for (const std::string& path : {gguf_path, mmproj_path, draft_path}) {
+        if (!path.empty()) {
+            const auto files = gguf_files(path);
+            command.model_files.insert(command.model_files.end(), files.begin(), files.end());
+        }
+    }
     command.port = port_;
 
     const bool inherit_output = (log_level_ == "info") || is_debug();
