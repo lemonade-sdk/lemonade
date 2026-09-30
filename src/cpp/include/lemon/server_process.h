@@ -37,14 +37,12 @@ public:
     // Terminates the server, or reaps it and logs its exit code when it has
     // already exited. Does nothing when it never started.
     virtual void stop();
-    // Non-mutating, so status checks can call it as often as they like.
     virtual bool running() const;
 
     utils::ProcessHandle handle() const { return handle_; }
     const std::vector<std::string>& command_line() const { return command_line_; }
 
 protected:
-    // Runs `command_line` as a child of lemond.
     void spawn(std::vector<std::string> command_line, const std::string& working_dir,
                const std::vector<std::pair<std::string, std::string>>& env);
 

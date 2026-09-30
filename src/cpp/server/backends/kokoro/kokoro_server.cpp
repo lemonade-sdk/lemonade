@@ -8,7 +8,6 @@
 #include "lemon/utils/path_utils.h"
 #include <filesystem>
 #include "lemon/backend_manager.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/error_types.h"
 #include <httplib.h>
@@ -115,7 +114,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
 #endif
 
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     fs::path model_dir = model_path.parent_path();
     std::vector<std::string> args = {
         "-m", (model_dir / model_index["model"]).string(),

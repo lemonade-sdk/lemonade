@@ -1,6 +1,7 @@
 #include "lemon/prometheus_metrics.h"
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/utils/url_utils.h"
 #include "lemon/version.h"
 
 #include <algorithm>
@@ -165,33 +166,6 @@ private:
     std::set<std::string> described_;
 };
 
-// The host and port of an "http://<host>:<port>/..." backend URL.
-bool parse_backend_host_port(const std::string& backend_url, std::string& host, int& port) {
-    const std::string scheme = "http://";
-    if (backend_url.compare(0, scheme.size(), scheme) != 0) {
-        return false;
-    }
-    const size_t colon = backend_url.find(':', scheme.size());
-    if (colon == std::string::npos || colon == scheme.size()) {
-        return false;
-    }
-    host = backend_url.substr(scheme.size(), colon - scheme.size());
-    size_t port_start = colon + 1;
-    size_t port_end = port_start;
-    while (port_end < backend_url.size() && std::isdigit(static_cast<unsigned char>(backend_url[port_end]))) {
-        port_end++;
-    }
-    if (port_end == port_start) {
-        return false;
-    }
-    try {
-        port = std::stoi(backend_url.substr(port_start, port_end - port_start));
-        return port > 0;
-    } catch (...) {
-        return false;
-    }
-}
-
 std::string rewrite_llamacpp_help_or_type_line(const std::string& line,
                                                std::set<std::string>& described_backend_metrics) {
     const bool is_help = line.rfind("# HELP ", 0) == 0;
@@ -287,7 +261,9 @@ void append_llamacpp_backend_metrics(PrometheusBuilder& metrics,
 
     std::string backend_host;
     int backend_port = 0;
-    if (!parse_backend_host_port(model.value("backend_url", ""), backend_host, backend_port)) {
+    bool backend_ssl = false;
+    utils::parse_target_url(model.value("backend_url", ""), backend_host, backend_port, backend_ssl, false);
+    if (backend_host.empty() || backend_port <= 0) {
         return;
     }
 
