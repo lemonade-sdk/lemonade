@@ -13,7 +13,7 @@
 
 ## Summary
 
-This spec describes how we will add 4 new container backends to Lemonade.
+This spec describes how we will add new container backends to Lemonade.
 
 A **container backend** is a Lemonade backend whose executable is a digest-pinned OCI image instead of a downloaded binary.
 
