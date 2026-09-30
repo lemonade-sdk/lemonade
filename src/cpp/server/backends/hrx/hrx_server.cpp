@@ -15,7 +15,6 @@
 #include "lemon/backends/hrx/hrx.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/custom_args.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 
 #include <lemon/utils/aixlog.hpp>

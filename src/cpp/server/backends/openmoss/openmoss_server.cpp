@@ -11,6 +11,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/url_utils.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
@@ -208,13 +209,7 @@ ServerCommand OpenMossServer::server_command(const std::string& model_path) cons
     };
     command.args.push_back("--no-webui");
     command.env = env_vars_;
-
-    LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << command.port << std::endl;
     return command;
-}
-
-void OpenMossServer::stop_speech_process() {
-    stop_server();
 }
 
 void OpenMossServer::start_speech_process(long timeout_seconds) {
@@ -224,7 +219,7 @@ void OpenMossServer::start_speech_process(long timeout_seconds) {
 
 void OpenMossServer::unload() {
     std::unique_lock<std::shared_mutex> lock(request_mutex_);
-    stop_speech_process();
+    stop_server();
     reference_cache_.clear();
 }
 
@@ -239,7 +234,7 @@ std::string OpenMossServer::design_reference_sample(
         + std::chrono::seconds(kVoiceDesignDeadlineSeconds);
     ProcessSwapGuard swap_guard(process_swap_in_progress_);
     LOG(INFO, "openmoss-server") << "Designing reference voice for: " << voice_description << std::endl;
-    stop_speech_process();
+    stop_server();
 
     std::string sample;
     try {
@@ -269,8 +264,8 @@ std::string OpenMossServer::render_reference_sample(
     std::chrono::steady_clock::time_point deadline) {
     const ServerCommand command = server_command(voicegen_path_);
     NativeProcess designer(ProcessOutput{is_debug(), false});
-    designer.start(command);
-    const std::string base = "http://127.0.0.1:" + std::to_string(command.port);
+    const std::string base = "http://" + utils::bracket_host_if_ipv6(designer.start(command)) + ":"
+                             + std::to_string(command.port);
     bool ready = false;
     while (!ready && std::chrono::steady_clock::now() < deadline) {
         if (client_cancelled(sink)) {

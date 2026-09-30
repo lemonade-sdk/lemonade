@@ -25,7 +25,6 @@
 namespace lemon {
 
 using json = nlohmann::json;
-using utils::ProcessHandle;
 
 class BackendStreamRetryableReset : public std::runtime_error {
 public:

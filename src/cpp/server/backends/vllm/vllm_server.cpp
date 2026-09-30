@@ -11,7 +11,6 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
@@ -537,6 +536,7 @@ void VLLMServer::load(const std::string& model_name,
     } catch (const std::runtime_error& e) {
         cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
         max_model_len_ = 0;
+        if (load_cancelled()) throw;
         std::string err = e.what();
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.

@@ -1,5 +1,6 @@
 #include <lemon/wrapped_server.h>
 #include <lemon/utils/process_manager.h>
+#include <lemon/utils/url_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
@@ -210,7 +211,7 @@ int WrappedServer::get_backend_port() const {
 
 std::string WrappedServer::get_base_url() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
-    return "http://" + host_ + ":" + std::to_string(port_);
+    return "http://" + utils::bracket_host_if_ipv6(host_) + ":" + std::to_string(port_);
 }
 
 std::unique_ptr<ServerProcess> WrappedServer::take_process() {
@@ -406,13 +407,7 @@ bool WrappedServer::has_backend_process_exited() const {
 
 void WrappedServer::start_server(std::unique_ptr<ServerProcess> process,
                                  const ServerCommand& command, long timeout_seconds) {
-    std::string host;
-    try {
-        host = process->start(command);
-    } catch (...) {
-        process->stop();
-        throw;
-    }
+    const std::string host = process->start(command);
     std::unique_ptr<ServerProcess> previous;
     {
         std::lock_guard<std::mutex> lock(process_mutex_);

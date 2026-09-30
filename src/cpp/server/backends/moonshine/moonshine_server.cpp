@@ -126,7 +126,6 @@ void MoonshineServer::load(const std::string& model_name,
     LOG(INFO, "MoonshineServer") << "Starting server on port " << port_
                                  << " (TCP streaming on " << tcp_port_ << ")" << std::endl;
 
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "--model-path", model_path,
         "--model-arch", std::to_string(model_arch),

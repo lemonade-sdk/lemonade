@@ -223,7 +223,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     command.program = flm_path;
     command.args = std::move(args);
     command.port = port_;
-    // FLM doesn't have a health endpoint, so /api/tags shows it is up
+    // FLM has no /health route.
     command.ready_endpoint = "/api/tags";
     try {
         // 5 minutes: large models can take time to load

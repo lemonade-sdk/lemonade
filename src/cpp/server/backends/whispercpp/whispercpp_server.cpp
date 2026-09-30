@@ -12,7 +12,6 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "whispercpp_multipart_fields.h"
 #include <iostream>
@@ -265,7 +264,6 @@ void WhisperServer::load(const std::string& model_name,
 
     // Lemonade manages the model path and port;
     // optional whisper-server flags like --convert come from whispercpp_args.
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "-m", model_path,
         "--port", std::to_string(port_)

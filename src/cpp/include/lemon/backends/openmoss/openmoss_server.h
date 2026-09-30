@@ -49,7 +49,6 @@ private:
     std::string resolve_binary_path(const std::string& backend);
     ServerCommand server_command(const std::string& model_path) const;
 
-    void stop_speech_process();
     void start_speech_process(long timeout_seconds = 600);
 
     std::string design_reference_sample(const std::string& voice_description,

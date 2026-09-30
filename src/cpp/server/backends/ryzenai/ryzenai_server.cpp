@@ -7,7 +7,6 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
@@ -100,7 +99,6 @@ void RyzenAIServer::load(const std::string& model_name,
     command.program = ryzenai_server_path;
     command.args = std::move(args);
     command.port = port_;
-    // Filter health check spam
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
 
     is_loaded_ = true;
