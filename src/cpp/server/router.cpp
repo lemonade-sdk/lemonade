@@ -19,9 +19,11 @@
 #include "telemetry.h"
 #include <algorithm>
 #include <condition_variable>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <sstream>
 #include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
@@ -1025,6 +1027,23 @@ void Router::load_model(const std::string& model_name,
                 + " (" + std::to_string(static_cast<int>(model_info.size))
                 + " GB). The NPU driver needs additional working memory beyond"
                 + " model weights. Free up memory or try a smaller model.");
+        }
+
+        // A streaming backend started without room for its working set fails
+        // partway through, and one that pins that memory can hang the host.
+        const auto* model_desc = backends::descriptor_for(model_info.recipe);
+        if (model_desc && model_desc->streams_model_from_storage) {
+            const double needed_gb = ModelManager::streaming_working_set_gb(
+                model_info.min_resident_gb, model_info.size);
+            const double free_gb = get_available_memory_gb(model_info.device);
+            if (ModelManager::streaming_model_exceeds_pool(needed_gb, free_gb)) {
+                std::ostringstream message;
+                message << std::fixed << std::setprecision(1) << canonical_model_name
+                        << " needs about " << needed_gb << " GB of free GPU memory and "
+                        << free_gb << " GB is free. Unload other models or close other GPU "
+                        << "applications, then load it again.";
+                throw std::runtime_error(message.str());
+            }
         }
 
         LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
