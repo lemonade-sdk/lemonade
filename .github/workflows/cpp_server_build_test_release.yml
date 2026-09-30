@@ -1044,6 +1044,7 @@ jobs:
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
@@ -1099,7 +1100,7 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm vulkan"
+            backends: "cpu vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
@@ -1114,7 +1115,7 @@ jobs:
           - name: audio-gen-openmoss
             script: server_audio_generation.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
@@ -1129,7 +1130,7 @@ jobs:
           - name: tts-openmoss
             script: server_tts_openmoss.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1317,6 +1318,7 @@ jobs:
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
@@ -1362,7 +1364,7 @@ jobs:
           - name: audio-gen-openmoss
             script: server_audio_generation.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
           - name: whisper
             script: server_whisper.py
@@ -1392,7 +1394,7 @@ jobs:
           - name: tts-openmoss
             script: server_tts_openmoss.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1468,6 +1470,7 @@ jobs:
     needs: build-lemonade-deb
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))

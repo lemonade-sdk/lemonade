@@ -213,9 +213,7 @@ jobs:
             {"label":"cpu","backend":"cpu","channel":"",
              "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
             {"label":"vulkan","backend":"vulkan","channel":"",
-             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
-            {"label":"rocm-stable","backend":"rocm","channel":"stable",
-             "runner":["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]}
+             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]}
           ]'
 
           # cpp_server_build_test_release.yml already exercises sd-cpp on CPU

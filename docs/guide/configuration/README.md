@@ -108,7 +108,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
-    "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
   "port": 13305,
