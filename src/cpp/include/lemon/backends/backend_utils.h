@@ -222,6 +222,9 @@ namespace lemon::backends {
         /** "<repository>@<digest>" for a container backend: its descriptor's repository and the digest its backend_versions.json pin names. Throws when the backend has no container policy or no valid pin. */
         static std::string get_backend_image(const std::string& recipe, const std::string& backend);
 
+        /** "<repository>@<digest>" for the pin a container backend's version.txt records, or "" when none is installed. */
+        static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);
+
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);
 

@@ -1371,20 +1371,23 @@ int LemonadeClient::list_recipes(bool show_all) const {
                     } else {
                         info_col = "-";
                     }
-                    // A multi-step action continues under the Action column.
-                    std::string action_col = backend.action.empty() ? "-" : backend.action;
-                    for (size_t pos = action_col.find('\n'); pos != std::string::npos;
-                         pos = action_col.find('\n', pos + 1)) {
-                        action_col.insert(pos + 1, std::string(120, ' '));
-                    }
                     if (show_all || status_str != "unsupported") {
-                        std::cout << std::left << std::setw(20) << recipe_col
-                                << std::setw(12) << backend.name
-                                << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
-                                << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
-                                << std::setw(16) << status_str
-                                << std::setw(46) << info_col
-                                << " " << action_col << std::endl;
+                        std::ostringstream row;
+                        row << std::left << std::setw(20) << recipe_col
+                            << std::setw(12) << backend.name
+                            << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
+                            << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
+                            << std::setw(16) << status_str
+                            << std::setw(46) << info_col << " ";
+                        // A long message pushes the action right; its later steps
+                        // line up under wherever the first one landed.
+                        std::string action_col = backend.action.empty() ? "-" : backend.action;
+                        const std::string indent(row.str().size(), ' ');
+                        for (size_t pos = action_col.find('\n'); pos != std::string::npos;
+                             pos = action_col.find('\n', pos + 1)) {
+                            action_col.insert(pos + 1, indent);
+                        }
+                        std::cout << row.str() << action_col << std::endl;
 
                         first_backend = false;
                     }
