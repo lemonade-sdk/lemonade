@@ -108,7 +108,6 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 | `ipc_host` | No, default `false` | Share the host's IPC namespace. | `--ipc=host` |
-| `memlock_unlimited` | No, default `false` | Remove the limit on locked memory. | `--ulimit memlock=-1:-1` |
 
 Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix Halo (`gfx1151`):
 
@@ -118,11 +117,10 @@ Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix 
 },
 /*containers*/ {
     {"rocm", {
-        /*image*/             "ghcr.io/peonist-ai/halogen-flash-server",
-        /*devices*/           {"/dev/dri", "/dev/kfd"},
-        /*cap_add*/           {},
-        /*ipc_host*/          true,
-        /*memlock_unlimited*/ true,
+        /*image*/    "ghcr.io/peonist-ai/halogen-flash-server",
+        /*devices*/  {"/dev/dri", "/dev/kfd"},
+        /*cap_add*/  {},
+        /*ipc_host*/ true,
     }},
 },
 ```
@@ -157,7 +155,7 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 
 | Method | `NativeProcess` | `ContainerProcess` |
 | --- | --- | --- |
-| `start` | Starts the binary through `ProcessManager::start_process()` and connects to it at `127.0.0.1` | 1. Removes any leftover container with the same name<br>2. Builds a `ContainerRunSpec`:<br>  1. Mounts the command's model files<br>  2. Rewrites their paths to `/mnt/models`<br>  3. Adds the `ContainerPolicy`'s `devices`, `cap_add`, `ipc_host` and `memlock_unlimited`<br>  4. Sets the container's network (see [Run Options](#run-options))<br>3. Has `ContainerManager` build the `podman run` or `docker run` command<br>4. Starts that command as a child of `lemond` with `ProcessManager::start_process()`<br>5. Connects to the server at the address given in [Run Options](#run-options) |
+| `start` | Starts the binary through `ProcessManager::start_process()` and connects to it at `127.0.0.1` | 1. Removes any leftover container with the same name<br>2. Builds a `ContainerRunSpec`:<br>  1. Mounts the command's model files<br>  2. Rewrites their paths to `/mnt/models`<br>  3. Adds the `ContainerPolicy`'s `devices`, `cap_add` and `ipc_host`<br>  4. Sets the container's network (see [Run Options](#run-options))<br>3. Has `ContainerManager` build the `podman run` or `docker run` command<br>4. Starts that command as a child of `lemond` with `ProcessManager::start_process()`<br>5. Connects to the server at the address given in [Run Options](#run-options) |
 | `stop` | Terminates the process | 1. Runs `stop --time 10` on the container by name †: SIGTERM, then SIGKILL after 10 seconds. Stopping by name reaches the container, because the client forwards SIGTERM and SIGKILL ends only the client<br>2. Removes the container and its network<br>3. Terminates the `run` client |
 | `handle` | The server process | The `podman run` or `docker run` client process. When `lemond` dies, the client gets SIGTERM, as a native server does, and forwards it to the container |
 
@@ -194,7 +192,7 @@ These options are the same for Podman and Docker:
 | `--env HOME=/tmp` | Same for every container † | Fixed |
 | `--env HIP_VISIBLE_DEVICES` | Index of the GPU whose arch is `SystemInfo::get_rocm_arch()`, only when `devices` includes `/dev/kfd` | `lemond` reads each node's `gfx_target_version` under `/sys/devices/virtual/kfd/kfd/topology/nodes` and picks the one equal to `SystemInfo::get_rocm_arch()` † |
 | `--env` | Any other variables the engine needs, such as `ROCBLAS_USE_HIPBLASLT=1` or Halogen's `HALOGEN_CTX` | `ServerCommand.env`, set by the `WrappedServer` subclass |
-| `--cap-add`, `--ipc=host`, `--ulimit memlock=-1:-1` | Only when `ContainerPolicy` sets `cap_add`, `ipc_host` or `memlock_unlimited` ‡ | `ContainerPolicy` |
+| `--cap-add`, `--ipc=host` | Only when `ContainerPolicy` sets `cap_add` or `ipc_host` ‡ | `ContainerPolicy` |
 
 When the container tool is Podman, `lemond` connects to the server at `127.0.0.1:<port>`, and the command adds:
 
@@ -395,7 +393,7 @@ Each row holds the options that serve one purpose. Where the options differ, the
 | Network | 1. Before the run: `podman network create --internal --label ai.lemonade lemonade-halogen-rocm-Qwen3.8-Flash-Next-Halogen`<br>2. On the run: `--network=lemonade-halogen-rocm-Qwen3.8-Flash-Next-Halogen` `-p 127.0.0.1:8001:8001` | 1. On the run: `--network=none`<br>2. For each API connection, a listener on the host at `127.0.0.1:8731` runs `podman exec -i ai-toolbox-cockpit-halogen-server python3 -I -u -c '<relay script>' 8731` and relays the connection through it | **Same.** In both, only the local machine can reach the API, and Halogen cannot reach the internet. |
 | GPU access | <code>--device /<wbr>dev/<wbr>dri</code><br><code>--device /<wbr>dev/<wbr>kfd</code><br><code>--group-add keep-groups</code> | <code>--device /<wbr>dev/<wbr>kfd</code><br><code>--device /<wbr>dev/<wbr>dri</code><br><code>--group-add keep-groups</code> |  |
 | GPU selection | <code>--env HIP_VISIBLE_DEVICES=<wbr>0</code> | Not passed | **More robust.** Halogen always runs on the Strix Halo. On a machine with a second AMD GPU, AI Cockpit can put it on the other GPU, where the image cannot run. |
-| Memory | <code>--ipc=<wbr>host</code><br><code>--ulimit memlock=<wbr>-1:<wbr>-1</code> | <code>--ipc=<wbr>host</code><br><code>--ulimit memlock=<wbr>-1:<wbr>-1</code> |  |
+| Memory | <code>--ipc=<wbr>host</code> | <code>--ipc=<wbr>host</code><br><code>--ulimit memlock=<wbr>-1:<wbr>-1</code> | **Stricter.** Halogen only locks memory when `HALOGEN_WEIGHTS_LOCK=1` is set, a troubleshooting flag that Lemonade doesn't set. |
 | Model files | <code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-w4b.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer:<wbr>ro,z</code><br><code>--env HALOGEN_CHECKPOINT=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn</code><br><code>--env HALOGEN_CK_OVERLAY=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn</code><br><code>--env HALOGEN_TOKENIZER=<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer</code> | <code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro</code><br><code>-e HALOGEN_CHECKPOINT=<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn</code><br><code>-e HALOGEN_CK_OVERLAY=<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn</code><br><code>-e HALOGEN_TOKENIZER=<wbr>/<wbr>models/<wbr>tokenizer</code> | **Same.** Both mount only Halogen's files, read-only. Lemonade also relabels them with `z` so SELinux lets the container read them. |
 | Engine settings | <code>--env HALOGEN_API_PORT=<wbr>8001</code><br><code>--env HALOGEN_CTX=<wbr>262144</code><br><code>--env HALOGEN_KV_POOL_POSITIONS=<wbr>524288</code><br><code>--env HALOGEN_KV_SLOTS=<wbr>4</code><br><code>--env HALOGEN_PROMPT_CACHE=<wbr>2</code> | <code>-e HALOGEN_API_PORT=<wbr>8731</code><br><code>-e HALOGEN_CTX=<wbr>262144</code><br><code>-e HALOGEN_KV_POOL_POSITIONS=<wbr>524288</code><br><code>-e HALOGEN_KV_SLOTS=<wbr>4</code><br><code>-e HALOGEN_PROMPT_CACHE=<wbr>2</code> | **Same.** The settings match, and only the port differs: `lemond` picks a free port for each load because it runs several servers at once. |
 | Image | <code>--pull=<wbr>never</code><br><code>ghcr.io/<wbr>peonist-ai/<wbr>halogen-flash-server@<wbr>sha256:<wbr>&lt;digest&gt;</code> | <code>--pull=<wbr>always</code><br><code>ghcr.io/<wbr>peonist-ai/<wbr>halogen-flash-server:<wbr>latest</code> | **Stricter.** Lemonade runs the exact image that passed validation, and it changes only through a reviewed pull request. AI Cockpit runs whatever `latest` is at launch. |
