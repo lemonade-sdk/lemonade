@@ -29,6 +29,7 @@ namespace {
 
 constexpr const char* kBackend = "rocm";
 constexpr int kNativeContext = 262144;
+constexpr const char* kTokenizerDir = "tokenizer";
 
 // Registering a 115 GiB checkpoint with the GPU is bounded by storage
 // bandwidth, not by anything global_timeout describes, so it gets its own
@@ -67,7 +68,7 @@ public:
         }
         std::vector<std::string> selected;
         for (const auto& file : repo_files) {
-            if (ends_with(file, ".hgn") || file.rfind("tokenizer/", 0) == 0) {
+            if (ends_with(file, ".hgn") || file.rfind(std::string(kTokenizerDir) + "/", 0) == 0) {
                 selected.push_back(file);
             }
         }
@@ -94,8 +95,7 @@ namespace halogen {
 
 bool kernel_supported(const std::string& release) {
     int major = 0;
-    int minor = 0;
-    if (std::sscanf(release.c_str(), "%d.%d", &major, &minor) != 2) {
+    if (std::sscanf(release.c_str(), "%d", &major) != 1) {
         return true;
     }
     return major >= 7;
@@ -130,8 +130,7 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
         throw std::runtime_error("halogen: model '" + model_name + "' names no halogen_overlay");
     }
     const std::string overlay = (bundle / overlay_name).string();
-    const std::string tokenizer =
-        (bundle / model_info.extra<std::string>("halogen_tokenizer", "tokenizer")).string();
+    const std::string tokenizer = (bundle / kTokenizerDir).string();
     const std::string vision_name = model_info.extra<std::string>("halogen_vision_tower", "");
     const std::string vision = vision_name.empty() ? "" : (bundle / vision_name).string();
     for (const auto& required : {overlay, tokenizer, vision}) {
@@ -146,6 +145,7 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                           ctx_option.get<int>() > 0)
                              ? ctx_option.get<int>()
                              : kNativeContext;
+    set_started_ctx_size(ctx_size);
 
     device_type_ = DEVICE_GPU;
     port_ = choose_port();
