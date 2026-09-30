@@ -3027,7 +3027,6 @@
         "size": 126.57,
         "min_resident_gb": 8.0,
         "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
-        "halogen_tokenizer": "tokenizer",
         "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef"
     },
     "Qwen3.8-Flash-Next-Speed-Halogen": {
@@ -3041,7 +3040,6 @@
         "size": 126.47,
         "min_resident_gb": 8.0,
         "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
-        "halogen_tokenizer": "tokenizer",
         "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef"
     },
     "Qwen3.8-Flash-Next-Vision-Halogen": {
@@ -3056,7 +3054,6 @@
         "size": 127.47,
         "min_resident_gb": 8.0,
         "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
-        "halogen_tokenizer": "tokenizer",
         "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
         "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
     },
@@ -3072,7 +3069,6 @@
         "size": 127.37,
         "min_resident_gb": 8.0,
         "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
-        "halogen_tokenizer": "tokenizer",
         "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
         "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
     }
