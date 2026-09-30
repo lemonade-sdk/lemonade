@@ -28,8 +28,8 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 
 - **Platform.** Linux-only, GPU-only. Single GPU.
 - **Image sources.**
-  - Donato's Docker Hub account for rocmfpx, nathanw, and ds4.
-  - Peonist's ghcr.io account for Halogen.
+  - Donato's [Docker Hub account](https://hub.docker.com/u/kyuz0) for rocmfpx, nathanw, and ds4.
+  - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - Source builds and the embedded SDK tarball will natively support the container backends.
