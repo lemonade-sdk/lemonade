@@ -76,6 +76,7 @@ public:
     // `image` is <repository>@<digest>; `model` names the container.
     ContainerProcess(ProcessOutput output, std::string recipe, std::string backend,
                      std::string model, ContainerPolicy policy, std::string image);
+    ~ContainerProcess() override;
 
     std::string start(const ServerCommand& command) override;
     // Stops the container by name first: the client forwards SIGTERM into the

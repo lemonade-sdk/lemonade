@@ -2834,7 +2834,8 @@
         "suggested": false,
         "labels": [
             "chat",
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 80.8,
         "min_resident_gb": 16.0,
@@ -2851,10 +2852,7 @@
             "reasoning"
         ],
         "size": 97.0,
-        "min_resident_gb": 16.0,
-        "recipe_options": {
-            "ds4_args": "--prefill-chunk 2048"
-        }
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Q4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf",
@@ -2888,6 +2886,7 @@
         "labels": [
             "chat",
             "reasoning",
+            "tool-calling",
             "vision"
         ],
         "size": 81.0,

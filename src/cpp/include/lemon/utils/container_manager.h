@@ -46,6 +46,8 @@ struct ContainerRunSpec {
 struct SetupFailure {
     std::string message;
     std::string action;
+
+    std::string text() const { return message + ". To fix it:\n" + action; }
 };
 
 struct CommandResult {
@@ -90,12 +92,10 @@ public:
     // The complete `run` command line for `spec`, starting with the tool.
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
 
-    // --- images -----------------------------------------------------------------
     bool has_image(const std::string& image) const;
     void pull(const std::string& image, const DownloadProgressCallback& progress) const;
     void remove_image(const std::string& image) const;
 
-    // --- containers and their networks ------------------------------------------
     // Replaces any network of that name with an --internal one carrying the
     // ai.lemonade label.
     void create_network(const std::string& name) const;
@@ -109,7 +109,6 @@ public:
     // carries the ai.lemonade label.
     void sweep() const;
 
-    // --- pure helpers -------------------------------------------------------------
     // lemonade-<recipe>-<backend>-<model>, reduced to the characters a
     // container name accepts.
     static std::string container_name(const std::string& recipe, const std::string& backend,

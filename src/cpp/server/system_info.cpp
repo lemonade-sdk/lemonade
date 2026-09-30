@@ -698,14 +698,6 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
     return false;
 }
 
-// The first setup check a container backend fails on this host, or nullopt.
-static std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
-                                                                  const std::string& backend) {
-    (void)recipe;
-    (void)backend;
-    return utils::ContainerManager::global().check_setup();
-}
-
 static bool is_installed_state(const std::string& state) {
     return state == "installed" || state == "update_available" || state == "update_required";
 }
@@ -723,12 +715,8 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     // A container backend is installed once the image its version.txt records
     // is present.
     if (cwsr_desc && cwsr_desc->container_for(backend)) {
-        auto* spec = try_get_spec_for_recipe(recipe);
-        const auto pin = spec ? backends::parse_container_pin(read_version_file(
-                                    BackendUtils::get_installed_version_file(*spec, backend)))
-                              : std::nullopt;
-        return pin && utils::ContainerManager::global().has_image(
-                          cwsr_desc->container_for(backend)->repository + "@" + pin->digest);
+        const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
+        return !image.empty() && utils::ContainerManager::global().has_image(image);
     }
 
     // Find the managed binary, then let the backend's ops decide installed-ness
@@ -1636,7 +1624,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // using BackendManager as the single source of truth for repo/version mappings.
 
         if (supported && container_backend) {
-            if (auto failure = container_setup_failure(def.recipe, def.backend)) {
+            if (auto failure = utils::ContainerManager::global().check_setup()) {
                 backend["state"] = "action_required";
                 backend["message"] = failure->message;
                 backend["action"] = failure->action;
@@ -1817,7 +1805,7 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
             if (!desc->container_for(backend) || state == "unsupported") {
                 continue;
             }
-            if (auto failure = container_setup_failure(recipe, backend)) {
+            if (auto failure = utils::ContainerManager::global().check_setup()) {
                 status["state"] = "action_required";
                 status["message"] = failure->message;
                 status["action"] = failure->action;
