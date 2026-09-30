@@ -52,6 +52,7 @@ jobs:
           import json
           import os
           import re
+          import urllib.error
           import urllib.request
 
           PIN_RE = re.compile(r"^(?P<tag>[^@]+)@(?P<digest>sha256:[0-9a-f]{64})$")
@@ -64,7 +65,6 @@ jobs:
               "application/vnd.oci.image.manifest.v1+json",
           ])
 
-          # Each container backend's repository, from its descriptor.
           repositories = {}
           for header in glob.glob("src/cpp/include/lemon/backends/*/*.h"):
               text = open(header, encoding="utf-8").read()
@@ -73,6 +73,19 @@ jobs:
                   continue
               for backend, repository in POLICY_RE.findall(text):
                   repositories[(recipe.group(1), backend)] = repository
+
+          versions = json.load(open("src/cpp/resources/backend_versions.json", encoding="utf-8"))
+          pinned = {
+              (recipe, backend)
+              for recipe, backends in versions.items() if isinstance(backends, dict)
+              for backend, pin in backends.items() if isinstance(pin, str) and PIN_RE.match(pin)
+          }
+          if not repositories or pinned - repositories.keys():
+              missing = ", ".join(f"{r}:{b}" for r, b in sorted(pinned - repositories.keys()))
+              raise SystemExit(
+                  "No container repository found in the backend descriptors for: "
+                  + (missing or "any backend")
+                  + ". Update RECIPE_RE or POLICY_RE to match the descriptor format.")
 
           def newest_digest(repository, tag):
               registry, name = repository.split("/", 1)
@@ -87,17 +100,21 @@ jobs:
                   manifest_url = f"https://ghcr.io/v2/{name}/manifests/{tag}"
               else:
                   raise SystemExit(f"Unsupported registry for {repository}")
-              with urllib.request.urlopen(token_url, timeout=30) as response:
-                  token = json.load(response)["token"]
-              request = urllib.request.Request(
-                  manifest_url,
-                  method="HEAD",
-                  headers={"Authorization": f"Bearer {token}", "Accept": ACCEPT},
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return response.headers["Docker-Content-Digest"]
+              request = urllib.request.Request(manifest_url, method="HEAD", headers={"Accept": ACCEPT})
+              try:
+                  with urllib.request.urlopen(token_url, timeout=30) as response:
+                      token = json.load(response)["token"]
+                  request.add_header("Authorization", f"Bearer {token}")
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      digest = response.headers.get("Docker-Content-Digest")
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(
+                      f"{repository}:{tag} returned HTTP {e.code}. If the tag was removed "
+                      "upstream, a maintainer must pin a new tag in backend_versions.json.")
+              if not digest:
+                  raise SystemExit(f"{repository}:{tag} returned no Docker-Content-Digest header")
+              return digest
 
-          versions = json.load(open("src/cpp/resources/backend_versions.json", encoding="utf-8"))
           updates = []
           for (recipe, backend), repository in sorted(repositories.items()):
               pin = versions.get(recipe, {}).get(backend, "")
@@ -118,10 +135,11 @@ jobs:
                       "new": latest,
                   })
 
-          # On a pull request nothing changes upstream, so every pin is
-          # validated to exercise the pipeline.
+          # A pull request validates every committed pin, so a change to this
+          # workflow is tested against images that already passed.
           validate = updates
           if os.environ["EVENT_NAME"] == "pull_request":
+              updates = []
               validate = [
                   {"recipe": r, "backend": b} for (r, b) in sorted(repositories)
               ]
@@ -210,65 +228,27 @@ jobs:
       matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
     env:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set HF_HOME environment variable
-        run: |
-          HF_HOME="$RUNNER_TEMP/huggingface"
-          mkdir -p "$HF_HOME"
-          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
-
-      - name: Install a container tool
-        run: |
-          set -e
-          if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y podman
-          fi
-          if command -v podman >/dev/null 2>&1; then podman --version; else docker --version; fi
-
-      - name: Install Lemonade (.deb)
-        uses: ./.github/actions/install-lemonade-deb
+      - name: Test the container backend
+        uses: ./.github/actions/test-container-backend
         with:
-          version: ${{ env.LEMONADE_VERSION }}
-          port: auto
+          recipe: ${{ matrix.recipe }}
+          backend: ${{ matrix.backend }}
+          version: ${{ needs.build.outputs.version }}
 
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
+      - name: Record the passing backend
+        run: |
+          mkdir -p validation-results
+          touch "validation-results/${{ matrix.recipe }}-${{ matrix.backend }}"
+
+      - name: Upload the validation result
+        uses: actions/upload-artifact@v7
         with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Install the container backend
-        run: |
-          set -e
-          lemonade backends install ${{ matrix.recipe }}:${{ matrix.backend }}
-
-      # The suites' request timeouts are shorter than a cold download.
-      - name: Download the test models
-        run: |
-          set -e
-          models=$(cd test && python3 -c "
-          import sys
-          from utils.capabilities import CAPABILITIES
-          from utils.test_models import MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY
-          models = set(CAPABILITIES['llm'][sys.argv[1]]['test_models'].values())
-          print(' '.join(sorted(models | {MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY})))
-          " "${{ matrix.recipe }}")
-          for model in $models; do
-            lemonade pull "$model"
-          done
-
-      - name: Run tests
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e
-          .venv/bin/python test/server_llm.py --wrapped-server ${{ matrix.recipe }} \
-            --backend ${{ matrix.backend }} --cli-binary lemonade
+          name: validation-results-${{ matrix.name }}
+          path: validation-results/
+          retention-days: 7
 
       - name: Capture and upload server logs
         if: always()
@@ -285,10 +265,20 @@ jobs:
     needs: [resolve, validate]
     runs-on: ubuntu-latest
     if: >-
+      always() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.resolve.result == 'success' && needs.validate.result != 'skipped'
     steps:
       - uses: actions/checkout@v5
+
+      # No leg passing leaves nothing to download.
+      - name: Download validation results
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: validation-results-*
+          path: validation-results
+          merge-multiple: true
 
       - name: Create Pull Request
         env:
@@ -305,19 +295,28 @@ jobs:
           versions = json.load(open(path, encoding="utf-8"))
           rows = []
           for update in updates:
-              versions[update["recipe"]][update["backend"]] = f"{update['tag']}@{update['new']}"
+              name = f"{update['recipe']}:{update['backend']}"
+              passed = os.path.exists(f"validation-results/{update['recipe']}-{update['backend']}")
+              if passed:
+                  versions[update["recipe"]][update["backend"]] = f"{update['tag']}@{update['new']}"
               rows.append(
-                  f"| `{update['recipe']}:{update['backend']}` | `{update['repository']}:{update['tag']}` "
-                  f"| `{update['old'][:19]}` | `{update['new'][:19]}` |"
+                  f"| `{name}` | `{update['repository']}:{update['tag']}` "
+                  f"| `{update['old'][:19]}` | `{update['new'][:19]}` "
+                  f"| {'Updated' if passed else 'Failed validation; pin kept'} |"
               )
           with open(path, "w", encoding="utf-8") as out:
               json.dump(versions, out, indent=2)
               out.write("\n")
           with open("pr_body.md", "w", encoding="utf-8") as out:
-              out.write("| Backend | Image | Old digest | New digest |\n|---|---|---|---|\n")
+              out.write("| Backend | Image | Old digest | New digest | Result |\n|---|---|---|---|---|\n")
               out.write("\n".join(rows) + "\n\n")
-              out.write("Each new digest passed its backend's `server_llm.py` suite on Devlab Dispatch.\n")
+              out.write("Each updated digest passed its backend's `server_llm.py` suite on Devlab Dispatch.\n")
           PY
+
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "No new digest passed validation."
+            exit 0
+          fi
 
           BRANCH="auto/container-pins-$(sha256sum src/cpp/resources/backend_versions.json | cut -c1-12)"
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
