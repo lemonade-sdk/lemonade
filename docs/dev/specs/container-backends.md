@@ -313,7 +313,7 @@ Containers are started by:
 
 | Container tool | Containers started by |
 | --- | --- |
-| Podman | Podman, run as the user's account |
+| Podman | Podman, as the account that runs `lemond`: rootless by default, or rootful when `CONTAINER_HOST` points at root's Podman socket |
 | Docker | The Docker daemon, through `/var/run/docker.sock` |
 
 When the container tool is Podman, the checks are:
