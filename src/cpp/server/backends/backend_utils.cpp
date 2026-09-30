@@ -445,6 +445,11 @@ namespace lemon::backends {
         return parsed;
     }
 
+    std::string short_container_pin(const std::string& pin) {
+        const auto parsed = parse_container_pin(pin);
+        return parsed ? parsed->tag + "@" + parsed->digest.substr(7, 12) : pin;
+    }
+
     std::string BackendUtils::get_backend_image(const std::string& recipe, const std::string& backend) {
         const BackendDescriptor* descriptor = descriptor_for(recipe);
         const ContainerPolicy* policy = descriptor ? descriptor->container_for(backend) : nullptr;
