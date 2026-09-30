@@ -34,15 +34,6 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 - **Packaging.**
   - Source builds and the embedded SDK tarball will natively support the container backends.
 
-### Future Work
-
-Not specified in this document, but should not be precluded by this spec either. Each of this would be its own future RFC/spec.
-
-- **Functional parity with AI Cockpit**, including all of Donato's images rather than the four engines here, and the operator features listed at the end of [Appendix A](#appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs).
-- **A container backend interface standard**, where an image describes its own suggested models and options so the registry follows the image rather than a pinned list.
-- **A backend plugin system**, where a backend declares itself through standard metadata and its sandbox policy is generated from that declaration.
-- **Agent containers**, with Lemonade orchestrating frontend containers and linking them to backend containers.
-
 ## New Backend Descriptor Labels
 
 Users and clients will be able to assess critical information about each backend at a glance using these two new labels.
