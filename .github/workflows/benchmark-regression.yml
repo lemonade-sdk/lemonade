@@ -590,7 +590,7 @@ jobs:
       - name: Aggregate leaderboard (full history)
         run: |
           python3 - << 'PY'
-          import json, os
+          import json, os, re
           from pathlib import Path
           from datetime import datetime, timezone
           # Full history, so the leaderboard keeps entries for forks that were
@@ -598,7 +598,22 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
-          lemonade_version = None
+          systems = {}          # hw fingerprint -> hardware block (dedup across runs)
+          lemonade_versions = set()
+
+          def quant_from_checkpoint(me, data):
+            # Quantization is encoded in the GGUF filename, e.g.
+            # "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf" -> "Q4_K_XL".
+            ck = (me.get("checkpoints") or {}).get("main") or data.get("checkpoint") or ""
+            fname = ck.split(":")[-1]
+            m = re.search(r"(IQ\d+_\w+|Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4)", fname, re.I)
+            return m.group(1) if m else None
+
+          def hw_fingerprint(hw):
+            gpu = hw.get("gpu") or []
+            gpu_name = gpu[0].get("name") if gpu and isinstance(gpu[0], dict) else None
+            return "|".join(str(x) for x in (hw.get("cpu"), gpu_name, hw.get("ram_gb"), hw.get("os")))
+
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
           for run_file in sorted(results_dir.rglob("run-*.json")):
@@ -610,8 +625,25 @@ jobs:
               continue
             fork_id = data.get("fork_id", "unknown")
             version = data.get("fork_version", "unknown")
-            if lemonade_version is None and data.get("lemonade_version"):
-              lemonade_version = data["lemonade_version"]
+            # Per-run (per-snapshot) lemonade version — do NOT latch a single
+            # value for the whole leaderboard (that pinned an arbitrary/stale
+            # release). Each entry carries its own; meta reports the set + latest.
+            hw = data.get("hardware", {}) or {}
+            lem_ver = data.get("lemonade_version") or hw.get("lemonade_version")
+            if lem_ver:
+              lemonade_versions.add(lem_ver)
+            hw_id = hw_fingerprint(hw) if hw else None
+            if hw_id and hw_id not in systems:
+              systems[hw_id] = {
+                "id": hw_id,
+                "cpu": hw.get("cpu"),
+                "gpu": (hw.get("gpu") or [{}])[0].get("name") if hw.get("gpu") else None,
+                "gpu_full": hw.get("gpu"),
+                "vram_gb": (hw.get("gpu") or [{}])[0].get("vram_gb") if hw.get("gpu") else None,
+                "ram_gb": hw.get("ram_gb"),
+                "os": hw.get("os"),
+                "lemonade_version": lem_ver,
+              }
             # The bench writes a top-level "models" array (one entry per model),
             # each with its own model name + results[]. Fall back to the flat
             # top-level shape for any legacy files.
@@ -645,13 +677,17 @@ jobs:
                     "fork_repo": data.get("fork_repo", ""), "fork_version": version,
                     "backend": br.get("backend"),
                     "ctx_size": br.get("ctx_size"),
+                    "quant": quant_from_checkpoint(me, data),
                     "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
                     "ttft_ms_best": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
-                    # provenance: which CI run produced this number
+                    # provenance: which CI run produced this number, on which
+                    # lemonade release and which hardware (per snapshot).
+                    "lemonade_version": lem_ver,
+                    "hw_id": hw_id,
                     "run_id": data.get("run_id"),
                     "run_url": data.get("run_url"),
                     "commit": data.get("commit"),
@@ -673,11 +709,14 @@ jobs:
               continue
             fid = data.get("fork_id", "unknown")
             ver = data.get("fork_version", "unknown")
+            hw = data.get("hardware", {}) or {}
+            lem_ver = data.get("lemonade_version") or hw.get("lemonade_version")
             model_entries = data.get("models")
             if not isinstance(model_entries, list):
               model_entries = [data]
             for me in model_entries:
               mdl = me.get("model", data.get("model", "unknown"))
+              quant = quant_from_checkpoint(me, data)
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
                   tps_block = sc.get("tps", {})
@@ -699,6 +738,8 @@ jobs:
                     "pp_tps": pp_tps,
                     "ttft_ms_best": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
+                    "quant": quant,
+                    "lemonade_version": lem_ver,
                     "run_id": data.get("run_id"), "run_url": data.get("run_url"),
                   })
           # sort each series chronologically and keep the last 30 points
@@ -710,6 +751,17 @@ jobs:
 
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo   = os.environ.get("GITHUB_REPOSITORY", "")
+          # "Latest" lemonade version = the one from the most recent entry by
+          # timestamp (NOT an arbitrary first-file latch). Falls back to any seen.
+          latest_version = None
+          latest_ts = ""
+          for entries in leaderboard.values():
+            for e in entries:
+              ts = e.get("timestamp") or ""
+              if e.get("lemonade_version") and ts >= latest_ts:
+                latest_ts, latest_version = ts, e["lemonade_version"]
+          if latest_version is None and lemonade_versions:
+            latest_version = sorted(lemonade_versions)[-1]
           out = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -718,7 +770,11 @@ jobs:
             "repo_url": f"{server}/{repo}" if repo else None,
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
-            "lemonade_version": lemonade_version,
+            # Latest release for the header; full set for reference. Per-entry
+            # lemonade_version is authoritative for each snapshot's number.
+            "lemonade_version": latest_version,
+            "lemonade_versions_seen": sorted(lemonade_versions),
+            "systems": list(systems.values()),
             "experimental_forks": experimental_forks,
             "by_model_scenario": leaderboard,
             "history": history,

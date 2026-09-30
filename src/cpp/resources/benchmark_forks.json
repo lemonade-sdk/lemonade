@@ -95,7 +95,7 @@
       "fork_id": "halo-box-strix",
       "label": "llama.cpp Strix Halo (halo-box)",
       "recipe": "llamacpp",
-      "backend": "halo-box",
+      "backend": "halo-box-strix",
       "install_as": "rocm",
       "rocm_channel": "nightly",
       "repo": "halo-box/strix-llama.cpp",
