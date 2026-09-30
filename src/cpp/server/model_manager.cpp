@@ -3818,7 +3818,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     std::set<std::string> size_filtered_recipes;
     std::set<std::string> visible_recipes;
-    std::map<std::string, std::string> experimental_gate_by_recipe;
 
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
@@ -3941,16 +3940,8 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         if (!filter_out) {
-            auto gate = experimental_gate_by_recipe.find(recipe);
-            if (gate == experimental_gate_by_recipe.end()) {
-                gate = experimental_gate_by_recipe
-                           .emplace(recipe, SystemInfo::check_experimental_backend_installed(recipe))
-                           .first;
-            }
-            if (!gate->second.empty()) {
-                filter_out = true;
-                filter_reason = gate->second;
-            }
+            filter_reason = SystemInfo::check_experimental_backend_installed(recipe, system_info);
+            filter_out = !filter_reason.empty();
         }
 
         // Filter out models too large to run on this machine.

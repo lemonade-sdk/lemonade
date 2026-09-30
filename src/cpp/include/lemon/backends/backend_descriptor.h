@@ -157,7 +157,7 @@ struct BackendDescriptor {
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
 
-    // The tier and format of each backend named in `support`.
+    // One entry per backend in `support`, enforced by test_backend_labels.
     std::map<std::string, BackendLabels> labels;
 
     const BackendLabels* labels_for(const std::string& backend) const {
