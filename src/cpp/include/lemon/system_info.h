@@ -116,11 +116,15 @@ public:
 
     // Device support detection
     static std::string get_rocm_arch();
+    // Resolve the ROCm architecture for an explicit llama.cpp device (e.g. ROCm1).
+    // An empty device keeps the default discrete-GPU preference.
+    static std::string get_rocm_arch_for_device(const std::string& device);
     static std::string get_cuda_arch();
 
     // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
     // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
-    static std::string select_rocm_arch(const json& amd_gpu_devices);
+    static std::string select_rocm_arch(const json& amd_gpu_devices,
+                                        const std::string& device = "");
 
     // Collapse a concrete ROCm ISA (e.g. gfx1201) to the family target name the
     // GitHub release repos publish their assets under (e.g. gfx120X), per the
@@ -139,6 +143,7 @@ public:
     // for an arbitrary GPU topology with no GPU present. Per-thread so it cannot
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
+    static std::string get_rocm_arch_override();
 
     // True if (recipe, backend) is published for the given ROCm family/ISA, per
     // the backend support matrix. Lets callers tell "this arch should have an

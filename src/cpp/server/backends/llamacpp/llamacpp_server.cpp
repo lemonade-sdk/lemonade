@@ -97,6 +97,42 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
     return backend == "rocm-stable" || backend == "rocm-nightly";
 }
 
+class RocmArchOverrideGuard {
+public:
+    explicit RocmArchOverrideGuard(const std::string& device)
+        : previous_(SystemInfo::get_rocm_arch_override()) {
+        std::string normalized = device;
+        const auto start = normalized.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) {
+            return;
+        }
+        const auto end = normalized.find_last_not_of(" \t\r\n");
+        normalized = normalized.substr(start, end - start + 1);
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (normalized == "rocm" || normalized.rfind("rocm", 0) != 0) {
+            return;
+        }
+
+        const std::string arch = SystemInfo::get_rocm_arch_for_device(device);
+        if (arch.empty()) {
+            throw std::invalid_argument(
+                "Unable to resolve the selected ROCm device architecture: " + device);
+        }
+        SystemInfo::set_rocm_arch_override(arch);
+    }
+
+    ~RocmArchOverrideGuard() {
+        SystemInfo::set_rocm_arch_override(previous_);
+    }
+
+    RocmArchOverrideGuard(const RocmArchOverrideGuard&) = delete;
+    RocmArchOverrideGuard& operator=(const RocmArchOverrideGuard&) = delete;
+
+private:
+    std::string previous_;
+};
+
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
@@ -286,6 +322,12 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
+    if (!llamacpp_device.empty()) {
+        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
+    }
+    RocmArchOverrideGuard rocm_arch_override(
+        is_llamacpp_rocm_backend(llamacpp_backend) ? llamacpp_device : "");
+
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 
     LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
@@ -344,7 +386,6 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
     if (!llamacpp_device.empty()) {
-        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});

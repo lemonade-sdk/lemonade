@@ -2085,6 +2085,10 @@ void SystemInfo::set_rocm_arch_override(const std::string& arch) {
     g_rocm_arch_override = arch;
 }
 
+std::string SystemInfo::get_rocm_arch_override() {
+    return g_rocm_arch_override;
+}
+
 std::string SystemInfo::rocm_asset_family(const std::string& arch) {
     static const json families = []() -> json {
         try {
@@ -2128,10 +2132,74 @@ std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_fami
     return "";
 }
 
-std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
+std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices,
+                                         const std::string& device) {
     if (!amd_gpu_devices.is_array()) {
         return "";
     }
+
+    if (!device.empty()) {
+        std::string requested = trim_copy(device);
+        std::transform(requested.begin(), requested.end(), requested.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (requested.empty()) {
+            return "";
+        }
+        if (requested != "rocm") {
+            if (requested.front() == ',' || requested.back() == ',' ||
+                requested.find(",,") != std::string::npos) {
+                return "";
+            }
+            std::istringstream devices(requested);
+            std::string selected_arch;
+            std::string selected_family;
+            std::string target;
+            while (std::getline(devices, target, ',')) {
+                target = trim_copy(target);
+                if (target.rfind("rocm", 0) != 0 || target.size() == 4) {
+                    return "";
+                }
+                const std::string index_text = target.substr(4);
+                if (!std::all_of(index_text.begin(), index_text.end(),
+                                 [](unsigned char c) { return std::isdigit(c) != 0; })) {
+                    return "";
+                }
+                unsigned long long index = 0;
+                try {
+                    index = std::stoull(index_text);
+                } catch (const std::exception&) {
+                    return "";
+                }
+                if (index >= amd_gpu_devices.size()) {
+                    return "";
+                }
+                const auto& gpu = amd_gpu_devices[static_cast<size_t>(index)];
+                if (!gpu.value("available", false)) {
+                    return "";
+                }
+                std::string arch = gpu.value("family", "");
+                if (arch.empty()) {
+                    arch = identify_rocm_arch_from_name(gpu.value("name", ""));
+                }
+                if (arch.empty()) {
+                    return "";
+                }
+                const std::string asset_family = rocm_asset_family(arch);
+                if (!selected_family.empty() && selected_family != asset_family) {
+                    return "";
+                }
+                if (selected_arch.empty()) {
+                    selected_arch = arch;
+                }
+                selected_family = asset_family;
+            }
+            if (selected_arch.empty()) {
+                return "";
+            }
+            return selected_arch;
+        }
+    }
+
     // The device array is iGPU-first, so taking the first supported match would pick the
     // APU on a hybrid host. Prefer a discrete GPU; fall back to integrated.
     std::string integrated_fallback;
@@ -2180,6 +2248,24 @@ std::string SystemInfo::get_rocm_arch() {
     }
 
     return "";  // No supported architecture found
+}
+
+std::string SystemInfo::get_rocm_arch_for_device(const std::string& device) {
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (!system_info.contains("devices")) {
+            return "";
+        }
+
+        const auto& devices = system_info["devices"];
+        if (devices.contains("amd_gpu")) {
+            return select_rocm_arch(devices["amd_gpu"], device);
+        }
+    } catch (const std::exception&) {
+        // Detection failed
+    }
+
+    return "";
 }
 
 static int cuda_sm_value(const std::string& arch) {
