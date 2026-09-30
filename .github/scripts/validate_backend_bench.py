@@ -42,7 +42,7 @@ SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
 # named explicitly AND need a matching ctx window, hence DEFAULT_CTX_SIZE below.
 # A fork may override via "bench_scenarios"/"ctx_size" (e.g. halo-box adds a
 # heavier context-32k deep-dive). See issue #2858.
-SCENARIOS = ["chat-short", "code-short", "context-4k"]
+SCENARIOS = ["chat-short", "context-4k"]
 # Window the model is loaded with by default. Must be >= the largest default
 # scenario prompt (context-4k ~4096 tokens). 8192 leaves headroom without the
 # large KV cache a 32k window would demand (which can OOM big dense models on
