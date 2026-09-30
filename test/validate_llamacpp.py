@@ -7,12 +7,15 @@ Usage:
     python test/validate_llamacpp.py --backend vulkan --logs-dir <dir>
     python test/validate_llamacpp.py --backend rocm --channel stable --logs-dir <dir>
 
-This script expects `lemond` to already be running on the target port, with its
-stderr redirected to `lemond.stderr.log` inside `--logs-dir`.
+This script expects `lemond` to already be running on the target port, in debug
+mode (env `LEMONADE_CI_MODE=1`, or `log_level=debug`), with its stdout and stderr
+saved as `lemond.stdout.log` / `lemond.stderr.log` inside `--logs-dir`.
 
 GPU backends (vulkan, rocm, cuda, metal) REQUIRE `--logs-dir`: the per-model GPU
-offload check reads `lemond.stderr.log` from that directory, and the script
-hard-fails if the flag is unset or the log file is missing.
+offload check scans those logs for llama-server's device lines (which lemond
+captures and re-emits to its stdout), and the script exits 1 if the flag is
+unset or no log file is found. Debug mode is required so the device lines,
+raised to verbosity `-lv 4`, are actually emitted.
 
 This script:
 1. Queries `/api/v1/models?show_all=true` and selects models with recipe
@@ -343,10 +346,9 @@ def main():
         "--logs-dir",
         default=None,
         help=(
-            "Directory that lemond redirects its stderr into as lemond.stderr.log. "
-            "REQUIRED for GPU backends (vulkan, rocm, cuda, metal). The GPU-offload "
-            "check reads that log, and the script hard-fails if it is unset or the "
-            "log is missing. Also used to collect server logs for CI artifact upload."
+            "Directory (NOT a file path) where lemond's captured logs are saved as lemond.stdout.log and lemond.stderr.log."
+            "REQUIRED for GPU backends: vulkan, rocm, cuda, metal. "
+            "The GPU-offload check scans those logs and the script exits 1 if this is unset or no log file is found there."
         ),
     )
     parser.add_argument(
@@ -397,24 +399,42 @@ def main():
     results = []
     all_passed = True
     gpu_token = GPU_DEVICE_TOKENS.get(args.backend)
-    stderr_log_path = (
-        os.path.join(args.logs_dir, "lemond.stderr.log") if args.logs_dir else None
+    # llama-server's device lines are captured by lemond and re-emitted through
+    # lemond's own logger, which writes to stdout. stderr is read too as a fallback.
+    gpu_log_paths = (
+        [
+            os.path.join(args.logs_dir, name)
+            for name in ("lemond.stdout.log", "lemond.stderr.log")
+        ]
+        if args.logs_dir
+        else []
     )
-    log_offset = 0
+    log_offsets = {path: 0 for path in gpu_log_paths}
     if gpu_token:
-        if not stderr_log_path:
+        if not args.logs_dir:
             print(
-                f"ERROR: '{args.backend}' backend runs on the GPU, so --logs-dir "
-                "must be set to verify GPU offload Re-run with --logs-dir <dir>.",
+                f"ERROR: '{args.backend}' runs on the GPU, so --logs-dir is required "
+                "to verify GPU offload.\n"
+                f"Pass the DIRECTORY that holds lemond's captured logs.\n"
+                "Make sure to start lemond in debug mode (set env LEMONADE_CI_MODE=1, or log_level=debug) "
+                "with its output (stdout/stderr) saved into that directory, e.g.:\n"
+                f"  lemond <cache_dir> --port {args.port} "
+                "1><dir>/lemond.stdout.log 2><dir>/lemond.stderr.log\n"
+                "Then re-run this script with: --logs-dir <dir>",
                 file=sys.stderr,
                 flush=True,
             )
             sys.exit(1)
-        if not os.path.isfile(stderr_log_path):
+        if not any(os.path.isfile(path) for path in gpu_log_paths):
+            joined = " or ".join(os.path.basename(p) for p in gpu_log_paths)
             print(
-                f"ERROR: expected server log '{stderr_log_path}' does not exist, so "
-                "GPU offload cannot be verified. Ensure lemond's stderr is redirected "
-                "to lemond.stderr.log inside --logs-dir.",
+                f"ERROR: --logs-dir is '{args.logs_dir}' but no {joined} was found "
+                "there, so GPU offload cannot be verified.\n"
+                f"Start lemond in debug mode (set env LEMONADE_CI_MODE=1, or "
+                "log_level=debug) with its stdout/stderr saved into that directory, e.g.:\n"
+                f"  lemond <cache_dir> --port {args.port} "
+                f'1>{os.path.join(args.logs_dir, "lemond.stdout.log")} '
+                f'2>{os.path.join(args.logs_dir, "lemond.stderr.log")}',
                 file=sys.stderr,
                 flush=True,
             )
@@ -428,7 +448,12 @@ def main():
             )
             gpu_status = "N/A"
             if gpu_token:
-                log_chunk, log_offset = read_new_log_text(stderr_log_path, log_offset)
+                log_chunk = ""
+                for path in gpu_log_paths:
+                    chunk, log_offsets[path] = read_new_log_text(
+                        path, log_offsets[path]
+                    )
+                    log_chunk += chunk
                 gpu_status = (
                     "PASS" if gpu_offload_confirmed(log_chunk, gpu_token) else "FAIL"
                 )
