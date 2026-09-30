@@ -165,13 +165,18 @@ private:
     std::set<std::string> described_;
 };
 
-bool parse_backend_port(const std::string& backend_url, int& port) {
-    const std::string host = "127.0.0.1:";
-    size_t host_pos = backend_url.find(host);
-    if (host_pos == std::string::npos) {
+// The host and port of an "http://<host>:<port>/..." backend URL.
+bool parse_backend_host_port(const std::string& backend_url, std::string& host, int& port) {
+    const std::string scheme = "http://";
+    if (backend_url.compare(0, scheme.size(), scheme) != 0) {
         return false;
     }
-    size_t port_start = host_pos + host.size();
+    const size_t colon = backend_url.find(':', scheme.size());
+    if (colon == std::string::npos || colon == scheme.size()) {
+        return false;
+    }
+    host = backend_url.substr(scheme.size(), colon - scheme.size());
+    size_t port_start = colon + 1;
     size_t port_end = port_start;
     while (port_end < backend_url.size() && std::isdigit(static_cast<unsigned char>(backend_url[port_end]))) {
         port_end++;
@@ -280,13 +285,14 @@ void append_llamacpp_backend_metrics(PrometheusBuilder& metrics,
         return;
     }
 
+    std::string backend_host;
     int backend_port = 0;
-    if (!parse_backend_port(model.value("backend_url", ""), backend_port)) {
+    if (!parse_backend_host_port(model.value("backend_url", ""), backend_host, backend_port)) {
         return;
     }
 
     try {
-        httplib::Client backend_client("127.0.0.1", backend_port);
+        httplib::Client backend_client(backend_host, backend_port);
         backend_client.set_connection_timeout(1);
         backend_client.set_read_timeout(1);
         if (auto backend_res = backend_client.Get("/metrics")) {

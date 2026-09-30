@@ -46,14 +46,8 @@ public:
     AudioFormatMetadata audio_format_metadata(const std::string& response_format) const override;
 
 private:
-    struct Subprocess {
-        ProcessHandle handle;
-        int port = 0;
-    };
-
     std::string resolve_binary_path(const std::string& backend);
     ServerCommand server_command(const std::string& model_path) const;
-    Subprocess spawn(const std::string& model_path);
 
     void stop_speech_process();
     void start_speech_process(long timeout_seconds = 600);

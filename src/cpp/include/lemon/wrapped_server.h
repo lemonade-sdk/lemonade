@@ -601,6 +601,8 @@ protected:
     // Stops the watchdog and the server. Safe to call when nothing is running.
     void stop_server();
 
+    bool load_cancelled() const { return load_cancel_ && load_cancel_->load(); }
+
     // Choose an available port
     int choose_port();
 

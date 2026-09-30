@@ -33,6 +33,10 @@ void ServerProcess::spawn(std::vector<std::string> command_line, const std::stri
                                << ")" << std::endl;
 }
 
+ServerProcess::~ServerProcess() {
+    ServerProcess::stop();
+}
+
 void ServerProcess::stop() {
     if (!has_handle(handle_)) {
         return;
@@ -43,8 +47,8 @@ void ServerProcess::stop() {
         ProcessManager::stop_process(handle_);
     } else {
         const int exit_code = ProcessManager::reap_process(handle_);
-        LOG(INFO, "ServerProcess") << command_line_.front() << " (PID " << handle_.pid
-                                   << ") had exited with code " << exit_code << std::endl;
+        LOG(ERROR, "ServerProcess") << command_line_.front() << " (PID " << handle_.pid
+                                    << ") had exited with code " << exit_code << std::endl;
     }
     handle_ = {nullptr, 0};
 }

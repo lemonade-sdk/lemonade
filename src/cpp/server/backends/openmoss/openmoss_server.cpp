@@ -28,13 +28,6 @@ namespace backends {
 
 namespace {
 
-bool has_handle(const ProcessHandle& handle) {
-#ifdef _WIN32
-    return handle.handle != nullptr;
-#else
-    return handle.pid > 0;
-#endif
-}
 constexpr const char* kVoiceDesignPhrase =
     "Hello there. This is a short sample of the voice you described.";
 
@@ -220,18 +213,6 @@ ServerCommand OpenMossServer::server_command(const std::string& model_path) cons
     return command;
 }
 
-OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
-    const ServerCommand command = server_command(model_path);
-    Subprocess proc;
-    proc.port = command.port;
-    proc.handle = utils::ProcessManager::start_process(
-        exe_path_, command.args, "", is_debug(), false, env_vars_);
-    if (!has_handle(proc.handle)) {
-        throw std::runtime_error("Failed to start openmoss-server process");
-    }
-    return proc;
-}
-
 void OpenMossServer::stop_speech_process() {
     stop_server();
 }
@@ -286,89 +267,78 @@ std::string OpenMossServer::design_reference_sample(
 std::string OpenMossServer::render_reference_sample(
     const std::string& voice_description, httplib::DataSink& sink,
     std::chrono::steady_clock::time_point deadline) {
-    Subprocess designer = spawn(voicegen_path_);
-    std::string sample;
-    try {
-        const std::string base = "http://127.0.0.1:" + std::to_string(designer.port);
-        bool ready = false;
-        while (!ready && std::chrono::steady_clock::now() < deadline) {
-            if (client_cancelled(sink)) {
-                throw std::runtime_error("voice design cancelled by client");
-            }
-            if (!utils::ProcessManager::is_running(designer.handle)) {
-                const int exit_code = utils::ProcessManager::reap_process(designer.handle);
-                designer.handle = ProcessHandle{};
-                throw std::runtime_error(
-                    "voice-design backend exited during startup with code "
-                    + std::to_string(exit_code));
-            }
-            try {
-                const long health_timeout = std::min<long>(2, remaining_seconds(deadline));
-                if (health_timeout <= 0) break;
-                auto health = utils::HttpClient::get(
-                    base + "/health", {}, health_timeout,
-                    utils::HttpSecurityPolicy::TrustedLoopback);
-                ready = (health.status_code == 200);
-            } catch (const std::exception&) {
-                ready = false;
-            }
-            if (!ready && std::chrono::steady_clock::now() < deadline) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            }
-        }
-        if (!ready) {
-            throw std::runtime_error("voice-design backend timed out while becoming ready");
-        }
+    const ServerCommand command = server_command(voicegen_path_);
+    NativeProcess designer(ProcessOutput{is_debug(), false});
+    designer.start(command);
+    const std::string base = "http://127.0.0.1:" + std::to_string(command.port);
+    bool ready = false;
+    while (!ready && std::chrono::steady_clock::now() < deadline) {
         if (client_cancelled(sink)) {
             throw std::runtime_error("voice design cancelled by client");
         }
-
-        const long post_timeout = remaining_seconds(deadline);
-        if (post_timeout <= 0) {
-            throw std::runtime_error("voice design deadline expired before generation");
+        if (!designer.running()) {
+            throw std::runtime_error("voice-design backend exited during startup");
         }
-
-        json body;
-        body["input"] = kVoiceDesignPhrase;
-        body["voice"] = voice_description;
-        body["response_format"] = "wav";
-
-        int backend_status = 200;
-        std::string response_body;
-        auto response = utils::HttpClient::post_stream(
-            base + "/v1/audio/speech",
-            body.dump(),
-            [&response_body](const char* data, size_t length) {
-                response_body.append(data, length);
-                return true;
-            },
-            {{"Content-Type", "application/json"}},
-            post_timeout,
-            [&backend_status](int status) { backend_status = status; },
-            utils::HttpSecurityPolicy::TrustedLoopback,
-            [&sink]() { return client_cancelled(sink); });
-
-        if (client_cancelled(sink)) {
-            throw std::runtime_error("voice design cancelled by client");
+        try {
+            const long health_timeout = std::min<long>(2, remaining_seconds(deadline));
+            if (health_timeout <= 0) break;
+            auto health = utils::HttpClient::get(
+                base + "/health", {}, health_timeout,
+                utils::HttpSecurityPolicy::TrustedLoopback);
+            ready = (health.status_code == 200);
+        } catch (const std::exception&) {
+            ready = false;
         }
-        if (response.curl_code != 0) {
-            throw std::runtime_error(
-                "voice design transport failed: " + response.curl_error);
+        if (!ready && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
-        const int status = backend_status != 200 ? backend_status : response.status_code;
-        if (status != 200 || response_body.empty()) {
-            throw std::runtime_error("voice design failed: HTTP " + std::to_string(status));
-        }
-        sample = utils::JsonUtils::base64_encode(response_body);
-    } catch (...) {
-        if (has_handle(designer.handle)) {
-            utils::ProcessManager::stop_process(designer.handle);
-        }
-        throw;
     }
-    utils::ProcessManager::stop_process(designer.handle);
+    if (!ready) {
+        throw std::runtime_error("voice-design backend timed out while becoming ready");
+    }
+    if (client_cancelled(sink)) {
+        throw std::runtime_error("voice design cancelled by client");
+    }
+
+    const long post_timeout = remaining_seconds(deadline);
+    if (post_timeout <= 0) {
+        throw std::runtime_error("voice design deadline expired before generation");
+    }
+
+    json body;
+    body["input"] = kVoiceDesignPhrase;
+    body["voice"] = voice_description;
+    body["response_format"] = "wav";
+
+    int backend_status = 200;
+    std::string response_body;
+    auto response = utils::HttpClient::post_stream(
+        base + "/v1/audio/speech",
+        body.dump(),
+        [&response_body](const char* data, size_t length) {
+            response_body.append(data, length);
+            return true;
+        },
+        {{"Content-Type", "application/json"}},
+        post_timeout,
+        [&backend_status](int status) { backend_status = status; },
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        [&sink]() { return client_cancelled(sink); });
+
+    if (client_cancelled(sink)) {
+        throw std::runtime_error("voice design cancelled by client");
+    }
+    if (response.curl_code != 0) {
+        throw std::runtime_error(
+            "voice design transport failed: " + response.curl_error);
+    }
+    const int status = backend_status != 200 ? backend_status : response.status_code;
+    if (status != 200 || response_body.empty()) {
+        throw std::runtime_error("voice design failed: HTTP " + std::to_string(status));
+    }
+    designer.stop();
     LOG(INFO, "openmoss-server") << "Voice-design subprocess released" << std::endl;
-    return sample;
+    return utils::JsonUtils::base64_encode(response_body);
 }
 
 json OpenMossServer::apply_voice_design(const json& request, httplib::DataSink& sink) {

@@ -212,6 +212,7 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}),
                      command);
     } catch (const std::runtime_error& e) {
+        if (load_cancelled()) throw;
         // The subprocess's stderr is invisible when lemond runs windowless (CI,
         // tray), so a startup failure would otherwise surface only as "not
         // ready". Re-run it briefly to capture the reason it refused the model.

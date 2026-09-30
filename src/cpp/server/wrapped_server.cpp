@@ -413,11 +413,16 @@ void WrappedServer::start_server(std::unique_ptr<ServerProcess> process,
         process->stop();
         throw;
     }
+    std::unique_ptr<ServerProcess> previous;
     {
         std::lock_guard<std::mutex> lock(process_mutex_);
+        previous = std::move(process_);
         process_ = std::move(process);
         port_ = command.port;
         host_ = host;
+    }
+    if (previous) {
+        previous->stop();
     }
 
     if (!wait_for_ready(command.ready_endpoint, timeout_seconds)) {
@@ -444,9 +449,8 @@ void WrappedServer::request_backend_reset_from_watchdog(const std::string& reaso
         watchdog_reset_reason_ = reason;
     }
 
-    // Take the process exactly once, so a later status check or unload() cannot
-    // stop the same child again, and its stale PID and port leave status output
-    // immediately.
+    // After take_process() this call is the process's only owner, and its stale
+    // PID and port have already left status output.
     if (auto process = take_process()) {
         LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
                                       << reason << "; stopping backend process PID "
