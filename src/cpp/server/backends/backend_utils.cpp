@@ -465,6 +465,20 @@ namespace lemon::backends {
         return policy->repository + "@" + parsed->digest;
     }
 
+    std::string BackendUtils::get_installed_backend_image(const std::string& recipe,
+                                                          const std::string& backend) {
+        const BackendDescriptor* descriptor = descriptor_for(recipe);
+        const ContainerPolicy* policy = descriptor ? descriptor->container_for(backend) : nullptr;
+        if (!policy) {
+            return "";
+        }
+        std::ifstream file(fs::path(get_install_directory(recipe, backend)) / "version.txt");
+        std::string pin;
+        std::getline(file, pin);
+        const auto parsed = parse_container_pin(pin.substr(0, pin.find_last_not_of(" \t\r\n") + 1));
+        return parsed ? policy->repository + "@" + parsed->digest : "";
+    }
+
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
         if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
