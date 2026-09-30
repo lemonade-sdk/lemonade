@@ -622,18 +622,22 @@ jobs:
               model = me.get("model", data.get("model", "unknown"))
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
-                  tps = sc.get("tps", {}).get("mean")
-                  if tps is None:
+                  tps_block = sc.get("tps", {})
+                  if tps_block.get("mean") is None and tps_block.get("max") is None:
                     continue
-                  # TG = token generation (decode) throughput = tps.
-                  # PP = prompt processing (prefill) throughput. Prefer the
-                  # driver-annotated pp_tps; recompute from input_tokens/ttft for
-                  # any legacy run file that predates the annotation.
-                  ttft_ms = sc.get("ttft_ms", {}).get("mean", 0)
+                  # BEST-OF, not average. TG = peak decode = tps.max. PP = peak
+                  # prefill = input_tokens / fastest TTFT. Prefer the driver's
+                  # annotated tg_tps/pp_tps; recompute from max/min for any legacy
+                  # run file that predates the annotation.
+                  ttft_block = sc.get("ttft_ms", {})
+                  best_ttft = ttft_block.get("min", ttft_block.get("mean", 0))
                   in_tok = sc.get("input_tokens")
+                  tg_tps = sc.get("tg_tps")
+                  if tg_tps is None:
+                    tg_tps = round(tps_block.get("max", tps_block.get("mean", 0)), 2)
                   pp_tps = sc.get("pp_tps")
-                  if pp_tps is None and in_tok and ttft_ms and ttft_ms > 0:
-                    pp_tps = round(in_tok * 1000.0 / ttft_ms, 2)
+                  if pp_tps is None and in_tok and best_ttft and best_ttft > 0:
+                    pp_tps = round(in_tok * 1000.0 / best_ttft, 2)
                   key = f"{model}|{sc['name']}"
                   entry = {
                     "model": model, "scenario": sc["name"],
@@ -641,11 +645,9 @@ jobs:
                     "fork_repo": data.get("fork_repo", ""), "fork_version": version,
                     "backend": br.get("backend"),
                     "ctx_size": br.get("ctx_size"),
-                    "tps_mean": round(tps, 2),
-                    "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
-                    "tg_tps": sc.get("tg_tps", round(tps, 2)),
+                    "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
-                    "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                    "ttft_ms_best": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
@@ -657,7 +659,7 @@ jobs:
                   leaderboard.setdefault(key, [])
                   leaderboard[key] = [e for e in leaderboard[key] if e["fork_id"] != fork_id]
                   leaderboard[key].append(entry)
-                  leaderboard[key].sort(key=lambda e: e["tps_mean"], reverse=True)
+                  leaderboard[key].sort(key=lambda e: e["tg_tps"], reverse=True)
 
           # Per-fork build-history series (for the trend/regression chart):
           # model -> scenario -> fork_id -> [ {version, timestamp, tps, run_url} ]
@@ -678,21 +680,24 @@ jobs:
               mdl = me.get("model", data.get("model", "unknown"))
               for br in me.get("results", []):
                 for sc in br.get("scenarios", []):
-                  tps = sc.get("tps", {}).get("mean")
-                  if tps is None:
+                  tps_block = sc.get("tps", {})
+                  if tps_block.get("mean") is None and tps_block.get("max") is None:
                     continue
-                  ttft_ms = sc.get("ttft_ms", {}).get("mean", 0)
+                  ttft_block = sc.get("ttft_ms", {})
+                  best_ttft = ttft_block.get("min", ttft_block.get("mean", 0))
                   in_tok = sc.get("input_tokens")
+                  tg_tps = sc.get("tg_tps")
+                  if tg_tps is None:
+                    tg_tps = round(tps_block.get("max", tps_block.get("mean", 0)), 2)
                   pp_tps = sc.get("pp_tps")
-                  if pp_tps is None and in_tok and ttft_ms and ttft_ms > 0:
-                    pp_tps = round(in_tok * 1000.0 / ttft_ms, 2)
+                  if pp_tps is None and in_tok and best_ttft and best_ttft > 0:
+                    pp_tps = round(in_tok * 1000.0 / best_ttft, 2)
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
-                    "tps_mean": round(tps, 2),
-                    "tg_tps": sc.get("tg_tps", round(tps, 2)),
+                    "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
-                    "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                    "ttft_ms_best": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
                     "run_id": data.get("run_id"), "run_url": data.get("run_url"),
                   })
