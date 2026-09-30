@@ -62,6 +62,8 @@ static UsageEvent sample_event() {
     e.input_tokens = 812;
     e.output_tokens = 356;
     e.cached_tokens = 640;
+    e.ttft_ms = 182.4;
+    e.tokens_per_second = 48.26;
     e.input = "hello";
     e.output = "hi there";
     return e;
@@ -75,6 +77,8 @@ static void test_record_format() {
     check("record: token counts", r["input_tokens"] == 812 && r["output_tokens"] == 356 && r["cached_tokens"] == 640);
     check("record: tokens_reported true", r["tokens_reported"] == true);
     check("record: tokens_estimated false", r["tokens_estimated"] == false);
+    check("record: ttft_ms rounded to whole ms", r["ttft_ms"] == 182);
+    check("record: tokens_per_second rounded to 0.1", r["tokens_per_second"] == 48.3);
     check("record: missing session/client_ip are null", r["session_id"].is_null() && r["client_ip"].is_null());
     check("record: content none omits text", !r.contains("input") && !r.contains("output"));
 
@@ -89,6 +93,15 @@ static void test_record_unreported_tokens() {
     check("unreported: tokens_reported false", r["tokens_reported"] == false);
     check("unreported: token fields null, not 0",
           r["input_tokens"].is_null() && r["output_tokens"].is_null() && r["cached_tokens"].is_null());
+}
+
+static void test_record_unreported_perf() {
+    auto e = sample_event();
+    e.ttft_ms = -1;
+    e.tokens_per_second = 0;
+    auto r = make_record(e, false);
+    check("perf: missing ttft_ms is null", r.contains("ttft_ms") && r["ttft_ms"].is_null());
+    check("perf: zero tokens_per_second is null", r.contains("tokens_per_second") && r["tokens_per_second"].is_null());
 }
 
 static void test_record_estimated_abort() {
@@ -129,38 +142,59 @@ static void test_rolls_over_at_day_boundary() {
           names == std::vector<std::string>{"usage-2026-09-28.jsonl", "usage-2026-09-29.jsonl"});
 }
 
-static void test_rolls_over_at_max_file_size() {
-    auto dir = fresh_dir("size");
-    auto opts = roomy(dir);
-    opts.max_file_bytes = 100;
-    UsageLog log([&] { return opts; });
-    log.start();
-    for (int i = 0; i < 6; ++i) log.push(record_on("2026-09-28", i));
-    log.flush();
-    auto names = file_names(dir);
-    check("size: rolled into numbered parts", names.size() > 1);
-    bool all_small = true;
-    for (const auto& n : names) all_small = all_small && fs::file_size(dir / n) <= 100;
-    check("size: no part exceeds max_file_bytes", all_small);
-}
-
-static void test_prunes_oldest_files_over_total_cap() {
+static void test_prunes_oldest_days_over_total_cap() {
     auto dir = fresh_dir("cap");
     auto opts = roomy(dir);
-    opts.max_total_bytes = 300;
-    opts.max_file_bytes = 100;
+    opts.max_total_bytes = 150;
     UsageLog log([&] { return opts; });
     log.start();
-    for (int i = 0; i < 20; ++i) log.push(record_on("2026-09-28", i));
+    for (int d = 20; d <= 29; ++d) log.push(record_on("2026-09-" + std::to_string(d), d));
     log.flush();
     uint64_t total = 0;
     for (const auto& n : file_names(dir)) total += fs::file_size(dir / n);
-    check("cap: total size within max_size", total <= 300);
-    bool newest_kept = false;
-    for (const auto& n : file_names(dir)) {
-        for (const auto& line : read_lines(dir / n)) newest_kept = newest_kept || nlohmann::json::parse(line)["n"] == 19;
-    }
-    check("cap: newest record kept", newest_kept);
+    auto names = file_names(dir);
+    check("cap: total size within max_size", total <= 150);
+    check("cap: oldest days deleted first", !names.empty() && names.front() != "usage-2026-09-20.jsonl");
+    check("cap: newest day kept", fs::exists(dir / "usage-2026-09-29.jsonl"));
+}
+
+static void test_cap_never_deletes_newest_day() {
+    auto dir = fresh_dir("cap_today");
+    auto opts = roomy(dir);
+    opts.max_total_bytes = 100;
+    UsageLog log([&] { return opts; });
+    log.start();
+    for (int i = 0; i < 20; ++i) log.push(record_on("2026-09-29", i));
+    log.flush();
+    check("cap: a single day over the cap is kept whole", read_lines(dir / "usage-2026-09-29.jsonl").size() == 20);
+}
+
+static void test_unlimited_limits_keep_everything() {
+    auto dir = fresh_dir("unlimited");
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2020-01-01.jsonl") << "{}\n";
+    UsageLogOptions opts{dir.string(), 0, 0};
+    UsageLog log([&] { return opts; });
+    log.start();
+    for (int i = 0; i < 20; ++i) log.push(record_on("2026-09-29", i));
+    log.flush();
+    check("unlimited: old file kept", fs::exists(dir / "usage-2020-01-01.jsonl"));
+}
+
+static void test_disk_usage_tracks_files() {
+    auto dir = fresh_dir("disk");
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2026-09-27.jsonl") << "{\"n\":0}\n";
+    auto opts = roomy(dir);
+    UsageLog log([&] { return opts; });
+    log.start();
+    log.flush();
+    check("disk: existing files counted at startup", log.disk_usage_bytes() == fs::file_size(dir / "usage-2026-09-27.jsonl"));
+    log.push(record_on("2026-09-29", 1));
+    log.flush();
+    uint64_t total = 0;
+    for (const auto& n : file_names(dir)) total += fs::file_size(dir / n);
+    check("disk: total follows writes", log.disk_usage_bytes() == total);
 }
 
 static void test_prunes_files_older_than_max_days() {
@@ -206,11 +240,14 @@ int main() {
     std::printf("=== RUNNING USAGE LOG C++ TESTS ===\n");
     test_record_format();
     test_record_unreported_tokens();
+    test_record_unreported_perf();
     test_record_estimated_abort();
     test_writes_one_line_per_record_into_dated_file();
     test_rolls_over_at_day_boundary();
-    test_rolls_over_at_max_file_size();
-    test_prunes_oldest_files_over_total_cap();
+    test_prunes_oldest_days_over_total_cap();
+    test_cap_never_deletes_newest_day();
+    test_unlimited_limits_keep_everything();
+    test_disk_usage_tracks_files();
     test_prunes_files_older_than_max_days();
     test_queue_full_writes_dropped_marker();
     test_write_failure_disables_log();

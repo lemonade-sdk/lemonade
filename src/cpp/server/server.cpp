@@ -2561,6 +2561,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
             }
             telemetry_info["captures"] = captures;
         }
+        telemetry_info["usage_log"] = usage::status();
         response["telemetry"] = telemetry_info;
     }
 
@@ -6952,8 +6953,6 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         }
         system_info["cloud"] = {{"providers", providers}};
     }
-
-    system_info["usage_log"] = usage::status();
 
     res.set_content(system_info.dump(), "application/json");
 }

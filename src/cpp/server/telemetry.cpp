@@ -1321,6 +1321,10 @@ void InferenceSpan::record_usage(const std::string& status, int input_tokens, in
         auto it = custom_attributes_.find(prefix + key);
         return it != custom_attributes_.end() && it->second.is_string() ? it->second.get<std::string>() : "";
     };
+    auto number = [&](const std::string& key) {
+        auto it = custom_attributes_.find(key);
+        return it != custom_attributes_.end() && it->second.is_number() ? it->second.get<double>() : -1.0;
+    };
 
     usage::UsageEvent e;
     e.end_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1333,6 +1337,9 @@ void InferenceSpan::record_usage(const std::string& status, int input_tokens, in
     e.status = status;
     e.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time_).count();
+    double ttft_s = number("llm.performance.time_to_first_token");
+    e.ttft_ms = ttft_s > 0 ? ttft_s * 1000 : -1;
+    e.tokens_per_second = number("llm.performance.tokens_per_second");
     e.input_tokens = input_tokens;
     e.output_tokens = output_tokens;
     e.cached_tokens = cached_tokens;

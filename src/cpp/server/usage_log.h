@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -12,7 +13,7 @@
 
 namespace lemon::usage {
 
-// Token counts use -1 for "not reported by the backend".
+// Counts and timings use a negative value for "not reported by the backend".
 struct UsageEvent {
     int64_t end_unix_ms = 0;
     std::string request;
@@ -22,6 +23,8 @@ struct UsageEvent {
     bool stream = false;
     std::string status;
     int64_t duration_ms = 0;
+    double ttft_ms = -1;
+    double tokens_per_second = -1;
     int input_tokens = -1;
     int output_tokens = -1;
     int cached_tokens = -1;
@@ -34,14 +37,14 @@ struct UsageEvent {
 
 nlohmann::ordered_json make_record(const UsageEvent& event, bool include_content);
 
+// A limit of 0 means unlimited.
 struct UsageLogOptions {
     std::string dir;
     uint64_t max_total_bytes = 0;
     int max_days = 0;
-    uint64_t max_file_bytes = 10 * 1024 * 1024;
 };
 
-// Appends JSON lines to usage-YYYY-MM-DD[.N].jsonl on a background thread.
+// Appends JSON lines to usage-YYYY-MM-DD.jsonl on a background thread.
 // Options are re-read for every batch so config changes apply without restart.
 class UsageLog {
 public:
@@ -52,6 +55,7 @@ public:
     void push(nlohmann::ordered_json record);
     void flush();
     bool failed() const;
+    uint64_t disk_usage_bytes() const;
 
 private:
     void run();
@@ -68,14 +72,13 @@ private:
     bool busy_ = false;
     bool stop_ = false;
     bool failed_ = false;
+    std::atomic<uint64_t> disk_bytes_{0};
     std::thread worker_;
 
     std::ofstream file_;
     std::string file_path_;
     std::string file_dir_;
     std::string file_date_;
-    int file_part_ = 0;
-    uint64_t file_bytes_ = 0;
 };
 
 bool enabled();

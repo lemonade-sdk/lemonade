@@ -192,26 +192,28 @@ Telemetry settings are configured under the `telemetry` block in your `config.js
 For machines without a collector, Lemonade can append one JSON line per LLM request (chat, completions, responses, embeddings, reranking, and the Anthropic, Ollama, and MCP gateways) to a local file. It is independent of `telemetry.enabled`.
 
 ```bash
-lemonade config set telemetry.file.enabled=true
+lemonade config set telemetry.usage_log.enabled=true
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `telemetry.file.enabled` | boolean | `false` | Turns the usage log on. |
-| `telemetry.file.path` | string | `""` | Directory for the files. Empty means `<config dir>/usage/`. |
-| `telemetry.file.content` | string | `"none"` | `"none"` logs counts only. `"full"` also logs prompts and responses. |
-| `telemetry.file.max_size_mb` | int | `100` | Total disk cap. Oldest files are deleted first. |
-| `telemetry.file.max_days` | int | `90` | Files older than this are deleted. |
+| `telemetry.usage_log.enabled` | boolean | `false` | Turns the usage log on. |
+| `telemetry.usage_log.path` | string | `""` | Directory for the files. Empty means `<config dir>/usage/`. |
+| `telemetry.usage_log.content` | string | `"none"` | `"none"` logs counts only. `"full"` also logs prompts and responses. |
+| `telemetry.usage_log.max_size_mb` | int | `100` | Total disk cap. Oldest days are deleted first. `-1` for unlimited. |
+| `telemetry.usage_log.max_days` | int | `90` | Days older than this are deleted. `-1` for unlimited. |
 
-Files are named `usage-YYYY-MM-DD.jsonl` (UTC) and roll over at midnight or at 10 MB (`usage-YYYY-MM-DD.1.jsonl`, ...). Files are only ever appended to, so any log shipper can collect them.
+There is one file per day, named `usage-YYYY-MM-DD.jsonl` (UTC). Files are only ever appended to, so any log shipper can collect them. A record is about 400 bytes, so the default 100 MB cap holds roughly 260,000 requests. The cap deletes whole days, oldest first, and never the newest day, so a single very busy day can exceed it.
 
 ```json
-{"ts":"2026-09-29T18:35:45.241Z","host":"WS-ENG-041","lemonade_version":"11.8.1","request":"chat.completions","model":"Qwen3-0.6B-GGUF","backend":"llamacpp","device":"gpu","stream":true,"status":"ok","duration_ms":132,"input_tokens":20,"output_tokens":27,"cached_tokens":3,"tokens_reported":true,"tokens_estimated":false,"session_id":"team-a/laptop-7","client_ip":"127.0.0.1"}
+{"ts":"2026-09-29T18:35:45.241Z","host":"WS-ENG-041","lemonade_version":"11.8.1","request":"chat.completions","model":"Qwen3-0.6B-GGUF","backend":"llamacpp","device":"gpu","stream":true,"status":"ok","duration_ms":132,"ttft_ms":14,"tokens_per_second":92.4,"input_tokens":20,"output_tokens":27,"cached_tokens":3,"tokens_reported":true,"tokens_estimated":false,"session_id":"team-a/laptop-7","client_ip":"127.0.0.1"}
 ```
 
 | Field | Meaning |
 |-------|---------|
 | `status` | `ok`, `error`, or `aborted` (client disconnected). |
+| `ttft_ms` | Time to first token. `null` when not measurable, e.g. non-streaming cloud requests. |
+| `tokens_per_second` | Decode speed (prefill excluded). `null` when not reported. |
 | `input_tokens` | All prompt tokens, including `cached_tokens`. |
 | `tokens_reported` | `false` when the backend returned no counts. Token fields are then `null`, not `0`. |
 | `tokens_estimated` | `true` when the client disconnected mid-stream; `output_tokens` is the number of chunks relayed before the disconnect. |
@@ -220,7 +222,7 @@ Files are named `usage-YYYY-MM-DD.jsonl` (UTC) and roll over at midnight or at 1
 
 Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log disables itself and logs one warning.
 
-`GET /api/v1/system-info` reports the log's state under `usage_log`. To total output tokens for a month:
+`GET /api/v1/health` reports the log's state under `telemetry.usage_log`. To total output tokens for a month:
 
 ```bash
 cat usage-2026-09-*.jsonl | jq -s 'map(.output_tokens // 0) | add'

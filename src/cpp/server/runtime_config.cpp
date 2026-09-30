@@ -595,24 +595,24 @@ int RuntimeConfig::telemetry_max_queue_capacity() const {
     return get_int_opt(nullptr, {"telemetry", "max_queue_capacity"}, 1000);
 }
 
-bool RuntimeConfig::telemetry_file_enabled() const {
-    return get_bool_opt(nullptr, {"telemetry", "file", "enabled"}, false);
+bool RuntimeConfig::telemetry_usage_log_enabled() const {
+    return get_bool_opt(nullptr, {"telemetry", "usage_log", "enabled"}, false);
 }
 
-std::string RuntimeConfig::telemetry_file_path() const {
-    return get_string_opt(nullptr, {"telemetry", "file", "path"}, "");
+std::string RuntimeConfig::telemetry_usage_log_path() const {
+    return get_string_opt(nullptr, {"telemetry", "usage_log", "path"}, "");
 }
 
-std::string RuntimeConfig::telemetry_file_content() const {
-    return get_string_opt(nullptr, {"telemetry", "file", "content"}, "none");
+std::string RuntimeConfig::telemetry_usage_log_content() const {
+    return get_string_opt(nullptr, {"telemetry", "usage_log", "content"}, "none");
 }
 
-int RuntimeConfig::telemetry_file_max_size_mb() const {
-    return get_int_opt(nullptr, {"telemetry", "file", "max_size_mb"}, 100);
+int RuntimeConfig::telemetry_usage_log_max_size_mb() const {
+    return get_int_opt(nullptr, {"telemetry", "usage_log", "max_size_mb"}, 100);
 }
 
-int RuntimeConfig::telemetry_file_max_days() const {
-    return get_int_opt(nullptr, {"telemetry", "file", "max_days"}, 90);
+int RuntimeConfig::telemetry_usage_log_max_days() const {
+    return get_int_opt(nullptr, {"telemetry", "usage_log", "max_days"}, 90);
 }
 
 int RuntimeConfig::telemetry_max_attribute_length() const {
@@ -985,33 +985,33 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
             "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
-            "max_queue_capacity", "max_attribute_length", "otlp", "session", "file"
+            "max_queue_capacity", "max_attribute_length", "otlp", "session", "usage_log"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
                 throw std::invalid_argument("Unknown config key: 'telemetry." + t_key + "'");
             }
         }
-        if (value.contains("file")) {
-            const auto& file = value["file"];
-            if (!file.is_object()) {
-                throw std::invalid_argument("'telemetry.file' must be an object");
+        if (value.contains("usage_log")) {
+            const auto& usage_log = value["usage_log"];
+            if (!usage_log.is_object()) {
+                throw std::invalid_argument("'telemetry.usage_log' must be an object");
             }
-            for (auto& [f_key, f_val] : file.items()) {
-                if (f_key == "enabled") {
-                    if (!f_val.is_boolean()) throw std::invalid_argument("'telemetry.file.enabled' must be a boolean");
-                } else if (f_key == "path") {
-                    if (!f_val.is_string()) throw std::invalid_argument("'telemetry.file.path' must be a string");
-                } else if (f_key == "content") {
-                    if (f_val != "none" && f_val != "full") {
-                        throw std::invalid_argument("'telemetry.file.content' must be 'none' or 'full'");
+            for (auto& [u_key, u_val] : usage_log.items()) {
+                if (u_key == "enabled") {
+                    if (!u_val.is_boolean()) throw std::invalid_argument("'telemetry.usage_log.enabled' must be a boolean");
+                } else if (u_key == "path") {
+                    if (!u_val.is_string()) throw std::invalid_argument("'telemetry.usage_log.path' must be a string");
+                } else if (u_key == "content") {
+                    if (u_val != "none" && u_val != "full") {
+                        throw std::invalid_argument("'telemetry.usage_log.content' must be 'none' or 'full'");
                     }
-                } else if (f_key == "max_size_mb" || f_key == "max_days") {
-                    if (!f_val.is_number_integer() || f_val.get<int>() <= 0) {
-                        throw std::invalid_argument("'telemetry.file." + f_key + "' must be an integer > 0");
+                } else if (u_key == "max_size_mb" || u_key == "max_days") {
+                    if (!u_val.is_number_integer() || (u_val.get<int>() <= 0 && u_val.get<int>() != -1)) {
+                        throw std::invalid_argument("'telemetry.usage_log." + u_key + "' must be an integer > 0, or -1 for unlimited");
                     }
                 } else {
-                    throw std::invalid_argument("Unknown config key: 'telemetry.file." + f_key + "'");
+                    throw std::invalid_argument("Unknown config key: 'telemetry.usage_log." + u_key + "'");
                 }
             }
         }
@@ -1251,7 +1251,7 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                 config_["telemetry"] = json::object();
             }
             for (auto& [t_key, t_val] : value.items()) {
-                if ((t_key == "otlp" || t_key == "file") && t_val.is_object()) {
+                if ((t_key == "otlp" || t_key == "usage_log") && t_val.is_object()) {
                     auto& section = config_["telemetry"][t_key];
                     if (!section.is_object()) {
                         section = json::object();

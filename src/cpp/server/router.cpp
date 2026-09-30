@@ -251,6 +251,32 @@ static bool is_unmetered_recipe(const std::string& recipe) {
     return slot_policy_for_recipe(recipe) == SlotPolicy::Unmetered;
 }
 
+// llama.cpp non-streaming responses carry a "timings" block alongside (or instead of) "usage".
+static void apply_timings(const json& response, nlohmann::json& usage_payload, telemetry::InferenceSpan& span) {
+    if (!response.contains("timings")) return;
+    const auto& timings = response["timings"];
+    if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
+    if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
+    if (timings.contains("cache_n")) usage_payload["cached_tokens"] = timings["cache_n"].get<int>();
+    if (!usage_payload.contains("prompt_tokens_total") && timings.contains("prompt_n")) {
+        usage_payload["prompt_tokens_total"] = timings["prompt_n"].get<int>() + timings.value("cache_n", 0);
+    }
+
+    if (timings.contains("prompt_ms") && timings.contains("prompt_n")) {
+        double prompt_ms = timings["prompt_ms"].get<double>();
+        if (prompt_ms > 0) {
+            span.set_attribute("llm.performance.time_to_first_token", prompt_ms / 1000.0);
+        }
+    }
+    if (timings.contains("predicted_ms") && timings.contains("predicted_n")) {
+        double predicted_ms = timings["predicted_ms"].get<double>();
+        int predicted_n = timings["predicted_n"].get<int>();
+        if (predicted_ms > 0 && predicted_n > 0) {
+            span.set_attribute("llm.performance.tokens_per_second", (predicted_n / (predicted_ms / 1000.0)));
+        }
+    }
+}
+
 static nlohmann::json stream_usage_payload(const StreamingProxy::TelemetryData& telemetry) {
     if (!telemetry.tokens_reported) return nlohmann::json::object();
     nlohmann::json usage = {
@@ -1827,29 +1853,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                         usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
                     }
                 }
-                if (response.contains("timings")) {
-                    auto timings = response["timings"];
-                    if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
-                    if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
-                    if (timings.contains("cache_n")) usage_payload["cached_tokens"] = timings["cache_n"].get<int>();
-                    if (!usage_payload.contains("prompt_tokens_total") && timings.contains("prompt_n")) {
-                        usage_payload["prompt_tokens_total"] = timings["prompt_n"].get<int>() + timings.value("cache_n", 0);
-                    }
-
-                    if (timings.contains("prompt_ms") && timings.contains("prompt_n")) {
-                        double prompt_ms = timings["prompt_ms"].get<double>();
-                        if (prompt_ms > 0) {
-                            span->set_attribute("llm.performance.time_to_first_token", prompt_ms / 1000.0);
-                        }
-                    }
-                    if (timings.contains("predicted_ms") && timings.contains("predicted_n")) {
-                        double predicted_ms = timings["predicted_ms"].get<double>();
-                        int predicted_n = timings["predicted_n"].get<int>();
-                        if (predicted_ms > 0 && predicted_n > 0) {
-                            span->set_attribute("llm.performance.tokens_per_second", (predicted_n / (predicted_ms / 1000.0)));
-                        }
-                    }
-                }
+                apply_timings(response, usage_payload, *span);
 
                 std::vector<telemetry::ToolCall> tool_calls;
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
@@ -1947,6 +1951,9 @@ json Router::completion(const json& request) {
                     } else if (usage.contains("input_tokens")) {
                         usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
                     }
+                    if (usage_payload.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens_total"] = usage_payload["prompt_tokens"];
+                    }
                     if (usage.contains("completion_tokens")) {
                         usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
                     } else if (usage.contains("output_tokens")) {
@@ -1957,6 +1964,7 @@ json Router::completion(const json& request) {
                         usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
                     }
                 }
+                apply_timings(response, usage_payload, *span);
 
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                     auto choice = response["choices"][0];
