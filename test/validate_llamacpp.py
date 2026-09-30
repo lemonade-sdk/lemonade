@@ -3,10 +3,16 @@
 Validate a llama.cpp backend release against all "hot" llamacpp models.
 
 Usage:
-    python test/validate_llamacpp.py --backend vulkan
-    python test/validate_llamacpp.py --backend rocm
+    python test/validate_llamacpp.py --backend cpu
+    python test/validate_llamacpp.py --backend vulkan --logs-dir <dir>
+    python test/validate_llamacpp.py --backend rocm --channel stable --logs-dir <dir>
 
-This script expects `lemond` to already be running on the target port.
+This script expects `lemond` to already be running on the target port, with its
+stderr redirected to `lemond.stderr.log` inside `--logs-dir`.
+
+GPU backends (vulkan, rocm, cuda, metal) REQUIRE `--logs-dir`: the per-model GPU
+offload check reads `lemond.stderr.log` from that directory, and the script
+hard-fails if the flag is unset or the log file is missing.
 
 This script:
 1. Queries `/api/v1/models?show_all=true` and selects models with recipe
@@ -336,7 +342,12 @@ def main():
     parser.add_argument(
         "--logs-dir",
         default=None,
-        help="Directory to collect server log files into (for CI artifact upload)",
+        help=(
+            "Directory that lemond redirects its stderr into as lemond.stderr.log. "
+            "REQUIRED for GPU backends (vulkan, rocm, cuda, metal). The GPU-offload "
+            "check reads that log, and the script hard-fails if it is unset or the "
+            "log is missing. Also used to collect server logs for CI artifact upload."
+        ),
     )
     parser.add_argument(
         "--lite",
@@ -390,11 +401,24 @@ def main():
         os.path.join(args.logs_dir, "lemond.stderr.log") if args.logs_dir else None
     )
     log_offset = 0
-    if gpu_token and not stderr_log_path:
-        print(
-            "Warning: --logs-dir not set; skipping GPU-fallback assertion",
-            flush=True,
-        )
+    if gpu_token:
+        if not stderr_log_path:
+            print(
+                f"ERROR: '{args.backend}' backend runs on the GPU, so --logs-dir "
+                "must be set to verify GPU offload Re-run with --logs-dir <dir>.",
+                file=sys.stderr,
+                flush=True,
+            )
+            sys.exit(1)
+        if not os.path.isfile(stderr_log_path):
+            print(
+                f"ERROR: expected server log '{stderr_log_path}' does not exist, so "
+                "GPU offload cannot be verified. Ensure lemond's stderr is redirected "
+                "to lemond.stderr.log inside --logs-dir.",
+                file=sys.stderr,
+                flush=True,
+            )
+            sys.exit(1)
     try:
         for model in hot_models:
             model_name = model["id"]
@@ -402,18 +426,16 @@ def main():
             success, response_text, stats = test_model(
                 base_url, model_name, args.backend
             )
-            if gpu_token and stderr_log_path:
+            gpu_status = "N/A"
+            if gpu_token:
                 log_chunk, log_offset = read_new_log_text(stderr_log_path, log_offset)
-                if success and not gpu_offload_confirmed(log_chunk, gpu_token):
-                    success = False
-                    response_text = (
-                        f"GPU assertion failed: backend '{args.backend}' did not "
-                        f"report GPU placement ('{gpu_token}') in the llama-server "
-                        f"log. Possibility of a silent CPU fallback."
-                    )
+                gpu_status = (
+                    "PASS" if gpu_offload_confirmed(log_chunk, gpu_token) else "FAIL"
+                )
             result = {
                 "model": model_name,
                 "pass": success,
+                "gpu": gpu_status,
                 "response": response_text,
                 "input_tokens": stats.get("input_tokens", "N/A"),
                 "output_tokens": stats.get("output_tokens", "N/A"),
@@ -422,7 +444,7 @@ def main():
             }
             results.append(result)
             status = "PASS" if success else "FAIL"
-            print(f"  Result: {status}", flush=True)
+            print(f"  Result: {status}  GPU: {gpu_status}", flush=True)
             if not success:
                 all_passed = False
                 print(f"  Error: {response_text}", flush=True)
