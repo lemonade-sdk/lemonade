@@ -6452,22 +6452,16 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # kv_count
 
     @contextlib.contextmanager
-    def _extra_models_dir(self, ggufs=(), gguf_sizes=None, text_files=None):
+    def _extra_models_dir(self, ggufs=(), gguf_sizes=None):
         """Serve a fresh extra_models_dir holding a stub GGUF at each of `ggufs`,
-        padded to `gguf_sizes` ({path: bytes}) where given, and each of
-        `text_files` ({path: contents}), all as '/'-separated paths; then
-        restore the prior setting."""
+        padded to `gguf_sizes` ({path: bytes}) where given, all as '/'-separated
+        paths; then restore the prior setting."""
         extra_dir = tempfile.mkdtemp(prefix=f"lemon_{self._testMethodName}_")
         for relative in ggufs:
             self._write_stub_gguf_file(os.path.join(extra_dir, *relative.split("/")))
         for relative, size in (gguf_sizes or {}).items():
             with open(os.path.join(extra_dir, *relative.split("/")), "r+b") as f:
                 f.truncate(size)
-        for relative, contents in (text_files or {}).items():
-            path = os.path.join(extra_dir, *relative.split("/"))
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as f:
-                f.write(contents)
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
@@ -6798,7 +6792,7 @@ class EndpointTests(ServerTestBase):
                 "Mistral-Local-GGUF/model-Q8_0.gguf",
             ]
         ) as extra_dir:
-            # The second folder found is qualified with its own folder name.
+            # The alphabetically later folder is qualified with its own folder name.
             self.assertExtraModelsListed(
                 extra_dir,
                 {
