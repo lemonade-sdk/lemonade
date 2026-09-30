@@ -229,6 +229,7 @@ void FastFlowLMServer::load(const std::string& model_name,
         // 5 minutes: large models can take time to load
         start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command, 300);
     } catch (const std::runtime_error&) {
+        if (load_cancelled()) throw;
         LOG(ERROR, "FastFlowLM") << "Troubleshooting tips:" << std::endl;
         LOG(ERROR, "FastFlowLM") << "  1. Check if FLM is installed correctly: flm --version" << std::endl;
         LOG(ERROR, "FastFlowLM") << "  2. Try running: flm serve <model> --ctx-len 8192 --port 8001" << std::endl;

@@ -8,28 +8,27 @@
 
 namespace lemon {
 
-// The program a backend runs, with its flags, environment variables, model
-// files, port and ready endpoint.
+// What a backend runs. It has the same shape wherever the server runs; the
+// ServerProcess that starts it decides where.
 struct ServerCommand {
     std::string program;
     std::vector<std::string> args;
     std::vector<std::pair<std::string, std::string>> env;
-    std::vector<std::string> model_files;
     int port = 0;
     std::string ready_endpoint = "/health";
 };
 
-// Where a server's stdout and stderr go.
 struct ProcessOutput {
     bool inherit = false;
     bool filter_health_logs = false;
 };
 
-// One running backend server. WrappedServer owns one while a model is loaded.
+// One running backend server. Destroying it stops the server, so a load that
+// fails after starting one cannot leave it running.
 class ServerProcess {
 public:
     explicit ServerProcess(ProcessOutput output) : output_(output) {}
-    virtual ~ServerProcess() = default;
+    virtual ~ServerProcess();
     ServerProcess(const ServerProcess&) = delete;
     ServerProcess& operator=(const ServerProcess&) = delete;
 

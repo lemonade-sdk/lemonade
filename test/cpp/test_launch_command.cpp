@@ -35,6 +35,7 @@ namespace lemon {
 class FakeProcess : public ServerProcess {
 public:
     explicit FakeProcess(int pid) : ServerProcess(ProcessOutput{}), pid_(pid) {}
+    ~FakeProcess() override { handle_ = {nullptr, 0}; }
 
     std::string start(const ServerCommand& command) override {
         command_line_ = {command.program};
@@ -68,7 +69,6 @@ public:
 }  // namespace lemon
 
 int main() {
-    // The ready endpoint every fake server is polled on.
     httplib::Server health;
     health.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         res.set_content("{}", "application/json");
