@@ -113,7 +113,7 @@ Add a ToC only if the document has **5 or more H2 sections**. Use a plain markdo
 
 ### Links
 
-Link to documentation in this repository using relative Markdown file paths, including the `.md` extension (for example, `../guide/install/windows.md`). Avoid published website URLs and hardcoded `blob/main` URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. Use the same convention in generated documentation. For repository-only files outside `docs/`, use explicit GitHub URLs so links also work on the published website.
+Link to documentation in this repository using relative Markdown file paths, including the `.md` extension (for example, `../guide/install/windows.md`). Avoid published website URLs and hardcoded `blob/main` URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. Use the same convention in generated documentation. For repository-only files outside `docs/`, use explicit GitHub URLs so links also work on the published website. Pages that exist only on the website, such as the [model browser](https://lemonade-server.ai/models.html) and the [marketplace](https://lemonade-server.ai/marketplace), have no in-repo equivalent, so link to them on the website.
 
 ### Code blocks
 
