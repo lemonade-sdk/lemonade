@@ -1167,12 +1167,29 @@ jobs:
             --base main \
             --head "$BRANCH"
 
+  gpu-offload-gate:
+    name: GPU offload gate
+    needs: validate
+    if: always() && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: validation-results-*
+          merge-multiple: true
+
+      - name: Enforce GPU offload
+        run: python3 .github/scripts/check_gpu_offload.py 'llamacpp_validation_*.json'
+
   # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
   # successfully (otherwise the merge is blocked), and 2. these jobs do not need
   # to run on ordinary pull request pushes.
   validation-gate:
     name: llama.cpp validation
-    needs: [build, validate]
+    needs: [build, validate, gpu-offload-gate]
     if: always()
     runs-on: ubuntu-latest
     steps:

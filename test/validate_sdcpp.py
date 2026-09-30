@@ -23,6 +23,12 @@ from typing import Any
 
 import requests
 
+from utils.gpu_offload import (
+    GPU_LOG_FILENAMES,
+    gpu_offload_confirmed,
+    read_new_log_text,
+)
+
 DEFAULT_PORT = int(os.environ.get("LEMONADE_PORT", "13305"))
 DEFAULT_TIMEOUT = int(os.environ.get("LEMONADE_VALIDATE_SD_TIMEOUT", "3600"))
 DEFAULT_STEPS = int(os.environ.get("LEMONADE_VALIDATE_SD_STEPS", "4"))
@@ -33,37 +39,11 @@ DEFAULT_PROMPT = os.environ.get(
 DEFAULT_MODELS = ("SD-Turbo-GGUF", "Flux-2-Klein-4B")
 DEFAULT_SIZES = ("512x256", "1024x1024")
 
-# rocm: sd-server's HIP build logs "ggml_cuda_init: found N ROCm devices".
-# vulkan: sd-server's Vulkan build logs "ggml_vulkan: Found N Vulkan devices:".
-GPU_DEVICE_PATTERNS: dict[str, "re.Pattern[str]"] = {
-    "rocm": re.compile(r"ggml_cuda_init: found \d+ ROCm devices"),
-    "vulkan": re.compile(r"ggml_vulkan: Found \d+ Vulkan devices"),
+# Device lines that confirm sd-server placed work on the GPU
+GPU_DEVICE_PATTERNS: dict[str, tuple["re.Pattern[str]", ...]] = {
+    "rocm": (re.compile(r"Initializing backend: ROCm\d+"),),
+    "vulkan": (re.compile(r"Initializing backend: Vulkan\d+"),),
 }
-
-GPU_LOG_FILENAMES = ("lemond.stdout.log", "lemond.stderr.log")
-
-
-def read_new_log_text(log_path: str, offset: int) -> tuple[str, int]:
-    """Read a live log file from a byte offset; return (new_text, new_offset).
-
-    Missing file or a read error yields ("", offset) so the caller keeps
-    polling without advancing.
-    """
-    if not log_path or not os.path.isfile(log_path):
-        return "", offset
-    try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as log_file:
-            log_file.seek(offset)
-            chunk = log_file.read()
-            return chunk, log_file.tell()
-    except OSError as exc:
-        print(f"[WARN] could not read server log '{log_path}': {exc}", file=sys.stderr)
-        return "", offset
-
-
-def gpu_offload_confirmed(log_chunk: str, pattern: "re.Pattern[str]") -> bool:
-    """True when the sd-server log chunk shows a GPU device was initialized."""
-    return bool(pattern.search(log_chunk))
 
 
 def parse_size(value: str) -> tuple[int, int]:
@@ -312,14 +292,14 @@ def main() -> int:
     )
     configure_backend(base_url, args.backend, args.channel)
 
-    gpu_pattern = GPU_DEVICE_PATTERNS.get(args.backend)
+    gpu_patterns = GPU_DEVICE_PATTERNS.get(args.backend)
     gpu_log_paths = (
         [os.path.join(args.logs_dir, name) for name in GPU_LOG_FILENAMES]
         if args.logs_dir
         else []
     )
     log_offsets: dict[str, int] = {path: 0 for path in gpu_log_paths}
-    if gpu_pattern is not None:
+    if gpu_patterns is not None:
         if not args.logs_dir:
             print(
                 f"[ERROR] backend '{args.backend}' runs on the GPU, so --logs-dir is "
@@ -436,12 +416,12 @@ def main() -> int:
                 print(f"[FAIL] {model} {width}x{height}: {exc}", file=sys.stderr)
             results.append(record)
 
-        if gpu_pattern is not None:
+        if gpu_patterns is not None:
             new_text = ""
             for path in gpu_log_paths:
                 chunk, log_offsets[path] = read_new_log_text(path, log_offsets[path])
                 new_text += chunk
-            model_on_gpu = gpu_offload_confirmed(new_text, gpu_pattern)
+            model_on_gpu = gpu_offload_confirmed(new_text, gpu_patterns)
             gpu_status = "PASS" if model_on_gpu else "FAIL"
             if not model_on_gpu:
                 print(

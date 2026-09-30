@@ -37,6 +37,11 @@ import tempfile
 
 import requests
 
+from utils.gpu_offload import (
+    GPU_LOG_FILENAMES,
+    gpu_offload_confirmed,
+    read_new_log_text,
+)
 from utils.server_base import _auth_headers, unload_all_models, wait_for_server
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
@@ -59,31 +64,17 @@ GPU_DEVICE_TOKENS = {
 }
 
 
-def gpu_offload_confirmed(log_chunk, gpu_token):
-    """Return True if the llama-server log shows work placed on the GPU.
-    Accepts either the device-selection line or the layer-offload line.
+def gpu_offload_patterns(gpu_token):
+    """Device/offload lines that confirm llama-server placed work on the GPU.
+
+    Either the device-selection line ("using device ROCm0") or
+    a layer-offload line with a non-zero count (e.g., "offloaded 33/33 layers to GPU").
+    Partial offload is acceptable.
     """
-    if f"using device {gpu_token}" in log_chunk:
-        return True
-    for line in log_chunk.splitlines():
-        match = re.search(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", line)
-        if match and int(match.group(1)) > 0:
-            return True
-    return False
-
-
-def read_new_log_text(log_path, offset):
-    """Read a live log file from a byte offset; return (text, new_offset)."""
-    if not log_path or not os.path.isfile(log_path):
-        return "", offset
-    try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as log_file:
-            log_file.seek(offset)
-            chunk = log_file.read()
-            return chunk, log_file.tell()
-    except OSError as exc:
-        print(f"  Warning: could not read server log for GPU check: {exc}", flush=True)
-        return "", offset
+    return (
+        re.compile(rf"using device {re.escape(gpu_token)}"),
+        re.compile(r"offloaded\s+[1-9]\d*/\d+\s+layers to GPU"),
+    )
 
 
 def collect_server_logs(output_dir):
@@ -399,13 +390,11 @@ def main():
     results = []
     all_passed = True
     gpu_token = GPU_DEVICE_TOKENS.get(args.backend)
+    gpu_patterns = gpu_offload_patterns(gpu_token) if gpu_token else None
     # llama-server's device lines are captured by lemond and re-emitted through
     # lemond's own logger, which writes to stdout. stderr is read too as a fallback.
     gpu_log_paths = (
-        [
-            os.path.join(args.logs_dir, name)
-            for name in ("lemond.stdout.log", "lemond.stderr.log")
-        ]
+        [os.path.join(args.logs_dir, name) for name in GPU_LOG_FILENAMES]
         if args.logs_dir
         else []
     )
@@ -447,7 +436,7 @@ def main():
                 base_url, model_name, args.backend
             )
             gpu_status = "N/A"
-            if gpu_token:
+            if gpu_patterns is not None:
                 log_chunk = ""
                 for path in gpu_log_paths:
                     chunk, log_offsets[path] = read_new_log_text(
@@ -455,7 +444,7 @@ def main():
                     )
                     log_chunk += chunk
                 gpu_status = (
-                    "PASS" if gpu_offload_confirmed(log_chunk, gpu_token) else "FAIL"
+                    "PASS" if gpu_offload_confirmed(log_chunk, gpu_patterns) else "FAIL"
                 )
             result = {
                 "model": model_name,
