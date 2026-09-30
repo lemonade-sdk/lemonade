@@ -96,6 +96,10 @@ ContainerProcess::ContainerProcess(ProcessOutput output, std::string recipe, std
       policy_(std::move(policy)),
       image_(std::move(image)) {}
 
+ContainerProcess::~ContainerProcess() {
+    ContainerProcess::stop();
+}
+
 std::string ContainerProcess::start(const ServerCommand& command) {
 #ifndef __linux__
     throw std::runtime_error(recipe_ + ":" + backend_ +
@@ -103,8 +107,7 @@ std::string ContainerProcess::start(const ServerCommand& command) {
 #endif
     const auto& manager = ContainerManager::global();
     if (auto failure = manager.check_setup()) {
-        throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start: " + failure->message +
-                                 ". To fix it:\n" + failure->action);
+        throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start: " + failure->text());
     }
     if (!ContainerManager::allowed_repository(policy_.repository)) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " names the repository " +
@@ -188,12 +191,16 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         if (!address.empty()) return address;
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
+    if (!running()) {
+        throw std::runtime_error(name_ + " exited before it started; its error is in the log above");
+    }
     throw std::runtime_error(name_ + " got no address on its network");
 }
 
 void ContainerProcess::stop() {
     if (!name_.empty()) {
         ContainerManager::global().stop(name_);
+        name_.clear();
     }
     ServerProcess::stop();
 }

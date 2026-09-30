@@ -158,10 +158,6 @@ const ContainerPolicy* container_policy(const std::string& recipe, const std::st
     return descriptor ? descriptor->container_for(backend) : nullptr;
 }
 
-std::string setup_failure_text(const utils::SetupFailure& failure) {
-    return failure.message + ". To fix it:\n" + failure.action;
-}
-
 // A container backend's install directory holds only its version.txt, which
 // records the pin its image was pulled for.
 fs::path container_version_file(const std::string& recipe, const std::string& backend) {
@@ -176,7 +172,7 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     const auto& manager = utils::ContainerManager::global();
     if (auto failure = manager.check_setup()) {
         throw std::runtime_error("Cannot install " + recipe + ":" + backend + ": " +
-                                 setup_failure_text(*failure));
+                                 failure->text());
     }
 
     const ContainerPolicy* policy = container_policy(recipe, backend);
@@ -207,11 +203,10 @@ void install_container_backend(const std::string& recipe, const std::string& bac
 
     // Replace whatever the install directory held, such as an earlier pin or a
     // binary release of the same backend, and drop the image it recorded.
-    if (const auto previous = backends::parse_container_pin(installed_pin)) {
-        const std::string previous_image = policy->repository + "@" + previous->digest;
-        if (previous_image != image) {
-            manager.remove_image(previous_image);
-        }
+    const std::string previous_image =
+        backends::BackendUtils::get_installed_backend_image(recipe, backend);
+    if (!previous_image.empty() && previous_image != image) {
+        manager.remove_image(previous_image);
     }
     const fs::path install_dir = version_file.parent_path();
     std::error_code ec;
@@ -241,17 +236,15 @@ std::string container_registry_url(const std::string& repository) {
 }
 
 void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
-    const ContainerPolicy* policy = container_policy(recipe, backend);
-    const fs::path version_file = container_version_file(recipe, backend);
-    if (const auto installed = backends::parse_container_pin(read_version_file(version_file))) {
-        utils::ContainerManager::global().remove_image(policy->repository + "@" +
-                                                       installed->digest);
+    const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
+    if (!image.empty()) {
+        utils::ContainerManager::global().remove_image(image);
     }
+    const fs::path install_dir = container_version_file(recipe, backend).parent_path();
     std::error_code ec;
-    fs::remove_all(version_file.parent_path(), ec);
+    fs::remove_all(install_dir, ec);
     if (ec) {
-        throw std::runtime_error("Failed to remove " + version_file.parent_path().string() + ": " +
-                                 ec.message());
+        throw std::runtime_error("Failed to remove " + install_dir.string() + ": " + ec.message());
     }
 }
 
