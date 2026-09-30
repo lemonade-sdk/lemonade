@@ -17,9 +17,9 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
         "-c", "--ctx-size",
         "-m", "--model",
         "-mu", "--model-url",
-        "-hf", "-hfr", "-hff", "--hf-repo", "--hf-file",
-        "-md", "--model-draft",
-        "-mm", "--mmproj",
+        "-hf", "-hfr", "-hff", "-mr", "-mf", "--hf-repo", "--hf-file",
+        "-md", "--model-draft", "--spec-draft-model",
+        "-mm", "--mmproj", "-mmu", "--mmproj-url", "--no-mmproj",
         "--host", "--port",
         "--jinja", "--no-jinja",
         "--metrics",
@@ -29,8 +29,8 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 
 // ROCm FPX is a llama.cpp fork that adds the ROCmFP4, FP6 and FP8 weight
 // formats and MTP drafting. Mainline llama.cpp cannot read those weights, so its
-// models run on this recipe alone. It runs from the rocm-10.0-rocmfpx build of
-// Donato Capitella's Strix Halo toolboxes.
+// models run on this recipe alone. It runs from Donato Capitella's Strix Halo
+// toolboxes image.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "rocmfpx",
     /*display_name*/    "ROCm FPX (experimental)",
