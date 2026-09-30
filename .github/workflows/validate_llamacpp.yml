@@ -348,56 +348,7 @@ jobs:
           LLAMACPP_LEMONADE_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.lemonade_update_backends }}
         run: |
           $ErrorActionPreference = "Stop"
-
-          $script = @'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          RELEASE_RE = re.compile(r"^b[0-9]+$")
-
-          def parse_csv(value):
-              return [item.strip() for item in (value or "").split(",") if item.strip()]
-
-          def update(section, release, backends):
-              if not backends:
-                  return []
-              if not RELEASE_RE.match(release):
-                  raise SystemExit(f"Invalid llama.cpp release tag: {release}")
-              changed = []
-              for key in backends:
-                  if key not in section:
-                      raise SystemExit(f"Refusing to create missing llamacpp.{key}")
-                  if not isinstance(section[key], str):
-                      raise SystemExit(f"llamacpp.{key} must be a string")
-                  old = section[key]
-                  section[key] = release
-                  changed.append((key, old, release))
-              return changed
-
-          path = Path("src/cpp/resources/backend_versions.json")
-          data = json.loads(path.read_text(encoding="utf-8"))
-          section = data.get("llamacpp")
-          if not isinstance(section, dict):
-              raise SystemExit("backend_versions.json is missing a llamacpp object")
-
-          changes = []
-          changes += update(section, os.environ["LLAMACPP_RELEASE"], parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
-          changes += update(section, os.environ["LLAMACPP_ROCM_RELEASE"], parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
-          changes += update(section, os.environ["LLAMACPP_LEMONADE_RELEASE"], parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
-
-          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-          print("Updated llamacpp backend versions:")
-          if changes:
-              for key, old, new in changes:
-                  print(f"  llamacpp.{key}: {old} -> {new}")
-          else:
-              print("  none")
-          '@
-
-          $script | python -
+          python .github/scripts/update_backend_versions.py
 
       - name: Build lemond
         shell: PowerShell
@@ -461,53 +412,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          RELEASE_RE = re.compile(r"^b[0-9]+$")
-
-          def parse_csv(value):
-              return [item.strip() for item in (value or "").split(",") if item.strip()]
-
-          def update(section, release, backends):
-              if not backends:
-                  return []
-              if not RELEASE_RE.match(release):
-                  raise SystemExit(f"Invalid llama.cpp release tag: {release}")
-              changed = []
-              for key in backends:
-                  if key not in section:
-                      raise SystemExit(f"Refusing to create missing llamacpp.{key}")
-                  if not isinstance(section[key], str):
-                      raise SystemExit(f"llamacpp.{key} must be a string")
-                  old = section[key]
-                  section[key] = release
-                  changed.append((key, old, release))
-              return changed
-
-          path = Path("src/cpp/resources/backend_versions.json")
-          data = json.loads(path.read_text(encoding="utf-8"))
-          section = data.get("llamacpp")
-          if not isinstance(section, dict):
-              raise SystemExit("backend_versions.json is missing a llamacpp object")
-
-          changes = []
-          changes += update(section, os.environ["LLAMACPP_RELEASE"], parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
-          changes += update(section, os.environ["LLAMACPP_ROCM_RELEASE"], parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
-          changes += update(section, os.environ["LLAMACPP_LEMONADE_RELEASE"], parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
-
-          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-          print("Updated llamacpp backend versions:")
-          if changes:
-              for key, old, new in changes:
-                  print(f"  llamacpp.{key}: {old} -> {new}")
-          else:
-              print("  none")
-          PY
+          python3 .github/scripts/update_backend_versions.py
 
       - name: Install build dependencies
         run: |
@@ -1017,14 +922,19 @@ jobs:
     needs: [get-latest-releases, build-linux]
     if: always() && needs.build-linux.result == 'success'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 420
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch: arm64
             runner: ["self-hosted", "Linux", "ARM64", "cuda", "lemon-prod", "sjlab-dgx-spark-01"]
+            lite_only: false
           - arch: x64
             runner: ["self-hosted", "Linux", "X64", "cuda", "lemon-prod", "sjlab-rtx-5070-fractal-01"]
+            # This RTX 5070 only has enough VRAM for the smallest hot models, so
+            # larger ones would run on CPU and a full run risks the job timeout.
+            lite_only: true
     steps:
       - name: Capture CUDA runner configuration
         shell: bash
@@ -1078,11 +988,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/lemond
           if [ ! -f build/lemond ]; then
             echo "ERROR: lemond not found!"
             exit 1
           fi
+          chmod +x build/lemond
           ./build/lemond --version
           echo "Binaries verified!"
 
@@ -1109,10 +1019,26 @@ jobs:
           stdout_log="$logs_dir/lemond.stdout.log"
           stderr_log="$logs_dir/lemond.stderr.log"
 
-          # Do not benchmark while another known inference process is active.
-          if pgrep -f 'lemond|llama-server|lemonade' >/dev/null 2>&1; then
-            echo "::error::Runner is not idle: $(pgrep -af 'lemond|llama-server|lemonade')"
-            exit 1
+          # Scope to this workspace's own binaries; a broad pgrep pattern also
+          # matches unrelated processes whose cmdline contains the workspace path.
+          stale_pids=()
+          for pid in $(pgrep -f 'lemond|llama-server' 2>/dev/null || true); do
+            if [ -r "/proc/$pid/cmdline" ]; then
+              cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+              if [[ "$cmdline" == *"$lemond_exe"* ]] || [[ "$cmdline" == *"$cache_dir"* ]]; then
+                stale_pids+=("$pid")
+              fi
+            fi
+          done
+          if [ ${#stale_pids[@]} -gt 0 ]; then
+            echo "::warning::Stopping stale workspace processes: ${stale_pids[*]}"
+            for pid in "${stale_pids[@]}"; do
+              kill -15 "$pid" 2>/dev/null || true
+            done
+            sleep 1
+            for pid in "${stale_pids[@]}"; do
+              kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+            done
           fi
 
           if ss -ltn "( sport = :$port )" 2>/dev/null | grep -q "$port"; then
@@ -1125,15 +1051,16 @@ jobs:
           lemond_pid=$!
           echo "Started lemond PID $lemond_pid"
 
+          results_file="llamacpp_validation_${backend}-${{ matrix.arch }}.json"
           validation_args=(
             "test/validate_llamacpp.py"
             "--backend" "$backend"
             "--port" "$port"
-            "--output" "llamacpp_validation_$backend.json"
+            "--output" "$results_file"
             "--logs-dir" "$logs_dir"
           )
 
-          if [ "${LITE_MODE}" = "true" ]; then
+          if [ "${LITE_MODE}" = "true" ] || [ "${{ matrix.lite_only }}" = "true" ]; then
             validation_args+=("--lite")
           fi
 
@@ -1156,7 +1083,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: validation-results-cuda-${{ matrix.arch }}
-          path: llamacpp_validation_cuda.json
+          path: llamacpp_validation_cuda-${{ matrix.arch }}.json
           retention-days: 30
 
       - name: Upload server logs
@@ -1208,53 +1135,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          RELEASE_RE = re.compile(r"^b[0-9]+$")
-
-          def parse_csv(value):
-              return [item.strip() for item in (value or "").split(",") if item.strip()]
-
-          def update(section, release, backends):
-              if not backends:
-                  return []
-              if not RELEASE_RE.match(release):
-                  raise SystemExit(f"Invalid llama.cpp release tag: {release}")
-              changed = []
-              for key in backends:
-                  if key not in section:
-                      raise SystemExit(f"Refusing to create missing llamacpp.{key}")
-                  if not isinstance(section[key], str):
-                      raise SystemExit(f"llamacpp.{key} must be a string")
-                  old = section[key]
-                  section[key] = release
-                  changed.append((key, old, release))
-              return changed
-
-          path = Path("src/cpp/resources/backend_versions.json")
-          data = json.loads(path.read_text(encoding="utf-8"))
-          section = data.get("llamacpp")
-          if not isinstance(section, dict):
-              raise SystemExit("backend_versions.json is missing a llamacpp object")
-
-          changes = []
-          changes += update(section, os.environ["LLAMACPP_RELEASE"], parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
-          changes += update(section, os.environ["LLAMACPP_ROCM_RELEASE"], parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
-          changes += update(section, os.environ["LLAMACPP_LEMONADE_RELEASE"], parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
-
-          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-          print("Updated llamacpp backend versions:")
-          if changes:
-              for key, old, new in changes:
-                  print(f"  llamacpp.{key}: {old} -> {new}")
-          else:
-              print("  none")
-          PY
+          python3 .github/scripts/update_backend_versions.py
 
       - name: Update supported llama.cpp architectures
         env:
@@ -1339,8 +1220,8 @@ jobs:
           body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
           body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          for backend in ["vulkan", "rocm-stable", "rocm-nightly", "cuda"]:
-              # Labels match the artifact names produced by the validate job
+          for backend in ["vulkan", "rocm-stable", "rocm-nightly", "cuda-arm64", "cuda-x64"]:
+              # Labels match the artifact names produced by the validate/validate-linux jobs
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
                   body_lines.append(f"| _{backend}: no results_ | | | | | | |")
