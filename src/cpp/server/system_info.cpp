@@ -712,8 +712,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         error_message = "Linux kernel missing support";
         return false;
     }
-    // A container backend is installed once the image its version.txt records
-    // is present.
     if (cwsr_desc && cwsr_desc->container_for(backend)) {
         const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
         return !image.empty() && utils::ContainerManager::global().has_image(image);
