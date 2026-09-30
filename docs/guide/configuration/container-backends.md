@@ -4,10 +4,10 @@ A container backend runs its server from a container image instead of a download
 
 Container backends run on Linux with Podman or Docker. Lemonade uses Podman when it is installed, and Docker otherwise.
 
-| Backend | Image |
-|---------|-------|
-| `ds4:rocm` | `docker.io/kyuz0/strix-halo-ds4-toolbox` |
-| `llamacpp:nathanw` | `docker.io/kyuz0/amd-strix-halo-toolboxes`, Strix Halo Vulkan performance fork |
+| Backend | Engine | Image |
+|---------|--------|-------|
+| `ds4:rocm` | DS4 | `docker.io/kyuz0/strix-halo-ds4-toolbox` |
+| `llamacpp:nathanw` | llama.cpp Vulkan performance fork | `docker.io/kyuz0/amd-strix-halo-toolboxes` |
 
 ## Setup
 
