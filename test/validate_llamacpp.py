@@ -52,10 +52,7 @@ GPU_DEVICE_TOKENS = {
 
 def gpu_offload_confirmed(log_chunk, gpu_token):
     """Return True if the llama-server log shows work placed on the GPU.
-
-    Accepts either the device-selection line (newer builds, needs -lv 4) or the
-    layer-offload line (older/ROCm-fork builds) so a single string change in one
-    of the three pinned binaries does not silently disable the check.
+    Accepts either the device-selection line or the layer-offload line.
     """
     if f"using device {gpu_token}" in log_chunk:
         return True
@@ -412,7 +409,7 @@ def main():
                     response_text = (
                         f"GPU assertion failed: backend '{args.backend}' did not "
                         f"report GPU placement ('{gpu_token}') in the llama-server "
-                        f"log — silent CPU fallback?"
+                        f"log. Possibility of a silent CPU fallback."
                     )
             result = {
                 "model": model_name,
