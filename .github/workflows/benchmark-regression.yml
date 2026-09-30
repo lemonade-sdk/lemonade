@@ -681,6 +681,11 @@ jobs:
                     "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
                     "ttft_ms_best": round(best_ttft, 2),
+                    # Back-compat aliases: the DEPLOYED dashboard still reads the
+                    # old key names. Emit both so an already-published dashboard
+                    # keeps rendering until it's updated to tg_tps/ttft_ms_best.
+                    "tps_mean": tg_tps,
+                    "ttft_ms_mean": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
@@ -737,6 +742,9 @@ jobs:
                     "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
                     "ttft_ms_best": round(best_ttft, 2),
+                    # back-compat aliases for the currently-deployed dashboard
+                    "tps_mean": tg_tps,
+                    "ttft_ms_mean": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
                     "quant": quant,
                     "lemonade_version": lem_ver,
