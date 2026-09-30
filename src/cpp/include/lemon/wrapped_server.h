@@ -408,6 +408,11 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         return ctx_size_auto_;
     }
+    // For a backend whose engine picks its own context over the one the router resolved.
+    void set_started_ctx_size(int ctx_size) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        recipe_options_.set_option("ctx_size", ctx_size);
+    }
     int get_process_id() const;
     std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
