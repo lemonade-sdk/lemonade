@@ -102,24 +102,9 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-// A split GGUF's shards, which llama-server opens from the first shard's
-// directory; a single-file GGUF alone.
-static std::vector<std::string> gguf_files(const std::string& gguf_path) {
-    std::vector<std::string> files = {gguf_path};
-    const fs::path path(gguf_path);
-    std::string base;
-    int total = 0;
-    if (!is_gguf_shard_filename(path.filename().string(), &base, &total)) {
-        return files;
-    }
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(path.parent_path(), ec)) {
-        if (entry.path() != path &&
-            same_shard_family(entry.path().filename().string(), base, total)) {
-            files.push_back(entry.path().string());
-        }
-    }
-    return files;
+// llamacpp:nathanw is a Vulkan build of llama.cpp, so it takes Vulkan devices.
+static std::string device_api(const std::string& backend) {
+    return backend == "nathanw" ? "vulkan" : backend;
 }
 
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
@@ -312,9 +297,6 @@ void LlamaCppServer::load(const std::string& model_name,
     // Update device type based on the actual backend selected.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
-    // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
-
     const ContainerPolicy* container = llamacpp::descriptor.container_for(llamacpp_backend);
     if (container && model_info.extra<bool>("hf_load", false)) {
         throw std::runtime_error(
@@ -322,6 +304,9 @@ void LlamaCppServer::load(const std::string& model_name,
             llamacpp_backend + " cannot do from its container's private network. "
             "Load it on a llamacpp backend that runs on the host.");
     }
+
+    // Install llama-server if needed (use per-model backend)
+    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
@@ -370,7 +355,7 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
     if (!llamacpp_device.empty()) {
-        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
+        BackendUtils::validate_device_backend_match(device_api(llamacpp_backend), llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
@@ -442,10 +427,12 @@ void LlamaCppServer::load(const std::string& model_name,
         ServerCommand command;
         command.program = llamacpp::descriptor.binary;
         command.args = std::move(args);
-        command.model_files = gguf_files(gguf_path);
-        command.model_files.push_back(mmproj_path);
-        if (use_draft_checkpoint) {
-            command.model_files.push_back(draft_path);
+        for (const std::string& path : {gguf_path, mmproj_path,
+                                        use_draft_checkpoint ? draft_path : std::string()}) {
+            if (!path.empty()) {
+                const auto files = gguf_files(path);
+                command.model_files.insert(command.model_files.end(), files.begin(), files.end());
+            }
         }
         command.port = port_;
 
