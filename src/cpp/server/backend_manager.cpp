@@ -1047,7 +1047,8 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         if (const ContainerPolicy* policy = container_policy(recipe, resolved_backend)) {
-            result.version = backends::BackendUtils::get_backend_version(recipe, resolved_backend);
+            result.version = backends::short_container_pin(
+                backends::BackendUtils::get_backend_version(recipe, resolved_backend));
             result.download_filename =
                 backends::BackendUtils::get_backend_image(recipe, resolved_backend);
             result.release_url = container_registry_url(policy->repository);
