@@ -26,10 +26,6 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 
 ## Scope
 
-### Phase 1 (This Proposal)
-
-This spec describes the initial batch of PRs into Lemonade, with future work expected to follow after. The future work will have its own spec.
-
 - **Platform.** Linux-only, GPU-only. Single GPU.
 - **Image sources.**
   - Donato's Docker Hub account for rocmfpx, nathanw, and ds4.
