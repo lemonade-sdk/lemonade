@@ -33,6 +33,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.
+  - Lemonade's Docker image, the `lemonade-server` snap and toolbox/distrobox will support them by driving Podman or Docker on the host (see [Sandboxed Hosts](#sandboxed-hosts)).
 
 ## New Backend Descriptor Labels
 
@@ -153,7 +154,7 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 
 | Method | `NativeProcess` | `ContainerProcess` |
 | --- | --- | --- |
-| `start` | Starts the binary through `ProcessManager::start_process()` and connects to it at `127.0.0.1` | <ol><li>Removes any leftover container with the same name</li><li>Builds a `ContainerRunSpec`:<ol><li>Mounts the command's model files</li><li>Rewrites their paths to `/mnt/models`</li><li>Adds the `ContainerPolicy`'s `devices` and `cap_add`</li><li>Sets the container's network (see [Run Options](#run-options))</li></ol></li><li>Has `ContainerManager` build the `podman run` or `docker run` command</li><li>Starts that command as a child of `lemond` with `ProcessManager::start_process()`</li><li>Connects to the server at the address given in [Run Options](#run-options)</li></ol> |
+| `start` | Starts the binary through `ProcessManager::start_process()` and connects to it at `127.0.0.1` | <ol><li>Removes any leftover container with the same name</li><li>Builds a `ContainerRunSpec`:<ol><li>Mounts the command's model files</li><li>Rewrites their paths to `/mnt/models`</li><li>Adds the `ContainerPolicy`'s `devices` and `cap_add`</li><li>Sets the container's network (see [Run Options](#run-options) and [Sandboxed Hosts](#sandboxed-hosts))</li></ol></li><li>Has `ContainerManager` build the `podman run` or `docker run` command</li><li>Starts that command as a child of `lemond` with `ProcessManager::start_process()`</li><li>Connects to the server at the address given in [Run Options](#run-options)</li></ol> |
 | `stop` | Terminates the process | <ol><li>Runs `stop --time 10` on the container by name †: SIGTERM, then SIGKILL after 10 seconds. Stopping by name reaches the container, because the client forwards SIGTERM and SIGKILL ends only the client</li><li>Removes the container and its network</li><li>Terminates the `run` client</li></ol> |
 | `handle` | The server process | The `podman run` or `docker run` client process. When `lemond` dies, the client gets SIGTERM, as a native server does, and forwards it to the container |
 
@@ -162,6 +163,7 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 `ContainerManager` is the single object in `lemond` that runs podman or docker. It is the container counterpart of `ProcessManager`. It:
 
 - picks the container tool (see [Tool Choice and Install Commands](#tool-choice-and-install-commands))
+- detects the host `lemond` runs on, and builds the command prefix and mount sources for it (see [Sandboxed Hosts](#sandboxed-hosts))
 - builds the `podman run` or `docker run` command in one function, which holds every Podman and Docker difference § (see [Command Contract](#command-contract))
 - runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup and includes stopped containers
 - checks prerequisites before a load and gives each failure its fix (see [Setup Assistant](#setup-assistant))
@@ -174,6 +176,8 @@ Lemonade starts each container backend with one `podman run` or `docker run` com
 ### Run Options
 
 Run options are the flags between `run` and the image.
+
+> Note: This section describes the command on a native host. [Sandboxed Hosts](#sandboxed-hosts), below, lists what changes when `lemond` runs in a Docker image, a snap or a toolbox.
 
 These options are the same for Podman and Docker:
 
@@ -254,12 +258,81 @@ podman run \
     --parallel 1
 ```
 
+### Sandboxed Hosts
+
+When `lemond` runs inside the Lemonade Docker image, the `lemonade-server` snap or a toolbox, the container tool runs on the host, outside the sandbox. `ContainerManager` detects the host at startup by a marker, and treats a host with no marker as native. `ContainerManager::invocation()` builds the command prefix for every podman or docker call, and it is the one function that reads the detected host. Each host subsection lists the parts of the command it changes, and the rest of the command matches [Run Options](#run-options).
+
+#### Lemonade Docker Image
+
+The Lemonade Docker image (`ghcr.io/lemonade-sdk/lemonade-server`) is detected by `/.dockerenv` or `/run/.containerenv`. It runs no container tool of its own. It bundles a client for each tool, and each client reaches the host's tool through a socket the user mounts:
+
+| Bundles | Socket the user mounts | Reaches |
+| --- | --- | --- |
+| The `podman` CLI | The host account's `/run/user/<uid>/podman/podman.sock`, at `/run/podman/podman.sock` | The host account's rootless Podman |
+| The `docker` CLI | The host's `/var/run/docker.sock`, at the same path | The host's Docker daemon |
+
+- The image sets `ENV CONTAINER_HOST=unix:///run/podman/podman.sock`.
+- In the image, a tool counts as installed when its socket is mounted.
+
+In the image, the server shares `lemond`'s loopback, and `lemond` connects to it at `127.0.0.1:<port>`. `lemond` inspects its own container to map each model path to its host source: a bind path, or a path in a named volume.
+
+When the container tool is Podman, the command changes these parts:
+
+| Part | Value |
+| --- | --- |
+| Prefix | `podman --remote`, with `CONTAINER_HOST` from the image |
+| `--mount` for a bind path | `type=bind,src=<host path>,destination=/mnt/models/<file>,ro` |
+| `--mount` for a named volume | `type=volume,src=<volume>,destination=/mnt/models/<file>,subpath=<path>,ro` |
+| `--network` | `container:<lemond's container>`, in place of the private network |
+| `-p` | Omitted |
+
+When the container tool is Docker, the command changes these parts:
+
+| Part | Value |
+| --- | --- |
+| Prefix | `docker`, through the mounted `/var/run/docker.sock` |
+| `--mount` for a bind path | `type=bind,src=<host path>,destination=/mnt/models/<file>,ro` |
+| `--mount` for a named volume | `type=volume,src=<volume>,destination=/mnt/models/<file>,volume-subpath=<path>,ro` |
+| `--network` | `container:<lemond's container>`, in place of the private network |
+
+#### `lemonade-server` Snap
+
+The `lemonade-server` snap is detected by `SNAP_NAME`. It runs `lemond` as its `daemon` app, a system service that runs as root. A strictly confined snap runs only binaries shipped inside it, so the snap bundles a client for each tool, and the `daemon` app declares the plug that client needs:
+
+| Bundles | Plug | Reaches |
+| --- | --- | --- |
+| The `podman` CLI | `podman` | The host's Podman service at `/run/podman/podman.sock`, where Podman runs as root |
+| The `docker` CLI | `docker` | The daemon of the `docker` snap |
+
+- In the snap, a tool counts as installed when its plug is connected.
+- snapd's base declaration sets `deny-connection` and `deny-auto-connection` for both interfaces, so each plug needs a store declaration, and the user connects it by hand.
+- The `podman` interface first shipped in snapd 2.76 ([canonical/snapd#17048](https://github.com/canonical/snapd/pull/17048), released 2026-06-19), so the `lemonade-server` snap declares `assumes: [snapd2.76]`.
+
+Model files mount from their host paths as they are, such as `/var/snap/lemonade-server/common/...`. The snap changes the command prefix:
+
+| Container tool | Prefix |
+| --- | --- |
+| Podman | `podman --remote`, with `CONTAINER_HOST=unix:///run/podman/podman.sock`, through the `podman` plug |
+| Docker | `docker`, with `DOCKER_HOST` from the `docker` plug |
+
+#### Toolbox
+
+A toolbox is detected by `/run/.toolboxenv`. Model files mount from their host paths, with the `/run/host` prefix removed. The toolbox changes the command prefix:
+
+| Container tool | Prefix |
+| --- | --- |
+| Podman | `flatpak-spawn --host podman` † |
+| Docker | `flatpak-spawn --host docker` † |
+
 ## Setup by Install Type
 
 A container backend loads only when `lemond` can reach Podman or Docker, and that tool can open the GPU's device nodes. This section specifies, for each install type, what starts the containers, what the installer sets up, and what the setup assistant checks. The install types are:
 
 - [`lemond` Started by the User](#lemond-started-by-the-user)
 - [`lemond` as a System Service](#lemond-as-a-system-service)
+- [Toolbox or Distrobox](#toolbox-or-distrobox)
+- [`lemonade-server` Snap](#lemonade-server-snap-1)
+- [Lemonade Docker Image](#lemonade-docker-image-1)
 
 Container backends are hidden on Windows and macOS.
 
@@ -377,6 +450,86 @@ When the container tool is Docker, the checks are:
 
 `lemond` starts, stops and sweeps the containers as children in its own cgroup, so stopping `lemond.service` tears down its containers with it.
 
+### Toolbox or Distrobox
+
+Running `lemond` inside a toolbox or distrobox, as the user's host account, is the same as [`lemond` Started by the User](#lemond-started-by-the-user), except for these differences:
+
+- Every step and check applies to the host: Podman or Docker installed on the host, and the host account's groups.
+- `lemond` runs the container tool through `flatpak-spawn --host` (see [Toolbox](#toolbox)).
+- The Podman install command comes from the `ID` in `/run/host/etc/os-release`.
+- The "Device nodes accessible" check reads the host account's groups from `flatpak-spawn --host id -nG`.
+
+### `lemonade-server` Snap
+
+The `lemonade-server` snap's `daemon` app runs `lemond` as root. The snap ships the `podman` and `docker` CLIs and their plugs (see [`lemonade-server` Snap](#lemonade-server-snap)).
+
+What the user does:
+
+- **With Podman:**
+  1. Installs Podman from the distro.
+  2. Runs `sudo systemctl enable --now podman.socket`.
+  3. Runs `sudo snap connect lemonade-server:podman :podman`.
+- **With Docker:**
+  1. Installs the `docker` snap.
+  2. Runs `sudo snap connect lemonade-server:docker docker:docker-daemon`.
+
+Containers are started by:
+
+| Container tool | Containers started by |
+| --- | --- |
+| Podman | The host's Podman, running as root, through the `podman` plug |
+| Docker | The daemon of the `docker` snap, through the `docker` plug |
+
+When the container tool is Podman, the checks are:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| Podman installed | Neither the `podman` plug nor the `docker` plug is connected | 1. The install command for the `ID` in `/var/lib/snapd/hostfs/etc/os-release`, the host's copy, which the snap reads through its `system-observe` plug<br>2. `sudo systemctl enable --now podman.socket`<br>3. `sudo snap connect lemonade-server:podman :podman` |
+| Podman reachable | `/run/podman/podman.sock` does not answer | `sudo systemctl enable --now podman.socket` |
+
+When the container tool is Docker, the checks are:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| Docker reachable | The `docker` snap's daemon does not answer | `sudo snap start docker` |
+
+### Lemonade Docker Image
+
+The Lemonade Docker image's entrypoint runs `lemond` inside that container. The image bundles the `podman` and `docker` CLIs (see [Lemonade Docker Image](#lemonade-docker-image)).
+
+What the user does:
+
+- **With Podman:**
+  1. Runs `systemctl --user enable --now podman.socket` on the host.
+  2. Adds the host account to `video` and `render`, if it is not in both.
+  3. Logs out and back in.
+  4. Adds `-v /run/user/<uid>/podman/podman.sock:/run/podman/podman.sock` to the command that starts the Lemonade image.
+- **With Docker:** adds `-v /var/run/docker.sock:/var/run/docker.sock` to the command that starts the Lemonade image.
+
+Containers are started by:
+
+| Container tool | Containers started by |
+| --- | --- |
+| Podman | The host account's rootless Podman, through its `podman.sock` mounted into the container |
+| Docker | The host's Docker daemon, through `/var/run/docker.sock` mounted into the container |
+
+Every fix here is a new section of `docs/guide/install/docker.md`, "Container Backends", at `https://lemonade-server.ai/docs/guide/install/docker/#container-backends`, and the table cells shorten its URL to `docker/#container-backends`. It gives the user's steps with the complete `docker run` command for each tool.
+
+When the container tool is Podman, the checks are:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| Podman installed | No socket is mounted at `/run/podman/podman.sock` or `/var/run/docker.sock` | `docker/#container-backends` |
+| Podman reachable | `/run/podman/podman.sock` does not answer | `docker/#container-backends` |
+| Own container visible | `lemond` cannot inspect its own container through the socket | `docker/#container-backends` |
+
+When the container tool is Docker, the checks are:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| Docker reachable | `/var/run/docker.sock` does not answer | `docker/#container-backends` |
+| Own container visible | `lemond` cannot inspect its own container through the socket | `docker/#container-backends` |
+
 ### SELinux Check
 
 A container backend whose `devices` include `/dev/kfd` runs one more check before the checks for its install type. The SELinux policy on some Fedora releases lets a container read and write `/dev/kfd` but not map it, so ROCm fails at its first GPU operation. Hosts without SELinux, such as Ubuntu, have no `/sys/fs/selinux` and pass the check:
@@ -422,6 +575,7 @@ The workflow changes only the digest in each pin. A maintainer sets the tag by h
 | Dry run | `--dryrun` / `--dry-run`: "show container runtime command without executing it" | Not a flag but the only path: every launch prints the exact command and waits for confirmation, with `--api-key` and `HF_TOKEN` redacted | **Same as both:** every load logs the full command, which shows the same information. Confirming a launch before it runs is left to clients, because `lemond` is a server. |
 | Docker vs Podman | One `run` builder with per-tool branches (`keep-groups`, `--add-host host.docker.internal=host-gateway`, `ps` format instead of `--noheading`) | Per-tool helpers around one builder: `upgrade_groups_for_podman`, `adapt_nvidia_runtime_args` turning `--runtime` into `--gpus all`, per-node `--device` for Docker's RDMA | **Same as both** §: one function builds the run command and holds every Podman and Docker difference. |
 | Network | No `--network` unless asked; Docker gets `--add-host host.docker.internal=host-gateway`; `--network=none` is used only for builds | `--network=none` for Halogen and for R9V's extraction step, nothing for the rest. The Halogen API is reached by a host listener that pipes each accepted socket through `podman/docker exec -i` to container loopback | **Stricter than Ramalama**, which gives each container full network access: each Lemonade container gets its own `--internal` network with no route out. **Same as AI Cockpit** in effect: in both, only the local machine reaches the API and the engine cannot reach the internet. Lemonade connects over HTTP, as it does to every backend, where AI Cockpit relays each connection through `exec`. |
+| Sandboxed self | In a Toolbox, podman/docker and GPU tools run on the host via `flatpak-spawn --host`; `TMPDIR` moves to a host-visible path | Not handled. AI Cockpit is what creates Toolbx and Distrobox containers, and expects to be run on the host | **Same as Ramalama** † in a toolbox: `flatpak-spawn --host`, extended to the Lemonade Docker image and the `lemonade-server` snap in `ContainerManager::invocation()`. **More robust than AI Cockpit**, which runs only on the host. |
 | Not adopted | README claims `--network=none`, `run` with `--rm`, `selinux=true` and `pull=missing`; the code does none of these by default | The README matches the code on every flag checked here | **Stricter than Ramalama:** `test/cpp/test_container_manager.cpp` asserts the Run Options in CI, so the documented defaults and the code stay in step. **Same as AI Cockpit**, whose README matches its code. |
 
 **What AI Cockpit gives an operator that Lemonade, with this spec implemented, still would not:**
