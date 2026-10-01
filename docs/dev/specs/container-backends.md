@@ -259,7 +259,7 @@ podman run \
 A container backend loads only when `lemond` can reach Podman or Docker, and that tool can open the GPU's device nodes. This section specifies, for each install type, what starts the containers, what the installer sets up, and what the setup assistant checks. The install types are:
 
 - [`lemond` Started by the User](#lemond-started-by-the-user)
-- [PPA and .deb](#ppa-and-deb)
+- [Debian packages](#debian-packages)
 
 Container backends are hidden on Windows and macOS.
 
@@ -323,13 +323,13 @@ When the container tool is Docker, the checks are:
 | --- | --- | --- |
 | Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
 
-### PPA and .deb
+### Debian packages
 
-The PPA (`ppa:lemonade-team/stable`), the GitHub release .debs for Ubuntu 24.04 and Debian 13, and the Debian archive all build from `contrib/debian`. They run `lemond` as `lemond.service`, a system service under the `lemonade` account.
+The Debian packages all build from `contrib/debian` and run `lemond` as `lemond.service`, a system service under the `lemonade` account.
 
 What the user does:
 
-- **With Podman:** installs Podman. The package does everything else.
+- **With Podman:** nothing; `podman` installs with the package.
 - **With Docker:**
   1. Runs `sudo usermod -aG docker lemonade`.
   2. Runs `sudo systemctl restart lemond`.
@@ -337,7 +337,7 @@ What the user does:
 What the package does:
 
 1. `lemonade-server.postinst` adds `lemonade` to `video` and `render` with `usermod`.
-2. `debian/control` declares `Suggests: podman`.
+2. `debian/control` declares `Recommends: podman`, so it installs with the package by default.
 
 Containers are started by:
 
