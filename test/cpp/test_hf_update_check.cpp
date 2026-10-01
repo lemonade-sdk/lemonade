@@ -1,5 +1,7 @@
 #include "lemon/registry_files.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -43,7 +45,46 @@ static rf::HfFileMetadata metadata(std::size_t size, const std::string& content_
     return m;
 }
 
+static void test_builtin_checkpoint_selects_main_model() {
+    std::ifstream input(SERVER_MODELS_JSON_PATH);
+    if (!input.good()) {
+        check("server_models.json is readable", false);
+        return;
+    }
+
+    const auto models = nlohmann::json::parse(input, nullptr, false);
+    if (!models.is_object()) {
+        check("server_models.json is an object", false);
+        return;
+    }
+
+    const auto model_it = models.find("gpt-oss-20b-mxfp4-GGUF");
+    if (model_it == models.end() || !model_it->is_object()) {
+        check("gpt-oss 20B registry entry is available", false);
+        return;
+    }
+
+    const std::string checkpoint = model_it->value("checkpoint", std::string{});
+    const std::size_t separator = checkpoint.find(':');
+    const std::string repo_id = checkpoint.substr(0, separator);
+    const std::string variant = separator == std::string::npos
+                                    ? std::string{}
+                                    : checkpoint.substr(separator + 1);
+    const std::vector<std::string> repo_files = {
+        "eagle3-gpt-oss-20b-BF16.gguf",
+        "gpt-oss-20b-MXFP4.gguf",
+    };
+
+    const auto selected = rf::select_main_repo_files(
+        repo_id, model_it->value("recipe", std::string{}), variant, repo_files);
+    check("gpt-oss 20B selects its main GGUF instead of the EAGLE3 draft",
+          has(selected, "gpt-oss-20b-MXFP4.gguf") &&
+              !has(selected, "eagle3-gpt-oss-20b-BF16.gguf"));
+}
+
 int main() {
+    test_builtin_checkpoint_selects_main_model();
+
     const fs::path base_dir = make_temp_test_dir();
     std::error_code ec;
     fs::remove_all(base_dir, ec);
