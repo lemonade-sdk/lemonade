@@ -33,11 +33,9 @@ struct ContainerRunSpec {
     std::string network;
     std::vector<std::string> devices;
     std::vector<std::string> cap_add;
-    bool ipc_host = false;
-    bool memlock_unlimited = false;
     std::vector<ContainerMount> mounts;
     std::vector<std::pair<std::string, std::string>> env;
-    std::string image;                 // <repository>@<digest>
+    std::string image;                 // <image>@<digest>
     std::vector<std::string> command;  // program and its arguments
 };
 
@@ -65,8 +63,8 @@ struct ContainerHost {
     std::function<std::string(const std::string& group)> group_id;
     // True when /var/run/docker.sock accepts a connection from this process.
     std::function<bool()> docker_socket_accepts;
-    // The contents of /etc/os-release.
-    std::function<std::string()> os_release;
+    // The contents of a file, or "" when it cannot be read.
+    std::function<std::string(const std::string& path)> read_file;
     // Runs a command line and waits for it.
     std::function<CommandResult(const std::vector<std::string>& argv, int timeout_seconds)> run;
 
@@ -88,6 +86,9 @@ public:
     // when every check passes. Rerun on each call, so a fix takes effect
     // without a restart.
     std::optional<SetupFailure> check_setup() const;
+    // The SELinux check for a backend whose devices include /dev/kfd, or
+    // nullopt when it passes.
+    std::optional<SetupFailure> check_selinux() const;
 
     // The complete `run` command line for `spec`, starting with the tool.
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
@@ -116,8 +117,8 @@ public:
     // The command that installs Podman on the distribution `os_release`
     // describes, matched on ID, then each word of ID_LIKE.
     static std::string podman_install_command(const std::string& os_release);
-    // True for the repositories container backends may pull from.
-    static bool allowed_repository(const std::string& repository);
+    // True for the images container backends may pull.
+    static bool allowed_image(const std::string& image);
     // "gfx1151" for KFD's gfx_target_version 110501.
     static std::string gfx_name(int gfx_target_version);
     // HIP_VISIBLE_DEVICES for the first GPU whose name is `arch`, counting the

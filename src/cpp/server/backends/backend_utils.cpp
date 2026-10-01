@@ -462,7 +462,7 @@ namespace lemon::backends {
             throw std::runtime_error("backend_versions.json pins " + recipe + ":" + backend +
                                      " to '" + pin + "', which is not <tag>@sha256:<digest>");
         }
-        return policy->repository + "@" + parsed->digest;
+        return policy->image + "@" + parsed->digest;
     }
 
     std::string BackendUtils::get_installed_backend_image(const std::string& recipe,
@@ -476,7 +476,7 @@ namespace lemon::backends {
         std::string pin;
         std::getline(file, pin);
         const auto parsed = parse_container_pin(pin.substr(0, pin.find_last_not_of(" \t\r\n") + 1));
-        return parsed ? policy->repository + "@" + parsed->digest : "";
+        return parsed ? policy->image + "@" + parsed->digest : "";
     }
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
