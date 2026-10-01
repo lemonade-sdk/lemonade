@@ -7,6 +7,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include "lemon/image_params.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/json_utils.h"
@@ -26,9 +27,6 @@ namespace lemon {
 namespace backends {
 
 namespace {
-int generate_random_seed() {
-    return static_cast<int>(std::random_device{}() & 0x7fffffffU);
-}
 
 // Split a comma-separated LoRA spec string ("style:0.8,sub/detail:0.5") into an
 // array of trimmed entries. Empty input yields an empty array.
@@ -219,60 +217,21 @@ json TheNoiseServer::responses(const json& /* request */) {
 }
 
 std::string TheNoiseServer::resolve_size(const json& request) const {
-    if (request.contains("size") && request["size"].is_string()) {
-        return request["size"].get<std::string>();
-    }
-    if (request.contains("width") && request.contains("height") &&
-        request["width"].is_number_integer() && request["height"].is_number_integer()) {
-        return std::to_string(request["width"].get<int>()) + "x"
-             + std::to_string(request["height"].get<int>());
-    }
-    // Fall back to the effective recipe options (ladder in build_request()).
-    // Return "" when unset so thenoise picks its own native defaults.
-    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
-    int w = static_cast<int>(recipe_options_.get_option("width"));
-    int h = static_cast<int>(recipe_options_.get_option("height"));
-    if (w <= 0 || h <= 0) return "";
-    return std::to_string(w) + "x" + std::to_string(h);
+    return image_params::resolve_size(request, recipe_options_);
 }
+
 json TheNoiseServer::build_request(const json& request) const {
     // thenoise /text2image accepts the shared model-agnostic params directly.
-    // Per-value precedence, highest → lowest: per-request body fields, then the
-    // effective recipe options, which already fold user-saved > model
-    // recipe_options > image_defaults > architecture > global config (via
-    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
-    // every layer is omitted, letting thenoise apply its own defaults.
+    // Per-value precedence, highest → lowest: per-request body fields, then
+    // the effective recipe options (user-saved > model recipe_options >
+    // image_defaults > architecture > global config, via
+    // RecipeOptions::merge_precedence_layers / inherit), then the backend
+    // descriptor's declared defaults (RecipeOptions::get_option fallback).
+    // Only a key with no usable value in any of those is omitted, letting
+    // thenoise apply its own default.
     json body;
 
     body["prompt"] = request.value("prompt", "");
-
-    auto resolve_int = [&](const std::string& key, int fallback) -> int {
-        if (request.contains(key) && request[key].is_number_integer()) {
-            return request[key].get<int>();
-        }
-        return fallback;
-    };
-    auto resolve_string = [&](const std::string& key, const std::string& fallback) -> std::string {
-        if (request.contains(key) && request[key].is_string()) {
-            return request[key].get<std::string>();
-        }
-        return fallback;
-    };
-    auto resolve_bool = [&](const std::string& key, bool fallback) -> bool {
-        if (request.contains(key) && request[key].is_boolean()) {
-            return request[key].get<bool>();
-        }
-        return fallback;
-    };
-    auto option_int = [&](const std::string& key) -> int {
-        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
-    };
-    auto option_float = [&](const std::string& key) -> float {
-        return recipe_options_.has_option(key) ? static_cast<float>(recipe_options_.get_option(key)) : 0.0f;
-    };
-    auto option_string = [&](const std::string& key) -> std::string {
-        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
-    };
 
     // size -> width / height
     std::string size = resolve_size(request);
@@ -285,62 +244,59 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // negative_prompt
-    std::string negative_prompt = resolve_string("negative_prompt", option_string("negative_prompt"));
+    std::string negative_prompt = image_params::request_string(
+        request, "negative_prompt", recipe_options_.get_string_or("negative_prompt"));
     if (!negative_prompt.empty()) {
         body["negative_prompt"] = negative_prompt;
     }
 
     // steps
-    int steps = resolve_int("steps", option_int("steps"));
+    int steps = image_params::request_int(request, "steps", recipe_options_.get_int_or("steps"));
     if (steps > 0) {
         body["steps"] = steps;
     }
 
     // cfg_scale -> guidance_scale
-    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
-    // when it is absent from every layer so thenoise applies its own default.
-    if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
-        body["guidance_scale"] = request["cfg_scale"].get<float>();
-    } else if (recipe_options_.has_option("cfg_scale")) {
-        body["guidance_scale"] = option_float("cfg_scale");
+    if (auto v = image_params::request_number(request, "cfg_scale")) {
+        body["guidance_scale"] = *v;
+    } else if (recipe_options_.has_numeric("cfg_scale")) {
+        body["guidance_scale"] = recipe_options_.get_float_or("cfg_scale");
     }
 
     // seed stays as-is; negative means "random" for thenoise. We still emit a
     // concrete seed so a user-supplied negative never accidentally collides.
-    if (request.contains("seed") && request["seed"].is_number_integer()) {
-        int seed = request["seed"].get<int>();
-        body["seed"] = seed >= 0 ? seed : generate_random_seed();
+    if (auto seed = image_params::resolve_seed(request)) {
+        body["seed"] = *seed;
     }
 
     // sampler
-    std::string sampler = resolve_string("sampler", option_string("sampler"));
+    std::string sampler = image_params::request_string(
+        request, "sampler", recipe_options_.get_string_or("sampler"));
     if (!sampler.empty()) {
         body["sampler"] = sampler;
     }
 
     // qwen_vae_enhance
-    bool qwen_vae_enhance = resolve_bool("qwen_vae_enhance",
-        recipe_options_.get_option("qwen_vae_enhance"));
-    if (qwen_vae_enhance) {
+    if (image_params::request_bool(request, "qwen_vae_enhance",
+                                   recipe_options_.get_bool_or("qwen_vae_enhance"))) {
         body["qwen_vae_enhance"] = true;
     }
 
     // film_grain
-    float film_grain = option_float("film_grain");
-    film_grain = request.contains("film_grain") && request["film_grain"].is_number()
-                     ? request["film_grain"].get<float>()
-                     : film_grain;
-    if (film_grain > 0.0f) {
-        body["film_grain"] = film_grain;
+    // An explicit 0.0 in the request disables grain even when a recipe option
+    // sets a nonzero strength; recipe options alone only emit when nonzero.
+    if (auto v = image_params::request_number(request, "film_grain")) {
+        body["film_grain"] = *v;
+    } else if (float grain = recipe_options_.get_float_or("film_grain"); grain > 0.0f) {
+        body["film_grain"] = grain;
     }
 
     // sharpening
-    float sharpening = option_float("sharpening");
-    sharpening = request.contains("sharpening") && request["sharpening"].is_number()
-                     ? request["sharpening"].get<float>()
-                     : sharpening;
-    if (sharpening > 0.0f) {
-        body["sharpening"] = sharpening;
+    // Same explicit-zero semantics as film_grain.
+    if (auto v = image_params::request_number(request, "sharpening")) {
+        body["sharpening"] = *v;
+    } else if (float sharp = recipe_options_.get_float_or("sharpening"); sharp > 0.0f) {
+        body["sharpening"] = sharp;
     }
 
     // lora_specs: config/recipe stores a comma-separated string; forward as an
@@ -351,8 +307,7 @@ json TheNoiseServer::build_request(const json& request) const {
         json specs = split_lora_specs(request["lora_specs"].get<std::string>());
         if (!specs.empty()) body["lora_specs"] = specs;
     } else {
-        const json opt = recipe_options_.get_option("lora_specs");
-        std::string specs = opt.is_string() ? opt.get<std::string>() : "";
+        std::string specs = recipe_options_.get_string_or("lora_specs");
         if (!specs.empty()) body["lora_specs"] = split_lora_specs(specs);
     }
 

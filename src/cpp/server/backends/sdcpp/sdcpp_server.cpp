@@ -10,6 +10,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
+#include "lemon/image_params.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
 #include <iostream>
@@ -79,10 +80,6 @@ std::string get_therock_version() {
     // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
-}
-
-int generate_random_seed() {
-    return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
 }
 
@@ -420,58 +417,43 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     // master nests steps/method/scheduler/flow_shift under "sample_params" and
     // cfg scale under "sample_params.guidance"; the old flat keys (`steps`,
     // `cfg_scale`) are silently ignored.
-    // Per-value precedence, highest → lowest: per-request body fields, then the
-    // effective recipe options, which already fold user-saved > model
-    // recipe_options > image_defaults > architecture > global config (via
-    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
-    // every layer is omitted, letting sd-server apply its own defaults.
+    // Per-value precedence, highest → lowest: per-request body fields, then
+    // the effective recipe options (user-saved > model recipe_options >
+    // image_defaults > architecture > global config, via
+    // RecipeOptions::merge_precedence_layers / inherit), then the backend
+    // descriptor's declared defaults (RecipeOptions::get_option fallback).
+    // Only a key with no usable value in any of those is omitted, letting
+    // sd-server apply its own defaults.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
 
-    auto resolve_int = [&](const std::string& key, int fallback) -> int {
-        if (request.contains(key) && request[key].is_number_integer()) {
-            return request[key].get<int>();
-        }
-        return fallback;
-    };
-    auto resolve_string = [&](const std::string& key, const std::string& fallback) -> std::string {
-        if (request.contains(key) && request[key].is_string()) {
-            return request[key].get<std::string>();
-        }
-        return fallback;
-    };
-    auto option_int = [&](const std::string& key) -> int {
-        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
-    };
-    auto option_string = [&](const std::string& key) -> std::string {
-        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
-    };
-
     // steps -> sample_params.sample_steps
-    int steps = resolve_int("steps", option_int("steps"));
+    int steps = image_params::request_int(request, "steps", recipe_options_.get_int_or("steps"));
     if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
-    // when it is absent from every layer so sd-server applies its own default.
-    if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
-        guidance["txt_cfg"] = request["cfg_scale"].get<float>();
-    } else if (recipe_options_.has_option("cfg_scale")) {
-        guidance["txt_cfg"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    if (auto v = image_params::request_number(request, "cfg_scale")) {
+        guidance["txt_cfg"] = *v;
+    } else if (recipe_options_.has_numeric("cfg_scale")) {
+        guidance["txt_cfg"] = recipe_options_.get_float_or("cfg_scale");
     }
 
     // sample_method -> sample_params.sample_method
-    std::string sample_method = resolve_string("sample_method", option_string("sampling_method"));
+    std::string sample_method = image_params::request_string(
+        request, "sample_method", recipe_options_.get_string_or("sampling_method"));
     if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
-    // Like cfg_scale, 0.0 is a real value here; only omit when unset everywhere.
+    // Like cfg_scale, an explicit 0.0 is a real value here. Unset stays unset
+    // (sd-cpp derives a per-model shift), so this reads only explicitly-set
+    // layers, not the descriptor's 0.0 default.
     if (include_flow_shift) {
-        if (request.contains("flow_shift") && request["flow_shift"].is_number()) {
-            sample_params["flow_shift"] = request["flow_shift"].get<float>();
-        } else if (recipe_options_.has_option("flow_shift")) {
-            sample_params["flow_shift"] = static_cast<float>(recipe_options_.get_option("flow_shift"));
+        if (auto v = image_params::request_number(request, "flow_shift")) {
+            sample_params["flow_shift"] = *v;
+        } else if (recipe_options_.has_option("flow_shift") &&
+                   recipe_options_.has_numeric("flow_shift")) {
+            sample_params["flow_shift"] = recipe_options_.get_float_or("flow_shift");
         }
     }
 
@@ -485,30 +467,15 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     // seed stays top-level in from_json_str. Negative seeds mean "random" for
     // Lemonade, so generate a concrete seed instead of letting sd-server fall
     // back to its deterministic default.
-    if (request.contains("seed") && request["seed"].is_number_integer()) {
-        int seed = request["seed"].get<int>();
-        extra_args["seed"] = seed >= 0 ? seed : generate_random_seed();
+    if (auto seed = image_params::resolve_seed(request)) {
+        extra_args["seed"] = *seed;
     }
 
     return extra_args;
 }
 
 std::string SDServer::resolve_size(const json& request) const {
-    if (request.contains("size") && request["size"].is_string()) {
-        return request["size"].get<std::string>();
-    }
-    if (request.contains("width") && request.contains("height") &&
-        request["width"].is_number_integer() && request["height"].is_number_integer()) {
-        return std::to_string(request["width"].get<int>()) + "x"
-             + std::to_string(request["height"].get<int>());
-    }
-    // Fall back to the effective recipe options (ladder in build_extra_args()).
-    // Return "" when unset so sd-server picks its own native defaults.
-    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
-    int w = static_cast<int>(recipe_options_.get_option("width"));
-    int h = static_cast<int>(recipe_options_.get_option("height"));
-    if (w <= 0 || h <= 0) return "";
-    return std::to_string(w) + "x" + std::to_string(h);
+    return image_params::resolve_size(request, recipe_options_);
 }
 
 // ICompletionServer implementation - not supported for image generation
