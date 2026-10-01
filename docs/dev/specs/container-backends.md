@@ -322,6 +322,14 @@ When the container tool is Docker, the checks are:
 | --- | --- | --- |
 | Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
 
+### SELinux Check
+
+A container backend whose `devices` include `/dev/kfd` runs one more check before the checks for its install type. The SELinux policy on some Fedora releases lets a container read and write `/dev/kfd` but not map it, so ROCm fails at its first GPU operation. Hosts without SELinux, such as Ubuntu, have no `/sys/fs/selinux` and pass the check:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| SELinux allows GPU mapping | SELinux is enforcing (`/sys/fs/selinux/enforce` is `1`) and the `container_use_devices` boolean is off (the first value in `/sys/fs/selinux/booleans/container_use_devices` is `0`) | `sudo setsebool -P container_use_devices 1` |
+
 ### Halogen Kernel Check
 
 `halogen:rocm` runs one more check before the checks for its install type. Halogen registers its checkpoint with the GPU as a read-only file mapping, which needs kernel support that is not backported, and upstream reports every working install on Linux 7.0 or later. When `lemond` cannot read the kernel version, the check passes:
