@@ -63,11 +63,9 @@ inline const BackendDescriptor descriptor = {
     /*streams_model_from_storage*/ false,
     /*containers*/ {
         {"nathanw", {
-            /*repository*/        "docker.io/kyuz0/amd-strix-halo-toolboxes",
-            /*devices*/           {"/dev/dri"},
-            /*cap_add*/           {},
-            /*ipc_host*/          false,
-            /*memlock_unlimited*/ false,
+            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/ {"/dev/dri"},
+            /*cap_add*/ {},
         }},
     },
 };
