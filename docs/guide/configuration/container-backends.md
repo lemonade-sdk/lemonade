@@ -9,7 +9,7 @@ Container backends run on Linux with Podman or Docker. Lemonade uses Podman when
 | `ds4:rocm` | DS4 | `docker.io/kyuz0/strix-halo-ds4-toolbox` |
 | `llamacpp:nathanw` | llama.cpp Vulkan performance fork | `docker.io/kyuz0/amd-strix-halo-toolboxes` |
 | `rocmfpx:rocm` | llama.cpp ROCm FPX fork | `docker.io/kyuz0/amd-strix-halo-toolboxes` |
-| `halogen:rocm` | Halogen Flash; needs Linux 7.0 or newer | `ghcr.io/peonist-ai/halogen-flash-server` |
+| `halogen:rocm` | Halogen Flash; needs Linux 6.18.4 or newer, built with `CONFIG_HSA_AMD_SVM` | `ghcr.io/peonist-ai/halogen-flash-server` |
 
 ## Setup
 
