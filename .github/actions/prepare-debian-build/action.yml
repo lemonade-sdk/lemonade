@@ -1,5 +1,5 @@
 name: Prepare Debian Build
-description: Extract version from git and create Debian packaging metadata from template
+description: Calculate the version and create Debian packaging metadata from template
 
 inputs:
   release:
@@ -17,14 +17,14 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Get version from git describe
+    - name: Calculate version
       id: get_version
       shell: bash
       run: |
-        VERSION=$(git describe --tags --always)
-        # Strip leading 'v' for Debian version compatibility
-        DEB_VERSION=$(echo "${VERSION}" | sed 's/^v//')
-        echo "version=${DEB_VERSION}" >> $GITHUB_OUTPUT
+        set -e
+        VERSION=$(python3 tools/version.py)
+        printf '%s\n' "$VERSION" > .version
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
     - name: Create Debian packaging metadata
       shell: bash

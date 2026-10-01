@@ -77,11 +77,10 @@ InstallParams OpenMossServer::get_install_params(const std::string& backend, con
     (void)version;
     InstallParams params;
     params.repo = "pwilkin/openmoss";
-    const std::string variant = (backend.rfind("rocm", 0) == 0) ? "rocm" : backend;
 #ifdef _WIN32
-    params.filename = "moss-tts-" + variant + "-windows-x64.zip";
+    params.filename = "moss-tts-" + backend + "-windows-x64.zip";
 #else
-    params.filename = "moss-tts-" + variant + "-linux-x64.tar.gz";
+    params.filename = "moss-tts-" + backend + "-linux-x64.tar.gz";
 #endif
     return params;
 }
@@ -145,7 +144,7 @@ void OpenMossServer::load(const std::string& model_name,
         auto supported = SystemInfo::get_supported_backends("openmoss");
         if (supported.backends.empty()) {
             throw UnsupportedOperationException(
-                "OpenMOSS TTS", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
+                "OpenMOSS TTS", "this system: no supported GPU backend (Vulkan or CUDA) detected");
         }
         backend = supported.backends[0];
     }
@@ -165,15 +164,7 @@ void OpenMossServer::load(const std::string& model_name,
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
     };
-    if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
-        std::string dirs;
-        if (!arch.empty()) {
-            dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(arch));
-        }
-        prepend_loader_path(dirs);
-    } else if (backend == "cuda") {
+    if (backend == "cuda") {
         prepend_loader_path("");
         BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
     }

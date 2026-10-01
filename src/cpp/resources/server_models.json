@@ -1680,7 +1680,7 @@
         "size": 11.6
     },
     "gpt-oss-120b-mxfp-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
+        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
@@ -1760,6 +1760,34 @@
             "chat"
         ],
         "size": 14.4
+    },
+    "Ornith-1.5-9B-GGUF": {
+        "checkpoint": "ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Ornith-1.5-9B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 6.7
+    },
+    "Ornith-1.5-35B-A3B-GGUF": {
+        "checkpoint": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Ornith-1.5-35B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 22.6
     },
     "Whisper-Tiny": {
         "checkpoints": {
@@ -2287,7 +2315,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 16.1,
         "image_defaults": {
@@ -2306,7 +2335,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 32.5,
         "image_defaults": {

@@ -5,12 +5,12 @@
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
-#include "lemon/utils/github_api.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/utils/archive_platform.h"
+#include "lemon/utils/github_api.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -140,6 +140,10 @@ namespace lemon::backends {
 
     static bool is_seven_zip(const std::string& filename) {
         return ends_with(filename, ".7z");
+    }
+
+    static bool is_zip(const std::string& filename) {
+        return ends_with(filename, ".zip");
     }
 
     // Greedy glob match where '*' matches any (possibly empty) run of
@@ -582,13 +586,18 @@ namespace lemon::backends {
             // falls through to the single-file path. Non-split backends skip
             // this entirely so their install logs stay quiet.
             std::string base;
+            std::string ext;
             if (is_tarball(filename)) {
                 base = filename.substr(0, filename.size() - 7);  // strip ".tar.gz"
+                ext = ".tar.gz";
+            } else if (is_zip(filename)) {
+                base = filename.substr(0, filename.size() - 4);  // strip ".zip"
+                ext = ".zip";
             }
 
             bool is_split = false;
             std::vector<std::string> part_assets;
-            if (spec.supports_split_archive && is_tarball(filename)) {
+            if (spec.supports_split_archive) {
                 const std::string partcount_url = base_download_url + base + ".partcount";
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
@@ -616,7 +625,7 @@ namespace lemon::backends {
                     const std::string total_padded = two_digit(total_parts);
                     for (int i = 1; i <= total_parts; ++i) {
                         part_assets.push_back(base + ".part" + two_digit(i)
-                                              + "-of-" + total_padded + ".tar.gz");
+                                              + "-of-" + total_padded + ext);
                     }
                     is_split = true;
                 } else if (resp.status_code != 404) {
@@ -1495,7 +1504,7 @@ namespace lemon::backends {
             utils::path_to_utf8(venv_dir / "bin" / "python");
 #endif
 
-        const std::string index_url = "https://repo.amd.com/rocm/whl-multi-arch/";
+        const std::string index_url = "https://stable.repo.amd.com/rocm/whl-next/";
         const std::string spec =
             "rocm[libraries,device-" + arch + "]==" + version;
 
@@ -1640,7 +1649,7 @@ namespace lemon::backends {
         std::string platform = "linux";
 #endif
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
-        std::string url = "https://repo.amd.com/rocm/tarball-multi-arch/" + filename;
+        std::string url = "https://stable.repo.amd.com/rocm/core/tarball/" + filename;
 
         fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();

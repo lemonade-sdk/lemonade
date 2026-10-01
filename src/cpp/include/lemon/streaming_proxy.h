@@ -66,7 +66,11 @@ public:
         std::function<void()> on_chunk = nullptr
     );
 
-    static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);
+    // Splits on all three SSE line terminators (LF, CRLF, CR). A trailing CR is
+    // held back until the next chunk disambiguates it from a split CRLF, so the
+    // final line of a CR-terminated stream needs end_of_stream to be dispatched.
+    static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback,
+                                  bool end_of_stream = false);
 
     static TelemetryData parse_telemetry(const std::string& buffer);
 

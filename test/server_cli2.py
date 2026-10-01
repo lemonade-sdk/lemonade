@@ -352,6 +352,9 @@ sys.exit(0)
         """Build isolated env so PATH resolves fake agents and avoids first-run side effects."""
         env = os.environ.copy()
         env.pop("OPENAI_BASE_URL", None)
+        # Outranks HOME, so a machine that sets it would have its real junie
+        # config rewritten instead of the stub directory.
+        env.pop("JUNIE_HOME", None)
         env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
         env["HOME"] = stub_dir
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
@@ -1949,6 +1952,211 @@ sys.exit(0)
                 cfg = json.load(f)
 
             self.assertEqual(cfg.get("$schema"), "https://opencode.ai/config.json")
+
+    def test_122_launch_junie_with_fake_binary(self):
+        """Launch should execute fake junie binary with --model custom:lemonade."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake junie binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("--model", argv)
+            model_idx = argv.index("--model") + 1
+            self.assertEqual(argv[model_idx], "custom:lemonade")
+
+    def test_123_launch_junie_creates_model_profile(self):
+        """Launch junie should create ~/.junie/models/lemonade.json for the local server."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_cfg.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(temp_dir, ".junie", "models", "lemonade.json")
+            self.assertTrue(
+                os.path.exists(profile_path),
+                f"lemonade.json not created at {profile_path}",
+            )
+
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile["id"], ENDPOINT_TEST_MODEL)
+            self.assertEqual(profile["apiType"], "OpenAICompletion")
+            self.assertEqual(profile["providerName"], "Lemonade")
+            # Junie appends nothing to baseUrl, so it must be the full endpoint.
+            self.assertTrue(profile["baseUrl"].endswith("/v1/chat/completions"))
+            self.assertGreater(profile["maxContextLength"], 0)
+            self.assertEqual(
+                profile.get("apiKey"),
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
+
+    def test_124_launch_junie_with_api_key_sets_profile(self):
+        """When --api-key is provided, lemonade.json should contain the same apiKey."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_key.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "junie",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "real-secret-key",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(temp_dir, ".junie", "models", "lemonade.json")
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile.get("apiKey"), "real-secret-key")
+
+    def test_125_launch_junie_honors_junie_home(self):
+        """JUNIE_HOME should redirect the profile away from ~/.junie."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_home.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            junie_home = os.path.join(temp_dir, "custom-junie-home")
+            env["JUNIE_HOME"] = junie_home
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(junie_home, "models", "lemonade.json")
+            self.assertTrue(
+                os.path.exists(profile_path),
+                f"lemonade.json not created at {profile_path}",
+            )
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_dir, ".junie")),
+                "JUNIE_HOME was set, so ~/.junie must not be created",
+            )
+
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile["id"], ENDPOINT_TEST_MODEL)
+
+    def test_126_launch_junie_leaves_other_profiles_alone(self):
+        """Launch should replace lemonade.json only, keeping user-authored profiles."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_keep.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            models_dir = os.path.join(temp_dir, ".junie", "models")
+            os.makedirs(models_dir)
+            own_profile = {"id": "my-model", "baseUrl": "http://example.invalid"}
+            own_profile_path = os.path.join(models_dir, "my-model.json")
+            with open(own_profile_path, "w", encoding="utf-8") as f:
+                json.dump(own_profile, f)
+            with open(
+                os.path.join(models_dir, "lemonade.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump({"id": "stale-model"}, f)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            with open(own_profile_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f), own_profile)
+
+            with open(
+                os.path.join(models_dir, "lemonade.json"), "r", encoding="utf-8"
+            ) as f:
+                self.assertEqual(json.load(f)["id"], ENDPOINT_TEST_MODEL)
+
+            self.assertEqual(
+                sorted(os.listdir(models_dir)),
+                ["lemonade.json", "my-model.json"],
+            )
+
+    def test_127_launch_junie_windows_uses_bat_shim(self):
+        """On Windows, launch must run the junie.bat shim the installer writes."""
+        if not IS_WINDOWS:
+            self.skipTest("Windows-only: the .bat shim does not apply on Unix")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_bat_capture.txt")
+
+            with open(os.path.join(temp_dir, "junie.bat"), "w", encoding="utf-8") as f:
+                f.write(f'@echo off\necho fake-agent-ok> "{capture_path}"\nexit /b 0\n')
+
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                "launch failed; junie.bat was likely not considered during "
+                "binary lookup",
+            )
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "junie.bat was not executed",
+            )
 
     # =============================================================================
     # Unload Tests
