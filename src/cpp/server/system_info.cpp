@@ -1622,7 +1622,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // using BackendManager as the single source of truth for repo/version mappings.
 
         if (supported && container_backend) {
-            if (auto failure = utils::ContainerManager::global().check_setup()) {
+            if (auto failure = backends::container_setup_failure(def.recipe, def.backend)) {
                 backend["state"] = "action_required";
                 backend["message"] = failure->message;
                 backend["action"] = failure->action;
@@ -1803,7 +1803,7 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
             if (!desc->container_for(backend) || state == "unsupported") {
                 continue;
             }
-            if (auto failure = utils::ContainerManager::global().check_setup()) {
+            if (auto failure = backends::container_setup_failure(recipe, backend)) {
                 status["state"] = "action_required";
                 status["message"] = failure->message;
                 status["action"] = failure->action;

@@ -147,7 +147,7 @@ ContainerHost ContainerHost::real() {
     host.group_id = host_group_id;
     host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
-    host.os_release = []() { return read_file("/etc/os-release"); };
+    host.read_file = [](const std::string& path) { return utils::read_file(path); };
     host.run = run_on_host;
     return host;
 }
@@ -168,7 +168,8 @@ std::optional<ContainerTool> ContainerManager::tool() const {
 std::optional<SetupFailure> ContainerManager::check_setup() const {
     const std::optional<ContainerTool> chosen = tool();
     if (!chosen) {
-        return SetupFailure{"podman is not on PATH", podman_install_command(host_.os_release())};
+        return SetupFailure{"podman is not on PATH",
+                            podman_install_command(host_.read_file("/etc/os-release"))};
     }
     if (*chosen == ContainerTool::Podman) {
         if (!host_.in_group("video") || !host_.in_group("render")) {
@@ -182,6 +183,18 @@ std::optional<SetupFailure> ContainerManager::check_setup() const {
         return SetupFailure{"The Docker daemon refuses the user's account",
                             "1. sudo usermod -aG docker $USER\n"
                             "2. Log out and back in"};
+    }
+    return std::nullopt;
+}
+
+std::optional<SetupFailure> ContainerManager::check_selinux() const {
+    // Hosts without SELinux have no /sys/fs/selinux, so both reads come back empty.
+    const bool enforcing = host_.read_file("/sys/fs/selinux/enforce").compare(0, 1, "1") == 0;
+    const bool devices_allowed =
+        host_.read_file("/sys/fs/selinux/booleans/container_use_devices").compare(0, 1, "0") != 0;
+    if (enforcing && !devices_allowed) {
+        return SetupFailure{"SELinux is enforcing and the container_use_devices boolean is off",
+                            "sudo setsebool -P container_use_devices 1"};
     }
     return std::nullopt;
 }
@@ -202,7 +215,6 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         "--label", std::string(kLabel) + ".port=" + std::to_string(spec.port),
         "--cap-drop=all",
         "--security-opt=no-new-privileges",
-        "--security-opt=label=disable",
         "--pull=never",
         "--network=" + spec.network,
     };
@@ -230,17 +242,14 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back("--cap-add");
         argv.push_back(capability);
     }
-    if (spec.ipc_host) {
-        argv.push_back("--ipc=host");
-    }
-    if (spec.memlock_unlimited) {
-        argv.push_back("--ulimit");
-        argv.push_back("memlock=-1:-1");
-    }
     for (const auto& mount : spec.mounts) {
-        argv.push_back("--mount");
-        argv.push_back("type=bind,src=" + mount.source + ",destination=" + mount.destination +
-                       ",ro");
+        // -v splits its argument on ':'.
+        if (mount.source.find(':') != std::string::npos) {
+            throw std::runtime_error("Cannot mount " + mount.source +
+                                     " into a container: its path contains ':'");
+        }
+        argv.push_back("-v");
+        argv.push_back(mount.source + ":" + mount.destination + ":ro,z");
     }
     argv.push_back("--env");
     argv.push_back("HOME=/tmp");
@@ -466,9 +475,9 @@ std::string ContainerManager::podman_install_command(const std::string& os_relea
     return "Install Podman with the host's package manager";
 }
 
-bool ContainerManager::allowed_repository(const std::string& repository) {
+bool ContainerManager::allowed_image(const std::string& image) {
     for (const std::string prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/"}) {
-        if (repository.size() > prefix.size() && repository.compare(0, prefix.size(), prefix) == 0) {
+        if (image.size() > prefix.size() && image.compare(0, prefix.size(), prefix) == 0) {
             return true;
         }
     }

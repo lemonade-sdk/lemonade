@@ -54,14 +54,12 @@ struct BackendLabels {
     BackendFormat format;
 };
 
-// A container backend's image repository, and the device nodes and Linux
-// permissions its container gets.
+// A container backend's image, and the device nodes and Linux permissions its
+// container gets.
 struct ContainerPolicy {
-    std::string repository;             // only docker.io/kyuz0/* and ghcr.io/peonist-ai/*
+    std::string image;                  // only docker.io/kyuz0/* and ghcr.io/peonist-ai/*
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
-    bool ipc_host = false;              // share the host's IPC namespace
-    bool memlock_unlimited = false;     // remove the limit on locked memory
 };
 
 inline const char* backend_tier_to_string(BackendTier tier) {
