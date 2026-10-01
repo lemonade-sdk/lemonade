@@ -283,10 +283,22 @@ void test_model_mounts() {
 #endif
 
 void test_halogen_kernel_check() {
-    check("Halogen accepts Linux 7.0", lemon::backends::halogen::kernel_supported("7.0.0-31-generic"));
-    check("Halogen accepts a later kernel", lemon::backends::halogen::kernel_supported("7.2.1"));
-    check("Halogen refuses Linux 6.x", !lemon::backends::halogen::kernel_supported("6.17.0-5-generic"));
-    check("an unreadable kernel version passes", lemon::backends::halogen::kernel_supported(""));
+    // A Strix Halo on Linux 7.0: SVM set, cwsr_size = 16384 + 40 * 479232.
+    const std::string node = "gfx_target_version 110501\ncapability 671326848\n"
+                             "simd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n";
+    check("Halogen passes a kernel with SVM and the gfx1151 fixes",
+          !lemon::backends::halogen::check_kfd_node(node));
+    const auto no_svm = lemon::backends::halogen::check_kfd_node(
+        "capability 537109120\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n");
+    check("Halogen refuses a kernel built without SVM",
+          no_svm && no_svm->action == "Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM");
+    const auto old_cwsr = lemon::backends::halogen::check_kfd_node(
+        "capability 671326848\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19169280\n");
+    check("Halogen refuses a kernel whose CWSR size predates the gfx1151 fixes",
+          old_cwsr && old_cwsr->action == "Install Linux 6.18.4 or newer");
+    check("Halogen refuses a kernel too old to report the CWSR sizes",
+          lemon::backends::halogen::check_kfd_node("capability 671326848\nsimd_count 80\n")
+              .has_value());
 }
 
 void test_descriptors_and_pins() {

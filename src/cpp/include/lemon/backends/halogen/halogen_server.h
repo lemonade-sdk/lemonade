@@ -24,10 +24,9 @@ public:
 };
 
 namespace halogen {
-// True when the kernel `release` names (uname -r) is Linux 7.0 or newer, or
-// cannot be read. Halogen registers its checkpoint with the GPU as a read-only
-// file mapping, which needs kernel support that is not backported.
-bool kernel_supported(const std::string& release);
+// The first kernel check that fails for the gfx1151 KFD node whose
+// `properties` file reads as given, or nullopt when both pass.
+std::optional<utils::SetupFailure> check_kfd_node(const std::string& properties);
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
