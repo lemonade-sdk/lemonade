@@ -240,7 +240,7 @@ podman run \
   --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
   --device /dev/dri \
   --group-add keep-groups \
-  -v /home/alice/.cache/huggingface/hub/models--unsloth--Qwen3-4B-GGUF/blobs/9a8c0b1e7f3d2c4a6b5e8f0d1c3a2b4e6f8d0c2a4b6e8f0a1c3e5d7b9f1a3c5e:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z \
+  -v /home/alice/.cache/huggingface/hub/models--unsloth--Qwen3-4B-GGUF/snapshots/a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4/Qwen3-4B-Q4_K_M.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z \
   --env HOME=/tmp \
   -p 127.0.0.1:8001:8001 \
   docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:<digest> \
