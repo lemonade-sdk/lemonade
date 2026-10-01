@@ -332,11 +332,12 @@ A container backend whose `devices` include `/dev/kfd` runs one more check befor
 
 ### Halogen Kernel Check
 
-`halogen:rocm` runs one more check before the checks for its install type. Halogen registers its checkpoint with the GPU as a read-only file mapping, which needs kernel support that is not backported, and upstream reports every working install on Linux 7.0 or later. When `lemond` cannot read the kernel version, the check passes:
+`halogen:rocm` runs two more checks before the checks for its install type. Halogen needs Linux 6.18.4 or newer, built with `CONFIG_HSA_AMD_SVM`. `lemond` checks for both on the KFD node whose `gfx_target_version` is `110501`, reading its `properties` under `/sys/devices/virtual/kfd/kfd/topology/nodes`. A kernel too old to report `cwsr_size` or `ctl_stack_size` fails the second check:
 
 | Check | Fails when | `action` |
 | --- | --- | --- |
-| Kernel supported | The running kernel is older than Linux 7.0 | Install Linux 7.0 or newer |
+| Kernel built with SVM | `capability & 0x08000000` is `0` | Install Linux 6.18.4 or newer, built with `CONFIG_HSA_AMD_SVM` |
+| Kernel has the `gfx1151` fixes | `cwsr_size` is not `ctl_stack_size + (simd_count / 2) * 479232` | Install Linux 6.18.4 or newer |
 
 ## Image Updates
 
