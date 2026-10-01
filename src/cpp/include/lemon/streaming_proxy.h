@@ -32,7 +32,7 @@ public:
         std::string extra_log = "";
 
         void print() const {
-            if (input_tokens > 0 || output_tokens > 0) {
+            if (input_tokens > 0 || output_tokens > 0 || !error_message.empty()) {
                 LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
                                        << ", tokens=" << (input_tokens + output_tokens)
                                        << " (in=" << input_tokens << ", out=" << output_tokens << ")"
