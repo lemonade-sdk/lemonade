@@ -68,11 +68,9 @@ inline const BackendDescriptor descriptor = {
     },
     /*containers*/ {
         {"rocm", {
-            /*repository*/        "docker.io/kyuz0/amd-strix-halo-toolboxes",
-            /*devices*/           {"/dev/dri", "/dev/kfd"},
-            /*cap_add*/           {},
-            /*ipc_host*/          false,
-            /*memlock_unlimited*/ false,
+            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/ {"/dev/dri", "/dev/kfd"},
+            /*cap_add*/ {},
         }},
     },
 };
