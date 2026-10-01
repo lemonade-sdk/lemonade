@@ -103,7 +103,7 @@ public:
         }
 
         unsigned int mask = IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF |
-                            IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY | IN_ISDIR |
+                            IN_MOVED_FROM | IN_MOVED_TO | IN_ISDIR |
                             IN_CLOSE_WRITE;
         wd_ = inotify_add_watch(inotify_fd_, dir_path_.c_str(), mask);
         if (wd_ < 0) {
@@ -171,7 +171,6 @@ public:
             alignas(struct inotify_event) char buf[4096];
             ssize_t len;
             while ((len = read(inotify_fd_, buf, sizeof(buf))) > 0) {
-                got_event = true;
                 for (char* p = buf; p < buf + len;) {
                     const auto* event = reinterpret_cast<const struct inotify_event*>(p);
                     p += sizeof(struct inotify_event) + event->len;
@@ -186,6 +185,7 @@ public:
                         add_nested_watch(created);
                         watch_subdirectories(created);
                     }
+                    if (!is_file_being_written(*event, parent)) got_event = true;
                 }
             }
 
@@ -205,13 +205,28 @@ public:
 
     // inotify watches one directory, not its subtree, and models sit in
     // nested folders whose contents (a new variant, a cache's refs/main) also
-    // change what is listed. IN_MODIFY is left off below the root so a file
-    // being downloaded fires once when it closes, not on every write.
+    // change what is listed. IN_MODIFY is left off so a file being downloaded
+    // fires once when it closes, not on every write.
     void add_nested_watch(const fs::path& dir) {
         constexpr unsigned int nested_mask = IN_CREATE | IN_DELETE | IN_MOVED_FROM |
                                              IN_MOVED_TO | IN_CLOSE_WRITE | IN_ONLYDIR;
         int wd = inotify_add_watch(inotify_fd_, dir.c_str(), nested_mask);
         if (wd >= 0) watch_paths_[wd] = dir;
+    }
+
+    // A new regular file reports IN_CLOSE_WRITE once it is written, so its
+    // IN_CREATE would only announce a file that may still be incomplete.
+    // Symlinks (a cache snapshot's links into blobs/) and hard links never
+    // close, so their IN_CREATE still counts.
+    bool is_file_being_written(const struct inotify_event& event,
+                               std::map<int, fs::path>::const_iterator parent) const {
+        if (!(event.mask & IN_CREATE) || (event.mask & IN_ISDIR) || event.len == 0 ||
+            parent == watch_paths_.end()) {
+            return false;
+        }
+        struct stat st;
+        const fs::path created = parent->second / event.name;
+        return lstat(created.c_str(), &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 1;
     }
 
     void watch_subdirectories(const fs::path& dir) {
