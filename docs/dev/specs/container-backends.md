@@ -361,10 +361,10 @@ When the container tool is Docker, the checks are:
 
 #### `lemond.service` and rootless Podman
 
-`lemond` runs `podman` directly, as a child process, the same way it runs every native backend. Rootless Podman needs two things that the hardened unit otherwise denies, so `lemond.service` is adjusted:
+`lemond` runs `podman` as a child process, the same way it runs every native backend. The unit is configured to give rootless Podman what it needs:
 
-- It no longer sets `RestrictNamespaces=yes` or `NoNewPrivileges=yes`. Rootless Podman creates user namespaces and runs the setuid `newuidmap`/`newgidmap` helpers, which both settings block. Dropping `NoNewPrivileges` also deactivates the unit's seccomp-based settings, `LockPersonality` and `RestrictRealtime`, so the service runs with a wider sandbox than a native-only `lemond`.
-- It sets `Environment=XDG_RUNTIME_DIR=%t/lemonade`, reusing the unit's existing `RuntimeDirectory` so Podman has a runtime directory without a login session.
+- It lets `lemond` create user namespaces and run the setuid `newuidmap`/`newgidmap` helpers that rootless Podman relies on, by running without `NoNewPrivileges` and `RestrictNamespaces`. Removing `NoNewPrivileges` also makes the unit's seccomp-based `LockPersonality` and `RestrictRealtime` inactive; the mount-based protections (`ProtectSystem`, `ProtectHome`, `PrivateTmp`) are unaffected, so the relaxation stops there.
+- It points `XDG_RUNTIME_DIR` at the unit's existing `RuntimeDirectory` (`Environment=XDG_RUNTIME_DIR=%t/lemonade`), giving Podman a runtime directory without a login session.
 - It allocates the `lemonade` account's subordinate UID/GID range on first start:
 
   ```ini
