@@ -57,7 +57,7 @@ jobs:
 
           PIN_RE = re.compile(r"^(?P<tag>[^@]+)@(?P<digest>sha256:[0-9a-f]{64})$")
           RECIPE_RE = re.compile(r'/\*recipe\*/\s*"([^"]+)"')
-          POLICY_RE = re.compile(r'\{"([^"]+)",\s*\{\s*/\*repository\*/\s*"([^"]+)"')
+          POLICY_RE = re.compile(r'\{"([^"]+)",\s*\{\s*/\*image\*/\s*"([^"]+)"')
           ACCEPT = ", ".join([
               "application/vnd.oci.image.index.v1+json",
               "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -65,14 +65,14 @@ jobs:
               "application/vnd.oci.image.manifest.v1+json",
           ])
 
-          repositories = {}
+          images = {}
           for header in glob.glob("src/cpp/include/lemon/backends/*/*.h"):
               text = open(header, encoding="utf-8").read()
               recipe = RECIPE_RE.search(text)
               if not recipe:
                   continue
-              for backend, repository in POLICY_RE.findall(text):
-                  repositories[(recipe.group(1), backend)] = repository
+              for backend, image in POLICY_RE.findall(text):
+                  images[(recipe.group(1), backend)] = image
 
           versions = json.load(open("src/cpp/resources/backend_versions.json", encoding="utf-8"))
           pinned = {
@@ -80,15 +80,15 @@ jobs:
               for recipe, backends in versions.items() if isinstance(backends, dict)
               for backend, pin in backends.items() if isinstance(pin, str) and PIN_RE.match(pin)
           }
-          if not repositories or pinned - repositories.keys():
-              missing = ", ".join(f"{r}:{b}" for r, b in sorted(pinned - repositories.keys()))
+          if not images or pinned - images.keys():
+              missing = ", ".join(f"{r}:{b}" for r, b in sorted(pinned - images.keys()))
               raise SystemExit(
-                  "No container repository found in the backend descriptors for: "
+                  "No container image found in the backend descriptors for: "
                   + (missing or "any backend")
                   + ". Update RECIPE_RE or POLICY_RE to match the descriptor format.")
 
-          def newest_digest(repository, tag):
-              registry, name = repository.split("/", 1)
+          def newest_digest(image, tag):
+              registry, name = image.split("/", 1)
               if registry == "docker.io":
                   token_url = (
                       "https://auth.docker.io/token?service=registry.docker.io"
@@ -99,7 +99,7 @@ jobs:
                   token_url = f"https://ghcr.io/token?scope=repository:{name}:pull"
                   manifest_url = f"https://ghcr.io/v2/{name}/manifests/{tag}"
               else:
-                  raise SystemExit(f"Unsupported registry for {repository}")
+                  raise SystemExit(f"Unsupported registry for {image}")
               request = urllib.request.Request(manifest_url, method="HEAD", headers={"Accept": ACCEPT})
               try:
                   with urllib.request.urlopen(token_url, timeout=30) as response:
@@ -109,27 +109,27 @@ jobs:
                       digest = response.headers.get("Docker-Content-Digest")
               except urllib.error.HTTPError as e:
                   raise SystemExit(
-                      f"{repository}:{tag} returned HTTP {e.code}. If the tag was removed "
+                      f"{image}:{tag} returned HTTP {e.code}. If the tag was removed "
                       "upstream, a maintainer must pin a new tag in backend_versions.json.")
               if not digest:
-                  raise SystemExit(f"{repository}:{tag} returned no Docker-Content-Digest header")
+                  raise SystemExit(f"{image}:{tag} returned no Docker-Content-Digest header")
               return digest
 
           updates = []
-          for (recipe, backend), repository in sorted(repositories.items()):
+          for (recipe, backend), image in sorted(images.items()):
               pin = versions.get(recipe, {}).get(backend, "")
               match = PIN_RE.match(pin)
               if not match:
                   raise SystemExit(f"{recipe}:{backend} is not pinned to <tag>@<digest>: {pin!r}")
               tag, digest = match.group("tag"), match.group("digest")
-              latest = newest_digest(repository, tag)
+              latest = newest_digest(image, tag)
               state = "current" if latest == digest else "new digest"
-              print(f"{recipe}:{backend} {repository}:{tag} pinned {digest[:19]} newest {latest[:19]} ({state})")
+              print(f"{recipe}:{backend} {image}:{tag} pinned {digest[:19]} newest {latest[:19]} ({state})")
               if latest != digest:
                   updates.append({
                       "recipe": recipe,
                       "backend": backend,
-                      "repository": repository,
+                      "image": image,
                       "tag": tag,
                       "old": digest,
                       "new": latest,
@@ -141,7 +141,7 @@ jobs:
           if os.environ["EVENT_NAME"] == "pull_request":
               updates = []
               validate = [
-                  {"recipe": r, "backend": b} for (r, b) in sorted(repositories)
+                  {"recipe": r, "backend": b} for (r, b) in sorted(images)
               ]
           matrix = {"include": [
               {"name": f"{u['recipe']}-{u['backend']}", "recipe": u["recipe"], "backend": u["backend"]}
@@ -300,7 +300,7 @@ jobs:
               if passed:
                   versions[update["recipe"]][update["backend"]] = f"{update['tag']}@{update['new']}"
               rows.append(
-                  f"| `{name}` | `{update['repository']}:{update['tag']}` "
+                  f"| `{name}` | `{update['image']}:{update['tag']}` "
                   f"| `{update['old'][:19]}` | `{update['new'][:19]}` "
                   f"| {'Updated' if passed else 'Failed validation; pin kept'} |"
               )
