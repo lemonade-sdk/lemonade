@@ -73,17 +73,23 @@ public:
         info.max_context_window = kNativeContext;
     }
 
-    // An HGN bundle is the checkpoint, its overlays, the vision tower and the
-    // tokenizer directory. Every Halogen model names the same checkpoint and
-    // picks its overlay at launch, so one download serves all of them.
+    // A bundle is the checkpoint <stem>.hgn, its <stem>.overlay*.hgn overlays,
+    // the *-vision.hgn tower and the tokenizer directory. Every Halogen model
+    // names the same checkpoint and picks its overlay at launch, so one
+    // download serves all of them; the repository's other checkpoints stay
+    // behind.
     std::optional<std::vector<std::string>> select_checkpoint_files(
         const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
         if (!ends_with(main_variant, ".hgn")) {
             return std::nullopt;
         }
+        const std::string overlay_prefix =
+            main_variant.substr(0, main_variant.size() - 4) + ".overlay";
         std::vector<std::string> selected;
         for (const auto& file : repo_files) {
-            if (ends_with(file, ".hgn") || file.rfind(std::string(kTokenizerDir) + "/", 0) == 0) {
+            const bool overlay = file.rfind(overlay_prefix, 0) == 0 && ends_with(file, ".hgn");
+            if (file == main_variant || overlay || ends_with(file, "-vision.hgn") ||
+                file.rfind(std::string(kTokenizerDir) + "/", 0) == 0) {
                 selected.push_back(file);
             }
         }
