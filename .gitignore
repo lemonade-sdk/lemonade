@@ -169,6 +169,7 @@ cython_debug/
 #.idea/
 
 .aider*
+.pi/
 
 # VS Code files
 .vscode/settings.json
