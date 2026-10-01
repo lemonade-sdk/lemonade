@@ -11,6 +11,7 @@ on:
       - "CMakeLists.txt"
       - "CMakePresets.json"
       - "setup.sh"
+      - "tools/version.py"
       - ".github/workflows/docker-build-smoke-test.yml"
 
 permissions:
@@ -27,6 +28,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Stamp version
+        run: |
+          VERSION=$(python3 tools/version.py)
+          printf '%s\n' "$VERSION" > .version
 
       - name: Build Docker image
         run: |

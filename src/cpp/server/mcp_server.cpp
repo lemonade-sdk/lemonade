@@ -1,5 +1,6 @@
 #include "lemon/mcp_server.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -16,6 +17,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
 #include "lemon/utils/json_utils.h"
@@ -218,7 +220,9 @@ std::string unique_token() {
 McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded)
     : router_(router),
       model_manager_(model_manager),
-      ensure_loaded_(std::move(ensure_loaded)) {}
+      ensure_loaded_(std::move(ensure_loaded)) {
+    tools_ = build_tools();
+}
 
 McpServer::~McpServer() = default;
 
@@ -360,7 +364,11 @@ json McpServer::handle_initialize(const json& /*params*/, const json& id) {
 }
 
 json McpServer::handle_tools_list(const json& id) {
-    json result = {{"tools", tools_descriptor()}};
+    json descriptors = json::array();
+    for (const auto& tool : tools_) {
+        descriptors.push_back(tool.descriptor());
+    }
+    json result = {{"tools", std::move(descriptors)}};
     return make_success_response(id, std::move(result));
 }
 
@@ -380,22 +388,20 @@ json McpServer::handle_tools_call(const json& params, const json& id) {
 
     json result;
     try {
-        if (tool_name == "lemonade_chat") {
-            result = tool_chat(arguments);
-        } else if (tool_name == "lemonade_transcribe_audio") {
-            result = tool_transcribe_audio(arguments);
-        } else if (tool_name == "lemonade_generate_image") {
-            result = tool_generate_image(arguments);
-        } else if (tool_name == "lemonade_omni") {
-            result = tool_omni(arguments);
-        } else if (tool_name == "lemonade_list_models") {
-            result = tool_list_models(arguments);
-        } else {
+        const auto tool = std::find_if(
+            tools_.begin(), tools_.end(),
+            [&tool_name](const McpTool& candidate) {
+                return candidate.name() == tool_name;
+            });
+
+        if (tool == tools_.end()) {
             // Per MCP spec, unknown-tool errors are isError=true results, not JSON-RPC errors.
             result = {
                 {"content", json::array({text_content_block("Unknown tool: " + tool_name)})},
                 {"isError", true},
             };
+        } else {
+            result = tool->call(arguments);
         }
     } catch (const std::exception& e) {
         LOG(ERROR, "McpServer") << "Tool '" << tool_name << "' failed: " << e.what() << std::endl;
@@ -1144,175 +1150,328 @@ json McpServer::tool_list_models(const json& arguments) {
     };
 }
 
-json McpServer::tools_descriptor() {
-    return json::array({
-        {
-            {"name", "lemonade_list_models"},
-            {"description",
-             "List models known to the Lemonade server. ALWAYS call this "
-             "first if you don't already know the exact model name to use "
-             "for chat/transcribe/image — passing a wrong name may trigger a "
-             "multi-GB download. Returns a summary text block plus a JSON "
-             "block with `{loaded, available, suggested_to_pull, "
-             "recommended_chat_model}`."},
-            {"inputSchema", {
-                {"type", "object"},
-                {"properties", {
-                    {"include_available", {{"type", "boolean"}}},
-                    {"include_suggested", {{"type", "boolean"}}},
+std::vector<McpTool> McpServer::build_tools() {
+    return {
+        McpTool(
+            json{
+                {"name", "lemonade_list_models"},
+                {"description",
+                 "List models known to the Lemonade server. ALWAYS call this "
+                 "first if you don't already know the exact model name to use "
+                 "for chat/transcribe/image — passing a wrong name may trigger a "
+                 "multi-GB download. Returns a summary text block plus a JSON "
+                 "block with `{loaded, available, suggested_to_pull, "
+                 "recommended_chat_model}`."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"include_available", {{"type", "boolean"}, {"description", "Include downloaded models in the `available` list."}}},
+                        {"include_suggested", {{"type", "boolean"}, {"description", "Include suggested, not-yet-downloaded models in `suggested_to_pull`."}}},
+                    }},
                 }},
-            }},
-        },
-        {
-            {"name", "lemonade_chat"},
-            {"description",
-             "Chat completion against a locally hosted LLM. Pass a `messages` "
-             "array (OpenAI chat format). `model` is OPTIONAL: when omitted, "
-             "the server reuses an already-loaded LLM, else an already-"
-             "downloaded one; if neither exists it asks you to either pass a "
-             "`model` or `allow_download: true` (which downloads the default, "
-             "Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you "
-             "want to choose explicitly — a wrong name may trigger a multi-GB "
-             "download."},
-            {"inputSchema", {
-                {"type", "object"},
-                {"required", json::array({"messages"})},
-                {"properties", {
-                    {"model",       {{"type", "string"},
-                                     {"description", "Optional. Omit to auto-select a loaded/downloaded LLM; defaults to Qwen3.5-4B-MTP-GGUF only with allow_download=true."}}},
-                    {"allow_download", {{"type", "boolean"},
-                                        {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
-                    {"messages",    {{"type", "array"}, {"items", {{"type", "object"}}}}},
-                    {"temperature", {{"type", "number"}}},
-                    {"top_p",       {{"type", "number"}}},
-                    {"max_tokens",  {{"type", "integer"}}},
-                    {"stop",        {{"description", "stop sequences (string or array)"}}},
-                    {"seed",        {{"type", "integer"}}},
-                    {"tools",       {{"type", "array"}, {"items", {{"type", "object"}}}}},
-                    {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
-                    {"response_format", {{"type", "object"}}},
-                    {"chat_template_kwargs", {{"type", "object"},
-                                              {"description", "e.g. {\"enable_thinking\": true} to enable reasoning blocks; disabled by default"}}},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success returns two `text` content blocks: a human-readable summary, then a "
+                         "JSON-stringified object with `loaded`, `available`, `suggested_to_pull`, and "
+                         "`recommended_chat_model`."
+                        },
+                    }},
                 }},
-            }},
-        },
-        {
-            {"name", "lemonade_transcribe_audio"},
-            {"description",
-             "Transcribe an audio clip with a Whisper-class model. The "
-             "Lemonade MCP server always runs on the same machine as the "
-             "caller, so prefer `audio_path` (an absolute path to a local "
-             "audio file: wav, mp3, m4a, ogg, flac, webm). Use "
-             "`audio_base64` only when you genuinely have audio bytes in "
-             "memory. Exactly one of the two must be provided. `model` is "
-             "OPTIONAL: when omitted, the server reuses an already-loaded "
-             "transcription model, else an already-downloaded one; if neither "
-             "exists it asks you to pass a `model` or `allow_download: true` "
-             "(which downloads the default, Whisper-Tiny)."},
-            {"inputSchema", {
-                {"type", "object"},
-                {"properties", {
-                    {"model",         {{"type", "string"},
-                                       {"description", "Optional. Omit to auto-select a loaded/downloaded model; defaults to Whisper-Tiny only with allow_download=true."}}},
-                    {"allow_download", {{"type", "boolean"},
-                                        {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
-                    {"audio_path",    {{"type", "string"},
-                                       {"description", "Absolute path to a local audio file. Preferred over audio_base64."}}},
-                    {"audio_base64",  {{"type", "string"}}},
-                    {"filename",      {{"type", "string"}}},
-                    {"language",      {{"type", "string"}}},
-                    {"prompt",        {{"type", "string"}}},
-                    {"response_format", {{"type", "string"},
-                                         {"enum", json::array({"json", "text", "srt", "verbose_json", "vtt"})}}},
-                    {"temperature",   {{"type", "number"}}},
+            },
+            [this](const json& arguments) {
+                return tool_list_models(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_chat"},
+                {"description",
+                 "Chat completion against a locally hosted LLM. Pass a `messages` "
+                 "array (OpenAI chat format). `model` is OPTIONAL: when omitted, "
+                 "the server reuses an already-loaded LLM, else an already-"
+                 "downloaded one; if neither exists it asks you to either pass a "
+                 "`model` or `allow_download: true` (which downloads the default, "
+                 "Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you "
+                 "want to choose explicitly — a wrong name may trigger a multi-GB "
+                 "download."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"messages"})},
+                    {"properties", {
+                        {"model",       {{"type", "string"},
+                                         {"description", "Optional. Omit to auto-select a loaded/downloaded LLM; defaults to Qwen3.5-4B-MTP-GGUF only with allow_download=true."}}},
+                        {"allow_download", {{"type", "boolean"},
+                                            {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
+                        {"messages",    {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "Conversation messages in OpenAI chat format."}}},
+                        {"temperature", {{"type", "number"}, {"description", "Sampling temperature."}}},
+                        {"top_p",       {{"type", "number"}, {"description", "Nucleus sampling probability."}}},
+                        {"max_tokens",  {{"type", "integer"}, {"description", "Maximum number of output tokens."}}},
+                        {"stop",        {{"description", "stop sequences (string or array)"}}},
+                        {"seed",        {{"type", "integer"}, {"description", "Optional random seed for reproducible sampling."}}},
+                        {"tools",       {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "OpenAI-compatible tool definitions available to the model."}}},
+                        {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
+                        {"response_format", {{"type", "object"}, {"description", "OpenAI-compatible response format configuration."}}},
+                        {"chat_template_kwargs", {{"type", "object"},
+                                                  {"description", "e.g. {\"enable_thinking\": true} to enable reasoning blocks; disabled by default"}}},
+                    }},
                 }},
-            }},
-        },
-        {
-            {"name", "lemonade_generate_image"},
-            {"description",
-             "Generate one or more images from a text prompt. The Lemonade "
-             "MCP server always runs on the same machine as the caller, so "
-             "PREFER writing the result directly to disk by passing "
-             "`output_path` (single image) or `output_dir` (one or more). "
-             "When you do, the tool returns absolute file path(s) as text — "
-             "no base64 round-trip and dramatically fewer tokens. Only omit "
-             "both arguments when you genuinely need the image inline. For "
-             "safety, disk writes are confined to a sandbox directory "
-             "(<cache_dir>/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); "
-             "paths outside it are rejected. `output_dir` writes get unique "
-             "auto-generated filenames (so concurrent callers never clobber "
-             "each other); use `output_path` when you need an exact name. "
-             "`model` is OPTIONAL: when "
-             "omitted, the server reuses an already-loaded image model, else "
-             "an already-downloaded one; if neither exists it asks you to pass "
-             "a `model` or `allow_download: true` (which downloads the "
-             "default, SD-Turbo)."},
-            {"inputSchema", {
-                {"type", "object"},
-                {"required", json::array({"prompt"})},
-                {"properties", {
-                    {"model",  {{"type", "string"},
-                                {"description", "Optional. Omit to auto-select a loaded/downloaded image model; defaults to SD-Turbo only with allow_download=true."}}},
-                    {"allow_download", {{"type", "boolean"},
-                                        {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
-                    {"prompt", {{"type", "string"}}},
-                    {"output_path", {{"type", "string"},
-                                     {"description", "Exact path of the PNG file to write, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Relative paths resolve against the sandbox root; absolute paths must stay within it. Written as named (overwrites if it already exists). Only valid when n == 1."}}},
-                    {"output_dir",  {{"type", "string"},
-                                     {"description", "Directory to write generated images into, inside the MCP image sandbox. Filenames are auto-generated and unique (image_<token>_<i>.png); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it."}}},
-                    {"size",   {{"type", "string"}}},
-                    {"n",      {{"type", "integer"}, {"minimum", 1}}},
-                    {"negative_prompt", {{"type", "string"}}},
-                    {"seed",   {{"type", "integer"}}},
-                    {"steps",  {{"type", "integer"}}},
-                    {"cfg_scale", {{"type", "number"}}},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success returns one `text` content block with the assistant output. If the "
+                         "model emits tool calls, a second `text` block prefixed with `tool_calls: ` "
+                         "contains the JSON tool-call array. If normal content is empty but reasoning "
+                         "content is present, the first block contains the reasoning fallback instead of "
+                         "an empty string."
+                        },
+                    }},
                 }},
-            }},
-        },
-        {
-            {"name", "lemonade_omni"},
-            {"description",
-             "Multimodal turn against a Lemonade Omni collection (one tool "
-             "call -> text + images + speech in the same response). The "
-             "server runs an internal tool-calling loop against the "
-             "collection's planner LLM and executes its image / image-edit / "
-             "TTS tools by routing to the bundled component models; the "
-             "result comes back as a text block plus native MCP `image` / "
-             "`audio` content blocks (one per artifact). `model` is "
-             "OPTIONAL: when omitted, the server reuses an already-downloaded "
-             "Omni collection; if none is downloaded it asks you to pass a "
-             "`model` or `allow_download: true` (which downloads the default, "
-             "`LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any "
-             "other recipe='collection.omni' model from `lemonade_list_models`) "
-             "to opt into a larger collection; that model may be multi-GB. "
-             "Same-machine deployment: PREFER `output_dir` to write artifacts "
-             "to disk and avoid expensive inline base64 blobs. For plain text "
-             "chat against a regular LLM, use `lemonade_chat` instead."},
-            {"inputSchema", {
-                {"type", "object"},
-                {"required", json::array({"messages"})},
-                {"properties", {
-                    {"model",       {{"type", "string"},
-                                     {"description", "Optional. Omni collection name (recipe='collection.omni'). Omit to reuse a downloaded collection; defaults to LMX-Omni-5.5B-Lite only with allow_download=true."}}},
-                    {"allow_download", {{"type", "boolean"},
-                                        {"description", "Permit downloading the default collection when none is downloaded. Defaults to false."}}},
-                    {"messages",    {{"type", "array"}, {"items", {{"type", "object"}}}}},
-                    {"output_dir",  {{"type", "string"},
-                                     {"description", "Directory to write produced artifacts into, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_<token>_<i>.<ext>); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks."}}},
-                    {"temperature", {{"type", "number"}}},
-                    {"top_p",       {{"type", "number"}}},
-                    {"max_tokens",  {{"type", "integer"}}},
-                    {"stop",        {{"description", "stop sequences (string or array)"}}},
-                    {"seed",        {{"type", "integer"}}},
-                    {"tools",       {{"type", "array"}, {"items", {{"type", "object"}}}}},
-                    {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
-                    {"response_format", {{"type", "object"}}},
-                    {"chat_template_kwargs", {{"type", "object"}}},
+            },
+            [this](const json& arguments) {
+                return tool_chat(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_transcribe_audio"},
+                {"description",
+                 "Transcribe an audio clip with a Whisper-class model. The "
+                 "Lemonade MCP server always runs on the same machine as the "
+                 "caller, so prefer `audio_path` (an absolute path to a local "
+                 "audio file: wav, mp3, m4a, ogg, flac, webm). Use "
+                 "`audio_base64` only when you genuinely have audio bytes in "
+                 "memory. If both are provided, `audio_path` takes precedence. `model` is "
+                 "OPTIONAL: when omitted, the server reuses an already-loaded "
+                 "transcription model, else an already-downloaded one; if neither "
+                 "exists it asks you to pass a `model` or `allow_download: true` "
+                 "(which downloads the default, Whisper-Tiny)."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"model",         {{"type", "string"},
+                                           {"description", "Optional. Omit to auto-select a loaded/downloaded model; defaults to Whisper-Tiny only with allow_download=true."}}},
+                        {"allow_download", {{"type", "boolean"},
+                                            {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
+                        {"audio_path",    {{"type", "string"},
+                                           {"description", "Path to a local audio file. Preferred over `audio_base64`; absolute paths avoid working-directory ambiguity."}}},
+                        {"audio_base64",  {{"type", "string"}, {"description", "Base64-encoded audio data. Used when `audio_path` is not provided."}}},
+                        {"filename",      {{"type", "string"}, {"description", "Original audio filename, used as an input-format hint."}}},
+                        {"language",      {{"type", "string"}, {"description", "Optional source language hint."}}},
+                        {"prompt",        {{"type", "string"}, {"description", "Optional text prompt to guide transcription."}}},
+                        {"response_format", {{"type", "string"},
+                                             {"enum", json::array({"json", "text", "srt", "verbose_json", "vtt"})}, {"description", "Transcription response format."}}},
+                        {"temperature",   {{"type", "number"}, {"description", "Sampling temperature for transcription."}}},
+                    }},
                 }},
-            }},
-        },
-    });
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success returns two `text` content blocks: the transcript, then the "
+                         "JSON-stringified full transcription response, including timestamps "
+                         "or segments when provided by the backend."
+                        },
+                    }},
+                }},
+            },
+            [this](const json& arguments) {
+                return tool_transcribe_audio(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_generate_image"},
+                {"description",
+                 "Generate one or more images from a text prompt. The Lemonade "
+                 "MCP server always runs on the same machine as the caller, so "
+                 "PREFER writing the result directly to disk by passing "
+                 "`output_path` (single image) or `output_dir` (one or more). "
+                 "When you do, the tool returns absolute file path(s) as text — "
+                 "no base64 round-trip and dramatically fewer tokens. Only omit "
+                 "both arguments when you genuinely need the image inline. For "
+                 "safety, disk writes are confined to a sandbox directory "
+                 "(<cache_dir>/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); "
+                 "paths outside it are rejected. `output_dir` writes get unique "
+                 "auto-generated filenames (so concurrent callers never clobber "
+                 "each other); use `output_path` when you need an exact name. "
+                 "`model` is OPTIONAL: when "
+                 "omitted, the server reuses an already-loaded image model, else "
+                 "an already-downloaded one; if neither exists it asks you to pass "
+                 "a `model` or `allow_download: true` (which downloads the "
+                 "default, SD-Turbo)."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"prompt"})},
+                    {"properties", {
+                        {"model",  {{"type", "string"},
+                                    {"description", "Optional. Omit to auto-select a loaded/downloaded image model; defaults to SD-Turbo only with allow_download=true."}}},
+                        {"allow_download", {{"type", "boolean"},
+                                            {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
+                        {"prompt", {{"type", "string"}, {"description", "Text prompt describing the image to generate."}}},
+                        {"output_path", {{"type", "string"},
+                                         {"description", "Exact path of the PNG file to write, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Relative paths resolve against the sandbox root; absolute paths must stay within it. Written as named (overwrites if it already exists). Only valid when n == 1."}}},
+                        {"output_dir",  {{"type", "string"},
+                                         {"description", "Directory to write generated images into, inside the MCP image sandbox. Filenames are auto-generated and unique (image_{token}_{index}.png); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it."}}},
+                        {"size",   {{"type", "string"}, {"description", "Requested image size as WIDTHxHEIGHT, for example 512x512."}}},
+                        {"n",      {{"type", "integer"}, {"minimum", 1}, {"description", "Number of images to generate."}}},
+                        {"negative_prompt", {{"type", "string"}, {"description", "Text describing content to avoid in the generated image."}}},
+                        {"seed",   {{"type", "integer"}, {"description", "Optional random seed for reproducible generation."}}},
+                        {"steps",  {{"type", "integer"}, {"description", "Number of diffusion sampling steps."}}},
+                        {"cfg_scale", {{"type", "number"}, {"description", "Classifier-free guidance scale."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Without `output_path` or `output_dir`, success returns one native MCP `image` "
+                         "content block per generated PNG. With disk output, success returns a summary "
+                         "`text` block, optional per-image path blocks when multiple files are written, "
+                         "and a final JSON-stringified `paths` object in a `text` block."
+                        },
+                    }},
+                }},
+            },
+            [this](const json& arguments) {
+                return tool_generate_image(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_omni"},
+                {"description",
+                 "Multimodal turn against a Lemonade Omni collection (one tool "
+                 "call -> text + images + speech in the same response). The "
+                 "server runs an internal tool-calling loop against the "
+                 "collection's planner LLM and executes its image / image-edit / "
+                 "TTS tools by routing to the bundled component models; the "
+                 "result comes back as a text block plus native MCP `image` / "
+                 "`audio` content blocks (one per artifact). `model` is "
+                 "OPTIONAL: when omitted, the server reuses an already-downloaded "
+                 "Omni collection; if none is downloaded it asks you to pass a "
+                 "`model` or `allow_download: true` (which downloads the default, "
+                 "`LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any "
+                 "other recipe='collection.omni' model from `lemonade_list_models`) "
+                 "to opt into a larger collection; that model may be multi-GB. "
+                 "Same-machine deployment: PREFER `output_dir` to write artifacts "
+                 "to disk and avoid expensive inline base64 blobs. For plain text "
+                 "chat against a regular LLM, use `lemonade_chat` instead."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"messages"})},
+                    {"properties", {
+                        {"model",       {{"type", "string"},
+                                         {"description", "Optional. Omni collection name (recipe='collection.omni'). Omit to reuse a downloaded collection; defaults to LMX-Omni-5.5B-Lite only with allow_download=true."}}},
+                        {"allow_download", {{"type", "boolean"},
+                                            {"description", "Permit downloading the default collection when none is downloaded. Defaults to false."}}},
+                        {"messages",    {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "Conversation messages in OpenAI chat format."}}},
+                        {"output_dir",  {{"type", "string"},
+                                         {"description", "Directory to write produced artifacts into, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_{token}_{index}.{ext}); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks."}}},
+                        {"temperature", {{"type", "number"}, {"description", "Sampling temperature for the planner LLM."}}},
+                        {"top_p",       {{"type", "number"}, {"description", "Nucleus sampling probability for the planner LLM."}}},
+                        {"max_tokens",  {{"type", "integer"}, {"description", "Maximum number of planner output tokens."}}},
+                        {"stop",        {{"description", "stop sequences (string or array)"}}},
+                        {"seed",        {{"type", "integer"}, {"description", "Optional random seed forwarded to the planner LLM."}}},
+                        {"tools",       {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "OpenAI-compatible application tool definitions passed to the planner."}}},
+                        {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
+                        {"response_format", {{"type", "object"}, {"description", "OpenAI-compatible response format configuration for the planner."}}},
+                        {"chat_template_kwargs", {{"type", "object"}, {"description", "Additional chat-template arguments forwarded to the planner LLM."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success always starts with one `text` block containing the final text. Artifacts "
+                         "follow in the order they were produced. Inline mode then appends one native MCP "
+                         "`image` or `audio` block per artifact. Disk mode instead appends one `text` block "
+                         "per artifact path in the same order, plus a final JSON-stringified `paths` object. "
+                         "If application tool calls are emitted, a final `text` block prefixed with "
+                         "`tool_calls: ` is appended."
+                        },
+                    }},
+                }},
+            },
+            [this](const json& arguments) {
+                return tool_omni(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_docs"},
+                {"description",
+                 "Read this server's own API reference. Call with no arguments to "
+                 "list the pages it ships, then pass `page` (an `id` from that "
+                 "list) to read one as markdown. The docs are bundled with the "
+                 "server, so they describe the version actually running and work "
+                 "offline. Use this before hand-writing requests against Lemonade "
+                 "endpoints."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"page", {{"type", "string"},
+                                  {"description", "Optional. Page id from the listing, e.g. 'api/lemonade'. Omit to list."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "With `page`, success returns one `text` block containing the raw bundled "
+                         "Markdown page. With no arguments, success normally returns a summary `text` "
+                         "block followed by a JSON-stringified `pages` object containing `id`, `title`, "
+                         "and `bytes` for each page; if no bundled documentation is installed, it "
+                         "returns one explanatory `text` block instead. Unknown pages return `isError: "
+                         "true` with one explanatory `text` block. The same bundled documentation is "
+                         "also available through `GET /v1/docs`."
+                        },
+                    }},
+                }},
+            },
+            [this](const json& arguments) {
+                return tool_docs(arguments);
+            })
+    };
+}
+
+json McpServer::tool_docs(const json& arguments) {
+    const std::string docs_dir = utils::get_resource_path("resources/docs");
+    const std::string page = arguments.value("page", std::string());
+
+    if (!page.empty()) {
+        std::string content;
+        if (!read_api_doc(docs_dir, page, content)) {
+            return {
+                {"content", json::array({text_content_block(
+                    "Unknown documentation page: " + page +
+                    ". Call lemonade_docs with no arguments to list what this server ships.")})},
+                {"isError", true},
+            };
+        }
+        return {
+            {"content", json::array({text_content_block(content)})},
+            {"isError", false},
+        };
+    }
+
+    json pages = json::array();
+    for (const ApiDoc& doc : list_api_docs(docs_dir)) {
+        pages.push_back({{"id", doc.id}, {"title", doc.title}, {"bytes", doc.bytes}});
+    }
+
+    if (pages.empty()) {
+        return {
+            {"content", json::array({text_content_block(
+                "This server has no bundled documentation installed.")})},
+            {"isError", false},
+        };
+    }
+
+    const std::string summary =
+        "Lemonade Server " LEMON_VERSION_STRING " ships " +
+        std::to_string(pages.size()) +
+        " documentation pages. Call lemonade_docs again with `page` set to one of the "
+        "listed ids to read it.";
+
+    return {
+        {"content", json::array({
+            text_content_block(summary),
+            text_content_block(json({{"pages", pages}}).dump()),
+        })},
+        {"isError", false},
+    };
 }
 
 json McpServer::make_error_response(const json& id, int code, const std::string& message) {

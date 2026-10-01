@@ -100,7 +100,7 @@ AnythingLLM also supports complex multi-step agentic tool calling. You can do th
   <img src="https://github.com/lemonade-sdk/assets/blob/main/anythingllm/tool-calling.png?raw=true" alt="Complex multi-step agentic tool calling with simple natural language" width="600"/>
 </div>
 
-You can find more details about agent usage [here](https://docs.anythingllm.com/agent/usage).
+You can find more details about agent usage [here](https://docs.anythingllm.com/agent/overview).
 
 ## Additional Resources
 

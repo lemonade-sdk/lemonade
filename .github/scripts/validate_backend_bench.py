@@ -71,14 +71,50 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "") -> str:
+def resolve_latest_version(
+    repo: str,
+    token: str | None,
+    tag_prefix: str = "",
+    pinned: str = "",
+    fallback: str = "",
+) -> str:
+    if pinned:
+        return pinned
     if tag_prefix:
         releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
         for r in releases:
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
+    try:
+        # /releases/latest can be a binary-less semver tag; require assets so a
+        # binary-less tag is never picked. Prefer a stable release, else newest bNNNN.
+        releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
+        for r in releases:
+            if not r.get("draft") and not r.get("prerelease") and r.get("assets"):
+                return r["tag_name"]
+        for r in releases:
+            tag = r.get("tag_name", "")
+            if (
+                not r.get("draft")
+                and r.get("assets")
+                and tag.startswith("b")
+                and tag[1:].isdigit()
+            ):
+                return tag
+    except Exception as e:
+        if fallback:
+            print(
+                f"  [WARN] Could not resolve latest release for {repo} ({e}); using fallback {fallback}"
+            )
+            return fallback
+        raise
+    if fallback:
+        print(
+            f"  [WARN] No suitable release found for {repo}; using fallback {fallback}"
+        )
+        return fallback
+    raise RuntimeError(f"No suitable release found for {repo}")
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
@@ -160,8 +196,12 @@ def find_lemonade_bin() -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_models_from_registry(base_url: str) -> list[str]:
-    """Mirror validate_llamacpp.py:get_hot_llamacpp_models() — reads live registry."""
+def get_models_from_registry(
+    base_url: str, recipe: str = "llamacpp", require_hot: bool = True
+) -> list[str]:
+    """Live-registry models for `recipe`. Production forks want the curated hot
+    set; experimental forks (require_hot=False) take every model on their recipe,
+    so a new hrx model needs only a server_models.json entry."""
     try:
         req = urllib.request.Request(f"{base_url}/api/v1/models?show_all=true")
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -169,7 +209,8 @@ def get_models_from_registry(base_url: str) -> list[str]:
         models = [
             m["id"]
             for m in data.get("data", [])
-            if m.get("recipe") == "llamacpp" and "hot" in m.get("labels", [])
+            if m.get("recipe") == recipe
+            and (not require_hot or "hot" in m.get("labels", []))
         ]
         return sorted(models)
     except Exception as e:
@@ -332,7 +373,11 @@ def run_bench(
     env = os.environ.copy()
 
     print(f"    cmd: {' '.join(cmd)}")
-    print(f"    backend key: {bench_as}  (binary routed via llamacpp.{bench_as}_bin)")
+    recipe = fork.get("recipe", "llamacpp")
+    cfg_section = fork.get("config_section", recipe)
+    print(
+        f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)"
+    )
 
     if dry_run:
         print("    [dry-run] skipping execution")
@@ -369,6 +414,7 @@ def run_bench(
             "fork_repo": fork["repo"],
             "fork_version": version,
             "fork_backend": backend,
+            "experimental": fork.get("experimental", False),
         }
     )
     # CI provenance so the dashboard can link each number back to its run.
@@ -592,7 +638,15 @@ def main() -> int:
             print(f"Downloading binary for {fork_id}...")
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
-                version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+                pinned = (
+                    fork.get("version", "")
+                    if fork.get("version_source") == "pinned"
+                    else ""
+                )
+                fallback = fork.get("version_fallback", "")
+                version = resolve_latest_version(
+                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                )
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
@@ -616,7 +670,15 @@ def main() -> int:
 
         try:
             tag_prefix = fork.get("version_tag_prefix", "")
-            version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+            pinned = (
+                fork.get("version", "")
+                if fork.get("version_source") == "pinned"
+                else ""
+            )
+            fallback = fork.get("version_fallback", "")
+            version = resolve_latest_version(
+                fork["repo"], args.token, tag_prefix, pinned, fallback
+            )
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve version: {e}")
@@ -656,14 +718,28 @@ def main() -> int:
                     f"  Skipping POST /install — fork provides its own prebuilt binary"
                 )
 
-        # Fetch model list from registry now that lemond is confirmed running
+        # Precedence: --model-filter, then the fork's model_filter, then registry
+        # discovery by the fork's recipe.
         run_models = models
-        if not run_models and not args.dry_run:
-            run_models = get_models_from_registry(base_url)
+        if not run_models:
+            run_models = fork.get("model_filter", [])
             if run_models:
-                print(f"  Models from registry ({len(run_models)}): {run_models}")
+                print(f"  Models (from fork model_filter): {run_models}")
+        if not run_models and not args.dry_run:
+            fork_recipe = fork.get("recipe", "llamacpp")
+            require_hot = not fork.get("experimental", False)
+            run_models = get_models_from_registry(
+                base_url, recipe=fork_recipe, require_hot=require_hot
+            )
+            if run_models:
+                print(
+                    f"  Models from registry ({len(run_models)}, "
+                    f"recipe={fork_recipe}, require_hot={require_hot}): {run_models}"
+                )
             else:
-                print("  [ERROR] No models from registry and no --model-filter set")
+                print(
+                    f"  [ERROR] No {fork_recipe} models in registry and no --model-filter set"
+                )
                 continue
 
         for model in run_models:
