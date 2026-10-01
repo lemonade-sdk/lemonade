@@ -408,10 +408,8 @@ When the container tool is Docker, the checks are:
 
 The GitHub release .rpms for Fedora 43 and 44 are the same as [Debian packages](#debian-packages), including what the user does. CPack builds them from `src/cpp/CPackRPM.cmake`, and the package does these steps:
 
-1. Ships `lemonade-podman.socket` and `lemonade-podman.service`.
-2. `postinst-rpm` adds `lemonade` to `video` and `render` with `usermod`.
-3. `postinst-rpm` runs `systemctl enable --now lemonade-podman.socket`.
-4. `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_SUGGESTS` to `podman`.
+1. `postinst-rpm` adds `lemonade` to `video` and `render` with `usermod`.
+2. `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_SUGGESTS` to `podman`.
 
 ### Arch
 
@@ -419,8 +417,8 @@ Arch's `lemonade-server` package in `extra` is the same as [Debian packages](#de
 
 - The user, with Podman:
   1. Installs Podman.
-  2. Runs `sudo systemctl enable --now lemonade-podman.socket`, because Arch packages leave services disabled.
-- Arch's `PKGBUILD` builds the package through `cmake --install`, which ships both units.
+  2. Runs `sudo systemctl enable --now lemond`, because Arch packages leave services disabled.
+- Arch's `PKGBUILD` builds the package through `cmake --install`, which ships `lemond.service`.
 - pacman applies `sysusers.d/lemonade.conf`, whose `m` lines add `lemonade` to `video` and `render`.
 - The `PKGBUILD` declares `optdepends=('podman: container backends')`, which the Arch maintainers add.
 
