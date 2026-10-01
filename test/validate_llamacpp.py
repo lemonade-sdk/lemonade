@@ -458,7 +458,15 @@ def main():
             }
             results.append(result)
             status = "PASS" if success else "FAIL"
-            print(f"  Result: {status}  GPU: {gpu_status}", flush=True)
+            print(f"  Inference: {status}  GPU Offload: {gpu_status}", flush=True)
+            if gpu_status == "FAIL":
+                print(
+                    f"  [WARN] {model_name} on {label}: requested backend "
+                    f"'{args.backend}' but no GPU device banner appeared in the "
+                    "server logs for this model (possible silent CPU fallback).",
+                    file=sys.stderr,
+                    flush=True,
+                )
             if not success:
                 all_passed = False
                 print(f"  Error: {response_text}", flush=True)

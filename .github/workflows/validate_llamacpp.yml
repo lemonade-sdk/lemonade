@@ -1057,8 +1057,8 @@ jobs:
           body_lines.append("")
           body_lines.append("## Validation Results")
           body_lines.append("")
-          body_lines.append("| Model | Backend | Result | GPU | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
-          body_lines.append("|-------|---------|--------|-----|----------|--------------|---------------|---------------------|-------------------|")
+          body_lines.append("| Model | Backend | Inference | GPU Offload | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
+          body_lines.append("|-------|---------|-----------|-------------|----------|--------------|---------------|---------------------|-------------------|")
 
           # Labels match the artifact names produced by the validate job.
           backend_labels = ["vulkan", "rocm-stable", "rocm-nightly"]

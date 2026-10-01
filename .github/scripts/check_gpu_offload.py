@@ -15,8 +15,23 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import os
 import sys
 from pathlib import Path
+
+
+def _run_url() -> str:
+    """Browser URL for this workflow run, or "" when not running in Actions."""
+    server = os.environ.get("GITHUB_SERVER_URL")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    if not (server and repo and run_id):
+        return ""
+    url = f"{server}/{repo}/actions/runs/{run_id}"
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    if attempt:
+        url += f"/attempts/{attempt}"
+    return url
 
 
 def main() -> int:
@@ -66,8 +81,15 @@ def main() -> int:
             print(f"  - {item}")
         print(
             f"\n{len(failures)} model/backend combination(s) fell back to CPU. "
-            "This blocks merge; PR creation is unaffected."
+            "This blocks merge."
         )
+        print(
+            "\nFor the full device banners behind each failure, open the matching "
+            "'Validate <backend>' job logs and its server-logs artifact (server-logs-<backend>) for this run:"
+        )
+        run_url = _run_url()
+        if run_url:
+            print(f"  {run_url}")
         return 1
 
     print("GPU offload confirmed for every enforced model/backend combination.")
