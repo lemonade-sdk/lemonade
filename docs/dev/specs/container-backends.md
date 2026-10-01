@@ -33,7 +33,6 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - The PPA, the GitHub release .deb and .rpm, Arch's `lemonade-server` package, source builds and the embedded SDK tarball will natively support the container backends.
-  - Toolbox/distrobox will support them by driving Podman or Docker on the host (see [Sandboxed Hosts](#sandboxed-hosts)).
 
 ## New Backend Descriptor Labels
 
@@ -154,7 +153,7 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 
 | Method | `NativeProcess` | `ContainerProcess` |
 | --- | --- | --- |
-| `start` | Starts the binary through `ProcessManager::start_process()` and connects to it at `127.0.0.1` | <ol><li>Removes any leftover container with the same name</li><li>Builds a `ContainerRunSpec`:<ol><li>Mounts the command's model files</li><li>Rewrites their paths to `/mnt/models`</li><li>Adds the `ContainerPolicy`'s `devices` and `cap_add`</li><li>Sets the container's network (see [Run Options](#run-options) and [Sandboxed Hosts](#sandboxed-hosts))</li></ol></li><li>Has `ContainerManager` build the `podman run` or `docker run` command</li><li>Starts that command as a child of `lemond` with `ProcessManager::start_process()`</li><li>Connects to the server at the address given in [Run Options](#run-options)</li></ol> |
+| `start` | Starts the binary through `ProcessManager::start_process()` and connects to it at `127.0.0.1` | <ol><li>Removes any leftover container with the same name</li><li>Builds a `ContainerRunSpec`:<ol><li>Mounts the command's model files</li><li>Rewrites their paths to `/mnt/models`</li><li>Adds the `ContainerPolicy`'s `devices` and `cap_add`</li><li>Sets the container's network (see [Run Options](#run-options))</li></ol></li><li>Has `ContainerManager` build the `podman run` or `docker run` command</li><li>Starts that command as a child of `lemond` with `ProcessManager::start_process()`</li><li>Connects to the server at the address given in [Run Options](#run-options)</li></ol> |
 | `stop` | Terminates the process | <ol><li>Runs `stop --time 10` on the container by name †: SIGTERM, then SIGKILL after 10 seconds. Stopping by name reaches the container, because the client forwards SIGTERM and SIGKILL ends only the client</li><li>Removes the container and its network</li><li>Terminates the `run` client</li></ol> |
 | `handle` | The server process | The `podman run` or `docker run` client process. When `lemond` dies, the client gets SIGTERM, as a native server does, and forwards it to the container |
 
@@ -163,7 +162,6 @@ For example, the `llamacpp` entry holds a native pin and a container pin side by
 `ContainerManager` is the single object in `lemond` that runs podman or docker. It is the container counterpart of `ProcessManager`. It:
 
 - picks the container tool (see [Tool Choice and Install Commands](#tool-choice-and-install-commands))
-- detects the host `lemond` runs on, and builds the command prefix and mount sources for it (see [Sandboxed Hosts](#sandboxed-hosts))
 - builds the `podman run` or `docker run` command in one function, which holds every Podman and Docker difference § (see [Command Contract](#command-contract))
 - runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup and includes stopped containers
 - checks prerequisites before a load and gives each failure its fix (see [Setup Assistant](#setup-assistant))
@@ -176,8 +174,6 @@ Lemonade starts each container backend with one `podman run` or `docker run` com
 ### Run Options
 
 Run options are the flags between `run` and the image.
-
-> Note: This section describes the command on a native host. [Sandboxed Hosts](#sandboxed-hosts), below, lists what changes when `lemond` runs in a toolbox.
 
 These options are the same for Podman and Docker:
 
@@ -258,25 +254,11 @@ podman run \
     --parallel 1
 ```
 
-### Sandboxed Hosts
-
-When `lemond` runs inside a toolbox, the container tool runs on the host, outside the sandbox. `ContainerManager` detects the host at startup by a marker, and treats a host with no marker as native. `ContainerManager::invocation()` builds the command prefix for every podman or docker call, and it is the one function that reads the detected host. Each host subsection lists the parts of the command it changes, and the rest of the command matches [Run Options](#run-options).
-
-#### Toolbox
-
-A toolbox is detected by `/run/.toolboxenv`. Model files mount from their host paths, with the `/run/host` prefix removed. The toolbox changes the command prefix:
-
-| Container tool | Prefix |
-| --- | --- |
-| Podman | `flatpak-spawn --host podman` † |
-| Docker | `flatpak-spawn --host docker` † |
-
 ## Setup by Install Type
 
 A container backend loads only when `lemond` can reach Podman or Docker, and that tool can open the GPU's device nodes. This section specifies, for each install type, what starts the containers, what the installer sets up, and what the setup assistant checks. The install types are:
 
 - [`lemond` Started by the User](#lemond-started-by-the-user)
-- [Toolbox or Distrobox](#toolbox-or-distrobox)
 - [Debian packages](#debian-packages)
 - [.rpm](#rpm)
 - [Arch](#arch)
@@ -342,15 +324,6 @@ When the container tool is Docker, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
-
-### Toolbox or Distrobox
-
-Running `lemond` inside a toolbox or distrobox, as the user's host account, is the same as [`lemond` Started by the User](#lemond-started-by-the-user), except for these differences:
-
-- Every step and check applies to the host: Podman or Docker installed on the host, and the host account's groups.
-- `lemond` runs the container tool through `flatpak-spawn --host` (see [Toolbox](#toolbox)).
-- The Podman install command comes from the `ID` in `/run/host/etc/os-release`.
-- The "Device nodes accessible" check reads the host account's groups from `flatpak-spawn --host id -nG`.
 
 ### Debian packages
 
@@ -466,7 +439,6 @@ The workflow changes only the digest in each pin. A maintainer sets the tag by h
 | Stop and sweep | `stop -t=0`, then `rm`; `containers()` lists by label | `rm -f <fixed name>` before the run and again after it; no sweep, since nothing is meant to outlive the foreground process | **More robust than both:** Lemonade stops by name and sweeps by label †, and gives the engine 10 seconds to exit cleanly before SIGKILL, where Ramalama kills it at once. AI Cockpit sweeps nothing. |
 | Dry run | `--dryrun` / `--dry-run`: "show container runtime command without executing it" | Not a flag but the only path: every launch prints the exact command and waits for confirmation, with `--api-key` and `HF_TOKEN` redacted | **Same as both:** every load logs the full command, which shows the same information. Confirming a launch before it runs is left to clients, because `lemond` is a server. |
 | Docker vs Podman | One `run` builder with per-tool branches (`keep-groups`, `--add-host host.docker.internal=host-gateway`, `ps` format instead of `--noheading`) | Per-tool helpers around one builder: `upgrade_groups_for_podman`, `adapt_nvidia_runtime_args` turning `--runtime` into `--gpus all`, per-node `--device` for Docker's RDMA | **Same as both** §: one function builds the run command and holds every Podman and Docker difference. |
-| Sandboxed self | In a Toolbox, podman/docker and GPU tools run on the host via `flatpak-spawn --host`; `TMPDIR` moves to a host-visible path | Not handled. AI Cockpit is what creates Toolbx and Distrobox containers, and expects to be run on the host | **Same as Ramalama** † in a toolbox: `flatpak-spawn --host`, in `ContainerManager::invocation()`. **More robust than AI Cockpit**, which runs only on the host. |
 | Network | No `--network` unless asked; Docker gets `--add-host host.docker.internal=host-gateway`; `--network=none` is used only for builds | `--network=none` for Halogen and for R9V's extraction step, nothing for the rest. The Halogen API is reached by a host listener that pipes each accepted socket through `podman/docker exec -i` to container loopback | **Stricter than Ramalama**, which gives each container full network access: each Lemonade container gets its own `--internal` network with no route out. **Same as AI Cockpit** in effect: in both, only the local machine reaches the API and the engine cannot reach the internet. Lemonade connects over HTTP, as it does to every backend, where AI Cockpit relays each connection through `exec`. |
 | Not adopted | README claims `--network=none`, `run` with `--rm`, `selinux=true` and `pull=missing`; the code does none of these by default | The README matches the code on every flag checked here | **Stricter than Ramalama:** `test/cpp/test_container_manager.cpp` asserts the Run Options in CI, so the documented defaults and the code stay in step. **Same as AI Cockpit**, whose README matches its code. |
 
