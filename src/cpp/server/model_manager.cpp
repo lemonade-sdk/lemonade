@@ -1165,15 +1165,18 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
-// newcomer with its folder keeps both and leaves the first model's id alone.
+// newcomer with the folder that contains it keeps both and leaves the first
+// model's id alone.
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
                             const std::string& base_name,
                             const fs::path& folder,
                             ModelInfo info,
-                            const std::set<std::string>* reserved_ids = nullptr) {
+                            const std::set<std::string>* reserved_ids = nullptr,
+                            bool owned_by_earlier_folder = false) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
     std::string id = prefix + base_name;
-    if (discovered.count(id) || (reserved_ids && reserved_ids->count(id))) {
+    if (owned_by_earlier_folder || discovered.count(id) ||
+        (reserved_ids && reserved_ids->count(id))) {
         const std::string qualified = folder.filename().string() + "-" + base_name;
         id = prefix + qualified;
         for (int n = 2; discovered.count(id); ++n) {
@@ -1507,10 +1510,11 @@ void ModelManager::discover_extra_models_in_directory(
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, dir_name, dir_path, std::move(info),
+        add_extra_model(discovered, dir_name, dir_path.parent_path(), std::move(info),
                         deployment_label.empty()
                             ? nullptr
-                            : &reserved_extra_model_ids());
+                            : &reserved_extra_model_ids(),
+                        !folder_ids_kept.insert(dir_name).second);
     }
 }
 
