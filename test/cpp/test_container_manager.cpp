@@ -3,6 +3,8 @@
 // checks every container backend's descriptor and pin.
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
@@ -296,6 +298,21 @@ void test_halogen_kernel_check() {
         "capability 671326848\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19169280\n");
     check("Halogen refuses a kernel whose CWSR size predates the gfx1151 fixes",
           old_cwsr && old_cwsr->action == "Install Linux 6.18.4 or newer");
+    // The repository as of 2026-10-01, which also carries v2, ngram and mtp checkpoints.
+    const auto bundle = lemon::backends::ops_for("halogen")->select_checkpoint_files(
+        "qwen38-flash-next-w4b.hgn",
+        {".gitattributes", "README.md", "halogen.jpg", "qwen38-flash-next-mtp.hgn",
+         "qwen38-flash-next-ngram.hgn", "qwen38-flash-next-v2.hgn",
+         "qwen38-flash-next-vision.hgn", "qwen38-flash-next-w4b.hgn",
+         "qwen38-flash-next-w4b.overlay-speed.hgn", "qwen38-flash-next-w4b.overlay.hgn",
+         "tokenizer/tokenizer.json", "tokenizer/vocab.json"});
+    check("a Halogen download is the checkpoint, its overlays, the vision tower and the tokenizer",
+          bundle && std::set<std::string>(bundle->begin(), bundle->end()) ==
+                        std::set<std::string>{"qwen38-flash-next-vision.hgn",
+                                              "qwen38-flash-next-w4b.hgn",
+                                              "qwen38-flash-next-w4b.overlay-speed.hgn",
+                                              "qwen38-flash-next-w4b.overlay.hgn",
+                                              "tokenizer/tokenizer.json", "tokenizer/vocab.json"});
     check("Halogen refuses a kernel too old to report the CWSR sizes",
           lemon::backends::halogen::check_kfd_node("capability 671326848\nsimd_count 80\n")
               .has_value());
