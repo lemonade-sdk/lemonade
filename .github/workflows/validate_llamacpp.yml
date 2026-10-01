@@ -383,8 +383,8 @@ jobs:
   build-linux:
     name: Build (Linux ${{ matrix.arch }})
     needs: [get-latest-releases, verify-release-assets]
-    # Label a PR `ci:upgrades` to opt it back in.
-    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
+    # Label a PR `ci:upgrades` to opt it back in. Skip in the merge queue so merges don't gate on the self-hosted CUDA runners being online.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && github.event_name != 'merge_group' && always() && !failure() && !cancelled()
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -1311,7 +1311,7 @@ jobs:
             exit 1
           fi
           if [ "${{ github.event_name }}" = "merge_group" ]; then
-            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            absent=$(jq -r 'to_entries[]|select(.key != "build-linux" and .key != "validate-linux")|select(.value.result!="success")|.key' <<<"$NEEDS")
             if [ -n "$absent" ]; then
               echo "DID NOT RUN IN MERGE QUEUE: $absent"
               exit 1
