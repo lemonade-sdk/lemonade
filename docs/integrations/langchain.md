@@ -6,7 +6,7 @@
 
 ## Prerequisites
 
-- [Lemonade Server installed and running](https://lemonade-server.ai/docs/install/)
+- [Lemonade Server installed and running](../guide/install/README.md)
 - Python 3.9+
 - A model pulled via Lemonade (e.g. `lemonade pull Llama-3.2-3B-Instruct-Hybrid`)
 

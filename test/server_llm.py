@@ -30,6 +30,7 @@ import threading
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    load_model,
     OpenAI,
     AsyncOpenAI,
     httpx,
@@ -47,6 +48,7 @@ from utils.test_models import (
     SIMPLE_MESSAGES,
     TEST_PROMPT,
     SAMPLE_TOOL,
+    TOOL_CALLING_CTX_SIZE,
     MULTI_MODEL_SECONDARY,
     MULTI_MODEL_TERTIARY,
     TIMEOUT_MODEL_OPERATION,
@@ -510,7 +512,9 @@ class LLMTests(ServerTestBase):
     def test_012_chat_completions_with_tool_calls(self):
         """Test chat completions with tool calls."""
         client = self.get_openai_client()
-        model = self.get_test_model("llm")
+        model = self.get_test_model("tool_calling")
+        response = load_model(model, ctx_size=TOOL_CALLING_CTX_SIZE)
+        self.assertEqual(response.status_code, 200, response.text)
 
         completion = client.chat.completions.create(
             model=model,
@@ -532,7 +536,9 @@ class LLMTests(ServerTestBase):
     def test_013_chat_completions_with_tool_calls_streaming(self):
         """Test streaming chat completions with tool calls."""
         client = self.get_openai_client()
-        model = self.get_test_model("llm")
+        model = self.get_test_model("tool_calling")
+        response = load_model(model, ctx_size=TOOL_CALLING_CTX_SIZE)
+        self.assertEqual(response.status_code, 200, response.text)
 
         stream = client.chat.completions.create(
             model=model,

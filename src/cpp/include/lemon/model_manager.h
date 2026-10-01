@@ -17,6 +17,7 @@
 #include "canonical_id.h"
 #include "directory_watcher.h"
 #include "gguf_reader.h"
+#include "model_registry.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -99,7 +100,7 @@ struct ModelInfo {
     std::vector<std::string> input_aliases;  // Names accepted in requests but hidden from /models
     bool suggested = false;
     std::string source;  // Local origin: local_upload/local_path/extra_models_dir
-    std::string registry_source = "huggingface";  // Remote registry: huggingface/modelscope
+    std::string registry_source;  // Remote registry: huggingface/modelscope; empty when unpinned
     bool downloaded = false;     // Whether model is downloaded and available
     bool update_available = false; // Whether a newer remote-registry version exists
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
@@ -108,6 +109,7 @@ struct ModelInfo {
     // See streaming_working_set_gb() / filter_models_by_backend.
     double min_resident_gb = 0.0;
     int64_t max_context_window = 0;  // Static model-supported text context, when known
+    int64_t max_output_tokens = 0;    // Static model-supported completion/output token limit, when known
 
     // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
     GgufMetadata gguf;
@@ -193,6 +195,13 @@ public:
 
     // The wired registry, or nullptr if set_cloud_registry was never called.
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
+
+    // Wires a provider returning the server-wide default_model_source
+    // ("huggingface"/"modelscope"). Self-managed backends (flm) are excluded
+    // from apply_default_pull_source, so they consult this to honor the default.
+    void set_default_model_source_provider(std::function<std::string()> provider);
+
+    RemoteRegistrySource download_source_for(const ModelInfo& info) const;
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
@@ -556,6 +565,7 @@ private:
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
+    std::function<std::string()> default_model_source_provider_;
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
     // Fired after the model registry changes (add/edit/remove). Guarded by its
@@ -623,11 +633,6 @@ private:
     // with no model left visible. Populated alongside filtered_out_models_.
     mutable std::set<std::string> recipes_all_models_filtered_;
     mutable bool cache_valid_ = false;
-
-    // Refresh user_models.json on-demand when a user.* lookup misses the cache.
-    // This keeps startup cache warmup / external registry writes from causing
-    // stale hard "Model not found" failures for registered user models.
-    bool refresh_user_models_from_disk_for_lookup(const std::string& model_name);
 
     json get_sync_status_locked() const;
     void rebuild_public_model_aliases_locked();
