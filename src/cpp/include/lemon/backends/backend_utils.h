@@ -219,7 +219,7 @@ namespace lemon::backends {
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);
 
-        /** "<repository>@<digest>" for a container backend: its descriptor's repository and the digest its backend_versions.json pin names. Throws when the backend has no container policy or no valid pin. */
+        /** "<image>@<digest>" for a container backend: its descriptor's image and the digest its backend_versions.json pin names. Throws when the backend has no container policy or no valid pin. */
         static std::string get_backend_image(const std::string& recipe, const std::string& backend);
 
         /** The image get_backend_image() gave at install time, or "" when none is installed. */

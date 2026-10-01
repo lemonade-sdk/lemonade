@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 
@@ -164,6 +165,12 @@ public:
 
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
+
+// The first setup check that fails for the container backend `recipe:backend`,
+// or nullopt: the SELinux check when its devices include /dev/kfd, then the
+// checks for its install type.
+std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
+                                                           const std::string& backend);
 
 } // namespace backends
 } // namespace lemon

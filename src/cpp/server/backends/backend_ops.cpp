@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/utils/path_utils.h"
 
@@ -128,6 +129,20 @@ void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
 const BackendOps* default_backend_ops() {
     static const BackendOps kDefault;
     return &kDefault;
+}
+
+std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
+                                                           const std::string& backend) {
+    const auto& manager = utils::ContainerManager::global();
+    const BackendDescriptor* desc = descriptor_for(recipe);
+    const ContainerPolicy* policy = desc ? desc->container_for(backend) : nullptr;
+    if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
+                      policy->devices.end()) {
+        if (auto failure = manager.check_selinux()) {
+            return failure;
+        }
+    }
+    return manager.check_setup();
 }
 
 } // namespace backends

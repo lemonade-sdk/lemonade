@@ -9,6 +9,7 @@
 #include <thread>
 
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/backends/backend_ops.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
@@ -106,12 +107,11 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                              " is a container backend, which runs on Linux");
 #endif
     const auto& manager = ContainerManager::global();
-    if (auto failure = manager.check_setup()) {
+    if (auto failure = backends::container_setup_failure(recipe_, backend_)) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start: " + failure->text());
     }
-    if (!ContainerManager::allowed_repository(policy_.repository)) {
-        throw std::runtime_error(recipe_ + ":" + backend_ + " names the repository " +
-                                 policy_.repository +
+    if (!ContainerManager::allowed_image(policy_.image)) {
+        throw std::runtime_error(recipe_ + ":" + backend_ + " names the image " + policy_.image +
                                  ", which is not one Lemonade runs container backends from");
     }
     const auto tool = manager.tool();
@@ -128,8 +128,6 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     spec.image = image_;
     spec.devices = policy_.devices;
     spec.cap_add = policy_.cap_add;
-    spec.ipc_host = policy_.ipc_host;
-    spec.memlock_unlimited = policy_.memlock_unlimited;
 
     // Each model file or directory is mounted on its own under /mnt/models,
     // so the container sees exactly what the command names.
