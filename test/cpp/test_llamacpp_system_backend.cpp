@@ -208,6 +208,15 @@ int main() {
     ScopedEnvVar path_env("PATH");
     ScopedEnvVar hip_env("LEMONADE_GGML_HIP_PATH");
 
+    const char* rocr_env_name =
+        lemon::backends::llamacpp::detail::rocm_visibility_override_env_name("", "1");
+    check(rocr_env_name && std::string(rocr_env_name) == "ROCR_VISIBLE_DEVICES",
+          "an empty ROCR_VISIBLE_DEVICES value remains an explicit override");
+    const char* hip_env_name =
+        lemon::backends::llamacpp::detail::rocm_visibility_override_env_name(nullptr, "");
+    check(hip_env_name && std::string(hip_env_name) == "HIP_VISIBLE_DEVICES",
+          "an empty HIP_VISIBLE_DEVICES value remains an explicit override");
+
     // PATH discovery is a direct C++ decision: no lemond is needed to prove it.
     path_env.set(system_bin.string());
     check(!lemon::utils::find_executable_in_path("llama-server").empty(),
