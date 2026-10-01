@@ -336,12 +336,10 @@ What the user does:
 
 What the package does:
 
-1. The postinst adds `lemonade` to `video` and `render` with `usermod`.
-    - Debian: `lemonade-server.postinst`.
-    - Fedora: `postinst-rpm`.
-2. Podman installs with the package by default.
-    - Debian: `debian/control` declares `Recommends: podman`.
-    - Fedora: `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_RECOMMENDS` to `podman`.
+| Action | Debian (`.deb`/PPA) | Fedora (`.rpm`) |
+| --- | --- | --- |
+| Adds `lemonade` to `video` and `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
+| Pulls in Podman by default | `debian/control` declares `Recommends: podman` | `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_RECOMMENDS` to `podman` |
 
 Containers are started by:
 
