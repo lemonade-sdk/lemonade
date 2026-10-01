@@ -7039,6 +7039,51 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] cache lookalikes keep folder naming")
 
+    def test_021yi_extra_hf_cache_follows_a_refs_main_switch(self):
+        """Switching refs/main on a running server moves the repo name to the
+        new revision without resetting extra_models_dir."""
+        repo = "models--lemontest--Switch-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Switch-7B-Q4_K_M.gguf"
+                for commit in ("commit-1", "commit-2")
+            ],
+            refs={repo: "commit-1"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                    "commit-2-Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                },
+            )
+
+            # Written the way llama.cpp updates a ref: a temp file renamed over it.
+            refs_main = os.path.join(extra_dir, repo, "refs", "main")
+            with open(refs_main + ".tmp", "w") as f:
+                f.write("commit-2")
+            os.replace(refs_main + ".tmp", refs_main)
+
+            live = os.path.join(extra_dir, *snapshots.split("/"), "commit-2")
+            deadline = time.time() + 10
+            while (
+                self._get_model("Switch-7B-GGUF")["checkpoint"] != live
+                and time.time() < deadline
+            ):
+                time.sleep(0.25)
+
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                    "commit-1-Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                },
+            )
+            self.assertEqual(self._get_model("Switch-7B-GGUF")["checkpoint"], live)
+
+            print("[OK] the repo name follows a refs/main switch")
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously
