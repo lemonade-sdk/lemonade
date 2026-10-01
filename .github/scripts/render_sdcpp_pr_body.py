@@ -261,18 +261,25 @@ def render_body(
         "",
         "## Per-image validation evidence",
         "",
-        "| Backend | Model | Size | Time | GPU Offload | Image |",
-        "|---|---|---:|---:|:---:|---|",
+        "| Model | Size | Backend | Inference Time | GPU Offload | Generated Image |",
+        "|---|---|---|---:|:---:|---|",
     ]
 
-    for row in sorted(
+    # Group by model, then size, with backends in validated-label order so the
+    # repeated Model/Size cells can be blanked for a merged-cell look.
+    label_order = {label: index for index, label in enumerate(labels)}
+    ordered_rows = sorted(
         records,
         key=lambda r: (
-            str(r.get("label", "")),
             str(r.get("model", "")),
             str(r.get("size", "")),
+            label_order.get(str(r.get("label", "")), len(labels)),
         ),
-    ):
+    )
+
+    prev_model: str | None = None
+    prev_model_size: tuple[str, str] | None = None
+    for row in ordered_rows:
         label = str(row.get("label", ""))
         model = str(row.get("model", ""))
         size = str(row.get("size", ""))
@@ -286,8 +293,14 @@ def render_body(
         else:
             image = "missing image"
         gpu = gpu_offload_cell(row)
+
+        model_cell = f"`{model}`" if model != prev_model else ""
+        size_cell = f"`{size}`" if (model, size) != prev_model_size else ""
+        prev_model = model
+        prev_model_size = (model, size)
+
         lines.append(
-            f"| {label} | `{model}` | `{size}` | {elapsed} | {gpu} | {image} |"
+            f"| {model_cell} | {size_cell} | {label} | {elapsed} | {gpu} | {image} |"
         )
 
     lines += [
