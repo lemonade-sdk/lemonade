@@ -1962,12 +1962,8 @@ namespace lemon::backends {
     }
 #endif
 
-    namespace {
 #ifdef _WIN32
-    // The HIP runtime and the code-object manager it loads are versioned as a
-    // set. Everything else TheRock ships (OpenCL.dll in particular) is left to
-    // the system so we do not downgrade unrelated subsystems.
-    bool is_hip_runtime_dll(const std::string& name) {
+    static bool is_hip_runtime_dll(const std::string& name) {
         std::string lower = name;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
         if (lower.size() < 4 || lower.compare(lower.size() - 4, 4, ".dll") != 0) {
@@ -1976,7 +1972,6 @@ namespace lemon::backends {
         return lower.rfind("amdhip64", 0) == 0 || lower.rfind("amd_comgr", 0) == 0;
     }
 #endif
-    } // namespace
 
     bool BackendUtils::stage_therock_hip_runtime(const std::string& rocm_arch,
                                                  const fs::path& target_dir) {
@@ -2004,8 +1999,7 @@ namespace lemon::backends {
         // amdhip64 loads amd_comgr through the ordinary loader search, which
         // reaches System32 before PATH. Staging one without the other pairs
         // TheRock's HIP with the display driver's comgr (or the reverse), and a
-        // mixed pair fails device discovery outright: hipGetDeviceCount()
-        // returns 0 and callers report "no ROCm-capable device is detected".
+        // mixed pair fails device discovery: hipGetDeviceCount() returns 0.
         // Stage every member of the set that System32 would otherwise supply so
         // the exe directory holds one internally consistent runtime.
         bool staged_any = false;
@@ -2023,9 +2017,6 @@ namespace lemon::backends {
             }
 
             const fs::path target = target_dir / name;
-            // A staged copy already matching TheRock's is both correct and
-            // possibly locked by a running backend, which Windows refuses to
-            // overwrite.
             if (fs::exists(target) &&
                 read_dll_version(target) == read_dll_version(entry.path())) {
                 continue;
