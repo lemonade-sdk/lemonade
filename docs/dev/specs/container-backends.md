@@ -32,7 +32,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
   - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
-  - The PPA, the GitHub release .deb, source builds and the embedded SDK tarball will natively support the container backends.
+  - The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.
 
 ## New Backend Descriptor Labels
 
@@ -259,7 +259,7 @@ podman run \
 A container backend loads only when `lemond` can reach Podman or Docker, and that tool can open the GPU's device nodes. This section specifies, for each install type, what starts the containers, what the installer sets up, and what the setup assistant checks. The install types are:
 
 - [`lemond` Started by the User](#lemond-started-by-the-user)
-- [Debian packages](#debian-packages)
+- [lemond as a system service](#lemond-as-a-system-service)
 
 Container backends are hidden on Windows and macOS.
 
@@ -323,9 +323,9 @@ When the container tool is Docker, the checks are:
 | --- | --- | --- |
 | Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
 
-### Debian packages
+### lemond as a system service
 
-The Debian packages all build from `contrib/debian` and run `lemond` as `lemond.service`, a system service under the `lemonade` account.
+The Debian (`.deb`/PPA) and Fedora (`.rpm`) packages install `lemond` as `lemond.service`, a systemd system service under the `lemonade` account. The Debian packages build from `contrib/debian`.
 
 What the user does:
 
@@ -371,9 +371,13 @@ When the container tool is Docker, the checks are:
   ExecStartPre=+/bin/sh -c 'grep -q "^lemonade:" /etc/subuid || usermod --add-subuids 200000-265535 --add-subgids 200000-265535 lemonade'
   ```
 
-  The `+` prefix runs this one step as root. `sysusers.d` cannot allocate subordinate ranges, and a service start is the first point at which every package type (`.deb`, `.rpm`, Arch) has created the `lemonade` account, so this lives in the unit rather than in each package's install script.
+  The `+` prefix runs this one step as root. `sysusers.d` cannot allocate subordinate ranges, and a service start is the first point at which every package type (`.deb`, `.rpm`) has created the `lemonade` account, so this lives in the unit rather than in each package's install script.
 
 `lemond` starts, stops and sweeps the containers as children in its own cgroup, so stopping `lemond.service` tears down its containers with it.
+
+#### .rpm
+
+The GitHub release `.rpm`s for Fedora 43 and 44 differ only in packaging: CPack builds them from `src/cpp/CPackRPM.cmake`, `postinst-rpm` adds `lemonade` to `video` and `render` with `usermod`, and `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_RECOMMENDS` to `podman`.
 
 ### SELinux Check
 
