@@ -6,6 +6,7 @@
 #include <memory>
 #include <functional>
 #include <cstring>
+#include <map>
 #include <set>
 #include <tuple>
 #include <filesystem>
@@ -21,11 +22,11 @@ namespace fs = std::filesystem;
     #include <unistd.h>
     #include <errno.h>
 #elif defined(__APPLE__)
-    #include <sys/event.h>
+    #include <CoreServices/CoreServices.h>
+    #include <condition_variable>
+    #include <dispatch/dispatch.h>
+    #include <mutex>
     #include <sys/stat.h>
-    #include <fcntl.h>
-    #include <unistd.h>
-    #include <errno.h>
 #endif
 
 #ifdef _WIN32
@@ -139,6 +140,9 @@ public:
         epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, inotify_fd_, &ev);
 
         has_watch_ = true;
+        watch_paths_[wd_] = dir_path_;
+        watch_subdirectories(dir_path_);
+
         constexpr int epoll_timeout_ms = 100;
 
         while (!stop_flag_.load()) {
@@ -164,17 +168,24 @@ public:
 
             // Drain all pending inotify events
             bool got_event = false;
-            for (int retries = 0; retries < 5; ++retries) {
-                constexpr size_t buf_size = 4096;
-                char buf[buf_size];
-                ssize_t n2 = read(inotify_fd_, buf, buf_size);
-                if (n2 < 0) {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-                    break;
-                }
-                if (n2 > 0) {
-                    got_event = true;
-                    break;
+            alignas(struct inotify_event) char buf[4096];
+            ssize_t len;
+            while ((len = read(inotify_fd_, buf, sizeof(buf))) > 0) {
+                got_event = true;
+                for (char* p = buf; p < buf + len;) {
+                    const auto* event = reinterpret_cast<const struct inotify_event*>(p);
+                    p += sizeof(struct inotify_event) + event->len;
+                    if (event->mask & IN_IGNORED) {
+                        watch_paths_.erase(event->wd);
+                        continue;
+                    }
+                    auto parent = watch_paths_.find(event->wd);
+                    if ((event->mask & IN_ISDIR) && (event->mask & (IN_CREATE | IN_MOVED_TO)) &&
+                        event->len > 0 && parent != watch_paths_.end()) {
+                        const fs::path created = parent->second / event->name;
+                        add_nested_watch(created);
+                        watch_subdirectories(created);
+                    }
                 }
             }
 
@@ -188,13 +199,34 @@ public:
         if (epoll_fd_ >= 0) { ::close(epoll_fd_); epoll_fd_ = -1; }
         if (wd_ >= 0)       { inotify_rm_watch(inotify_fd_, wd_); wd_ = -1; }
         if (inotify_fd_ >= 0) { ::close(inotify_fd_); inotify_fd_ = -1; }
+        watch_paths_.clear();
         has_watch_ = false;
+    }
+
+    // inotify watches one directory, not its subtree, and models sit in
+    // nested folders whose contents (a new variant, a cache's refs/main) also
+    // change what is listed. IN_MODIFY is left off below the root so a file
+    // being downloaded fires once when it closes, not on every write.
+    void add_nested_watch(const fs::path& dir) {
+        constexpr unsigned int nested_mask = IN_CREATE | IN_DELETE | IN_MOVED_FROM |
+                                             IN_MOVED_TO | IN_CLOSE_WRITE | IN_ONLYDIR;
+        int wd = inotify_add_watch(inotify_fd_, dir.c_str(), nested_mask);
+        if (wd >= 0) watch_paths_[wd] = dir;
+    }
+
+    void watch_subdirectories(const fs::path& dir) {
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+             !ec && it != end; it.increment(ec)) {
+            if (it->is_directory(ec) && !it->is_symlink(ec)) add_nested_watch(it->path());
+        }
     }
 
     std::string dir_path_;
     std::atomic<bool> stop_flag_;
     std::function<void()> callback_;
     std::thread thread_;
+    std::map<int, fs::path> watch_paths_;
     int inotify_fd_;
     int wd_;
     int event_fd_;
@@ -208,51 +240,42 @@ public:
     explicit Impl(const std::string& dir_path)
         : dir_path_(dir_path)
         , stop_flag_(false)
-        , stop_pipe_read_(-1)
-        , stop_pipe_write_(-1)
-        , dir_fd_(-1)
-        , kq_(-1)
+        , changed_(false)
     {}
 
     ~Impl() { stop(); }
 
-    // The stop pipe is created here, before the thread exists, and closed only
-    // after it is joined. run_loop() never reassigns it, so stop() always has a
-    // valid write end and neither thread writes an fd the other may be reading.
     void start() {
-        int fds[2];
-        if (pipe(fds) == 0) {
-            for (int fd : fds) {
-                const int flags = fcntl(fd, F_GETFL);
-                if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-            }
-            const int nosig = 1;
-            fcntl(fds[1], F_SETNOSIGPIPE, nosig);
-            stop_pipe_read_ = fds[0];
-            stop_pipe_write_ = fds[1];
-        }
         thread_ = std::thread([this]() { run_loop(); });
     }
 
     void stop() {
-        stop_flag_.store(true);
-        if (stop_pipe_write_ >= 0) {
-            char byte = '\0';
-            ssize_t ret;
-            do { ret = ::write(stop_pipe_write_, &byte, 1); }
-            while (ret < 0 && errno == EINTR);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_flag_.store(true);
         }
+        wake_.notify_all();
         if (thread_.joinable()) {
             thread_.join();
         }
-        // Sole owner again: the thread is gone and cannot race these closes.
-        if (stop_pipe_read_ >= 0)  { ::close(stop_pipe_read_);  stop_pipe_read_ = -1; }
-        if (stop_pipe_write_ >= 0) { ::close(stop_pipe_write_); stop_pipe_write_ = -1; }
     }
 
     void set_callback(std::function<void()> cb) { callback_ = std::move(cb); }
 
 private:
+    // FSEvents reports changes anywhere below the watched path, so nested model
+    // folders and a cache repo's refs/main are seen without a descriptor per
+    // folder, which a large tree would exhaust under kqueue.
+    static void on_events(ConstFSEventStreamRef, void* info, size_t, void*,
+                          const FSEventStreamEventFlags*, const FSEventStreamEventId*) {
+        auto* self = static_cast<Impl*>(info);
+        {
+            std::lock_guard<std::mutex> lock(self->mutex_);
+            self->changed_ = true;
+        }
+        self->wake_.notify_all();
+    }
+
     void run_loop() {
         struct stat st;
         bool dir_exists = (stat(dir_path_.c_str(), &st) == 0 && S_ISDIR(st.st_mode));
@@ -266,105 +289,53 @@ private:
             if (!dir_exists) return;
         }
 
-        kq_ = kqueue();
-        if (kq_ < 0) return;
+        CFStringRef path = CFStringCreateWithCString(nullptr, dir_path_.c_str(), kCFStringEncodingUTF8);
+        if (!path) return;
+        const void* path_values[] = { path };
+        CFArrayRef paths = CFArrayCreate(nullptr, path_values, 1, &kCFTypeArrayCallBacks);
+        CFRelease(path);
+        if (!paths) return;
 
-        // Open directory file descriptor for EVFILT_VNODE
-        dir_fd_ = open(dir_path_.c_str(), O_RDONLY | O_CLOEXEC);
-        if (dir_fd_ < 0) {
-            ::close(kq_);
-            kq_ = -1;
-            return;
-        }
+        FSEventStreamContext context = {0, this, nullptr, nullptr, nullptr};
+        constexpr CFTimeInterval latency_seconds = 0.05;
+        FSEventStreamRef stream = FSEventStreamCreate(
+            nullptr, &Impl::on_events, &context, paths, kFSEventStreamEventIdSinceNow,
+            latency_seconds, kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer);
+        CFRelease(paths);
+        if (!stream) return;
 
-        if (stop_pipe_read_ < 0) {
-            ::close(dir_fd_);
-            dir_fd_ = -1;
-            ::close(kq_);
-            kq_ = -1;
-            return;
-        }
+        dispatch_queue_t queue = dispatch_queue_create("lemon.directory_watcher", DISPATCH_QUEUE_SERIAL);
+        FSEventStreamSetDispatchQueue(stream, queue);
+        if (FSEventStreamStart(stream)) {
+            while (true) {
+                std::unique_lock<std::mutex> lock(mutex_);
+                wake_.wait_for(lock, std::chrono::milliseconds(200),
+                               [this]() { return stop_flag_.load() || changed_; });
+                if (stop_flag_.load()) break;
+                const bool changed = changed_;
+                changed_ = false;
+                lock.unlock();
 
-        struct kevent ev_dir;
-        EV_SET(&ev_dir, dir_fd_,
-               EVFILT_VNODE, EV_ADD | EV_ENABLE,
-#ifndef NOTE_TRUNCATE
-               NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_EXTEND | NOTE_ATTRIB,
-#else
-               NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_EXTEND | NOTE_TRUNCATE | NOTE_ATTRIB,
-#endif
-               0, nullptr);
-
-        struct kevent ev_stop;
-        EV_SET(&ev_stop, static_cast<intptr_t>(stop_pipe_read_),
-               EVFILT_READ, EV_ADD | EV_ENABLE,
-               0, 0, nullptr);
-
-        struct kevent change_events[2] = { ev_dir, ev_stop };
-        if (kevent(kq_, change_events, 2, nullptr, 0, nullptr) < 0) {
-            ::close(dir_fd_);
-            dir_fd_ = -1;
-            ::close(kq_);
-            kq_ = -1;
-            return;
-        }
-
-        struct kevent events[4];
-
-        while (!stop_flag_.load()) {
-            constexpr int timeout_ms = 200;
-            struct timespec ts;
-            ts.tv_sec = timeout_ms / 1000;
-            ts.tv_nsec = (timeout_ms % 1000) * 1000000L;
-
-            int n = kevent(kq_, nullptr, 0, events, 4, &ts);
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                break;
+                if (stat(dir_path_.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) break;
+                if (changed && callback_) callback_();
             }
-            if (n == 0) continue;
-
-            bool stop_detected = false;
-            for (int i = 0; i < n; ++i) {
-                if (events[i].ident == static_cast<uintptr_t>(stop_pipe_read_) &&
-                    events[i].filter == EVFILT_READ) {
-                    // Drain the pipe
-                    char dummy[64];
-                    ssize_t ret;
-                    do { ret = ::read(stop_pipe_read_, dummy, sizeof(dummy)); }
-                    while (ret < 0 && errno == EINTR);
-                    stop_detected = true;
-                    break;
-                }
-                if (events[i].filter == EVFILT_VNODE &&
-                    events[i].udata != nullptr &&
-                    events[i].fflags & NOTE_RENAME) {
-                    continue;
-                }
-            }
-
-            if (stop_detected) break;
-            if (stop_flag_.load()) break;
-
-            if (stat(dir_path_.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
-                break;
-            }
-
-            if (callback_) callback_();
+            FSEventStreamStop(stream);
         }
-
-        if (dir_fd_ >= 0) { ::close(dir_fd_); dir_fd_ = -1; }
-        if (kq_ >= 0)     { ::close(kq_);     kq_ = -1; }
+        FSEventStreamInvalidate(stream);
+        FSEventStreamRelease(stream);
+        // on_events runs on the queue and reads this Impl, so let any queued
+        // call finish before the watcher can be destroyed.
+        dispatch_sync_f(queue, nullptr, [](void*) {});
+        dispatch_release(queue);
     }
 
     std::string dir_path_;
     std::atomic<bool> stop_flag_;
     std::function<void()> callback_;
     std::thread thread_;
-    int stop_pipe_read_;
-    int stop_pipe_write_;
-    int dir_fd_;
-    int kq_;
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    bool changed_;
 };
 
 #else
