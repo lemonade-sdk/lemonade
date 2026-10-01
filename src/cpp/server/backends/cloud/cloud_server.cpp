@@ -827,10 +827,14 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 }
             };
 
+            std::chrono::steady_clock::time_point last_activity_time = start_time;
+            constexpr int64_t heartbeat_interval_ms = 15000;
+
             auto result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
                 [&](const char* data, size_t length) -> bool {
+                    last_activity_time = std::chrono::steady_clock::now();
                     if (length == 0) return true;
                     if (first_chunk) {
                         first_chunk = false;
@@ -882,7 +886,24 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 headers,
                 timeout_seconds,
                 nullptr,
-                creds.policy
+                creds.policy,
+                [&sink, &last_activity_time, heartbeat_interval_ms]() {
+                    if (sink.is_writable && !sink.is_writable()) {
+                        return true;
+                    }
+
+                    const auto now = std::chrono::steady_clock::now();
+                    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now - last_activity_time).count();
+                    if (elapsed >= heartbeat_interval_ms) {
+                        static constexpr const char* heartbeat = ": ping\n\n";
+                        if (!sink.write(heartbeat, std::strlen(heartbeat))) {
+                            return true;
+                        }
+                        last_activity_time = now;
+                    }
+                    return false;
+                }
             );
 
             if (result.curl_code != CURLE_OK) {
