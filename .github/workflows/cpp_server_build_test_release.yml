@@ -1102,6 +1102,11 @@ jobs:
             extra_args: ""
             backends: "cpu vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
+          - name: thenoise
+            script: server_thenoise.py
+            extra_args: "--wrapped-server thenoise"
+            backends: "rocm"
+            runner: [Windows, X64, stx-halo, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
             extra_args: "--wrapped-server thinksound"

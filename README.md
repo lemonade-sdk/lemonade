@@ -328,7 +328,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td rowspan="1"><code>thenoise</code> (experimental)</td>
       <td><code>rocm</code></td>
       <td>Supported AMD ROCm families</td>
-      <td>Linux</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>3D generation</strong></td>
