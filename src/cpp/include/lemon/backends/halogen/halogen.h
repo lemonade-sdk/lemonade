@@ -47,11 +47,9 @@ inline const BackendDescriptor descriptor = {
     },
     /*containers*/ {
         {"rocm", {
-            /*repository*/        "ghcr.io/peonist-ai/halogen-flash-server",
-            /*devices*/           {"/dev/dri", "/dev/kfd"},
-            /*cap_add*/           {},
-            /*ipc_host*/          true,
-            /*memlock_unlimited*/ true,
+            /*image*/   "ghcr.io/peonist-ai/halogen-flash-server",
+            /*devices*/ {"/dev/dri", "/dev/kfd"},
+            /*cap_add*/ {},
         }},
     },
 };
