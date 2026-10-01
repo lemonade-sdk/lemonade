@@ -27,6 +27,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/models/{id}/options`](#get-v1modelsidoptions) | Read a model's saved, effective, and default recipe options |
 | `POST` | [`/v1/models/{id}/options`](#post-v1modelsidoptions) | Save recipe options for a model without loading it |
 | `DELETE` | [`/v1/models/{id}/options`](#delete-v1modelsidoptions) | Reset a model's recipe options to defaults |
+| `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
+| `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -408,14 +410,14 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
-`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--no-mmap` saved and the context size left automatic:
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--load-mode none` saved and the context size left automatic:
 
 ```json
 {
   "model_name": "Qwen3-0.6B-GGUF",
   "recipe": "llamacpp",
   "saved": {
-    "llamacpp_args": "--no-mmap"
+    "llamacpp_args": "--load-mode none"
   },
   "effective": {
     "auto_evict": null,
@@ -423,7 +425,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "downsize_idle_timeout": 60,
     "evict_idle_timeout": 300,
     "evict_weight_factor": 1.0,
-    "llamacpp_args": "--no-mmap",
+    "llamacpp_args": "--load-mode none",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
     "merge_args": true,
@@ -769,7 +771,7 @@ Files written by `lemonade export` (and the desktop app's Export button) are imp
 This works for regular models and collections alike; exported collection files additionally
 carry `components` plus a `models` array embedding each component's definition (see the
 `models` parameter above). For the file format and the export/import/Hugging Face workflows,
-see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-between-machines).
 
 ### Streaming Response (stream=true)
 
@@ -1195,7 +1197,7 @@ curl -X POST http://localhost:13305/v1/load \
     "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
-    "llamacpp_args": "--flash-attn on --no-mmap"
+    "llamacpp_args": "--flash-attn on --load-mode none"
   }'
 ```
 
@@ -1208,7 +1210,7 @@ curl -X POST http://localhost:13305/v1/load \
     "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "vulkan",
-    "llamacpp_args": "--no-context-shift --no-mmap",
+    "llamacpp_args": "--no-context-shift --load-mode none",
     "save_options": true
   }'
 ```
@@ -1406,6 +1408,80 @@ curl -X POST http://localhost:13305/v1/3d/generations \
   --output model.glb
 ```
 
+## `GET /v1/docs`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+List the API reference pages bundled with the server. The documentation ships with the
+server, so it describes the version you are actually running and requires no internet
+access.
+
+Fetch this index first, then read the pages it advertises. New pages can be added in
+future releases without breaking clients, because every entry carries its own URL.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/docs
+```
+
+### Example response
+
+```json
+{
+  "version": "11.8.0",
+  "format": "text/markdown",
+  "docs": [
+    {
+      "id": "api/README",
+      "title": "Lemonade Endpoints Spec",
+      "url": "/v1/docs/api/README",
+      "bytes": 1272
+    },
+    {
+      "id": "api/lemonade",
+      "title": "Lemonade API",
+      "url": "/v1/docs/api/lemonade",
+      "bytes": 96847
+    }
+  ]
+}
+```
+
+`url` is returned with the same prefix used to request the index, so a client that queries
+`/api/v0/docs` receives `/api/v0/docs/...` URLs.
+
+## `GET /v1/docs/{page}`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Read one page, served as `Content-Type: text/markdown`. `{page}` is the `id` from the index,
+which mirrors the path used on the documentation website; the `.md` suffix is optional.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/docs/api/lemonade
+```
+
+Unknown pages return `404`.
+
+### Reading the files directly
+
+The same files are installed on disk, so they can be read without a running server:
+
+| Platform | Path |
+|----------|------|
+| Windows (per-user) | `%LOCALAPPDATA%\lemonade_server\bin\resources\docs\` |
+| Windows (all users) | `C:\Program Files\Lemonade Server\bin\resources\docs\` |
+| macOS | `/Library/Application Support/Lemonade/resources/docs/` |
+| Linux (local) | `/usr/local/share/lemonade-server/resources/docs/` |
+| Linux (system) | `/usr/share/lemonade-server/resources/docs/` |
+| Linux (optional prefix) | `/opt/share/lemonade-server/resources/docs/` |
+| Linux (per-user) | `~/.local/share/lemonade-server/resources/docs/` |
+
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -1464,11 +1540,11 @@ curl http://localhost:13305/v1/health
         "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
         "--ctx-size", "8192",
         "--port", "8002",
-        "--no-mmap"
+        "--load-mode none"
       ],
       "recipe_options": {
         "ctx_size": 8192,
-        "llamacpp_args": "--no-mmap",
+        "llamacpp_args": "--load-mode none",
         "llamacpp_backend": "rocm"
       },
       "backend_url": "http://127.0.0.1:8002/v1"
@@ -1676,7 +1752,7 @@ text/plain; version=0.0.4; charset=utf-8
 
 ### Lemonade Metric Families
 
-The authoritative metric-family list is generated by the `/metrics` implementation in [`src/cpp/server/server.cpp`](../../src/cpp/server/server.cpp). Search for `handle_metrics` and `metrics.describe(...)` to see the current names, types, labels, and descriptions.
+The authoritative metric-family list is generated by the `/metrics` implementation in [`src/cpp/server/server.cpp`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/server/server.cpp). Search for `handle_metrics` and `metrics.describe(...)` to see the current names, types, labels, and descriptions.
 
 Unsupported, unavailable, null, NaN, and infinity values are omitted rather than emitted as samples.
 

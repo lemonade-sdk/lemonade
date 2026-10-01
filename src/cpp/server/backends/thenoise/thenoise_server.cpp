@@ -1,5 +1,6 @@
 #include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/thenoise/thenoise.h"
+#include "lemon/backends/thenoise/thenoise_bundle.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -43,6 +44,18 @@ json split_lora_specs(const std::string& specs) {
     }
     return result;
 }
+
+#ifdef _WIN32
+void launch_bundled_python(std::string& exe_path,
+                           std::vector<std::string>& args,
+                           std::vector<std::pair<std::string, std::string>>& env_vars) {
+    const thenoise_bundle::Launch launch = thenoise_bundle::make_launch(
+        exe_path, get_environment_variable_utf8("PATH"));
+    exe_path = launch.executable;
+    args.insert(args.begin(), launch.args.begin(), launch.args.end());
+    env_vars = launch.env_vars;
+}
+#endif
 }  // namespace
 
 InstallParams TheNoiseServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -50,13 +63,15 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm");
     }
 
-    // TheNoise publishes one portable bundle per GPU target (gfx1150 / gfx1151)
-    // under the same release tag. Pick the archive matching this host.
-    std::string target_arch = SystemInfo::get_rocm_arch();
+    std::string target_arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
 
     InstallParams params;
     params.repo = "lemonade-sdk/thenoise";
+#ifdef _WIN32
+    params.filename = version + "-" + target_arch + "-win-x64.zip";
+#else
     params.filename = version + "-" + target_arch + "-x64.tar.gz";
+#endif
     return params;
 }
 
@@ -145,8 +160,11 @@ void TheNoiseServer::load(const std::string& model_name,
         args.push_back(upscaler_dir);
     }
 
-    // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
     std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef _WIN32
+    launch_bundled_python(exe_path, args, env_vars);
+    LOG(DEBUG, "TheNoise") << "Launching bundled interpreter: " << exe_path << std::endl;
+#endif
 
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
@@ -381,15 +399,41 @@ json TheNoiseServer::image_generations(const json& request) {
     return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};
 }
 
-json TheNoiseServer::image_edits(const json& /* request */) {
-    return ErrorResponse::from_exception(
-        UnsupportedOperationException("Image editing", "thenoise (text-to-image only)")
-    );
+json TheNoiseServer::image_edits(const json& request) {
+    int n = request.value("n", 1);
+    if (n < 1) n = 1;
+
+    json data = json::array();
+    for (int i = 0; i < n; ++i) {
+        json body = build_request(request);
+        body["out"] = "json";
+
+        if (request.contains("image_data") && !request["image_data"].is_null()) {
+            body["image"] = request["image_data"];
+        }
+        body.erase("image_data");
+        body.erase("image_filename");
+
+        LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
+
+        json resp = forward_request("/edit", body);
+
+        if (!resp.contains("b64_json")) {
+            LOG(ERROR, "TheNoise") << "thenoise image edit failed: " << resp.dump() << std::endl;
+            return ErrorResponse::from_exception(
+                BackendException("thenoise", "image edit returned no b64_json: " + resp.dump())
+            );
+        }
+
+        data.push_back(resp);
+    }
+
+    return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};
 }
 
 json TheNoiseServer::image_variations(const json& /* request */) {
     return ErrorResponse::from_exception(
-        UnsupportedOperationException("Image variations", "thenoise (text-to-image only)")
+        UnsupportedOperationException("Image variations", "thenoise")
     );
 }
 
@@ -464,10 +508,20 @@ std::string TheNoiseServer::upscale_via_cli(
     };
 
     std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef _WIN32
+    launch_bundled_python(exe_path, args, env_vars);
+#endif
     auto proc = ProcessManager::start_process(
         exe_path, args, "", true, false, env_vars);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
+    if (exit_code == -1) {
+        LOG(WARNING, "TheNoise") << "Upscale timed out, killing PID " << proc.pid << std::endl;
+        ProcessManager::kill_process(proc);
+    } else {
+        // Closes the process handle; on POSIX the child is already reaped.
+        ProcessManager::reap_process(proc);
+    }
 
     std::string result;
     if (exit_code == 0 && fs::exists(output_path)) {

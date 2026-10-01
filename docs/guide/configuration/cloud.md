@@ -113,6 +113,16 @@ curl -X POST http://localhost:13305/v1/chat/completions \
 
 No special headers, no per-request credentials — `lemond` resolves the key from its registry and forwards the request transparently.
 
+## Session continuity headers
+
+Some providers key their prompt cache on a per-session identifier the client supplies as an HTTP header (for example, OpenCode sends `x-opencode-session`). When a request carries a well-known session header, Lemonade relays it upstream **verbatim** — the same header name that arrived is re-sent with the resolved value — so the provider can maintain cache continuity across the Lemonade hop:
+
+- If the client sends `x-opencode-session`, the provider receives `x-opencode-session`.
+- If the client sends `x-session-id`, the provider receives `x-session-id`.
+- Requests with no recognized session header are forwarded unchanged.
+
+The relay uses the built-in well-known session header allowlist only (`x-opencode-session`, `x-session-id`, `x-client-session-id`, `mcp-session-id`, `x-conversation-id`, `session-id`). Headers you configure for telemetry correlation via `telemetry.session.headers.id` are **not** sent to external providers, so internal identifiers never leave your network. Discovery (`GET <base_url>/models`) never carries a session header, since it is an administrative catalog query rather than inference.
+
 ## Authentication precedence
 
 When `lemond` needs an API key for a provider, it resolves it in this order:
@@ -129,7 +139,8 @@ Env vars always win. If you `POST /v1/cloud/auth` while the env var is set, the 
 
 - **Public name** — `<provider>.<cleaned_upstream_id>` after stripping `accounts/<x>/models/` wrappers and deduplicating leading provider segments.
 - **Capability labels** — `vision`, `tool-calling`, `reasoning`, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.
-- **Context window** — from `context_length`, when reported.
+- **Context window** — from `context_length`, `max_context_length`, or provider-specific nested limits (such as `top_provider.context_length`), when reported.
+- **Completion limit** — maximum output/completion tokens (from `max_completion_tokens`, `max_output_tokens`, or `top_provider.max_completion_tokens`), surfaced as `max_output_tokens` and `max_completion_tokens` on `/v1/models` when reported.
 - **Per-million-token cost** — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Surfaced on `/v1/models` for display, and attached to `collection.router` decisions as illustrative `outputs.estimated_cost` (not a billing figure).
 
 Discovery runs at every cache build (server startup, install, auth) and is best-effort: an unreachable provider logs a warning and is skipped without blocking the rest of the catalog.

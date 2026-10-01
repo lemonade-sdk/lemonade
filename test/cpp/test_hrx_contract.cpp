@@ -18,7 +18,7 @@ namespace {
 namespace hrx = lemon::backends::hrx;
 using lemon::backends::HrxServer;
 
-constexpr const char* kReleaseVersion = "hrx-b59";
+constexpr const char* kReleaseVersion = "hrx-b69";
 
 int failures = 0;
 
@@ -47,11 +47,11 @@ void check_launch_contract() {
         "--jinja",
         "--metrics",
         "--threads", "7",
-        "--no-mmap",
+        "--load-mode", "none",
         "--parallel", "1",
     };
     const auto argv = hrx::build_server_argv(
-        "/models/qualified.gguf", 32768, 14123, "--threads 7 --no-mmap");
+        "/models/qualified.gguf", 32768, 14123, "--threads 7 --load-mode none");
     check("HRX builds the complete managed argv with a benign custom tail",
           argv == expected_argv);
 
@@ -118,7 +118,7 @@ void check_installer_contract() {
           params.repo == "ROCm/ggml-staging-automation");
     check("HRX installer maps the version to the exact release asset",
           params.filename ==
-              "llama-hrx-b59-bin-manylinux-hrx-x64.tar.gz");
+              "llama-hrx-b69-bin-manylinux-hrx-x64.tar.gz");
 #else
     const bool unsupported_host_rejected = throws_exception([] {
         (void)HrxServer::get_install_params("hrx", kReleaseVersion);
