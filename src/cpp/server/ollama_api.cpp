@@ -2,6 +2,7 @@
 #include "lemon/error_types.h"
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
+#include "lemon/thinking_controls.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
@@ -756,6 +757,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
 
         // Convert to OpenAI format
         auto openai_req = convert_ollama_to_openai_chat(request_json);
+        normalize_thinking_controls(openai_req);
 
         bool has_tools = request_json.contains("tools") &&
                          request_json["tools"].is_array() &&
