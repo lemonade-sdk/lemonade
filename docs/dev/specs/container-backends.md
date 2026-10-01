@@ -388,9 +388,7 @@ The GitHub release .rpms for Fedora 43 and 44 are the same as [Debian packages](
 
 Arch's `lemonade-server` package in `extra` is the same as [Debian packages](#debian-packages), except for these differences:
 
-- The user, with Podman:
-  1. Installs Podman.
-  2. Runs `sudo systemctl enable --now lemond`, because Arch packages leave services disabled.
+- The user installs Podman, because Arch's `optdepends` does not install it automatically.
 - Arch's `PKGBUILD` builds the package through `cmake --install`, which ships `lemond.service`.
 - pacman applies `sysusers.d/lemonade.conf`, whose `m` lines add `lemonade` to `video` and `render`.
 - The `PKGBUILD` declares `optdepends=('podman: container backends')`, which the Arch maintainers add.
