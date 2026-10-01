@@ -313,7 +313,15 @@ private:
                                [this]() { return stop_flag_.load() || changed_; });
                 if (stop_flag_.load()) break;
                 const bool changed = changed_;
-                changed_ = false;
+                // FSEvents has no IN_CLOSE_WRITE and reports a file being
+                // downloaded on every latency window, so hold the callback
+                // until the tree has been quiet: one call per download.
+                while (changed_) {
+                    changed_ = false;
+                    wake_.wait_for(lock, std::chrono::milliseconds(200),
+                                   [this]() { return stop_flag_.load() || changed_; });
+                }
+                if (stop_flag_.load()) break;
                 lock.unlock();
 
                 if (stat(dir_path_.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) break;
