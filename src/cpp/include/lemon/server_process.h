@@ -72,7 +72,7 @@ private:
 // container.
 class ContainerProcess : public ServerProcess {
 public:
-    // `image` is <repository>@<digest>; `model` names the container.
+    // `image` is <image>@<digest>; `model` names the container.
     ContainerProcess(ProcessOutput output, std::string recipe, std::string backend,
                      std::string model, ContainerPolicy policy, std::string image);
     ~ContainerProcess() override;

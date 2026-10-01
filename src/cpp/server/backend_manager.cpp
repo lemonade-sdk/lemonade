@@ -1,6 +1,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -170,15 +171,14 @@ void install_container_backend(const std::string& recipe, const std::string& bac
         throw std::runtime_error(recipe + ":" + backend + " is a container backend, which runs on Linux");
     }
     const auto& manager = utils::ContainerManager::global();
-    if (auto failure = manager.check_setup()) {
+    if (auto failure = backends::container_setup_failure(recipe, backend)) {
         throw std::runtime_error("Cannot install " + recipe + ":" + backend + ": " +
                                  failure->text());
     }
 
     const ContainerPolicy* policy = container_policy(recipe, backend);
-    if (!utils::ContainerManager::allowed_repository(policy->repository)) {
-        throw std::runtime_error(recipe + ":" + backend + " names the repository " +
-                                 policy->repository +
+    if (!utils::ContainerManager::allowed_image(policy->image)) {
+        throw std::runtime_error(recipe + ":" + backend + " names the image " + policy->image +
                                  ", which is not one Lemonade pulls container backends from");
     }
 
@@ -217,15 +217,15 @@ void install_container_backend(const std::string& recipe, const std::string& bac
                                 << std::endl;
 }
 
-// The registry page a container backend's repository is published on.
-std::string container_registry_url(const std::string& repository) {
+// The registry page a container backend's image is published on.
+std::string container_registry_url(const std::string& image) {
     const std::string docker_hub = "docker.io/";
     const std::string ghcr = "ghcr.io/";
-    if (repository.compare(0, docker_hub.size(), docker_hub) == 0) {
-        return "https://hub.docker.com/r/" + repository.substr(docker_hub.size());
+    if (image.compare(0, docker_hub.size(), docker_hub) == 0) {
+        return "https://hub.docker.com/r/" + image.substr(docker_hub.size());
     }
-    if (repository.compare(0, ghcr.size(), ghcr) == 0) {
-        const std::string path = repository.substr(ghcr.size());
+    if (image.compare(0, ghcr.size(), ghcr) == 0) {
+        const std::string path = image.substr(ghcr.size());
         const auto slash = path.find('/');
         if (slash != std::string::npos) {
             return "https://github.com/orgs/" + path.substr(0, slash) +
@@ -1044,7 +1044,7 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
                 backends::BackendUtils::get_backend_version(recipe, resolved_backend));
             result.download_filename =
                 backends::BackendUtils::get_backend_image(recipe, resolved_backend);
-            result.release_url = container_registry_url(policy->repository);
+            result.release_url = container_registry_url(policy->image);
             return result;
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
