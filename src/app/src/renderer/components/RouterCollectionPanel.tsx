@@ -537,6 +537,8 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   const [previewJson, setPreviewJson] = useState<string | null>(null);
   const [confirmAdvanced, setConfirmAdvanced] = useState(false);
   const [confirmQuick, setConfirmQuick] = useState(false);
+  const [confirmLlm, setConfirmLlm] = useState(false);
+  const [confirmLlmTarget, setConfirmLlmTarget] = useState<'quick' | 'rules' | null>(null);
   const [lossyAcknowledged, setLossyAcknowledged] = useState(false);
   const ruleSeqRef = useRef(0);
   const clfSeqRef = useRef(0);
@@ -867,14 +869,28 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           <label className="form-label">Routing Mode</label>
           <div className="router-mode-options">
             <label className={`router-mode-option${draft.routingMode === 'llm' ? ' router-mode-option--selected' : ''}`}>
-              <input type="radio" name="routingMode" value="llm" checked={draft.routingMode === 'llm'} onChange={() => patch({ routingMode: 'llm' })} />
+              <input type="radio" name="routingMode" value="llm" checked={draft.routingMode === 'llm'}
+                onChange={() => {
+                  if ((draft.routingMode === 'quick' || draft.routingMode === 'rules') && ((draft.rules ?? []).length > 0 || (draft.classifiers ?? []).length > 0)) {
+                    setConfirmLlmTarget(null);
+                    setConfirmLlm(true);
+                  } else {
+                    patch({ routingMode: 'llm', rules: [], classifiers: [] });
+                  }
+                }} />
               <strong>Natural Language</strong>
               <span className="settings-description">A small LLM reads your prompt and picks the best candidate.</span>
             </label>
             <label className={`router-mode-option${draft.routingMode === 'quick' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'}
                 onChange={() => {
-                  if (draft.routingMode === 'rules' && (draft.rules ?? []).length > 0) {
+                  const hasNaturalLanguageProgress =
+                    Boolean(draft.routerModel) ||
+                    Boolean(draft.routerPrompt?.trim() && draft.routerPrompt.trim() !== DEFAULT_ROUTER_PROMPT);
+                  if (draft.routingMode === 'llm' && hasNaturalLanguageProgress) {
+                    setConfirmLlmTarget('quick');
+                    setConfirmLlm(true);
+                  } else if (draft.routingMode === 'rules' && (draft.rules ?? []).length > 0) {
                     setConfirmQuick(true);
                   } else {
                     patch({ routingMode: 'quick', rules: [], classifiers: [] });
@@ -886,7 +902,13 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <label className={`router-mode-option${draft.routingMode === 'rules' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'}
                 onChange={() => {
-                  if (draft.routingMode === 'quick' && (draft.rules ?? []).length > 0) {
+                  const hasNaturalLanguageProgress =
+                    Boolean(draft.routerModel) ||
+                    Boolean(draft.routerPrompt?.trim() && draft.routerPrompt.trim() !== DEFAULT_ROUTER_PROMPT);
+                  if (draft.routingMode === 'llm' && hasNaturalLanguageProgress) {
+                    setConfirmLlmTarget('rules');
+                    setConfirmLlm(true);
+                  } else if (draft.routingMode === 'quick' && (draft.rules ?? []).length > 0) {
                     setConfirmAdvanced(true);
                   } else {
                     patch({ routingMode: 'rules', rules: [], classifiers: [] });
@@ -1010,6 +1032,36 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <div className="confirm-actions">
               <button type="button" className="settings-reset-button" onClick={() => setConfirmQuick(false)}>Cancel</button>
               <button type="button" className="settings-save-button" onClick={() => { setConfirmQuick(false); patch({ routingMode: 'quick', rules: [], classifiers: [] }); }}>
+                Clear and Switch
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {confirmLlm && createPortal(
+        <div className="confirm-overlay" onClick={() => setConfirmLlm(false)}>
+          <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+            <div className="confirm-title">
+              {confirmLlmTarget ? 'Switch away from Natural Language?' : 'Switch to Natural Language?'}
+            </div>
+            <div className="confirm-body">
+              {confirmLlmTarget
+                ? <>Switching to {confirmLlmTarget === 'quick' ? 'Quick Rules' : 'Advanced Rules'} will <strong style={{ color: '#f87171' }}>clear your Natural Language router model and prompt.</strong></>
+                : <>Switching to Natural Language will <strong style={{ color: '#f87171' }}>clear your existing rules and classifiers.</strong></>
+              }
+            </div>
+            <div className="confirm-actions">
+              <button type="button" className="settings-reset-button" onClick={() => setConfirmLlm(false)}>Cancel</button>
+              <button type="button" className="settings-save-button" onClick={() => {
+                setConfirmLlm(false);
+                if (confirmLlmTarget) {
+                  patch({ routingMode: confirmLlmTarget, rules: [], classifiers: [], routerModel: '', routerPrompt: DEFAULT_ROUTER_PROMPT });
+                } else {
+                  patch({ routingMode: 'llm', rules: [], classifiers: [] });
+                }
+              }}>
                 Clear and Switch
               </button>
             </div>

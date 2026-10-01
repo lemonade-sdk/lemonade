@@ -1,0 +1,34 @@
+name: Check gated jobs
+description: >-
+  Fail if any needed job broke; in the merge queue, also fail if any never ran.
+inputs:
+  needs:
+    description: 'toJSON(needs) from the calling job'
+    required: true
+  event-name:
+    description: 'github.event_name from the calling workflow'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check gated jobs
+      shell: bash
+      env:
+        NEEDS: ${{ inputs.needs }}
+        EVENT_NAME: ${{ inputs.event-name }}
+      run: |
+        # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+        # Fail if any job broke. In the merge queue, also fail if any never ran.
+        echo "$NEEDS"
+        broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+        if [ -n "$broke" ]; then
+          echo "FAILED: $broke"
+          exit 1
+        fi
+        if [ "$EVENT_NAME" = "merge_group" ]; then
+          absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+          if [ -n "$absent" ]; then
+            echo "DID NOT RUN IN MERGE QUEUE: $absent"
+            exit 1
+          fi
+        fi

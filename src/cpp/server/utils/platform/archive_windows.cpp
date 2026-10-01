@@ -117,23 +117,23 @@ public:
                 return true;
             },
             "",
-            30,
+            tarball_listing_timeout_seconds,
             false
         );
 
-        int strip = 0;
-        if (list_result == 0) {
-            strip = compute_tarball_strip_components(entries);
-            LOG(DEBUG, backend_name) << "Tarball strip-components: " << strip << std::endl;
-        } else {
-            LOG(DEBUG, backend_name) << "Could not list tarball contents, using strip=0" << std::endl;
+        const auto strip = resolve_tarball_strip_components(list_result, entries);
+        if (!strip.has_value()) {
+            LOG(ERROR, backend_name) << "Could not list tarball contents, code: "
+                                     << list_result << std::endl;
+            return false;
         }
+        LOG(DEBUG, backend_name) << "Tarball strip-components: " << *strip << std::endl;
 
         std::string output;
         int result = ProcessManager::run_process_with_output(
             get_native_tar_path(),
             {"-xf", tarball_path, "-C", dest_dir,
-             "--strip-components=" + std::to_string(strip), "--no-same-owner"},
+             "--strip-components=" + std::to_string(*strip), "--no-same-owner"},
             [&output](const std::string& line) {
                 output += line + "\n";
                 return true;

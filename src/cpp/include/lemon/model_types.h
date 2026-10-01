@@ -1,7 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace lemon {
@@ -115,52 +118,87 @@ inline std::string device_type_to_string(DeviceType device) {
 // Labels describe *capabilities* (what the model accepts or produces). ModelType
 // describes the *deployment mode* we spawn the backend subprocess in (LLM chat,
 // ASR, embedding, etc.) and the LRU bucket the router uses. These are different
-// concepts.
+// concepts, and only the labels below name a deployment mode. "vision",
+// "reasoning", "tool-calling", "chat-transcription" and friends describe what a
+// chat model accepts or how it behaves; they never make one. In particular
+// "chat-transcription" is an input modality — the model takes audio in a chat
+// turn and transcribes it as part of its answer — so a model carrying it is a
+// chat model and says so with "chat", exactly as a vision model does.
 //
-// Label semantics:
-//   "transcription"          → model can serve /audio/transcriptions (functional)
-//   "realtime-transcription" → model supports WebSocket /realtime streaming
-//   "chat-transcription"     → model accepts audio input in /chat/completions
+// "chat" is checked first so an omni model that also declares a mode it could
+// serve standalone ("transcription") still deploys as an LLM rather than as ASR.
 //
-// Resolution: chat-indicator labels win. The "transcription" label triggers
-// ModelType::TRANSCRIPTION only when no chat indicator is present (pure Whisper).
-// "chat-transcription" is an LLM input-modality label and does not change the
-// deployment mode.
-inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
+// Templated on the container so a label set already held as a std::set can be
+// tested without copying it into a vector.
+template <typename Labels>
+inline bool find_deployment_mode(const Labels& labels, ModelType& out) {
     for (const auto& label : labels) {
-        if (label == "vision" || label == "reasoning" ||
-            label == "tool-calling" || label == "tools" ||
-            label == "chat-transcription") {
-            return ModelType::LLM;
+        if (label == "chat") {
+            out = ModelType::LLM;
+            return true;
         }
     }
     for (const auto& label : labels) {
         if (label == "embeddings" || label == "embedding") {
-            return ModelType::EMBEDDING;
+            out = ModelType::EMBEDDING;
+            return true;
         }
         if (label == "reranking") {
-            return ModelType::RERANKING;
+            out = ModelType::RERANKING;
+            return true;
         }
         if (label == "transcription") {
-            return ModelType::TRANSCRIPTION;
+            out = ModelType::TRANSCRIPTION;
+            return true;
         }
         if (label == "image") {
-            return ModelType::IMAGE;
+            out = ModelType::IMAGE;
+            return true;
         }
         if (label == "tts") {
-            return ModelType::TTS;
+            out = ModelType::TTS;
+            return true;
         }
         if (label == "audio-generation") {
-            return ModelType::AUDIO_GENERATION;
+            out = ModelType::AUDIO_GENERATION;
+            return true;
         }
         if (label == "classification" || label == "classifier") {
-            return ModelType::CLASSIFICATION;
+            out = ModelType::CLASSIFICATION;
+            return true;
         }
         if (label == "3d") {
-            return ModelType::MESH;
+            out = ModelType::MESH;
+            return true;
         }
     }
-    return ModelType::LLM;
+    return false;
+}
+
+// Single-label form of find_deployment_mode(), for callers testing labels one at
+// a time. Allocates nothing.
+inline bool deployment_mode_of(std::string_view label, ModelType& out) {
+    const std::array<std::string_view, 1> one{label};
+    return find_deployment_mode(one, out);
+}
+
+// A label set that names no deployment mode stays usable as a chat model rather
+// than failing to route. Use find_deployment_mode() where the difference between
+// "declares chat" and "declares nothing" matters.
+inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
+    ModelType type = ModelType::LLM;
+    find_deployment_mode(labels, type);
+    return type;
+}
+
+inline bool has_label(const std::vector<std::string>& labels, const std::string& label) {
+    return std::find(labels.begin(), labels.end(), label) != labels.end();
+}
+
+inline bool add_label_once(std::vector<std::string>& labels, const std::string& label) {
+    if (has_label(labels, label)) return false;
+    labels.push_back(label);
+    return true;
 }
 
 // Fallback device type for recipes with no registered backend descriptor

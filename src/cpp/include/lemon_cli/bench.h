@@ -1,8 +1,6 @@
-#ifndef LEMON_CLI_BENCH_H
-#define LEMON_CLI_BENCH_H
+#pragma once
 
 #include <map>
-#include <optional>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -27,6 +25,8 @@ struct BenchScenario {
     std::vector<json> messages;  // Chat messages (system + user/assistant turns)
     json input;                  // Input for non-chat scenarios (e.g., textgen, embedding)
     json imgconfig;              // Input for image generation
+    std::string image_path;      // Path to image file for vision benchmarks (relative to scenario file)
+    std::string source_file;     // The scenario JSON file path (for resolving relative image paths at run time)
     int max_tokens;
     int warmup_runs = 0;
     int measurement_runs = 3;
@@ -41,6 +41,7 @@ struct BenchRunResult {
     double vram_gb = -1.0;      // -1 means not available
     double memory_gb = -1.0;    // -1 means not available
     bool success = true;        // false if the run failed (exception, HTTP error, etc.)
+    bool valid = false;         // set by parse_response when meaningful data was extracted
     std::string response_text;  // LLM response text (only populated if capture enabled)
 };
 
@@ -107,10 +108,10 @@ struct BackendDiscovery {
     std::string backend;
 };
 
-// Discover available backends for a model
-std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client,
-                                                const std::string& model,
-                                                const std::vector<std::string>& requested);
+// Discover available backends for a model (uses pre-fetched system-info and model-info)
+std::vector<BackendDiscovery> discover_backends(const json& sys_info,
+                                                const std::vector<std::string>& requested,
+                                                const json& model_info);
 
 // ============================================================
 // Model Load/Unload
@@ -249,72 +250,7 @@ CLI::App* register_bench_command(CLI::App& parent,
                                  std::string& output_file,
                                  BenchCliOptions& opts);
 
-// ============================================================
-// Output Formatting
-// ============================================================
-struct FieldWidths {
-    size_t scenario_name = 20;
-    size_t ttft = 8;
-    size_t tps = 8;
-    size_t vram = 8;
-};
-
-FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results);
-
-// Print results as a comparison table to stdout
-// use_percentiles: show p50/p95 columns (true when runs >= 10); otherwise show min/max
-void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
-                 bool use_percentiles);
-
-// Convert results to JSON for programmatic consumption
-json to_json(const std::vector<BenchBackendResult>& results,
-             const std::string& model,
-             const std::string& timestamp,
-             const BenchConfig& config);
-
-// ============================================================
-// Comparison
-// ============================================================
-
-struct BenchComparisonDelta {
-    std::string backend;
-    int ctx_size = 0;
-    std::string backend_args;
-    std::string scenario;
-    double ttft_pct_change;    // Positive = slower, negative = faster
-    double tps_pct_change;     // Positive = faster, negative = slower
-    std::optional<double> vram_gb_change; // Positive = more VRAM used, nullopt = no data
-    std::string status;        // "matched", "new", "removed"
-};
-
-// Load previous results from a JSON file
-json load_previous_results(const std::string& file_path);
-
-// Compute deltas between current and previous results
-std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendResult>& current,
-                                                  const json& previous_results);
-
-// Print comparison table to stdout
-void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
-                      const std::string& model,
-                      const std::string& previous_file,
-                      const std::string& previous_timestamp);
-
-// Build comparison JSON (for --json --compare)
-json build_comparison_json(const std::vector<BenchBackendResult>& results,
-                           const std::string& model,
-                           const std::string& timestamp,
-                           const BenchConfig& config,
-                           const json& previous_results,
-                           const std::vector<BenchComparisonDelta>& deltas);
-
-// ============================================================
-// Utility
-// ============================================================
-
 // Get ISO 8601 timestamp string
 std::string get_timestamp_iso();
 
 } // namespace lemon_cli
-
-#endif // LEMON_CLI_BENCH_H

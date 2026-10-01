@@ -1,5 +1,6 @@
 #include "lemon/realtime_session.h"
 #include "lemon/router.h"
+#include <algorithm>
 #include <random>
 #include <chrono>
 #include <iostream>
@@ -59,6 +60,7 @@ void RealtimeSessionManager::apply_turn_detection_config(
         session->vad.reset();
         session->vad_speech_window_open = false;
         session->last_interim_transcription_ms = 0;
+        session->interim_generation.fetch_add(1, std::memory_order_relaxed);
         return;
     }
 
@@ -298,13 +300,20 @@ void RealtimeSessionManager::transcribe_interim(std::shared_ptr<RealtimeSession>
     auto wav_data = session->audio_buffer.get_wav_padded(500);
     std::string model = session->model;
     session->last_interim_transcription_ms = session->audio_buffer.duration_ms();
+    const std::uint64_t generation =
+        session->interim_generation.load(std::memory_order_relaxed);
 
     LOG(DEBUG, "RealtimeSession") << "Firing interim transcription at "
               << session->last_interim_transcription_ms << "ms" << std::endl;
 
     auto future = std::async(std::launch::async,
-        [this, session, wav_data = std::move(wav_data), model = std::move(model)]() {
-            transcribe_wav(session, wav_data, model, /*is_interim=*/true);
+        [this, session, wav_data = std::move(wav_data), model = std::move(model), generation]() {
+            transcribe_wav(
+                session,
+                wav_data,
+                model,
+                /*is_interim=*/true,
+                generation);
             session->interim_in_flight.store(false);
         });
 
@@ -342,6 +351,7 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
         session->audio_buffer.clear();
         session->vad.reset();
         session->last_interim_transcription_ms = 0;
+        session->interim_generation.fetch_add(1, std::memory_order_relaxed);
 
         if (session->send_message) {
             json msg = {
@@ -386,6 +396,8 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
     session->audio_buffer.clear();
     session->vad.reset();
     session->vad_speech_window_open = false;
+    session->last_interim_transcription_ms = 0;
+    session->interim_generation.fetch_add(1, std::memory_order_relaxed);
 
     if (session->send_message) {
         json msg = {
@@ -407,6 +419,8 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
     session->vad.reset();
     session->vad_speech_window_open = false;
     session->last_interim_transcription_ms = 0;  // Reset for next utterance
+    // A final result supersedes any interim jobs that have not started yet.
+    session->interim_generation.fetch_add(1, std::memory_order_relaxed);
 
     // Dispatch transcription to worker thread so it doesn't block the WebSocket callback
     auto future = std::async(std::launch::async,
@@ -432,8 +446,25 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
 void RealtimeSessionManager::transcribe_wav(
     std::shared_ptr<RealtimeSession> session,
     std::vector<uint8_t> wav_data, std::string model,
-    bool is_interim) {
+    bool is_interim,
+    std::uint64_t interim_generation) {
     try {
+        const char* tag = is_interim ? "interim" : "final";
+        std::unique_lock<std::mutex> transcription_lock(session->transcription_mutex);
+
+        if (!session->session_active.load()) {
+            LOG(DEBUG, "RealtimeSession") << "Skipping " << tag
+                      << " transcription for closed session" << std::endl;
+            return;
+        }
+
+        if (is_interim &&
+            session->interim_generation.load(std::memory_order_relaxed) != interim_generation) {
+            LOG(DEBUG, "RealtimeSession") << "Skipping stale interim transcription"
+                      << std::endl;
+            return;
+        }
+
         // Convert WAV bytes to a string for the router (expects file_data as string)
         std::string file_data(reinterpret_cast<const char*>(wav_data.data()), wav_data.size());
 
@@ -445,18 +476,44 @@ void RealtimeSessionManager::transcribe_wav(
         };
 
         // Call router for transcription
-        const char* tag = is_interim ? "interim" : "final";
         LOG(DEBUG, "RealtimeSession") << "Calling Whisper " << tag << " transcription ("
                   << wav_data.size() << " bytes)..." << std::endl;
         json response = router_->audio_transcriptions(request);
+
+        // Drop stale result (including stale errors) instead of publishing it.
+        if (is_interim &&
+            session->interim_generation.load(std::memory_order_relaxed) != interim_generation) {
+            LOG(DEBUG, "RealtimeSession") << "Discarding stale interim transcription result"
+                      << std::endl;
+            return;
+        }
+
         LOG(DEBUG, "RealtimeSession") << "Whisper " << tag << " response: " << response.dump() << std::endl;
+
+        if (response.contains("error")) {
+            const json& error = response["error"];
+            std::string message = "Whisper backend returned an error";
+            if (error.is_object()) {
+                message = error.value("message", message);
+            } else if (error.is_string()) {
+                message = error.get<std::string>();
+            }
+
+            const std::string prefix = "Transcription failed: ";
+            if (message.rfind(prefix, 0) == 0) {
+                message.erase(0, prefix.size());
+            }
+            throw std::runtime_error(message);
+        }
+
+        if (!response.contains("text") || !response["text"].is_string()) {
+            throw std::runtime_error(
+                "Whisper backend response did not contain a string 'text' field");
+        }
 
         // Send transcription result if session is still active
         if (session->send_message && session->session_active.load()) {
-            std::string transcript;
-            if (response.contains("text")) {
-                transcript = response["text"].get<std::string>();
-            }
+            std::string transcript = response["text"].get<std::string>();
 
             LOG(DEBUG, "RealtimeSession") << "Sending " << tag << " transcript to client: \""
                       << transcript << "\"" << std::endl;
@@ -628,6 +685,7 @@ void RealtimeSessionManager::close_session(const std::string& session_id) {
         if (it != sessions_.end()) {
             session = it->second;
             session->session_active = false;
+            session->interim_generation.fetch_add(1, std::memory_order_relaxed);
             sessions_.erase(it);
         }
     }

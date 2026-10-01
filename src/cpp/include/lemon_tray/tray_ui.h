@@ -1,9 +1,12 @@
 #pragma once
 
+#include <lemon/utils/url_utils.h>
 #include "lemon_tray/platform/tray_interface.h"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
+#include <csignal>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <set>
@@ -40,22 +43,38 @@ struct LoadedModelInfo {
     }
 };
 
+struct TrayUIOptions {
+    int port = 13305;
+    std::string host = "127.0.0.1";
+    bool is_ssl = false;
+    bool silent = false;
+    bool launch_app = false;
+    bool server_initially_connected = false;
+};
+
 class TrayUI {
 public:
-    TrayUI(int port, const std::string& host, bool silent = false);
+    explicit TrayUI(const TrayUIOptions& options);
     ~TrayUI();
 
     bool initialize();
     void run();   // Blocking event loop (main thread)
     void stop();  // Thread-safe, posts quit to event loop
 
+    // Set by the POSIX SIGINT/SIGTERM handler; polled by the refresh thread so
+    // the tray quits cleanly through the event loop instead of std::exit() from
+    // a signal handler (which is not async-signal-safe).
+    static volatile std::sig_atomic_t g_quit_requested;
+
 private:
     // HTTP helpers (inline, using httplib::Client)
     std::string http_get(const std::string& endpoint);
     std::string http_post(const std::string& endpoint, const std::string& body = "");
+    httplib::Client make_client(const std::string& host, int port, bool is_ssl) const;
+    httplib::Client make_client() const;
 
     // Data fetchers
-    std::pair<bool, std::vector<LoadedModelInfo>> fetch_server_state();
+    std::optional<std::vector<LoadedModelInfo>> fetch_server_state();
     std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();
     void fetch_runtime_config();
@@ -96,8 +115,12 @@ private:
     // State
     int port_;
     std::string host_;
+    bool is_ssl_ = false;
     int max_loaded_models_ = 1;  // Mirrors server config; default 1 per configuration.md
     bool silent_;  // Suppress startup notification
+    bool launch_app_;
+    bool server_initially_connected_;
+    std::atomic<bool> stop_refresh_{false};
     std::unique_ptr<TrayInterface> tray_;
 
     // Model loading state
@@ -114,13 +137,7 @@ private:
     // Recipe options (for context size tracking)
     nlohmann::json recipe_options_;
 
-    // Signal handling (non-Windows)
-#ifndef _WIN32
-    std::thread signal_monitor_thread_;
-    std::atomic<bool> stop_signal_monitor_{false};
-public:
-    static int signal_pipe_[2];
-#endif
+
 };
 
 } // namespace lemon_tray

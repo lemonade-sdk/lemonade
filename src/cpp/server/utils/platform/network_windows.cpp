@@ -1,9 +1,55 @@
-#include "lemon/utils/network_utils.h"
-
+// Windows header discipline — must precede all other includes.
+#ifdef _WIN32
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
+#include <windows.h>
+#pragma comment(lib, "ws2_32.lib")
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
+#include "lemon/utils/network_utils.h"
+#include "lemon/utils/aixlog.hpp"
 
 namespace lemon::utils {
+
+bool configure_tcp_keepalive(socket_t sock) {
+    int opt = 1;
+    bool ok = true;
+    if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char*>(&opt), sizeof(opt)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(SO_KEEPALIVE) failed: WSA error " << WSAGetLastError() << std::endl;
+        ok = false;
+    }
+#ifdef TCP_KEEPIDLE
+    int idle = 15;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, reinterpret_cast<const char*>(&idle), sizeof(idle)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(TCP_KEEPIDLE) failed: WSA error " << WSAGetLastError() << std::endl;
+        ok = false;
+    }
+#endif
+#ifdef TCP_KEEPINTVL
+    int interval = 5;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, reinterpret_cast<const char*>(&interval), sizeof(interval)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(TCP_KEEPINTVL) failed: WSA error " << WSAGetLastError() << std::endl;
+        ok = false;
+    }
+#endif
+#ifdef TCP_KEEPCNT
+    int count = 3;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, reinterpret_cast<const char*>(&count), sizeof(count)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(TCP_KEEPCNT) failed: WSA error " << WSAGetLastError() << std::endl;
+        ok = false;
+    }
+#endif
+    return ok;
+}
 
 bool is_tcp_listener_active(int family, const std::string& host_ip, int port) {
     SOCKET sock = socket(family, SOCK_STREAM, IPPROTO_TCP);

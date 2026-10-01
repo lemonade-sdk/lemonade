@@ -97,7 +97,17 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
         return "";
     }
 
-    // No variant: return the cache directory.
+    fs::path active_snapshot = hf_cache::active_snapshot_path(model_cache_path_fs);
+    if (!active_snapshot.empty()) {
+        return path_to_utf8(active_snapshot);
+    }
+
+    // A snapshots directory without a usable refs/main is an interrupted or
+    // otherwise uncommitted pull. Do not expose the cache root as a downloaded
+    // model; a later pull can resume the preserved .partial files.
+    if (hf_cache::exists(model_cache_path_fs / "snapshots")) {
+        return "";
+    }
     return ctx.model_cache_path;
 }
 

@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <iomanip>
 #include <initializer_list>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 #include "lemon/utils/http_client.h"
@@ -22,6 +24,20 @@ std::string lower_copy(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
+}
+
+std::string strip_query_fragment(std::string value) {
+    const size_t pos = value.find_first_of("?#");
+    if (pos != std::string::npos) value.resize(pos);
+    while (!value.empty() && value.back() == '/') value.pop_back();
+    return value;
+}
+
+std::string first_two_path_segments(const std::string& path) {
+    const size_t slash = path.find('/');
+    if (slash == std::string::npos) return path;
+    const size_t second = path.find('/', slash + 1);
+    return second == std::string::npos ? path : path.substr(0, second);
 }
 
 bool is_unreserved(unsigned char c) {
@@ -361,10 +377,10 @@ public:
         std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
         if (endpoint.empty()) endpoint = "https://huggingface.co";
 
-        std::string url = endpoint + "/api/models/" + percent_encode(repo_id, true);
-        if (!requested_revision.empty() && revision != "main") {
-            url += "/revision/" + percent_encode(revision, true);
-        }
+        std::string url = huggingface_repository_api_url(
+            endpoint,
+            repo_id,
+            !requested_revision.empty() && revision != "main" ? revision : "");
         url += "?blobs=true";
 
         const auto response = HttpClient::get(url, auth_headers());
@@ -605,7 +621,7 @@ RegistrySearchResponse normalize_registry_search_response(
     result.results.reserve(std::min<std::size_t>(items->size(), limit));
     for (const auto& item : *items) {
         RegistrySearchResult normalized = normalize_registry_search_result(source, item);
-        if (normalized.repo_id.empty() || excluded_generation_task(normalized.task)) continue;
+        if (normalized.repo_id.empty() || registry_task_is_excluded(normalized.task)) continue;
         // Provider list metadata is only a hint here. The request-specific
         // format filter is applied by search_registry_models below, while
         // /pull/variants remains the authoritative file compatibility check.
@@ -613,6 +629,73 @@ RegistrySearchResponse normalize_registry_search_response(
         if (result.results.size() >= limit) break;
     }
     return result;
+}
+
+bool registry_task_is_excluded(const std::string& task) {
+    return excluded_generation_task(task);
+}
+
+bool is_official_huggingface_endpoint(const std::string& endpoint) {
+    return trim_trailing_slash(endpoint) == "https://huggingface.co";
+}
+
+std::string huggingface_repository_api_url(
+    const std::string& endpoint,
+    const std::string& repo_id,
+    const std::string& revision) {
+    std::string url = trim_trailing_slash(endpoint) +
+                      "/api/models/" + percent_encode(repo_id, true);
+    if (!revision.empty()) {
+        url += "/revision/" + percent_encode(revision, true);
+    }
+    return url;
+}
+
+std::optional<json> parse_huggingface_compatibility_response(
+    int status_code,
+    const std::string& body,
+    bool metadata_required) {
+    if (status_code != 200) {
+        const bool mirror_does_not_support_metadata =
+            !metadata_required &&
+            (status_code == 400 || status_code == 404 ||
+             status_code == 405 || status_code == 422);
+        if (mirror_does_not_support_metadata) {
+            return std::nullopt;
+        }
+        throw std::runtime_error(
+            "Hugging Face compatibility metadata returned status " +
+            std::to_string(status_code));
+    }
+    try {
+        json metadata = JsonUtils::parse(body);
+        if (metadata_required &&
+            (!metadata.is_object() || !metadata.contains("gguf") ||
+             !metadata["gguf"].is_object())) {
+            throw std::runtime_error(
+                "Hugging Face compatibility response is missing GGUF metadata");
+        }
+        return metadata;
+    } catch (const std::exception&) {
+        if (metadata_required) throw;
+        return std::nullopt;
+    }
+}
+
+std::optional<json> fetch_huggingface_compatibility_metadata(
+    const std::string& repo_id,
+    const std::string& revision) {
+    std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
+    if (endpoint.empty()) endpoint = "https://huggingface.co";
+    const std::string url = huggingface_repository_api_url(
+        endpoint, repo_id, revision) +
+        "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag";
+    const auto response = HttpClient::get(
+        url, model_registry(RemoteRegistrySource::HuggingFace).auth_headers());
+    return parse_huggingface_compatibility_response(
+        response.status_code,
+        response.body,
+        is_official_huggingface_endpoint(endpoint));
 }
 
 RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
@@ -752,6 +835,188 @@ bool is_remote_registry_source(const std::string& source) {
     const std::string normalized = lower_copy(source);
     return normalized == "huggingface" || normalized == "hf" ||
            normalized == "modelscope" || normalized == "ms";
+}
+
+bool detect_registry_url(const std::string& value,
+                         RemoteRegistrySource& out_source,
+                         std::string& out_repo_id) {
+    static const std::initializer_list<std::pair<const char*, RemoteRegistrySource>> prefixes = {
+        {"https://huggingface.co/", RemoteRegistrySource::HuggingFace},
+        {"http://huggingface.co/", RemoteRegistrySource::HuggingFace},
+        {"https://modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"https://www.modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"http://modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"http://www.modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"https://modelscope.ai/models/", RemoteRegistrySource::ModelScope},
+        {"https://www.modelscope.ai/models/", RemoteRegistrySource::ModelScope},
+    };
+    for (const auto& [prefix, source] : prefixes) {
+        const std::string prefix_str(prefix);
+        if (value.rfind(prefix_str, 0) != 0) continue;
+        out_source = source;
+        out_repo_id = first_two_path_segments(
+            strip_query_fragment(value.substr(prefix_str.size())));
+        return true;
+    }
+    return false;
+}
+
+bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
+    // Registry repo ids never contain ':', so the portion before the first ':'
+    // is the repo. An owner/repo id carries a '/'; FLM tags (`gemma3:4b`) do not.
+    const size_t colon = checkpoint.find(':');
+    const std::string repo =
+        colon == std::string::npos ? checkpoint : checkpoint.substr(0, colon);
+    return repo.find('/') != std::string::npos;
+}
+
+namespace {
+
+// Returns the caller's explicitly named remote registry, if any. Non-registry
+// `source` values (local_upload/local_path/…) are ignored so only genuine
+// registry provenance participates in provider-URL conflict checks.
+std::optional<RemoteRegistrySource> explicit_registry_source(const json& request_json) {
+    if (request_json.contains("registry_source") &&
+        request_json["registry_source"].is_string()) {
+        return parse_remote_registry_source(
+            request_json["registry_source"].get<std::string>());
+    }
+    if (request_json.contains("source") && request_json["source"].is_string()) {
+        const std::string source = request_json["source"].get<std::string>();
+        if (is_remote_registry_source(source)) {
+            return parse_remote_registry_source(source);
+        }
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+void apply_default_pull_source(json& request_json, const std::string& default_source) {
+    if (request_json.value("local_import", false)) return;
+
+    // Explicit source fields must be strings when present; reject non-string
+    // values (e.g. `source: 123`) up front so a provider URL cannot later hide
+    // them by overwriting with the URL's registry. A JSON null is treated as
+    // absent so it falls back to the configured default like an omitted field.
+    for (const char* field : {"source", "registry_source"}) {
+        if (!request_json.contains(field)) continue;
+        if (request_json[field].is_null()) {
+            request_json.erase(field);
+        } else if (!request_json[field].is_string()) {
+            throw std::invalid_argument(std::string("'") + field +
+                                        "' must be a string");
+        }
+    }
+
+    // Validate explicit registry source values before any URL normalization
+    // so that invalid values (like "nexus" with an HF URL) are rejected up
+    // front rather than silently overwritten by a provider URL.
+    if (request_json.contains("registry_source") &&
+        request_json["registry_source"].is_string()) {
+        (void)parse_remote_registry_source(
+            request_json["registry_source"].get<std::string>());
+    }
+    if (request_json.contains("source") && request_json["source"].is_string()) {
+        const auto& src = request_json["source"].get<std::string>();
+        if (!is_remote_registry_source(src) &&
+            src != "local_upload" && src != "local_path" &&
+            src != "extra_models_dir") {
+            throw std::invalid_argument(
+                "Unsupported model source '" + src +
+                "' (expected remote registry or local import type)");
+        }
+    }
+
+    // Follow the ModelManager precedence: multi-component bodies carry every
+    // checkpoint under `checkpoints` (primary in `main`); single-checkpoint
+    // bodies use `checkpoint`. When `checkpoints` is present it is authoritative,
+    // even if a stray top-level `checkpoint` also exists.
+    std::vector<std::string*> checkpoint_slots;
+    std::string* primary_slot = nullptr;
+    if (request_json.contains("checkpoints") &&
+        request_json["checkpoints"].is_object()) {
+        for (auto& [role, value] : request_json["checkpoints"].items()) {
+            if (!value.is_string()) continue;
+            std::string* slot = value.get_ptr<std::string*>();
+            checkpoint_slots.push_back(slot);
+            if (role == "main") primary_slot = slot;
+        }
+    } else if (request_json.contains("checkpoint") &&
+               request_json["checkpoint"].is_string()) {
+        primary_slot = request_json["checkpoint"].get_ptr<std::string*>();
+        checkpoint_slots.push_back(primary_slot);
+    }
+    if (primary_slot == nullptr || primary_slot->empty()) return;
+
+    std::optional<RemoteRegistrySource> explicit_source =
+        explicit_registry_source(request_json);
+
+    // A provider URL is authoritative for its registry. Normalize every
+    // registry-backed checkpoint to owner/repo, enforce a single registry across
+    // the whole model, and reject a URL that contradicts an explicit source.
+    std::optional<RemoteRegistrySource> url_source;
+    for (std::string* slot : checkpoint_slots) {
+        RemoteRegistrySource detected;
+        std::string repo_id;
+        if (!detect_registry_url(*slot, detected, repo_id)) continue;
+        *slot = repo_id;
+        if (url_source && *url_source != detected) {
+            throw std::invalid_argument(
+                "All checkpoints in one model must use the same remote registry");
+        }
+        url_source = detected;
+        if (explicit_source && *explicit_source != detected) {
+            throw std::invalid_argument(
+                "checkpoint URL uses " + remote_registry_source_name(detected) +
+                " but source was set to " +
+                remote_registry_source_name(*explicit_source));
+        }
+    }
+
+    if (url_source && explicit_source && *explicit_source != *url_source) {
+        throw std::invalid_argument(
+            "checkpoint URL uses " + remote_registry_source_name(*url_source) +
+            " but source was set to " +
+            remote_registry_source_name(*explicit_source));
+    }
+
+    // If registry_source is set (and source is empty), validate against the
+    // URL as well.
+    if (url_source && !explicit_source &&
+        request_json.contains("registry_source") &&
+        request_json["registry_source"].is_string()) {
+        RemoteRegistrySource registry_parsed =
+            parse_remote_registry_source(
+                request_json["registry_source"].get<std::string>());
+        if (*url_source != registry_parsed) {
+            throw std::invalid_argument(
+                "checkpoint URL uses " + remote_registry_source_name(*url_source) +
+                " but registry_source was set to " +
+                remote_registry_source_name(registry_parsed));
+        }
+    }
+
+    if (url_source) {
+        if (!explicit_source) {
+            request_json["source"] = remote_registry_source_name(*url_source);
+        }
+        return;
+    }
+
+    if (explicit_source ||
+        request_json.contains("source") || request_json.contains("registry_source")) {
+        return;
+    }
+
+    // Self-managed backends own their checkpoints; those are not registry ids
+    // even when they happen to contain a '/' (e.g. cloud model identifiers).
+    const std::string recipe = request_json.value("recipe", "");
+    if (recipe == "flm" || recipe == "cloud") return;
+
+    if (!checkpoint_looks_like_repo_id(*primary_slot)) return;
+
+    request_json["source"] = default_source;
 }
 
 std::string registry_tree_snapshot_id(RemoteRegistrySource source,

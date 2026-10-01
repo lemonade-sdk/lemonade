@@ -7,11 +7,14 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/session_utils.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <curl/curl.h>
+#include <limits>
+#include <map>
 #include <string_view>
 #include <utility>
 #include <lemon/utils/aixlog.hpp>
@@ -120,7 +123,7 @@ bool is_chat_model(const json& m) {
 }
 
 std::vector<std::string> chat_labels() {
-    return {"cloud"};
+    return {"cloud", "chat"};
 }
 
 // Detect capability labels (vision / tool-calling / reasoning) from a
@@ -239,6 +242,7 @@ std::pair<double, double> parse_cloud_cost(const json& m) {
     return cost;
 }
 
+
 // Build the user-facing model name "<provider>.<cleaned_upstream_id>" by
 // applying two content-pattern cleanup rules (no provider-specific code).
 // Example: provider="fireworks", id="accounts/fireworks/models/deepseek-v4-pro"
@@ -271,6 +275,78 @@ std::string build_public_name(const std::string& provider, const std::string& up
 }
 
 } // namespace
+
+std::pair<int64_t, int64_t> CloudServer::parse_cloud_limits(const json& m) {
+    if (!m.is_object()) {
+        return {0, 0};
+    }
+
+    auto to_int64 = [](const json& v) -> int64_t {
+        if (v.is_number_integer() || v.is_number_unsigned()) {
+            return v.get<int64_t>();
+        }
+        if (v.is_number_float()) {
+            double d = v.get<double>();
+            if (std::isfinite(d) && d > 0 &&
+                d < static_cast<double>(std::numeric_limits<int64_t>::max())) {
+                return static_cast<int64_t>(d);
+            }
+            return 0;
+        }
+        if (v.is_string()) {
+            try {
+                const std::string s = v.get<std::string>();
+                size_t idx = 0;
+                long long val = std::stoll(s, &idx);
+                if (idx == s.size() && val > 0) {
+                    return static_cast<int64_t>(val);
+                }
+            } catch (...) {}
+        }
+        return 0;
+    };
+
+    std::vector<const json*> cap_scopes{&m};
+    auto top_it = m.find("top_provider");
+    if (top_it != m.end() && top_it->is_object()) {
+        cap_scopes.push_back(&*top_it);
+    }
+
+    auto find_first_positive = [&](const std::vector<const json*>& scopes,
+                                   std::initializer_list<const char*> keys) -> int64_t {
+        for (const json* scope : scopes) {
+            for (const char* key : keys) {
+                auto it = scope->find(key);
+                if (it != scope->end()) {
+                    int64_t val = to_int64(*it);
+                    if (val > 0) return val;
+                }
+            }
+        }
+        return 0;
+    };
+
+    int64_t ctx = find_first_positive(
+        cap_scopes,
+        {"context_length", "max_context_length", "context_window", "max_context_window"});
+    int64_t max_out = find_first_positive(
+        cap_scopes,
+        {"max_completion_tokens", "max_output_tokens", "max_tokens"});
+
+    auto req_it = m.find("per_request_limits");
+    if (req_it != m.end() && req_it->is_object()) {
+        const std::vector<const json*> req_scope{&*req_it};
+        int64_t req_out = find_first_positive(
+            req_scope,
+            {"completion_tokens", "max_completion_tokens", "max_output_tokens", "max_tokens"});
+
+        if (req_out > 0) {
+            max_out = (max_out > 0) ? std::min(max_out, req_out) : req_out;
+        }
+    }
+
+    return {ctx, max_out};
+}
 
 CloudServer::CloudServer(const std::string& provider,
                          const std::string& log_level,
@@ -335,6 +411,7 @@ CloudServer::ResolvedCreds CloudServer::resolve_creds() const {
     }
     creds.api_key = registry_->resolve_key(provider_);
     creds.base_url = registry_->base_url_for(provider_);
+    creds.auth_header = registry_->auth_header_for(provider_);
 
     // The registry already normalizes base_url on install, but a defensive
     // strip here keeps the contract local — anyone tracing post_with_auth
@@ -392,6 +469,26 @@ std::string CloudServer::missing_creds_sse() const {
     return "data: " + err.dump() + "\n\n";
 }
 
+bool CloudServer::wire_format_mismatch() const {
+    return registry_ != nullptr && registry_->wire_format_for(provider_) != "openai";
+}
+
+std::string CloudServer::wire_format_message() const {
+    const std::string wire_format = registry_->wire_format_for(provider_);
+    return "Cloud provider '" + provider_ + "' speaks the '" + wire_format +
+           "' wire format, which this endpoint does not serve. Send " + wire_format +
+           "-shaped requests to POST /v1/messages instead.";
+}
+
+json CloudServer::wire_format_error() const {
+    return ErrorResponse::create(
+        wire_format_message(),
+        ErrorType::UNSUPPORTED_OPERATION,
+        {{"provider", provider_},
+         {"wire_format", registry_->wire_format_for(provider_)}}
+    );
+}
+
 json CloudServer::insecure_http_error() const {
     const std::string msg =
         "Cloud provider '" + provider_ + "' uses http:// with an API key. "
@@ -434,10 +531,15 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     if (creds.api_key.empty() || creds.base_url.empty()) {
         return missing_creds_error();
     }
-    std::string url = creds.base_url + path;
-    std::map<std::string, std::string> headers = {
-        {"Authorization", "Bearer " + creds.api_key}
-    };
+    std::string url = upstream_url(creds.base_url, path);
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
+
+    auto cancel_token = current_request_cancel_context();
+    if (cancel_token.cancelled()) {
+        LOG(WARNING, "CloudServer") << "Client request already cancelled before forwarding cloud request; aborting." << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
 
     try {
         auto response = utils::HttpClient::post(
@@ -445,7 +547,8 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             request.dump(),
             headers,
             timeout_seconds,
-            creds.policy);
+            creds.policy,
+            cancel_token);
         if (response.status_code == 200) {
             // Return the body unchanged so the server.cpp handler picks up the
             // `usage` telemetry like every other backend.
@@ -466,17 +569,26 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
                 {"response", error_details}
             }
         );
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "CloudServer") << "Cloud request aborted due to client disconnect: " << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
         return ErrorResponse::from_exception(NetworkException(e.what()));
     }
 }
 
 json CloudServer::chat_completion(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
     json modified = rewrite_model_field(request);
     return post_with_auth("/chat/completions", modified, resolve_creds());
 }
 
 json CloudServer::completion(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
     json modified = rewrite_model_field(request);
     return post_with_auth("/completions", modified, resolve_creds());
 }
@@ -494,11 +606,16 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             long timeout_seconds,
                                             TelemetryCallback telemetry_callback) {
     // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
-    // usage block in the final pre-[DONE] chunk. We don't parse it here —
-    // the Router-level streaming path delivers cleaner numbers than we can
-    // reconstruct from chunked output, and matching local backends here
-    // would only diverge subtly. Passing the callback through preserves the
-    // contract for callers that pass one in.
+    // usage block in the final pre-[DONE] chunk, but only when the request
+    // sets stream_options.include_usage. When the client did not ask for it,
+    // it is injected into the forwarded request and the resulting usage-only
+    // frame is swallowed before the relay, so the client-visible stream is
+    // unchanged while telemetry still gets provider-reported usage.
+    auto error_telemetry = [](const std::string& message) {
+        StreamingProxy::TelemetryData telemetry;
+        telemetry.error_message = message;
+        return telemetry;
+    };
     auto sse_error = [](const std::string& message, const std::string& type,
                         const json& extra = json::object()) {
         json err = {{"error", {{"message", message}, {"type", type}}}};
@@ -513,13 +630,27 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         if (telemetry_callback) {
-            telemetry_callback(0, 0, 0.0, 0.0, "Cloud model not loaded");
+            telemetry_callback(error_telemetry("Cloud model not loaded"));
         }
         return;
     }
 
-    // The router calls this with endpoints like "/v1/chat/completions"; strip
-    // the local /v1 prefix and join with the provider's base URL.
+    if (wire_format_mismatch()) {
+        const std::string message = wire_format_message();
+        std::string error_msg = sse_error(
+            message, ErrorType::UNSUPPORTED_OPERATION,
+            {{"provider", provider_},
+             {"wire_format", registry_->wire_format_for(provider_)}});
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(error_telemetry(message));
+        }
+        return;
+    }
+
+    // Only the completion endpoints carry stream_options, so the usage
+    // injection below has to know which one this is.
     std::string suffix = endpoint;
     const std::string v1_prefix = "/v1";
     if (suffix.rfind(v1_prefix, 0) == 0) {
@@ -531,10 +662,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     // a body the client can interpret, which is more informative than
     // refusing locally.
     std::string forwarded_body = request_body;
+    bool injected_usage = false;
     try {
         json req = json::parse(request_body);
         req["model"] = upstream_model_;
         utils::JsonUtils::add_legacy_max_tokens_alias(req);
+        if (sse && (suffix == "/chat/completions" || suffix == "/completions")) {
+            json& stream_options = req["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            if (!stream_options.value("include_usage", false)) {
+                stream_options["include_usage"] = true;
+                injected_usage = true;
+            }
+        }
         forwarded_body = req.dump();
     } catch (const json::exception&) {
         // Best-effort: forward whatever we got.
@@ -552,16 +694,15 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         if (telemetry_callback) {
-            telemetry_callback(0, 0, 0.0, 0.0, "Missing API credentials");
+            telemetry_callback(error_telemetry("Missing API credentials"));
         }
         return;
     }
 
-    std::string url = creds.base_url + suffix;
+    std::string url = upstream_url(creds.base_url, endpoint);
 
-    std::map<std::string, std::string> headers = {
-        {"Authorization", "Bearer " + creds.api_key}
-    };
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
 
     try {
         if (sse) {
@@ -581,6 +722,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
             int input_tokens = 0;
             int output_tokens = 0;
+            int cache_tokens = -1;
             double time_to_first_token = 0.0;
             double tokens_per_second = 0.0;
             bool has_first_token = false;
@@ -603,8 +745,40 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number()) {
                                 output_tokens = usage["completion_tokens"].get<int>();
                             }
+                            if (usage.contains("prompt_tokens_details") &&
+                                usage["prompt_tokens_details"].is_object() &&
+                                usage["prompt_tokens_details"].contains("cached_tokens") &&
+                                usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
+                                cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
+                            }
                         }
                     } catch (...) {}
+                }
+            };
+
+            // A frame that carries usage but no choices content exists only
+            // because include_usage was requested. Swallowing is limited to
+            // that shape: a provider that attaches usage to a content-bearing
+            // final chunk keeps its content (and its usage field) intact.
+            auto is_usage_only_frame = [](const std::string& line) {
+                if (line.rfind("data: ", 0) != 0) {
+                    return false;
+                }
+                std::string json_str = line.substr(6);
+                if (json_str == "[DONE]") {
+                    return false;
+                }
+                try {
+                    auto chunk = json::parse(json_str);
+                    if (!chunk.is_object() || !chunk.contains("usage") || chunk["usage"].is_null()) {
+                        return false;
+                    }
+                    if (!chunk.contains("choices")) {
+                        return true;
+                    }
+                    return chunk["choices"].is_array() && chunk["choices"].empty();
+                } catch (...) {
+                    return false;
                 }
             };
 
@@ -626,17 +800,36 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             has_done_marker = true;
                         }
 
-                        // Parse SSE lines
-                        sse_line_buffer.append(data, length);
-                        StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
-
                         if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
                             has_first_token = true;
                             time_to_first_token = std::chrono::duration<double>(
                                 std::chrono::steady_clock::now() - start_time).count();
                         }
 
-                        return sink.write(data, length);
+                        if (!injected_usage) {
+                            // Parse SSE lines for telemetry; the client asked for
+                            // whatever usage frames arrive, so relay bytes verbatim.
+                            sse_line_buffer.append(data, length);
+                            StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
+                            return sink.write(data, length);
+                        }
+
+                        // include_usage was injected: relay complete lines and
+                        // drop the usage-only frame the injection added.
+                        bool client_ok = true;
+                        sse_line_buffer.append(data, length);
+                        StreamingProxy::process_sse_lines(
+                            sse_line_buffer, [&](const std::string& line) {
+                                process_cloud_line(line);
+                                if (is_usage_only_frame(line)) {
+                                    return;
+                                }
+                                std::string out = line + "\n";
+                                if (!sink.write(out.data(), out.size())) {
+                                    client_ok = false;
+                                }
+                            });
+                        return client_ok;
                     }
                     body_buffer.append(data, length);
                     return true;
@@ -651,7 +844,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 if (result.curl_code == CURLE_WRITE_ERROR) {
                     LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
-                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                        telemetry_callback(error_telemetry("Client disconnected during stream"));
                     }
                     return;
                 } else if (result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR) {
@@ -672,7 +865,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 sink.write(error_msg.c_str(), error_msg.size());
                 sink.done();
                 if (telemetry_callback) {
-                    telemetry_callback(0, 0, 0.0, 0.0, "cloud (" + provider_ + ") request failed with status " + std::to_string(result.status_code));
+                    telemetry_callback(error_telemetry(
+                        "cloud (" + provider_ + ") request failed with status " + std::to_string(result.status_code)));
                 }
                 return;
             }
@@ -680,6 +874,15 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             // 200 OK: if streaming_mode is true we've already flushed everything.
             // If we somehow buffered on a 200 (provider sent non-SSE success),
             // flush the buffer now so the client at least sees the payload.
+            if (injected_usage && !sse_line_buffer.empty()) {
+                // Line-mode relay held back a trailing fragment with no final
+                // newline; deliver it unless it is the injected usage frame.
+                process_cloud_line(sse_line_buffer);
+                if (!is_usage_only_frame(sse_line_buffer)) {
+                    sink.write(sse_line_buffer.data(), sse_line_buffer.size());
+                }
+                sse_line_buffer.clear();
+            }
             if (!body_buffer.empty()) {
                 sink.write(body_buffer.data(), body_buffer.size());
             }
@@ -697,7 +900,13 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                         tokens_per_second = output_tokens / generation_duration;
                     }
                 }
-                telemetry_callback(input_tokens, output_tokens, time_to_first_token, tokens_per_second, "");
+                StreamingProxy::TelemetryData telemetry;
+                telemetry.input_tokens = input_tokens;
+                telemetry.output_tokens = output_tokens;
+                telemetry.cache_tokens = cache_tokens;
+                telemetry.time_to_first_token = time_to_first_token;
+                telemetry.tokens_per_second = tokens_per_second;
+                telemetry_callback(telemetry);
             }
         } else {
             utils::HttpResponse result = utils::HttpClient::post_stream(
@@ -715,7 +924,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 if (result.curl_code == CURLE_WRITE_ERROR) {
                     LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
-                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                        telemetry_callback(error_telemetry("Client disconnected during stream"));
                     }
                     return;
                 } else {
@@ -725,11 +934,11 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             if (result.status_code != 200) {
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code << std::endl;
                 if (telemetry_callback) {
-                    telemetry_callback(0, 0, 0.0, 0.0, "status_code " + std::to_string(result.status_code));
+                    telemetry_callback(error_telemetry("status_code " + std::to_string(result.status_code)));
                 }
             } else {
                 if (telemetry_callback) {
-                    telemetry_callback(0, 0, 0.0, 0.0, "");
+                    telemetry_callback(StreamingProxy::TelemetryData{});
                 }
             }
             sink.done();
@@ -737,7 +946,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     } catch (const std::exception& e) {
         LOG(ERROR, "Cloud") << "Streaming request failed: " << e.what() << std::endl;
         if (telemetry_callback) {
-            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+            telemetry_callback(error_telemetry(e.what()));
         }
         try {
             std::string error_msg = sse_error(e.what(), "streaming_error");
@@ -747,6 +956,34 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             // Sink may already be closed.
         }
     }
+}
+
+std::map<std::string, std::string> CloudServer::upstream_headers(
+    const CloudProviderRegistry::AuthHeader& auth_header,
+    const std::string& api_key,
+    const std::string& wire_format) {
+    std::map<std::string, std::string> headers = {
+        {auth_header.name, auth_header.prefix + api_key}
+    };
+    if (wire_format == "anthropic") {
+        headers["anthropic-version"] = kAnthropicVersion;
+    }
+    return headers;
+}
+
+std::string CloudServer::upstream_url(const std::string& base_url,
+                                      const std::string& endpoint) {
+    std::string normalized = base_url;
+    while (!normalized.empty() && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+    // Match on the whole segment: "/v1x" is a different endpoint, not "/v1"
+    // followed by a path.
+    const std::string v1_prefix = "/v1";
+    const bool strip = endpoint.rfind(v1_prefix, 0) == 0 &&
+                       (endpoint.size() == v1_prefix.size() ||
+                        endpoint[v1_prefix.size()] == '/');
+    return normalized + (strip ? endpoint.substr(v1_prefix.size()) : endpoint);
 }
 
 utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_url,
@@ -763,7 +1000,9 @@ utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_
 std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
-                                                     bool allow_insecure_http) {
+                                                     bool allow_insecure_http,
+                                                     const CloudProviderRegistry::AuthHeader& auth_header,
+                                                     const std::string& wire_format) {
     std::vector<ModelInfo> models;
     if (api_key.empty()) {
         return models;
@@ -774,18 +1013,10 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    // Mirror the trailing-slash normalization done in load() so a config
-    // entry like "https://.../v1/" doesn't produce "/v1//models".
-    std::string normalized_base = base_url;
-    while (!normalized_base.empty() && normalized_base.back() == '/') {
-        normalized_base.pop_back();
-    }
-    std::string url = normalized_base + "/models";
-    std::map<std::string, std::string> headers = {
-        {"Authorization", "Bearer " + api_key}
-    };
+    std::string url = upstream_url(base_url, "/models");
+    const auto headers = upstream_headers(auth_header, api_key, wire_format);
 
-    const auto policy = discovery_policy(normalized_base, allow_insecure_http);
+    const auto policy = discovery_policy(base_url, allow_insecure_http);
 
     utils::HttpResponse response;
     try {
@@ -857,9 +1088,9 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
             info.labels.push_back(std::move(cap));
         }
         // Display-only metadata; never affects routing.
-        if (m.contains("context_length") && m["context_length"].is_number_integer()) {
-            info.max_context_window = m["context_length"].get<int64_t>();
-        }
+        const auto limits = parse_cloud_limits(m);
+        info.max_context_window = limits.first;
+        info.max_output_tokens = limits.second;
         const auto cost = parse_cloud_cost(m);
         info.cost_input_per_million = cost.first;
         info.cost_output_per_million = cost.second;
@@ -929,8 +1160,10 @@ public:
                 continue;
             }
             try {
-                for (auto& m : CloudServer::discover_models(rec.name, api_key, rec.base_url,
-                                                            rec.allow_insecure_http)) {
+                for (auto& m : CloudServer::discover_models(
+                         rec.name, api_key, rec.base_url, rec.allow_insecure_http,
+                         {rec.auth_header_name, rec.auth_header_prefix},
+                         rec.wire_format)) {
                     if (m.recipe == "cloud" && !m.model_name.empty()) {
                         out.push_back(std::move(m));
                     }

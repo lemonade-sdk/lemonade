@@ -6,6 +6,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - list
 - export
 - backends
+- cloud
 - import (from JSON file)
 - pull with labels and checkpoints
 - load
@@ -37,6 +38,7 @@ import uuid
 from utils.server_base import _auth_headers, set_server_config, wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    ENDPOINT_TEST_MODEL_CTX_SIZE,
     MULTI_REPO_MODEL_A_CACHE_DIR,
     MULTI_REPO_MODEL_A_MAIN,
     MULTI_REPO_MODEL_A_NAME,
@@ -237,6 +239,7 @@ def _is_transient_cli_pull_failure(result):
         or "connection reset" in output
         or "connection aborted" in output
         or "connection refused" in output
+        or "ssl connect error" in output
         or "timed out" in output
         or "timeout" in output
     )
@@ -349,6 +352,9 @@ sys.exit(0)
         """Build isolated env so PATH resolves fake agents and avoids first-run side effects."""
         env = os.environ.copy()
         env.pop("OPENAI_BASE_URL", None)
+        # Outranks HOME, so a machine that sets it would have its real junie
+        # config rewritten instead of the stub directory.
+        env.pop("JUNIE_HOME", None)
         env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
         env["HOME"] = stub_dir
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
@@ -394,6 +400,37 @@ sys.exit(0)
         result = self.assertCommandSucceeds(["status"])
         output = result.stdout + result.stderr
         print(f"Status output: {output}")
+
+    def test_010a_status_json(self):
+        """Test status --json emits parseable per-model detail."""
+        result = self.assertCommandSucceeds(["status", "--json"])
+        data = json.loads(result.stdout)
+
+        self.assertIn("port", data)
+        self.assertIsInstance(data["port"], int)
+        self.assertIn("version", data)
+        self.assertIn("models", data)
+        self.assertIsInstance(data["models"], list)
+
+        # Per-model detail only exists when something is loaded; the CLI suite
+        # does not guarantee that, so the contract is checked opportunistically.
+        for model in data["models"]:
+            for key in (
+                "model_name",
+                "checkpoint",
+                "type",
+                "device",
+                "recipe",
+                "recipe_options",
+                "status",
+                "pinned",
+                "pid",
+                "backend_url",
+            ):
+                self.assertIn(key, model)
+            self.assertIsInstance(model["recipe_options"], dict)
+            self.assertIsInstance(model["pinned"], bool)
+            self.assertIsInstance(model["pid"], int)
 
     def test_011_status_with_global_options(self):
         """Test status command with global options."""
@@ -577,6 +614,51 @@ sys.exit(0)
         print(f"Backends uninstall exit code: {result.returncode}")
 
     # =============================================================================
+    # Cloud Tests
+    # =============================================================================
+
+    def test_046_cloud_list_json(self):
+        """Test `cloud list --json` emits the provider array from system-info."""
+        result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+        providers = json.loads(result.stdout)
+        self.assertIsInstance(providers, list)
+
+        provider = "clijsonprobe"
+        base_url = "https://example.invalid/v1"
+        try:
+            self.assertCommandSucceeds(
+                ["cloud", "install", provider, "--base-url", base_url]
+            )
+            result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+            providers = json.loads(result.stdout)
+            self.assertIsInstance(providers, list)
+            entry = next((p for p in providers if p.get("name") == provider), None)
+            self.assertIsNotNone(entry, f"{provider} missing from {providers}")
+            for key in (
+                "name",
+                "base_url",
+                "env_var",
+                "env_var_set",
+                "runtime_key_set",
+                "models_discovered",
+                "allow_insecure_http",
+            ):
+                self.assertIn(key, entry)
+            self.assertEqual(entry["base_url"], base_url)
+            self.assertEqual(entry["env_var"], "LEMONADE_CLIJSONPROBE_API_KEY")
+            self.assertFalse(entry["env_var_set"])
+            self.assertFalse(entry["runtime_key_set"])
+            self.assertEqual(entry["models_discovered"], 0)
+            self.assertFalse(entry["allow_insecure_http"])
+
+            human = self.assertCommandSucceeds(["cloud", "list"])
+            with self.assertRaises(json.JSONDecodeError):
+                json.loads(human.stdout)
+            self.assertIn(provider, human.stdout)
+        finally:
+            run_cli_command(["cloud", "uninstall", provider])
+
+    # =============================================================================
     # Runtime Config Tests
     # =============================================================================
 
@@ -638,7 +720,8 @@ sys.exit(0)
                     timeout=10,
                 )
                 if response.status_code < 400:
-                    print("[OK] Restored host to localhost")
+                    wait_for_server(port=PORT, timeout=30)
+                    print("[OK] Restored host to localhost and server is reachable")
                 else:
                     print(
                         "Warning: Failed to restore host to localhost: "
@@ -686,9 +769,9 @@ sys.exit(0)
         )
         print(f"Config set output: {result.stdout}")
 
-        # 2. Query the params to verify it parsed correctly and merged
+        # 2. Read the config back to verify it parsed correctly and merged
         response = requests.get(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/config",
             headers=_auth_headers(),
             timeout=10,
         )
@@ -699,6 +782,69 @@ sys.exit(0)
         )
         self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
         self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
+
+    def test_045_config_set_broadcast(self):
+        """Verify that CLI config set can modify broadcast setting, and client CLI works with --discovery / --no-discovery."""
+        try:
+            # 1. Set broadcast to false using the CLI config set
+            result = self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "config",
+                    "set",
+                    "broadcast=false",
+                ]
+            )
+            print(f"Config set broadcast=false output: {result.stdout}")
+
+            # Verify it is set to false on the server
+            response = requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json().get("broadcast"), False)
+
+            # 2. Set broadcast back to true
+            result = self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "config",
+                    "set",
+                    "broadcast=true",
+                ]
+            )
+            response = requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json().get("broadcast"), True)
+
+            # 3. Test that the client works with --no-discovery and --discovery flags
+            self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "--no-discovery",
+                    "status",
+                ]
+            )
+            self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "--discovery",
+                    "status",
+                ]
+            )
+        finally:
+            # Restore default
+            run_cli_command(["--port", str(PORT), "config", "set", "broadcast=true"])
 
     # =============================================================================
     # Pull Tests
@@ -1671,8 +1817,12 @@ sys.exit(0)
             )
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
-                lemonade["models"][ENDPOINT_TEST_MODEL]["contextWindow"],
-                40960,
+                lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["context"],
+                ENDPOINT_TEST_MODEL_CTX_SIZE,
+            )
+            self.assertEqual(
+                lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["output"],
+                int(ENDPOINT_TEST_MODEL_CTX_SIZE / 3),
             )
 
     def test_119_launch_opencode_refreshes_model_entries(self):
@@ -1803,6 +1953,211 @@ sys.exit(0)
 
             self.assertEqual(cfg.get("$schema"), "https://opencode.ai/config.json")
 
+    def test_122_launch_junie_with_fake_binary(self):
+        """Launch should execute fake junie binary with --model custom:lemonade."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake junie binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("--model", argv)
+            model_idx = argv.index("--model") + 1
+            self.assertEqual(argv[model_idx], "custom:lemonade")
+
+    def test_123_launch_junie_creates_model_profile(self):
+        """Launch junie should create ~/.junie/models/lemonade.json for the local server."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_cfg.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(temp_dir, ".junie", "models", "lemonade.json")
+            self.assertTrue(
+                os.path.exists(profile_path),
+                f"lemonade.json not created at {profile_path}",
+            )
+
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile["id"], ENDPOINT_TEST_MODEL)
+            self.assertEqual(profile["apiType"], "OpenAICompletion")
+            self.assertEqual(profile["providerName"], "Lemonade")
+            # Junie appends nothing to baseUrl, so it must be the full endpoint.
+            self.assertTrue(profile["baseUrl"].endswith("/v1/chat/completions"))
+            self.assertGreater(profile["maxContextLength"], 0)
+            self.assertEqual(
+                profile.get("apiKey"),
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
+
+    def test_124_launch_junie_with_api_key_sets_profile(self):
+        """When --api-key is provided, lemonade.json should contain the same apiKey."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_key.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "junie",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "real-secret-key",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(temp_dir, ".junie", "models", "lemonade.json")
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile.get("apiKey"), "real-secret-key")
+
+    def test_125_launch_junie_honors_junie_home(self):
+        """JUNIE_HOME should redirect the profile away from ~/.junie."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_home.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            junie_home = os.path.join(temp_dir, "custom-junie-home")
+            env["JUNIE_HOME"] = junie_home
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(junie_home, "models", "lemonade.json")
+            self.assertTrue(
+                os.path.exists(profile_path),
+                f"lemonade.json not created at {profile_path}",
+            )
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_dir, ".junie")),
+                "JUNIE_HOME was set, so ~/.junie must not be created",
+            )
+
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile["id"], ENDPOINT_TEST_MODEL)
+
+    def test_126_launch_junie_leaves_other_profiles_alone(self):
+        """Launch should replace lemonade.json only, keeping user-authored profiles."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_keep.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            models_dir = os.path.join(temp_dir, ".junie", "models")
+            os.makedirs(models_dir)
+            own_profile = {"id": "my-model", "baseUrl": "http://example.invalid"}
+            own_profile_path = os.path.join(models_dir, "my-model.json")
+            with open(own_profile_path, "w", encoding="utf-8") as f:
+                json.dump(own_profile, f)
+            with open(
+                os.path.join(models_dir, "lemonade.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump({"id": "stale-model"}, f)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            with open(own_profile_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f), own_profile)
+
+            with open(
+                os.path.join(models_dir, "lemonade.json"), "r", encoding="utf-8"
+            ) as f:
+                self.assertEqual(json.load(f)["id"], ENDPOINT_TEST_MODEL)
+
+            self.assertEqual(
+                sorted(os.listdir(models_dir)),
+                ["lemonade.json", "my-model.json"],
+            )
+
+    def test_127_launch_junie_windows_uses_bat_shim(self):
+        """On Windows, launch must run the junie.bat shim the installer writes."""
+        if not IS_WINDOWS:
+            self.skipTest("Windows-only: the .bat shim does not apply on Unix")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_bat_capture.txt")
+
+            with open(os.path.join(temp_dir, "junie.bat"), "w", encoding="utf-8") as f:
+                f.write(f'@echo off\necho fake-agent-ok> "{capture_path}"\nexit /b 0\n')
+
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                "launch failed; junie.bat was likely not considered during "
+                "binary lookup",
+            )
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "junie.bat was not executed",
+            )
+
     # =============================================================================
     # Unload Tests
     # =============================================================================
@@ -1898,7 +2253,10 @@ sys.exit(0)
 
         # Pull both models (downloads both quants into the same models-- directory)
         for name in [SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_B_NAME]:
-            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+            result = run_cli_pull_command_with_retry(
+                ["pull", name], timeout=TIMEOUT_MODEL_OPERATION
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
         # Verify both show as downloaded
         result = self.assertCommandSucceeds(["list", "--downloaded"])
@@ -1983,7 +2341,10 @@ sys.exit(0)
 
         # Pull both models
         for name in [MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_B_NAME]:
-            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+            result = run_cli_pull_command_with_retry(
+                ["pull", name], timeout=TIMEOUT_MODEL_OPERATION
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
         # Verify both show as downloaded
         result = self.assertCommandSucceeds(["list", "--downloaded"])
@@ -2110,6 +2471,33 @@ sys.exit(0)
             f"repo3 should be deleted after removing Model B: {repo3_path}",
         )
         print("[OK] After deleting B: all repo directories cleaned up")
+
+    def test_models_sync_command(self):
+        """Test the 'update-models' CLI subcommand dry-run check and execution."""
+        # 1. Run update-models dry-run check (using --check)
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check"]
+        )
+        self.assertIn("Checked", result.stdout)
+        self.assertIn("update(s) available", result.stdout)
+
+        # 3. Run update-models with --check --json option
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check", "--json"]
+        )
+        self.assertIn("checked_count", result.stdout)
+
+        # 4. Run update-models on nonexistent model with --check --json, expecting exit code 1
+        result = run_cli_command(
+            ["update-models", "nonexistent-model-test-xyz", "--check", "--json"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            result.returncode,
+            1,
+            f"update-models nonexistent model with --json should fail, got returncode {result.returncode}",
+        )
+        self.assertIn("failed_models", result.stdout)
 
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):

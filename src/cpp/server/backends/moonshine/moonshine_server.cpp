@@ -169,7 +169,7 @@ void MoonshineServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, executable, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start moonshine-server process");

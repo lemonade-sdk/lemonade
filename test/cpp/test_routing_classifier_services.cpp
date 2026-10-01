@@ -494,6 +494,420 @@ static void test_build_route_context_responses_uses_last_user_message() {
           ctx.input == "thanks that helps");
 }
 
+// total_chars is the whole-conversation counterpart of chars (#2958): every
+// text part the request carries, across every role, so a policy can route on
+// conversation size rather than on the size of the latest turn.
+static void test_build_route_context_total_chars_all_roles() {
+    const std::string system_text = "you are a helpful assistant";
+    const std::string user_first = "first turn about databases";
+    const std::string assistant_text = "sure, here is a schema";
+    const std::string tool_text = "{\"rows\": 42}";
+    const std::string user_last = "go on";
+
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "system"}, {"content", system_text}},
+            {{"role", "user"}, {"content", user_first}},
+            {{"role", "assistant"}, {"content", assistant_text}},
+            {{"role", "tool"}, {"content", tool_text}},
+            {{"role", "user"}, {"content", user_last}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    const std::size_t expected = system_text.size() + user_first.size() +
+                                 assistant_text.size() + tool_text.size() +
+                                 user_last.size();
+    check("total_chars sums text across every role", ctx.params.total_chars == expected);
+    check("chars still measures the latest user turn only",
+          ctx.params.chars == user_last.size());
+    check("a long history with a short last turn has total_chars > chars",
+          ctx.params.total_chars > ctx.params.chars);
+}
+
+// Guards the short-circuit trap: the image scan stops at the first hit, so
+// totalling alongside it must not stop with it.
+static void test_build_route_context_total_chars_counts_past_first_image() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "text"}, {"text", "describe this"}},
+                {{"type", "image_url"}, {"image_url", {{"url", "data:image/png;base64,AAAA"}}}},
+            })}},
+            {{"role", "assistant"}, {"content", "that is a cat"}},
+            {{"role", "user"}, {"content", "and this one?"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    const std::size_t expected = std::string("describe this").size() +
+                                 std::string("that is a cat").size() +
+                                 std::string("and this one?").size();
+    check("total_chars counts messages after the first image",
+          ctx.params.total_chars == expected);
+    check("has_images still set when totalling shares the pass", ctx.params.has_images);
+}
+
+static void test_build_route_context_total_chars_utf8_bytes() {
+    // "café" is 4 code points but 5 UTF-8 bytes; two messages => 10 bytes.
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "assistant"}, {"content", "caf\xC3\xA9"}},
+            {{"role", "user"}, {"content", "caf\xC3\xA9"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("total_chars counts UTF-8 bytes, not code points", ctx.params.total_chars == 10);
+}
+
+// The legacy completions forms carry no history, so the total is the routing
+// input itself — total_chars == chars.
+static void test_build_route_context_total_chars_prompt_form() {
+    json string_request = {{"model", "router"}, {"prompt", "plain text prompt"}};
+    RouteContext string_ctx = lemon::build_route_context(string_request, "router");
+    check("prompt string: total_chars == chars",
+          string_ctx.params.total_chars == string_ctx.params.chars &&
+              string_ctx.params.total_chars == std::string("plain text prompt").size());
+
+    json array_request = {
+        {"model", "router"},
+        {"prompt", json::array({"first part", "second part"})},
+    };
+    RouteContext array_ctx = lemon::build_route_context(array_request, "router");
+    check("prompt array: total_chars == chars",
+          array_ctx.params.total_chars == array_ctx.params.chars &&
+              array_ctx.params.total_chars == std::string("first part\nsecond part").size());
+
+    json input_string_request = {{"model", "router"}, {"input", "plain text prompt"}};
+    RouteContext input_string_ctx = lemon::build_route_context(input_string_request, "router");
+    check("input string: total_chars == chars",
+          input_string_ctx.params.total_chars == input_string_ctx.params.chars);
+}
+
+static void test_build_route_context_total_chars_responses_input_array() {
+    json role_tagged = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "assistant"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "here is some code"}},
+            })}},
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "thanks that helps"}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(role_tagged, "router");
+    check("responses input array: total_chars sums all items",
+          ctx.params.total_chars == std::string("here is some code").size() +
+                                        std::string("thanks that helps").size());
+    check("responses input array: chars is the last user item only",
+          ctx.params.chars == std::string("thanks that helps").size());
+
+    json bare = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"type", "input_text"}, {"text", "hello"}},
+            {{"type", "input_image"}, {"image_url", "data:image/png;base64,AAAA"}},
+        })},
+    };
+    RouteContext bare_ctx = lemon::build_route_context(bare, "router");
+    check("responses bare parts: images contribute nothing to total_chars",
+          bare_ctx.params.total_chars == std::string("hello").size());
+}
+
+static void test_build_route_context_reads_max_tokens() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", 256},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: max_tokens populates expected_output_tokens",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 256);
+}
+
+static void test_build_route_context_reads_max_completion_tokens_when_max_tokens_absent() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_completion_tokens", 512},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: max_completion_tokens populates expected_output_tokens "
+          "when max_tokens is absent",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 512);
+}
+
+static void test_build_route_context_max_tokens_wins_over_max_completion_tokens() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", 128},
+        {"max_completion_tokens", 512},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: max_tokens takes precedence when both are present",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 128);
+}
+
+static void test_build_route_context_reads_max_output_tokens_for_responses() {
+    json request = {
+        {"model", "router"},
+        {"input", "summarize this"},
+        {"max_output_tokens", 256},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: /v1/responses' max_output_tokens populates "
+          "expected_output_tokens",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 256);
+}
+
+static void test_build_route_context_expected_output_tokens_absent_when_unset() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: expected_output_tokens is nullopt when neither field is sent",
+          !ctx.params.expected_output_tokens.has_value());
+}
+
+static void test_build_route_context_ignores_non_positive_or_non_integer_max_tokens() {
+    json zero_request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", 0},
+    };
+    RouteContext zero_ctx = lemon::build_route_context(zero_request, "router");
+    check("build_route_context: max_tokens: 0 is treated as absent",
+          !zero_ctx.params.expected_output_tokens.has_value());
+
+    json negative_request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", -10},
+    };
+    RouteContext negative_ctx = lemon::build_route_context(negative_request, "router");
+    check("build_route_context: a negative max_tokens is treated as absent",
+          !negative_ctx.params.expected_output_tokens.has_value());
+
+    json string_request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", "unlimited"},
+    };
+    RouteContext string_ctx = lemon::build_route_context(string_request, "router");
+    check("build_route_context: a non-integer max_tokens is treated as absent",
+          !string_ctx.params.expected_output_tokens.has_value());
+}
+
+static lemon::CostServices fake_cost_services() {
+    lemon::CostServices services;
+    services.cost_of = [](const std::string& candidate) -> lemon::CostInfo {
+        lemon::CostInfo info;
+        if (candidate == "model-a") {
+            info.cost_tier = "free";
+            info.latency_ms_hint = 12.0;
+        } else if (candidate == "model-b") {
+            info.cost_tier = "medium";
+            info.cost_input_per_million = 3.0;
+            info.cost_output_per_million = 15.0;
+        }
+        return info;
+    };
+    return services;
+}
+
+static void test_estimated_cost_attached_on_matched_rule() {
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               fake_cost_services());
+    Decision decision = engine.route(route_context("alpha path"), false);
+    check("matched rule routes to model-a",
+          decision.route_to == "model-a" && !decision.default_used);
+    check("matched rule attaches estimated_cost",
+          decision.outputs.contains("estimated_cost") &&
+          decision.outputs["estimated_cost"].value("cost_tier", "") == "free" &&
+          near(decision.outputs["estimated_cost"].value("latency_ms_hint", -1.0), 12.0) &&
+          !decision.outputs["estimated_cost"].contains("cost_input_per_million"));
+}
+
+static void test_estimated_cost_attached_on_default() {
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               fake_cost_services());
+    Decision decision = engine.route(route_context("no match here"), false);
+    check("default routes to model-b",
+          decision.route_to == "model-b" && decision.default_used);
+    check("default attaches estimated_cost",
+          decision.outputs.contains("estimated_cost") &&
+          decision.outputs["estimated_cost"].value("cost_tier", "") == "medium" &&
+          near(decision.outputs["estimated_cost"].value("cost_input_per_million", -1.0), 3.0) &&
+          near(decision.outputs["estimated_cost"].value("cost_output_per_million", -1.0), 15.0));
+}
+
+static void test_estimated_cost_omitted_when_candidate_has_no_cost_data() {
+    lemon::CostServices services;
+    services.cost_of = [](const std::string&) { return lemon::CostInfo{}; };
+
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               std::move(services));
+    Decision decision = engine.route(route_context("alpha path"), false);
+    check("no estimated_cost when CostInfo is empty",
+          !decision.outputs.contains("estimated_cost"));
+}
+
+// #2763 review: cost_of is caller-injected and must never make route() throw.
+static void test_estimated_cost_swallows_cost_of_exception() {
+    lemon::CostServices services;
+    services.cost_of = [](const std::string&) -> lemon::CostInfo {
+        throw std::runtime_error("boom");
+    };
+
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               std::move(services));
+    Decision matched;
+    bool matched_threw = false;
+    try {
+        matched = engine.route(route_context("alpha path"), false);
+    } catch (...) {
+        matched_threw = true;
+    }
+    check("route() does not throw when cost_of throws on the matched-rule path",
+          !matched_threw && matched.route_to == "model-a" &&
+          !matched.outputs.contains("estimated_cost"));
+
+    Decision defaulted;
+    bool default_threw = false;
+    try {
+        defaulted = engine.route(route_context("no match here"), false);
+    } catch (...) {
+        default_threw = true;
+    }
+    check("route() does not throw when cost_of throws on the default path",
+          !default_threw && defaulted.route_to == "model-b" &&
+          !defaulted.outputs.contains("estimated_cost"));
+}
+
+// #2763 review: engine-attached cost must not clobber a rule author's own
+// outputs["estimated_cost"].
+static void test_estimated_cost_preserves_author_set_value() {
+    Rule prefer_a = rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}),
+                          "model-a");
+    prefer_a.outputs = json{{"estimated_cost", "author-provided"}};
+
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {prefer_a};
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               fake_cost_services());
+    Decision decision = engine.route(route_context("alpha path"), false);
+    check("author-set outputs.estimated_cost is not overwritten by the engine",
+          decision.outputs.contains("estimated_cost") &&
+          decision.outputs["estimated_cost"] == json("author-provided"));
+}
+
+static void test_resolve_cost_info_typed_and_extras() {
+    // Typed fields (cloud discovery path from PR #1785) win when present.
+    lemon::CostInfo from_typed =
+        lemon::resolve_cost_info(std::optional<double>{1.25},
+                                 std::optional<double>{10.0}, {});
+    check("typed cost_input_per_million is used when present",
+          from_typed.cost_input_per_million.has_value() &&
+          near(*from_typed.cost_input_per_million, 1.25));
+    check("typed cost_output_per_million is used when present",
+          from_typed.cost_output_per_million.has_value() &&
+          near(*from_typed.cost_output_per_million, 10.0));
+
+    // Hand-authored extras path when typed fields are absent.
+    std::map<std::string, json> extras = {
+        {"cost_tier", "free"},
+        {"cost_input_per_million", 0.0},
+        {"latency_ms_hint", 8.5},
+    };
+    lemon::CostInfo from_extras =
+        lemon::resolve_cost_info(std::nullopt, std::nullopt, extras);
+    check("extras cost_tier is read",
+          from_extras.cost_tier.has_value() && *from_extras.cost_tier == "free");
+    check("extras cost_input_per_million is read when typed is absent",
+          from_extras.cost_input_per_million.has_value() &&
+          near(*from_extras.cost_input_per_million, 0.0));
+    check("extras latency_ms_hint is read",
+          from_extras.latency_ms_hint.has_value() &&
+          near(*from_extras.latency_ms_hint, 8.5));
+    check("absent typed prices stay nullopt without extras",
+          !lemon::resolve_cost_info(std::nullopt, std::nullopt, {})
+               .cost_input_per_million.has_value());
+
+    // Precedence: typed wins when both typed and extras are set.
+    std::map<std::string, json> both = {{"cost_input_per_million", 99.0},
+                                        {"cost_output_per_million", 88.0}};
+    lemon::CostInfo from_both =
+        lemon::resolve_cost_info(std::optional<double>{1.25},
+                                 std::optional<double>{10.0}, both);
+    check("typed price wins over extras when both present",
+          from_both.cost_input_per_million.has_value() &&
+          near(*from_both.cost_input_per_million, 1.25));
+    check("typed output price wins over extras when both present",
+          from_both.cost_output_per_million.has_value() &&
+          near(*from_both.cost_output_per_million, 10.0));
+}
+
+static void test_resolve_cost_info_rejects_unknown_cost_tier() {
+    std::map<std::string, json> extras = {{"cost_tier", "cheap"}};
+    lemon::CostInfo info =
+        lemon::resolve_cost_info(std::nullopt, std::nullopt, extras);
+    check("unrecognized cost_tier is dropped", !info.cost_tier.has_value());
+}
+
+static void test_cost_info_to_json() {
+    lemon::CostInfo empty;
+    check("empty CostInfo serializes to empty object", empty.to_json().empty());
+
+    lemon::CostInfo info;
+    info.cost_tier = "low";
+    info.cost_input_per_million = 2.5;
+    json out = info.to_json();
+    check("to_json emits cost_tier", out.value("cost_tier", "") == "low");
+    check("to_json emits cost_input_per_million",
+          near(out.value("cost_input_per_million", -1.0), 2.5));
+    check("to_json omits unset fields",
+          !out.contains("cost_output_per_million") && !out.contains("latency_ms_hint"));
+}
+
 int main() {
     test_embed_uses_router_embeddings_shape();
     test_semantic_similarity_loops_through_router_embeddings();
@@ -514,6 +928,25 @@ int main() {
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
     test_build_route_context_responses_uses_last_user_message();
+    test_build_route_context_total_chars_all_roles();
+    test_build_route_context_total_chars_counts_past_first_image();
+    test_build_route_context_total_chars_utf8_bytes();
+    test_build_route_context_total_chars_prompt_form();
+    test_build_route_context_total_chars_responses_input_array();
+    test_build_route_context_reads_max_tokens();
+    test_build_route_context_reads_max_completion_tokens_when_max_tokens_absent();
+    test_build_route_context_max_tokens_wins_over_max_completion_tokens();
+    test_build_route_context_reads_max_output_tokens_for_responses();
+    test_build_route_context_expected_output_tokens_absent_when_unset();
+    test_build_route_context_ignores_non_positive_or_non_integer_max_tokens();
+    test_estimated_cost_attached_on_matched_rule();
+    test_estimated_cost_attached_on_default();
+    test_estimated_cost_omitted_when_candidate_has_no_cost_data();
+    test_estimated_cost_swallows_cost_of_exception();
+    test_estimated_cost_preserves_author_set_value();
+    test_resolve_cost_info_typed_and_extras();
+    test_resolve_cost_info_rejects_unknown_cost_tier();
+    test_cost_info_to_json();
 
     if (g_failures == 0) {
         std::printf("All routing classifier service tests passed.\n");

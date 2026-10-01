@@ -306,10 +306,6 @@ static json build_ollama_details(const std::string& model_name,
     };
 }
 
-static bool has_label(const ModelInfo& info, const std::string& label) {
-    return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
-}
-
 static json build_ollama_capabilities(const ModelInfo& info) {
     json capabilities = json::array();
     ModelType model_type = get_model_type_from_labels(info.labels);
@@ -320,15 +316,15 @@ static json build_ollama_capabilities(const ModelInfo& info) {
         capabilities.push_back("embedding");
     }
 
-    if (has_label(info, "tool-calling") || has_label(info, "tools")) {
+    if (has_label(info.labels, "tool-calling") || has_label(info.labels, "tools")) {
         capabilities.push_back("tools");
     }
 
-    if (has_label(info, "vision")) {
+    if (has_label(info.labels, "vision")) {
         capabilities.push_back("vision");
     }
 
-    if (has_label(info, "reasoning")) {
+    if (has_label(info.labels, "reasoning")) {
         capabilities.push_back("thinking");
     }
 

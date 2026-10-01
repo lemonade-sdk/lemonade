@@ -310,17 +310,28 @@ class ServerConfig {
   }
 
   /**
+   * Resolve a relative endpoint against the current base URL. Root-level
+   * control endpoints (/internal/*) are not mounted under the /api/v1 prefix,
+   * so they resolve against the server base instead.
+   */
+  private resolveUrl(endpoint: string): string {
+    if (endpoint.startsWith('http')) {
+      return endpoint;
+    }
+    const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return path.startsWith('/internal/')
+      ? `${this.getServerBaseUrl()}${path}`
+      : `${this.getApiBaseUrl()}${path}`;
+  }
+
+  /**
    * Wrapper for fetch that automatically discovers port on connection failures
    * (only attempts discovery in localhost mode)
    */
   async fetch(endpoint: string, opts?: RequestInit): Promise<Response> {
     await this.waitForInit();
 
-    const fullUrl = endpoint.startsWith('http')
-      ? endpoint
-      : endpoint.startsWith('/internal/')
-        ? `${this.getServerBaseUrl()}${endpoint}`
-        : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const fullUrl = this.resolveUrl(endpoint);
 
     const options = { ...opts };
 
@@ -347,7 +358,7 @@ class ServerConfig {
         await this.discoverPort();
         const newUrl = endpoint.startsWith('http')
           ? endpoint.replace(/localhost:\d+/, `localhost:${this.port}`)
-          : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+          : this.resolveUrl(endpoint);
 
         return await fetch(newUrl, options);
       } catch (retryError) {

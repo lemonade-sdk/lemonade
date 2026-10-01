@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
@@ -43,7 +44,7 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
         return params;
     }
 
-    params.repo = "FastFlowLM/FastFlowLM";
+    params.repo = "ROCm/FastFlowLM";
 
     // Release asset filenames use bare version numbers (no 'v' prefix)
     std::string bare_version = version;
@@ -69,7 +70,8 @@ FastFlowLMServer::~FastFlowLMServer() {
     unload();
 }
 
-std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
+std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
+                                             RemoteRegistrySource source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -77,10 +79,8 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
         throw std::runtime_error("FLM not found");
     }
 
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
+    std::vector<std::string> args = fastflowlm::flm_pull_arguments(
+        checkpoint, do_not_upgrade, source);
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {
@@ -175,7 +175,11 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    download_model(model_info.checkpoint(), do_not_upgrade);
+    RemoteRegistrySource source = model_manager_
+        ? model_manager_->download_source_for(model_info)
+        : RemoteRegistrySource::HuggingFace;
+
+    download_model(model_info.checkpoint(), do_not_upgrade, source);
 
     port_ = choose_port();
 
@@ -215,7 +219,8 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true));
+    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true),
+                       flm_path, args);
     LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
 
     bool ready = wait_for_ready();
@@ -322,19 +327,22 @@ json FastFlowLMServer::embeddings(const json& request) {
     return forward_request("/v1/embeddings", request);
 }
 
-json FastFlowLMServer::reranking(const json& request) {
-    if (model_type_ != ModelType::LLM) {
-        return ErrorResponse::from_exception(
-            UnsupportedOperationException("Reranking", "FLM " + model_type_to_string(model_type_) + " model")
-        );
-    }
-    return forward_request("/v1/rerank", request);
-}
-
 json FastFlowLMServer::audio_transcriptions(const json& request) {
     if (model_type_ != ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Audio transcription", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
+
+    // FLM's transcription endpoint ignores response_format and always answers with
+    // the compact {model, text} JSON. Plain text can be derived from that; SRT and
+    // VTT cannot, because they need the per-segment timestamps FLM never returns.
+    const std::string requested_format = request.value("response_format", audio::ResponseFormat::JSON);
+    if (requested_format == audio::ResponseFormat::SRT ||
+        requested_format == audio::ResponseFormat::VTT) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("response_format '" + requested_format + "'",
+                                          "FLM transcription models (no segment timestamps)")
         );
     }
 
@@ -380,6 +388,8 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
+        // FLM always replies with JSON here, so the strict shared helper is correct:
+        // handle_audio_transcriptions() renders the "text" field for plain-text formats.
         return forward_multipart_request("/v1/audio/transcriptions", fields);
 
     } catch (const std::exception& e) {
@@ -473,8 +483,11 @@ public:
     }
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
-                        const BackendOpsContext&) const override {
-        flm_download(info.checkpoint(), do_not_upgrade, progress);
+                        const BackendOpsContext& ctx) const override {
+        RemoteRegistrySource source = ctx.model_manager
+            ? ctx.model_manager->download_source_for(info)
+            : RemoteRegistrySource::HuggingFace;
+        flm_download(info.checkpoint(), do_not_upgrade, progress, source);
     }
 
     bool invalidates_cache_after_download() const override { return true; }

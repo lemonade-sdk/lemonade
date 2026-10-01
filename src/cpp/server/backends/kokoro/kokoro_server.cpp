@@ -133,7 +133,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         false,
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start koko process");

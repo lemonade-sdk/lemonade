@@ -104,7 +104,7 @@ void RyzenAIServer::load(const std::string& model_name,
         is_debug(),
         true
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, ryzenai_server_path, args);
 
     if (!utils::ProcessManager::is_running(started_handle)) {
         throw std::runtime_error("Failed to start ryzenai-server process");
