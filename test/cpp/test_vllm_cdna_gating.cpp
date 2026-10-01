@@ -241,6 +241,43 @@ int main() {
                                    {"integrated", false}, {"available", false}});
         expect(SystemInfo::select_rocm_arch(unavailable_gpu, "ROCm1").empty(),
                "an unavailable explicitly selected GPU is rejected");
+
+        nlohmann::json identical_gpu = nlohmann::json::array();
+        identical_gpu.push_back({{"name", "AMD Radeon RX 9070"}, {"family", "gfx1201"},
+                                 {"integrated", false}, {"available", true},
+                                 {"uuid", "GPU-0000000000000001"}});
+        identical_gpu.push_back({{"name", "AMD Radeon RX 9070"}, {"family", "gfx1201"},
+                                 {"integrated", false}, {"available", true},
+                                 {"uuid", "GPU-0000000000000002"}});
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm0") ==
+                   "GPU-0000000000000001",
+               "an explicit ROCm0 selection resolves to its stable GPU UUID");
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1") ==
+                   "GPU-0000000000000002",
+               "an identical second GPU resolves to a different stable UUID");
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1,ROCm0") ==
+                   "GPU-0000000000000002,GPU-0000000000000001",
+               "a multi-GPU selection preserves the requested UUID order");
+        expect(SystemInfo::remap_rocm_device_selection("ROCm1,ROCm0") ==
+                   "ROCm0,ROCm1",
+               "UUID-filtered ROCm devices are remapped to child ordinals");
+
+        identical_gpu[1].erase("uuid");
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1").empty(),
+               "missing AMD UUIDs do not trigger unsafe numeric visibility filtering");
+        identical_gpu[1]["uuid"] = "GPU-XX";
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1").empty(),
+               "an unsupported-UUID placeholder does not trigger visibility filtering");
+        identical_gpu[1]["uuid"] = "GPU-0000000000000001";
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1").empty(),
+               "duplicate UUIDs do not trigger ambiguous visibility filtering");
+        identical_gpu[1]["uuid"] = 2;
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1").empty(),
+               "non-string UUID fields do not trigger visibility filtering");
+        identical_gpu[1]["uuid"] = "GPU-0000000000000002";
+        identical_gpu[1]["available"] = "true";
+        expect(SystemInfo::get_rocm_visible_devices(identical_gpu, "ROCm1").empty(),
+               "non-boolean availability fields do not trigger visibility filtering");
     }
 
     // Status must resolve the SAME per-arch override install writes, or gfx942 reads

@@ -22,6 +22,7 @@ using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::rocm_gpu_uuid_from_identifier;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
@@ -256,6 +257,21 @@ int main() {
     failures += !expect_string(
         "an empty version has no ISA",
         gfx_target_version_to_arch(""), "");
+    failures += !expect_string(
+        "a decimal KFD unique_id becomes a ROCr GPU UUID",
+        rocm_gpu_uuid_from_identifier("123456789"), "GPU-00000000075bcd15");
+    failures += !expect_string(
+        "a hexadecimal KFD unique_id becomes a ROCr GPU UUID",
+        rocm_gpu_uuid_from_identifier("0x1F"), "GPU-000000000000001f");
+    failures += !expect_string(
+        "a valid HSA UUID is normalized",
+        rocm_gpu_uuid_from_identifier("gpu-00000000000000AB"),
+        "GPU-00000000000000ab");
+    for (const char* invalid : {"", "0", "-1", "GPU-XX", "GPU-123", "0xGG"}) {
+        failures += !expect_string(
+            (std::string("invalid ROCm GPU identifier ") + invalid).c_str(),
+            rocm_gpu_uuid_from_identifier(invalid), "");
+    }
 
     {
         // 27.07 of 32.0 GiB free: the reading from the gfx1151 merge-queue failures.
