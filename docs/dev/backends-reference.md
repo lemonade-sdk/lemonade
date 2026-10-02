@@ -18,6 +18,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
+| `rocmfpx` | ROCm FPX (experimental) | no | yes | rocm |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
@@ -57,6 +58,7 @@ Each backend has a tier and a format. The tier is `core` (supported by Lemonade'
 | `onnxruntime` | cpu | community | native | macos | cpu (arm64) |
 | `openmoss` | cuda | community | native | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `rocmfpx` | rocm | experimental | container | linux | amd_gpu (gfx1151) |
 | `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | core | native | macos | metal |
 | `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -141,6 +143,13 @@ Each backend has a tier and a format. The tier is `core` (supported by Lemonade'
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+
+#### `rocmfpx` — ROCm FPX (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `rocmfpx_args` | `--rocmfpx-args` | ARGS | "" | Custom arguments to pass to the ROCm FPX llama-server |
 
 #### `sd-cpp` — StableDiffusion.cpp
 
