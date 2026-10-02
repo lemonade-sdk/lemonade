@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
+import { getModelJSONName } from './utils/addModel';
 import { ModelInfo, USER_MODEL_PREFIX } from './utils/modelData';
 import { CANONICAL_PREFIXES, getModelDisplayName } from './utils/modelDisplayName';
 import { ToastContainer, useToast } from './Toast';
@@ -1805,25 +1806,22 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const uploadModelJSON = (json: ModelJSON) => {
-    let modelName: string;
-
     if (!json.recipe) {
       showError("Invalid model JSON. Recipe is missing");
       return;
     }
 
-    if(!json.model_name && !json.id) {
+    const modelName = getModelJSONName(json);
+    if (!modelName) {
       showError("Invalid model JSON. Either model or id must be present.");
       return;
     }
-
-    modelName = json.model_name ? json.model_name : json.id as string;
 
     if (json.checkpoint && json.checkpoints) delete json.checkpoint;
     if (json.model_name) delete json.model_name;
     if(json.id) delete json.id;
 
-    handleDownloadModel(modelName as string, json as ModelRegistrationData);
+    handleDownloadModel(modelName, json as ModelRegistrationData);
   }
 
   useEffect(() => {
