@@ -1847,7 +1847,13 @@ void Server::setup_cors(httplib::Server &web_server) {
 
     // Catch-all error handler - must be last!
     web_server.set_error_handler([](const httplib::Request& req, httplib::Response& res) {
-        LOG(ERROR, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
+        // A 4xx is the client's request being refused, which is expected (the
+        // model search probes every candidate repository), so only 5xx is an error
+        if (res.status >= 500) {
+            LOG(ERROR, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
+        } else {
+            LOG(WARNING, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
+        }
 
         if (res.status == 404) {
             // Only set generic "endpoint not found" if no content was already set
@@ -1864,7 +1870,7 @@ void Server::setup_cors(httplib::Server &web_server) {
             }
         } else if (res.status == 400) {
             // Log more details about 400 errors
-            LOG(ERROR, "Server") << "400 Bad Request details - Body length: " << req.body.length()
+            LOG(WARNING, "Server") << "400 Bad Request details - Body length: " << req.body.length()
                       << ", Content-Type: " << req.get_header_value("Content-Type") << std::endl;
             // Ensure a response is sent
             if (res.body.empty()) {
