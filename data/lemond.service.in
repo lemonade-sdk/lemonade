@@ -9,15 +9,18 @@ User=lemonade
 Group=lemonade
 StateDirectory=lemonade
 StateDirectoryMode=0750
+# CacheDirectory for $XDG_CACHE_HOME-style lemonade cache
+CacheDirectory=lemonade
+CacheDirectoryMode=0755
+# RuntimeDirectory for ephemeral state (PID files, Unix sockets)
 RuntimeDirectory=lemonade
 RuntimeDirectoryMode=0700
 WorkingDirectory=%S/lemonade
 # Server settings (port, host, models_dir, …) live in config.json, not env vars.
-# The env-file drop-in is kept for the few env vars lemond still reads:
-#   HF_TOKEN                 — HuggingFace authentication token
-#   LEMONADE_API_KEY         — require API-key auth on all routes
-#   LEMONADE_ADMIN_API_KEY   — API-key specific to internal routes
-EnvironmentFile=-/etc/lemonade/conf.d/*.conf
+# The few env vars lemond still reads (HF_TOKEN, LEMONADE_API_KEY,
+# LEMONADE_ADMIN_API_KEY) can be set via `systemctl edit lemond` drop-ins or the
+# optional environment file below.
+EnvironmentFile=-/etc/default/lemond
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

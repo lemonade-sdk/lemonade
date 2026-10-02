@@ -67,6 +67,19 @@ defineTest('mergeWithDefaultSettings rejects invalid theme', () => {
   assert.equal(settings.layout.theme, 'dark');
 });
 
+defineTest('mergeWithDefaultSettings rejects removed prompt-debugger leftPanelView', () => {
+  // Prompt Debugger was removed as a standalone view (folded into the Router
+  // Builder's Test Prompt tab instead) - a stale settings file still naming
+  // it must fall back to the default, not persist a now-nonexistent view.
+  const settings = mergeWithDefaultSettings({
+    layout: {
+      leftPanelView: 'prompt-debugger',
+    },
+  });
+
+  assert.equal(settings.layout.leftPanelView, 'models');
+});
+
 let failures = 0;
 
 for (const { name, fn } of tests) {

@@ -28,15 +28,19 @@ namespace fs = std::filesystem;
 
 namespace lemon_tray {
 
-#ifndef _WIN32
-int TrayUI::signal_pipe_[2] = {-1, -1};
-#endif
+volatile std::sig_atomic_t TrayUI::g_quit_requested = 0;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 std::string TrayUI::get_connect_host() const {
+    if (is_ssl_) {
+        if (host_.empty() || host_ == "0.0.0.0") {
+            return "127.0.0.1";
+        }
+        return host_;
+    }
     if (host_.empty() || host_ == "0.0.0.0" || host_ == "localhost") {
         return "127.0.0.1";
     }
@@ -47,38 +51,27 @@ std::string TrayUI::get_connect_host() const {
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-TrayUI::TrayUI(int port, const std::string& host, bool silent)
-    : port_(port)
-    , host_(host)
-    , silent_(silent)
+TrayUI::TrayUI(const TrayUIOptions& options)
+    : port_(options.port)
+    , host_(options.host)
+    , is_ssl_(options.is_ssl)
+    , silent_(options.silent)
+    , launch_app_(options.launch_app)
+    , server_initially_connected_(options.server_initially_connected)
     , recipe_options_(nlohmann::json::object())
 {
-#ifndef _WIN32
-    if (pipe(signal_pipe_) == -1) {
-        std::cerr << "Failed to create signal pipe" << std::endl;
-    } else {
-        // Set write end to non-blocking
-        int flags = fcntl(signal_pipe_[1], F_GETFL);
-        if (flags != -1) {
-            fcntl(signal_pipe_[1], F_SETFL, flags | O_NONBLOCK);
-        }
-    }
-#endif
+    std::string clean_host;
+    int clean_port = port_;
+    bool clean_is_ssl = is_ssl_;
+    lemon::utils::parse_target_url(host_, clean_host, clean_port, clean_is_ssl, false);
+    host_ = clean_host;
+    port_ = clean_port;
+    is_ssl_ = clean_is_ssl;
+
+
 }
 
 TrayUI::~TrayUI() {
-#ifndef _WIN32
-    if (signal_monitor_thread_.joinable()) {
-        stop_signal_monitor_ = true;
-        signal_monitor_thread_.join();
-    }
-    if (signal_pipe_[0] != -1) {
-        close(signal_pipe_[0]);
-        close(signal_pipe_[1]);
-        signal_pipe_[0] = signal_pipe_[1] = -1;
-    }
-#endif
-
 }
 
 // ---------------------------------------------------------------------------
@@ -93,8 +86,15 @@ bool TrayUI::initialize() {
     }
 
     tray_->set_ready_callback([this]() {
-        if (!silent_) {
-            show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+        // Only announce the server if it was reachable at startup; when the tray
+        // starts in disconnected mode the periodic refresher notifies on reconnect.
+        if (server_initially_connected_) {
+            if (!silent_) {
+                show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+            }
+            if (launch_app_) {
+                open_desktop_app();
+            }
         }
     });
 
@@ -118,37 +118,52 @@ bool TrayUI::initialize() {
 }
 
 void TrayUI::run() {
+    if (!tray_) return;
+
+    // On POSIX, a background thread refreshes the menu so the tray reflects
+    // server state and recovers if it goes offline and later comes back
+    // (disconnected mode), and polls g_quit_requested to quit cleanly on
+    // SIGINT/SIGTERM. This thread is non-Windows only: Windows already refreshes
+    // on its UI thread via set_menu_update_callback, and WindowsTray::set_menu
+    // mutates Win32 menu handles without synchronization, so it must only be
+    // called from the UI thread. On Linux/macOS set_menu marshals to the UI
+    // thread (g_idle_add / dispatch_async), so cross-thread calls are safe.
 #ifndef _WIN32
-    // Background thread to monitor signals and periodically refresh the menu
-    signal_monitor_thread_ = std::thread([this]() {
+    std::thread refresher([this]() {
         auto last_tick = std::chrono::steady_clock::now();
-        while (!stop_signal_monitor_) {
-            fd_set readfds;
-            FD_ZERO(&readfds);
-            FD_SET(signal_pipe_[0], &readfds);
-
-            struct timeval tv = {0, 100000};  // 100ms
-            int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
-
+        bool notified_reconnect = server_initially_connected_;
+        while (!stop_refresh_) {
+            if (g_quit_requested) {
+                stop();
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
                 refresh_menu();
+                if (!notified_reconnect) {
+                    if (fetch_server_state().has_value()) {
+                        notified_reconnect = true;
+                        if (!silent_) {
+                            show_notification("Lemonade Server", "Lemonade Server is now available.");
+                        }
+                        if (launch_app_) {
+                            open_desktop_app();
+                        }
+                    }
+                }
                 last_tick = now;
-            }
-
-            if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
-                char sig;
-                ssize_t bytes_read = read(signal_pipe_[0], &sig, 1);
-                (void)bytes_read;
-                std::cout << "\nReceived interrupt signal, shutting down..." << std::endl;
-                stop();
-                break;
             }
         }
     });
 #endif
 
     tray_->run();  // Blocks in platform event loop
+
+#ifndef _WIN32
+    stop_refresh_ = true;
+    if (refresher.joinable()) refresher.join();
+#endif
 }
 
 void TrayUI::stop() {
@@ -161,43 +176,70 @@ void TrayUI::stop() {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+httplib::Client TrayUI::make_client(const std::string& host, int port, bool is_ssl) const {
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
+    if (is_ssl) {
+        throw std::runtime_error("HTTPS support is not compiled in this client.");
+    }
+#endif
+    std::string format_host = lemon::utils::bracket_host_if_ipv6(host);
+    std::string scheme = is_ssl ? "https" : "http";
+    std::string url = scheme + "://" + format_host + ":" + std::to_string(port);
+    auto client = httplib::Client(url);
+#ifdef LEMONADE_HTTPLIB_HAS_TLS
+    const char* skip_verify = std::getenv("LEMONADE_SKIP_VERIFY");
+    if (skip_verify && std::string(skip_verify) == "1") {
+        client.enable_server_certificate_verification(false);
+    }
+#endif
+    return client;
+}
+
+httplib::Client TrayUI::make_client() const {
+    return make_client(get_connect_host(), port_, is_ssl_);
+}
+
 std::string TrayUI::http_get(const std::string& endpoint) {
-    httplib::Client cli(get_connect_host(), port_);
-    cli.set_connection_timeout(2);
-    cli.set_read_timeout(5);
+    try {
+        auto cli = make_client();
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(5);
 
-    // Pass API key if set - prefer admin key over regular API key
-    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
-    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
-    httplib::Headers headers;
-    if (api_key && api_key[0]) {
-        headers.emplace("Authorization", std::string("Bearer ") + api_key);
-    }
+        // Pass API key if set - prefer admin key over regular API key
+        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+        const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
+        httplib::Headers headers;
+        if (api_key && api_key[0]) {
+            headers.emplace("Authorization", std::string("Bearer ") + api_key);
+        }
 
-    auto res = cli.Get(endpoint, headers);
-    if (res && res->status == 200) {
-        return res->body;
-    }
+        auto res = cli.Get(endpoint, headers);
+        if (res && res->status == 200) {
+            return res->body;
+        }
+    } catch (...) {}
     return "";
 }
 
 std::string TrayUI::http_post(const std::string& endpoint, const std::string& body) {
-    httplib::Client cli(get_connect_host(), port_);
-    cli.set_connection_timeout(2);
-    cli.set_read_timeout(30);
+    try {
+        auto cli = make_client();
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(30);
 
-    // Pass API key if set - prefer admin key over regular API key
-    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
-    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
-    httplib::Headers headers;
-    if (api_key && api_key[0]) {
-        headers.emplace("Authorization", std::string("Bearer ") + api_key);
-    }
+        // Pass API key if set - prefer admin key over regular API key
+        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+        const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
+        httplib::Headers headers;
+        if (api_key && api_key[0]) {
+            headers.emplace("Authorization", std::string("Bearer ") + api_key);
+        }
 
-    auto res = cli.Post(endpoint, headers, body, "application/json");
-    if (res && (res->status == 200 || res->status == 204)) {
-        return res->body;
-    }
+        auto res = cli.Post(endpoint, headers, body, "application/json");
+        if (res && (res->status == 200 || res->status == 204)) {
+            return res->body;
+        }
+    } catch (...) {}
     return "";
 }
 
@@ -205,13 +247,13 @@ std::string TrayUI::http_post(const std::string& endpoint, const std::string& bo
 // Data fetchers
 // ---------------------------------------------------------------------------
 
-std::pair<bool, std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
-    std::vector<LoadedModelInfo> loaded_models;
+std::optional<std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
     try {
         std::string body = http_get("/api/v1/health");
-        if (body.empty()) return {false, loaded_models};
+        if (body.empty()) return std::nullopt;
 
         auto health = nlohmann::json::parse(body);
+        std::vector<LoadedModelInfo> loaded_models;
         if (health.contains("all_models_loaded") && health["all_models_loaded"].is_array()) {
             for (const auto& model : health["all_models_loaded"]) {
                 LoadedModelInfo info;
@@ -226,14 +268,14 @@ std::pair<bool, std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
                 }
             }
         }
-        return {true, loaded_models};
+        return loaded_models;
     } catch (...) {
-        return {false, loaded_models};
+        return std::nullopt;
     }
 }
 
 std::vector<LoadedModelInfo> TrayUI::get_all_loaded_models() {
-    return fetch_server_state().second;
+    return fetch_server_state().value_or(std::vector<LoadedModelInfo>{});
 }
 
 void TrayUI::fetch_runtime_config() {
@@ -285,7 +327,9 @@ void TrayUI::build_menu() {
     if (!tray_) return;
 
     // Fetch once, use for both the menu and the cache
-    auto [reachable, loaded_models] = fetch_server_state();
+    auto server_state = fetch_server_state();
+    bool reachable = server_state.has_value();
+    auto loaded_models = server_state.value_or(std::vector<LoadedModelInfo>{});
     auto available_models = get_downloaded_models();
     if (reachable) fetch_runtime_config();
 
@@ -307,7 +351,9 @@ void TrayUI::refresh_menu() {
 
 bool TrayUI::menu_needs_refresh() {
     // Fetch outside the lock to avoid blocking other threads during HTTP calls
-    auto [reachable, loaded] = fetch_server_state();
+    auto server_state = fetch_server_state();
+    bool reachable = server_state.has_value();
+    auto loaded = server_state.value_or(std::vector<LoadedModelInfo>{});
     auto current_available = get_downloaded_models();
 
     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -520,7 +566,7 @@ void TrayUI::on_change_context_size(int new_ctx_size) {
     recipe_options_["ctx_size"] = new_ctx_size;
     nlohmann::json body;
     body["ctx_size"] = new_ctx_size;
-    http_post("/api/v1/params", body.dump());
+    http_post("/internal/set", body.dump());
     build_menu();
 
     std::string label = (new_ctx_size >= 1024)
@@ -626,7 +672,9 @@ void TrayUI::open_desktop_app(const std::string& route) {
 }
 
 void TrayUI::open_web_app(const std::string& route) {
-    std::string url = "http://" + get_connect_host() + ":" + std::to_string(port_) + "/";
+    std::string scheme = is_ssl_ ? "https" : "http";
+    std::string formatted_host = lemon::utils::bracket_host_if_ipv6(get_connect_host());
+    std::string url = scheme + "://" + formatted_host + ":" + std::to_string(port_) + "/";
     if (!route.empty()) {
         url += "?" + route;
     }
@@ -666,6 +714,8 @@ std::string TrayUI::find_icon_path() {
         data_dirs.push_back("/opt/lemonade/share");
     }
     for (const auto& d : data_dirs) {
+        auto svg_clean = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonadeserver.Lemonade.svg";
+        if (fs::exists(svg_clean)) return svg_clean.string();
         auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
         if (fs::exists(svg)) return svg.string();
         auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";

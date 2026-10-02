@@ -14,10 +14,19 @@ namespace lemon {
 //   extra.NAME   — model discovered in --extra-models-dir
 //   builtin.NAME — model compiled into server_models.json
 //
-// `/v1/models` and Ollama `/api/tags` emit the bare name when a model is the
+// Listing surfaces (`/v1/models`, Ollama `/api/tags`, and the MCP
+// `lemonade_list_models` tool) emit the bare name when a model is the
 // precedence-winner for its bare name (precedence: Registered > Imported >
-// Builtin), or the canonical-prefixed ID when shadowed. Bare names are accepted
-// as input anywhere a model name is accepted and resolve to the winner.
+// Builtin), or the canonical-prefixed ID when shadowed.
+//
+// EXCEPTION: a non-built-in collection winner (a `user.*` / `extra.*` model
+// with recipe `collection.omni` or `collection.router`) is emitted under its
+// canonical-prefixed ID on every listing surface, even when it is the
+// precedence-winner, so the listed ID matches the one used for registration,
+// fetch, and chat (issue #2788). Built-in collections stay bare.
+//
+// Bare names are accepted as input anywhere a model name is accepted and
+// resolve to the winner.
 //
 // Display strings like "NAME (registered)" / "NAME (imported)" / "NAME (builtin)"
 // are a GUI concern only. The C++ server emits canonical IDs only; the Tauri

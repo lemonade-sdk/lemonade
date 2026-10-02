@@ -1,0 +1,18 @@
+{
+  "version": "1",
+  "model_name": "user.Input-Forms",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "escalate-rule",
+        "match": { "keywords_any": ["escalate"] },
+        "route_to": "cloud" },
+      { "id": "alpha-omega-rule",
+        "match": { "keywords_all": ["alpha", "omega"] },
+        "route_to": "cloud" }
+    ]
+  }
+}

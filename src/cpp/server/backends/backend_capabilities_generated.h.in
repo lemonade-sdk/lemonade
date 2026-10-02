@@ -1,0 +1,31 @@
+#pragma once
+//
+// AUTO-GENERATED at CMake configure time from LEMON_BACKENDS in CMakeLists.txt.
+// Do not edit by hand. Pairs each descriptor with the capability interfaces its
+// server class implements, derived from the class type at compile time.
+//
+// Header-only on purpose: this pulls in the server class *definitions* but calls
+// nothing on them, so BackendModeContractTest can check the descriptor contract
+// without linking the whole backend layer.
+//
+#include <cstdint>
+#include <vector>
+#include "lemon/backends/backend_descriptor.h"
+@LEMON_DESCRIPTOR_INCLUDES@
+@LEMON_FACTORY_INCLUDES@
+namespace lemon {
+namespace backends {
+
+struct BackendCapabilityEntry {
+    const BackendDescriptor* descriptor;
+    uint32_t capabilities;
+};
+
+inline std::vector<BackendCapabilityEntry> all_backend_capabilities() {
+    return {
+@LEMON_CAPABILITY_ENTRIES@
+    };
+}
+
+} // namespace backends
+} // namespace lemon

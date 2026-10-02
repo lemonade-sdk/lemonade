@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -32,6 +33,23 @@ public:
         std::string name;                         // e.g. "fireworks", "openai"
         std::string base_url;                     // normalized: no trailing slash
         bool allow_insecure_http = false;         // explicit opt-in for http:// + API key
+        // Some gateways front an OpenAI-shaped API but authenticate with a
+        // differently-named header and no "Bearer " prefix. Defaults reproduce
+        // the previously hardcoded Authorization/Bearer behavior.
+        std::string auth_header_name = "Authorization";
+        std::string auth_header_prefix = "Bearer ";
+        // Request/response shape this provider speaks. "openai" (the default)
+        // is what CloudServer implements; "anthropic" providers are relayed
+        // from lemond's /v1/messages instead.
+        std::string wire_format = "openai";
+
+        bool operator==(const Record& other) const {
+            return name == other.name && base_url == other.base_url &&
+                   allow_insecure_http == other.allow_insecure_http &&
+                   auth_header_name == other.auth_header_name &&
+                   auth_header_prefix == other.auth_header_prefix &&
+                   wire_format == other.wire_format;
+        }
     };
 
     struct AuthState {
@@ -50,12 +68,30 @@ public:
     // "cloud_providers" field. Excludes runtime keys by construction.
     nlohmann::json to_config_array() const;
 
+    // Everything install() can set on a record. An unset field means "leave
+    // this alone": callers that only know about base_url (the desktop app's
+    // add-provider form, a re-install that doesn't repeat the auth flags) must
+    // not clobber settings they never asked about.
+    struct InstallOptions {
+        std::optional<bool> allow_insecure_http;
+        std::optional<std::string> auth_header_name;
+        std::optional<std::string> auth_header_prefix;
+        std::optional<std::string> wire_format;
+    };
+
     // Idempotent. Adds the provider if absent, updates base_url if present.
-    // Normalizes base_url (trims trailing slash). Returns true if the stored
-    // record changed, false if it was already identical.
+    // Normalizes base_url (trims trailing slash). Unset options keep the
+    // existing record's value, or the Record default for a new record.
+    // Returns true if the stored record changed, false if it was already
+    // identical. Invalid auth header values are rejected by the caller-facing
+    // validators below; passing one here stores it unchecked.
     bool install(const std::string& provider,
                  const std::string& base_url,
-                 bool allow_insecure_http = false);
+                 const InstallOptions& options = {});
+
+    // Opts an already-installed provider into plaintext-HTTP key transmission
+    // without disturbing any other field. Returns false if not installed.
+    bool set_allow_insecure_http(const std::string& provider, bool allow);
 
     // Removes the provider record AND its runtime key. Returns true if a
     // record was removed.
@@ -72,6 +108,18 @@ public:
     // Whether this provider has explicit opt-in to send API keys to an
     // http:// base URL. Irrelevant for https:// providers.
     bool allow_insecure_http_for(const std::string& provider) const;
+
+    // A provider that isn't installed yields the Record defaults rather than
+    // an error, so callers can send a request without a prior existence check.
+    struct AuthHeader {
+        std::string name = "Authorization";
+        std::string prefix = "Bearer ";
+    };
+    AuthHeader auth_header_for(const std::string& provider) const;
+
+    // Wire format for a provider. Returns "openai" for a provider that isn't
+    // installed, matching the default for records that predate this field.
+    std::string wire_format_for(const std::string& provider) const;
 
     // Resolves an API key for a provider:
     //   1. Returns the LEMONADE_<PROVIDER_UPPER>_API_KEY env var if set.
@@ -107,12 +155,27 @@ public:
     // string on OK, a human-readable error message otherwise.
     static std::string validate_provider_name(const std::string& provider);
 
+    // Validates a candidate auth header name: a non-empty RFC 7230 token.
+    // Rejecting separators and CTLs (notably CR/LF) is what keeps a
+    // configured value from injecting extra header lines into every forwarded
+    // request, and rejecting empty keeps a malformed ": Bearer <key>" line —
+    // which sends the request out effectively unauthenticated — off the wire.
+    // Returns empty string on OK, a human-readable error message otherwise.
+    static std::string validate_auth_header_name(const std::string& name);
+
+    // Empty is valid and meaningful here: gateways that expect the bare key.
+    static std::string validate_auth_header_prefix(const std::string& prefix);
+
     // Validates a candidate base URL: must be https:// or http://. Plain HTTP
     // is allowed because custom backends can legitimately live on a trusted LAN,
     // but callers should surface base_url_warnings() so the user understands
     // the transport tradeoff.
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_base_url(const std::string& base_url);
+
+    // Only "openai" and "anthropic" are recognized; anything else would leave
+    // the provider undispatchable.
+    static std::string validate_wire_format(const std::string& wire_format);
 
     // Returns true for an http:// base URL, false for https:// or invalid input.
     static bool is_http_base_url(const std::string& base_url);

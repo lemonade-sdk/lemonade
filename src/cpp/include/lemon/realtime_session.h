@@ -7,6 +7,7 @@
 #include <functional>
 #include <future>
 #include <atomic>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include "streaming_audio_buffer.h"
 #include "vad.h"
@@ -50,6 +51,10 @@ struct RealtimeSession {
     // Interim transcription state
     int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription
     std::atomic<bool> interim_in_flight{false};  // Guard against overlapping interim requests
+    std::atomic<std::uint64_t> interim_generation{0}; // Invalidates stale queued interim requests
+    // Serializes all Whisper calls for this session. A final transcription
+    // invalidates queued interim work before it can reach the backend.
+    std::mutex transcription_mutex;
 
     // Streaming backend connection (used when backend supports IStreamingTranscriptionServer).
     // streaming_mutex guards streaming_client against concurrent forward/disconnect.
@@ -157,7 +162,8 @@ private:
     // When is_interim is true the result is sent as a delta event.
     void transcribe_wav(std::shared_ptr<RealtimeSession> session,
                         std::vector<uint8_t> wav_data, std::string model,
-                        bool is_interim = false);
+                        bool is_interim = false,
+                        std::uint64_t interim_generation = 0);
 
     // Process VAD for a session
     void process_vad(std::shared_ptr<RealtimeSession> session);

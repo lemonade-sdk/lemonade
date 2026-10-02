@@ -1,17 +1,18 @@
 name: 'Build macOS .dmg Package'
-description: 'Build Lemonade .dmg for macOS (signed and notarized via CMake notarize target)'
+description: 'Build the macOS .pkg, and notarize it when signing secrets are available'
 inputs:
   include-tauri:
     description: 'Whether to include the Tauri desktop app (full build)'
     required: false
     default: 'true'
-  skip-packaging:
-    description: 'Skip .pkg packaging and notarization (for unsigned local builds)'
+  sign:
+    description: 'Whether Apple signing secrets are available. When false, the .pkg is still
+      built (ad-hoc signed binaries, unsigned installer) but notarization is skipped.'
     required: false
-    default: 'false'
+    default: 'true'
 outputs:
   artifact-name:
-    description: 'The name of the generated .dmg file'
+    description: 'Filename of the generated .pkg'
     value: ${{ steps.build-dmg.outputs.artifact_name }}
 runs:
   using: "composite"
@@ -46,9 +47,11 @@ runs:
 
         # Reconfigure if Tauri app is included (setup.sh already did basic config)
         EXTRA_CMAKE_ARGS=""
-        if [ "${{ inputs.skip-packaging }}" == "true" ]; then
-            echo "No signing identity available — using ad-hoc signing"
-            EXTRA_CMAKE_ARGS="-DSIGNING_IDENTITY=- -DINSTALLER_IDENTITY=-"
+        if [ "${{ inputs.sign }}" != "true" ]; then
+            # Ad-hoc sign the binaries; leave INSTALLER_IDENTITY empty so CPack
+            # omits productbuild --sign and emits an unsigned .pkg.
+            echo "No signing identity available — ad-hoc binaries, unsigned installer"
+            EXTRA_CMAKE_ARGS="-DSIGNING_IDENTITY=- -DINSTALLER_IDENTITY="
         fi
 
         if [ "${{ inputs.include-tauri }}" == "true" ]; then
@@ -127,15 +130,36 @@ runs:
 
         echo "Web app built and copied successfully!"
 
-    - name: Build .pkg and notarize
-      if: inputs.skip-packaging != 'true'
+    - name: Build .pkg
       id: build-dmg
       shell: bash
       run: |
         set -e
 
-        echo "Building macOS .pkg via CMake notarize target..."
-        echo "This will: build Tauri app, sign binaries, create package, notarize, and staple."
+        echo "Building macOS .pkg via CMake package-macos target..."
+        cmake --build --preset default --target package-macos
+
+        PKG_FILE=$(find build -maxdepth 1 -name "*.pkg" -type f | head -1)
+
+        if [ -z "$PKG_FILE" ]; then
+            echo "ERROR: No .pkg file found after build!"
+            echo "Contents of build directory:"
+            ls -lh build/*.pkg build/*.dmg 2>/dev/null || true
+            exit 1
+        fi
+
+        ARTIFACT_NAME=$(basename "$PKG_FILE")
+        echo "Package created: $ARTIFACT_NAME (at $PKG_FILE)"
+        echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+        echo "File details:"
+        ls -lh "$PKG_FILE"
+
+    - name: Notarize and staple .pkg
+      if: inputs.sign == 'true'
+      shell: bash
+      run: |
+        set -e
 
         if ! cmake --build --preset default --target notarize; then
             echo ""
@@ -156,21 +180,4 @@ runs:
             exit 1
         fi
 
-        # Find the generated .pkg
-        PKG_FILE=$(find build -maxdepth 1 -name "*.pkg" -type f | head -1)
-
-        if [ -z "$PKG_FILE" ]; then
-            echo "ERROR: No .pkg file found after build!"
-            echo "Contents of build directory:"
-            ls -lh build/*.pkg build/*.dmg 2>/dev/null || true
-            exit 1
-        fi
-
-        ARTIFACT_NAME=$(basename "$PKG_FILE")
-        echo "Package created: $ARTIFACT_NAME (at $PKG_FILE)"
-        echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
-
-        echo "File details:"
-        ls -lh "$PKG_FILE"
-
-        echo "Build and notarization complete!"
+        echo "Notarization and stapling complete!"

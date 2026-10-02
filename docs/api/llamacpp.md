@@ -6,19 +6,23 @@ This page documents Lemonade's llama.cpp-specific compatibility surface.
 
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
-| `POST` | [`/v1/reranking`](#post-v1reranking) | Reranking | query + documents -> relevance-scored documents |
+| `POST` | [`/v1/rerank`](#post-v1rerank) | Reranking | query + documents -> relevance-scored documents |
 | `GET` | [`/v1/slots`](#get-v1slots) | Returns the current slots processing state | slots state |
 | `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsidactionsave) | Save the prompt cache of the specified slot to a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsidactionrestore) | Restore the prompt cache of the specified slot from a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsidactionerase) | Erase the prompt cache of the specified slot | prompt cache |
 | `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize a given text | tokenization |
 
-## `POST /v1/reranking`
+## `POST /v1/rerank`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Reranking API for llama.cpp-compatible reranker models. You provide a query and a list of documents, and receive relevance scores for each document. Lemonade will load the requested model automatically if it is not already loaded.
 
 > **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/v1/rerank` endpoint.
+
+> **Note:** Lemonade also accepts `/reranking` and `/reranker` as aliases — all three route to the same handler and behave identically.
+
+> **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, `/api/v1/`, `/v0/`, and `/v1/`.
 
 > **Note:** This endpoint is only available for reranker-specific models using the `llamacpp` recipe, such as `bge-reranker-v2-m3-GGUF`.
 
@@ -36,7 +40,7 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
 
     ```powershell
     Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/reranking" `
+      -Uri "http://localhost:13305/v1/rerank" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
@@ -53,7 +57,7 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:13305/v1/reranking \
+    curl -X POST http://localhost:13305/v1/rerank \
       -H "Content-Type: application/json" \
       -d '{
             "model": "bge-reranker-v2-m3-GGUF",

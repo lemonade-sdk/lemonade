@@ -4,9 +4,10 @@ Router end-to-end tests for Lemonade Server (issue #2388).
 Registers a `collection.router` collection and drives it with a vanilla OpenAI
 client, asserting that requests are dispatched to the right candidate by the
 policy's rules. Covers deterministic conditions (keywords / min_chars /
-metadata), a model-backed `semantic_similarity` classifier, a cloud candidate,
-first-match ordering, fail-open to `default_model`, and the decision surfaced on
-the response (`x-lemonade-route` header + `x_lemonade_route` body).
+min_total_chars / metadata), a model-backed `semantic_similarity` classifier, a
+cloud candidate, first-match ordering, fail-open to `default_model`, and the
+decision surfaced on the response (`x-lemonade-route` header +
+`x_lemonade_route` body).
 
 The routing decision is computed server-side before the request is forwarded to
 the chosen candidate, so these are true end-to-end runs: a real completion comes
@@ -18,7 +19,9 @@ Usage:
 
 import json as _json
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import platform
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import requests
 
@@ -30,11 +33,23 @@ from utils.server_base import (
 )
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
+MOCK_CLOUD_USAGE = {
+    "prompt_tokens": 50,
+    "completion_tokens": 2,
+    "total_tokens": 52,
+    "prompt_tokens_details": {"cached_tokens": 37},
+}
 
-def start_mock_cloud_provider(upstream_ids, marker_content):
+
+def start_mock_cloud_provider(upstream_ids, marker_content, record_state=None):
     """In-process OpenAI-compatible provider: GET /v1/models + POST
-    /v1/chat/completions. The chat reply content is `marker_content` so a test
-    can prove a request actually reached this (cloud) provider. Returns
+    /v1/chat/completions (non-streaming and SSE). The chat reply content is
+    `marker_content` so a test can prove a request actually reached this
+    (cloud) provider. Streaming replies append a usage-only frame
+    (MOCK_CLOUD_USAGE) only when the request sets
+    stream_options.include_usage, mirroring OpenAI-wire providers. When
+    `record_state` (a dict) is given, the last parsed chat request body is
+    stored under record_state["last_chat_request"]. Returns
     (base_url ending in /v1, stop_fn)."""
 
     class _FakeProvider(BaseHTTPRequestHandler):
@@ -62,6 +77,47 @@ def start_mock_cloud_provider(upstream_ids, marker_content):
                 parsed = _json.loads(body or b"{}")
             except _json.JSONDecodeError:
                 parsed = {}
+            if self.server.record_state is not None:
+                self.server.record_state["last_chat_request"] = parsed
+            if parsed.get("stream"):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+
+                def sse(obj):
+                    self.wfile.write(b"data: " + _json.dumps(obj).encode() + b"\n\n")
+
+                base_chunk = {
+                    "id": "cmpl-mock",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": parsed.get("model", upstream_ids[0]),
+                }
+                sse(
+                    {
+                        **base_chunk,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "content": marker_content,
+                                },
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                )
+                sse(
+                    {
+                        **base_chunk,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    }
+                )
+                if (parsed.get("stream_options") or {}).get("include_usage"):
+                    sse({**base_chunk, "choices": [], "usage": MOCK_CLOUD_USAGE})
+                self.wfile.write(b"data: [DONE]\n\n")
+                return
             resp = {
                 "id": "cmpl-mock",
                 "object": "chat.completion",
@@ -90,7 +146,8 @@ def start_mock_cloud_provider(upstream_ids, marker_content):
         def log_message(self, *_args):
             pass
 
-    httpd = HTTPServer(("127.0.0.1", 0), _FakeProvider)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FakeProvider)
+    httpd.record_state = record_state
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -110,6 +167,21 @@ CAPABLE_MODEL = "Qwen3-0.6B-GGUF"
 EMBED_MODEL = "nomic-embed-text-v1-GGUF"
 # Real encoder classifier (onnxruntime backend) for the `classifier` condition.
 CLASSIFIER_MODEL = "Phishing-Email-Detection-ONNX"
+
+SEMANTIC_REFERENCE_PHRASES = [
+    "write a function",
+    "fix this bug",
+    "refactor this code",
+    "debug a stack trace",
+    "time complexity of an algorithm",
+]
+SEMANTIC_CODING_PROMPT = (
+    "How do I refactor this recursive function to lower its time complexity?"
+)
+SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
+SEMANTIC_MIN_SCORE = 0.6
+SEMANTIC_CTX_SIZE = 2048
+SEMANTIC_BACKEND = "metal" if platform.system() == "Darwin" else "cpu"
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -138,6 +210,12 @@ POLICY = {
                 },
                 "route_to": CAPABLE_MODEL,
                 "outputs": {"reason": "complex-or-long"},
+            },
+            {
+                "id": "long-conversation-to-capable",
+                "match": {"min_total_chars": 4000},
+                "route_to": CAPABLE_MODEL,
+                "outputs": {"reason": "long-conversation"},
             },
         ],
     },
@@ -181,11 +259,16 @@ class RouterTests(ServerTestBase):
         super().setUp()
         self._ensure_setup()
 
-    def _route(self, prompt, metadata=None, collection=COLLECTION_NAME):
-        """Send a chat request through the router; return (header, decision, body)."""
+    def _route(
+        self, prompt=None, metadata=None, collection=COLLECTION_NAME, messages=None
+    ):
+        """Send a chat request through the router; return (header, decision, body).
+
+        Pass `messages` instead of `prompt` to route a multi-turn conversation.
+        """
         body = {
             "model": collection,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages or [{"role": "user", "content": prompt}],
             "max_tokens": 8,
             "temperature": 0.0,
             "route_trace": True,
@@ -224,6 +307,73 @@ class RouterTests(ServerTestBase):
 
     def _trace_map(self, decision):
         return {t["condition"]: t["result"] for t in decision.get("trace", [])}
+
+    @staticmethod
+    def _classifier_score(decision, classifier_id):
+        condition = f"classifier:{classifier_id}"
+        for entry in decision.get("trace", []):
+            if entry.get("condition") == condition:
+                return entry.get("score")
+        return None
+
+    def _load_semantic_model(self):
+        """Load the embedding dependency with deterministic test settings."""
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": EMBED_MODEL,
+                "ctx_size": SEMANTIC_CTX_SIZE,
+                "llamacpp_backend": SEMANTIC_BACKEND,
+                "pinned": True,
+                "save_options": False,
+            },
+            timeout=600,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            "failed to load semantic model with deterministic settings "
+            f"(backend={SEMANTIC_BACKEND}, ctx_size={SEMANTIC_CTX_SIZE}): "
+            f"{resp.text}",
+        )
+
+        resp = requests.post(
+            f"{self.base_url}/embeddings",
+            json={"model": EMBED_MODEL, "input": SEMANTIC_CODING_PROMPT},
+            timeout=600,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            f"semantic embedding readiness probe failed: {resp.text}",
+        )
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            self.fail(f"semantic embedding probe returned invalid JSON: {exc}")
+        data = payload.get("data", []) if isinstance(payload, dict) else []
+        embedding = (
+            data[0].get("embedding")
+            if data and isinstance(data[0], dict)
+            else payload.get("embedding") if isinstance(payload, dict) else None
+        )
+        self.assertTrue(
+            isinstance(embedding, list) and embedding,
+            f"semantic embedding probe returned no vector: {payload}",
+        )
+
+    def _unload_semantic_model(self):
+        """Release the pinned embedding model after each semantic test."""
+        resp = requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": EMBED_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(
+            resp.status_code,
+            (200, 404),
+            f"failed to unload semantic model {EMBED_MODEL}: {resp.text}",
+        )
 
     def test_600_default_fallthrough(self):
         """A prompt matching no rule falls open to default_model."""
@@ -270,6 +420,64 @@ class RouterTests(ServerTestBase):
         self.assertEqual(header, "sensitive-stays-local")
         print(f"[OK] consent=denied coding prompt -> {DEFAULT_MODEL} (first-match)")
 
+    def test_605_route_switch_counter(self):
+        """Same-conversation requests that change candidates bump routing_switches_total."""
+
+        def stats():
+            resp = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text)
+            return resp.json()
+
+        def routed_chat(messages, metadata=None):
+            body = {
+                "model": COLLECTION_NAME,
+                "messages": messages,
+                "max_tokens": 8,
+                "temperature": 0.0,
+                "route_trace": True,
+            }
+            if metadata is not None:
+                body["metadata"] = metadata
+            resp = requests.post(
+                f"{self.base_url}/chat/completions", json=body, timeout=600
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"status {resp.status_code}: {resp.text}"
+            )
+            return resp.json().get("x_lemonade_route", {})
+
+        before = stats()
+
+        # All three requests share the conversation fingerprint (same first user
+        # message); the routed turn is the LAST user message, which changes.
+        first_turn = [{"role": "user", "content": "Give me a fun fact about otters."}]
+        decision_a = routed_chat(first_turn, metadata={"consent": "denied"})
+        self.assertEqual(decision_a.get("route_to"), DEFAULT_MODEL)
+
+        followup = first_turn + [
+            {"role": "assistant", "content": "Otters hold hands while sleeping."},
+            {"role": "user", "content": "Now write a function about otters."},
+        ]
+        decision_b = routed_chat(followup)
+        self.assertEqual(decision_b.get("route_to"), CAPABLE_MODEL)
+
+        decision_c = routed_chat(followup)
+        self.assertEqual(decision_c.get("route_to"), CAPABLE_MODEL)
+
+        after = stats()
+        self.assertEqual(
+            after["routing_decisions_total"] - before["routing_decisions_total"],
+            3,
+            f"before={before} after={after}",
+        )
+        self.assertEqual(
+            after["routing_switches_total"] - before["routing_switches_total"],
+            1,
+            "exactly one switch expected: default -> capable, then unchanged "
+            f"(before={before} after={after})",
+        )
+        print("[OK] route-switch counter: 3 decisions, 1 switch")
+
     def test_604_no_trace_when_not_requested(self):
         """Without route_trace the decision omits the per-condition trace."""
         body = {
@@ -287,6 +495,47 @@ class RouterTests(ServerTestBase):
         decision = resp.json().get("x_lemonade_route", {})
         self.assertEqual(decision.get("trace", []), [])
         print("[OK] route_trace omitted -> no trace array")
+
+    def test_605_total_chars_routes_long_conversation(self):
+        """A long history with a short final turn routes via min_total_chars.
+
+        `min_chars` sees only "go on", so this is the case the whole-conversation
+        bound exists for: without it the request lands on the small default.
+        """
+        history = "We reviewed the quarterly telemetry numbers in detail. " * 40
+        messages = [
+            {"role": "user", "content": history},
+            {"role": "assistant", "content": history},
+            {"role": "user", "content": "go on"},
+        ]
+        self.assertGreater(sum(len(m["content"]) for m in messages), 4000)
+        self.assertLess(len(messages[-1]["content"]), 4000)
+
+        header, decision, _ = self._route(messages=messages)
+        self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+        self.assertEqual(decision.get("matched_rule"), "long-conversation-to-capable")
+        self.assertFalse(decision.get("default_used"))
+        self.assertEqual(header, "long-conversation-to-capable")
+        tmap = self._trace_map(decision)
+        self.assertTrue(tmap.get("min_total_chars"))
+        self.assertFalse(tmap.get("min_chars"))
+        print(f"[OK] min_total_chars -> {CAPABLE_MODEL} (short last turn)")
+
+    def test_606_short_conversation_falls_through(self):
+        """The same final turn with a short history falls open to default."""
+        messages = [
+            {"role": "user", "content": "Hi there."},
+            {"role": "assistant", "content": "Hello! How can I help?"},
+            {"role": "user", "content": "go on"},
+        ]
+        self.assertLess(sum(len(m["content"]) for m in messages), 4000)
+
+        _, decision, _ = self._route(messages=messages)
+        self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+        self.assertTrue(decision.get("default_used"))
+        self.assertEqual(decision.get("matched_rule"), "")
+        self.assertFalse(self._trace_map(decision).get("min_total_chars"))
+        print(f"[OK] short conversation -> {DEFAULT_MODEL} (default)")
 
     def test_610_cloud_candidate_routing(self):
         """A candidate whose recipe is `cloud` routes to a cloud provider.
@@ -416,14 +665,238 @@ class RouterTests(ServerTestBase):
             )
             stop_provider()
 
+    def test_611_cloud_streaming_usage_injection(self):
+        """Cloud streaming records provider usage without changing the client stream.
+
+        The server injects stream_options.include_usage into the forwarded
+        request and swallows the resulting usage-only frame, so telemetry gets
+        cached-token counts while a client that never asked for usage never
+        sees one. A client that DOES ask keeps receiving the usage frame.
+        """
+        provider = "teststreamcloud"
+        upstream_id = "vendor/stream-cloud-model"
+        marker = "streamed-by-cloud-provider"
+        record_state = {}
+
+        base_url, stop_provider = start_mock_cloud_provider(
+            [upstream_id], marker, record_state=record_state
+        )
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(
+                len(cloud_ids), 1, f"expected one cloud model, got {cloud_ids}"
+            )
+            cloud_model = cloud_ids[0]
+
+            def stream_chat(extra_body):
+                body = {
+                    "model": cloud_model,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Stream something."}],
+                    **extra_body,
+                }
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json=body,
+                    stream=True,
+                    timeout=600,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                lines = [ln.decode("utf-8") for ln in resp.iter_lines() if ln]
+                return lines
+
+            # Client does NOT request usage: the injected frame must be swallowed.
+            lines = stream_chat({})
+            self.assertTrue(
+                any(marker in ln for ln in lines),
+                f"content chunk missing from client stream: {lines}",
+            )
+            self.assertTrue(any("[DONE]" in ln for ln in lines))
+            self.assertFalse(
+                any("prompt_tokens_details" in ln or '"usage"' in ln for ln in lines),
+                f"usage frame leaked into client stream: {lines}",
+            )
+            last_request = record_state.get("last_chat_request", {})
+            self.assertTrue(
+                (last_request.get("stream_options") or {}).get("include_usage"),
+                f"include_usage was not injected upstream: {last_request}",
+            )
+
+            stats = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(
+                stats.get("cache_tokens"),
+                MOCK_CLOUD_USAGE["prompt_tokens_details"]["cached_tokens"],
+                f"cloud cached tokens not recorded: {stats}",
+            )
+            self.assertEqual(
+                stats.get("input_tokens"), MOCK_CLOUD_USAGE["prompt_tokens"]
+            )
+            print("[OK] injected include_usage: telemetry recorded, stream clean")
+
+            # Client explicitly requests usage: the frame passes through.
+            lines = stream_chat({"stream_options": {"include_usage": True}})
+            self.assertTrue(
+                any("prompt_tokens_details" in ln for ln in lines),
+                f"client-requested usage frame missing: {lines}",
+            )
+            print("[OK] client-requested include_usage: usage frame forwarded")
+        finally:
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
+    def test_612_concurrent_requests_record_atomic_telemetry(self):
+        """Concurrent requests never interleave one request's telemetry fields
+        with another's.
+
+        Every mock-provider streaming request reports the same usage
+        (MOCK_CLOUD_USAGE), so after N concurrent requests the latest gauges
+        must equal that usage exactly — under the old split-lock recording, one
+        request's cache reset could land after another request's cache value
+        and leave `cache_tokens` null/stale — and the cumulative counters must
+        be exact multiples.
+        """
+        provider = "testconccloud"
+        upstream_id = "vendor/concurrent-cloud-model"
+        marker = "concurrent-cloud-reply"
+        rounds, workers = 2, 8
+
+        base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(len(cloud_ids), 1, f"cloud model missing: {cloud_ids}")
+            cloud_model = cloud_ids[0]
+
+            def stream_once(_i):
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": cloud_model,
+                        "stream": True,
+                        "messages": [{"role": "user", "content": "Go."}],
+                    },
+                    stream=True,
+                    timeout=600,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                for _ in resp.iter_lines():
+                    pass
+
+            before = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            total = 0
+            for _ in range(rounds):
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    list(pool.map(stream_once, range(workers)))
+                total += workers
+
+            after = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            cached = MOCK_CLOUD_USAGE["prompt_tokens_details"]["cached_tokens"]
+            prompt = MOCK_CLOUD_USAGE["prompt_tokens"]
+            self.assertEqual(
+                after.get("cache_tokens"),
+                cached,
+                f"latest cache gauge corrupted by concurrency: {after}",
+            )
+            self.assertEqual(after.get("input_tokens"), prompt)
+            self.assertEqual(after.get("prompt_tokens"), prompt)
+            self.assertEqual(
+                after["cache_tokens_total"] - before["cache_tokens_total"],
+                cached * total,
+                f"cache totals lost updates: before={before} after={after}",
+            )
+            self.assertEqual(
+                after["request_count_total"] - before["request_count_total"], total
+            )
+            print(f"[OK] {total} concurrent requests: atomic telemetry intact")
+        finally:
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
     def test_620_semantic_similarity_routing(self):
         """A `semantic_similarity` classifier routes by embedding similarity.
 
         This is the first *model-backed* condition in the suite: it embeds the
         input (via `Router::embeddings`) and scores it against labelled
-        reference phrases. Scores are deterministic for a fixed model, so the
-        0.6 threshold reliably separates a coding query (~0.74) from an
-        unrelated one (~0.47).
+        reference phrases. The embedding model is explicitly loaded first so
+        this test measures routing behavior rather than cold-start lifecycle.
         """
         pull_model_with_retry(EMBED_MODEL)
         collection = "user.Test-Router-Semantic"
@@ -441,13 +914,7 @@ class RouterTests(ServerTestBase):
                         "type": "semantic_similarity",
                         "model": EMBED_MODEL,
                         "reference_phrases": {
-                            "coding": [
-                                "write a function",
-                                "fix this bug",
-                                "refactor this code",
-                                "debug a stack trace",
-                                "time complexity of an algorithm",
-                            ]
+                            "coding": SEMANTIC_REFERENCE_PHRASES,
                         },
                     }
                 ],
@@ -457,51 +924,76 @@ class RouterTests(ServerTestBase):
                         "match": {
                             "classifier": "topic",
                             "label": "coding",
-                            "min_score": 0.6,
+                            "min_score": SEMANTIC_MIN_SCORE,
                         },
                         "route_to": CAPABLE_MODEL,
                     }
                 ],
             },
         }
-        resp = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
-        )
-        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
-
         try:
+            self._load_semantic_model()
+            resp = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+            )
+            self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
-            def classify_score(decision):
-                for t in decision.get("trace", []):
-                    if t["condition"] == "classifier:topic":
-                        return t.get("score")
-                return None
-
-            # A semantically coding prompt (no literal rule keyword) -> capable.
+            # A semantically coding prompt -> capable.
             _, decision, _ = self._route(
-                "How do I refactor this recursive function to lower its time complexity?",
+                SEMANTIC_CODING_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+            coding_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                coding_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertGreaterEqual(
+                coding_score,
+                SEMANTIC_MIN_SCORE,
+                f"coding score {coding_score:.6f} fell below {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                CAPABLE_MODEL,
+                f"unexpected semantic coding decision: {decision}",
+            )
             self.assertEqual(decision.get("matched_rule"), "coding-to-capable")
-            coding_score = classify_score(decision)
-            self.assertIsNotNone(coding_score)
-            self.assertGreaterEqual(coding_score, 0.6)
-            print(f"[OK] semantic coding ({coding_score:.3f}) -> {CAPABLE_MODEL}")
+            print(
+                f"[OK] semantic coding ({coding_score:.3f} >= {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {CAPABLE_MODEL}"
+            )
 
             # An unrelated prompt scores below threshold -> default.
             _, decision, _ = self._route(
-                "What are some good recipes for a summer picnic by the lake?",
+                SEMANTIC_OTHER_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            other_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                other_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertLess(
+                other_score,
+                SEMANTIC_MIN_SCORE,
+                f"unrelated score {other_score:.6f} reached {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                DEFAULT_MODEL,
+                f"unexpected semantic non-coding decision: {decision}",
+            )
             self.assertTrue(decision.get("default_used"))
-            other_score = classify_score(decision)
-            self.assertIsNotNone(other_score)
-            self.assertLess(other_score, 0.6)
-            print(f"[OK] semantic non-coding ({other_score:.3f}) -> {DEFAULT_MODEL}")
+            print(
+                f"[OK] semantic non-coding ({other_score:.3f} < {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {DEFAULT_MODEL}"
+            )
         finally:
-            self._delete_collection(collection)
+            try:
+                self._delete_collection(collection)
+            finally:
+                self._unload_semantic_model()
 
     def test_621_semantic_similarity_cloud_candidate(self):
         """A `semantic_similarity` match routes to a *cloud* candidate.
@@ -519,6 +1011,7 @@ class RouterTests(ServerTestBase):
 
         base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
         try:
+            self._load_semantic_model()
             resp = requests.post(
                 f"{self.base_url}/install",
                 json={
@@ -567,13 +1060,7 @@ class RouterTests(ServerTestBase):
                             "type": "semantic_similarity",
                             "model": EMBED_MODEL,
                             "reference_phrases": {
-                                "coding": [
-                                    "write a function",
-                                    "fix this bug",
-                                    "refactor this code",
-                                    "debug a stack trace",
-                                    "time complexity of an algorithm",
-                                ]
+                                "coding": SEMANTIC_REFERENCE_PHRASES,
                             },
                         }
                     ],
@@ -583,7 +1070,7 @@ class RouterTests(ServerTestBase):
                             "match": {
                                 "classifier": "topic",
                                 "label": "coding",
-                                "min_score": 0.6,
+                                "min_score": SEMANTIC_MIN_SCORE,
                             },
                             "route_to": cloud_model,
                             "outputs": {"route_category": "cloud"},
@@ -598,28 +1085,65 @@ class RouterTests(ServerTestBase):
 
             # Semantically coding -> cloud candidate, answered by the mock provider.
             _, decision, data = self._route(
-                "How do I refactor this recursive function to lower its time complexity?",
+                SEMANTIC_CODING_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), cloud_model)
+            coding_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                coding_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertGreaterEqual(
+                coding_score,
+                SEMANTIC_MIN_SCORE,
+                f"coding score {coding_score:.6f} fell below {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                cloud_model,
+                f"unexpected semantic cloud decision: {decision}",
+            )
             self.assertEqual(decision.get("matched_rule"), "coding-to-cloud")
             self.assertEqual(
                 data["choices"][0]["message"]["content"],
                 marker,
                 "coding prompt should be answered by the cloud provider",
             )
-            print(f"[OK] semantic coding -> {cloud_model} (cloud), answered by mock")
+            print(
+                f"[OK] semantic coding ({coding_score:.3f} >= {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {cloud_model} (cloud), answered by mock"
+            )
 
             # Unrelated -> stays local (default).
             _, decision, _ = self._route(
-                "What are some good recipes for a summer picnic by the lake?",
+                SEMANTIC_OTHER_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            other_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                other_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertLess(
+                other_score,
+                SEMANTIC_MIN_SCORE,
+                f"unrelated score {other_score:.6f} reached {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                DEFAULT_MODEL,
+                f"unexpected semantic non-coding decision: {decision}",
+            )
             self.assertTrue(decision.get("default_used"))
-            print(f"[OK] semantic non-coding -> {DEFAULT_MODEL} (local default)")
+            print(
+                f"[OK] semantic non-coding ({other_score:.3f} < {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {DEFAULT_MODEL} (local default)"
+            )
         finally:
-            self._delete_collection(collection)
+            try:
+                self._delete_collection(collection)
+            finally:
+                self._unload_semantic_model()
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
             )

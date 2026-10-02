@@ -76,9 +76,26 @@ static inline bool config_migrate(json& config,
     return true;
 }
 
+/// Migrate deprecated LEMONADE_ALLOWED_ORIGINS environment variable into config.json.
+/// If env_origins is non-empty:
+///   - If config does not contain "allowed_origins" or it is an empty string, set config["allowed_origins"] to env_origins.
+///   - If config already has a non-empty "allowed_origins", do not modify it.
+/// Returns true if the config was modified.
+static inline bool config_migrate_allowed_origins_env(json& config, const char* env_origins) {
+    if (!env_origins || *env_origins == '\0') {
+        return false;
+    }
+    if (!config.contains("allowed_origins") ||
+        (config["allowed_origins"].is_string() && config["allowed_origins"].get<std::string>().empty())) {
+        config["allowed_origins"] = std::string(env_origins);
+        return true;
+    }
+    return false;
+}
+
 // ============================================================================
 
-/// Manages reading and writing config.json in the lemonade cache dir.
+/// Manages reading and writing config.json in the lemonade config dir.
 class ConfigFile {
 public:
     /// The canonical default config: resources/defaults.json (global keys) with
@@ -91,14 +108,18 @@ public:
     /// is merged on top when present.
     static json get_defaults();
 
-    /// Load config.json from cache_dir, deep-merging with defaults.
+    /// Load raw config.json from config_dir without merging defaults.
+    /// Returns an empty JSON object if the file does not exist or is empty.
+    static json load_raw(const std::string& config_dir);
+
+    /// Load config.json from config_dir (or derived from cache_dir), deep-merging with defaults.
     /// Applies migrations for older config formats, then persists if any
     /// changes were made. Unknown keys are preserved (forward compatibility).
-    static json load(const std::string& cache_dir);
+    static json load(const std::string& cache_dir, const std::string& config_dir = "");
 
-    /// Save config to <cache_dir>/config.json atomically (write temp, rename).
+    /// Save config to <config_dir>/config.json atomically (write temp, rename).
     /// Thread-safe.
-    static void save(const std::string& cache_dir, const json& config);
+    static void save(const std::string& config_dir, const json& config);
 
 private:
     static std::shared_mutex file_mutex_;

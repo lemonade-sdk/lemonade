@@ -3,11 +3,13 @@ Integration tests for the MCP gateway endpoint (POST /mcp).
 
 Requires a Lemonade server to already be running on port 13305.
 
-Covers the JSON-RPC 2.0 envelope plus the four tools exposed by the gateway:
+Covers the JSON-RPC 2.0 envelope plus the pre-existing MCP tool catalog:
 - lemonade_list_models
 - lemonade_chat
 - lemonade_transcribe_audio   (smoke-tested via schema only; needs Whisper)
 - lemonade_generate_image     (smoke-tested via schema only; needs SD)
+- lemonade_omni
+- lemonade_docs
 
 The "live" chat tool uses a small model so the suite stays fast.
 
@@ -18,6 +20,7 @@ Usage:
 import json
 import os
 import sys
+import uuid
 
 # Make the `utils` package importable when this file is executed directly.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -219,23 +222,54 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(body["result"], {})
 
     def test_012_tools_list(self):
-        """tools/list must include the five gateway tools, each with a schema."""
+        """tools/list must expose the pre-existing registry tools with valid schemas."""
         response = _post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         body = response.json()
         tools = body["result"]["tools"]
         names = {tool["name"] for tool in tools}
+        self.assertEqual(
+            len(names), len(tools), "tools/list contains duplicate tool names"
+        )
         expected = {
             "lemonade_list_models",
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
             "lemonade_omni",
+            "lemonade_docs",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
         for tool in tools:
             self.assertIn("description", tool)
+            self.assertIsInstance(tool["description"], str)
+            self.assertTrue(tool["description"].strip())
             self.assertIn("inputSchema", tool)
             self.assertEqual(tool["inputSchema"]["type"], "object")
+
+            meta = tool.get("_meta", {})
+            result_contract = meta.get("lemonade/result", {})
+            result_description = result_contract.get("description", "")
+            self.assertIsInstance(
+                result_description,
+                str,
+                f"{tool['name']}: missing result description",
+            )
+            self.assertTrue(
+                result_description.strip(),
+                f"{tool['name']}: missing result description",
+            )
+
+            for arg, arg_schema in tool["inputSchema"].get("properties", {}).items():
+                arg_description = arg_schema.get("description", "")
+                self.assertIsInstance(
+                    arg_description,
+                    str,
+                    f"{tool['name']}.{arg}: missing argument description",
+                )
+                self.assertTrue(
+                    arg_description.strip(),
+                    f"{tool['name']}.{arg}: missing argument description",
+                )
 
         # lemonade_omni's only required arg is `messages`; `model` is optional
         # so callers can fall back to the default (LMX-Omni-5.5B-Lite).
@@ -248,6 +282,71 @@ class McpGatewayTests(ServerTestBase):
     # ---------------------------------------------------------------------
     # tools/call error paths
     # ---------------------------------------------------------------------
+
+    def test_013_list_models_emits_prefixed_collection_id(self):
+        """lemonade_list_models emits the canonical `user.` collection id (issue #2788).
+
+        The MCP listing tool serializes the same get_downloaded_models() mapping
+        as /v1/models and Ollama /api/tags, so a registered `user.*` collection
+        must appear under its prefixed id, not its bare name.
+        """
+        canonical_name = f"user.McpColl-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+        base = f"http://localhost:{PORT}/api/v1"
+        try:
+            pull = requests.post(
+                f"{base}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull.status_code, 200, pull.text)
+
+            response = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 20,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "lemonade_list_models",
+                        "arguments": {"include_suggested": False},
+                    },
+                }
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertFalse(body["result"]["isError"], msg=str(body))
+            # content[1] carries the JSON payload as a text block.
+            payload = json.loads(body["result"]["content"][1]["text"])
+            available = {m["model_name"] for m in payload["available"]}
+            self.assertIn(
+                canonical_name,
+                available,
+                f"lemonade_list_models should list {canonical_name} under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                available,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in payload["available"] if m["model_name"] == canonical_name
+            )
+            self.assertEqual(entry.get("recipe"), "collection.omni")
+        finally:
+            try:
+                requests.post(
+                    f"{base}/delete",
+                    json={"model_name": canonical_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_020_tools_call_unknown_tool_returns_is_error(self):
         """An unknown tool name must return isError=true (not a JSON-RPC error)."""
@@ -275,6 +374,76 @@ class McpGatewayTests(ServerTestBase):
         )
         body = response.json()
         self.assertTrue(body["result"]["isError"])
+
+    def test_021a_tools_call_rejects_wrong_argument_type(self):
+        """Schema validation must reject wrong types before the tool handler runs."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 51,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": "definitely-not-a-real-model",
+                        "prompt": "validation test",
+                        "n": "many",
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertIn("$.n", message)
+        self.assertIn("expected integer", message)
+
+    def test_021b_tools_call_rejects_value_below_minimum(self):
+        """Schema validation must enforce numeric minimum constraints."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 52,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": "definitely-not-a-real-model",
+                        "prompt": "validation test",
+                        "n": 0,
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertIn("$.n", message)
+        self.assertIn("value must be >= 1", message)
+
+    def test_021c_tools_call_optional_null_does_not_preempt_validation(self):
+        """Optional null args must remain handler-compatible, as before the registry."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 53,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": None,
+                        "prompt": "validation test",
+                        "n": 0,
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertNotIn("$.model", message)
+        self.assertIn("$.n", message)
+        self.assertIn("value must be >= 1", message)
 
     def test_022_omni_rejects_non_collection_model(self):
         """

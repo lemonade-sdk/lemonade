@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "model_name": "user.Conditions-Features-Negated",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "no-tools-rule",
+        "match": { "has_tools": false },
+        "route_to": "cloud" }
+    ]
+  }
+}

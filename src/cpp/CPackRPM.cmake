@@ -9,7 +9,8 @@ set(CPACK_RPM_PACKAGE_URL "https://github.com/lemonade-sdk/lemonade")
 
 # RPM runtime requirements (package names on Fedora/RHEL)
 # Adjust for target distro if needed.
-set(CPACK_RPM_PACKAGE_REQUIRES "libcurl, openssl, zlib")
+# libgomp is required at runtime by OpenMP-linked backends (e.g. llama-server).
+set(CPACK_RPM_PACKAGE_REQUIRES "libcurl, openssl, zlib, libgomp")
 
 # Architecture and file name
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")

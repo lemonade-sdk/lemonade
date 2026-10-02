@@ -22,7 +22,7 @@ import EmptyState from '../EmptyState';
 import ImageLightbox from '../ImageLightbox';
 import StreamingAudio from '../StreamingAudio';
 import TypingIndicator from '../TypingIndicator';
-import { getCollectionPrimaryChatModel } from '../../utils/collectionModels';
+import { getCollectionComponents, getCollectionPrimaryChatModel, isRouterCollection } from '../../utils/collectionModels';
 import RecordButton from '../RecordButton';
 import {
   buildLemonadeTools,
@@ -162,6 +162,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     () => getCollectionPrimaryChatModel(selectedModel, modelsData),
     [selectedModel, modelsData],
   );
+  const routerCandidates = useMemo(() => {
+    const info = modelsData[selectedModel];
+    return isRouterCollection(info) ? getCollectionComponents(info) : [];
+  }, [selectedModel, modelsData]);
+  // /health reports the routed candidate for a router, never the router's own
+  // name, so either counts as "loaded".
+  const isChatModelLoaded = currentLoadedModel === chatModelName ||
+    (currentLoadedModel !== null && routerCandidates.includes(currentLoadedModel));
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -501,8 +509,20 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const buildErrorMessage = (error: any): string => {
     const errorMessage = error.message || 'Failed to get response from the model.';
     const modelInfo = modelsData[chatModelName];
-    const recipe = modelInfo?.recipe;
-    const backendAction = recipe && systemInfo?.recipes?.[recipe]?.backends?.[systemInfo.recipes[recipe].default_backend || '']?.action;
+    // collection.router is not a hardware recipe, so backend setup help must
+    // come from the candidates' recipes instead.
+    const recipes = isRouterCollection(modelInfo)
+      ? getCollectionComponents(modelInfo).map((component) => modelsData[component]?.recipe)
+      : [modelInfo?.recipe];
+    let backendAction: string | undefined;
+    for (const recipe of recipes) {
+      const recipeInfo = recipe ? systemInfo?.recipes?.[recipe] : undefined;
+      const action = recipeInfo?.backends?.[recipeInfo.default_backend || '']?.action;
+      if (action) {
+        backendAction = action;
+        break;
+      }
+    }
     const helpText = backendAction ? `\n\n${backendAction}` : '';
 
     if (backendAction && backendAction.match(/https?:\/\/[^\s]+\.html/)) {
@@ -522,7 +542,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const handleCollectionChat = async (messageHistory: Message[]): Promise<void> => {
     if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
     const MAX_ITERATIONS = 5;
-    const isNewModelLoad = currentLoadedModel !== chatModelName;
+    const isNewModelLoad = !isChatModelLoaded;
     const assistantMessageIndex = messageHistory.length;
 
     // Pre-extract audio and image data from user messages
@@ -797,7 +817,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     let lastRenderUpdateAt = 0;
     let thinkingAutoExpanded = false;
     const STREAM_UPDATE_INTERVAL_MS = 33;
-    const isNewModelLoad = currentLoadedModel !== chatModelName;
+    const isNewModelLoad = !isChatModelLoaded;
 
     const flushAssistantUpdate = (force = false) => {
       const now = Date.now();

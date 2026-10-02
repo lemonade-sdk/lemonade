@@ -7922,3 +7922,33 @@ input::-webkit-calendar-picker-indicator {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
 }
+
+.decision-tree-scroll {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--border-4);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.decision-tree-modal {
+    max-width: 640px;
+}
+
+.decision-tree-svg {
+    display: block;
+}
+
+.trace-log {
+    background: var(--bg-alpha-03);
+    border: 1px solid var(--border-4);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: monospace;
+    font-size: 0.72rem;
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: var(--text-primary);
+    margin: 0;
+}

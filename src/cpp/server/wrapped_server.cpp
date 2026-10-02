@@ -14,11 +14,26 @@
 
 namespace lemon {
 
-static thread_local std::atomic<bool>* t_request_cancel = nullptr;
+static thread_local utils::RequestCancelToken t_request_cancel_ctx{};
 
-void WrappedServer::set_request_cancel_flag(std::atomic<bool>* f) { t_request_cancel = f; }
+WrappedServer::RequestCancelScope::RequestCancelScope(const utils::RequestCancelToken& token)
+    : prev_token_(t_request_cancel_ctx) {
+    // A nested scope that carries no checker must not drop an outer
+    // connection-liveness checker: Router::chat_completion() wraps the handler
+    // scope, and replacing the whole token here would lose mid-request
+    // disconnect detection for non-streaming chat.
+    t_request_cancel_ctx = {
+        token.flag,
+        token.should_cancel ? token.should_cancel : prev_token_.should_cancel};
+}
 
-std::atomic<bool>* WrappedServer::current_request_cancel() { return t_request_cancel; }
+WrappedServer::RequestCancelScope::~RequestCancelScope() {
+    t_request_cancel_ctx = prev_token_;
+}
+
+utils::RequestCancelToken WrappedServer::current_request_cancel_context() {
+    return t_request_cancel_ctx;
+}
 
 namespace {
 
@@ -86,6 +101,12 @@ bool is_backend_connection_failure(const std::string& message) {
            lowered.find("transfer closed") != std::string::npos ||
            lowered.find("partial file") != std::string::npos ||
            lowered.find("stream before done") != std::string::npos;
+}
+
+bool is_gpu_hang_or_compute_error(const std::string& message) {
+    const std::string lowered = lower_copy(message);
+    return lowered.find("compute error") != std::string::npos ||
+           lowered.find("gpu hang") != std::string::npos;
 }
 
 bool is_context_window_error(const std::string& message) {
@@ -177,9 +198,35 @@ ProcessHandle WrappedServer::get_process_handle_snapshot() const {
     return process_handle_;
 }
 
-void WrappedServer::set_process_handle(ProcessHandle handle) {
+void WrappedServer::set_process_handle(ProcessHandle handle,
+                                       const std::string& executable,
+                                       const std::vector<std::string>& args) {
     std::lock_guard<std::mutex> lock(process_mutex_);
     process_handle_ = handle;
+    launch_command_.clear();
+    launch_command_.push_back(executable);
+    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
+}
+
+void WrappedServer::set_process_state(ProcessHandle handle, int port,
+                                      const std::string& executable,
+                                      const std::vector<std::string>& args) {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    process_handle_ = handle;
+    port_ = port;
+    launch_command_.clear();
+    launch_command_.push_back(executable);
+    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
+}
+
+std::vector<std::string> WrappedServer::get_launch_command() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return launch_command_;
+}
+
+WrappedServer::ProcessInfo WrappedServer::get_process_info() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return {process_handle_.pid, launch_command_};
 }
 
 int WrappedServer::get_backend_port() const {
@@ -192,6 +239,7 @@ ProcessHandle WrappedServer::consume_process_handle_for_cleanup() {
     ProcessHandle handle = process_handle_;
     process_handle_ = {nullptr, 0};
     port_ = 0;
+    launch_command_.clear();
     return handle;
 }
 
@@ -636,7 +684,9 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     }
 }
 
-json WrappedServer::forward_request(const std::string& endpoint, const json& request, long timeout_seconds) {
+json WrappedServer::forward_request(const std::string& endpoint,
+                                     const json& request,
+                                     long timeout_seconds) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -652,6 +702,12 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::string url = get_base_url() + endpoint;
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
+    auto cancel_token = current_request_cancel_context();
+    if (cancel_token.cancelled()) {
+        LOG(WARNING, "WrappedServer") << "Client request already cancelled before forwarding non-streaming request; aborting." << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+
     try {
         auto response = utils::HttpClient::post(
             url,
@@ -659,7 +715,7 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             headers,
             timeout_seconds,
             utils::HttpSecurityPolicy::TrustedLoopback,
-            current_request_cancel());
+            cancel_token);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -679,6 +735,9 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
                 error_details
             );
         }
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "WrappedServer") << "Non-streaming request aborted due to client disconnect: " << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
         if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
             if (!was_watchdog_triggered()) {
@@ -710,13 +769,19 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
 
     std::string url = get_base_url() + endpoint;
 
+    auto cancel_token = current_request_cancel_context();
+    if (cancel_token.cancelled()) {
+        LOG(WARNING, "WrappedServer") << "Client request already cancelled before forwarding multipart request; aborting." << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+
     try {
         auto response = utils::HttpClient::post_multipart(
             url,
             fields,
             timeout_seconds,
             utils::HttpSecurityPolicy::TrustedLoopback,
-            current_request_cancel());
+            cancel_token);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -740,6 +805,9 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
                 }
             );
         }
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "WrappedServer") << "Multipart request aborted due to client disconnect: " << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
         if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
             if (!was_watchdog_triggered()) {
@@ -788,18 +856,13 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     };
 
     try {
-
         if (sse) {
             // Use StreamingProxy to forward the SSE stream with telemetry callback
             // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
             StreamingProxy::forward_sse_stream(url, request_body, sink,
                 [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {
                     if (telemetry_callback) {
-                        telemetry_callback(telemetry.input_tokens,
-                                           telemetry.output_tokens,
-                                           telemetry.time_to_first_token,
-                                           telemetry.tokens_per_second,
-                                           telemetry.error_message);
+                        telemetry_callback(telemetry);
                     }
                 },
                 timeout_seconds,
@@ -814,20 +877,28 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         // Log the error but don't crash the server
         LOG(ERROR, "WrappedServer") << "Streaming request failed: " << e.what() << std::endl;
 
-        bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) && !streamed_any_bytes;
+        bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() ||
+                           is_backend_connection_failure(e.what()) ||
+                           is_gpu_hang_or_compute_error(e.what())) && !streamed_any_bytes;
 
         if (telemetry_callback && !will_retry) {
-            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+            StreamingProxy::TelemetryData error_telemetry;
+            error_telemetry.error_message = e.what();
+            telemetry_callback(error_telemetry);
         }
 
         // Try to send error to client if possible
         try {
             json error;
-            if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
+            if (was_watchdog_triggered() || has_backend_process_exited() ||
+                is_backend_connection_failure(e.what()) ||
+                is_gpu_hang_or_compute_error(e.what())) {
                 if (!was_watchdog_triggered()) {
                     const std::string reset_reason = has_backend_process_exited()
                         ? "backend process exited during streaming request"
-                        : "backend connection failed during streaming request: " + std::string(e.what());
+                        : (is_gpu_hang_or_compute_error(e.what())
+                            ? "gpu hang or compute error during streaming request"
+                            : "backend connection failed during streaming request: " + std::string(e.what()));
                     request_backend_reset_from_watchdog(reset_reason);
                 }
 
