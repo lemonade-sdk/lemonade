@@ -20,7 +20,7 @@ using lemon::config_get_version;
 using lemon::config_migrate_v1_to_v2;
 using lemon::config_migrate;
 
-// Minimal deep-merge implementation — same logic as JsonUtils::merge,
+// Minimal deep-merge implementation matching JsonUtils::merge logic,
 // pulled in to avoid linking against platform-dependent code.
 static json deep_merge(const json& base, const json& overlay) {
     json result = base;
@@ -374,7 +374,9 @@ static void test_telemetry_migration() {
         {"hide_inputs", false},
         {"hide_outputs", false},
         {"hide_thinking", false},
+        {"max_attribute_length", 0},
         {"max_queue_capacity", 1000},
+        {"max_queue_bytes", 134217728},
         {"otlp", json{
             {"endpoint", "http://localhost:4318/v1/traces"},
             {"protocol", "http/protobuf"},
@@ -392,6 +394,8 @@ static void test_telemetry_migration() {
 
     check(changed == true, "migration ran");
     check(merged["telemetry"]["enabled"] == false, "telemetry.enabled defaulted to false");
+    check(merged["telemetry"]["max_attribute_length"] == 0, "telemetry.max_attribute_length defaulted to 0");
+    check(merged["telemetry"]["max_queue_bytes"] == 134217728, "telemetry.max_queue_bytes defaulted to 134217728");
     check(merged["telemetry"]["otlp"]["endpoint"] == "http://localhost:4318/v1/traces", "telemetry.otlp.endpoint set to default");
     check(merged["telemetry"]["otlp"]["headers"].is_object(), "telemetry.otlp.headers is object");
     check(merged["telemetry"]["otlp"]["protocol"] == "http/protobuf", "telemetry.otlp.protocol defaulted to http/protobuf");
