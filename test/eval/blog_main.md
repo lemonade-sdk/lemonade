@@ -152,7 +152,7 @@ All numbers in this post come from the test split of `nvidia/Nemotron-PII` . For
 
 The dataset covers 55 distinct PII and sensitive-attribute labels. About 43 of these are direct identifiers, such as SSNs, email addresses, phone numbers, and account numbers. The remaining ~12 are quasi-identifiers or sensitive attributes, including gender, race, sexuality, religion, political affiliation, education, employment, age, language, blood type, occupation, and biometric descriptors. One important caveat: most of the detector models we evaluate don't have output classes for that second group. So when we get to the per-category results, those numbers need to be interpreted with that limitation in mind.
 
-All 55 gold labels are represented in the 20k-document corpus, but their coverage is highly skewed. The top six labels (name, date, email, URL, company, etc.) each appear in roughly a quarter to nearly half of all documents, while the bottom dozen including device IDs, national IDs, and tax IDs appear in under 5% of documents each.
+All 55 gold labels are represented in the 20k-document corpus, but their coverage is highly skewed. The top five labels below each appear in roughly a third to nearly half of all documents. From there, coverage drops off steadily - company_name and occupation are still each in a fifth to a quarter of documents, most mid-tier labels (phone numbers, addresses, dates of birth, account numbers, and the like) land in the 10-20% range, and the bottom dozen, including device IDs, national IDs, and tax IDs, appear in under 5% of documents each.
 
 | Label | Group | Docs containing (of 20,000) | % of corpus |
 | --- | --- | --- | --- |
@@ -161,58 +161,8 @@ All 55 gold labels are represented in the 20k-document corpus, but their coverag
 | email | direct identifier | 8,563 | 42.8% |
 | last_name | direct identifier | 7,300 | 36.5% |
 | url | direct identifier | 6,652 | 33.3% |
-| company_name | direct identifier | 5,444 | 27.2% |
-| occupation | quasi-identifier / sensitive | 4,318 | 21.6% |
-| phone_number | direct identifier | 3,957 | 19.8% |
-| customer_id | direct identifier | 3,385 | 16.9% |
-| country | direct identifier | 3,255 | 16.3% |
-| time | direct identifier | 3,242 | 16.2% |
-| date_of_birth | direct identifier | 3,230 | 16.2% |
-| street_address | direct identifier | 3,019 | 15.1% |
-| account_number | direct identifier | 2,826 | 14.1% |
-| state | direct identifier | 2,682 | 13.4% |
-| city | direct identifier | 2,579 | 12.9% |
-| credit_debit_card | direct identifier | 2,267 | 11.3% |
-| user_name | direct identifier | 2,229 | 11.1% |
-| medical_record_number | direct identifier | 2,034 | 10.2% |
-| date_time | direct identifier | 2,003 | 10.0% |
-| health_plan_beneficiary_number | direct identifier | 1,998 | 10.0% |
-| biometric_identifier | quasi-identifier / sensitive | 1,958 | 9.8% |
-| employment_status | quasi-identifier / sensitive | 1,917 | 9.6% |
-| bank_routing_number | direct identifier | 1,519 | 7.6% |
-| employee_id | direct identifier | 1,515 | 7.6% |
-| county | direct identifier | 1,423 | 7.1% |
-| education_level | quasi-identifier / sensitive | 1,416 | 7.1% |
-| age | quasi-identifier / sensitive | 1,390 | 7.0% |
-| race_ethnicity | quasi-identifier / sensitive | 1,357 | 6.8% |
-| ssn | direct identifier | 1,284 | 6.4% |
-| gender | quasi-identifier / sensitive | 1,268 | 6.3% |
-| password | direct identifier | 1,249 | 6.2% |
-| language | quasi-identifier / sensitive | 1,175 | 5.9% |
-| pin | direct identifier | 1,175 | 5.9% |
-| coordinate | direct identifier | 1,155 | 5.8% |
-| postcode | direct identifier | 1,099 | 5.5% |
-| fax_number | direct identifier | 1,098 | 5.5% |
-| swift_bic | direct identifier | 1,092 | 5.5% |
-| ipv4 | direct identifier | 1,057 | 5.3% |
-| political_view | quasi-identifier / sensitive | 1,050 | 5.3% |
-| blood_type | quasi-identifier / sensitive | 1,039 | 5.2% |
-| religious_belief | quasi-identifier / sensitive | 955 | 4.8% |
-| http_cookie | direct identifier | 930 | 4.7% |
-| cvv | direct identifier | 877 | 4.4% |
-| license_plate | direct identifier | 794 | 4.0% |
-| vehicle_identifier | direct identifier | 792 | 4.0% |
-| mac_address | direct identifier | 782 | 3.9% |
-| api_key | direct identifier | 697 | 3.5% |
-| certificate_license_number | direct identifier | 607 | 3.0% |
-| ipv6 | direct identifier | 580 | 2.9% |
-| sexuality | quasi-identifier / sensitive | 506 | 2.5% |
-| national_id | direct identifier | 406 | 2.0% |
-| device_identifier | direct identifier | 391 | 2.0% |
-| unique_id | direct identifier | 364 | 1.8% |
-| tax_id | direct identifier | 242 | 1.2% |
 
-(Counts are documents containing at least one span of that label; most documents carry several labels at once, so columns don't sum to 20,000.)
+(Counts are documents containing at least one span of that label; most documents carry several labels at once, so columns don't sum to 20,000. This is the top five of 55 gold labels - the full per-label breakdown is in the eval repo.)
 
 Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 characters, and the maximum is 7,191 characters (1,737 tokens). No document is truncated for any model in this comparison, so differences in context-window size cannot explain the differences in benchmark results.
 
