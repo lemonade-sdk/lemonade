@@ -75,6 +75,13 @@ struct RouteContext {
         std::size_t chars = 0;       // UTF-8 byte count of `input`
         std::size_t total_chars = 0; // UTF-8 byte count of all request text
 
+        // Conversation depth: the count of user-role turns in the request's
+        // `messages` (chat/completions) or `input` (Responses) array, at
+        // least 1 for any request that reaches the engine. Harness-agnostic
+        // (pure message count, no tool-call/error semantics) — see
+        // min_turns/max_turns.
+        std::size_t turn_count = 0;
+
         // The caller's requested output-length ceiling (OpenAI `max_tokens` /
         // `max_completion_tokens`), when present. This is a ceiling, not an
         // estimate of actual completion length — nullopt when the caller
