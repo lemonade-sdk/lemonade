@@ -3425,6 +3425,48 @@ input::-webkit-calendar-picker-indicator {
     padding: 4px 0;
 }
 
+.chat-error {
+    padding: 12px 14px;
+    background: var(--error-background-color);
+    border: 1px solid var(--error-border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.chat-error-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: var(--error-color);
+}
+
+.chat-error-detail {
+    margin: 0;
+    color: var(--text-tertiary);
+    white-space: pre-line;
+}
+
+.chat-error-command {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.chat-error-command code {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.8rem;
+    color: var(--text-code);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 .chat-message.collection-image-message {
     max-width: none;
     padding: 0;
