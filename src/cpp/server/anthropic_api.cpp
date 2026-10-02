@@ -4,6 +4,7 @@
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/error_types.h"
 #include "lemon/ollama_api.h"
+#include "lemon/thinking_controls.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 #include <iostream>
@@ -694,6 +695,8 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
     }
 
     openai_req["stream"] = anthropic_request.value("stream", false);
+
+    normalize_thinking_controls(openai_req);
 
     return openai_req;
 }
