@@ -83,11 +83,11 @@ int main() {
         "-b 2048 -ub 1024 -np 1 --temp 0.8 --top-k 40 --flash-attn on");
 
     failures += !expect_args(
-        "merge false without request inherits no custom args",
+        "merge false without request keeps saved model args only",
         resolve_scoped_custom_args(
             {backend, architecture, model_defaults, model,
              CustomArgsRequestState::Omitted, "", false}),
-        "");
+        "--load-mode none --threads 8");
 
     failures += !expect_args(
         "merge false with request uses request only",

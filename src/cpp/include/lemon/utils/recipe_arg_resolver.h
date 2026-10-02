@@ -48,7 +48,12 @@ inline std::string merge_custom_args(const std::string& high,
 
 inline std::string resolve_scoped_custom_args(const ScopedCustomArgs& args) {
     if (!args.merge_args) {
-        return args.request_state == CustomArgsRequestState::Value ? args.request : "";
+        // merge_args=false drops only the inherited layers (backend, architecture,
+        // model defaults); the model's own saved args are a direct per-model
+        // setting and must survive, otherwise saved args never reach `effective`.
+        if (args.request_state == CustomArgsRequestState::Value) return args.request;
+        if (args.request_state == CustomArgsRequestState::Tombstone) return "";
+        return args.model;
     }
 
     if (args.request_state == CustomArgsRequestState::Value) {
