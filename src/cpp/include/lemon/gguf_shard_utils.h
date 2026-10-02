@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <regex>
 #include <string>
+#include <vector>
 
 namespace lemon {
 
@@ -54,5 +55,9 @@ inline bool same_shard_family(const std::string& filename, const std::string& ba
 // Returns 0 when `shard_path` is not a shard. Defined in model_manager.cpp,
 // which owns the Windows-safe filesystem helpers.
 std::uintmax_t sharded_gguf_size_bytes(const std::filesystem::path& shard_path);
+
+// Every file llama-server opens for `gguf_path`: all shards of a split GGUF,
+// or the file alone. Defined in model_manager.cpp.
+std::vector<std::string> gguf_files(const std::string& gguf_path);
 
 } // namespace lemon

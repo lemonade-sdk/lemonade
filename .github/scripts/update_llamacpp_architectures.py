@@ -121,7 +121,9 @@ def main() -> int:
     args = parse_args()
     versions = json.loads(Path(args.versions).read_text(encoding="utf-8"))
     pins = versions["llamacpp"]
-    configured_refs = sorted(set(pins.values()))
+    # A container backend's pin is an image digest (<tag>@sha256:...), not a
+    # llama.cpp ref.
+    configured_refs = sorted({ref for ref in pins.values() if "@" not in ref})
     sources: dict[str, str] = {}
     if args.source:
         for item in args.source:
