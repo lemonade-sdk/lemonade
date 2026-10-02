@@ -107,6 +107,7 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
                 weight_factor = 1.0;  // guard against divide-by-zero / non-positive config
             }
 
+            ModelState state = server->get_state();
             auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - server->get_last_access_time()).count();
             long load_duration_ms = server->get_load_duration_ms() > 0 ? server->get_load_duration_ms() : 1000;
 
@@ -116,8 +117,6 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
             //   eviction_score = idle_time_ms / (load_duration_ms * weight_factor)
             double eviction_score =
                 static_cast<double>(idle_ms) / (static_cast<double>(load_duration_ms) * weight_factor);
-
-            ModelState state = server->get_state();
 
             // 1. Time-based hard idle eviction
             if (idle_ms >= evict_timeout_sec * 1000 && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {

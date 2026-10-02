@@ -105,10 +105,12 @@ public:
 
     // Multi-model support: Track last access time (for LRU eviction)
     void update_access_time() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         last_access_time_ = std::chrono::steady_clock::now();
     }
 
     std::chrono::steady_clock::time_point get_last_access_time() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         return last_access_time_;
     }
 
@@ -241,6 +243,8 @@ public:
             // Note: is_streaming_ is managed by end_backend_request() which correctly
             // clears the flag only when the last streaming request completes.
             if (--active_request_count_ == 0) {
+                // Idle eviction should start after the complete request, not its start.
+                last_access_time_ = std::chrono::steady_clock::now();
                 state_ = ModelState::READY;
                 state_cv_.notify_all();
                 on_idle = take_pending_reclaim_if_idle_locked();
