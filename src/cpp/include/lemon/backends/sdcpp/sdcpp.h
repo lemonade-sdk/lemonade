@@ -58,6 +58,14 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"cpu", "rocm", "vulkan", "cuda"},
     /*bin_variants*/    {"cpu", "rocm", "vulkan", "cuda"},
     /*config_extra*/    {{"steps", 20}, {"cfg_scale", 7.0}, {"width", 512}, {"height", 512}},
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"metal", {BackendTier::Core, BackendFormat::Native}},
+        {"cuda", {BackendTier::Core, BackendFormat::Native}},
+        {"vulkan", {BackendTier::Core, BackendFormat::Native}},
+        {"rocm", {BackendTier::Core, BackendFormat::Native}},
+        {"cpu", {BackendTier::Core, BackendFormat::Native}},
+    },
 };
 
 }  // namespace sdcpp

@@ -69,6 +69,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"hrx"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"hrx", {BackendTier::Community, BackendFormat::Native}},
+    },
 };
 
 }  // namespace hrx

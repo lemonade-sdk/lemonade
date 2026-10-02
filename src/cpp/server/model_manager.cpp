@@ -3862,6 +3862,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
+        if (!filter_out) {
+            filter_reason = SystemInfo::check_experimental_backend_installed(recipe, system_info);
+            filter_out = !filter_reason.empty();
+        }
+
         // Filter out models too large to run on this machine.
         if (!filter_out && !user_controlled_model && info.size > 0.0) {
             const auto* desc = backends::descriptor_for(recipe);

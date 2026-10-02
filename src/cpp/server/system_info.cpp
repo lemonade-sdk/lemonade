@@ -698,6 +698,10 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
 }
 
 // Generic installation check
+static bool is_installed_state(const std::string& state) {
+    return state == "installed" || state == "update_available" || state == "update_required";
+}
+
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
     // CWSR fix is missing (a per-descriptor flag).
@@ -1614,9 +1618,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         if (supported && !skip_as_default) {
             const std::string effective_state =
                 recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
-            const bool locally_installed = effective_state == "installed"
-                || effective_state == "update_available"
-                || effective_state == "update_required";
+            const bool locally_installed = is_installed_state(effective_state);
             const bool overrides_uninstalled_default =
                 locally_installed && default_backend_installed.count(def.recipe) == 0;
             if (!recipes[def.recipe].contains("default_backend") || overrides_uninstalled_default) {
@@ -1656,14 +1658,27 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 devices.push_back({{"device", device},
                                    {"families", std::vector<std::string>(families.begin(), families.end())}});
             }
-            support.push_back({
+            json support_row = {
                 {"backend", row.backend},
                 {"os", std::vector<std::string>(row.supported_os.begin(), row.supported_os.end())},
                 {"devices", devices},
                 {"device_summary", row.device_summary},
-            });
+            };
+            if (const auto* labels = desc->labels_for(row.backend)) {
+                support_row["tier"] = backend_tier_to_string(labels->tier);
+                support_row["format"] = backend_format_to_string(labels->format);
+            }
+            support.push_back(support_row);
         }
         entry["support"] = support;
+        if (entry.contains("backends") && entry["backends"].is_object()) {
+            for (auto& [backend_name, backend_entry] : entry["backends"].items()) {
+                if (const auto* labels = desc->labels_for(backend_name)) {
+                    backend_entry["tier"] = backend_tier_to_string(labels->tier);
+                    backend_entry["format"] = backend_format_to_string(labels->format);
+                }
+            }
+        }
         json options = json::array();
         for (const auto& opt : desc->options) {
             json o = {
@@ -1749,6 +1764,42 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
+}
+
+std::string SystemInfo::check_experimental_backend_installed(const std::string& recipe,
+                                                             const json& system_info) {
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (!desc) {
+        return "";
+    }
+    if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
+        return "";
+    }
+    const json backends = system_info["recipes"][recipe].value("backends", json::object());
+
+    std::string experimental_backend;
+    for (const auto& [name, info] : backends.items()) {
+        const std::string state = info.value("state", "unsupported");
+        if (state == "unsupported") {
+            continue;
+        }
+        const auto* labels = desc->labels_for(name);
+        if (!labels || labels->tier != BackendTier::Experimental) {
+            return "";
+        }
+        if (is_installed_state(state)) {
+            return "";
+        }
+        if (experimental_backend.empty()) {
+            experimental_backend = recipe + ":" + name;
+        }
+    }
+    if (experimental_backend.empty()) {
+        return "";
+    }
+    return "This model runs only on the experimental backend " + experimental_backend +
+           ", which is not installed. Install it with `lemonade backends install " +
+           experimental_backend + "` to use this model.";
 }
 
 std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
