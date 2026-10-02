@@ -1475,7 +1475,7 @@ jobs:
   # one, and downloads its models into the workspace volume before the tests,
   # whose per-request timeouts are shorter than a cold download.
   test-container-backends:
-    name: Test container backend - ${{ matrix.name }}
+    name: Test container backend - ${{ matrix.recipe }}:${{ matrix.backend }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
     needs: build-lemonade-deb
     if: >-
@@ -1489,94 +1489,30 @@ jobs:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
-          - name: ds4
-            install: "ds4:rocm"
-            script: server_llm.py
-            extra_args: "--wrapped-server ds4 --backend rocm"
-          - name: llamacpp-nathanw
-            install: "llamacpp:nathanw"
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp --backend nathanw"
-          - name: rocmfpx
-            install: "rocmfpx:rocm"
-            script: server_llm.py
-            extra_args: "--wrapped-server rocmfpx --backend rocm"
-          - name: halogen
-            install: "halogen:rocm"
-            script: server_llm.py
-            extra_args: "--wrapped-server halogen --backend rocm"
+          - {recipe: ds4, backend: rocm}
+          - {recipe: llamacpp, backend: nathanw}
+          - {recipe: rocmfpx, backend: rocm}
+          - {recipe: halogen, backend: rocm}
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set HF_HOME environment variable
-        run: |
-          HF_HOME="$RUNNER_TEMP/huggingface"
-          mkdir -p "$HF_HOME"
-          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
-
-      - name: Install a container tool
-        run: |
-          set -e
-          if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y podman
-          fi
-          if command -v podman >/dev/null 2>&1; then podman --version; else docker --version; fi
-
-      - name: Install Lemonade (.deb)
-        uses: ./.github/actions/install-lemonade-deb
+      - name: Test the container backend
+        uses: ./.github/actions/test-container-backend
         with:
-          version: ${{ env.LEMONADE_VERSION }}
-          port: auto
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Install the container backend
-        run: |
-          set -e
-          lemonade backends
-          lemonade backends install ${{ matrix.install }}
-
-      - name: Download the test models
-        env:
-          EXTRA_ARGS: ${{ matrix.extra_args }}
-        run: |
-          set -e
-          wrapped_server=$(sed -E 's/.*--wrapped-server ([^ ]+).*/\1/' <<<"$EXTRA_ARGS")
-          models=$(cd test && python3 -c "
-          import sys
-          from utils.capabilities import CAPABILITIES
-          from utils.test_models import MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY
-          models = set(CAPABILITIES['llm'][sys.argv[1]]['test_models'].values())
-          print(' '.join(sorted(models | {MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY})))
-          " "$wrapped_server")
-          for model in $models; do
-            lemonade pull "$model"
-          done
-
-      - name: Run tests
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e
-          .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade
+          recipe: ${{ matrix.recipe }}
+          backend: ${{ matrix.backend }}
+          version: ${{ needs.build-lemonade-deb.outputs.version }}
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-container-${{ matrix.name }}
+          artifact-name: server-logs-container-${{ matrix.recipe }}-${{ matrix.backend }}
 
       - name: Cleanup
         if: always()

@@ -1,0 +1,75 @@
+name: 'Test a container backend'
+description: 'Installs Lemonade from the .deb and a container tool, installs one container backend, and runs server_llm.py against it'
+inputs:
+  recipe:
+    description: 'Recipe of the container backend, such as ds4'
+    required: true
+  backend:
+    description: 'Backend of the container backend, such as rocm'
+    required: true
+  version:
+    description: 'Version string of the .deb package to install'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set HF_HOME environment variable
+      shell: bash
+      run: |
+        HF_HOME="$RUNNER_TEMP/huggingface"
+        mkdir -p "$HF_HOME"
+        echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
+
+    - name: Install a container tool
+      shell: bash
+      run: |
+        set -e
+        if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y podman
+        fi
+        if command -v podman >/dev/null 2>&1; then podman --version; else docker --version; fi
+
+    - name: Install Lemonade (.deb)
+      uses: ./.github/actions/install-lemonade-deb
+      with:
+        version: ${{ inputs.version }}
+        port: auto
+
+    - name: Setup Python and virtual environment
+      uses: ./.github/actions/setup-venv
+      with:
+        venv-name: '.venv'
+        python-version: '3.10'
+        requirements-file: 'test/requirements.txt'
+
+    - name: Install the container backend
+      shell: bash
+      run: |
+        set -e
+        lemonade backends
+        lemonade backends install ${{ inputs.recipe }}:${{ inputs.backend }}
+
+    # The suites' request timeouts are shorter than a cold download.
+    - name: Download the test models
+      shell: bash
+      run: |
+        set -e
+        models=$(cd test && python3 -c "
+        import sys
+        from utils.capabilities import CAPABILITIES
+        from utils.test_models import MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY
+        models = set(CAPABILITIES['llm'][sys.argv[1]]['test_models'].values())
+        print(' '.join(sorted(models | {MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY})))
+        " "${{ inputs.recipe }}")
+        for model in $models; do
+          lemonade pull "$model"
+        done
+
+    - name: Run tests
+      shell: bash
+      run: |
+        set -e
+        .venv/bin/python test/server_llm.py --wrapped-server ${{ inputs.recipe }} \
+          --backend ${{ inputs.backend }} --cli-binary lemonade
