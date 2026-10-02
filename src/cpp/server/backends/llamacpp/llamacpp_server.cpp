@@ -572,30 +572,23 @@ void LlamaCppServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(
-        process_executable, args, working_dir, inherit_llama_output, true, env_vars),
-        process_executable, args);
+    ServerCommand command;
+    command.program = process_executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
 
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("llama-server failed to start");
-    }
+    bool inherit_llama_output = (log_level_ == "info") || is_debug();
+    start_server(
+        std::make_unique<NativeProcess>(ProcessOutput{inherit_llama_output, true}, working_dir),
+        command);
 
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void LlamaCppServer::unload() {
-    stop_backend_watchdog();
     LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
