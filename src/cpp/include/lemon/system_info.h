@@ -27,7 +27,7 @@ struct CPUInfo : DeviceInfo {
 
 struct GPUInfo : DeviceInfo {
     int index = -1;  // Physical device index, when available
-    std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
+    std::string uuid;  // Stable GPU UUID, when the runtime exposes one
     std::string driver_version;
     // Human-readable name for display. Empty when no better name than `name` is
     // available; `name` itself stays machine-readable because the ROCm arch lookup
@@ -116,11 +116,22 @@ public:
 
     // Device support detection
     static std::string get_rocm_arch();
+    // Resolve the ROCm architecture for an explicit llama.cpp device (e.g. ROCm1).
+    // An empty device keeps the default discrete-GPU preference.
+    static std::string get_rocm_arch_for_device(const std::string& device);
+    // Return stable ROCr/HIP selectors for an explicit ROCm device selection.
+    static std::string get_rocm_visible_devices(const json& amd_gpu_devices,
+                                                const std::string& device);
+    static std::string get_rocm_visible_devices_for_device(const std::string& device);
+    // Remap physical ROCm ordinals to the child process's visible ordinals after
+    // ROCr/HIP filtering (e.g. ROCm2 -> ROCm0 when only physical GPU 2 is visible).
+    static std::string remap_rocm_device_selection(const std::string& device);
     static std::string get_cuda_arch();
 
     // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
     // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
-    static std::string select_rocm_arch(const json& amd_gpu_devices);
+    static std::string select_rocm_arch(const json& amd_gpu_devices,
+                                        const std::string& device = "");
 
     // Collapse a concrete ROCm ISA (e.g. gfx1201) to the family target name the
     // GitHub release repos publish their assets under (e.g. gfx120X), per the
@@ -139,6 +150,7 @@ public:
     // for an arbitrary GPU topology with no GPU present. Per-thread so it cannot
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
+    static std::string get_rocm_arch_override();
 
     // True if (recipe, backend) is published for the given ROCm family/ISA, per
     // the backend support matrix. Lets callers tell "this arch should have an
