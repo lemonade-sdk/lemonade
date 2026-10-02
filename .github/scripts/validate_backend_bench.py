@@ -32,13 +32,27 @@ from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
-# Long-context scenarios (context-32k/64k/128k) need the model loaded with a
-# matching ctx window; bench loads once at 4096 by default, so a 32k prompt gets
-# HTTP 400. Until per-scenario ctx is wired up, run only the short scenarios
-# that fit the default window. See issue #2858.
-SCENARIOS = ["chat-short", "code-short"]
+SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
+# Default scenario set for EVERY fork (current + future). context-4k gives a
+# meaningful prefill/PP number: short prompts are dominated by fixed TTFT
+# overhead, so PP (input_tokens/TTFT) only approaches the true prefill rate once
+# the prompt is large. 4k is the sweet spot — big enough to saturate prefill,
+# small enough that the KV cache fits comfortably at DEFAULT_CTX_SIZE on the
+# shared runner. Long-context scenarios are excluded by lemonade bench unless
+# named explicitly AND need a matching ctx window, hence DEFAULT_CTX_SIZE below.
+# A fork may override via "bench_scenarios"/"ctx_size" (e.g. halo-box adds a
+# heavier context-32k deep-dive). See issue #2858.
+SCENARIOS = ["chat-short", "context-4k"]
+# Window the model is loaded with by default. Must be >= the largest default
+# scenario prompt (context-4k ~4096 tokens). 8192 leaves headroom without the
+# large KV cache a 32k window would demand (which can OOM big dense models on
+# the 32GB runner).
+DEFAULT_CTX_SIZE = 8192
 WARMUP_RUNS = 1
-MEASUREMENT_RUNS = 5
+# Report best-of, not an average: peak TG (tps.max) and peak PP
+# (input_tokens/ttft.min). Fewer runs suffice when we take the best sample
+# rather than a mean, so this stays cheap even with the added long-context pass.
+MEASUREMENT_RUNS = 3
 THRESHOLDS = {
     "tps_warn": -0.05,
     "tps_critical": -0.15,
@@ -350,6 +364,14 @@ def run_bench(
     # lemond never reads one.
     bench_as = fork.get("install_as", backend)
 
+    # A fork may override the scenario set (e.g. to add a long-context prompt for
+    # prefill/PP measurement). Long-context scenarios are excluded by lemonade
+    # bench unless named explicitly AND need the model loaded with a matching
+    # window, so a fork opting into them must also set ctx_size — otherwise the
+    # big prompt overflows the default 4096 ctx and the backend returns HTTP 400.
+    scenarios = fork.get("bench_scenarios") or SCENARIOS
+    ctx_size = fork.get("ctx_size", DEFAULT_CTX_SIZE)
+
     cmd = [
         lemonade_bin,
         "bench",
@@ -357,7 +379,7 @@ def run_bench(
         "--backend",
         bench_as,
         "--scenarios",
-        *SCENARIOS,
+        *scenarios,
         "--runs",
         str(MEASUREMENT_RUNS),
         "--warmup",
@@ -367,6 +389,14 @@ def run_bench(
         "--output",
         str(output_file),
     ]
+    # The prebuilt lemonade ships its OWN bundled scenario file, which may not yet
+    # contain scenarios we've added to the repo (e.g. context-4k). Point bench at
+    # the repo's scenario file so named scenarios always resolve to the checked-out
+    # definitions rather than whatever the release happens to bundle.
+    if SCENARIO_FILE.exists():
+        cmd += ["--scenario-file", str(SCENARIO_FILE)]
+    if ctx_size:
+        cmd += ["--ctx-size", str(ctx_size)]
     if compare_file and compare_file.exists():
         cmd += ["--compare", str(compare_file)]
 
@@ -406,6 +436,18 @@ def run_bench(
 
     with open(output_file) as f:
         data = json.load(f)
+
+    annotate_tg_pp(data)
+    for br in backend_results(data, model):
+        for sc in br.get("scenarios", []):
+            print(
+                f"    [{model} / {sc.get('name')}] "
+                f"TG (peak decode) = {sc.get('tg_tps', 'n/a')} tok/s  |  "
+                f"PP (peak prefill) = {sc.get('pp_tps', 'n/a')} tok/s  "
+                f"(best TTFT {round(sc.get('ttft_ms', {}).get('min', 0), 1)} ms, "
+                f"in={sc.get('input_tokens')} out={sc.get('output_tokens')})",
+                flush=True,
+            )
 
     data.update(
         {
@@ -467,6 +509,33 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
                 out.extend(me.get("results", []))
         return out
     return data.get("results", [])
+
+
+def annotate_tg_pp(data: dict) -> None:
+    """Label each scenario's throughput explicitly as TG and PP, in place.
+
+    Reports BEST-OF, not an average — we want each backend's peak capability,
+    not a mean dragged down by outlier runs (thermal blips, scheduler noise).
+    TG (token generation) = peak decode throughput = bench's tps.max.
+    PP (prompt processing) = peak prefill throughput, derived as
+    input_tokens / (fastest ttft). bench emits no prefill rate, but it records
+    input_tokens and ttft (for llama.cpp forks ttft is llama.cpp's own prompt_ms
+    timing), so input_tokens / ttft.min is the peak prefill rate. Written back
+    into the run file so the numbers are unambiguous in the results, not just
+    the logs.
+    """
+    for br in backend_results(data):
+        for sc in br.get("scenarios", []):
+            tps = sc.get("tps", {})
+            tg = tps.get("max", tps.get("mean"))
+            if tg is not None:
+                sc["tg_tps"] = round(tg, 2)
+            in_tok = sc.get("input_tokens")
+            ttft = sc.get("ttft_ms", {})
+            # Fastest prefill = smallest TTFT. Fall back to mean if min absent.
+            best_ttft = ttft.get("min", ttft.get("mean", 0))
+            if in_tok and best_ttft and best_ttft > 0:
+                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
 
 
 def check_regression(
@@ -533,8 +602,8 @@ def update_leaderboard(
 ) -> None:
     for br in backend_results(result, model):
         for sc in br.get("scenarios", []):
-            tps_mean = sc.get("tps", {}).get("mean")
-            if tps_mean is None:
+            tg_tps = sc.get("tg_tps")
+            if tg_tps is None:
                 continue
             key = f"{model}|{sc['name']}"
             entry = {
@@ -545,9 +614,9 @@ def update_leaderboard(
                 "fork_repo": fork["repo"],
                 "fork_version": version,
                 "backend": br.get("backend"),
-                "tps_mean": round(tps_mean, 2),
-                "tps_p95": round(sc["tps"].get("p95", 0), 2),
-                "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                "tg_tps": tg_tps,
+                "pp_tps": sc.get("pp_tps"),
+                "ttft_ms_best": round(sc.get("ttft_ms", {}).get("min", 0), 2),
                 "vram_peak_gb": sc.get("vram_peak_gb"),
                 "timestamp": result.get("timestamp"),
             }
@@ -556,7 +625,7 @@ def update_leaderboard(
                 e for e in leaderboard[key] if e["fork_id"] != fork["fork_id"]
             ]
             leaderboard[key].append(entry)
-            leaderboard[key].sort(key=lambda e: e["tps_mean"], reverse=True)
+            leaderboard[key].sort(key=lambda e: e["tg_tps"], reverse=True)
 
 
 # ---------------------------------------------------------------------------

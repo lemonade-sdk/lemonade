@@ -90,6 +90,44 @@
       "experimental": true,
       "tracked": true,
       "notes": "Experimental HRX backend. Linux gfx1151 only. Auto-discovers all 'llamacpp-hrx' models from server_models.json; add an optional model_filter to pin a subset."
+    },
+    {
+      "fork_id": "halo-box-strix",
+      "label": "llama.cpp Halo-box",
+      "recipe": "llamacpp",
+      "backend": "halo-box-strix",
+      "install_as": "rocm",
+      "rocm_channel": "nightly",
+      "repo": "halo-box/strix-llama.cpp",
+      "version_source": "github_latest",
+      "version_fallback": "b1000",
+      "binary_url_windows": "",
+      "binary_url_linux": "https://github.com/halo-box/strix-llama.cpp/releases/download/{version}/llama-{version}-ubuntu-rocm-{arch}-x64.zip",
+      "binary_exe_windows": "",
+      "binary_exe_linux": "llama-server",
+      "runner_os": "linux",
+      "arch": "gfx1151",
+      "tracked": true,
+      "enabled": true,
+      "experimental": true,
+      "model_filter": [
+        "Qwen3.5-4B-GGUF",
+        "Qwen3.6-35B-A3B-GGUF",
+        "Qwen3.6-27B-MTP-GGUF",
+        "Qwen3.8-27B-GGUF",
+        "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        "Gemma-4-26B-A4B-it-GGUF",
+        "Gemma-4-26B-A4B-it-MTP-GGUF",
+        "Gemma-4-31B-it-GGUF",
+        "Gemma-4-31B-it-MTP-GGUF",
+        "MiniCPM-V-4.6-GGUF",
+        "MiniCPM5-1B-GGUF",
+        "Muse-Glimmer-30B-GGUF",
+        "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF"
+      ],
+      "bench_scenarios": ["chat-short", "context-4k", "context-32k"],
+      "ctx_size": 32768,
+      "notes": "Community llama.cpp fork perf-tuned for AMD Strix Halo (gfx1151). Ships standard llama-server binaries in the lemonade-sdk/llamacpp-rocm release layout (per-arch ROCm zips + one Vulkan zip, Linux only), so it drops into the llamacpp recipe as a ROCm binary swap — routed via `lemonade config set llamacpp.rocm_bin=<file> rocm_channel=nightly` and benched with --backend rocm. NO C++ change, same mechanism as llamacpp-amd-ecosystem-gfx11. Tracks the gfx1151 ROCm build only; the Vulkan build would duplicate llamacpp-upstream-vulkan. Tag scheme: sequential bNNNN from b1000. Marked experimental (shown as an experimental backend on the dashboard). Because experimental flips the driver to require_hot=False (which would otherwise pull ALL llamacpp models, including ones too big for the 32GB runner), an explicit model_filter pins the hot comparison set — kept in sync with the rocm forks' hot models, minus gpt-oss (crashes/too big), Qwen3-Coder-Next (48GB) and gpt-oss-120b (120GB) which won't fit. Runs an extra context-32k long-context scenario (with ctx_size=32768 so the 32k prompt fits) to surface prefill/PP throughput — short scenarios can't, since PP is derived as input_tokens/TTFT and short prompts are dominated by fixed launch overhead. Heavier prefill: adds minutes + VRAM per model; scoped to halo-box only for now."
     }
   ]
 }
