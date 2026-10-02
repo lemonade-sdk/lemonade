@@ -20,6 +20,7 @@ FIXTURE_DIR = os.path.join(REPO_ROOT, "test", "cpp", "fixtures", "routing")
 
 ROUTE_POLICY_FIXTURES = [
     "l0a_llm_router.json",
+    "l0b_cost_select.json",
     "l1_keywords.json",
     "l1_metadata.json",
     "l2_semantic.json",
@@ -88,6 +89,22 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
             },
         }
         # Missing reference_phrases for semantic_similarity -> invalid.
+        self.assertTrue(list(validator.iter_errors(base)))
+
+    def test_cost_classifier_requires_labels(self):
+        """The `cost` classifier has no model/prompt but must declare labels
+        (the candidates it ranks)."""
+        validator = jsonschema.Draft202012Validator(self.route_policy_schema)
+        base = {
+            "version": "1",
+            "recipe": "collection.router",
+            "routing": {
+                "candidates": ["a"],
+                "default_model": "a",
+                "classifiers": [{"id": "x", "type": "cost"}],
+                "rules": [{"id": "r", "match": {"classifier": "x"}, "route_to": "a"}],
+            },
+        }
         self.assertTrue(list(validator.iter_errors(base)))
 
     def test_locked_structural_invariants(self):
