@@ -6843,6 +6843,55 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] root shard files are one model")
 
+    def test_021yg_extra_shared_folder_name_has_one_owner(self):
+        """When several folders share a name, the first one found owns that name
+        in both its bare and extra. forms."""
+        with self._extra_models_dir(
+            ggufs=[
+                f"{publisher}/Qwen3-8B-GGUF/{name}"
+                for publisher in ("bartowski", "lmstudio-community", "unsloth")
+                for name in ("Qwen3-8B-Q4_K_M.gguf", "Qwen3-8B-Q8_0.gguf")
+            ]
+        ) as extra_dir:
+            for requested in ("Qwen3-8B-GGUF", "extra.Qwen3-8B-GGUF"):
+                self.assertEqual(
+                    self._get_model(requested)["checkpoint"],
+                    os.path.join(
+                        extra_dir, "bartowski", "Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf"
+                    ),
+                    f"{requested} must resolve to the first folder found",
+                )
+
+            print("[OK] a shared folder name has one owner")
+
+    def test_021ygb_extra_shared_folder_name_qualifies_a_later_single_model(self):
+        """A later single-model folder whose name an earlier folder owns is
+        qualified with the folder that contains it, and the earlier folder
+        keeps the name."""
+        with self._extra_models_dir(
+            ggufs=[
+                "alpha/Shared/Llama-Q4_K_M.gguf",
+                "alpha/Shared/Llama-Q8_0.gguf",
+                "beta/Shared/Mistral-Q4_K_M.gguf",
+            ]
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Llama-Q4_K_M": "alpha/Shared/Llama-Q4_K_M.gguf",
+                    "Llama-Q8_0": "alpha/Shared/Llama-Q8_0.gguf",
+                    "beta-Shared": "beta/Shared/",
+                },
+            )
+            for requested in ("Shared", "extra.Shared"):
+                self.assertEqual(
+                    self._get_model(requested)["checkpoint"],
+                    os.path.join(extra_dir, "alpha", "Shared", "Llama-Q4_K_M.gguf"),
+                    f"{requested} must resolve to the first folder found",
+                )
+
+            print("[OK] a later single-model folder is qualified")
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously

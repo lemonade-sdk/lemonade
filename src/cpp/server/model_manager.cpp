@@ -1165,23 +1165,31 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
-// newcomer with its folder keeps both and leaves the first model's id alone.
+// newcomer with the folder that contains it keeps both and leaves the first
+// model's id alone. Ids and kept folder names share one namespace, so a
+// qualified id can never shadow a folder name another model already owns.
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
+                            std::set<std::string>& claimed_names,
                             const std::string& base_name,
                             const fs::path& folder,
                             ModelInfo info,
                             const std::set<std::string>* reserved_ids = nullptr) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
-    std::string id = prefix + base_name;
-    if (discovered.count(id) || (reserved_ids && reserved_ids->count(id))) {
+    auto taken = [&](const std::string& name) {
+        return claimed_names.count(name) ||
+               (reserved_ids && reserved_ids->count(prefix + name));
+    };
+    std::string name = base_name;
+    if (taken(name)) {
         const std::string qualified = folder.filename().string() + "-" + base_name;
-        id = prefix + qualified;
-        for (int n = 2; discovered.count(id); ++n) {
-            id = prefix + qualified + "-" + std::to_string(n);
+        name = qualified;
+        for (int n = 2; taken(name); ++n) {
+            name = qualified + "-" + std::to_string(n);
         }
     }
-    info.model_name = id;
-    discovered.emplace(id, std::move(info));
+    claimed_names.insert(name);
+    info.model_name = prefix + name;
+    discovered.emplace(info.model_name, std::move(info));
 }
 
 static const std::set<std::string>& reserved_extra_model_ids() {
@@ -1263,7 +1271,9 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
-    std::set<std::string> folder_ids_kept;
+    // The first model to keep a folder name owns it in both its bare and
+    // extra. forms; resolving each form separately could split them.
+    std::set<std::string> claimed_names;
     auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
                                     const std::string& deployment_label,
                                     const fs::path& mmproj_file = fs::path()) {
@@ -1297,12 +1307,12 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.labels.push_back("vision");
         }
 
-        if (!deployment_label.empty() && folder_ids_kept.insert(deployment_label).second) {
+        if (!deployment_label.empty() && claimed_names.insert(deployment_label).second) {
             info.input_aliases.push_back(deployment_label);
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
-        add_extra_model(discovered, base_name, gguf_path.parent_path(),
+        add_extra_model(discovered, claimed_names, base_name, gguf_path.parent_path(),
                         std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
@@ -1372,7 +1382,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
                   [](const fs::path& lhs, const fs::path& rhs) {
                       return lhs.generic_string() < rhs.generic_string();
                   });
-        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path);
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path,
+                                           claimed_names);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -1384,7 +1395,8 @@ void ModelManager::discover_extra_models_in_directory(
     const fs::path& dir_path,
     const std::vector<fs::path>& gguf_files,
     std::map<std::string, ModelInfo>& discovered,
-    const fs::path& search_path) const {
+    const fs::path& search_path,
+    std::set<std::string>& claimed_names) const {
 
     std::string dir_name = dir_path.filename().string();
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
@@ -1474,12 +1486,12 @@ void ModelManager::discover_extra_models_in_directory(
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
-            if (path == main_model_path) {
+            if (path == main_model_path && claimed_names.insert(dir_name).second) {
                 info.input_aliases.push_back(dir_name);
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), dir_path,
+            add_extra_model(discovered, claimed_names, visible_extra_variant_name(v), dir_path,
                             std::move(info), deployment_label.empty()
                                 ? nullptr
                                 : &reserved_extra_model_ids());
@@ -1503,8 +1515,8 @@ void ModelManager::discover_extra_models_in_directory(
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, dir_name, dir_path, std::move(info),
-                        deployment_label.empty()
+        add_extra_model(discovered, claimed_names, dir_name, dir_path.parent_path(),
+                        std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
     }
