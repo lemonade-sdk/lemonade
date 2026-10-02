@@ -237,9 +237,9 @@ public:
     AudioFormatMetadata audio_speech_format_metadata(
         const std::string& model_name, const std::string& response_format);
 
-    json image_generations(const json& request);
-    json image_edits(const json& request);
-    json image_variations(const json& request);
+    json image_generations(const json& request, std::atomic<bool>* cancel = nullptr);
+    json image_edits(const json& request, std::atomic<bool>* cancel = nullptr);
+    json image_variations(const json& request, std::atomic<bool>* cancel = nullptr);
 
     void audio_generations(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);

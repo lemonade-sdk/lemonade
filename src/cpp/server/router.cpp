@@ -2270,7 +2270,11 @@ AudioFormatMetadata Router::audio_speech_format_metadata(
                       : AudioFormatMetadata{};
 }
 
-json Router::image_generations(const json& request) {
+json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
@@ -2282,7 +2286,11 @@ json Router::image_generations(const json& request) {
     });
 }
 
-json Router::image_edits(const json& request) {
+json Router::image_edits(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
@@ -2294,7 +2302,11 @@ json Router::image_edits(const json& request) {
     });
 }
 
-json Router::image_variations(const json& request) {
+json Router::image_variations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
