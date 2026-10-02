@@ -1029,6 +1029,7 @@ set(SOURCES_CORE
     src/cpp/server/log_stream.cpp
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
+    src/cpp/server/utils/container_manager.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -2581,6 +2582,18 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
+# The container backends spec's Command Contract and setup checks, against a fake
+# Podman/Docker host, plus every container backend's policy and pin.
+set(_CONTAINER_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_manager.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
+    add_executable(test_container_manager test/cpp/test_container_manager.cpp)
+    target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
+    target_compile_definitions(test_container_manager PRIVATE
+        BACKEND_VERSIONS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json"
+    )
+    add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
+endif()
+
 # Every backend in a descriptor's support rows has a tier and a format.
 set(_BACKEND_LABELS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_labels.cpp")
 if(BUILD_TESTING AND EXISTS "${_BACKEND_LABELS_TEST_SRC}")
@@ -3283,16 +3296,6 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
-endif()
-
-# ds4 install params: upstream ds4 ships no binaries, so assets come from
-# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
-# plus the detected ISA. Only gfx1151 is validated upstream.
-set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
-if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
-    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
-    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
-    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

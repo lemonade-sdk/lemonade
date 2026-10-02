@@ -78,6 +78,7 @@ nav:
       - vLLM: guide/configuration/vllm.md
       - Moonshine: guide/configuration/moonshine.md
       - Cloud Offload: guide/configuration/cloud.md
+      - Container Backends: guide/configuration/container-backends.md
     - Telemetry: guide/telemetry.md
     - FAQ: guide/faq.md
   - Development:
