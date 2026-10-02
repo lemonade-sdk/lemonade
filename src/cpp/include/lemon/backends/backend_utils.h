@@ -192,8 +192,9 @@ namespace lemon::backends {
          *  get_therock_lib_paths). Returns "" for empty input. */
         static std::string join_runtime_dirs(const std::vector<std::string>& dirs);
 
-        /** Stage TheRock's amdhip64_7.dll next to a ROCm backend exe, unless
-         *  System32 already ships a newer runtime. No-op off Windows. */
+        /** Stage TheRock's HIP runtime set (the amdhip64 and amd_comgr DLLs)
+         *  next to a ROCm backend exe, so the loader cannot mix it with the
+         *  display driver's copies in System32. No-op off Windows. */
         static bool stage_therock_hip_runtime(const std::string& rocm_arch,
                                               const fs::path& target_dir);
 
