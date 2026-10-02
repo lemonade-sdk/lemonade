@@ -18,6 +18,19 @@ public:
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
     bool has_option(const std::string& opt) const;
+    // Type-guarded reads: resolve through get_option() (stored value, then the
+    // descriptor default) and fall back only when the resolved value is absent
+    // or has the wrong JSON type (RecipeOptions stores config values unchecked).
+    int get_int_or(const std::string& opt, int fallback = 0) const;
+    float get_float_or(const std::string& opt, float fallback = 0.0f) const;
+    bool get_bool_or(const std::string& opt, bool fallback = false) const;
+    std::string get_string_or(const std::string& opt, const std::string& fallback = "") const;
+    // True when get_option() resolves to a JSON number (descriptor default
+    // included). This is the emission test for params where an explicit 0.0 is
+    // meaningful (e.g. cfg_scale disabling guidance): emit whenever a numeric
+    // exists in any layer, omit only when truly unset so the backend default
+    // applies.
+    bool has_numeric(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
     // True when this layer explicitly named or set this option, even if its

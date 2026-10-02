@@ -261,6 +261,30 @@ bool RecipeOptions::has_option(const std::string& opt) const {
     return options_.contains(opt);
 }
 
+int RecipeOptions::get_int_or(const std::string& opt, int fallback) const {
+    const json v = get_option(opt);
+    return v.is_number() ? v.get<int>() : fallback;
+}
+
+float RecipeOptions::get_float_or(const std::string& opt, float fallback) const {
+    const json v = get_option(opt);
+    return v.is_number() ? v.get<float>() : fallback;
+}
+
+bool RecipeOptions::get_bool_or(const std::string& opt, bool fallback) const {
+    const json v = get_option(opt);
+    return v.is_boolean() ? v.get<bool>() : fallback;
+}
+
+std::string RecipeOptions::get_string_or(const std::string& opt, const std::string& fallback) const {
+    const json v = get_option(opt);
+    return v.is_string() ? v.get<std::string>() : fallback;
+}
+
+bool RecipeOptions::has_numeric(const std::string& opt) const {
+    return get_option(opt).is_number();
+}
+
 void RecipeOptions::set_option(const std::string& opt, const json& value) {
     options_[opt] = value;
     explicit_options_[opt] = value;
