@@ -437,6 +437,13 @@ json parse_classifier_configs(const json& routing,
                         "', which cannot serve as a classifier (needs an LLM or "
                         "classification model)");
                 }
+
+                if (type == "zero_shot" && model_type != ModelType::CLASSIFICATION) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) +
+                        "', which cannot serve zero_shot (needs a classification model)");
+                }
                 if (type == "semantic_similarity" && model_type != ModelType::EMBEDDING) {
                     throw std::invalid_argument(
                         path + ".model '" + original + "' has type '" +

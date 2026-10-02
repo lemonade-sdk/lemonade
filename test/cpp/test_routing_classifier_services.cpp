@@ -185,6 +185,83 @@ static void test_run_classifier_uses_classify_for_classification_model() {
           near(scores.at("BENIGN"), 0.1) && near(scores.at("MALICIOUS"), 0.9));
 }
 
+static void test_run_zero_shot_classifier_forwards_labels() {
+    bool chat_completion_called = false;
+    json seen_classify_request;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [&](const json&) -> json {
+            chat_completion_called = true;
+            return json::object();
+        },
+        {},
+        [&](const json& request) {
+            seen_classify_request = request;
+            return json{{"labels", {{"coding", 0.02}, {"cooking", 0.93}, {"pii", 0.05}}}};
+        },
+        [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
+
+    auto scores = services.run_zero_shot_classifier(
+        "router-model", "how do I bake a cheesecake", {"coding", "cooking", "pii"});
+    check("run_zero_shot_classifier never uses chat", !chat_completion_called);
+    check("run_zero_shot_classifier forwards model and input",
+          seen_classify_request.value("model", "") == "router-model" &&
+          seen_classify_request.value("input", "") == "how do I bake a cheesecake");
+    check("run_zero_shot_classifier puts the label list in the classify body",
+          seen_classify_request["labels"] ==
+              json::array({"coding", "cooking", "pii"}));
+    check("run_zero_shot_classifier parses classify label scores",
+          near(scores.at("cooking"), 0.93) && near(scores.at("coding"), 0.02));
+}
+
+static void test_run_zero_shot_classifier_loads_before_resolving_type() {
+    // Same cold-start ordering requirement as run_classifier: the resolver
+    // reports LLM until the backend is alive.
+    bool loaded = false;
+    bool classify_called = false;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) { return json::object(); },
+        [&](const std::string&) { loaded = true; },
+        [&](const json&) {
+            classify_called = true;
+            return json{{"labels", {{"a", 0.3}, {"b", 0.7}}}};
+        },
+        [&](const std::string&) {
+            return loaded ? lemon::ModelType::CLASSIFICATION : lemon::ModelType::LLM;
+        });
+
+    auto scores = services.run_zero_shot_classifier("router-model", "text", {"a", "b"});
+    check("run_zero_shot_classifier loads the model before resolving its type",
+          loaded && classify_called && near(scores.at("b"), 0.7));
+}
+
+static void test_run_zero_shot_classifier_rejects_non_classification_model() {
+    bool chat_called = false;
+    bool classify_called = false;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [&](const json&) -> json {
+            chat_called = true;
+            return json::object();
+        },
+        {},
+        [&](const json&) -> json {
+            classify_called = true;
+            return json::object();
+        },
+        [](const std::string&) { return lemon::ModelType::LLM; });
+
+    bool threw = false;
+    try {
+        services.run_zero_shot_classifier("chat-model", "text", {"a", "b"});
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("run_zero_shot_classifier errors instead of falling back to chat",
+          threw && !chat_called && !classify_called);
+}
+
 static void test_run_classifier_falls_back_to_chat_for_non_classification_model() {
     bool classify_called = false;
     auto services = lemon::make_classifier_services_from_router_calls(
@@ -913,6 +990,9 @@ int main() {
     test_semantic_similarity_loops_through_router_embeddings();
     test_run_classifier_uses_router_chat_completion();
     test_run_classifier_uses_classify_for_classification_model();
+    test_run_zero_shot_classifier_forwards_labels();
+    test_run_zero_shot_classifier_loads_before_resolving_type();
+    test_run_zero_shot_classifier_rejects_non_classification_model();
     test_run_classifier_falls_back_to_chat_for_non_classification_model();
     test_run_classifier_loads_before_resolving_type();
     test_run_classifier_ignores_openai_metadata();

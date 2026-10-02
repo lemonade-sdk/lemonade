@@ -107,9 +107,9 @@ std::vector<fs::path> find_complete_model_dirs(const fs::path& root) {
 }  // namespace
 
 // The ort-server subprocess speaks a tiny HTTP contract:
-//   GET  /health             -> 200 when the model is loaded and ready
-//   POST /classify {text}    -> 200 {"labels": {"<label>": <score in [0,1]>, ...}}
-// It runs one exported ONNX model (seq- or token-classification) on the CPU EP.
+//   GET  /health                     -> 200 when the model is loaded and ready
+//   POST /classify {text[, labels]}  -> 200 {"labels": {"<label>": <score in [0,1]>, ...}}
+// It runs one exported ONNX model (seq-, token-, or zero-shot classification) on the CPU EP.
 // Distributed as a self-contained bundle by lemonade-sdk/ort-server.
 InstallParams OnnxRuntimeServer::get_install_params(const std::string& backend,
                                                     const std::string& version) {
@@ -238,6 +238,7 @@ void OnnxRuntimeServer::unload() {
 json OnnxRuntimeServer::forward_classify(const std::string& text, const json& params) {
     json body = {{"text", text}};
     if (params.contains("top_k")) body["top_k"] = params["top_k"];
+    if (params.contains("labels")) body["labels"] = params["labels"];
     return forward_request("/classify", body, 120);
 }
 

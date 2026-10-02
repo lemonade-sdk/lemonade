@@ -326,6 +326,31 @@ ClassifierServices make_classifier_services_from_router_calls(
         return parse_classifier_scores((*chat_completion_call)(request));
     };
 
+    services.run_zero_shot_classifier =
+        [classify_call, get_model_type, ensure_loaded](
+            const std::string& model, const std::string& input,
+            const std::vector<std::string>& labels) -> std::map<std::string, double> {
+        if (!classify_call || !*classify_call) {
+            throw std::runtime_error("Router classify call is not configured");
+        }
+
+        ensure_model(ensure_loaded, model);
+
+        // Deliberately no chat fallback
+        if (!get_model_type || get_model_type(model) != ModelType::CLASSIFICATION) {
+            throw std::runtime_error(
+                "zero-shot classifier model '" + model +
+                "' is not a classification model; it cannot score a per-request label list");
+        }
+
+        json request = {
+            {"model", model},
+            {"input", input},
+            {"labels", labels},
+        };
+        return parse_classifier_scores((*classify_call)(request));
+    };
+
     services.chat = [chat_completion_call,
                      ensure_loaded](const std::string& model,
                                     const std::string& prompt,

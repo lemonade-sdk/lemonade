@@ -9,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using lemon::Condition;
 using lemon::ConditionPtr;
@@ -93,6 +94,80 @@ static void test_make_classifier() {
     EvalContext ctx = make_eval_context(route, services);
     auto score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
     check("generic classifier calls run_classifier service", score.ok && score.score_of("PII") == 0.91);
+}
+
+static void test_make_zero_shot_classifier() {
+    json cfg = {
+        {"id", "route"},
+        {"type", "zero_shot"},
+        {"model", "lfm-prompt-router"},
+        {"labels", json::array({"coding", "cooking", "pii"})},
+    };
+    auto classifier = lemon::make_classifier(cfg);
+    check("make_classifier builds zero_shot classifier",
+          classifier->id() == "route" && classifier->type() == "zero_shot" &&
+              classifier->labels().size() == 3);
+
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_zero_shot_scores("lfm-prompt-router",
+                              {{"coding", 0.02}, {"cooking", 0.93}, {"pii", 0.05}});
+    // Configured on the other service too: if the classifier reached
+    // run_classifier instead, the scores below would be the wrong ones.
+    fake.set_classifier_scores("lfm-prompt-router", {{"coding", 1.0}});
+    auto services = fake.make();
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, services);
+    auto score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    check("zero_shot classifier calls run_zero_shot_classifier service",
+          score.ok && score.score_of("cooking") == 0.93);
+    check("zero_shot classifier sends its declared labels",
+          fake.last_zero_shot_labels() ==
+              std::vector<std::string>{"coding", "cooking", "pii"});
+}
+
+static void test_make_zero_shot_classifier_rejections() {
+    check("zero_shot rejects missing model",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"labels", json::array({"a"})}});
+          }));
+    check("zero_shot rejects missing labels",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"}});
+          }));
+    check("zero_shot rejects empty labels",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"}, {"labels", json::array()}});
+          }));
+    check("zero_shot rejects prompt",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"},
+                                          {"labels", json::array({"a"})},
+                                          {"prompt", "pick one"}});
+          }));
+    check("zero_shot rejects reference_phrases",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"},
+                                          {"labels", json::array({"a"})},
+                                          {"reference_phrases", json{{"a", json::array({"p"})}}}});
+          }));
+}
+
+// An unconfigured run_zero_shot_classifier must surface as Score::ok=false so
+// the owning condition applies on_error, not as a throw out of evaluate().
+static void test_zero_shot_classifier_without_service_fails_soft() {
+    auto classifier = lemon::make_classifier(json{
+        {"id", "route"}, {"type", "zero_shot"}, {"model", "m"},
+        {"labels", json::array({"a", "b"})}});
+    lemon::ClassifierServices services;  // every service left unset
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, services);
+    auto score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    check("zero_shot without service reports ok=false", !score.ok);
 }
 
 static void test_make_classifier_rejections() {
@@ -359,6 +434,9 @@ static void test_leaf_factory_classifier_and_deterministic_implicit_all() {
 
 int main() {
     test_make_classifier();
+    test_make_zero_shot_classifier();
+    test_make_zero_shot_classifier_rejections();
+    test_zero_shot_classifier_without_service_fails_soft();
     test_make_classifier_rejections();
     test_make_classifiers();
     test_leaf_factory_classifier_refs();
