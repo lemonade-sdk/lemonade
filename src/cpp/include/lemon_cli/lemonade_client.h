@@ -113,7 +113,8 @@ public:
 
     // Recipe/backend commands
     int list_recipes(bool show_all = false) const;
-    int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
+    int install_backend(const std::string& recipe, const std::string& backend, bool force = false,
+                        const std::string& arch = "");
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
     // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,
