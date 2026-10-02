@@ -645,9 +645,9 @@ Image Generation API. You provide a text prompt and receive a generated image.
 | `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. If not specified, a random seed is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `skip_implicit_upscaling` | No | Boolean. If `true`, skip the auto-upscale configured via `upscale_model`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation. Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale_model` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `upscale_model` recipe option. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Lemonade does not interpret this parameter (see the `upscale_model` recipe option for post-generation auto-upscale). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Requires a configured `thenoise.upscaler_dir` to work. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -716,9 +716,9 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `skip_implicit_upscaling` | No | Boolean. If `true`, skip the auto-upscale configured via `upscale_model`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `upscale_model`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation. Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale_model` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `upscale_model` recipe option. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Lemonade does not interpret this parameter (see the `upscale_model` recipe option for post-generation auto-upscale). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Requires a configured `thenoise.upscaler_dir` to work. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `background` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `quality` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
@@ -778,9 +778,9 @@ Image Variations API. You provide a source image and receive a variation of it.
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `skip_implicit_upscaling` | No | Boolean. If `true`, skip the auto-upscale configured via `upscale_model`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `upscale_model`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation. Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale_model` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `upscale_model` recipe option. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Lemonade does not interpret this parameter (see the `upscale_model` recipe option for post-generation auto-upscale). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Requires a configured `thenoise.upscaler_dir` to work. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 ### Example request

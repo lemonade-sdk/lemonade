@@ -455,7 +455,7 @@ The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-o
 
 ### Image defaults
 
-For `sd-cpp` recipe models, you can specify default image generation parameters:
+For `sd-cpp` and `thenoise` recipe models, you can specify default image generation parameters:
 
 ```json
 {

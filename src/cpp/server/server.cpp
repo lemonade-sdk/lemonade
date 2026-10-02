@@ -5201,8 +5201,10 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
 
         bool refine = request_json.value("refine", false);
         std::string upscale_model = request_json.value("upscale_model", "");
+        bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
         request_json.erase("refine");
         request_json.erase("upscale_model");
+        request_json.erase("skip_implicit_upscaling");
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -5247,7 +5249,6 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
                 LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
                 res.status = 500;
             }
-            bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
             apply_upscale_if_configured(requested_model, response, skip_upscale,
                                         upscale_model);
             res.set_content(response.dump(), "application/json");
