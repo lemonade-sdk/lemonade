@@ -170,6 +170,34 @@ static void test_zero_shot_classifier_without_service_fails_soft() {
     check("zero_shot without service reports ok=false", !score.ok);
 }
 
+// Scores for any label set other than the declared one must fail the
+// classifier, so a protective rule applies on_error instead of silently missing.
+static void test_zero_shot_classifier_rejects_mismatched_label_set() {
+    auto classifier = lemon::make_classifier(json{
+        {"id", "route"}, {"type", "zero_shot"}, {"model", "m"},
+        {"labels", json::array({"pii", "chit-chat"})}});
+    auto route = make_route_context();
+
+    auto evaluate_with = [&](std::map<std::string, double> returned) {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_zero_shot_scores("m", std::move(returned));
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        return classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    };
+
+    check("zero_shot fails on the backend's own label set",
+          !evaluate_with({{"LABEL_0", 0.9}, {"LABEL_1", 0.1}}).ok);
+    check("zero_shot fails when a declared label is missing",
+          !evaluate_with({{"chit-chat", 1.0}}).ok);
+    check("zero_shot fails when an undeclared label is returned",
+          !evaluate_with({{"pii", 0.2}, {"chit-chat", 0.7}, {"O", 0.1}}).ok);
+
+    auto exact = evaluate_with({{"pii", 0.8}, {"chit-chat", 0.2}});
+    check("zero_shot accepts exactly the declared label set",
+          exact.ok && exact.score_of("pii") == 0.8);
+}
+
 static void test_make_classifier_rejections() {
     check("make_classifier rejects missing id",
           throws_invalid_arg([] {
@@ -437,6 +465,7 @@ int main() {
     test_make_zero_shot_classifier();
     test_make_zero_shot_classifier_rejections();
     test_zero_shot_classifier_without_service_fails_soft();
+    test_zero_shot_classifier_rejects_mismatched_label_set();
     test_make_classifier_rejections();
     test_make_classifiers();
     test_leaf_factory_classifier_refs();
