@@ -208,6 +208,96 @@ static void test_directory_removal(TestResult& r) {
     r.ok("directory removal graceful stop");
 }
 
+// Test 7: A file written in a pre-existing nested folder is detected
+static void test_nested_change(TestResult& r) {
+    fs::path dir = make_temp_dir();
+    fs::path nested = fs::path(dir) / "nested_existing" / "refs";
+    fs::create_directories(nested);
+    std::atomic<int> call_count{0};
+
+    {
+        DirectoryWatcher watcher(dir.string());
+        watcher.set_callback([&call_count]() { ++call_count; });
+        watcher.start();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::ofstream{nested / "main"} << "commit-b";
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    }
+
+    fs::remove_all(fs::path(dir) / "nested_existing");
+    if (call_count.load() > 0) {
+        r.ok("nested folder change detection");
+    } else {
+        r.fail("nested folder change detection (callback never fired)");
+    }
+}
+
+// Test 8: A folder created after start() is watched too
+static void test_new_folder_is_watched(TestResult& r) {
+    fs::path dir = make_temp_dir();
+    fs::path created = fs::path(dir) / "nested_created";
+    std::atomic<int> call_count{0};
+    int after_create = 0;
+
+    {
+        DirectoryWatcher watcher(dir.string());
+        watcher.set_callback([&call_count]() { ++call_count; });
+        watcher.start();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        fs::create_directories(created);
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        after_create = call_count.load();
+
+        std::ofstream{created / "model.gguf"} << "GGUF";
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    }
+
+    fs::remove_all(created);
+    if (call_count.load() > after_create) {
+        r.ok("new folder is watched");
+    } else {
+        r.fail("new folder is watched (write inside it was missed)");
+    }
+}
+
+#ifdef __linux__
+// Test 9: A file still being written is not announced until it is closed
+static void test_open_file_waits_for_close(TestResult& r) {
+    fs::path dir = make_temp_dir();
+    fs::path nested = fs::path(dir) / "nested_download";
+    fs::create_directories(nested);
+    std::atomic<int> call_count{0};
+    int while_open = 0;
+
+    {
+        DirectoryWatcher watcher(dir.string());
+        watcher.set_callback([&call_count]() { ++call_count; });
+        watcher.start();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        {
+            std::ofstream file(nested / "model.gguf");
+            for (int i = 0; i < 6; ++i) {
+                file << "GGUF" << std::flush;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            while_open = call_count.load();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    }
+
+    fs::remove_all(nested);
+    if (while_open == 0 && call_count.load() > 0) {
+        r.ok("open file waits for close");
+    } else {
+        r.fail("open file waits for close (calls while open=" + std::to_string(while_open) +
+               ", total=" + std::to_string(call_count.load()) + ")");
+    }
+}
+#endif
+
 int main() {
     TestResult r;
 
@@ -219,6 +309,11 @@ int main() {
     test_nonexistent_dir(r);
     test_debounce(r);
     test_directory_removal(r);
+    test_nested_change(r);
+    test_new_folder_is_watched(r);
+#ifdef __linux__
+    test_open_file_waits_for_close(r);
+#endif
 
     printf("\n%d/%d tests passed\n", r.passed, r.passed + r.failed);
     return r.failed == 0 ? 0 : 1;
