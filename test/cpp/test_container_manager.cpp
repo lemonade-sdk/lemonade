@@ -3,7 +3,10 @@
 // checks every container backend's descriptor and pin.
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -239,6 +242,40 @@ void test_helpers() {
               !lemon::backends::parse_container_pin("b0001"));
 }
 
+void test_halogen_kernel_check() {
+    // A Strix Halo on Linux 7.0: SVM set, cwsr_size = 16384 + 40 * 479232.
+    const std::string node = "gfx_target_version 110501\ncapability 671326848\n"
+                             "simd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n";
+    check("Halogen passes a kernel with SVM and the gfx1151 fixes",
+          !lemon::backends::halogen::check_kfd_node(node));
+    const auto no_svm = lemon::backends::halogen::check_kfd_node(
+        "capability 537109120\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n");
+    check("Halogen refuses a kernel built without SVM",
+          no_svm && no_svm->action == "Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM");
+    const auto old_cwsr = lemon::backends::halogen::check_kfd_node(
+        "capability 671326848\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19169280\n");
+    check("Halogen refuses a kernel whose CWSR size predates the gfx1151 fixes",
+          old_cwsr && old_cwsr->action == "Install Linux 6.18.4 or newer");
+    // The repository as of 2026-10-01, which also carries v2, ngram and mtp checkpoints.
+    const auto bundle = lemon::backends::ops_for("halogen")->select_checkpoint_files(
+        "qwen38-flash-next-w4b.hgn",
+        {".gitattributes", "README.md", "halogen.jpg", "qwen38-flash-next-mtp.hgn",
+         "qwen38-flash-next-ngram.hgn", "qwen38-flash-next-v2.hgn",
+         "qwen38-flash-next-vision.hgn", "qwen38-flash-next-w4b.hgn",
+         "qwen38-flash-next-w4b.overlay-speed.hgn", "qwen38-flash-next-w4b.overlay.hgn",
+         "tokenizer/tokenizer.json", "tokenizer/vocab.json"});
+    check("a Halogen download is the checkpoint, its overlays, the vision tower and the tokenizer",
+          bundle && std::set<std::string>(bundle->begin(), bundle->end()) ==
+                        std::set<std::string>{"qwen38-flash-next-vision.hgn",
+                                              "qwen38-flash-next-w4b.hgn",
+                                              "qwen38-flash-next-w4b.overlay-speed.hgn",
+                                              "qwen38-flash-next-w4b.overlay.hgn",
+                                              "tokenizer/tokenizer.json", "tokenizer/vocab.json"});
+    check("Halogen refuses a kernel too old to report the CWSR sizes",
+          lemon::backends::halogen::check_kfd_node("capability 671326848\nsimd_count 80\n")
+              .has_value());
+}
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -270,6 +307,7 @@ int main() {
     test_tool_choice_and_setup();
     test_install_commands();
     test_helpers();
+    test_halogen_kernel_check();
     test_descriptors_and_pins();
 
     if (failures == 0) {

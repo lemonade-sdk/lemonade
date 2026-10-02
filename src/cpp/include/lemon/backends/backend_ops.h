@@ -161,14 +161,22 @@ public:
         (void)default_install_command;
         return std::nullopt;
     }
+
+    // An extra host requirement of `backend`, as the failure and its fix, or
+    // nullopt when met. Default: none.
+    virtual std::optional<utils::SetupFailure> check_container_host(
+        const std::string& backend) const {
+        (void)backend;
+        return std::nullopt;
+    }
 };
 
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
 
 // The first setup check that fails for the container backend `recipe:backend`,
-// or nullopt: the SELinux check when its devices include /dev/kfd, then the
-// checks for its install type.
+// or nullopt: the SELinux check when its devices include /dev/kfd, then its
+// check_container_host(), then the checks for its install type.
 std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
                                                            const std::string& backend);
 

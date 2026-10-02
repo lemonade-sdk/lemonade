@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/utils/path_utils.h"
 
@@ -141,6 +142,9 @@ std::optional<utils::SetupFailure> container_setup_failure(const std::string& re
         if (auto failure = manager.check_selinux()) {
             return failure;
         }
+    }
+    if (auto failure = ops_for(recipe)->check_container_host(backend)) {
+        return failure;
     }
     return manager.check_setup();
 }
