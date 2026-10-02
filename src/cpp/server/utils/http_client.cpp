@@ -345,6 +345,7 @@ struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;
     bool stalled = false;
+    long stalled_after = 0;
     bool waiting_for_first_byte = false;
     long current_response_code = 0;
     int no_progress_timeout = 0;
@@ -443,6 +444,7 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 
         if (idle_seconds >= stall_timeout) {
             data->stalled = true;
+            data->stalled_after = stall_timeout;
             return 1;
         }
     }
@@ -497,6 +499,17 @@ bool apply_http_security_policy(
         return set(CURLOPT_MAXREDIRS, 5L) &&
                set_proto(CURLOPT_REDIR_PROTOCOLS_STR, CURLOPT_REDIR_PROTOCOLS, redirect_protocols, redir_mask);
     };
+
+#ifdef _WIN32
+    // Schannel (the Windows TLS backend) checks certificate revocation by
+    // default and hard-fails when no CRL/OCSP endpoint is reachable, which is
+    // the common case for internal/private CAs. Best-effort still checks
+    // revocation when the info is available; it only stops treating an
+    // absent CRL/OCSP responder as fatal.
+    if (!set(CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_REVOKE_BEST_EFFORT))) {
+        return false;
+    }
+#endif
 
     switch (policy) {
         case HttpSecurityPolicy::TrustedLoopback:
@@ -916,7 +929,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    const int no_progress_timeout = options.no_progress_timeout;
+    const int no_progress_timeout = static_cast<int>(effective_timeout(options.no_progress_timeout));
     std::unique_ptr<ProgressData> prog_data;
     if (callback || no_progress_timeout > 0) {
         prog_data = std::make_unique<ProgressData>();
@@ -972,7 +985,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         result.can_resume = current_file_size > 0;
         std::ostringstream oss;
         oss << "Download stalled: no bytes received for "
-            << no_progress_timeout << " seconds";
+            << prog_data->stalled_after << " seconds";
         if (current_file_size > 0) {
             oss << "\n  Partial file size: " << (current_file_size / (1024.0 * 1024.0)) << " MB (resumable)";
         }
