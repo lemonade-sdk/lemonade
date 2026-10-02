@@ -1163,15 +1163,69 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
+// A model kept in a Hugging Face or ModelScope cache lives under
+// <models--org--repo>/snapshots/<commit>/, so its folder is an opaque commit
+// hash. An empty name means the folder is not in a cache with a live revision.
+struct CacheRepoNaming {
+    std::string name;
+    std::string qualifier;
+    std::string variant_prefix;
+};
+
+static CacheRepoNaming cache_repo_naming(const fs::path& dir_path,
+                                         const fs::path& search_path) {
+    fs::path snapshot_dir;
+    for (fs::path cur = dir_path; cur.has_filename(); cur = cur.parent_path()) {
+        if (cur.parent_path().filename() == "snapshots") {
+            snapshot_dir = cur;
+            break;
+        }
+        if (cur == search_path) break;
+    }
+    if (snapshot_dir.empty()) return {};
+
+    const fs::path cache_root = snapshot_dir.parent_path().parent_path();
+    const std::string cache_dir_name = cache_root.filename().string();
+    std::string encoded;
+    for (const std::string prefix : {"modelscope--models--", "models--"}) {
+        if (cache_dir_name.rfind(prefix, 0) == 0) {
+            encoded = cache_dir_name.substr(prefix.size());
+            break;
+        }
+    }
+
+    // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo". Only the
+    // first separator is the org boundary; the rest belongs to the repo name.
+    const size_t sep = encoded.find("--");
+    const std::string org = sep == std::string::npos ? "" : encoded.substr(0, sep);
+    const std::string repo = sep == std::string::npos ? encoded : encoded.substr(sep + 2);
+    if (repo.empty()) return {};
+
+    const fs::path live = active_hf_snapshot_path(cache_root);
+    if (live.empty()) return {};
+
+    CacheRepoNaming out;
+    out.name = dir_path == snapshot_dir ? repo : repo + "-" + dir_path.filename().string();
+    if (live != snapshot_dir) {
+        // Names the live revision uses stay with it, whatever order the
+        // revisions are discovered in.
+        out.variant_prefix = snapshot_dir.filename().string() + "-";
+        out.name = out.variant_prefix + out.name;
+    }
+    // Qualifying a collision with the folder would bring back the commit hash.
+    out.qualifier = org.empty() ? out.name : org;
+    return out;
+}
+
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
-// newcomer with the folder that contains it keeps both and leaves the first
-// model's id alone. Ids and kept folder names share one namespace, so a
-// qualified id can never shadow a folder name another model already owns.
+// newcomer keeps both and leaves the first model's id alone. Ids and kept
+// folder names share one namespace, so a qualified id can never shadow a
+// folder name another model already owns.
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
                             std::set<std::string>& claimed_names,
                             const std::string& base_name,
-                            const fs::path& folder,
+                            const std::string& qualifier,
                             ModelInfo info,
                             const std::set<std::string>* reserved_ids = nullptr) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
@@ -1181,7 +1235,7 @@ static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
     };
     std::string name = base_name;
     if (taken(name)) {
-        const std::string qualified = folder.filename().string() + "-" + base_name;
+        const std::string qualified = qualifier + "-" + base_name;
         name = qualified;
         for (int n = 2; taken(name); ++n) {
             name = qualified + "-" + std::to_string(n);
@@ -1312,7 +1366,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
-        add_extra_model(discovered, claimed_names, base_name, gguf_path.parent_path(),
+        add_extra_model(discovered, claimed_names, base_name,
+                        gguf_path.parent_path().filename().string(),
                         std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
@@ -1399,6 +1454,13 @@ void ModelManager::discover_extra_models_in_directory(
     std::set<std::string>& claimed_names) const {
 
     std::string dir_name = dir_path.filename().string();
+    std::string qualifier = dir_name;
+    std::string folder_qualifier = dir_path.parent_path().filename().string();
+    const CacheRepoNaming cache = cache_repo_naming(dir_path, search_path);
+    if (!cache.name.empty()) {
+        dir_name = cache.name;
+        qualifier = folder_qualifier = cache.qualifier;
+    }
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
@@ -1466,7 +1528,9 @@ void ModelManager::discover_extra_models_in_directory(
             if (it == model_file_by_name.end()) continue;
 
             const fs::path& path = it->second;
-            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + visible_extra_variant_name(v);
+            const std::string variant_name =
+                cache.variant_prefix + visible_extra_variant_name(v);
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + variant_name;
 
             ModelInfo info = init_extra_model_info(variant_id);
             info.checkpoints["main"] = path.string();
@@ -1486,12 +1550,13 @@ void ModelManager::discover_extra_models_in_directory(
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
-            if (path == main_model_path && claimed_names.insert(dir_name).second) {
+            if (path == main_model_path && cache.name.empty() &&
+                claimed_names.insert(dir_name).second) {
                 info.input_aliases.push_back(dir_name);
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            add_extra_model(discovered, claimed_names, visible_extra_variant_name(v), dir_path,
+            add_extra_model(discovered, claimed_names, variant_name, qualifier,
                             std::move(info), deployment_label.empty()
                                 ? nullptr
                                 : &reserved_extra_model_ids());
@@ -1515,7 +1580,7 @@ void ModelManager::discover_extra_models_in_directory(
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, claimed_names, dir_name, dir_path.parent_path(),
+        add_extra_model(discovered, claimed_names, dir_name, folder_qualifier,
                         std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
