@@ -1,7 +1,12 @@
 #pragma once
 
+#include <algorithm>
+#include <iterator>
 #include <map>
+#include <set>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include "lemon/routing_policy.h"
 
@@ -11,10 +16,18 @@
 // instead of the live Router so they run with no backend subprocess.
 //
 // It returns fixed, caller-configured outputs:
-//   - embed(model, text)          -> a fixed vector (default: one configured per
-//                                    model, else a deterministic unit vector).
+//   - embed(model, text)          -> a fixed vector (per (model, text), else a
+//                                    per-model default).
 //   - run_classifier(model, text) -> a fixed label->score map per model.
 //   - chat(model, prompt, input)  -> a fixed reply per model.
+//
+// A model can also be marked as failing, so callers can exercise on_error.
+//
+// A call with no configured stub is recorded in unexpected_calls() and served a
+// placeholder default (unit vector / empty map / empty string). A strict caller
+// (the conformance corpus) checks unexpected_calls() is empty, so a missing stub
+// fails the test instead of passing on that default. The mirror case — a stub
+// configured but never called — is reported by unused_stubs().
 //
 // Nothing here implements routing or scoring logic; tests dictate every output.
 
@@ -26,6 +39,7 @@ public:
     // Configure a fixed embedding vector returned for `model`.
     void set_embedding(const std::string& model, std::vector<float> vec) {
         embeddings_[model] = std::move(vec);
+        declare("embed", model);
     }
 
     // Configure a fixed embedding for a specific (model, text) pair. Takes
@@ -34,6 +48,7 @@ public:
     void set_embedding(const std::string& model, const std::string& text,
                        std::vector<float> vec) {
         text_embeddings_[model][text] = std::move(vec);
+        declare("embed", model + " / " + text);
     }
 
     // Number of embed() calls observed for `text` (across all models).
@@ -49,11 +64,48 @@ public:
     void set_classifier_scores(const std::string& model,
                                std::map<std::string, double> scores) {
         classifier_scores_[model] = std::move(scores);
+        declare("run_classifier", model);
     }
 
     // Configure a fixed chat reply returned for `model`.
     void set_chat_reply(const std::string& model, std::string reply) {
         chat_replies_[model] = std::move(reply);
+        declare("chat", model);
+    }
+
+    // Make a service throw, so the owning classifier fails (Score{ok=false})
+    // and its on_error applies. embed fails per (model, text) since its answers
+    // are keyed that way; run_classifier / chat fail per model.
+    void set_embed_failure(const std::string& model, const std::string& text) {
+        failing_embeds_.insert({model, text});
+        declare("embed", model + " / " + text);
+    }
+
+    void set_classifier_failure(const std::string& model) {
+        failing_classifiers_.insert(model);
+        declare("run_classifier", model);
+    }
+
+    void set_chat_failure(const std::string& model) {
+        failing_chats_.insert(model);
+        declare("chat", model);
+    }
+
+    // A call with no configured stub is recorded here instead of being served a
+    // placeholder default. A caller that must declare every backend answer (the
+    // conformance corpus) checks this is empty and fails the test otherwise, so a
+    // missing stub cannot pass on a default value.
+    const std::vector<std::string>& unexpected_calls() const { return unexpected_calls_; }
+
+    // Configured stubs that no call consumed, sorted. The same strict caller checks
+    // this is empty: an answer the engine never asks for means the case declares a
+    // model, text or service it does not exercise, so a typo'd or stale stub cannot
+    // sit in the corpus looking like coverage.
+    std::vector<std::string> unused_stubs() const {
+        std::vector<std::string> unused;
+        std::set_difference(declared_stubs_.begin(), declared_stubs_.end(), used_stubs_.begin(),
+                            used_stubs_.end(), std::back_inserter(unused));
+        return unused;
     }
 
     // Build a ClassifierServices wired to this fake. The returned struct copies
@@ -65,36 +117,85 @@ public:
         svc.embed = [self](const std::string& model, const std::string& text) {
             ++self->total_embed_calls_;
             ++self->embed_calls_[text];
+            if (self->failing_embeds_.count({model, text}) != 0) {
+                self->mark_used("embed", model + " / " + text);
+                throw std::runtime_error("fake embed failure: " + model + " / " + text);
+            }
             auto model_it = self->text_embeddings_.find(model);
             if (model_it != self->text_embeddings_.end()) {
                 auto text_it = model_it->second.find(text);
-                if (text_it != model_it->second.end()) return text_it->second;
+                if (text_it != model_it->second.end()) {
+                    self->mark_used("embed", model + " / " + text);
+                    return text_it->second;
+                }
             }
             auto it = self->embeddings_.find(model);
-            if (it != self->embeddings_.end()) return it->second;
+            if (it != self->embeddings_.end()) {
+                self->mark_used("embed", model);
+                return it->second;
+            }
+            self->record_unexpected("embed", model + " / " + text);
             return std::vector<float>{1.0f, 0.0f, 0.0f};
         };
         svc.run_classifier = [self](const std::string& model, const std::string&) {
+            if (self->failing_classifiers_.count(model) != 0) {
+                self->mark_used("run_classifier", model);
+                throw std::runtime_error("fake classifier failure: " + model);
+            }
             auto it = self->classifier_scores_.find(model);
-            if (it != self->classifier_scores_.end()) return it->second;
+            if (it != self->classifier_scores_.end()) {
+                self->mark_used("run_classifier", model);
+                return it->second;
+            }
+            self->record_unexpected("run_classifier", model);
             return std::map<std::string, double>{};
         };
         svc.chat = [self](const std::string& model, const std::string&,
                           const std::string&) {
+            if (self->failing_chats_.count(model) != 0) {
+                self->mark_used("chat", model);
+                throw std::runtime_error("fake chat failure: " + model);
+            }
             auto it = self->chat_replies_.find(model);
-            if (it != self->chat_replies_.end()) return it->second;
+            if (it != self->chat_replies_.end()) {
+                self->mark_used("chat", model);
+                return it->second;
+            }
+            self->record_unexpected("chat", model);
             return std::string{};
         };
         return svc;
     }
 
 private:
+    static std::string stub_key(const std::string& service, const std::string& target) {
+        return service + "(" + target + ")";
+    }
+
+    void declare(const std::string& service, const std::string& target) {
+        declared_stubs_.insert(stub_key(service, target));
+    }
+
+    void mark_used(const std::string& service, const std::string& target) {
+        used_stubs_.insert(stub_key(service, target));
+    }
+
+    void record_unexpected(const std::string& service, const std::string& target) {
+        unexpected_calls_.push_back(stub_key(service, target));
+    }
+
+    std::vector<std::string> unexpected_calls_;
+    std::set<std::string> declared_stubs_;
+    std::set<std::string> used_stubs_;
     std::map<std::string, std::vector<float>> embeddings_;
     std::map<std::string, std::map<std::string, std::vector<float>>> text_embeddings_;
     std::map<std::string, int> embed_calls_;
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
     std::map<std::string, std::string> chat_replies_;
+    std::set<std::pair<std::string, std::string>> failing_embeds_;
+    std::set<std::string> failing_classifiers_;
+    std::set<std::string> failing_chats_;
 };
 
 } // namespace testing
