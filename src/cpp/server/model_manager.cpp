@@ -5568,7 +5568,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.max_retry_delay_ms = 120000;
         download_opts.resume_partial = true;
         download_opts.low_speed_limit = 1000;
-        download_opts.low_speed_time = 60;
+        download_opts.low_speed_time = static_cast<int>(utils::HttpClient::get_default_timeout());
         download_opts.connect_timeout = 60;
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
