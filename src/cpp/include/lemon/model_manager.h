@@ -558,7 +558,7 @@ private:
         const std::vector<std::filesystem::path>& gguf_files,
         std::map<std::string, ModelInfo>& discovered,
         const std::filesystem::path& search_path,
-        std::set<std::string>& folder_ids_kept) const;
+        std::set<std::string>& claimed_names) const;
 
     json server_models_;
     json user_models_;
