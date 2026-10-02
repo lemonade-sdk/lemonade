@@ -226,6 +226,33 @@ int main() {
             check_int("extract_telemetry: responses output_tokens", tel.output_tokens, 40);
         }
 
+        // 1a'. accumulate_telemetry across a stream: content chunks counted, usage flags reporting
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {\"content\": \"Hel\"}}]}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {\"content\": \"lo\"}}]}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {}, \"finish_reason\": \"stop\"}]}"), tel);
+            check_int("accumulate_telemetry: counts content chunks", tel.output_chunks, 2);
+            check_bool("accumulate_telemetry: no usage yet", tel.tokens_reported, false);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [], \"usage\": {\"prompt_tokens\": 7, \"completion_tokens\": 2}}"), tel);
+            check_bool("accumulate_telemetry: usage marks tokens reported", tel.tokens_reported, true);
+            check_int("accumulate_telemetry: usage output tokens", tel.output_tokens, 2);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.output_text.delta\", \"delta\": \"Hi\"}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.completed\", \"response\": {\"usage\": {\"input_tokens\": 9, \"output_tokens\": 4}}}"), tel);
+            check_int("accumulate_telemetry: responses delta counted", tel.output_chunks, 1);
+            check_bool("accumulate_telemetry: responses usage reported", tel.tokens_reported, true);
+            check_int("accumulate_telemetry: responses input tokens", tel.input_tokens, 9);
+        }
+
         // 1b. Cached tokens from usage.prompt_tokens_details (OpenAI-wire)
         {
             std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 8}}}\n";

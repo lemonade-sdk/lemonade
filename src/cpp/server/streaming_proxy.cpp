@@ -12,7 +12,26 @@ namespace lemon {
 
 namespace {
 
+bool has_output_text(const nlohmann::json& chunk) {
+    if (chunk.contains("choices") && chunk["choices"].is_array() && !chunk["choices"].empty()) {
+        const auto& choice = chunk["choices"][0];
+        if (!choice.is_object()) return false;
+        const auto& delta = choice.contains("delta") && choice["delta"].is_object() ? choice["delta"] : choice;
+        for (const char* key : {"content", "reasoning_content", "text"}) {
+            if (delta.contains(key) && delta[key].is_string() && !delta[key].get_ref<const std::string&>().empty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return chunk.contains("type") && chunk["type"] == "response.output_text.delta";
+}
+
 void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
+    if (has_output_text(chunk)) {
+        ++telemetry.output_chunks;
+    }
+
     nlohmann::json usage;
     if (chunk.contains("usage")) {
         usage = chunk["usage"];
@@ -21,6 +40,7 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (usage.is_object()) {
+        telemetry.tokens_reported = true;
         if (usage.contains("prompt_tokens")) {
             telemetry.input_tokens = usage["prompt_tokens"].get<int>();
         } else if (usage.contains("input_tokens")) {
@@ -60,6 +80,7 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (timings.is_object()) {
+        telemetry.tokens_reported = true;
         if (timings.contains("prompt_n")) {
             telemetry.input_tokens = timings["prompt_n"].get<int>();
         }
@@ -257,6 +278,7 @@ void StreamingProxy::forward_sse_stream(
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
+            telemetry.client_disconnected = true;
         } else if (transport_interrupted) {
             if (!has_done_marker) {
                 // This is the important crash path: HTTP headers may have been sent and
@@ -470,6 +492,10 @@ void StreamingProxy::forward_byte_stream(
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
     }
     sink.done();
+}
+
+void StreamingProxy::accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry) {
+    extract_telemetry_from_chunk(chunk, telemetry);
 }
 
 StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::json& payload) {

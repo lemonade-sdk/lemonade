@@ -720,11 +720,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             bool streaming_mode = false;
             bool first_chunk = true;
 
-            int input_tokens = 0;
-            int output_tokens = 0;
-            int cache_tokens = -1;
+            StreamingProxy::TelemetryData telemetry;
             double time_to_first_token = 0.0;
-            double tokens_per_second = 0.0;
             bool has_first_token = false;
             const auto start_time = std::chrono::steady_clock::now();
             std::string sse_line_buffer;
@@ -736,22 +733,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 }
                 if (!json_str.empty() && json_str != "[DONE]") {
                     try {
-                        auto chunk = json::parse(json_str);
-                        if (chunk.contains("usage") && !chunk["usage"].is_null()) {
-                            auto usage = chunk["usage"];
-                            if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number()) {
-                                input_tokens = usage["prompt_tokens"].get<int>();
-                            }
-                            if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number()) {
-                                output_tokens = usage["completion_tokens"].get<int>();
-                            }
-                            if (usage.contains("prompt_tokens_details") &&
-                                usage["prompt_tokens_details"].is_object() &&
-                                usage["prompt_tokens_details"].contains("cached_tokens") &&
-                                usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
-                                cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
-                            }
-                        }
+                        StreamingProxy::accumulate_telemetry(json::parse(json_str), telemetry);
                     } catch (...) {}
                 }
             };
@@ -844,7 +826,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 if (result.curl_code == CURLE_WRITE_ERROR) {
                     LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
-                        telemetry_callback(error_telemetry("Client disconnected during stream"));
+                        telemetry.error_message = "Client disconnected during stream";
+                        telemetry.client_disconnected = true;
+                        telemetry_callback(telemetry);
                     }
                     return;
                 } else if (result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR) {
@@ -893,19 +877,14 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             sink.done();
 
             if (telemetry_callback) {
-                if (output_tokens > 0 && time_to_first_token > 0.0) {
+                if (telemetry.output_tokens > 0 && time_to_first_token > 0.0) {
                     double duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
                     double generation_duration = duration - time_to_first_token;
                     if (generation_duration > 0.0) {
-                        tokens_per_second = output_tokens / generation_duration;
+                        telemetry.tokens_per_second = telemetry.output_tokens / generation_duration;
                     }
                 }
-                StreamingProxy::TelemetryData telemetry;
-                telemetry.input_tokens = input_tokens;
-                telemetry.output_tokens = output_tokens;
-                telemetry.cache_tokens = cache_tokens;
                 telemetry.time_to_first_token = time_to_first_token;
-                telemetry.tokens_per_second = tokens_per_second;
                 telemetry_callback(telemetry);
             }
         } else {
