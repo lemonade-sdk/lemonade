@@ -2471,6 +2471,9 @@ if(BUILD_TESTING AND EXISTS "${_HF_UPDATE_CHECK_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
+    target_compile_definitions(test_hf_update_check PRIVATE
+        SERVER_MODELS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
+    )
     target_link_libraries(test_hf_update_check PRIVATE lemonade-server-core)
     add_dependencies(test_hf_update_check copy_resources)
 
