@@ -285,23 +285,6 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 /// The caller should check the return value and update RecipeOptions accordingly.
 inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
                                       const ModelInfo& model_info) {
-    // Cloud models have no local weights or KV buffer; use their declared max_context_window
-    if (model_info.recipe == "cloud") {
-        if (model_info.max_context_window > 0) {
-            return model_info.max_context_window;
-        }
-    }
-
-    // Optional environment variable override (e.g. LEMONADE_CTX_SIZE=262144)
-    if (const char* env_ctx = std::getenv("LEMONADE_CTX_SIZE")) {
-        try {
-            int64_t val = std::stoll(env_ctx);
-            if (val > 0) {
-                return val;
-            }
-        } catch (...) {}
-    }
-
     json ctx_json = effective_options.get_option("ctx_size");
     int64_t ctx_size = ctx_json.is_number() ? ctx_json.get<int64_t>() : -1;
 

@@ -533,16 +533,13 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     if (creds.api_key.empty() || creds.base_url.empty()) {
         return missing_creds_error();
     }
-    uint64_t task_id = next_task_id_.fetch_add(1);
-    LOG(INFO, "Cloud") << "[task " << task_id << "] Forwarding request to " << provider_
-                       << " (" << upstream_model_ << ")" << std::endl;
     std::string url = upstream_url(creds.base_url, path);
     auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
     session::apply_forwardable_session(headers);
 
     auto cancel_token = current_request_cancel_context();
     if (cancel_token.cancelled()) {
-        LOG(WARNING, "Cloud") << "[task " << task_id << "] Client request already cancelled before forwarding cloud request; aborting." << std::endl;
+        LOG(WARNING, "CloudServer") << "Client request already cancelled before forwarding cloud request; aborting." << std::endl;
         return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     }
 
@@ -555,11 +552,9 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             creds.policy,
             cancel_token);
         if (response.status_code == 200) {
-            auto parsed = json::parse(response.body);
-            std::string id_str = parsed.value("id", "");
-            LOG(INFO, "Cloud") << "[task " << task_id << "] Completed"
-                               << (!id_str.empty() ? " (id=" + id_str + ")" : "") << std::endl;
-            return parsed;
+            // Return the body unchanged so the server.cpp handler picks up the
+            // `usage` telemetry like every other backend.
+            return json::parse(response.body);
         }
 
         json error_details;
@@ -568,7 +563,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
         } catch (...) {
             error_details = response.body;
         }
-        LOG(ERROR, "Cloud") << "[task " << task_id << "] Provider returned status " << response.status_code << std::endl;
+        LOG(ERROR, "Cloud") << "Provider returned status " << response.status_code << std::endl;
         return ErrorResponse::create(
             "cloud (" + provider_ + ") request failed",
             ErrorType::BACKEND_ERROR,
@@ -578,10 +573,10 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             }
         );
     } catch (const utils::HttpClientCancellationException& e) {
-        LOG(WARNING, "Cloud") << "[task " << task_id << "] Cloud request aborted due to client disconnect: " << e.what() << std::endl;
+        LOG(WARNING, "CloudServer") << "Cloud request aborted due to client disconnect: " << e.what() << std::endl;
         return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
-        LOG(ERROR, "Cloud") << "[task " << task_id << "] " << e.what() << std::endl;
+        LOG(ERROR, "Cloud") << e.what() << std::endl;
         return ErrorResponse::from_exception(NetworkException(e.what()));
     }
 }
@@ -614,6 +609,16 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             bool sse,
                                             long timeout_seconds,
                                             TelemetryCallback telemetry_callback) {
+    forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds, telemetry_callback, 15000);
+}
+
+void CloudServer::forward_streaming_request(const std::string& endpoint,
+                                            const std::string& request_body,
+                                            httplib::DataSink& sink,
+                                            bool sse,
+                                            long timeout_seconds,
+                                            TelemetryCallback telemetry_callback,
+                                            long heartbeat_interval_ms) {
     // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
     // usage block in the final pre-[DONE] chunk, but only when the request
     // sets stream_options.include_usage. When the client did not ask for it,
@@ -710,10 +715,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     std::string url = upstream_url(creds.base_url, endpoint);
 
-    uint64_t task_id = next_task_id_.fetch_add(1);
-    LOG(INFO, "Cloud") << "[task " << task_id << "] Forwarding " << (sse ? "streaming " : "")
-                       << "request to " << provider_ << " (" << upstream_model_ << ")" << std::endl;
-
     auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
     session::apply_forwardable_session(headers);
 
@@ -733,18 +734,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             bool streaming_mode = false;
             bool first_chunk = true;
 
-            int input_tokens = 0;
-            int output_tokens = 0;
-            int cache_tokens = -1;
-            double time_to_first_token = 0.0;
-            double tokens_per_second = 0.0;
-            double reported_ttft = 0.0;
-            double reported_tps = 0.0;
-            double reported_pp = 0.0;
-            int reported_cache = -1;
-            int draft_n = 0;
-            int draft_accepted = -1;
-            std::string upstream_id;
+            StreamingProxy::TelemetryData telemetry;
+            telemetry.model_name = model_name_;
+            double measured_ttft = 0.0;
             bool has_first_token = false;
             const auto start_time = std::chrono::steady_clock::now();
             std::string sse_line_buffer;
@@ -757,46 +749,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 if (!json_str.empty() && json_str != "[DONE]") {
                     try {
                         auto chunk = json::parse(json_str);
-                        if (chunk.contains("id") && chunk["id"].is_string() && upstream_id.empty()) {
-                            upstream_id = chunk["id"].get<std::string>();
-                        }
-                        if (chunk.contains("usage") && !chunk["usage"].is_null()) {
-                            auto usage = chunk["usage"];
-                            if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number()) {
-                                input_tokens = usage["prompt_tokens"].get<int>();
-                            }
-                            if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number()) {
-                                output_tokens = usage["completion_tokens"].get<int>();
-                            }
-                            if (usage.contains("prompt_tokens_details") &&
-                                usage["prompt_tokens_details"].is_object() &&
-                                usage["prompt_tokens_details"].contains("cached_tokens") &&
-                                usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
-                                cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
-                            }
-                        }
-                        // llama.cpp-style timings, sent by llama.cpp-compatible servers such as gufo.
-                        if (chunk.contains("timings") && chunk["timings"].is_object()) {
-                            const auto& timings = chunk["timings"];
-                            if (timings.contains("prompt_ms") && timings["prompt_ms"].is_number()) {
-                                reported_ttft = timings["prompt_ms"].get<double>() / 1000.0;
-                            }
-                            if (timings.contains("predicted_per_second") && timings["predicted_per_second"].is_number()) {
-                                reported_tps = timings["predicted_per_second"].get<double>();
-                            }
-                            if (timings.contains("prompt_per_second") && timings["prompt_per_second"].is_number()) {
-                                reported_pp = timings["prompt_per_second"].get<double>();
-                            }
-                            if (timings.contains("cache_n") && timings["cache_n"].is_number()) {
-                                reported_cache = timings["cache_n"].get<int>();
-                            }
-                            if (timings.contains("draft_n") && timings["draft_n"].is_number()) {
-                                draft_n = timings["draft_n"].get<int>();
-                            }
-                            if (timings.contains("draft_n_accepted") && timings["draft_n_accepted"].is_number()) {
-                                draft_accepted = timings["draft_n_accepted"].get<int>();
-                            }
-                        }
+                        StreamingProxy::extract_telemetry_from_chunk(chunk, telemetry);
                     } catch (...) {}
                 }
             };
@@ -828,7 +781,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             };
 
             std::chrono::steady_clock::time_point last_activity_time = start_time;
-            constexpr int64_t heartbeat_interval_ms = 15000;
 
             auto result = utils::HttpClient::post_stream(
                 url,
@@ -851,7 +803,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
                         if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
                             has_first_token = true;
-                            time_to_first_token = std::chrono::duration<double>(
+                            measured_ttft = std::chrono::duration<double>(
                                 std::chrono::steady_clock::now() - start_time).count();
                         }
 
@@ -892,23 +844,29 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                         return true;
                     }
 
-                    const auto now = std::chrono::steady_clock::now();
-                    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - last_activity_time).count();
-                    if (elapsed >= heartbeat_interval_ms) {
-                        static constexpr const char* heartbeat = ": ping\n\n";
-                        if (!sink.write(heartbeat, std::strlen(heartbeat))) {
-                            return true;
+                    if (heartbeat_interval_ms > 0) {
+                        const auto now = std::chrono::steady_clock::now();
+                        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now - last_activity_time).count();
+                        if (elapsed >= heartbeat_interval_ms) {
+                            static constexpr const char* heartbeat = ": ping\n\n";
+                            if (!sink.write(heartbeat, std::strlen(heartbeat))) {
+                                return true;
+                            }
+                            last_activity_time = now;
                         }
-                        last_activity_time = now;
                     }
                     return false;
                 }
             );
 
+            const bool client_disconnected =
+                result.curl_code == CURLE_WRITE_ERROR ||
+                result.curl_code == CURLE_ABORTED_BY_CALLBACK;
+
             if (result.curl_code != CURLE_OK) {
-                if (result.curl_code == CURLE_WRITE_ERROR) {
-                    LOG(WARNING, "Cloud") << "[task " << task_id << "] Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
+                if (client_disconnected) {
+                    LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
                         telemetry_callback(error_telemetry("Client disconnected during stream"));
                     }
@@ -923,7 +881,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             }
 
             if (result.status_code != 200) {
-                LOG(ERROR, "Cloud") << "[task " << task_id << "] Provider returned status " << result.status_code
+                LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code
                                     << ", body: " << body_buffer.substr(0, 200) << std::endl;
                 json extra = {{"status_code", result.status_code}};
                 std::string error_msg = sse_error(
@@ -962,38 +920,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             }
             sink.done();
 
-            if (output_tokens > 0 && time_to_first_token > 0.0) {
+            if (telemetry.time_to_first_token <= 0.0 && measured_ttft > 0.0) {
+                telemetry.time_to_first_token = measured_ttft;
+            }
+            if (telemetry.tokens_per_second <= 0.0 && telemetry.output_tokens > 0 && telemetry.time_to_first_token > 0.0) {
                 double duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
-                double generation_duration = duration - time_to_first_token;
+                double generation_duration = duration - telemetry.time_to_first_token;
                 if (generation_duration > 0.0) {
-                    tokens_per_second = output_tokens / generation_duration;
+                    telemetry.tokens_per_second = telemetry.output_tokens / generation_duration;
                 }
             }
-            StreamingProxy::TelemetryData telemetry;
-            telemetry.model_name = model_name_;
-            telemetry.input_tokens = input_tokens;
-            telemetry.output_tokens = output_tokens;
-            telemetry.cache_tokens = cache_tokens;
-            telemetry.time_to_first_token = reported_ttft > 0.0 ? reported_ttft : time_to_first_token;
-            telemetry.tokens_per_second = reported_tps > 0.0 ? reported_tps : tokens_per_second;
-            std::ostringstream extra;
-            extra << std::fixed;
-            extra << ", task=" << task_id;
-            if (!upstream_id.empty()) {
-                extra << " (id=" << upstream_id << ")";
-            }
-            if (reported_pp > 0.0) {
-                extra << ", pp=" << std::setprecision(2) << reported_pp << " t/s";
-            }
-            if (reported_cache >= 0) {
-                extra << ", cached=" << reported_cache;
-            }
-            if (draft_n > 0 && draft_accepted >= 0) {
-                extra << ", draft=" << draft_accepted << "/" << draft_n << " ("
-                      << std::setprecision(1) << (100.0 * draft_accepted / draft_n) << "%)";
-            }
-            telemetry.extra_log = extra.str();
-            // Local streams log through StreamingProxy::forward_sse_stream; the cloud relay bypasses it.
+            // Local streams log through StreamingProxy::forward_sse_stream; the cloud relay logs its completed telemetry here.
             telemetry.print();
             if (telemetry_callback) {
                 telemetry_callback(telemetry);
@@ -1010,9 +947,12 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 nullptr,
                 creds.policy
             );
+            const bool client_disconnected =
+                result.curl_code == CURLE_WRITE_ERROR ||
+                result.curl_code == CURLE_ABORTED_BY_CALLBACK;
             if (result.curl_code != CURLE_OK) {
-                if (result.curl_code == CURLE_WRITE_ERROR) {
-                    LOG(WARNING, "Cloud") << "[task " << task_id << "] Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
+                if (client_disconnected) {
+                    LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
                         telemetry_callback(error_telemetry("Client disconnected during stream"));
                     }
@@ -1022,7 +962,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 }
             }
             if (result.status_code != 200) {
-                LOG(ERROR, "Cloud") << "[task " << task_id << "] Provider returned status " << result.status_code << std::endl;
+                LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code << std::endl;
                 if (telemetry_callback) {
                     telemetry_callback(error_telemetry("status_code " + std::to_string(result.status_code)));
                 }
@@ -1034,7 +974,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             sink.done();
         }
     } catch (const std::exception& e) {
-        LOG(ERROR, "Cloud") << "[task " << task_id << "] Streaming request failed: " << e.what() << std::endl;
+        LOG(ERROR, "Cloud") << "Streaming request failed: " << e.what() << std::endl;
         if (telemetry_callback) {
             telemetry_callback(error_telemetry(e.what()));
         }

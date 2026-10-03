@@ -6,7 +6,6 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
-#include <atomic>
 #include <map>
 #include <string>
 #include <vector>
@@ -78,6 +77,14 @@ public:
                                    bool sse = true,
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
+
+    void forward_streaming_request(const std::string& endpoint,
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink,
+                                   bool sse,
+                                   long timeout_seconds,
+                                   TelemetryCallback telemetry_callback,
+                                   long heartbeat_interval_ms);
 
     /// Fetch the list of models accessible to this API key from the
     /// provider's /v1/models endpoint. Returns ModelInfos with name,
@@ -156,8 +163,6 @@ private:
     std::string upstream_model_; // provider's model id (from ModelInfo.checkpoint())
     CloudProviderRegistry* registry_ = nullptr;  // Not owned
     bool loaded_ = false;
-
-    inline static std::atomic<uint64_t> next_task_id_{1};
 };
 
 namespace cloud {
