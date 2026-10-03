@@ -7,7 +7,7 @@ There are three ways to get a model into Lemonade:
 | Option | Use when | What happens |
 |--------|----------|--------------|
 | [Pull a model](#pull-a-model) | The model is published on Hugging Face or ModelScope | Lemonade downloads it into your model store and registers it |
-| [Point at a folder of GGUFs](#model-naming-spec) | You already have GGUF files on disk, or share a library with LM Studio or llama.cpp | Lemonade lists them where they sit and downloads nothing |
+| [Point at a folder of GGUFs](#imported-models-extra_models_dir) | You already have GGUF files on disk, or share a library with LM Studio or llama.cpp | Lemonade lists them where they sit and downloads nothing |
 | [Edit the JSON files by hand](#configuration-files) | You need full control over a definition and can restart `lemond` | You describe the model yourself in `user_models.json` |
 
 Pulling covers most cases and has several front ends that all end in the same registration; pick one under [Pull a Model](#pull-a-model).
@@ -255,7 +255,7 @@ Lemonade tracks three sources of models. Every model has a **canonical ID** of t
 | Canonical ID    | Source                                                                   |
 |-----------------|--------------------------------------------------------------------------|
 | `user.NAME`     | Model registered via `lemonade pull` (entry in `user_models.json`)       |
-| `extra.NAME`    | Model imported from `extra_models_dir`, see [Imported models](#model-naming-spec) |
+| `extra.NAME`    | Model imported from `extra_models_dir`, see [Imported models](#imported-models-extra_models_dir) |
 | `builtin.NAME`  | Model compiled into Lemonade's built-in catalog (`server_models.json`)   |
 
 The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
@@ -280,7 +280,7 @@ Anywhere a model name is accepted (request bodies, CLI args, URL path parameters
 
 `lemonade pull` rejects model names starting with `extra.` or `builtin.` since those prefixes are reserved.
 
-An imported model also answers to names derived from the directory layout around it, so a name keeps working after that layout changes. See [model naming spec](#model-naming-spec).
+An imported model also answers to names derived from the directory layout around it, so a name keeps working after that layout changes. See [Model Naming Scheme](#model-naming-scheme).
 
 ### CLI vs. GUI display
 
@@ -347,6 +347,123 @@ Every registered alias is exposed as an independent model entry in `/v1/models`,
 | built-in `Bar` + registered `Bar` + extra `Bar` | `Bar`, `extra.Bar`, `builtin.Bar`                      | `Bar`/`user.Bar` → user; `extra.Bar` → extra; `builtin.Bar` → built-in       |
 | built-in `Baz` + extra `Baz`                    | `Baz`, `builtin.Baz`                                   | `Baz`/`extra.Baz` → extra; `builtin.Baz` → built-in                          |
 | registered `MyModel` only                       | `MyModel`                                              | `MyModel`/`user.MyModel` → user; `builtin.MyModel` → 404                     |
+
+## Imported models (`extra_models_dir`)
+
+`extra_models_dir` is a directory that `lemond` scans recursively for `.gguf` files, listing everything it finds alongside your other models. The files stay where they are and Lemonade reads them in place. It is empty by default, which disables the feature.
+
+```bash
+lemonade config set extra_models_dir="/home/you/.lmstudio/models"
+```
+
+`lemonade pull` still downloads into `models_dir`. Point `extra_models_dir` at files you already have:
+
+| Source | Typical path |
+|---|---|
+| LM Studio | `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` |
+| A Hugging Face or ModelScope cache | `~/.cache/huggingface/hub` |
+| Your own folder of GGUFs | anywhere readable, absolute or relative |
+
+### Model Naming Scheme
+
+A model's name comes from the directory layout around its files. A path uses the Hugging Face / ModelScope cache rules only when its GGUFs are inside a recognized cache layout such as `models--<org>--<repo>/snapshots/<commit>/...` or `modelscope--models--<org>--<repo>/snapshots/<commit>/...`. A folder merely named like a cache repo is not sufficient. All other paths use the non-HF/MS rules below.
+
+These notes apply to both:
+
+- Files whose names declare the same shard series are one model, as in `model-Q4_K_M-00001-of-00003.gguf`, and its name drops the shard suffix. The `-`, `.`, and `_` separators are accepted before the shard index.
+- An `mmproj` file joins the model in its folder.
+- Names are assigned in a fixed order: files at the search root, then files in reserved directories, then folders, each group in sorted path order. A model at the search root keeps its name when a directory is reserved later.
+- Every imported model is also addressable as `extra.<name>`; see the [model naming spec](#model-naming-spec). [Model aliases](#model-aliases-aliasesjson) are a separate feature that you define yourself in `aliases.json`.
+
+#### Non-HF/MS folders
+
+| What is on disk | Name |
+|---|---|
+| A `.gguf` file at the search root, or in a reserved directory | the filename without `.gguf` |
+| A folder holding one model | the folder name |
+| A folder holding several quantization variants | one name per variant, each from its filename |
+| A name another imported model already took | the name, qualified with its own folder, then `-2`, `-3` if that is also taken |
+
+For example:
+
+| Layout | Names |
+|---|---|
+| `Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-Q4_K_M` |
+| `Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-GGUF` |
+| `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M.gguf` and `Qwen3-8B-Q8_0.gguf` | `Qwen3-8B-Q4_K_M`, `Qwen3-8B-Q8_0` |
+| `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M-00001-of-00002.gguf` and `Qwen3-8B-Q4_K_M-00002-of-00002.gguf` | `Qwen3-8B-GGUF` |
+| `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M.gguf` and `mmproj-Qwen3-8B-f16.gguf` | `Qwen3-8B-GGUF` |
+| `Mixtral-GGUF/` holding a two-shard `Mixtral-Q4_K_M` set and a two-shard `Mixtral-Q8_0` set | `Mixtral-Q4_K_M`, `Mixtral-Q8_0` |
+| `Llama-Local-GGUF/` and `Mistral-Local-GGUF/`, each holding `model-Q4_K_M.gguf` and `model-Q8_0.gguf` | `model-Q4_K_M`, `model-Q8_0`, `Mistral-Local-GGUF-model-Q4_K_M`, `Mistral-Local-GGUF-model-Q8_0` |
+
+Notes:
+
+- Adding a second quantization variant to a folder renames the first model, as rows two and three show. The folder name keeps resolving and points at the first model alphabetically, so a request that used it still works. A model file that sorts earlier takes that pointer over, so name a specific model in scripts you intend to keep. When several folders share a name, the first in the order above owns it, in both its plain and `extra.` forms.
+
+#### HF/MS caches
+
+| What is on disk | Name |
+|---|---|
+| One model in the revision that `refs/main` points at | the repo name, or `<repo>-<folder>` when the GGUFs sit in a subfolder |
+| Several quantization variants in that revision | one name per variant, each from its filename |
+| One model in a superseded revision | the active-style name prefixed with that revision's commit: `<commit>-<repo>` or `<commit>-<repo>-<folder>` |
+| Several quantization variants in a superseded revision | one name per variant, each from its filename and prefixed with that revision's commit |
+| A name another imported model already took | the name, qualified with its org or namespace |
+
+For example:
+
+| Layout | Names |
+|---|---|
+| `models--unsloth--Qwen3-8B-GGUF/snapshots/<commit>/Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-GGUF` |
+| `models--unsloth--Qwen3-235B-GGUF/snapshots/<commit>/Q4_K_M/` holding a shard set | `Qwen3-235B-GGUF-Q4_K_M` |
+| a cache holding a live `snapshots/<new>/` and a superseded `snapshots/<old>/`, each with `Repo-Q4_K_M.gguf` and `Repo-Q8_0.gguf` | `Repo-Q4_K_M`, `Repo-Q8_0`, `<old>-Repo-Q4_K_M`, `<old>-Repo-Q8_0` |
+| `models--bartowski--Collide-7B-GGUF/` and `models--unsloth--Collide-7B-GGUF/`, each with an active `snapshots/<commit>/Collide-7B-Q4_K_M.gguf` | `Collide-7B-GGUF`, `unsloth-Collide-7B-GGUF` |
+
+Notes:
+
+- A cache can hold several revisions. Names follow the revision `refs/main` points at, so updating a model moves its name to the new revision.
+- Unlike non-HF/MS folders, a cache folder's name does not keep resolving after the folder's models are renamed.
+
+### Choosing how an imported model runs
+
+The top-level directory a model sits under selects its deployment mode. The reserved names are `chat`, `embeddings`, and `reranking`:
+
+```text
+extra_models_dir/
+├── chat/
+├── embeddings/
+└── reranking/
+```
+
+`Files directly inside a reserved directory are listed as separate models, except where numbered shard names declare that they belong together. Nested folder models and per-variant models inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat. The folder's old name, such as `extra.embeddings`, still works and points to its first file alphabetically.`
+
+---
+
+Reserved names must match exactly. `embeddings` is reserved; `Embedding`, `embedding`, and `embeddings 2` are ordinary directories. The mode comes from the top-level directory name alone, so `embeddings/bge-reranker-v2.gguf` is an embedding model.
+
+A file with `mmproj` anywhere in its name is attached as the model's `mmproj` and adds the `vision` label. When several are present the first by filename wins, so the choice is stable across restarts. An `mmproj` sitting directly in a reserved directory is attached only when that directory holds one main model; if you keep several vision models in one reserved directory, give each model and its `mmproj` their own subdirectory.
+
+### Properties of an imported model
+
+| Property | Value |
+|---|---|
+| `recipe` | `llamacpp` |
+| `suggested` | `true` |
+| `downloaded` | `true` |
+| `labels` | `custom`, the directory-selected mode (`chat` by default), and `vision` if multimodal |
+| `type` | Derived from `labels` |
+| `size` | Sum of all `.gguf` file sizes in GB |
+| `source` | `extra_models_dir` |
+
+### Deleting an imported model
+
+Imported models are yours to manage, so `/v1/delete` on one returns an error naming the path to remove by hand.
+
+### Access and failure behavior
+
+An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../embeddable/runtime.md).
+
+During a scan, unreadable nested directories are skipped. Discovery is best-effort by design, so your registered and built-in catalogs stay intact through a filesystem failure.
 
 ## Configuration files
 
@@ -530,7 +647,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 }
 ```
 
-(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for a GGUF imported from [`extra_models_dir`](#model-naming-spec).)
+(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for a GGUF imported from [`extra_models_dir`](#imported-models-extra_models_dir).)
 
 Then load the model:
 ```bash

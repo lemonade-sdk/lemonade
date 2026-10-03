@@ -10,7 +10,7 @@ namespace lemon {
 ///
 /// Concrete implementations differ by platform:
 ///   - Linux  : inotify + epoll  (low latency, ~0-5ms)
-///   - macOS  : kqueue           (~50ms latency)
+///   - macOS  : FSEvents         (~50ms latency)
 ///   - others : polling fallback (~200ms interval)
 class DirectoryWatcher {
 public:
