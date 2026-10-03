@@ -238,7 +238,7 @@ public:
         const std::string& model_name, const std::string& response_format);
 
     json image_generations(const json& request);
-    json video_generations(const json& request);
+    json video_generations(const json& request, std::atomic<bool>* cancel = nullptr);
     json image_edits(const json& request);
     json image_variations(const json& request);
 

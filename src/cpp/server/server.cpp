@@ -552,6 +552,23 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             }
             return lemon::jobs::json::parse(response.dump());
         };
+        providers.video_op = [this](const lemon::jobs::json& params,
+                                    lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            const std::string model = request.value("model", std::string());
+            if (!model.empty()) auto_load_model_if_needed(model, extract_auto_load_options(request));
+            nlohmann::json response = router_->video_generations(request, &cancel);
+            if (response.contains("error")) {
+                std::string msg = "video generation failed";
+                const auto& err = response["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            return lemon::jobs::json::parse(response.dump());
+        };
         providers.begin_exclusive = [this, job_states, current_job, state_mutex](
                                         const std::string& job_id,
                                         lemon::jobs::CancelFlag* cancel) -> bool {
@@ -1257,12 +1274,26 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
     });
-    // Video endpoint: text/image -> video. Not an OpenAI-standard route (there
-    // is no /v1/videos in the OpenAI API), but registered under the same four
-    // prefixes as every other endpoint.
-    register_post("videos/generations", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_video_generations(req, res);
+    // Video endpoint: text -> video. Generation runs for minutes, so it is a job
+    // rather than a held connection: create returns a handle, and the clip is
+    // fetched from the content route instead of inline.
+    register_post("videos", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_video_create(req, res);
     });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Post(std::string(prefix) + R"(/videos/([^/]+)/cancel)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_video_cancel(req, res);
+                        });
+        web_server.Get(std::string(prefix) + R"(/videos/([^/]+)/content)",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+                           handle_video_content(req, res);
+                       });
+        web_server.Get(std::string(prefix) + R"(/videos/([^/]+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+                           handle_video_get(req, res);
+                       });
+    }
     // Generative-audio endpoint: text -> audio clip (music, sound effects)
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
@@ -5267,10 +5298,13 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
     }
 }
 
-void Server::handle_video_generations(const httplib::Request& req, httplib::Response& res) {
-    try {
-        LOG(INFO, "Server") << "POST /api/v1/videos/generations" << std::endl;
+namespace {
+std::string job_id_from_path(const httplib::Request& req);
+void job_error(httplib::Response& res, int status, const std::string& message);
+}
 
+void Server::handle_video_create(const httplib::Request& req, httplib::Response& res) {
+    try {
         auto request_json = nlohmann::json::parse(req.body);
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
@@ -5287,28 +5321,28 @@ void Server::handle_video_generations(const httplib::Request& req, httplib::Resp
             }
         }
 
-        std::string requested_model = request_json["model"];
+        lemon::jobs::StepRecord step;
+        step.id = "video";
+        step.op = "generate_video";
+        step.params = lemon::jobs::json::parse(request_json.dump());
 
-        try {
-            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
-        } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "Failed to load video model: " << e.what() << std::endl;
-            auto error_response = create_model_error(requested_model, e.what());
-            std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = get_http_status_from_error(error_code);
-            res.set_content(error_response.dump(), "application/json");
-            return;
-        }
+        std::vector<lemon::jobs::StepRecord> steps;
+        steps.push_back(std::move(step));
+        const std::string id =
+            job_manager_->create("video", std::move(steps), lemon::jobs::json::object());
 
-        auto response = router_->video_generations(request_json);
-        if (response.contains("error")) {
-            LOG(ERROR, "Server") << "Video generation backend error: " << response.dump() << std::endl;
-            res.status = 500;
-        }
-        res.set_content(response.dump(), "application/json");
-
+        const auto job = job_manager_->get(id);
+        res.status = 202;
+        nlohmann::json body = {
+            {"id", id},
+            {"status", job ? (*job).value("status", "queued") : "queued"},
+            {"model", request_json["model"]}
+        };
+        if (job && job->contains("created_at")) body["created_at"] = (*job)["created_at"];
+        res.set_content(body.dump(), "application/json");
+    } catch (const lemon::jobs::JobError& e) {
+        job_error(res, e.status, e.what());
     } catch (const nlohmann::json::exception& e) {
-        LOG(ERROR, "Server") << "JSON parse error in handle_video_generations: " << e.what() << std::endl;
         res.status = 400;
         nlohmann::json error = {{"error", {
             {"message", "Invalid JSON: " + std::string(e.what())},
@@ -5316,14 +5350,68 @@ void Server::handle_video_generations(const httplib::Request& req, httplib::Resp
         }}};
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_video_generations: " << e.what() << std::endl;
+        LOG(ERROR, "Server") << "ERROR in handle_video_create: " << e.what() << std::endl;
         res.status = 500;
-        nlohmann::json error = {{"error", {
-            {"message", e.what()},
-            {"type", "internal_error"}
-        }}};
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "internal_error"}}}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+// The clip is served from the content route, so the status payload drops the
+// encoded bytes and keeps only what a caller polls for.
+void Server::handle_video_get(const httplib::Request& req, httplib::Response& res) {
+    const auto job = job_manager_->get(job_id_from_path(req));
+    if (!job) {
+        job_error(res, 404, "unknown video");
+        return;
+    }
+    nlohmann::json out = {{"id", (*job).value("id", "")},
+                          {"status", (*job).value("status", "")}};
+    if (job->contains("created_at")) out["created_at"] = (*job)["created_at"];
+    if (job->contains("steps") && (*job)["steps"].is_array() && !(*job)["steps"].empty()) {
+        const auto& step = (*job)["steps"][0];
+        if (step.contains("params") && step["params"].is_object())
+            out["model"] = step["params"].value("model", "");
+        if (step.contains("error") && !step["error"].empty()) out["error"] = step["error"];
+        if (step.contains("output") && step["output"].is_object()) {
+            for (const char* key : {"mime_type", "output_format", "frame_count", "fps"}) {
+                if (step["output"].contains(key)) out[key] = step["output"][key];
+            }
+        }
+    }
+    res.set_content(out.dump(), "application/json");
+}
+
+void Server::handle_video_content(const httplib::Request& req, httplib::Response& res) {
+    const auto job = job_manager_->get(job_id_from_path(req));
+    if (!job) {
+        job_error(res, 404, "unknown video");
+        return;
+    }
+    const std::string status = (*job).value("status", "");
+    if (status != "completed") {
+        job_error(res, 409, "video is not ready: " + status);
+        return;
+    }
+    if (!job->contains("steps") || !(*job)["steps"].is_array() || (*job)["steps"].empty()) {
+        job_error(res, 500, "video job has no output");
+        return;
+    }
+    const auto& output = (*job)["steps"][0]["output"];
+    if (!output.is_object() || !output.contains("b64_json")) {
+        job_error(res, 500, "video job has no output");
+        return;
+    }
+    const std::string mime = output.value("mime_type", "video/webm");
+    res.set_content(utils::JsonUtils::base64_decode(output["b64_json"].get<std::string>()), mime);
+}
+
+void Server::handle_video_cancel(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->interrupt(job_id_from_path(req))) {
+        job_error(res, 404, "video not found or not cancellable");
+        return;
+    }
+    res.set_content(R"({"status":"interrupting"})", "application/json");
 }
 
 bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {

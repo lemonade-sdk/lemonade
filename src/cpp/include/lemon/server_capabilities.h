@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -99,7 +100,8 @@ public:
 class IVideoServer : public virtual ICapability {
 public:
     virtual ~IVideoServer() = default;
-    virtual json video_generations(const json& request) = 0;
+    virtual json video_generations(const json& request,
+                                   std::atomic<bool>* cancel = nullptr) = 0;
 };
 
 class IUpscaleServer : public virtual ICapability {

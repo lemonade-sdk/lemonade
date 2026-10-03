@@ -291,7 +291,10 @@ private:
 
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
-    void handle_video_generations(const httplib::Request& req, httplib::Response& res);
+    void handle_video_create(const httplib::Request& req, httplib::Response& res);
+    void handle_video_get(const httplib::Request& req, httplib::Response& res);
+    void handle_video_content(const httplib::Request& req, httplib::Response& res);
+    void handle_video_cancel(const httplib::Request& req, httplib::Response& res);
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
     void handle_image_upscale(const httplib::Request& req, httplib::Response& res);

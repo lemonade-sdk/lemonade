@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <functional>
 #include <thread>
 #include <cstring>
 #include <random>
@@ -600,7 +601,7 @@ json SDServer::image_generations(const json& request) {
     return forward_request("/v1/images/generations", sd_request, 0);
 }
 
-json SDServer::video_generations(const json& request) {
+json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
     // /sdcpp/v1/vid_gen is sd-cpp's NATIVE route and takes a real JSON body --
     // unlike /v1/images/generations, which is OpenAI-shaped and reads its
     // parameters from a <sd_cpp_extra_args> blob smuggled inside the prompt.
@@ -687,11 +688,9 @@ json SDServer::video_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
                            << body.dump(2) << std::endl;
 
-    // Unlike /v1/images/generations, vid_gen is asynchronous: it answers 202
-    // with a job handle and does the work in the background. forward_request
-    // reports any non-200 as a backend error, so accept the 202 body here and
-    // poll the job to completion, presenting the whole thing to the caller as
-    // one synchronous request.
+    // vid_gen is asynchronous: it answers 202 with a job handle and does the
+    // work in the background. forward_request reports any non-200 as a backend
+    // error, so the 202 body is accepted here and the job polled to completion.
     json accepted = forward_request("/sdcpp/v1/vid_gen", body, 0);
     const json* handle = &accepted;
     if (accepted.contains("error") && accepted["error"].is_object()) {
@@ -710,10 +709,34 @@ json SDServer::video_generations(const json& request) {
         return *handle;
     }
 
-    // No wall-clock deadline: a long clip legitimately runs for many minutes,
-    // and the caller's own connection is the real bound. Give up only when the
-    // backend dies, which is_backend_alive() catches via forward_get_request.
+    // The job is marked interrupted without waiting for this function to return,
+    // so the cancel fires on scope exit rather than from the loop below. The
+    // backend only honours it while the job is queued: it reports
+    // cancel_generating false and answers 409 once frames are being produced, so
+    // a clip already on the GPU still runs to completion.
+    struct ScopeExit {
+        std::function<void()> fn;
+        ~ScopeExit() { if (fn) fn(); }
+    } cancel_backend{[this, &poll_url, cancel]() {
+        if (!cancel || !cancel->load()) return;
+        try {
+            json reply = forward_request(poll_url + "/cancel", json::object(), 0);
+            LOG(INFO, "SDServer") << "canceled backend video job " << poll_url << ": "
+                                  << reply.dump() << std::endl;
+        } catch (const std::exception& e) {
+            LOG(INFO, "SDServer") << "backend declined to cancel " << poll_url << ": "
+                                  << e.what() << std::endl;
+        }
+    }};
+
+    // No wall-clock deadline: a long clip legitimately runs for many minutes.
+    // Give up when the caller cancels, or when the backend dies, which
+    // is_backend_alive() catches via forward_get_request.
     while (true) {
+        if (cancel && cancel->load()) {
+            return ErrorResponse::from_exception(
+                BackendException(server_name_, "video generation canceled", 499));
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         json status = forward_get_request(poll_url, 0);
         // A job payload always carries a string "status"; anything else is a
@@ -724,7 +747,7 @@ json SDServer::video_generations(const json& request) {
             return status;
         }
         const std::string state = status.value("status", std::string());
-        if (state == "queued" || state == "generating" || state == "running") {
+        if (state == "queued" || state == "generating") {
             continue;
         }
         if (!status.value("error", json()).is_null()) {
