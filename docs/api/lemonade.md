@@ -46,6 +46,63 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/internal/aliases`](#post-internalaliases) | Create or update a model alias |
 | `DELETE` | [`/internal/aliases/{alias}`](#delete-internalaliasesalias) | Remove a model alias |
 
+## `POST /v1/videos`
+
+Video Generation API. You provide a text prompt and receive a job handle. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend, and is not part of the OpenAI API.
+
+> **Note:** Generation runs for minutes, so this endpoint is a job rather than a held connection. Create the job, poll it, then fetch the clip from the content route. Frame count matters more than it looks: stable-diffusion.cpp generates a single frame when the field is absent, and video models need a few dozen frames before they animate rather than drift, so Lemonade sends 33 by default. A registry entry can override that with a `video_frames` recipe option.
+>
+> **Performance:** GPU only, in practice. A 33-frame 832x480 clip takes about 5 minutes on a discrete GPU; CPU inference is impractically slow.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `prompt` | Yes | The text description of the video to generate. |
+| `model` | Yes | The video model to use (e.g., `Wan2.1-T2V-1.3B`). |
+| `negative_prompt` | No | Text describing what to avoid. |
+| `video_frames` | No | Number of frames to generate. Falls back to the model's recipe option, then to 33. |
+| `fps` | No | Frames per second of the returned clip. |
+| `width` / `height` | No | Output dimensions. Models are sensitive to resolutions they were not trained on. |
+| `steps` | No | Number of diffusion steps per frame. |
+| `cfg_scale` | No | Classifier-free guidance scale. |
+| `sampling_method` | No | Sampler name (e.g. `euler`). |
+| `flow_shift` | No | Flow shift, used by flow-matching models such as Wan. |
+| `seed` | No | Random seed for reproducibility. |
+| `output_format` | No | Container format. `webm`, `webp` or `avi`. Default: `webm`. |
+
+### Lifecycle
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `POST` | `/v1/videos` | Create the job. Returns `202` with `id`, `status`, `created_at` and `model`. |
+| `GET` | `/v1/videos/{id}` | Poll. Returns `status`, and `mime_type`, `output_format`, `frame_count` and `fps` once it completes. |
+| `GET` | `/v1/videos/{id}/content` | Fetch the clip as raw bytes. Returns `409` until the status is `completed`. |
+| `POST` | `/v1/videos/{id}/cancel` | Stop the generation. The record is kept. |
+
+Status values follow the job system: `queued`, `running`, `paused`, `interrupted`, `completed` and `failed`. A canceled generation reports `interrupted`. A video job is an ordinary job, so it also appears under `/v1/jobs` and accepts the job control routes.
+
+> **Limitation:** cancelling releases the job and the model slot immediately, but stable-diffusion.cpp reports `cancel_generating: false` and answers `409` once frames are being produced. A clip that already reached the GPU therefore runs to completion in the background, while a clip still queued is cancelled straight away.
+
+### Example request
+
+=== "Bash"
+
+    ```bash
+    # create
+    curl -X POST http://localhost:13305/v1/videos       -H "Content-Type: application/json"       -d '{
+            "model": "Wan2.1-T2V-1.3B",
+            "prompt": "a lovely cat walking through tall grass",
+            "video_frames": 33,
+            "fps": 16
+          }'
+
+    # poll, then download
+    curl http://localhost:13305/v1/videos/$ID
+    curl -o clip.webm http://localhost:13305/v1/videos/$ID/content
+    ```
+
+
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
