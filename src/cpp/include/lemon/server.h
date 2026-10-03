@@ -311,23 +311,26 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
-    // Resolve the refine / upscale_model flags, falling back to the model's
-    // recipe options. When refine is enabled it is forwarded to the backend
-    // as "refine"; backends that don't support it ignore the field.
+    // Resolve the refine / upscale_model flags. Absent values fall back to the
+    // recipe options of the loaded model instance, then to the model's saved
+    // recipe options. An explicit request value (including false/empty) is
+    // never overridden. When refine resolves to true it is forwarded to the
+    // backend as "refine"; backends that don't support it ignore the field.
     void resolve_refine_options(
         const std::string& model_name,
         nlohmann::json& request_json,
-        bool& refine,
-        std::string& upscale_model);
+        std::optional<bool>& refine,
+        std::optional<std::string>& upscale_model);
 
-    // Auto-upscale response image(s) per the model's "upscale_model" recipe
-    // option, or upscale_model_override. Failed upscales leave the original
-    // image in place; skip_upscale_request forces the pass-through.
+    // Auto-upscale response image(s) per the loaded model's "upscale_model"
+    // recipe option (saved options as fallback), or upscale_model_override.
+    // Failed upscales leave the original image in place;
+    // skip_upscale_request forces the pass-through.
     void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
         bool skip_upscale_request = false,
-        const std::string& upscale_model_override = "");
+        const std::optional<std::string>& upscale_model_override = std::nullopt);
 
     // Returns the upscaled base64 image, or std::nullopt on failure
     // (error written to res if res is not null).

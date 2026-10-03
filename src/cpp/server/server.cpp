@@ -5199,8 +5199,15 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
-        bool refine = request_json.value("refine", false);
-        std::string upscale_model = request_json.value("upscale_model", "");
+        std::optional<bool> refine;
+        if (request_json.contains("refine") && request_json["refine"].is_boolean()) {
+            refine = request_json["refine"].get<bool>();
+        }
+        std::optional<std::string> upscale_model;
+        if (request_json.contains("upscale_model") && request_json["upscale_model"].is_string()
+            && !request_json["upscale_model"].get<std::string>().empty()) {
+            upscale_model = request_json["upscale_model"].get<std::string>();
+        }
         bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
         request_json.erase("refine");
         request_json.erase("upscale_model");
@@ -5477,9 +5484,15 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (!load_image_model(request_json, res)) return;
 
         std::string edit_model_name = request_json["model"].get<std::string>();
-        bool edit_refine = parse_bool_form_field(req.form, "refine");
-        std::string edit_upscale_model =
-            req.form.has_field("upscale_model") ? req.form.get_field("upscale_model") : "";
+        std::optional<bool> edit_refine;
+        if (req.form.has_field("refine")) {
+            edit_refine = parse_bool_form_field(req.form, "refine");
+        }
+        std::optional<std::string> edit_upscale_model;
+        if (req.form.has_field("upscale_model")) {
+            const std::string& um = req.form.get_field("upscale_model");
+            if (!um.empty()) edit_upscale_model = um;
+        }
         resolve_refine_options(edit_model_name, request_json, edit_refine, edit_upscale_model);
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
@@ -5537,9 +5550,15 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         if (!load_image_model(request_json, res))             return;
 
         std::string var_model_name = request_json["model"].get<std::string>();
-        bool var_refine = parse_bool_form_field(req.form, "refine");
-        std::string var_upscale_model =
-            req.form.has_field("upscale_model") ? req.form.get_field("upscale_model") : "";
+        std::optional<bool> var_refine;
+        if (req.form.has_field("refine")) {
+            var_refine = parse_bool_form_field(req.form, "refine");
+        }
+        std::optional<std::string> var_upscale_model;
+        if (req.form.has_field("upscale_model")) {
+            const std::string& um = req.form.get_field("upscale_model");
+            if (!um.empty()) var_upscale_model = um;
+        }
         resolve_refine_options(var_model_name, request_json, var_refine, var_upscale_model);
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
@@ -5573,26 +5592,35 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 void Server::resolve_refine_options(
     const std::string& model_name,
     nlohmann::json& request_json,
-    bool& refine,
-    std::string& upscale_model) {
-    if (!refine || upscale_model.empty()) {
-        try {
-            auto info = model_manager_->get_model_info(model_name);
-            if (!refine) {
-                auto opt = info.recipe_options.get_option("refine");
-                if (opt.is_boolean() && opt.get<bool>()) {
-                    refine = true;
-                }
+    std::optional<bool>& refine,
+    std::optional<std::string>& upscale_model) {
+    if (!refine.has_value() || !upscale_model.has_value()) {
+        // The loaded instance holds the option set merged at load time
+        // (request > saved > config), so prefer it; fall back to saved info
+        // only when no live instance exists.
+        RecipeOptions effective;
+        auto loaded = router_->get_model_recipe_options(model_name);
+        if (!loaded.get_recipe().empty()) {
+            effective = loaded;
+        } else {
+            try {
+                effective = model_manager_->get_model_info(model_name).recipe_options;
+            } catch (const std::exception&) {}
+        }
+        if (!refine.has_value()) {
+            auto opt = effective.get_option("refine");
+            if (opt.is_boolean() && opt.get<bool>()) {
+                refine = true;
             }
-            if (upscale_model.empty()) {
-                auto opt = info.recipe_options.get_option("upscale_model");
-                if (opt.is_string() && !opt.get<std::string>().empty()) {
-                    upscale_model = opt.get<std::string>();
-                }
+        }
+        if (!upscale_model.has_value()) {
+            auto opt = effective.get_option("upscale_model");
+            if (opt.is_string() && !opt.get<std::string>().empty()) {
+                upscale_model = opt.get<std::string>();
             }
-        } catch (const std::exception&) {}
+        }
     }
-    if (refine) {
+    if (refine.value_or(false)) {
         request_json["refine"] = true;
     }
 }
@@ -5601,16 +5629,22 @@ void Server::apply_upscale_if_configured(
     const std::string& model_name,
     nlohmann::json& response,
     bool skip_upscale_request,
-    const std::string& upscale_model_override) {
-    std::string upscale_model_name = upscale_model_override;
+    const std::optional<std::string>& upscale_model_override) {
+    std::string upscale_model_name = upscale_model_override.value_or("");
     if (upscale_model_name.empty()) {
-        try {
-            auto info = model_manager_->get_model_info(model_name);
-            auto upscale_opt = info.recipe_options.get_option("upscale_model");
-            if (upscale_opt.is_string() && !upscale_opt.get<std::string>().empty()) {
-                upscale_model_name = upscale_opt.get<std::string>();
-            }
-        } catch (const std::exception&) {}
+        RecipeOptions effective;
+        auto loaded = router_->get_model_recipe_options(model_name);
+        if (!loaded.get_recipe().empty()) {
+            effective = loaded;
+        } else {
+            try {
+                effective = model_manager_->get_model_info(model_name).recipe_options;
+            } catch (const std::exception&) {}
+        }
+        auto upscale_opt = effective.get_option("upscale_model");
+        if (upscale_opt.is_string() && !upscale_opt.get<std::string>().empty()) {
+            upscale_model_name = upscale_opt.get<std::string>();
+        }
     }
     if (upscale_model_name.empty()) {
         return;
