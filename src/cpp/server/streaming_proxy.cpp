@@ -10,9 +10,7 @@
 
 namespace lemon {
 
-namespace {
-
-void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
+void StreamingProxy::extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
     nlohmann::json usage;
     if (chunk.contains("usage")) {
         usage = chunk["usage"];
@@ -77,6 +75,8 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         }
     }
 }
+
+namespace {
 
 struct Field {
     std::string_view name;

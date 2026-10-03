@@ -78,6 +78,14 @@ public:
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
+    void forward_streaming_request(const std::string& endpoint,
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink,
+                                   bool sse,
+                                   long timeout_seconds,
+                                   TelemetryCallback telemetry_callback,
+                                   long heartbeat_interval_ms);
+
     /// Fetch the list of models accessible to this API key from the
     /// provider's /v1/models endpoint. Returns ModelInfos with name,
     /// checkpoint, recipe, cloud_provider, type (inferred from id),

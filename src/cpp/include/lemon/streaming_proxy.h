@@ -74,6 +74,9 @@ public:
 
     static TelemetryData parse_telemetry(const std::string& buffer);
 
+    // Extract telemetry from a single chunk payload or usage object.
+    static void extract_telemetry_from_chunk(const nlohmann::json& chunk, TelemetryData& telemetry);
+
     // Extract telemetry from a complete (non-streaming) response body or a
     // single SSE chunk payload: OpenAI usage (chat and Responses field names,
     // cached-token details) and llama.cpp timings.
