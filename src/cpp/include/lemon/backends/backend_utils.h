@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/install_params.h"
 
 namespace fs = std::filesystem;
 
@@ -17,12 +18,6 @@ namespace lemon {
 }
 
 namespace lemon::backends {
-    struct InstallParams {
-        std::string repo;      // GitHub "org/repo"
-        std::string filename;  // Release asset filename
-        std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
-    };
-
     struct BackendSpec {
         const std::string recipe;
         const std::string binary;
@@ -95,14 +90,15 @@ namespace lemon::backends {
         */
         static bool extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name);
 
-        /** Download and install the specified version of the backend from github.
+        /** Download and install a GitHub release asset or an explicit asset URL.
          *  If progress_cb is provided, it receives download progress events instead of console output. */
-        static void install_from_github(const BackendSpec& spec,
+        static void install_from_release(const BackendSpec& spec,
                                         const std::string& expected_version,
                                         const std::string& repo,
                                         const std::string& filename,
                                         const std::string& backend,
-                                        DownloadProgressCallback progress_cb = nullptr);
+                                        DownloadProgressCallback progress_cb = nullptr,
+                                        const std::string& download_url = "");
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);

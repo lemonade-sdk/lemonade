@@ -390,6 +390,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 
 std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                                                      bool throw_on_failure) {
+    if (repo.empty()) return "";
     {
         std::lock_guard<std::mutex> lock(latest_version_cache_mutex_);
         auto it = latest_version_cache_.find(repo);
@@ -488,6 +489,11 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // to the binary already installed rather than refusing to load a model that
     // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
+        if (repo.empty()) {
+            throw std::invalid_argument(
+                "Latest release discovery is not available for " + recipe + ":" +
+                resolved_backend + "; use 'builtin' or an explicit version");
+        }
         const bool offline = cfg->offline();
         // A non-throwing lookup so a transient GitHub failure becomes a fallback
         // rather than an exception. Skipped entirely when offline.
@@ -564,7 +570,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    return {final_params.repo, final_params.filename, release_version, final_params.download_url};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -587,6 +593,16 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
 
+    const std::string configured_binary =
+        backends::BackendUtils::get_bin_config_value(recipe, resolved_backend);
+    if (!force && has_existing_backend && utils::looks_like_path(configured_binary)) {
+        LOG(INFO, "BackendManager")
+            << "Using user-managed " << recipe << ":" << resolved_backend
+            << " backend at " << existing_backend_binary << std::endl;
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
+
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();
         const bool no_fetch = cfg->no_fetch_executables();
@@ -607,8 +623,19 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
     }
 
-    if (!force && has_existing_backend && !github_download_service_reachable()) {
-        // enter install_from_github() when GitHub is reachable, so available
+    bool uses_github = true;
+    if (!force && has_existing_backend && spec->install_params_fn) {
+        try {
+            const auto source = spec->install_params_fn(
+                resolved_backend, get_version_from_config(recipe, resolved_backend));
+            uses_github = source.download_url.empty();
+        } catch (const std::exception&) {
+            // Asset resolution failures must not prevent the existing offline fallback.
+            // get_install_params() below reports the error when installation proceeds.
+        }
+    }
+    if (uses_github && !force && has_existing_backend && !github_download_service_reachable()) {
+        // enter install_from_release() when GitHub is reachable, so available
         // backend updates are applied before the model starts. Only skip the
         // update path when the machine is effectively offline and a usable
         // backend binary is already present.
@@ -754,9 +781,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     };
 
     try {
-        backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
-        // install_from_github only returns after atomically swapping the new
+        backends::BackendUtils::install_from_release(
+            *spec, params.version, params.repo, params.filename, resolved_backend,
+            backend_progress_cb, params.download_url);
+        // install_from_release only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;
 
@@ -913,7 +941,7 @@ std::string BackendManager::get_release_url(const std::string& recipe, const std
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         auto params = get_install_params(recipe, resolved_backend);
-        return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
+        return backends::release_page_url(params.repo, params.version, params.download_url);
     } catch (...) {
         return "";
     }
@@ -935,7 +963,7 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, resolved_backend);
-        result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
+        result.release_url = backends::release_page_url(params.repo, params.version, params.download_url);
         result.download_filename = params.filename;
         result.version = params.version;
     } catch (...) {}

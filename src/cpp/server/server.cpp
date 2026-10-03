@@ -7259,7 +7259,7 @@ void Server::handle_bin_change(const std::string& section,
         }
     }
 
-    // Install the new binary. install_from_github bails early when the user's
+    // Install the new binary. install_from_release bails early when the user's
     // value resolves to a path (find_external_backend_binary returns it). When
     // version.txt mismatches the resolved version, the install dir is wiped
     // and re-downloaded.
@@ -8137,13 +8137,12 @@ void Server::handle_install_dry_run(const httplib::Request& req, httplib::Respon
         // any later work on this thread.
         SystemInfo::set_rocm_arch_override("");
 
-        const std::string url = "https://github.com/" + params.repo +
-                                "/releases/download/" + params.version + "/" +
-                                params.filename;
+        const std::string url = backends::release_asset_url(
+            params.repo, params.version, params.filename, params.download_url);
 
         bool supports_split_archive = false;
         if (auto* spec = backends::try_get_spec_for_recipe(recipe)) {
-            supports_split_archive = spec->supports_split_archive;
+            supports_split_archive = params.download_url.empty() && spec->supports_split_archive;
         }
 
         bool supported = requested_arch.empty()

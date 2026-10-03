@@ -76,6 +76,7 @@ nav:
       - Running Many Models: guide/configuration/multi-model.md
       - llama.cpp: guide/configuration/llamacpp.md
       - vLLM: guide/configuration/vllm.md
+      - EXTENSOR: guide/configuration/extensor.md
       - Moonshine: guide/configuration/moonshine.md
       - Cloud Offload: guide/configuration/cloud.md
     - Telemetry: guide/telemetry.md

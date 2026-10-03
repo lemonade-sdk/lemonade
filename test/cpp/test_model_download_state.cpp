@@ -1,4 +1,7 @@
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
+#include "lemon/registry_files.h"
 #include "lemon/utils/path_utils.h"
 
 #include <chrono>
@@ -6,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
@@ -213,6 +217,36 @@ static void test_collection_component_download_state(
           !manager.get_model_info("user.coll-test").downloaded);
 }
 
+static void test_extensor_download_state(ModelManager& manager, const fs::path& root) {
+    check("EXTENSOR uses the shared automatic model download flow",
+          !manager.backend_self_manages_downloads("extensor"));
+
+    const std::string filename = "Qwen3.6-35B-A3B-EXTENSOR-ROCmFP4-v1.extensor.gguf";
+    const auto files = lemon::registry_files::select_main_repo_files(
+        "amd/Qwen3.6-35B-A3B-EXTENSOR", "extensor", filename,
+        {"README.md", filename, "Qwen3.6-35B-A3B-EXTENSOR-ROCmFP4-MTP-v2.extensor.gguf"});
+    check("EXTENSOR selects only the compatible Qwen image", files == std::vector<std::string>{filename});
+
+    const fs::path path = root / "extensor" / filename;
+    ModelInfo info;
+    info.recipe = "extensor";
+    info.checkpoints = {{"main", "amd/Qwen3.6-35B-A3B-EXTENSOR:" + filename}};
+    info.resolved_paths = {{"main", path_to_utf8(path)}};
+    lemon::backends::BackendOpsContext context;
+    context.model_manager = &manager;
+    const auto* ops = lemon::backends::ops_for("extensor");
+    check("EXTENSOR missing image is not downloaded", !ops->is_downloaded(info, context));
+    write_file(path, "GGUF");
+    check("EXTENSOR complete image is downloaded", ops->is_downloaded(info, context));
+    write_file(path.string() + ".partial");
+    check("EXTENSOR interrupted image is not downloaded", !ops->is_downloaded(info, context));
+    fs::remove(path.string() + ".partial");
+    write_file(path.parent_path() / ".download_manifest.json", "{}");
+    check("EXTENSOR uncommitted snapshot is not downloaded", !ops->is_downloaded(info, context));
+    fs::remove(path.parent_path() / ".download_manifest.json");
+    check("EXTENSOR committed image becomes usable", ops->is_downloaded(info, context));
+}
+
 int main() {
     fs::path temp = make_temp_dir();
     fs::path hf_root = temp / "hf";
@@ -231,6 +265,7 @@ int main() {
         test_hf_manifest_marks_variant_incomplete(manager, fixtures);
         test_variantless_snapshot_commit_state(manager, fixtures);
         test_collection_component_download_state(manager, fixtures);
+        test_extensor_download_state(manager, temp);
     }
 
     fs::remove_all(temp);
