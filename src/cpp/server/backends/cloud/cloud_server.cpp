@@ -895,9 +895,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 return;
             }
 
-            // Flush any remaining buffered lines for telemetry before finalizing stream.
+            // Flush any remaining buffered lines before finalizing stream.
             if (!sse_line_buffer.empty()) {
-                StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line, true);
+                if (injected_usage) {
+                    StreamingProxy::process_sse_lines(
+                        sse_line_buffer, [&](const std::string& line) {
+                            process_cloud_line(line);
+                            if (is_usage_only_frame(line)) {
+                                return;
+                            }
+                            std::string out = line + "\n";
+                            sink.write(out.data(), out.size());
+                        }, true);
+                } else {
+                    StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line, true);
+                }
             }
 
             // 200 OK: if streaming_mode is true we've already flushed everything.
@@ -906,6 +918,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             if (injected_usage && !sse_line_buffer.empty()) {
                 // Line-mode relay held back a trailing fragment with no final
                 // newline; deliver it unless it is the injected usage frame.
+                process_cloud_line(sse_line_buffer);
                 if (!is_usage_only_frame(sse_line_buffer)) {
                     sink.write(sse_line_buffer.data(), sse_line_buffer.size());
                 }
