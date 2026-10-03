@@ -3863,8 +3863,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         // Filter out models too large to run on this machine.
-        if (!filter_out && !user_controlled_model && info.size > 0.0) {
-            const auto* desc = backends::descriptor_for(recipe);
+        const auto* desc = backends::descriptor_for(recipe);
+        if (!filter_out && !user_controlled_model && info.size > 0.0 &&
+            !(desc && desc->skip_model_size_filter)) {
             if (desc && desc->streams_model_from_storage) {
                 // A streaming backend reads the model from disk on demand, so the
                 // full model need not fit in memory — only its resident working

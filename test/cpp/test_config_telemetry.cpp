@@ -99,7 +99,7 @@ int main() {
     json extensor_update = {
         {"extensor", {
             {"extensor_model_path", "/models/deepseek-v4.extensor.gguf"},
-            {"extensor_preset", "demo"}
+            {"extensor_preset", "balanced"}
         }}
     };
     config.set(extensor_update);
@@ -107,7 +107,7 @@ int main() {
     check(snapshot["extensor"]["extensor_model_path"] ==
               "/models/deepseek-v4.extensor.gguf",
           "accepts descriptor-declared backend string option");
-    check(snapshot["extensor"]["extensor_preset"] == "demo",
+    check(snapshot["extensor"]["extensor_preset"] == "balanced",
           "persists descriptor-declared backend option");
 
     bool threw_wrong_extensor_type = false;
