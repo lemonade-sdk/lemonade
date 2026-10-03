@@ -255,6 +255,64 @@ public:
     }
 };
 
+// A zero-shot encoder: the declared labels are written into the text the model
+// reads rather than being a property of its export, so they travel with every
+// call. The full score distribution is reported unchanged, so conditions band
+// it exactly as they band a `classifier`.
+class ZeroShotClassifier final : public Classifier {
+public:
+    ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
+                       std::vector<std::string> labels,
+                       std::optional<std::string> default_label)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)) {
+        if (model_name_.empty()) {
+            throw std::invalid_argument("zero_shot classifier requires model");
+        }
+        if (this->labels().empty()) {
+            throw std::invalid_argument(
+                "zero_shot classifier requires at least one label; the model has no "
+                "label set of its own to fall back on");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        Score score;
+        if (!ctx.services.run_zero_shot_classifier) {
+            return failed_score();
+        }
+
+        try {
+            score.labels =
+                ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
+            score.ok = true;
+        } catch (...) {
+            score = failed_score();
+        }
+        if (score.ok && !scores_declared_labels(score)) {
+            LOG(WARNING, "Routing") << "zero_shot classifier '" << id()
+                                    << "' got scores for a different label set than it sent; "
+                                       "the backend did not score the request's labels"
+                                    << std::endl;
+            score = failed_score();
+        }
+        return score;
+    }
+
+private:
+    // A backend that ignores the request's labels answers with its own head's
+    // label set. Accepting that would score every declared label 0.0, a
+    // confident miss that skips on_error instead of triggering it.
+    bool scores_declared_labels(const Score& score) const {
+        const std::set<std::string> declared(labels().begin(), labels().end());
+        if (score.labels.size() != declared.size()) return false;
+        for (const auto& entry : score.labels) {
+            if (!declared.count(entry.first)) return false;
+        }
+        return true;
+    }
+};
+
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
 // prompt plus a fixed response-contract suffix (listing the candidates), and
 // requires a structured reply: a single JSON object
@@ -1137,6 +1195,23 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ModelClassifier>(
+            id, type, config.value("model", ""), on_error,
+            std::move(labels), std::move(default_label));
+    }
+
+    if (type == "zero_shot") {
+        if (config.contains("prompt")) {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id +
+                "' does not accept prompt; the backend builds the label block itself");
+        }
+        if (config.contains("reference_phrases")) {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id + "' does not accept reference_phrases");
+        }
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<ZeroShotClassifier>(
             id, type, config.value("model", ""), on_error,
             std::move(labels), std::move(default_label));
     }

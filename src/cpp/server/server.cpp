@@ -4332,6 +4332,32 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     }
 }
 
+namespace {
+// Shape check for the optional `labels` list of a zero-shot classify request.
+std::string validate_classify_labels(const nlohmann::json& labels) {
+    if (!labels.is_array()) {
+        return "'labels' must be an array of strings";
+    }
+    if (labels.empty()) {
+        return "'labels' must contain at least one label";
+    }
+    std::set<std::string> seen;
+    for (const auto& label : labels) {
+        if (!label.is_string()) {
+            return "'labels' must be an array of strings";
+        }
+        const std::string value = label.get<std::string>();
+        if (value.find_first_not_of(" \t\r\n") == std::string::npos) {
+            return "'labels' entries must not be empty";
+        }
+        if (!seen.insert(value).second) {
+            return "'labels' contains a duplicate entry: '" + value + "'";
+        }
+    }
+    return "";
+}
+}  // namespace
+
 void Server::handle_classify(const httplib::Request& req, httplib::Response& res) {
     try {
         nlohmann::json request_json;
@@ -4371,6 +4397,8 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
                     request_json["top_k"].get<long long>() < 1 ||
                     request_json["top_k"].get<long long>() > 1000000)) {
             validation_error = "'top_k' must be a positive integer";
+        } else if (request_json.contains("labels")) {
+            validation_error = validate_classify_labels(request_json["labels"]);
         }
         if (!validation_error.empty()) {
             res.status = 400;
