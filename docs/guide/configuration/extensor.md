@@ -36,12 +36,12 @@ memory. EXTENSOR streams weights and sizes its expert cache at runtime, so it
 determines whether a model can load with the available memory. OS and GPU
 compatibility checks still apply; other backends retain their memory filters.
 
-Set these overrides in `config.json` to keep model downloads under `/scratch`:
+Set these overrides in `config.json`, replacing the example path with your model directory:
 
 ```json
 {
   "ctx_size": 4096,
-  "models_dir": "/scratch/eddier/lemonade-cache/models",
+  "models_dir": "/path/to/lemonade-models",
   "extensor": {
     "backend": "rocm",
     "rocm_bin": "builtin",
