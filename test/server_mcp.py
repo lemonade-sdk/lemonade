@@ -46,6 +46,14 @@ def _auth_headers():
     return {}
 
 
+def _admin_headers():
+    """Bearer-token header for /internal routes, which only the admin key opens."""
+    admin_key = os.environ.get("LEMONADE_ADMIN_API_KEY")
+    if admin_key:
+        return {"Authorization": f"Bearer {admin_key}"}
+    return _auth_headers()
+
+
 def _post(payload, timeout=TIMEOUT_DEFAULT):
     """POST a JSON-RPC body to /mcp and return the requests.Response."""
     return requests.post(
@@ -532,7 +540,7 @@ class McpGatewayTests(ServerTestBase):
         registered = requests.post(
             f"{base}/internal/aliases",
             json={"alias": alias, "target": ENDPOINT_TEST_MODEL},
-            headers=_auth_headers(),
+            headers=_admin_headers(),
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -543,7 +551,7 @@ class McpGatewayTests(ServerTestBase):
         self.addCleanup(
             requests.delete,
             f"{base}/internal/aliases/{alias}",
-            headers=_auth_headers(),
+            headers=_admin_headers(),
             timeout=TIMEOUT_DEFAULT,
         )
 
