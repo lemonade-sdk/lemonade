@@ -1548,7 +1548,21 @@ RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices 
 }
 
 Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
-    EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
+    // Any request reaching the engine is at least one turn. build_route_context
+    // floors that, but route() is also callable with a context built by hand,
+    // and a zero left there would make min_turns: 1 fail and max_turns: 1 match.
+    // The floor cannot live on the field's default: build_route_context counts
+    // user turns by incrementing it, so a non-zero default would overcount by
+    // one on every request. Copy only when the floor actually applies.
+    RouteContext floored;
+    const RouteContext* request = &ctx;
+    if (ctx.params.turn_count == 0) {
+        floored = ctx;
+        floored.params.turn_count = 1;
+        request = &floored;
+    }
+
+    EvalContext eval{*request, services_, want_trace, {}, {}, {}};
 
     // First-match-wins over the compiled rules. A classifier-level failure is
     // already absorbed upstream by ClassifierBandCondition (Score::ok + the
