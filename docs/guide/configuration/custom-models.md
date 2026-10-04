@@ -382,7 +382,7 @@ These notes apply to both:
 | A `.gguf` file at the search root, or in a reserved directory | the filename without `.gguf` |
 | A folder holding one model | the folder name |
 | A folder holding several quantization variants | one name per variant, each from its filename |
-| A name another imported model already took | the name, qualified with its own folder, then `-2`, `-3` if that is also taken |
+| A name another imported model already took, or an earlier folder owns | the name, qualified with the folder that contains it, then `-2`, `-3` if that is also taken |
 
 For example:
 
@@ -395,6 +395,7 @@ For example:
 | `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M.gguf` and `mmproj-Qwen3-8B-f16.gguf` | `Qwen3-8B-GGUF` |
 | `Mixtral-GGUF/` holding a two-shard `Mixtral-Q4_K_M` set and a two-shard `Mixtral-Q8_0` set | `Mixtral-Q4_K_M`, `Mixtral-Q8_0` |
 | `Llama-Local-GGUF/` and `Mistral-Local-GGUF/`, each holding `model-Q4_K_M.gguf` and `model-Q8_0.gguf` | `model-Q4_K_M`, `model-Q8_0`, `Mistral-Local-GGUF-model-Q4_K_M`, `Mistral-Local-GGUF-model-Q8_0` |
+| `alpha/Shared/` holding `Llama-Q4_K_M.gguf` and `Llama-Q8_0.gguf`, and `beta/Shared/` holding `Mistral-Q4_K_M.gguf` | `Llama-Q4_K_M`, `Llama-Q8_0`, `beta-Shared` |
 
 Notes:
 
