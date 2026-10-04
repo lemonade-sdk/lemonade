@@ -1,7 +1,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
+#include "support/test_state_isolation.h"
 
-#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -19,14 +19,6 @@ static int g_failures = 0;
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
-}
-
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_download_state_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
 }
 
 static void write_file(const fs::path& path, const std::string& contents = "data") {
@@ -214,12 +206,10 @@ static void test_collection_component_download_state(
 }
 
 int main() {
-    fs::path temp = make_temp_dir();
+    const fs::path temp = lemon::test::state_dir();
     fs::path hf_root = temp / "hf";
     fs::create_directories(hf_root);
 
-    lemon::utils::set_cache_dir(path_to_utf8(temp));
-    lemon::utils::set_config_dir(path_to_utf8(temp));
     lemon::utils::set_models_dir(path_to_utf8(hf_root));
 
     RegistryFixtures fixtures = create_registry_fixtures(temp, hf_root);
@@ -232,8 +222,6 @@ int main() {
         test_variantless_snapshot_commit_state(manager, fixtures);
         test_collection_component_download_state(manager, fixtures);
     }
-
-    fs::remove_all(temp);
 
     if (g_failures == 0) {
         std::printf("All model download-state tests passed.\n");
