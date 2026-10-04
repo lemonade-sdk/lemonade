@@ -1,3 +1,5 @@
+import type { ChatErrorInfo } from './httpErrors';
+
 export interface ImageContent {
   type: 'image_url';
   image_url: {
@@ -24,6 +26,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: MessageContent;
   thinking?: string;
+  error?: ChatErrorInfo;
 }
 
 // Wire protocol types for tool-calling agentic loop
