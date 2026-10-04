@@ -6,6 +6,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
+#include <atomic>
 #include <map>
 #include <string>
 #include <vector>
@@ -163,6 +164,10 @@ private:
     std::string upstream_model_; // provider's model id (from ModelInfo.checkpoint())
     CloudProviderRegistry* registry_ = nullptr;  // Not owned
     bool loaded_ = false;
+
+    // Monotonic across instances so every relay, whichever cloud model serves
+    // it, is identifiable in the log by a distinct id.
+    inline static std::atomic<uint64_t> next_task_id_{1};
 };
 
 namespace cloud {
