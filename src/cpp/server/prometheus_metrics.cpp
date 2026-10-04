@@ -8,11 +8,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <iomanip>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include <httplib.h>
 
@@ -314,7 +316,23 @@ void append_llamacpp_backend_metrics(PrometheusBuilder& metrics,
 
 } // namespace
 
-std::string build_prometheus_metrics(Router& router, const SystemMetrics& system_metrics) {
+MetricsAliasMap build_metrics_alias_map(
+    const std::unordered_map<std::string, std::string>& raw_aliases,
+    const std::function<std::string(const std::string&)>& resolve) {
+    MetricsAliasMap mapping;
+    if (!resolve) return mapping;
+
+    for (const auto& entry : raw_aliases) {
+        if (entry.first.empty()) continue;
+        std::string target = resolve(entry.first);
+        if (target.empty() || target == entry.first) continue;
+        mapping[entry.first] = target;
+    }
+    return mapping;
+}
+
+std::string build_prometheus_metrics(Router& router, const SystemMetrics& system_metrics,
+                                     const MetricsAliasMap& aliases) {
     PrometheusBuilder metrics;
 
     metrics.describe("lemonade_server_up", "Whether the Lemonade server is running.", "gauge");
@@ -343,6 +361,12 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     metrics.describe("lemonade_model_output_tokens_total", "Cumulative output tokens observed for a model.", "counter");
     metrics.describe("lemonade_model_prompt_tokens_total", "Cumulative prompt tokens observed for a model.", "counter");
     metrics.describe("lemonade_model_cache_tokens_total", "Cumulative prompt tokens served from the backend prefix cache for a model.", "counter");
+    metrics.describe("lemonade_model_alias_info", "Mapping from a registered alias to the model name it resolves to; always 1.", "gauge");
+
+    for (const auto& entry : aliases) {
+        metrics.sample("lemonade_model_alias_info",
+                       {{"alias", entry.first}, {"model_name", entry.second}}, 1.0);
+    }
 
     for (const auto& model : model_metrics) {
         std::map<std::string, std::string> labels = {
