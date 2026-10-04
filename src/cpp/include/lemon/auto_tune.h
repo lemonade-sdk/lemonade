@@ -279,10 +279,10 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     return ctx_size;
 }
 
-/// An encoder SystemOne decision model has no KV cache to grow and reads its
-/// whole input in one physical batch, so its context is its trained window.
-/// Causal decision models (openjev, lev, kev) keep a KV cache and declare
-/// windows up to 262144 tokens, so they size their context like any LLM.
+/// An encoder SystemOne decision model has no KV cache to grow, so its context
+/// is its trained window. Causal decision models (openjev, lev, kev) keep a KV
+/// cache and declare windows up to 262144 tokens, so they size their context
+/// like any LLM.
 inline bool is_encoder_decision_model(const ModelInfo& model_info) {
     return has_label(model_info.labels, "systemone") && !model_info.gguf.causal_attention &&
            model_info.max_context_window > 0;
