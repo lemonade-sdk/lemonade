@@ -4245,6 +4245,10 @@ void ModelManager::register_user_model(const std::string& model_name,
     // components) still must not trigger one.
     if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
         notify_models_changed();
+    } else {
+        // The bump alone: notify_models_changed() would also reconcile routing
+        // helpers, which an ordinary model does not affect.
+        next_notify_generation();
     }
 }
 
@@ -4271,6 +4275,8 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
 
     if (was_router_collection) {
         notify_models_changed();
+    } else {
+        next_notify_generation();
     }
 }
 

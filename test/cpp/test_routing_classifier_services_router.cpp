@@ -112,9 +112,32 @@ static void test_unregistered_candidate_is_consistently_no_data() {
     fs::remove_all(temp);
 }
 
+// Registering an ordinary model changes what a bare candidate name resolves
+// to, so a price already memoised under that name has to be dropped. Only a
+// router collection used to advance the notify generation, which left the memo
+// answering from the registry as it was before the model existed.
+static void test_ordinary_registration_advances_the_generation() {
+    fs::path temp = make_temp_dir();
+    lemon::utils::set_cache_dir(temp.string());
+
+    ModelManager model_manager;
+    const uint64_t before = model_manager.current_notify_generation();
+    model_manager.register_user_model(
+        "user.PlainModel",
+        json{{"model_name", "user.PlainModel"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/plain:Q4_K_M"}});
+    const uint64_t after = model_manager.current_notify_generation();
+
+    check("router cost cache: registering an ordinary model advances the notify generation",
+          after > before);
+
+    fs::remove_all(temp);
+}
+
 int main() {
     test_price_cache_survives_flooding_past_its_bound();
     test_unregistered_candidate_is_consistently_no_data();
+    test_ordinary_registration_advances_the_generation();
 
     if (g_failures == 0) {
         std::printf("All router cost services tests passed.\n");
