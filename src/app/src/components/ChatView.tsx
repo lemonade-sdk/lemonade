@@ -44,7 +44,7 @@ import {
   modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
-import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
+import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
@@ -895,6 +895,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
   const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
+  const [historyNoticeDismissed, setHistoryNoticeDismissed] = useState(false);
   // Large persisted conversations are not required to draw the first usable
   // frame.  Hydrate them after paint instead of JSON-parsing the full history
   // synchronously inside the initial React render.
@@ -2120,6 +2121,25 @@ const ChatView: React.FC<ChatViewProps> = ({
     try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
   }, [conversations, historyHydrated, persistHistory]);
 
+  const hasUnsavedConversations = !persistHistory && conversations.some(c => c.messages.length > 0);
+
+  // The browser owns this dialog's wording, so it cannot say what is at stake.
+  // The composer notice carries the explanation; this only catches the reflex refresh.
+  useEffect(() => {
+    if (!hasUnsavedConversations) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedConversations]);
+
+  const handleEnableHistoryPersistence = useCallback(() => {
+    saveChatHistoryPreference(true);
+  }, []);
+
   // Persist active conversation id only after the initial stored value has been
   // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
@@ -2171,7 +2191,19 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const handleSelectConversation = useCallback((id: string) => {
     setActiveId(id);
-  }, []);
+    // Each conversation answers with the model it was started on. Without this the
+    // app-level selection leaks across conversations and an old thread silently
+    // continues on whatever model was picked last.
+    const convoModel = conversations.find(c => c.id === id)?.model?.name;
+    if (!convoModel || convoModel === currentModel) return;
+    if (loadedModels.some(m => m.model_name.toLowerCase() === convoModel.toLowerCase())) {
+      setFallbackModelOverride(null);
+      onModelSelect(convoModel);
+    } else {
+      // Not loaded: show it now, let the send path's ensureChatModelReady load it.
+      setFallbackModelOverride(convoModel);
+    }
+  }, [conversations, currentModel, loadedModels, onModelSelect]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     streaming.stop(id);
@@ -3809,6 +3841,25 @@ ${finalText}`
             {streamingToolStatus}
           </div>
         )}
+        {!persistHistory && messages.length > 0 && !historyNoticeDismissed && (
+          <div className="composer__history-notice" role="status">
+            <Icon name="alert" size={13} aria-hidden="true" />
+            <span className="composer__history-notice-copy">
+              Chat history is not saved. Refreshing clears this conversation. Turning saving on keeps the text of what is already here, but not images or audio.
+            </span>
+            <button type="button" className="composer__history-notice-action" onClick={handleEnableHistoryPersistence}>
+              Save chat history
+            </button>
+            <button
+              type="button"
+              className="composer__history-notice-dismiss"
+              onClick={() => setHistoryNoticeDismissed(true)}
+              aria-label="Dismiss chat history warning"
+            >
+              <Icon name="x" size={12} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
           <div className="composer__image-settings" aria-label="Image generation settings">
@@ -4372,11 +4423,11 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
+                aria-label={`Thinking: ${thinkingMode === 'off' ? 'Off' : 'On'}`}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
+                <span>{thinkingMode === 'off' ? 'Thinking: Off' : 'Thinking: On'}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
               {!thinkingMenuOpen && (
