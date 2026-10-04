@@ -1138,18 +1138,14 @@ void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res)
         }
 
         auto info = model_manager_->get_model_info(name);
-        int64_t ctx_size = -1;
-        if (router_) {
-            const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
-            const RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
-            const nlohmann::json ctx_json = effective.get_option("ctx_size");
-            if (ctx_json.is_number()) {
-                ctx_size = ctx_json.get<int64_t>();
-            }
-        }
-        if (ctx_size == -1) {
-            ctx_size = resolve_auto_ctx_size(RecipeOptions(info.recipe, nlohmann::json::object()), info);
-        }
+        const RecipeOptions effective = router_
+            ? router_->resolve_effective_options(info, RecipeOptions(info.recipe, nlohmann::json::object()))
+            : RecipeOptions(info.recipe, nlohmann::json::object());
+        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        const nlohmann::json ctx_json = effective.get_option("ctx_size");
+        int64_t ctx_size = auto_ctx != -2
+            ? auto_ctx
+            : (ctx_json.is_number() ? ctx_json.get<int64_t>() : -1);
         if (ctx_size <= 0) {
             ctx_size = info.max_context_window > 0 ? info.max_context_window : 4096;
         }
