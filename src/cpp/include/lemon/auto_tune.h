@@ -292,6 +292,18 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         return -2;  // Explicit value, no auto-resolution needed
     }
 
+    // Cloud models execute remotely and do not consume local GPU/system RAM.
+    // Preserve the model's declared maximum context window (e.g. 262,144) instead
+    // of applying the local VRAM auto-tune heuristic.
+    if (model_info.recipe == "cloud") {
+        int64_t cloud_ctx = model_info.max_context_window > 0
+            ? model_info.max_context_window
+            : AUTO_CTX_FALLBACK;
+        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
+                               << " (cloud) → ctx_size=" << cloud_ctx;
+        return cloud_ctx;
+    }
+
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
     std::string backend;
     std::string device;
