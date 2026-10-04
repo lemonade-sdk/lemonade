@@ -299,7 +299,27 @@ public:
         } catch (...) {
             score = failed_score();
         }
+        if (score.ok && !scores_declared_labels(score)) {
+            LOG(WARNING, "Routing") << "zero_shot classifier '" << id()
+                                    << "' got scores for a different label set than it sent; "
+                                       "the backend did not score the request's labels"
+                                    << std::endl;
+            score = failed_score();
+        }
         return score;
+    }
+
+private:
+    // A backend that ignores the request's labels answers with its own head's
+    // label set. Accepting that would score every declared label 0.0, a
+    // confident miss that skips on_error instead of triggering it.
+    bool scores_declared_labels(const Score& score) const {
+        const std::set<std::string> declared(labels().begin(), labels().end());
+        if (score.labels.size() != declared.size()) return false;
+        for (const auto& entry : score.labels) {
+            if (!declared.count(entry.first)) return false;
+        }
+        return true;
     }
 };
 
