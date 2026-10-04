@@ -1386,6 +1386,11 @@ jobs:
             extra_args: "--wrapped-server moonshine"
             backends: "cpu"
             runner: [self-hosted, Linux, X64, lemon-prod]
+          - name: systemone-llamacpp
+            script: server_systemone.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "cpu"
+            runner: [self-hosted, Linux, X64, lemon-prod]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
