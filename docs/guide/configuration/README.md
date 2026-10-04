@@ -472,7 +472,7 @@ lemonade-tray [--port PORT] [--host HOST] [--spawn-server] [--launch-app] [--sil
 ```
 
 - **--port** / **--host** — Server to connect to. Defaults come from the server's `config.json`.
-- **--spawn-server** — If no server is reachable at startup, start a local `lemond` and supervise it; quitting the tray stops that `lemond`. If a server is already running, such as the `systemd` service on Linux or the LaunchDaemon installed by the macOS package, the tray connects to it and nothing is spawned.
+- **--spawn-server** — Linux only. If no server is reachable at startup, start a local `lemond` and supervise it; quitting the tray stops that `lemond`. If a server is already running, such as the `systemd` service, the tray connects to it and nothing is spawned. On macOS the flag is accepted but ignored; the LaunchDaemon installed by the macOS package runs `lemond`.
 - **--launch-app** / **--open** — Open the desktop app once the server is ready.
 - **--silent** — Suppress the startup notification.
 
