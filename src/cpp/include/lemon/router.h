@@ -225,7 +225,7 @@ public:
     json embeddings(const json& request);
     json reranking(const json& request);
     json classify(const json& request);
-    json systemone(const json& request);
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);

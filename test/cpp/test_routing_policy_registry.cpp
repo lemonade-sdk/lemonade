@@ -199,7 +199,7 @@ static void test_zero_shot_classifier_rejects_mismatched_label_set() {
 }
 
 static lemon::Score evaluate_systemone(const lemon::ClassifierPtr& classifier, json answer,
-                                       json* asked = nullptr) {
+                                       nlohmann::ordered_json* asked = nullptr) {
     lemon::testing::FakeClassifierServices fake;
     fake.set_systemone_answer("decider", std::move(answer));
     auto services = fake.make();
@@ -223,13 +223,13 @@ static void test_make_systemone_classifier() {
           choice->type() == "systemone" &&
               choice->labels() == std::vector<std::string>{"billing", "shipping"});
 
-    json asked;
+    nlohmann::ordered_json asked;
     auto score = evaluate_systemone(
         choice,
         {{"type", "choice"}, {"choice", "billing"},
          {"probabilities", {{"billing", 0.9}, {"shipping", 0.1}}}},
         &asked);
-    check("systemone sends its declared question", asked == choice_question);
+    check("systemone sends its declared question", json(asked) == choice_question);
     check("systemone choice reports the option probabilities",
           score.ok && score.score_of("billing") == 0.9 && score.score_of("shipping") == 0.1);
 
@@ -254,6 +254,31 @@ static void test_make_systemone_classifier() {
     check("systemone score keys each level probability by its description",
           score.ok && score.score_of("can wait") == 0.1 && score.score_of("today") == 0.6 &&
               score.score_of("right now") == 0.3);
+}
+
+// A stored policy is json, which sorts object keys; the array form is how a
+// choice keeps the option order the model scores by.
+static void test_systemone_choice_array_keeps_option_order() {
+    auto choice = lemon::make_classifier(json{
+        {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "choice"}, {"instructions", "Which team?"},
+                      {"criteria", json::array({"technical",
+                                                json{{"shipping", "where an order is"}},
+                                                "billing"})}}}});
+    check("a choice criteria array declares its options in array order",
+          choice->labels() ==
+              std::vector<std::string>{"technical", "shipping", "billing"});
+
+    nlohmann::ordered_json asked;
+    auto score = evaluate_systemone(
+        choice,
+        {{"probabilities", {{"technical", 0.1}, {"shipping", 0.2}, {"billing", 0.7}}}},
+        &asked);
+    check("a choice criteria array reaches the model as an object in array order",
+          asked["criteria"].dump() ==
+              R"({"technical":null,"shipping":"where an order is","billing":null})");
+    check("a choice criteria array is scored like an object",
+          score.ok && score.score_of("billing") == 0.7);
 }
 
 // An answer that does not cover the asked options must fail the
@@ -322,6 +347,27 @@ static void test_make_systemone_classifier_rejections() {
           make({{"type", "score"}, {"instructions", "?"}, {"criteria", json::array({"a", 2})}}));
     check("systemone rejects noul criteria keys other than true and false",
           make({{"type", "noul"}, {"instructions", "?"}, {"criteria", {{"maybe", "?"}}}}));
+    check("systemone rejects an empty choice array",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array()}}));
+    check("systemone rejects a choice array that lists an option twice",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({"a", json{{"a", "again"}}})}}));
+    check("systemone rejects a choice array entry with two options",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({json{{"a", nullptr}, {"b", nullptr}}})}}));
+    check("systemone rejects a choice array entry that is not an option",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array({"a", 3})}}));
+
+    for (const char* type : {"classifier", "zero_shot", "llm"}) {
+        json config = {{"id", "x"}, {"type", type}, {"model", "m"},
+                       {"labels", json::array({"a"})}, {"prompt", "p"}};
+        if (std::string(type) == "zero_shot") config.erase("prompt");
+        const bool accepted = !throws_invalid_arg([config] { lemon::make_classifier(config); });
+        config["question"] = ok_question;
+        const std::string name = std::string(type) + " rejects a question, which only systemone asks";
+        check(name.c_str(),
+              accepted && throws_invalid_arg([config] { lemon::make_classifier(config); }));
+    }
 }
 
 static void test_make_classifier_rejections() {
@@ -593,6 +639,7 @@ int main() {
     test_zero_shot_classifier_without_service_fails_soft();
     test_zero_shot_classifier_rejects_mismatched_label_set();
     test_make_systemone_classifier();
+    test_systemone_choice_array_keeps_option_order();
     test_systemone_classifier_rejects_mismatched_answer();
     test_make_systemone_classifier_rejections();
     test_make_classifier_rejections();

@@ -116,7 +116,7 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
 
 TypeSafe System One API for llama.cpp decision models. You provide a `state` (the content to judge) and typed `questions`; the model answers each question in one forward pass, without generating tokens.
 
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Lemonade forwards the request body unchanged to llama.cpp's `/v1/systemone` endpoint, which builds the model prompt from the template stored in the GGUF. It needs llama.cpp `b11361` or later.
+> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Lemonade forwards the request body unchanged, including the order of each question's options, to llama.cpp's `/v1/systemone` endpoint, which builds the model prompt from the template stored in the GGUF. It needs llama.cpp `b11361` or later.
 
 > **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, `/api/v1/`, `/v0/`, and `/v1/`.
 
@@ -205,9 +205,8 @@ TypeSafe System One API for llama.cpp decision models. You provide a `state` (th
   - `score` - The expected level index, the `legend` of levels, `probabilities` per level, and `confidence`
 - `usage` - `input_tokens` counts the prompt tokens of all questions; `output_tokens` is always 0
 
-> **Note:** Answers depend on the model and on the wording of the question. Test a question with the model that will serve it before relying on its scores.
+> **Note:** Answers depend on the model, on the wording of the question, and on the order of a `choice` question's options. Test a question with the model that will serve it before relying on its scores.
 
-> **Note:** A state longer than the model's context window (8192 tokens for `Julia-1-GGUF` and `Laya-GGUF`) returns `500`. A model that is not a decision model returns `400`; image input on a model without image support returns `501`.
 
 ## `GET /v1/slots`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

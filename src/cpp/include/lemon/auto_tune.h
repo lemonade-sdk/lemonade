@@ -279,6 +279,15 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     return ctx_size;
 }
 
+/// An encoder SystemOne decision model has no KV cache to grow and reads its
+/// whole input in one physical batch, so its context is its trained window.
+/// Causal decision models (openjev, lev, kev) keep a KV cache and declare
+/// windows up to 262144 tokens, so they size their context like any LLM.
+inline bool is_encoder_decision_model(const ModelInfo& model_info) {
+    return has_label(model_info.labels, "systemone") && !model_info.gguf.causal_attention &&
+           model_info.max_context_window > 0;
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -292,12 +301,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         return -2;  // Explicit value, no auto-resolution needed
     }
 
-    // An encoder decision model has no KV cache to grow and reads its whole input
-    // in one physical batch, so it takes its trained window rather than a memory
-    // budget. Causal decision models (openjev, lev, kev) keep a KV cache and
-    // declare windows up to 262144 tokens, so they use the memory budget below.
-    if (has_label(model_info.labels, "systemone") && !model_info.gguf.causal_attention &&
-        model_info.max_context_window > 0) {
+    if (is_encoder_decision_model(model_info)) {
         return model_info.max_context_window;
     }
 

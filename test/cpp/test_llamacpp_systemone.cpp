@@ -6,6 +6,8 @@
 #include <string>
 
 using lemon::backends::llamacpp::build_systemone_classify_request;
+using lemon::backends::llamacpp::encoder_decision_ctx_size;
+using lemon::backends::llamacpp::map_encoder_overflow_error;
 using lemon::backends::llamacpp::systemone_classify_response;
 using nlohmann::json;
 
@@ -41,16 +43,15 @@ json answer_with(json probabilities) {
 int main() {
     const json labels = json::array({"coding", "pii", "cooking"});
 
-    const json body = build_systemone_classify_request("bake a cheesecake", labels);
+    const nlohmann::ordered_json body = build_systemone_classify_request("bake a cheesecake", labels);
     expect(body["state"] == "bake a cheesecake", "the input text is the state");
     expect(body["questions"].size() == 1, "the body asks exactly one question");
-    const json& question = body["questions"]["label"];
+    const nlohmann::ordered_json& question = body["questions"]["label"];
     expect(question["type"] == "choice", "the question is a choice");
     expect(question["instructions"].is_string() && !question["instructions"].empty(),
            "the question has instructions");
-    expect(question["criteria"] ==
-               json({{"coding", nullptr}, {"pii", nullptr}, {"cooking", nullptr}}),
-           "each label is an option without a description");
+    expect(question["criteria"].dump() == R"({"coding":null,"pii":null,"cooking":null})",
+           "each label is an option without a description, in the order of the labels");
 
     expect(throws<std::invalid_argument>([] {
                build_systemone_classify_request("x", json::array());
@@ -97,6 +98,30 @@ int main() {
                systemone_classify_response(json{{"answers", json::object()}}, labels, 0);
            }),
            "a response without the answer is refused");
+
+    expect(encoder_decision_ctx_size(190000, 8192) == 8192,
+           "a context above the trained window is capped to it");
+    expect(encoder_decision_ctx_size(2048, 8192) == 2048, "a smaller context is kept");
+    expect(encoder_decision_ctx_size(0, 8192) == 8192, "an unset context takes the trained window");
+    expect(encoder_decision_ctx_size(4096, 0) == 4096, "an unknown trained window changes nothing");
+
+    const json overflow = {{"error", {
+        {"message", "input (9217 tokens) is too large to process. increase the physical batch "
+                    "size (current batch size: 8192)"},
+        {"type", "server_error"},
+        {"status_code", 500},
+    }}};
+    const json mapped = map_encoder_overflow_error(overflow, 8192);
+    expect(mapped["error"]["status_code"] == 400 &&
+               mapped["error"]["code"] == "context_length_exceeded",
+           "an input longer than the batch is a 400 context_length_exceeded");
+    expect(mapped["error"]["message"].get<std::string>().find("input (9217 tokens)") == 0 &&
+               mapped["error"]["message"].get<std::string>().find("8192 tokens") !=
+                   std::string::npos,
+           "the message names the input and the window sizes");
+    const json other = {{"error", {{"message", "Compute error."}, {"status_code", 500}}}};
+    expect(map_encoder_overflow_error(other, 8192) == other, "other errors are left alone");
+    expect(map_encoder_overflow_error(response, 8192) == response, "answers are left alone");
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed" << std::endl;

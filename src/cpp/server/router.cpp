@@ -812,6 +812,13 @@ void Router::load_model(const std::string& model_name,
         residency_class_for_load_purpose(load_purpose);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
 
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        const std::string refusal = ops->validate_load(model_info);
+        if (!refusal.empty()) {
+            throw std::invalid_argument(refusal);
+        }
+    }
+
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
@@ -2091,12 +2098,14 @@ json Router::classify(const json& request) {
     }
 }
 
-json Router::systemone(const json& request) {
-    std::string requested_model = request.value("model", "");
-    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, request);
+nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) {
+    const json routing_request(request);
+    std::string requested_model = routing_request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, routing_request);
 
     try {
-        json response = execute_inference(request, [&](WrappedServer* server) {
+        nlohmann::ordered_json response = execute_inference(
+            routing_request, [&](WrappedServer* server) -> nlohmann::ordered_json {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("classifier.backend", identity.recipe);

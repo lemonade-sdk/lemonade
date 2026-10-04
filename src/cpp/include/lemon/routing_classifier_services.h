@@ -15,6 +15,7 @@ class Router;
 
 using EnsureClassifierModelLoaded = std::function<void(const std::string& model)>;
 using RouterJsonCall = std::function<json(const json& request)>;
+using RouterOrderedJsonCall = std::function<json(const nlohmann::ordered_json& request)>;
 using RouterModelTypeCall = std::function<ModelType(const std::string& model)>;
 
 ClassifierServices make_router_classifier_services(
@@ -35,7 +36,7 @@ ClassifierServices make_classifier_services_from_router_calls(
     EnsureClassifierModelLoaded ensure_loaded = {},
     RouterJsonCall classify = {},
     RouterModelTypeCall get_model_type = {},
-    RouterJsonCall systemone = {});
+    RouterOrderedJsonCall systemone = {});
 
 // Resolve CostInfo from optional typed per-million fields plus recognized
 // extras keys (cost_tier, cost_*_per_million, latency_ms_hint). Typed values

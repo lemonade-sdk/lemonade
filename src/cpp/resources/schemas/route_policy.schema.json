@@ -115,7 +115,9 @@
           "properties": {
             "type": { "enum": ["choice", "noul", "score"] },
             "instructions": {},
-            "criteria": {}
+            "criteria": {
+              "description": "choice: an object {option: description or null}, read by the model in sorted option order, or an array of option names and one-key {option: description} objects, read in array order. noul: optional {\"true\": ..., \"false\": ...}. score: an array of 2 to 10 level strings, lowest first."
+            }
           },
           "additionalProperties": false
         },
@@ -143,7 +145,9 @@
                                        { "required": ["reference_phrases"] }] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
           "then": { "required": ["model", "prompt", "labels"],
-                    "properties": { "labels": { "minItems": 1 } } } }
+                    "properties": { "labels": { "minItems": 1 } } } },
+        { "if":   { "required": ["question"] },
+          "then": { "properties": { "type": { "const": "systemone" } } } }
       ]
     },
     "rule": {

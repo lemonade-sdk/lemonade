@@ -120,14 +120,23 @@ std::string illegal_deployment_labels(const std::vector<std::string>& labels,
     }
 
     const BackendDescriptor* d = descriptor_for(recipe);
-    if (d != nullptr && !deploys_as.empty()) {
+    if (d != nullptr) {
+        if (deploys_as.empty() && !modes.empty()) {
+            deployment_mode_of(modes.front(), deployed);
+        }
         for (const auto& [mode, capability] : d->mode_capability_requirements) {
             ModelType gated = ModelType::LLM;
-            if (deployment_mode_of(mode, gated) && gated == deployed &&
-                !has_label(labels, capability)) {
-                return "recipe '" + recipe + "' cannot serve '" + deploys_as +
+            if (!deployment_mode_of(mode, gated)) continue;
+            const bool has_capability = has_label(labels, capability);
+            if (gated == deployed && !has_capability) {
+                return "recipe '" + recipe + "' cannot serve '" + mode +
                        "' without the '" + capability + "' label. Add that label, or omit '" +
-                       deploys_as + "' to deploy as '" + default_mode_for(recipe) + "'.";
+                       mode + "' to deploy as '" + default_mode_for(recipe) + "'.";
+            }
+            if (gated != deployed && has_capability) {
+                return "the '" + capability + "' label needs the '" + mode +
+                       "' label: recipe '" + recipe + "' serves '" + capability +
+                       "' models only in that mode. Add '" + mode + "'.";
             }
         }
     }

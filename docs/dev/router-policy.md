@@ -179,7 +179,8 @@ and every entry's `model` must be one of `components`:
   classification model, checked when the policy is registered rather than on the
   first request. A llama.cpp decision model such as `Laya-GGUF` also serves
   `zero_shot`: Lemonade asks it one `choice` question whose options are your
-  labels.
+  labels, with the fixed instruction "Which category does this text belong
+  to?". To ask your own instruction, use `systemone`.
 - `systemone` asks a llama.cpp decision model one typed question. Its labels come from the question, so the classifier takes no `labels`:
   the criteria keys of a `choice`, `"true"` and `"false"` for a `noul`, the level
   strings of a `score`:
@@ -202,6 +203,7 @@ and every entry's `model` must be one of `components`:
   registered. A classification model without the `systemone` label (an ONNX
   classifier) fails each request and the rule applies `on_error`. Answers depend
   on the model and on the question's wording, so test a question with its model.
+  Only `systemone` accepts `question`.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in

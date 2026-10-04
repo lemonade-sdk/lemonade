@@ -625,6 +625,10 @@ protected:
                          const json& request,
                          long timeout_seconds = 0);
 
+    nlohmann::ordered_json forward_ordered_request(const std::string& endpoint,
+                                                   const nlohmann::ordered_json& request,
+                                                   long timeout_seconds = 0);
+
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
@@ -692,6 +696,9 @@ private:
 
     void begin_backend_request(BackendRequestKind kind);
     void end_backend_request(BackendRequestKind kind);
+    template <typename Json>
+    Json forward_body(const std::string& endpoint, const std::string& body,
+                      long timeout_seconds);
     void backend_watchdog_loop();
     bool has_backend_process_exited() const;
 

@@ -18,6 +18,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/model_types.h"
 #include <cstring>
@@ -42,6 +43,7 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <thread>
@@ -3479,8 +3481,15 @@ void Server::respond_with_model_options(
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const nlohmann::json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+        int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        // LlamaCppServer::load caps it there; the Router cannot, because the
+        // stored options must keep matching later requests or every load reloads.
+        if (is_encoder_decision_model(info)) {
+            resolved_ctx = backends::llamacpp::encoder_decision_ctx_size(
+                static_cast<int>(std::min<int64_t>(resolved_ctx, std::numeric_limits<int>::max())),
+                info.max_context_window);
+        }
 
         nlohmann::json response = {
             {"model_name", model_id},
@@ -4417,6 +4426,18 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
         if (request_json.contains("model") && request_json["model"].is_string()) {
             requested_model = request_json["model"].get<std::string>();
         }
+        // Refused before the load: loading a chat model would take an LLM slot
+        // (and evict a loaded chat model) only to fail.
+        if (!requested_model.empty() && model_manager_->model_exists(requested_model) &&
+            model_manager_->get_model_info(requested_model).type != ModelType::CLASSIFICATION) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "model '" + requested_model + "' is not a classification model "
+                            "(it has no 'classification' label)"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
         auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request_json);
 
         // Handle model loading/switching using helper function
@@ -4523,8 +4544,12 @@ void Server::handle_systemone(const httplib::Request& req, httplib::Response& re
 
     try {
         nlohmann::json request_json;
+        // Forwarded instead of request_json, which sorts keys: the order of a
+        // choice question's options changes the model's scores.
+        nlohmann::ordered_json body;
         try {
             request_json = nlohmann::json::parse(req.body);
+            body = nlohmann::ordered_json::parse(req.body);
         } catch (const nlohmann::json::parse_error& e) {
             reject(std::string("Invalid JSON in request body: ") + e.what());
             return;
@@ -4566,11 +4591,14 @@ void Server::handle_systemone(const httplib::Request& req, httplib::Response& re
             request_json["model"] = requested_model;
         }
 
-        if (model_manager_->model_exists(requested_model) &&
-            !has_label(model_manager_->get_model_info(requested_model).labels, "systemone")) {
-            reject("model '" + requested_model +
-                   "' is not a SystemOne decision model (it has no 'systemone' label)");
-            return;
+        if (model_manager_->model_exists(requested_model)) {
+            const ModelInfo info = model_manager_->get_model_info(requested_model);
+            if (!has_label(info.labels, "systemone") || info.type != ModelType::CLASSIFICATION) {
+                reject("model '" + requested_model +
+                       "' is not a SystemOne decision model (it needs the 'classification' "
+                       "and 'systemone' labels)");
+                return;
+            }
         }
 
         auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, request_json);
@@ -4591,7 +4619,8 @@ void Server::handle_systemone(const httplib::Request& req, httplib::Response& re
             return;
         }
 
-        auto response = router_->systemone(request_json);
+        body["model"] = requested_model;
+        auto response = router_->systemone(body);
         if (response.contains("error")) {
             set_error_response(response, res);
             return;

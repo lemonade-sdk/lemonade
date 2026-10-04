@@ -81,7 +81,9 @@ public:
     }
 
     // The question passed to the most recent run_systemone call.
-    const json& last_systemone_question() const { return last_systemone_question_; }
+    const nlohmann::ordered_json& last_systemone_question() const {
+        return last_systemone_question_;
+    }
 
     // Build a ClassifierServices wired to this fake. The returned struct copies
     // `this` by pointer, so keep the FakeClassifierServices alive for the
@@ -114,7 +116,7 @@ public:
             return std::map<std::string, double>{};
         };
         svc.run_systemone = [self](const std::string& model, const std::string&,
-                                   const json& question) {
+                                   const nlohmann::ordered_json& question) {
             self->last_systemone_question_ = question;
             auto it = self->systemone_answers_.find(model);
             if (it != self->systemone_answers_.end()) return it->second;
@@ -138,7 +140,7 @@ private:
     std::map<std::string, std::map<std::string, double>> zero_shot_scores_;
     std::vector<std::string> last_zero_shot_labels_;
     std::map<std::string, json> systemone_answers_;
-    json last_systemone_question_;
+    nlohmann::ordered_json last_systemone_question_;
     std::map<std::string, std::string> chat_replies_;
 };
 

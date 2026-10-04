@@ -684,9 +684,10 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     }
 }
 
-json WrappedServer::forward_request(const std::string& endpoint,
-                                     const json& request,
-                                     long timeout_seconds) {
+template <typename Json>
+Json WrappedServer::forward_body(const std::string& endpoint,
+                                 const std::string& body,
+                                 long timeout_seconds) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -711,7 +712,7 @@ json WrappedServer::forward_request(const std::string& endpoint,
     try {
         auto response = utils::HttpClient::post(
             url,
-            request.dump(),
+            body,
             headers,
             timeout_seconds,
             utils::HttpSecurityPolicy::TrustedLoopback,
@@ -719,7 +720,7 @@ json WrappedServer::forward_request(const std::string& endpoint,
         note_backend_activity();
 
         if (response.status_code == 200) {
-            return json::parse(response.body);
+            return Json::parse(response.body);
         } else {
             // Try to parse error response from backend
             json error_details;
@@ -750,6 +751,19 @@ json WrappedServer::forward_request(const std::string& endpoint,
         }
         return ErrorResponse::from_exception(NetworkException(e.what()));
     }
+}
+
+json WrappedServer::forward_request(const std::string& endpoint,
+                                     const json& request,
+                                     long timeout_seconds) {
+    return forward_body<json>(endpoint, request.dump(), timeout_seconds);
+}
+
+nlohmann::ordered_json WrappedServer::forward_ordered_request(
+    const std::string& endpoint,
+    const nlohmann::ordered_json& request,
+    long timeout_seconds) {
+    return forward_body<nlohmann::ordered_json>(endpoint, request.dump(), timeout_seconds);
 }
 
 json WrappedServer::forward_multipart_request(const std::string& endpoint,

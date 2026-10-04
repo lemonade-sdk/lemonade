@@ -181,10 +181,12 @@ struct ClassifierServices {
 
     // Ask `model` one `question` (type, instructions, criteria) about `text`;
     // returns the answer object for it. Powers the `systemone` type (see
-    // ISystemOneServer). Maps to Router::systemone.
+    // ISystemOneServer). Maps to Router::systemone. The question is
+    // ordered_json because the order of a choice question's options changes the
+    // model's scores.
     std::function<json(const std::string& model,
                        const std::string& text,
-                       const json& question)> run_systemone;
+                       const nlohmann::ordered_json& question)> run_systemone;
 
     // Run a chat `model` with a system `prompt` over `input`; returns the raw
     // assistant text. Powers the `llm` router / L0a on-ramp. Maps to

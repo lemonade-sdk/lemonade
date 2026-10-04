@@ -17,7 +17,9 @@ ClassifierServices make_router_classifier_services(
         std::move(ensure_loaded),
         [&router](const json& request) { return router.classify(request); },
         [&router](const std::string& model) { return router.get_model_type(model); },
-        [&router](const json& request) { return router.systemone(request); });
+        [&router](const nlohmann::ordered_json& request) {
+            return json(router.systemone(request));
+        });
 }
 
 CostServices make_router_cost_services(Router& router) {

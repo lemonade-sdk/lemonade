@@ -91,7 +91,7 @@ public:
 class ISystemOneServer : public virtual ICapability {
 public:
     virtual ~ISystemOneServer() = default;
-    virtual json systemone(const json& request) = 0;
+    virtual nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) = 0;
 };
 
 class IImageServer : public virtual ICapability {

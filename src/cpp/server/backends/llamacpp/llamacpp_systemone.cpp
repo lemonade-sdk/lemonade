@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -19,12 +20,12 @@ constexpr const char* CLASSIFY_INSTRUCTIONS = "Which category does this text bel
 
 }  // namespace
 
-nlohmann::json build_systemone_classify_request(const std::string& text,
-                                                const nlohmann::json& labels) {
+nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
+                                                        const nlohmann::json& labels) {
     if (!labels.is_array() || labels.empty()) {
         throw std::invalid_argument("\"labels\" must be a non-empty array of strings");
     }
-    nlohmann::json criteria = nlohmann::json::object();
+    nlohmann::ordered_json criteria = nlohmann::ordered_json::object();
     for (const auto& label : labels) {
         if (!label.is_string()) {
             throw std::invalid_argument("\"labels\" must be a non-empty array of strings");
@@ -38,7 +39,7 @@ nlohmann::json build_systemone_classify_request(const std::string& text,
         }
         criteria[value] = nullptr;
     }
-    return nlohmann::json{
+    return nlohmann::ordered_json{
         {"state", text},
         {"questions", {
             {QUESTION_ID, {
@@ -92,6 +93,40 @@ nlohmann::json systemone_classify_response(const nlohmann::json& response,
     nlohmann::json scores = nlohmann::json::object();
     for (const auto& [label, probability] : ranked) scores[label] = probability;
     return nlohmann::json{{"labels", std::move(scores)}};
+}
+
+int encoder_decision_ctx_size(int requested, int64_t trained_window) {
+    if (trained_window <= 0 || trained_window > std::numeric_limits<int>::max()) {
+        return requested;
+    }
+    if (requested <= 0 || requested > trained_window) {
+        return static_cast<int>(trained_window);
+    }
+    return requested;
+}
+
+nlohmann::json map_encoder_overflow_error(nlohmann::json response, int context_size) {
+    if (!response.is_object() || !response.contains("error") || !response["error"].is_object()) {
+        return response;
+    }
+    const nlohmann::json& error = response["error"];
+    const std::string message = error.value("message", "");
+    if (message.find("increase the physical batch size") == std::string::npos) {
+        return response;
+    }
+    // llama-server words it "input (N tokens) is too large to process. ..."
+    std::string input = "the input";
+    const size_t end = message.find(" tokens)");
+    if (message.rfind("input (", 0) == 0 && end != std::string::npos) {
+        input = message.substr(0, end + 8);
+    }
+    return nlohmann::json{{"error", {
+        {"message", input + " is longer than the context window of this decision model (" +
+                        std::to_string(context_size) + " tokens)"},
+        {"type", "invalid_request_error"},
+        {"code", "context_length_exceeded"},
+        {"status_code", 400},
+    }}};
 }
 
 }  // namespace llamacpp

@@ -52,7 +52,7 @@ public:
     json classify(const json& request) override;
 
     // ISystemOneServer implementation
-    json systemone(const json& request) override;
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
 
     // ISlotsServer implementation
     json get_slots() override;
@@ -68,8 +68,10 @@ private:
     json normalize_response_model(json response, const json& request) const;
 
     json unsupported_decision_request(const std::string& operation) const;
+    nlohmann::ordered_json forward_systemone(const nlohmann::ordered_json& body);
 
     bool decision_model_ = false;
+    int encoder_batch_ctx_ = 0;
 };
 
 namespace llamacpp {

@@ -319,7 +319,8 @@ class SystemOneClassifier final : public Classifier {
 public:
     SystemOneClassifier(std::string id, std::string type, std::string model, OnError on_error,
                         std::vector<std::string> labels,
-                        std::optional<std::string> default_label, json question)
+                        std::optional<std::string> default_label,
+                        nlohmann::ordered_json question)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
                      std::move(labels), std::move(default_label)),
           question_(std::move(question)) {
@@ -388,7 +389,7 @@ private:
         return scores;
     }
 
-    json question_;
+    nlohmann::ordered_json question_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -711,9 +712,14 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
     return labels;
 }
 
+struct SystemOneQuestion {
+    std::vector<std::string> labels;
+    nlohmann::ordered_json question;
+};
+
 // Validates the TypeSafe question shape at registration, so a malformed question
 // fails once instead of sending every request to on_error.
-std::vector<std::string> parse_systemone_question(const json& config, const std::string& id) {
+SystemOneQuestion parse_systemone_question(const json& config, const std::string& id) {
     auto invalid = [&id](const std::string& message) {
         return std::invalid_argument("systemone classifier '" + id + "' " + message);
     };
@@ -738,17 +744,42 @@ std::vector<std::string> parse_systemone_question(const json& config, const std:
     const json criteria = question.contains("criteria") ? question["criteria"] : json();
 
     std::vector<std::string> labels;
+    nlohmann::ordered_json wire = {
+        {"type", type},
+        {"instructions", nlohmann::ordered_json(question["instructions"])},
+    };
     if (type == "choice") {
-        if (!criteria.is_object() || criteria.empty()) {
-            throw invalid("choice question requires a non-empty criteria object");
-        }
-        for (const auto& [option, description] : criteria.items()) {
-            (void)description;
+        nlohmann::ordered_json options = nlohmann::ordered_json::object();
+        auto add_option = [&](const std::string& option, const json& description) {
             if (blank(option)) {
                 throw invalid("choice options must not be empty");
             }
+            if (options.contains(option)) {
+                throw invalid("choice option '" + option + "' is listed twice");
+            }
+            options[option] = nlohmann::ordered_json(description);
             labels.push_back(option);
+        };
+        if (criteria.is_object() && !criteria.empty()) {
+            for (const auto& [option, description] : criteria.items()) {
+                add_option(option, description);
+            }
+        } else if (criteria.is_array() && !criteria.empty()) {
+            for (const auto& entry : criteria) {
+                if (entry.is_string()) {
+                    add_option(entry.get<std::string>(), nullptr);
+                } else if (entry.is_object() && entry.size() == 1) {
+                    add_option(entry.begin().key(), entry.begin().value());
+                } else {
+                    throw invalid("choice criteria array entries must be an option name or a "
+                                  "one-key object {option: description}");
+                }
+            }
+        } else {
+            throw invalid("choice question requires criteria: a non-empty object, or a "
+                          "non-empty array that keeps the option order");
         }
+        wire["criteria"] = std::move(options);
     } else if (type == "noul") {
         if (!criteria.is_null()) {
             if (!criteria.is_object()) {
@@ -762,6 +793,9 @@ std::vector<std::string> parse_systemone_question(const json& config, const std:
             }
         }
         labels = {"true", "false"};
+        if (!criteria.is_null()) {
+            wire["criteria"] = nlohmann::ordered_json(criteria);
+        }
     } else if (type == "score") {
         if (!criteria.is_array() || criteria.size() < 2 || criteria.size() > 10) {
             throw invalid("score question requires 2 to 10 criteria levels");
@@ -776,10 +810,11 @@ std::vector<std::string> parse_systemone_question(const json& config, const std:
             }
             labels.push_back(level.get<std::string>());
         }
+        wire["criteria"] = nlohmann::ordered_json(criteria);
     } else {
         throw invalid("question type must be one of: choice, noul, score");
     }
-    return labels;
+    return {std::move(labels), std::move(wire)};
 }
 
 std::optional<std::string> parse_default_label(const json& config,
@@ -1340,6 +1375,11 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
 
+    if (type != "systemone" && config.contains("question")) {
+        throw std::invalid_argument("classifier '" + id + "' does not accept question; "
+                                    "only the systemone type asks one");
+    }
+
     if (type == "classifier") {
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
@@ -1373,11 +1413,13 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
                     "; its labels are the options of its question");
             }
         }
-        std::vector<std::string> labels = parse_systemone_question(config, id);
-        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        SystemOneQuestion question = parse_systemone_question(config, id);
+        std::optional<std::string> default_label =
+            parse_default_label(config, question.labels, id);
         return std::make_shared<SystemOneClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label), config["question"]);
+            std::move(question.labels), std::move(default_label),
+            std::move(question.question));
     }
 
     if (type == "semantic_similarity") {

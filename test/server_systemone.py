@@ -40,12 +40,14 @@ QUESTIONS = {
         "criteria": ["can wait", "this week", "today", "right now"],
     },
 }
-# Long enough to overflow llama-server's default physical batch (512 tokens),
-# short of the 8192-token window the model was trained with.
-LONG_STATE = (
+PARAGRAPH = (
     "The quarterly report shows revenue growth across all regions, driven by "
     "strong demand for cloud services and improved margins in hardware. "
-) * 300
+)
+# Long enough to overflow llama-server's default physical batch (512 tokens),
+# short of the 8192-token window the model was trained with.
+LONG_STATE = PARAGRAPH * 100
+TOO_LONG_STATE = PARAGRAPH * 400
 
 
 class SystemOneTests(ServerTestBase):
@@ -104,6 +106,14 @@ class SystemOneTests(ServerTestBase):
             "systemone",
             self._payload(model=get_test_model("llm")),
             "Model without the systemone label",
+        )
+
+    def test_004_classify_chat_model_error(self):
+        """/v1/classify refuses a chat model before loading it into an LLM slot."""
+        self._assert_rejected(
+            "classify",
+            {"model": get_test_model("llm"), "input": "hello", "labels": ["a", "b"]},
+            "Classify on a chat model",
         )
 
     def test_500_typed_answers(self):
@@ -263,6 +273,123 @@ class SystemOneTests(ServerTestBase):
                         f"classifier failed instead of scoring: {entry}",
                     )
                 print(f"[OK] router: {prompt[:30]!r} -> {rule}")
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": collection},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_505_state_longer_than_window(self):
+        """A state beyond the context window is a client error, not a 500."""
+        self._ensure_model_pulled()
+        response = self._post("systemone", self._payload(state=TOO_LONG_STATE))
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertEqual(
+            response.json()["error"].get("code"), "context_length_exceeded"
+        )
+        print(f"[OK] too-long state: {response.json()['error']['message']}")
+
+    def test_506_option_order_reaches_model(self):
+        """The options reach the model in the client's order, which it scores by."""
+        self._ensure_model_pulled()
+        route = QUESTIONS["route"]
+        reversed_route = {
+            **route,
+            "criteria": dict(reversed(list(route["criteria"].items()))),
+        }
+        scores = []
+        for question in (route, reversed_route):
+            response = self._post(
+                "systemone", self._payload(questions={"route": question})
+            )
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            probabilities = response.json()["answers"]["route"]["probabilities"]
+            self.assertEqual(
+                list(probabilities),
+                list(question["criteria"]),
+                "The answer must list the options in the order they were asked",
+            )
+            scores.append(probabilities)
+        # Re-sorted options would make the two requests identical. Julia-1 is
+        # deterministic and scores options by position; an order-invariant model
+        # such as lev-GGUF gives equal scores and fails this check.
+        self.assertNotEqual(scores[0], scores[1])
+        print(f"[OK] option order: {scores[0]} vs {scores[1]}")
+
+    def test_507_router_choice_keeps_option_order(self):
+        """A router choice question given as an array reaches the model in that order."""
+        decider = get_test_model("systemone_router")
+        pull_model_with_retry(decider)
+        default_model = get_test_model("llm")
+        options = ["technical", "shipping", "billing"]
+        question = {
+            "type": "choice",
+            "instructions": "Which team should handle this?",
+            "criteria": options,
+        }
+        collection = "user.Test-Router-SystemOne-Order"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [default_model, decider],
+            "routing": {
+                "candidates": [default_model],
+                "default_model": default_model,
+                "classifiers": [
+                    {
+                        "id": "team",
+                        "type": "systemone",
+                        "model": decider,
+                        "question": question,
+                    }
+                ],
+                # min_score 0 makes every option's condition evaluate and trace.
+                "rules": [
+                    {
+                        "id": "probe",
+                        "match": {
+                            "all": [
+                                {"classifier": "team", "label": o, "min_score": 0.0}
+                                for o in options
+                            ]
+                        },
+                        "route_to": default_model,
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=1800
+        )
+        self.assertEqual(response.status_code, 200, f"register failed: {response.text}")
+        try:
+            direct = self._post(
+                "systemone",
+                {
+                    "model": decider,
+                    "state": STATE,
+                    "questions": {
+                        "q": {**question, "criteria": {o: None for o in options}}
+                    },
+                },
+            )
+            self.assertEqual(direct.status_code, 200, direct.text[:1000])
+            expected = direct.json()["answers"]["q"]["probabilities"]
+
+            response = self._post(
+                "routing/validate",
+                {"policy": policy, "prompt": STATE, "route_trace": True},
+            )
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            traced = {
+                entry["label"]: entry["score"]
+                for entry in response.json()["decision"]["trace"]
+            }
+            for option in options:
+                self.assertAlmostEqual(traced[option], expected[option], places=6)
+            print(f"[OK] router option order: {traced}")
         finally:
             requests.post(
                 f"{self.base_url}/delete",

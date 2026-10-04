@@ -263,9 +263,10 @@ static void test_run_zero_shot_classifier_rejects_non_classification_model() {
           threw && !chat_called && !classify_called);
 }
 
-static lemon::ClassifierServices systemone_services(std::function<json(const json&)> systemone,
-                                                    lemon::ModelType type,
-                                                    bool* loaded = nullptr) {
+static lemon::ClassifierServices systemone_services(
+    std::function<json(const nlohmann::ordered_json&)> systemone,
+    lemon::ModelType type,
+    bool* loaded = nullptr) {
     return lemon::make_classifier_services_from_router_calls(
         [](const json&) { return json::object(); },
         [](const json&) { return json::object(); },
@@ -278,14 +279,21 @@ static lemon::ClassifierServices systemone_services(std::function<json(const jso
 }
 
 static void test_run_systemone_sends_one_question_and_returns_its_answer() {
-    const json question = {{"type", "noul"}, {"instructions", "Does it contain personal data?"}};
-    json seen;
+    // Not alphabetical on purpose: the model scores options by position.
+    const nlohmann::ordered_json question = {
+        {"type", "choice"},
+        {"instructions", "Which team?"},
+        {"criteria", {{"shipping", nullptr}, {"billing", nullptr}}},
+    };
+    nlohmann::ordered_json seen;
     bool loaded = false;
     auto services = systemone_services(
-        [&](const json& request) {
+        [&](const nlohmann::ordered_json& request) {
             seen = request;
             return json{{"model", "decider"},
-                        {"answers", {{"question", {{"type", "noul"}, {"noul", 0.8}}}}}};
+                        {"answers", {{"question", {{"type", "choice"},
+                                                   {"probabilities", {{"billing", 0.8},
+                                                                      {"shipping", 0.2}}}}}}}};
         },
         lemon::ModelType::CLASSIFICATION, &loaded);
 
@@ -294,16 +302,17 @@ static void test_run_systemone_sends_one_question_and_returns_its_answer() {
     check("run_systemone sends the model and the input as the state",
           seen.value("model", "") == "decider" &&
               seen.value("state", "") == "my SSN is 123-45-6789");
-    check("run_systemone sends exactly one question",
-          seen["questions"].size() == 1 && seen["questions"]["question"] == question);
+    check("run_systemone sends exactly one question, options in their order",
+          seen["questions"].size() == 1 &&
+              seen["questions"]["question"].dump() == question.dump());
     check("run_systemone returns the answer to that question",
-          answer.value("noul", 0.0) == 0.8);
+          answer["probabilities"].value("billing", 0.0) == 0.8);
 }
 
 static void test_run_systemone_rejects_non_classification_model() {
     bool systemone_called = false;
     auto services = systemone_services(
-        [&](const json&) {
+        [&](const nlohmann::ordered_json&) {
             systemone_called = true;
             return json::object();
         },
@@ -320,8 +329,9 @@ static void test_run_systemone_rejects_non_classification_model() {
 
 static void test_run_systemone_throws_on_error_or_missing_answer() {
     auto throws_for = [](json response) {
-        auto services = systemone_services([response](const json&) { return response; },
-                                           lemon::ModelType::CLASSIFICATION);
+        auto services = systemone_services(
+            [response](const nlohmann::ordered_json&) { return response; },
+            lemon::ModelType::CLASSIFICATION);
         try {
             services.run_systemone("decider", "text", json{{"type", "noul"}});
         } catch (const std::exception&) {
