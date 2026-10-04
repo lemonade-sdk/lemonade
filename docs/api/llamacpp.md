@@ -7,6 +7,7 @@ This page documents Lemonade's llama.cpp-specific compatibility surface.
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
 | `POST` | [`/v1/rerank`](#post-v1rerank) | Reranking | query + documents -> relevance-scored documents |
+| `POST` | [`/v1/systemone`](#post-v1systemone) | Typed questions answered by a decision model | state + questions -> one answer per question |
 | `GET` | [`/v1/slots`](#get-v1slots) | Returns the current slots processing state | slots state |
 | `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsidactionsave) | Save the prompt cache of the specified slot to a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsidactionrestore) | Restore the prompt cache of the specified slot from a file | prompt cache |
@@ -109,6 +110,104 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
   - `total_tokens` - Total tokens processed
 
 > **Note:** Results are returned in input order. To rank documents by relevance, sort `results` by `relevance_score` in descending order on the client side.
+
+## `POST /v1/systemone`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+TypeSafe System One API for llama.cpp decision models. You provide a `state` (the content to judge) and typed `questions`; the model answers each question in one forward pass, without generating tokens.
+
+> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Lemonade forwards the request body unchanged to llama.cpp's `/v1/systemone` endpoint, which builds the model prompt from the template stored in the GGUF. It needs llama.cpp `b11361` or later.
+
+> **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, `/api/v1/`, `/v0/`, and `/v1/`.
+
+> **Note:** This endpoint is only available for decision models: `llamacpp` models labelled `classification` and `systemone`, such as `OpenJev-GGUF` and `Laya-GGUF`. Any other model is rejected with `400` before it is loaded.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes* | The decision model to use. *Optional when exactly one classification model is loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `state` | Yes | The content to judge: a string, an object, or an array. A value that is not a string reaches the model as JSON text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `questions` | Yes | An object that maps a question id to a question. Each question has a `type` (`choice`, `score`, or `noul`), `instructions`, and `criteria`: an object of option descriptions (or `null`) for `choice`, an array of 2 to 10 levels for `score`, optional `true`/`false` descriptions for `noul`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `images` | No | Data URLs of images, for decision models that accept them (`openjev` with `--mmproj`). | <sub>![Status](https://img.shields.io/badge/experimental-orange)</sub> |
+
+### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/systemone" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+        "model": "Laya-GGUF",
+        "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+        "questions": {
+          "route":   {"type": "choice", "instructions": "Which team should handle this?",
+                      "criteria": {"billing": null, "shipping": null, "technical": null}},
+          "angry":   {"type": "noul", "instructions": "Is the customer angry?"},
+          "urgency": {"type": "score", "instructions": "How urgent is this?",
+                      "criteria": ["can wait", "this week", "today", "right now"]}
+        }
+      }' -UseBasicParsing
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:13305/v1/systemone \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "Laya-GGUF",
+            "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+            "questions": {
+              "route":   {"type": "choice", "instructions": "Which team should handle this?",
+                          "criteria": {"billing": null, "shipping": null, "technical": null}},
+              "angry":   {"type": "noul", "instructions": "Is the customer angry?"},
+              "urgency": {"type": "score", "instructions": "How urgent is this?",
+                          "criteria": ["can wait", "this week", "today", "right now"]}
+            }
+          }'
+    ```
+
+### Response format
+
+```json
+{
+  "model": "Laya-GGUF",
+  "answers": {
+    "route": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": {"billing": 0.9905, "shipping": 0.0066, "technical": 0.0029},
+      "confidence": 0.9858
+    },
+    "angry": {"type": "noul", "noul": 0.7844},
+    "urgency": {
+      "type": "score",
+      "score": 1.916,
+      "legend": {"0": "can wait", "1": "this week", "2": "today", "3": "right now"},
+      "probabilities": {"0": 0.0405, "1": 0.4560, "2": 0.0503, "3": 0.4531},
+      "confidence": 0.0029
+    }
+  },
+  "usage": {"input_tokens": 136, "output_tokens": 0}
+}
+```
+
+**Field Descriptions:**
+
+- `model` - The Lemonade model name
+- `answers` - One answer per question id
+  - `choice` - The most likely option, `probabilities` per option (sum to 1), and `confidence` (0 when every option is equally likely)
+  - `noul` - The probability that the answer is `true`
+  - `score` - The expected level index, the `legend` of levels, `probabilities` per level, and `confidence`
+- `usage` - `input_tokens` counts the prompt tokens of all questions; `output_tokens` is always 0
+
+> **Note:** Answers depend on the model and on the wording of the question. Test a question with the model that will serve it before relying on its scores.
+
+> **Note:** A state longer than the model's context window (8192 tokens for `Julia-1-GGUF` and `Laya-GGUF`) returns `500`. A model that is not a decision model returns `400`; image input on a model without image support returns `501`.
 
 ## `GET /v1/slots`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

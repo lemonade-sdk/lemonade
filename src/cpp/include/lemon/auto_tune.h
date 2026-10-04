@@ -292,6 +292,15 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         return -2;  // Explicit value, no auto-resolution needed
     }
 
+    // An encoder decision model has no KV cache to grow and reads its whole input
+    // in one physical batch, so it takes its trained window rather than a memory
+    // budget. Causal decision models (openjev, lev, kev) keep a KV cache and
+    // declare windows up to 262144 tokens, so they use the memory budget below.
+    if (has_label(model_info.labels, "systemone") && !model_info.gguf.causal_attention &&
+        model_info.max_context_window > 0) {
+        return model_info.max_context_window;
+    }
+
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
     std::string backend;
     std::string device;

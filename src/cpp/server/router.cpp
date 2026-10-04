@@ -2091,6 +2091,52 @@ json Router::classify(const json& request) {
     }
 }
 
+json Router::systemone(const json& request) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("classifier.backend", identity.recipe);
+                span->set_attribute("classifier.device_type", identity.device);
+                span->set_attribute("classifier.checkpoint", identity.checkpoint);
+                span->set_attribute("classifier.recipe", identity.recipe);
+            }
+            auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
+            if (!systemone_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return systemone_server->systemone(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (response.contains("usage") && response["usage"].is_object() &&
+                    response["usage"].contains("input_tokens") &&
+                    response["usage"]["input_tokens"].is_number_integer()) {
+                    usage_payload["prompt_tokens"] = response["usage"]["input_tokens"].get<int>();
+                }
+                span->end_with_success(usage_payload, "");
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
+}
+
 json Router::get_slots() {
     WrappedServer* server = nullptr;
     ISlotsServer* slots_server = nullptr;

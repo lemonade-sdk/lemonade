@@ -49,7 +49,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe. Sequence-classification (one label set), token-classification (aggregated span labels), and zero-shot classification (labels supplied per request) models are supported.
+Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe, or be a llama.cpp decision model (`llamacpp` recipe, `systemone` label) for zero-shot labels. Sequence-classification (one label set), token-classification (aggregated span labels), and zero-shot classification (labels supplied per request) models are supported.
 
 **Supported architectures:** single-sequence encoder families — BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as-is. Zero-shot models are a separate family (LFM2) with their own input convention.
 
@@ -68,7 +68,7 @@ The endpoint is available at:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `model` | string | yes* | Classifier model id (a model with the `onnxruntime` recipe). *Optional when a classification model is already loaded; the loaded model is used and echoed in the response. |
+| `model` | string | yes* | Classifier model id (an `onnxruntime` model, or a `llamacpp` model labelled `systemone`). *Optional when a classification model is already loaded; the loaded model is used and echoed in the response. |
 | `input` | string | yes | Text to classify. `text` is accepted as an alias. |
 | `top_k` | integer | no | Return only the highest-scoring `k` labels. |
 | `labels` | string[] | zero-shot only | The label set to score this input against. **Required** for a zero-shot model and **rejected** for every other kind. Entries must be non-empty and unique. |
@@ -113,6 +113,8 @@ curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/
 ```
 
 The response keys are the labels you sent, softmaxed across the set. Sending `labels` to a fixed-label model, or omitting them for a zero-shot one, is a `400`, only the backend knows which kind its model is.
+
+A llama.cpp decision model such as `OpenJev-GGUF`, `Julia-1-GGUF` or `Laya-GGUF` serves the same request: Lemonade asks it one `choice` question whose options are your labels, through [`/v1/systemone`](llamacpp.md#post-v1systemone), and returns the option probabilities as `labels`. Like the ONNX zero-shot task, it requires `labels`.
 
 The router consumes the same capability through the `zero_shot` classifier type; see [Router Policies](../dev/router-policy.md).
 

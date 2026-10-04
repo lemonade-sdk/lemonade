@@ -1210,6 +1210,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_classify(req, res);
     });
 
+    register_post("systemone", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_systemone(req, res);
+    });
+
     // Slots (llama.cpp backend information)
     register_get("slots", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots(req, res);
@@ -4502,6 +4506,100 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_classify: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_systemone(const httplib::Request& req, httplib::Response& res) {
+    auto reject = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", message},
+            {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    };
+
+    try {
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const nlohmann::json::parse_error& e) {
+            reject(std::string("Invalid JSON in request body: ") + e.what());
+            return;
+        }
+        if (!request_json.is_object()) {
+            reject("Request body must be a JSON object");
+            return;
+        }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
+
+        // Shape only, before any model gets loaded; llama-server validates the
+        // questions themselves.
+        if (request_json.contains("model") && !request_json["model"].is_string()) {
+            reject("'model' must be a string");
+            return;
+        }
+        if (!request_json.contains("state") || request_json["state"].is_null()) {
+            reject("\"state\" must be provided");
+            return;
+        }
+        if (!request_json.contains("questions") || !request_json["questions"].is_object() ||
+            request_json["questions"].empty()) {
+            reject("\"questions\" must be a non-empty object");
+            return;
+        }
+
+        std::string requested_model;
+        if (request_json.contains("model")) {
+            requested_model = request_json["model"].get<std::string>();
+        } else {
+            requested_model = router_->get_sole_loaded_model_of_type(ModelType::CLASSIFICATION);
+            if (requested_model.empty()) {
+                reject("No 'model' specified and no single classification model is loaded "
+                       "(load one, or name it in the request)");
+                return;
+            }
+            request_json["model"] = requested_model;
+        }
+
+        if (model_manager_->model_exists(requested_model) &&
+            !has_label(model_manager_->get_model_info(requested_model).labels, "systemone")) {
+            reject("model '" + requested_model +
+                   "' is not a SystemOne decision model (it has no 'systemone' label)");
+            return;
+        }
+
+        auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, request_json);
+        try {
+            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
+            if (span) {
+                span->cancel();
+            }
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = get_http_status_from_error(error_code);
+            res.set_content(error_response.dump(), "application/json");
+            if (span) {
+                span->end_with_error(e.what());
+            }
+            return;
+        }
+
+        auto response = router_->systemone(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_systemone: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");

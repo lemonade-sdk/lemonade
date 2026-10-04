@@ -252,12 +252,14 @@ ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall chat_completion,
     EnsureClassifierModelLoaded ensure_loaded,
     RouterJsonCall classify,
-    RouterModelTypeCall get_model_type) {
+    RouterModelTypeCall get_model_type,
+    RouterJsonCall systemone) {
     ClassifierServices services;
     auto embeddings_call = std::make_shared<RouterJsonCall>(std::move(embeddings));
     auto chat_completion_call =
         std::make_shared<RouterJsonCall>(std::move(chat_completion));
     auto classify_call = std::make_shared<RouterJsonCall>(std::move(classify));
+    auto systemone_call = std::make_shared<RouterJsonCall>(std::move(systemone));
 
     services.embed = [embeddings_call,
                       ensure_loaded](const std::string& model,
@@ -349,6 +351,38 @@ ClassifierServices make_classifier_services_from_router_calls(
             {"labels", labels},
         };
         return parse_classifier_scores((*classify_call)(request));
+    };
+
+    services.run_systemone =
+        [systemone_call, get_model_type, ensure_loaded](
+            const std::string& model, const std::string& input,
+            const json& question) -> json {
+        if (!*systemone_call) {
+            throw std::runtime_error("Router systemone call is not configured");
+        }
+
+        ensure_model(ensure_loaded, model);
+
+        if (!get_model_type || get_model_type(model) != ModelType::CLASSIFICATION) {
+            throw std::runtime_error(
+                "systemone classifier model '" + model +
+                "' is not a classification model; it cannot answer a SystemOne question");
+        }
+
+        constexpr const char* kQuestionId = "question";
+        json request = {
+            {"model", model},
+            {"state", input},
+            {"questions", {{kQuestionId, question}}},
+        };
+        json response = (*systemone_call)(request);
+        throw_if_error_response(response, "systemone request");
+        if (!response.is_object() || !response.contains("answers") ||
+            !response["answers"].is_object() || !response["answers"].contains(kQuestionId) ||
+            !response["answers"][kQuestionId].is_object()) {
+            throw std::runtime_error("systemone response has no answer to the question");
+        }
+        return response["answers"][kQuestionId];
     };
 
     services.chat = [chat_completion_call,

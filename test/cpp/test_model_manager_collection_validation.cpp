@@ -217,10 +217,10 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
                          "cannot serve as a classifier"));
 
-    // The inverse: /v1/classify is served only by onnxruntime, so a
-    // `classification` label on a chat backend names a mode it cannot serve.
-    // Registration refuses it rather than registering a model that would fail
-    // when run_classifier reached Router::classify().
+    // The inverse: llamacpp serves /v1/classify only for SystemOne decision
+    // models, so a `classification` label without `systemone` names a mode it
+    // cannot serve. Registration refuses it rather than registering a model that
+    // would fail when run_classifier reached Router::classify().
     bool rejected = false;
     try {
         manager.register_user_model(

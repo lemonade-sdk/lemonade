@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -260,6 +261,78 @@ static void test_run_zero_shot_classifier_rejects_non_classification_model() {
     }
     check("run_zero_shot_classifier errors instead of falling back to chat",
           threw && !chat_called && !classify_called);
+}
+
+static lemon::ClassifierServices systemone_services(std::function<json(const json&)> systemone,
+                                                    lemon::ModelType type,
+                                                    bool* loaded = nullptr) {
+    return lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) { return json::object(); },
+        [loaded](const std::string&) {
+            if (loaded) *loaded = true;
+        },
+        [](const json&) { return json::object(); },
+        [type](const std::string&) { return type; },
+        std::move(systemone));
+}
+
+static void test_run_systemone_sends_one_question_and_returns_its_answer() {
+    const json question = {{"type", "noul"}, {"instructions", "Does it contain personal data?"}};
+    json seen;
+    bool loaded = false;
+    auto services = systemone_services(
+        [&](const json& request) {
+            seen = request;
+            return json{{"model", "decider"},
+                        {"answers", {{"question", {{"type", "noul"}, {"noul", 0.8}}}}}};
+        },
+        lemon::ModelType::CLASSIFICATION, &loaded);
+
+    json answer = services.run_systemone("decider", "my SSN is 123-45-6789", question);
+    check("run_systemone loads the model", loaded);
+    check("run_systemone sends the model and the input as the state",
+          seen.value("model", "") == "decider" &&
+              seen.value("state", "") == "my SSN is 123-45-6789");
+    check("run_systemone sends exactly one question",
+          seen["questions"].size() == 1 && seen["questions"]["question"] == question);
+    check("run_systemone returns the answer to that question",
+          answer.value("noul", 0.0) == 0.8);
+}
+
+static void test_run_systemone_rejects_non_classification_model() {
+    bool systemone_called = false;
+    auto services = systemone_services(
+        [&](const json&) {
+            systemone_called = true;
+            return json::object();
+        },
+        lemon::ModelType::LLM);
+    bool threw = false;
+    try {
+        services.run_systemone("chat-model", "text", json{{"type", "noul"}});
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("run_systemone refuses a model that is not a classification model",
+          threw && !systemone_called);
+}
+
+static void test_run_systemone_throws_on_error_or_missing_answer() {
+    auto throws_for = [](json response) {
+        auto services = systemone_services([response](const json&) { return response; },
+                                           lemon::ModelType::CLASSIFICATION);
+        try {
+            services.run_systemone("decider", "text", json{{"type", "noul"}});
+        } catch (const std::exception&) {
+            return true;
+        }
+        return false;
+    };
+    check("run_systemone throws on a backend error",
+          throws_for(json{{"error", {{"message", "input is too large"}}}}));
+    check("run_systemone throws when the answer is missing",
+          throws_for(json{{"answers", json::object()}}));
 }
 
 static void test_run_classifier_falls_back_to_chat_for_non_classification_model() {
@@ -993,6 +1066,9 @@ int main() {
     test_run_zero_shot_classifier_forwards_labels();
     test_run_zero_shot_classifier_loads_before_resolving_type();
     test_run_zero_shot_classifier_rejects_non_classification_model();
+    test_run_systemone_sends_one_question_and_returns_its_answer();
+    test_run_systemone_rejects_non_classification_model();
+    test_run_systemone_throws_on_error_or_missing_answer();
     test_run_classifier_falls_back_to_chat_for_non_classification_model();
     test_run_classifier_loads_before_resolving_type();
     test_run_classifier_ignores_openai_metadata();

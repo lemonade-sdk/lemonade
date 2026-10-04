@@ -198,6 +198,132 @@ static void test_zero_shot_classifier_rejects_mismatched_label_set() {
           exact.ok && exact.score_of("pii") == 0.8);
 }
 
+static lemon::Score evaluate_systemone(const lemon::ClassifierPtr& classifier, json answer,
+                                       json* asked = nullptr) {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_systemone_answer("decider", std::move(answer));
+    auto services = fake.make();
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, services);
+    lemon::Score score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    if (asked) *asked = fake.last_systemone_question();
+    return score;
+}
+
+static void test_make_systemone_classifier() {
+    const json choice_question = {
+        {"type", "choice"},
+        {"instructions", "Which team should handle this?"},
+        {"criteria", {{"billing", nullptr}, {"shipping", "where an order is"}}},
+    };
+    auto choice = lemon::make_classifier(json{
+        {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", choice_question}});
+    check("make_classifier builds a systemone classifier",
+          choice->type() == "systemone" &&
+              choice->labels() == std::vector<std::string>{"billing", "shipping"});
+
+    json asked;
+    auto score = evaluate_systemone(
+        choice,
+        {{"type", "choice"}, {"choice", "billing"},
+         {"probabilities", {{"billing", 0.9}, {"shipping", 0.1}}}},
+        &asked);
+    check("systemone sends its declared question", asked == choice_question);
+    check("systemone choice reports the option probabilities",
+          score.ok && score.score_of("billing") == 0.9 && score.score_of("shipping") == 0.1);
+
+    auto noul = lemon::make_classifier(json{
+        {"id", "pii"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "noul"},
+                      {"instructions", "Does the message contain personal data?"}}}});
+    score = evaluate_systemone(noul, {{"type", "noul"}, {"noul", 0.75}});
+    check("systemone noul declares true and false",
+          noul->labels() == std::vector<std::string>{"true", "false"});
+    check("systemone noul reports true and its complement",
+          score.ok && score.score_of("true") == 0.75 && score.score_of("false") == 0.25);
+
+    auto level = lemon::make_classifier(json{
+        {"id", "urgency"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "score"},
+                      {"instructions", "How urgent is this?"},
+                      {"criteria", json::array({"can wait", "today", "right now"})}}}});
+    score = evaluate_systemone(
+        level, {{"type", "score"}, {"score", 1.2},
+                {"probabilities", {{"0", 0.1}, {"1", 0.6}, {"2", 0.3}}}});
+    check("systemone score keys each level probability by its description",
+          score.ok && score.score_of("can wait") == 0.1 && score.score_of("today") == 0.6 &&
+              score.score_of("right now") == 0.3);
+}
+
+// An answer that does not cover the asked options must fail the
+// classifier, so a protective rule applies on_error instead of silently missing.
+static void test_systemone_classifier_rejects_mismatched_answer() {
+    auto choice = lemon::make_classifier(json{
+        {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "choice"}, {"instructions", "Which team?"},
+                      {"criteria", {{"billing", nullptr}, {"shipping", nullptr}}}}}});
+    check("systemone fails on another option set",
+          !evaluate_systemone(choice, {{"probabilities", {{"LABEL_0", 1.0}}}}).ok);
+    check("systemone fails when an option is missing",
+          !evaluate_systemone(choice, {{"probabilities", {{"billing", 1.0}}}}).ok);
+    check("systemone fails on an empty answer", !evaluate_systemone(choice, json::object()).ok);
+    check("systemone fails on a probability outside [0, 1]",
+          !evaluate_systemone(choice,
+                              {{"probabilities", {{"billing", 1.5}, {"shipping", -0.5}}}}).ok);
+
+    auto level = lemon::make_classifier(json{
+        {"id", "urgency"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "score"}, {"instructions", "How urgent?"},
+                      {"criteria", json::array({"low", "high"})}}}});
+    check("systemone score fails on a level index out of range",
+          !evaluate_systemone(level, {{"probabilities", {{"0", 0.5}, {"5", 0.5}}}}).ok);
+
+    lemon::ClassifierServices no_services;
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, no_services);
+    check("systemone without service reports ok=false",
+          !choice->evaluate(lemon::ClassifierContext{ctx.request, ctx.services}).ok);
+}
+
+static void test_make_systemone_classifier_rejections() {
+    auto make = [](json question, json extra = json::object()) {
+        json config = {{"id", "x"}, {"type", "systemone"}, {"model", "m"},
+                       {"question", std::move(question)}};
+        config.update(extra);
+        return throws_invalid_arg([config] { lemon::make_classifier(config); });
+    };
+    const json ok_question = {{"type", "noul"}, {"instructions", "Is it?"}};
+
+    check("systemone rejects a missing question",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "systemone"}, {"model", "m"}});
+          }));
+    check("systemone rejects a missing model",
+          throws_invalid_arg([&] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "systemone"},
+                                          {"question", ok_question}});
+          }));
+    check("systemone rejects labels", make(ok_question, {{"labels", json::array({"a"})}}));
+    check("systemone rejects prompt", make(ok_question, {{"prompt", "p"}}));
+    check("systemone rejects an unknown question type",
+          make({{"type", "rank"}, {"instructions", "?"}}));
+    check("systemone rejects a question without instructions", make({{"type", "noul"}}));
+    check("systemone rejects an unknown question key",
+          make({{"type", "noul"}, {"instructions", "?"}, {"options", json::array()}}));
+    check("systemone rejects an empty choice",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::object()}}));
+    check("systemone rejects a one-level score",
+          make({{"type", "score"}, {"instructions", "?"}, {"criteria", json::array({"a"})}}));
+    check("systemone rejects duplicate score levels",
+          make({{"type", "score"}, {"instructions", "?"},
+                {"criteria", json::array({"a", "a"})}}));
+    check("systemone rejects a non-string score level",
+          make({{"type", "score"}, {"instructions", "?"}, {"criteria", json::array({"a", 2})}}));
+    check("systemone rejects noul criteria keys other than true and false",
+          make({{"type", "noul"}, {"instructions", "?"}, {"criteria", {{"maybe", "?"}}}}));
+}
+
 static void test_make_classifier_rejections() {
     check("make_classifier rejects missing id",
           throws_invalid_arg([] {
@@ -466,6 +592,9 @@ int main() {
     test_make_zero_shot_classifier_rejections();
     test_zero_shot_classifier_without_service_fails_soft();
     test_zero_shot_classifier_rejects_mismatched_label_set();
+    test_make_systemone_classifier();
+    test_systemone_classifier_rejects_mismatched_answer();
+    test_make_systemone_classifier_rejections();
     test_make_classifier_rejections();
     test_make_classifiers();
     test_leaf_factory_classifier_refs();

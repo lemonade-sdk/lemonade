@@ -52,10 +52,12 @@ constexpr uint32_t kNonModeCapabilities = lemon::CAP_STREAMING_TRANSCRIPTION |
 // Serving one of these means a single fixed modality, which rules out chat.
 // Transcription is absent because a backend can serve it alongside chat. Defined
 // by subtraction so a newly added media capability is exclusive until someone
-// deliberately lists it as chat-compatible.
+// deliberately lists it as chat-compatible. Classification is chat-compatible
+// because llama.cpp serves it for SystemOne decision models next to chat GGUFs.
 constexpr uint32_t kChatCompatible = lemon::CAP_EMBEDDINGS | lemon::CAP_RERANKING |
                                      lemon::CAP_TRANSCRIPTION |
-                                     lemon::CAP_STREAMING_TRANSCRIPTION;
+                                     lemon::CAP_STREAMING_TRANSCRIPTION |
+                                     lemon::CAP_CLASSIFICATION;
 constexpr uint32_t kExclusiveModalities = lemon::CAP_ALL & ~kChatCompatible;
 
 std::string join(const std::vector<std::string>& items) {
@@ -224,9 +226,13 @@ int main() {
     };
 
     const std::vector<IngestCase> ingest = {
-        // A mode the backend cannot serve. llamacpp answers no /v1/classify, so
-        // an LLM-as-classifier must be registered as the chat model it is.
+        // A mode the backend serves only with a capability. llamacpp answers
+        // /v1/classify for SystemOne decision models only, so an LLM-as-classifier
+        // must be registered as the chat model it is.
         {"llamacpp + classification", "llamacpp", {"classification"}, false, {}, {}},
+        {"llamacpp + classification + systemone", "llamacpp",
+         {"classification", "systemone"}, true, {"classification", "systemone"},
+         ModelType::CLASSIFICATION},
         // The mirror image: a fixed-modality backend cannot be talked into chat.
         {"sd-cpp + chat", "sd-cpp", {"chat"}, false, {}, {}},
         // Two modes the backend does serve are still two modes. llama-server is

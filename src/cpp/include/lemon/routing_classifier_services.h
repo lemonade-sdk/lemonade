@@ -34,7 +34,8 @@ ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall chat_completion,
     EnsureClassifierModelLoaded ensure_loaded = {},
     RouterJsonCall classify = {},
-    RouterModelTypeCall get_model_type = {});
+    RouterModelTypeCall get_model_type = {},
+    RouterJsonCall systemone = {});
 
 // Resolve CostInfo from optional typed per-million fields plus recognized
 // extras keys (cost_tier, cost_*_per_million, latency_ms_hint). Typed values

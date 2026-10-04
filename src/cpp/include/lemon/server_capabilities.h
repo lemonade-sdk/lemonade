@@ -84,6 +84,16 @@ public:
     virtual json classify(const json& request) = 0;
 };
 
+// TypeSafe System One API of llama-server decision models: a state plus typed
+// questions (choice, score, noul) -> one answer per question. Not a deployment
+// mode: a decision model deploys as classification, and llama-server answers
+// /v1/classify only through /v1/systemone.
+class ISystemOneServer : public virtual ICapability {
+public:
+    virtual ~ISystemOneServer() = default;
+    virtual json systemone(const json& request) = 0;
+};
+
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;
@@ -141,8 +151,8 @@ bool supports_capability(ICapability* server) {
 //
 // ICompletionServer is absent on purpose: WrappedServer inherits it and supplies
 // "unsupported capability" defaults for every backend, so it says nothing about
-// whether a backend actually chats. ISlotsServer/ITokenizerServer are absent
-// because they are plumbing, not deployment modes.
+// whether a backend actually chats. ISlotsServer/ITokenizerServer/ISystemOneServer
+// are absent because they are not deployment modes.
 enum CapabilityMask : uint32_t {
     CAP_EMBEDDINGS              = 1u << 0,
     CAP_RERANKING               = 1u << 1,

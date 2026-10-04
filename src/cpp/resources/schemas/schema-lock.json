@@ -1,6 +1,6 @@
 {
   "route_policy.schema.json": {
-    "sha256": "66eda0e5b2f78ea3d2d1b56883675bc6024a8c77c67a074417b10d0d77caafd3",
+    "sha256": "143dba318861d140ae42e4090051b4d278d68ae9d27f569d8084f3a1f56bcbd5",
     "released": false
   },
   "decision.schema.json": {
