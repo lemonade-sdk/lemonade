@@ -76,6 +76,9 @@ void unregister_span_listener();
 bool has_span_listeners();
 void emit_span(const nlohmann::json& span_details);
 std::string hash_token(const std::string& token);
+std::string truncate_string(const std::string& str, size_t max_len);
+std::string truncate_json_string(const std::string& str, size_t max_len);
+std::string format_namespaced_session(const std::string& client, const std::string& session, size_t max_len);
 
 extern thread_local std::string g_current_auth_token;
 extern thread_local std::chrono::steady_clock::time_point g_request_start_time;
