@@ -183,6 +183,12 @@ private:
         if (inserted) {
             try {
                 it->second = classifier_->evaluate(ClassifierContext{ctx.request, ctx.services});
+            } catch (const RouterResidencyConflictException&) {
+                // Deliberately not converted to on_error: a residency conflict
+                // says the classifier model cannot run on this hardware
+                // alongside what is resident, which is a deterministic 409 for
+                // the caller rather than a score the band can reason about.
+                throw;
             } catch (const std::exception& e) {
                 // Classifier implementations should return Score{ok=false}
                 // rather than throw. Keep this catch as a permanent safety
@@ -248,6 +254,8 @@ public:
         try {
             score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
             score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             score = failed_score();
         }
@@ -286,6 +294,8 @@ public:
             score.labels =
                 ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
             score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             score = failed_score();
         }
@@ -333,8 +343,6 @@ public:
             reply = ctx.services.chat(model_name_, effective_prompt(),
                                       build_context_payload(ctx.request));
         } catch (const RouterResidencyConflictException&) {
-            // A hardware coexistence conflict is not a classifier-quality
-            // failure and must reach the HTTP layer as a deterministic 409.
             throw;
         } catch (...) {
             return failed_score();
@@ -530,6 +538,8 @@ public:
         const ReferenceEmbeddings* references = nullptr;
         try {
             references = &reference_embeddings(ctx.services);
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             return failed_score();
         }
@@ -537,6 +547,8 @@ public:
         Embedding input_embedding;
         try {
             input_embedding = ctx.services.embed(model_name_, ctx.request.input);
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             return failed_score();
         }
@@ -1476,11 +1488,11 @@ RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices 
 Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
     EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
 
-    // First-match-wins over the compiled rules. A classifier-level failure is
-    // already absorbed upstream by ClassifierBandCondition (Score::ok + the
-    // band's on_error), so this catch is only a last-resort guard: any
-    // unexpected throw fails the whole request open to default_model rather than
-    // escaping route().
+    // First-match-wins over the compiled rules. A classifier-level quality
+    // failure is already absorbed upstream by ClassifierBandCondition
+    // (Score::ok + the band's on_error), so this catch is only a last-resort
+    // guard: any unexpected throw fails the whole request open to default_model
+    // rather than escaping route().
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
@@ -1489,6 +1501,8 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                 return decision;
             }
         }
+    } catch (const RouterResidencyConflictException&) {
+        throw;
     } catch (const std::exception& e) {
         LOG(WARNING, "Routing") << "Routing policy evaluation threw; failing open to '"
                                 << policy_.default_model << "': " << e.what() << std::endl;

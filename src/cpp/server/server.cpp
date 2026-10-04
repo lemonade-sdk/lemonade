@@ -3811,6 +3811,11 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
             {"normalized_policy", std::move(normalized_policy)},
         };
         res.set_content(response.dump(), "application/json");
+    } catch (const RouterResidencyConflictException& e) {
+        // The policy document is well-formed; the hardware just cannot host its
+        // classifier right now. Reporting that as 400 would send the caller off
+        // to debug a document that has nothing wrong with it.
+        set_router_residency_conflict_response(e, res);
     } catch (const std::exception& e) {
         res.status = 400;
         nlohmann::json error = {{"error", std::string("Invalid routing policy: ") + e.what()}};
