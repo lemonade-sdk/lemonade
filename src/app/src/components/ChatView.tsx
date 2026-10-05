@@ -2189,21 +2189,42 @@ const ChatView: React.FC<ChatViewProps> = ({
     inputRef.current?.focus();
   }, []);
 
-  const handleSelectConversation = useCallback((id: string) => {
-    setActiveId(id);
-    // Each conversation answers with the model it was started on. Without this the
-    // app-level selection leaks across conversations and an old thread silently
-    // continues on whatever model was picked last.
-    const convoModel = conversations.find(c => c.id === id)?.model?.name;
+  // Each conversation answers with the model it was started on. Without this the
+  // app-level selection leaks across conversations and an old thread silently
+  // continues on whatever model was picked last.
+  const applyConversationModel = useCallback((convoModel: string | undefined) => {
     if (!convoModel || convoModel === currentModel) return;
     if (loadedModels.some(m => m.model_name.toLowerCase() === convoModel.toLowerCase())) {
       setFallbackModelOverride(null);
       onModelSelect(convoModel);
     } else {
       // Not loaded: show it now, let the send path's ensureChatModelReady load it.
+      // The override also outranks App's "pick a loaded model" effect, which would
+      // otherwise snap the selection back to whatever happens to be resident.
       setFallbackModelOverride(convoModel);
     }
-  }, [conversations, currentModel, loadedModels, onModelSelect]);
+  }, [currentModel, loadedModels, onModelSelect]);
+
+  // Restoring the active conversation from storage sets activeId directly rather
+  // than going through handleSelectConversation, so the model needs restoring too.
+  const startupModelRestoredRef = useRef(false);
+  useEffect(() => {
+    if (startupModelRestoredRef.current || !historyHydrated || !activeId) return;
+    startupModelRestoredRef.current = true;
+    applyConversationModel(conversations.find(c => c.id === activeId)?.model?.name);
+  }, [activeId, applyConversationModel, conversations, historyHydrated]);
+
+  const handleSelectConversation = useCallback((id: string) => {
+    setActiveId(id);
+    applyConversationModel(conversations.find(c => c.id === id)?.model?.name);
+  }, [applyConversationModel, conversations]);
+
+  // An explicit pick outranks a conversation-restored override, which would
+  // otherwise keep winning and make the click look like it did nothing.
+  const handleEmptyStateModelSelect = useCallback((model: string) => {
+    setFallbackModelOverride(null);
+    onModelSelect(model);
+  }, [onModelSelect]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     streaming.stop(id);
@@ -3541,7 +3562,7 @@ ${finalText}`
               loadedModels={loadedModels}
               currentModel={currentModel}
               showLoadedOverview={showLoadedOverview}
-              onModelSelect={onModelSelect}
+              onModelSelect={handleEmptyStateModelSelect}
               onOpenModelDetails={onOpenModelDetails}
               onUnloadModel={handleLoadedCardUnload}
               unloadingModel={modelPickerUnloading}
