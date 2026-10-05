@@ -1,7 +1,9 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 #include <functional>
+#include <sstream>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/http_client.h"
@@ -28,6 +30,41 @@ public:
         double tokens_per_second = 0.0;
         std::string error_message = "";
         std::string model_name = "";
+        // Optional detail reported by the backend, appended to the
+        // "Inference completed" line as key=value fields. Each is unset when
+        // the backend does not report it, so a plain OpenAI relay keeps the
+        // original line shape.
+        double prompt_per_second = 0.0;
+        int draft_tokens = 0;
+        int draft_tokens_accepted = -1;
+        uint64_t task_id = 0;
+        std::string upstream_id = "";
+
+        // Trailing ", task=N (id=...), pp=S t/s, cached=K, draft=A/B (P%)" for
+        // whichever fields were reported. Callers that log a completed request
+        // print it so a consumer can tie the line back to one dispatch. Gated
+        // on the task id so backends that never set one keep the original line.
+        std::string detail_suffix() const {
+            if (task_id == 0) {
+                return "";
+            }
+            std::ostringstream extra;
+            extra << std::fixed << ", task=" << task_id;
+            if (!upstream_id.empty()) {
+                extra << " (id=" << upstream_id << ")";
+            }
+            if (prompt_per_second > 0.0) {
+                extra << ", pp=" << std::setprecision(2) << prompt_per_second << " t/s";
+            }
+            if (cache_tokens >= 0) {
+                extra << ", cached=" << cache_tokens;
+            }
+            if (draft_tokens > 0 && draft_tokens_accepted >= 0) {
+                extra << ", draft=" << draft_tokens_accepted << "/" << draft_tokens << " ("
+                      << std::setprecision(1) << (100.0 * draft_tokens_accepted / draft_tokens) << "%)";
+            }
+            return extra.str();
+        }
 
         void print() const {
             if (input_tokens > 0 || output_tokens > 0) {
@@ -35,7 +72,8 @@ public:
                                        << ", tokens=" << (input_tokens + output_tokens)
                                        << " (in=" << input_tokens << ", out=" << output_tokens << ")"
                                        << ", ttft=" << std::fixed << std::setprecision(3) << time_to_first_token << "s"
-                                       << ", tps=" << std::fixed << std::setprecision(2) << tokens_per_second << std::endl;
+                                       << ", tps=" << std::fixed << std::setprecision(2) << tokens_per_second
+                                       << detail_suffix() << std::endl;
 
                 LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
                                         << "Model:         " << model_name << "\n"
@@ -73,6 +111,9 @@ public:
                                   bool end_of_stream = false);
 
     static TelemetryData parse_telemetry(const std::string& buffer);
+
+    // Extract telemetry from a single chunk payload or usage object.
+    static void extract_telemetry_from_chunk(const nlohmann::json& chunk, TelemetryData& telemetry);
 
     // Extract telemetry from a complete (non-streaming) response body or a
     // single SSE chunk payload: OpenAI usage (chat and Responses field names,
