@@ -61,6 +61,9 @@ files per tier. The runner enforces this layout strictly. Each of the following 
 a hard failure:
 
 - a file at the corpus root other than `README.md`;
+- a missing, renamed or unknown version or tier directory. The runner keeps the
+  expected set in `kExpectedTiers` (for version 1: `l0a`, `l1`, `l2`, `l3`), so a
+  new version or tier must be added there too;
 - a stray file or an extra directory inside a version or tier directory;
 - a missing `policies.json` or `cases.jsonl`;
 - a policy whose `version` does not match the directory name;

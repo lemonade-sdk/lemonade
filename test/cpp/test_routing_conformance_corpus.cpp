@@ -131,10 +131,17 @@ static bool is_valid_tier_dir(const fs::path& tier_dir, const fs::path& root) {
     return ok;
 }
 
-// Corpus layout is exactly routing/<version>/<tier>/{policies.json,cases.jsonl}.
-// One <tier> directory per engine tier (l0a, l1, l2, l3). Anything off
-// that shape — stray files, a missing file, an extra nesting level, an unreadable
-// dir — is a hard failure, not silently skipped.
+// The schema versions and tiers the corpus must contain. Listing them explicitly
+// means a renamed or deleted tier fails the run instead of quietly dropping its
+// coverage while the other tiers stay green.
+static const std::map<std::string, std::set<std::string>> kExpectedTiers = {
+    {"1", {"l0a", "l1", "l2", "l3"}},
+};
+
+// Corpus layout is exactly routing/<version>/<tier>/{policies.json,cases.jsonl},
+// with the version and tier sets given by kExpectedTiers. Anything off that
+// shape — stray files, a missing file or tier, an unknown version or tier, an
+// extra nesting level, an unreadable dir — is a hard failure, not silently skipped.
 static std::vector<fs::path> find_tier_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
@@ -150,7 +157,14 @@ static std::vector<fs::path> find_tier_dirs(const fs::path& root) {
             check(rel_label(stray, root) + ": is README.md", false);
         }
     }
+    std::set<std::string> seen_versions;
     for (const auto& version : root_entries.dirs) {
+        const auto expected = kExpectedTiers.find(version.filename().string());
+        if (expected == kExpectedTiers.end()) {
+            check(rel_label(version, root) + ": is a known schema version", false);
+            continue;
+        }
+        seen_versions.insert(expected->first);
         std::error_code vec;
         const DirEntries version_entries = list_entries(version, vec);
         if (vec) {
@@ -160,10 +174,27 @@ static std::vector<fs::path> find_tier_dirs(const fs::path& root) {
         for (const auto& stray : version_entries.non_dirs) {
             check(rel_label(stray, root) + ": is a tier directory", false);
         }
+        std::set<std::string> seen_tiers;
         for (const auto& tier_dir : version_entries.dirs) {
+            const std::string tier = tier_dir.filename().string();
+            if (expected->second.count(tier) == 0) {
+                check(rel_label(tier_dir, root) + ": is a known tier", false);
+                continue;
+            }
+            seen_tiers.insert(tier);
             if (is_valid_tier_dir(tier_dir, root)) {
                 dirs.push_back(tier_dir);
             }
+        }
+        for (const auto& tier : expected->second) {
+            if (seen_tiers.count(tier) == 0) {
+                check(expected->first + "/" + tier + ": exists", false);
+            }
+        }
+    }
+    for (const auto& [version, tiers] : kExpectedTiers) {
+        if (seen_versions.count(version) == 0) {
+            check(version + ": exists", false);
         }
     }
     return dirs;
