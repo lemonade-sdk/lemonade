@@ -214,6 +214,12 @@ static void test_compare_trace(TestResult& r) {
              says(compare_decision(with_trace(other), with_trace(other_near), computed),
                   "trace[0].score: expected"));
 
+    json bad_condition = entry;
+    bad_condition["condition"] = 123;
+    r.expect("non-string condition reported, not thrown",
+             says(compare_decision(with_trace(bad_condition), with_trace(entry), computed),
+                  "trace[0].condition: expected"));
+
     r.expect("trace length mismatch reported",
              says(compare_decision(with_trace(entry), decision({{"trace", json::array()}})),
                   "trace: expected 1 entries, produced 0"));

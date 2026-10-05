@@ -103,11 +103,13 @@ inline void compare_trace_entry(const nlohmann::json& expected, const nlohmann::
                                 std::vector<std::string>& out) {
     // The entry's own condition decides whether its score is computed. It is compared
     // exactly just below, so a case naming the wrong condition fails on that field
-    // rather than borrowing another condition's margin.
+    // rather than borrowing another condition's margin. A non-string condition gets no
+    // margin and is reported by that same comparison.
+    const auto condition = expected.find("condition");
+    const bool computed = condition != expected.end() && condition->is_string() &&
+                          computed_score_conditions.count(condition->get<std::string>()) > 0;
     const std::optional<double> score_tolerance =
-        computed_score_conditions.count(expected.value("condition", std::string())) > 0
-            ? std::optional<double>(kScoreTolerance)
-            : std::nullopt;
+        computed ? std::optional<double>(kScoreTolerance) : std::nullopt;
 
     compare_field(expected, produced, "condition", path, std::nullopt, out);
     compare_field(expected, produced, "result", path, std::nullopt, out);
