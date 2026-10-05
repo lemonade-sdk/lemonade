@@ -44,8 +44,8 @@
         }
       },
       "lemonade-sdk/ryzenai-server": {
-        "medusa-v0.9.2": {
-          "medusa-server.zip": "sha256:4681b73b0a639ea0703fc9ecb9c52b4b0848ed981f60e8e226549db5550f948e"
+        "medusa-v1.0": {
+          "medusa-server.zip": "sha256:TODO_fill_in_after_building_medusa-v1.0_server.zip"
         }
       },
       "lemonade-sdk/ds4-rocm": {
@@ -150,8 +150,8 @@
   "ryzenai-llm": {
     "npu": "v1.7.0"
   },
-  "ryzenai-llm-medusa": {
-    "npu": "medusa-v0.9.2"
+  "ryzenai-medusa": {
+    "npu": "medusa-v1.0"
   },
   "flm": {
     "npu": "v1.0.5"

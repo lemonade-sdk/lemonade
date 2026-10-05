@@ -82,6 +82,7 @@
   "ryzenai_medusa": {
     "server_bin": "builtin"
   },
+
   "sdcpp": {
     "args": "",
     "backend": "auto",

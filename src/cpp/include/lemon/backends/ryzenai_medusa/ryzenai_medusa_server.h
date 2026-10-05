@@ -8,7 +8,7 @@ namespace lemon {
 namespace backends {
 namespace ryzenai_medusa {
 
-// Factory, spec, ops, and capabilities for the ryzenai-llm-medusa backend.
+// Factory, spec, ops, and capabilities for the ryzenai-medusa backend.
 // The server class is RyzenAIServer — reused identically, with a different
 // BackendSpec that points to the medusa-server.zip release asset.
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

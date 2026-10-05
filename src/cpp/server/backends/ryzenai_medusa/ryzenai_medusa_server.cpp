@@ -20,7 +20,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 const BackendSpec* spec() {
-    static const BackendSpec kSpec("ryzenai-llm-medusa", descriptor.binary,
+    static const BackendSpec kSpec("ryzenai-medusa", descriptor.binary,
                                    ::lemon::RyzenAIServer::get_install_params_medusa, /*split=*/false);
     return &kSpec;
 }

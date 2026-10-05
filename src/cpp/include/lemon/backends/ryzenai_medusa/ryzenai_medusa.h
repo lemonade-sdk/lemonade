@@ -7,7 +7,7 @@ namespace backends {
 namespace ryzenai_medusa {
 
 inline const BackendDescriptor descriptor = {
-    /*recipe*/          "ryzenai-llm-medusa",
+    /*recipe*/          "ryzenai-medusa",
     /*display_name*/    "Ryzen AI LLM (Medusa)",
 #ifdef _WIN32
     /*binary*/          "ryzenai-server.exe",
