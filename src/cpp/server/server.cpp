@@ -3223,6 +3223,11 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["context_length"] = context_length;
     }
 
+    if (info.max_output_tokens > 0) {
+        model_json["max_output_tokens"] = info.max_output_tokens;
+        model_json["max_completion_tokens"] = info.max_output_tokens;
+    }
+
     // Per-million-token pricing in USD, when the provider reported it (cloud
     // models from OpenRouter/Together). Display only.
     if (info.cost_input_per_million >= 0) {
@@ -3887,6 +3892,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
 
+    utils::RequestCancelToken cancel_token;
+    if (req.is_connection_closed) {
+        cancel_token.should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    WrappedServer::RequestCancelScope cancel_scope(cancel_token);
+
     try {
 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
@@ -4064,6 +4075,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_completions(const httplib::Request& req, httplib::Response& res) {
+    utils::RequestCancelToken cancel_token;
+    if (req.is_connection_closed) {
+        cancel_token.should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    WrappedServer::RequestCancelScope cancel_scope(cancel_token);
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -5629,6 +5646,12 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
+    utils::RequestCancelToken cancel_token;
+    if (req.is_connection_closed) {
+        cancel_token.should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    WrappedServer::RequestCancelScope cancel_scope(cancel_token);
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
         normalize_client_model_name(request_json);

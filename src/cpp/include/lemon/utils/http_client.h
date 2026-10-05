@@ -8,6 +8,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,34 @@ struct DownloadResult {
     bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
 };
 
+class HttpClientException : public std::runtime_error {
+public:
+    HttpClientException(int curl_code, const std::string& message)
+        : std::runtime_error(message), curl_code_(curl_code) {}
+    int curl_code() const noexcept { return curl_code_; }
+private:
+    int curl_code_ = 0;
+};
+
+class HttpClientCancellationException : public HttpClientException {
+public:
+    HttpClientCancellationException(int curl_code, const std::string& message)
+        : HttpClientException(curl_code, message) {}
+};
+
+// Cancellation state for a non-streaming request. The flag is an atomic a
+// caller may share; the checker is a predicate consulted on each curl progress
+// tick, which is how a client disconnect aborts an in-flight transfer.
+struct RequestCancelToken {
+    std::atomic<bool>* flag = nullptr;
+    std::function<bool()> should_cancel = nullptr;
+
+    bool cancelled() const {
+        return (flag != nullptr && flag->load()) ||
+               (should_cancel != nullptr && should_cancel());
+    }
+};
+
 // Progress callback returns bool: true = continue, false = cancel download
 using ProgressCallback = std::function<bool(size_t downloaded, size_t total)>;
 using StreamCallback = std::function<bool(const char* data, size_t length)>;
@@ -82,7 +111,7 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
-    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    int no_progress_timeout = 0;       // Seconds without byte progress before aborting; 0 uses the default timeout
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
 
@@ -135,7 +164,7 @@ public:
         const std::map<std::string, std::string>& headers = {},
         long timeout_seconds = 300,
         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
-        std::atomic<bool>* cancel_flag = nullptr);
+        const RequestCancelToken& cancel = {});
 
     // Multipart form data POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_.
@@ -143,7 +172,8 @@ public:
         const std::string& url,
         const std::vector<MultipartField>& fields,
         long timeout_seconds = 300,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        const RequestCancelToken& cancel = {});
 
     // Streaming POST request (calls callback for each chunk as it arrives).
     // on_status fires once, before the first chunk is delivered, so callers can

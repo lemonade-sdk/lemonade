@@ -1,10 +1,20 @@
 # Add a Custom Model
 
-This guide explains every supported way to add a custom model to Lemonade Server. Start with the CLI workflows below unless you specifically need to hand-edit `user_models.json` or `recipe_options.json`.
+This guide explains every supported way to add a custom model to Lemonade Server, and documents the files and naming rules behind them.
 
-## Choose a Workflow
+There are three ways to get a model into Lemonade:
 
-### Pull from Hugging Face or ModelScope
+| Option | Use when | What happens |
+|--------|----------|--------------|
+| [Pull a model](#pull-a-model) | The model is published on Hugging Face or ModelScope | Lemonade downloads it into your model store and registers it |
+| [Point at a folder of GGUFs](#imported-models-extra_models_dir) | You already have GGUF files on disk, or share a library with LM Studio or llama.cpp | Lemonade lists them where they sit and downloads nothing |
+| [Edit the JSON files by hand](#configuration-files) | You need full control over a definition and can restart `lemond` | You describe the model yourself in `user_models.json` |
+
+Pulling covers most cases and has several front ends that all end in the same registration; pick one under [Pull a Model](#pull-a-model).
+
+## Pull a Model
+
+### Pull by Hugging Face or ModelScope Checkpoint
 
 A source-less pull uses the server's configured `default_model_source` (shipped default: Hugging Face), so existing commands keep working unchanged:
 
@@ -51,13 +61,15 @@ Hugging Face snapshots use the immutable commit returned by the Hub. ModelScope 
 
 The desktop app's manual model form exposes the same source selector. The browse/search catalog remains Hugging Face-backed in this first version; ModelScope models can be added by repository ID through the manual form, CLI, or API.
 
-### Register with explicit CLI flags
+### Pull with an Explicit Recipe and Checkpoints
 
-Use a `user.*` name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
+Give the model a name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
 
 ```bash
 lemonade pull user.NAME --source SOURCE --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
 ```
+
+The `user.` prefix is optional; the CLI adds it when you leave it off.
 
 Examples:
 
@@ -91,7 +103,7 @@ Supported registration flags:
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
-### Register an omni collection
+### Pull an Omni Collection
 
 A collection is a meta-model made up of components. An **omni collection** is the recipe type behind [Lemonade Omni Models](../../dev/lemonade-omni.md) — registered with `recipe: "collection.omni"`.
 
@@ -105,7 +117,7 @@ lemonade pull user.MyKit \
 
 `lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component files stay on disk.
 
-### Register a custom Omni Model from the desktop app
+### Build an Omni Model in the Desktop App
 
 The desktop app offers a UI-driven path to register the same `recipe: "collection.omni"` entry — useful when you want to swap in a different planner LLM or a different image/ASR/TTS backbone without waiting for a new built-in [Lemonade Omni Model](../../dev/lemonade-omni.md) to ship.
 
@@ -132,7 +144,50 @@ If a component model is deleted later, the Omni Model entry remains registered b
 
 The editor also exposes a **System Prompt** field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a *template* — both the `{tool_list}` and `{tool_guidance}` placeholders are **required** in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via **Reset to default** — stores no override and keeps tracking whatever the global default is at runtime.
 
-### Share a collection: export, import, and model registries
+### Pull from the API
+
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.MyModel",
+        "recipe": "llamacpp",
+        "source": "modelscope",
+        "checkpoint": "org/repo:Q4_0"
+    }'
+```
+
+For multi-file models, send `checkpoints`:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.Gemma-3-4b",
+        "recipe": "llamacpp",
+        "checkpoints": {
+            "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+            "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+        },
+        "labels": ["vision"]
+    }'
+```
+
+For an omni collection, send `components`:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.MyKit",
+        "recipe": "collection.omni",
+        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+    }'
+```
+
+## Share a Collection Between Machines
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
 collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
@@ -193,72 +248,6 @@ Example collection file:
 }
 ```
 
-### Register via API
-
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model_name": "user.MyModel",
-        "recipe": "llamacpp",
-        "source": "modelscope",
-        "checkpoint": "org/repo:Q4_0"
-    }'
-```
-
-For multi-file models, send `checkpoints`:
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model_name": "user.Gemma-3-4b",
-        "recipe": "llamacpp",
-        "checkpoints": {
-            "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
-            "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
-        },
-        "labels": ["vision"]
-    }'
-```
-
-For an omni collection, send `components`:
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model_name": "user.MyKit",
-        "recipe": "collection.omni",
-        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
-    }'
-```
-
-### Edit JSON files directly
-
-Advanced users can edit `user_models.json` and `recipe_options.json` directly. The rest of this guide documents those files and gives complete examples.
-
-## Overview
-
-Custom model configuration involves two files, both located in the Lemonade config directory:
-
-| File | Purpose |
-|------|---------|
-| `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
-| `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
-
-If you used an installer from a Lemonade release, the config directory is typically:
-
-| OS | Config directory |
-|----|------------------|
-| Linux systemd install | `/var/lib/lemonade` |
-| Windows | `%USERPROFILE%\.config\lemonade` |
-| macOS system install | `/Library/Application Support/lemonade/.config` |
-
-For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
-
 ## Model naming spec
 
 Lemonade tracks three sources of models. Every model has a **canonical ID** of the form `<source>.<bare-name>`:
@@ -266,7 +255,7 @@ Lemonade tracks three sources of models. Every model has a **canonical ID** of t
 | Canonical ID    | Source                                                                   |
 |-----------------|--------------------------------------------------------------------------|
 | `user.NAME`     | Model registered via `lemonade pull` (entry in `user_models.json`)       |
-| `extra.NAME`    | Model imported by dropping a GGUF in `--extra-models-dir`                |
+| `extra.NAME`    | Model imported from `extra_models_dir`, see [Imported models](#imported-models-extra_models_dir) |
 | `builtin.NAME`  | Model compiled into Lemonade's built-in catalog (`server_models.json`)   |
 
 The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
@@ -290,6 +279,8 @@ Anywhere a model name is accepted (request bodies, CLI args, URL path parameters
 - `builtin.NAME` — always the built-in model (404 if none)
 
 `lemonade pull` rejects model names starting with `extra.` or `builtin.` since those prefixes are reserved.
+
+An imported model also answers to names derived from the directory layout around it, so a name keeps working after that layout changes. See [Model Naming Scheme](#model-naming-scheme).
 
 ### CLI vs. GUI display
 
@@ -356,6 +347,144 @@ Every registered alias is exposed as an independent model entry in `/v1/models`,
 | built-in `Bar` + registered `Bar` + extra `Bar` | `Bar`, `extra.Bar`, `builtin.Bar`                      | `Bar`/`user.Bar` → user; `extra.Bar` → extra; `builtin.Bar` → built-in       |
 | built-in `Baz` + extra `Baz`                    | `Baz`, `builtin.Baz`                                   | `Baz`/`extra.Baz` → extra; `builtin.Baz` → built-in                          |
 | registered `MyModel` only                       | `MyModel`                                              | `MyModel`/`user.MyModel` → user; `builtin.MyModel` → 404                     |
+
+## Imported models (`extra_models_dir`)
+
+`extra_models_dir` is a directory that `lemond` scans recursively for `.gguf` files, listing everything it finds alongside your other models. The files stay where they are and Lemonade reads them in place. It is empty by default, which disables the feature.
+
+```bash
+lemonade config set extra_models_dir="/home/you/.lmstudio/models"
+```
+
+`lemonade pull` still downloads into `models_dir`. Point `extra_models_dir` at files you already have:
+
+| Source | Typical path |
+|---|---|
+| LM Studio | `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` |
+| A Hugging Face or ModelScope cache | `~/.cache/huggingface/hub` |
+| Your own folder of GGUFs | anywhere readable, absolute or relative |
+
+### Model Naming Scheme
+
+A model's name comes from the directory layout around its files. A path uses the Hugging Face / ModelScope cache rules only when its GGUFs are inside a recognized cache layout such as `models--<org>--<repo>/snapshots/<commit>/...` or `modelscope--models--<org>--<repo>/snapshots/<commit>/...`. A folder merely named like a cache repo is not sufficient. All other paths use the non-HF/MS rules below.
+
+These notes apply to both:
+
+- Files whose names declare the same shard series are one model, as in `model-Q4_K_M-00001-of-00003.gguf`, and its name drops the shard suffix. The `-`, `.`, and `_` separators are accepted before the shard index.
+- An `mmproj` file joins the model in its folder.
+- Names are assigned in a fixed order: files at the search root, then files in reserved directories, then folders, each group in sorted path order. A model at the search root keeps its name when a directory is reserved later.
+- Every imported model is also addressable as `extra.<name>`; see the [model naming spec](#model-naming-spec). [Model aliases](#model-aliases-aliasesjson) are a separate feature that you define yourself in `aliases.json`.
+
+#### Non-HF/MS folders
+
+| What is on disk | Name |
+|---|---|
+| A `.gguf` file at the search root, or in a reserved directory | the filename without `.gguf` |
+| A folder holding one model | the folder name |
+| A folder holding several quantization variants | one name per variant, each from its filename |
+| A name another imported model already took, or an earlier folder owns | the name, qualified with the folder that contains it, then `-2`, `-3` if that is also taken |
+
+For example:
+
+| Layout | Names |
+|---|---|
+| `Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-Q4_K_M` |
+| `Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-GGUF` |
+| `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M.gguf` and `Qwen3-8B-Q8_0.gguf` | `Qwen3-8B-Q4_K_M`, `Qwen3-8B-Q8_0` |
+| `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M-00001-of-00002.gguf` and `Qwen3-8B-Q4_K_M-00002-of-00002.gguf` | `Qwen3-8B-GGUF` |
+| `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M.gguf` and `mmproj-Qwen3-8B-f16.gguf` | `Qwen3-8B-GGUF` |
+| `Mixtral-GGUF/` holding a two-shard `Mixtral-Q4_K_M` set and a two-shard `Mixtral-Q8_0` set | `Mixtral-Q4_K_M`, `Mixtral-Q8_0` |
+| `Llama-Local-GGUF/` and `Mistral-Local-GGUF/`, each holding `model-Q4_K_M.gguf` and `model-Q8_0.gguf` | `model-Q4_K_M`, `model-Q8_0`, `Mistral-Local-GGUF-model-Q4_K_M`, `Mistral-Local-GGUF-model-Q8_0` |
+| `alpha/Shared/` holding `Llama-Q4_K_M.gguf` and `Llama-Q8_0.gguf`, and `beta/Shared/` holding `Mistral-Q4_K_M.gguf` | `Llama-Q4_K_M`, `Llama-Q8_0`, `beta-Shared` |
+
+Notes:
+
+- Adding a second quantization variant to a folder renames the first model, as rows two and three show. The folder name keeps resolving and points at the first model alphabetically, so a request that used it still works. A model file that sorts earlier takes that pointer over, so name a specific model in scripts you intend to keep. When several folders share a name, the first in the order above owns it, in both its plain and `extra.` forms.
+
+#### HF/MS caches
+
+| What is on disk | Name |
+|---|---|
+| One model in the revision that `refs/main` points at | the repo name, or `<repo>-<folder>` when the GGUFs sit in a subfolder |
+| Several quantization variants in that revision | one name per variant, each from its filename |
+| One model in a superseded revision | the active-style name prefixed with that revision's commit: `<commit>-<repo>` or `<commit>-<repo>-<folder>` |
+| Several quantization variants in a superseded revision | one name per variant, each from its filename and prefixed with that revision's commit |
+| A name another imported model already took | the name, qualified with its org or namespace |
+
+For example:
+
+| Layout | Names |
+|---|---|
+| `models--unsloth--Qwen3-8B-GGUF/snapshots/<commit>/Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-GGUF` |
+| `models--unsloth--Qwen3-235B-GGUF/snapshots/<commit>/Q4_K_M/` holding a shard set | `Qwen3-235B-GGUF-Q4_K_M` |
+| a cache holding a live `snapshots/<new>/` and a superseded `snapshots/<old>/`, each with `Repo-Q4_K_M.gguf` and `Repo-Q8_0.gguf` | `Repo-Q4_K_M`, `Repo-Q8_0`, `<old>-Repo-Q4_K_M`, `<old>-Repo-Q8_0` |
+| `models--bartowski--Collide-7B-GGUF/` and `models--unsloth--Collide-7B-GGUF/`, each with an active `snapshots/<commit>/Collide-7B-Q4_K_M.gguf` | `Collide-7B-GGUF`, `unsloth-Collide-7B-GGUF` |
+
+Notes:
+
+- A cache can hold several revisions. Names follow the revision `refs/main` points at, so updating a model moves its name to the new revision.
+- Unlike non-HF/MS folders, a cache folder's name does not keep resolving after the folder's models are renamed.
+
+### Choosing how an imported model runs
+
+The top-level directory a model sits under selects its deployment mode. The reserved names are `chat`, `embeddings`, and `reranking`:
+
+```text
+extra_models_dir/
+├── chat/
+├── embeddings/
+└── reranking/
+```
+
+`Files directly inside a reserved directory are listed as separate models, except where numbered shard names declare that they belong together. Nested folder models and per-variant models inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat. The folder's old name, such as `extra.embeddings`, still works and points to its first file alphabetically.`
+
+---
+
+Reserved names must match exactly. `embeddings` is reserved; `Embedding`, `embedding`, and `embeddings 2` are ordinary directories. The mode comes from the top-level directory name alone, so `embeddings/bge-reranker-v2.gguf` is an embedding model.
+
+A file with `mmproj` anywhere in its name is attached as the model's `mmproj` and adds the `vision` label. When several are present the first by filename wins, so the choice is stable across restarts. An `mmproj` sitting directly in a reserved directory is attached only when that directory holds one main model; if you keep several vision models in one reserved directory, give each model and its `mmproj` their own subdirectory.
+
+### Properties of an imported model
+
+| Property | Value |
+|---|---|
+| `recipe` | `llamacpp` |
+| `suggested` | `true` |
+| `downloaded` | `true` |
+| `labels` | `custom`, the directory-selected mode (`chat` by default), and `vision` if multimodal |
+| `type` | Derived from `labels` |
+| `size` | Sum of all `.gguf` file sizes in GB |
+| `source` | `extra_models_dir` |
+
+### Deleting an imported model
+
+Imported models are yours to manage, so `/v1/delete` on one returns an error naming the path to remove by hand.
+
+### Access and failure behavior
+
+An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../embeddable/runtime.md).
+
+During a scan, unreadable nested directories are skipped. Discovery is best-effort by design, so your registered and built-in catalogs stay intact through a filesystem failure.
+
+## Configuration files
+
+Everything above is backed by two JSON files, both located in the Lemonade config directory. The next two sections document them field by field. You can edit them by hand; restart `lemond` for the changes to take effect.
+
+| File | Purpose |
+|------|---------|
+| `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
+| `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
+
+If you used an installer from a Lemonade release, the config directory is typically:
+
+| OS | Config directory |
+|----|------------------|
+| Linux systemd install | `/var/lib/lemonade` |
+| Windows | `%USERPROFILE%\.config\lemonade` |
+| macOS (user install) | `~/.config/lemonade` |
+| macOS (system install) | `/Library/Application Support/lemonade/.config` |
+
+For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
 
 ## `user_models.json` Reference
 
@@ -440,7 +569,7 @@ A collection bundles several already-registered models so they can be loaded, pu
 
 Components must already be registered (built-in models, or other `user.*` entries earlier in this file). Loading the collection (`lemonade load user.MyKit`) loads each component; deleting the collection removes only the collection entry, leaving components on disk.
 
-The equivalent CLI registration is shown in [Register an omni collection](#register-an-omni-collection).
+The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-omni-collection).
 
 ### Image defaults
 
@@ -519,7 +648,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 }
 ```
 
-(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for an `--extra-models-dir` GGUF.)
+(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for a GGUF imported from [`extra_models_dir`](#imported-models-extra_models_dir).)
 
 Then load the model:
 ```bash

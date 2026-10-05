@@ -1,7 +1,6 @@
 name: MCP Smoke Test
 
-# Smoke-tests all 5 MCP tools (lemonade_list_models, lemonade_chat,
-# lemonade_transcribe_audio, lemonade_generate_image, lemonade_omni) via two
+# Smoke-tests the MCP gateway catalog and representative tool paths via two
 # independent build paths: a native CMake build and a Docker image build.
 # Either job failing fails the workflow.
 
@@ -10,6 +9,7 @@ on:
     paths:
       - "src/cpp/server/mcp_server.cpp"
       - "src/cpp/include/lemon/mcp_server.h"
+      - "src/cpp/include/lemon/mcp_tool.h"
       - "src/cpp/server/server.cpp"
       - "src/cpp/server/router.cpp"
       - "src/cpp/server/model_manager.cpp"

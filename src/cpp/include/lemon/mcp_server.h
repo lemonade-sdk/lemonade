@@ -4,10 +4,12 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "mcp_tool.h"
 #include "model_manager.h"
 #include "router.h"
 
@@ -72,11 +74,12 @@ private:
     static json make_needs_model_result(const char* type_str,
                                          const char* default_model,
                                          const std::string& name_hint);
-    static json tools_descriptor();
+    std::vector<McpTool> build_tools();
 
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    std::vector<McpTool> tools_;
 };
 
 }  // namespace lemon

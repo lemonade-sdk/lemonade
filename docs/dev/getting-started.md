@@ -452,7 +452,6 @@ The notarization process will:
 src/cpp/
 ├── CPackRPM.cmake              # RPM packaging configuration
 ├── DOCKER_GUIDE.md             # Docker containerization guide
-├── Extra-Models-Dir-Spec.md    # Extra models directory specification
 ├── Multi-Model-Spec.md         # Multi-model loading specification
 ├── postinst                    # Debian package post-install script
 ├── postinst-full               # Debian package post-install script (full version)
@@ -586,6 +585,12 @@ A GUI application for desktop users that exposes the server via a system tray ic
 - Zero console output or CLI interface
 - Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users
+
+**`lemonade-tray` options (Linux/macOS):**
+- `--port, -p <port>` / `--host <host>` - server to connect to (defaults read from the server's `config.json`).
+- `--spawn-server` - if no server is reachable, spawn a local `lemond` and supervise it. The tray opens a watchdog pipe and passes `--watchdog-fd <FD>` to the child; when the tray exits for any reason (including SIGKILL), the OS closes the pipe and `lemond` shuts itself down, so no orphaned server is left behind. This flag is intended for standalone environments where `lemond` is not already managed by a service manager (`systemd` on Linux or `LaunchDaemon` on macOS); when running alongside a managed daemon, the existing server is detected and no child is spawned.
+- `--launch-app, --open` - open the desktop app once the server is ready.
+- `--silent` - suppress the startup notification.
 
 ### Client-Server Communication
 
@@ -859,6 +864,7 @@ The C++ implementation is tested using the existing Python test suite.
 |-----------|-------------|
 | `server_cli2.py` | CLI commands (version, status, list, export, backends, pull, import, load, unload, run, launch, delete) |
 | `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, stats) |
+| `server_cancellation.py` | Client disconnect robustness (server stays healthy; prompt-abort regression lives in `test_request_cancellation`) |
 | `server_llm.py` | LLM inference (chat completions, embeddings, reranking) |
 | `server_whisper.py` | Audio transcription (whisper models) |
 | `server_sd.py` | Image generation (Stable Diffusion, ~2-3 min per image on CPU) |
@@ -870,6 +876,9 @@ python test/server_cli2.py
 
 # Endpoint tests (no inference backend needed)
 python test/server_endpoints.py
+
+# Client disconnect robustness tests (health checks; prompt-abort regression lives in the C++ suite)
+python test/server_cancellation.py
 
 # LLM tests (specify wrapped server and backend)
 python test/server_llm.py --wrapped-server llamacpp --backend vulkan

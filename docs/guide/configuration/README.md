@@ -14,7 +14,7 @@ If you used an installer from the Lemonade release your `config.json` will be at
   > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), downloaded backends go to `/var/cache/lemonade` (CacheDirectory), and models are cached under `/var/lib/lemonade/.cache/huggingface`. For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
 - **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.config/config.json`
+- **macOS:** `~/.config/lemonade/config.json` (user install) or `/Library/Application Support/lemonade/.config/config.json` (system install)
 
 If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 
@@ -108,7 +108,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
-    "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
   "port": 13305,
@@ -211,7 +210,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `auto_evict` | bool | false | Enable dynamic VRAM management based on idle time and global GPU memory pressure. Can be overridden per model. |
 | `auto_evict_threshold_pct` | number | 0.90 | Global VRAM fraction at which pressure eviction is evaluated. Must be greater than 0 and at most 1.0; `0.90` means 90%. |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
-| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. Top-level `chat`, `embeddings`, and `reranking` directories select how models run, see [Model Management](../../embeddable/models.md) |
+| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |

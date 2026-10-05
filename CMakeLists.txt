@@ -472,7 +472,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
+        GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -2374,6 +2374,9 @@ if(BUILD_TESTING AND EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHE
         target_link_libraries(test_directory_watcher PRIVATE pthread)
         target_link_options(test_directory_watcher PRIVATE -pthread)
     endif()
+    if(APPLE)
+        target_link_libraries(test_directory_watcher PRIVATE "-framework CoreServices")
+    endif()
 
     # Enable testing and register the test with CTest
     include(CTest)
@@ -2832,6 +2835,9 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_STORE_TEST_SRC}")
     target_link_libraries(test_routing_policy_store PRIVATE nlohmann_json::nlohmann_json)
     find_package(Threads REQUIRED)
     target_link_libraries(test_routing_policy_store PRIVATE Threads::Threads)
+    if(APPLE)
+        target_link_libraries(test_routing_policy_store PRIVATE "-framework CoreServices")
+    endif()
     target_compile_definitions(test_routing_policy_store PRIVATE
         ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
     )
@@ -3313,11 +3319,11 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
 endif()
 
-set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
-if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
-    add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
-    target_link_libraries(test_streaming_proxy_cancel PRIVATE lemonade-server-core)
-    add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
+set(_REQUEST_CANCELLATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_cancellation.cpp")
+if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
+    add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)
+    target_link_libraries(test_request_cancellation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
 endif()
 
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")

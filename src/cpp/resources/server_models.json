@@ -985,6 +985,248 @@
         ],
         "size": 4.92
     },
+    "Qwen3.8-27B-HRX": {
+        "checkpoint": "bartowski/Qwen3.8-27B-GGUF:Qwen3.8-27B-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 17.77
+    },
+    "Mistral-Small-3.2-24B-Instruct-2506-HRX": {
+        "checkpoint": "bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF:mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 14.33
+    },
+    "Jan-v1-4B-HRX": {
+        "checkpoint": "janhq/Jan-v1-4B-GGUF:Jan-v1-4B-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.5
+    },
+    "Qwen3-4B-Instruct-2507-HRX": {
+        "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 2.5
+    },
+    "Jan-nano-128k-HRX": {
+        "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.5
+    },
+    "Phi-4-mini-instruct-HRX": {
+        "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.49
+    },
+    "MiniCPM3-4B-HRX": {
+        "checkpoint": "OpenBMB/MiniCPM3-4B-GGUF:minicpm3-4b-q4_k_m.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.47
+    },
+    "Qwen3-4B-HRX": {
+        "checkpoint": "unsloth/Qwen3-4B-GGUF:Qwen3-4B-Q4_0.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 2.38
+    },
+    "Ministral-3-3B-Instruct-2512-HRX": {
+        "checkpoint": "mistralai/Ministral-3-3B-Instruct-2512-GGUF:Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.15
+    },
+    "Llama-3.2-3B-Instruct-HRX": {
+        "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.06
+    },
+    "SmolLM3-3B-128K-HRX": {
+        "checkpoint": "unsloth/SmolLM3-3B-128K-GGUF:SmolLM3-3B-128K-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 1.94
+    },
+    "Qwen3.5-2B-HRX": {
+        "checkpoint": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 1.34
+    },
+    "Bonsai-8B-HRX": {
+        "checkpoint": "prism-ml/Bonsai-8B-gguf:Bonsai-8B-Q1_0.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 1.16
+    },
+    "Qwen3-1.7B-HRX": {
+        "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Qwen3-1.7B-Q4_0.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 1.06
+    },
+    "Llama-3.2-1B-Instruct-HRX": {
+        "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.83
+    },
+    "LFM2.5-1.2B-Instruct-HRX": {
+        "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.73
+    },
+    "LFM2-1.2B-HRX": {
+        "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.73
+    },
+    "MiniCPM5-1B-HRX": {
+        "checkpoint": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 0.69
+    },
+    "Bonsai-4B-HRX": {
+        "checkpoint": "prism-ml/Bonsai-4B-gguf:Bonsai-4B-Q1_0.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.57
+    },
+    "Qwen3.5-0.8B-HRX": {
+        "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 0.56
+    },
+    "MiniCPM-V-4.6-Thinking-HRX": {
+        "checkpoint": "OpenBMB/MiniCPM-V-4.6-Thinking-gguf:MiniCPM-V-4_6-Thinking-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 0.53
+    },
+    "MiniCPM-V-4.6-HRX": {
+        "checkpoint": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.53
+    },
+    "PromptBridge-0.6b-Alpha-HRX": {
+        "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": false,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.4
+    },
+    "Qwen3-0.6B-HRX": {
+        "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 0.38
+    },
+    "Bonsai-1.7B-HRX": {
+        "checkpoint": "prism-ml/Bonsai-1.7B-gguf:Bonsai-1.7B-Q1_0.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.25
+    },
+    "gemma-3-270m-it-HRX": {
+        "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": false,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.18
+    },
     "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -1760,6 +2002,34 @@
             "chat"
         ],
         "size": 14.4
+    },
+    "Ornith-1.5-9B-GGUF": {
+        "checkpoint": "ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Ornith-1.5-9B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 6.7
+    },
+    "Ornith-1.5-35B-A3B-GGUF": {
+        "checkpoint": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Ornith-1.5-35B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 22.6
     },
     "Whisper-Tiny": {
         "checkpoints": {
