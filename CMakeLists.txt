@@ -2374,6 +2374,9 @@ if(BUILD_TESTING AND EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHE
         target_link_libraries(test_directory_watcher PRIVATE pthread)
         target_link_options(test_directory_watcher PRIVATE -pthread)
     endif()
+    if(APPLE)
+        target_link_libraries(test_directory_watcher PRIVATE "-framework CoreServices")
+    endif()
 
     # Enable testing and register the test with CTest
     include(CTest)
@@ -2832,6 +2835,9 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_STORE_TEST_SRC}")
     target_link_libraries(test_routing_policy_store PRIVATE nlohmann_json::nlohmann_json)
     find_package(Threads REQUIRED)
     target_link_libraries(test_routing_policy_store PRIVATE Threads::Threads)
+    if(APPLE)
+        target_link_libraries(test_routing_policy_store PRIVATE "-framework CoreServices")
+    endif()
     target_compile_definitions(test_routing_policy_store PRIVATE
         ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
     )
