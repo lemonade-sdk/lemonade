@@ -150,7 +150,7 @@
   "ryzenai-llm": {
     "npu": "v1.7.0"
   },
-  "ryzenai-medusa": {
+  "ryzenai-llm-medusa": {
     "npu": "medusa-v1.0"
   },
   "flm": {
