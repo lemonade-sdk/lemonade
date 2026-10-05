@@ -74,6 +74,11 @@ double BenchScenarioResult::ttft_min_ms() const { return reduce_min(collect_fiel
 double BenchScenarioResult::ttft_max_ms() const { return reduce_max(collect_field(*this, &BenchRunResult::ttft_ms)); }
 double BenchScenarioResult::ttft_p50_ms() const { return percentile(collect_field(*this, &BenchRunResult::ttft_ms), 50.0); }
 double BenchScenarioResult::ttft_p95_ms() const { return percentile(collect_field(*this, &BenchRunResult::ttft_ms), 95.0); }
+double BenchScenarioResult::pp_tps_mean() const { return reduce_mean(collect_field(*this, &BenchRunResult::pp_tps)); }
+double BenchScenarioResult::pp_tps_min() const { return reduce_min(collect_field(*this, &BenchRunResult::pp_tps)); }
+double BenchScenarioResult::pp_tps_max() const { return reduce_max(collect_field(*this, &BenchRunResult::pp_tps)); }
+double BenchScenarioResult::pp_tps_p50() const { return percentile(collect_field(*this, &BenchRunResult::pp_tps), 50.0); }
+double BenchScenarioResult::pp_tps_p95() const { return percentile(collect_field(*this, &BenchRunResult::pp_tps), 95.0); }
 double BenchScenarioResult::tps_mean() const { return reduce_mean(collect_field(*this, &BenchRunResult::tps)); }
 double BenchScenarioResult::tps_min() const { return reduce_min(collect_field(*this, &BenchRunResult::tps)); }
 double BenchScenarioResult::tps_max() const { return reduce_max(collect_field(*this, &BenchRunResult::tps)); }
@@ -467,6 +472,7 @@ static void extract_usage_into_result(const json& usage, BenchRunResult& result)
 
 static void extract_timings_into_result(const json& timings, BenchRunResult& result) {
     if (timings.contains("prompt_ms")) result.ttft_ms = timings["prompt_ms"].get<double>();
+    if (timings.contains("prompt_per_second")) result.pp_tps = timings["prompt_per_second"].get<double>();
     if (timings.contains("predicted_per_second")) result.tps = timings["predicted_per_second"].get<double>();
     if (timings.contains("prompt_n")) result.input_tokens = timings["prompt_n"].get<int>();
     if (timings.contains("predicted_n")) result.output_tokens = timings["predicted_n"].get<int>();
@@ -487,6 +493,13 @@ static void extract_mem_use_into_result(lemonade::LemonadeClient& client, BenchR
 static void compute_tps_from_tokens_and_time(BenchRunResult& result) {
     if (result.tps <= 0 && result.output_tokens > 0 && result.total_time_ms > 0)
         result.tps = (result.output_tokens * 1000.0) / result.total_time_ms;
+}
+
+// Backends that report no prompt_per_second still expose enough to recover it: TTFT is the
+// prefill wall-clock, so the sent prompt tokens divided by it gives prefill throughput.
+static void compute_pp_tps_from_tokens_and_time(BenchRunResult& result) {
+    if (result.pp_tps <= 0 && result.input_tokens > 0 && result.ttft_ms > 0)
+        result.pp_tps = (result.input_tokens * 1000.0) / result.ttft_ms;
 }
 
 struct BenchStrategy {
@@ -527,6 +540,7 @@ static BenchRunResult run_bench_with_strategy(lemonade::LemonadeClient& client,
     auto end = steady_clock::now();
     result.total_time_ms = duration<double, std::milli>(end - start).count();
     compute_tps_from_tokens_and_time(result);
+    compute_pp_tps_from_tokens_and_time(result);
 
     if (memory_tracking)
         extract_mem_use_into_result(client, result);
@@ -800,6 +814,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                 entry["input_tokens"] = run_result.input_tokens;
                 entry["output_tokens"] = run_result.output_tokens;
                 entry["ttft_ms"] = run_result.ttft_ms;
+                entry["pp_tps"] = run_result.pp_tps;
                 entry["tps"] = run_result.tps;
                 entry["response"] = run_result.response_text;
                 log << entry.dump() << "\n";
@@ -810,8 +825,10 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
             run_result.response_text.shrink_to_fit();
         }
 
-        std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms << "ms"
-                  << " TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
+        std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms << "ms";
+        if (run_result.pp_tps > 0)
+            std::cout << " PP=" << std::fixed << std::setprecision(1) << run_result.pp_tps << "t/s";
+        std::cout << " TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
         result.runs.push_back(run_result);
     }
 

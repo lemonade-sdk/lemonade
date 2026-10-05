@@ -886,7 +886,7 @@ lemonade telemetry off
 
 ## Options for bench
 
-The `bench` command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
+The `bench` command measures chat completion performance (TTFT, prefill throughput, and decode tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
 
 ```
 lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
@@ -1027,7 +1027,7 @@ Vision scenarios are excluded by default both because they require a vision-capa
 
 #### Table Output (default)
 
-Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), and peak VRAM usage:
+Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (decode Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), PP t/s, and peak VRAM usage:
 
 ```
 Benchmark: Qwen3-0.6B-GGUF
@@ -1035,25 +1035,27 @@ Benchmark: Qwen3-0.6B-GGUF
 
 Backend: llamacpp/vulkan (ctx=4096)
 ----------------------------------------------------------------------------------------------------
-Scenario            TTFT    min     max     TPS     min     max     VRAM (GB)
+Scenario            TTFT     min      max      PP t/s  TPS      min      max      VRAM (GB)
 ----------------------------------------------------------------------------------------------------
-chat-short          45.2    42.1    48.3    185.3   178.2   192.1   1.2
-chat-long-output    48.7    46.5    51.2    142.6   138.4   147.8   1.2
-code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
+chat-short          45.2     42.1     48.3     1327.4  185.3    178.2    192.1    1.2
+chat-long-output    48.7     46.5     51.2     1330.5  142.6    138.4    147.8    1.2
+code-short          46.1     44.3     47.8     1296.8  168.9    162.3    175.4    1.2
 ```
+
+**Note:** `PP t/s` is prefill throughput — the prompt tokens divided by TTFT. Backends that report a prompt-eval time (`timings.prompt_ms`, as llama.cpp does) yield the backend's own prefill rate; backends that only report a wall-clock TTFT (`usage.prefill_duration_ttft`, as cloud models do) include request routing and transfer overhead, so their `PP t/s` reads lower than raw compute speed. Workloads without a prefill timing, such as embedding and image generation, show `-`.
 
 #### JSON Output
 
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
-Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run, and `pp_tps` stats with the same keys when the workload reported a prefill timing.
 
 With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
 along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 
-Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta.
+Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT, prefill throughput, and TPS, plus VRAM delta.
 
 Model matching behavior:
 - Models are matched by model name.
@@ -1079,7 +1081,7 @@ The comparison table marks each scenario as:
 - **failed** — all measurement runs errored
 - **prev_failed** — previous run errored, no baseline
 
-**Note:** TTFT change > 0 means slower (worse). TPS change > 0 means faster (better).
+**Note:** TTFT change > 0 means slower (worse). TPS and PP (prefill throughput) change > 0 means faster (better). PP is reported as `-` when either run lacks prefill data, for example when comparing against a file written by an older `lemonade`.
 
 ### Examples
 
