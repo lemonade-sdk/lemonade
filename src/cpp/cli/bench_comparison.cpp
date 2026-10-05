@@ -124,6 +124,7 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
             if (scenario.runs.empty()) {
                 delta.status = "failed";
                 delta.ttft_pct_change = 0.0;
+                delta.pp_tps_pct_change = std::nullopt;
                 delta.tps_pct_change = 0.0;
                 delta.vram_gb_change = std::nullopt;
             } else if (it != prev_map.end()) {
@@ -132,20 +133,26 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
                 if (it->second.value("all_runs_failed", false)) {
                     delta.status = "prev_failed";
                     delta.ttft_pct_change = 0.0;
+                    delta.pp_tps_pct_change = std::nullopt;
                     delta.tps_pct_change = 0.0;
                     delta.vram_gb_change = std::nullopt;
                 } else {
                     delta.status = "matched";
 
                     double curr_ttft = scenario.ttft_mean_ms();
+                    double curr_pp_tps = scenario.pp_tps_mean();
                     double curr_tps = scenario.tps_mean();
                     double curr_vram = scenario.vram_peak_gb();
 
                     double prev_ttft = it->second.value("ttft_ms", json::object()).value("mean", 0.0);
+                    double prev_pp_tps = it->second.value("pp_tps", json::object()).value("mean", 0.0);
                     double prev_tps = it->second.value("tps", json::object()).value("mean", 0.0);
                     double prev_vram = it->second.value("vram_peak_gb", -1.0);
 
                     delta.ttft_pct_change = (prev_ttft > 0) ? ((curr_ttft - prev_ttft) / prev_ttft * 100.0) : 0.0;
+                    delta.pp_tps_pct_change = (prev_pp_tps > 0 && curr_pp_tps > 0)
+                        ? std::optional<double>((curr_pp_tps - prev_pp_tps) / prev_pp_tps * 100.0)
+                        : std::nullopt;
                     delta.tps_pct_change = (prev_tps > 0) ? ((curr_tps - prev_tps) / prev_tps * 100.0) : 0.0;
                     delta.vram_gb_change = (prev_vram >= 0 && curr_vram >= 0)
                         ? std::optional<double>(curr_vram - prev_vram)
@@ -154,6 +161,7 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
             } else {
                 delta.status = "new";
                 delta.ttft_pct_change = 0.0;
+                delta.pp_tps_pct_change = std::nullopt;
                 delta.tps_pct_change = 0.0;
                 delta.vram_gb_change = std::nullopt;
             }
@@ -172,6 +180,7 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
             delta.scenario = prev_key.scenario;
             delta.status = "removed";
             delta.ttft_pct_change = 0.0;
+            delta.pp_tps_pct_change = std::nullopt;
             delta.tps_pct_change = 0.0;
             delta.vram_gb_change = std::nullopt;
             deltas.push_back(delta);
@@ -207,6 +216,7 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
         std::cout << std::string(80, '-') << std::endl;
         std::cout << std::left << std::setw(22) << "Scenario"
                   << std::setw(14) << "TTFT change"
+                  << std::setw(14) << "PP change"
                   << std::setw(14) << "TPS change"
                   << std::setw(16) << "VRAM change"
                   << "Status" << std::endl;
@@ -214,14 +224,17 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
 
         for (const auto* d : backend_deltas) {
             std::string ttft_str = "-", tps_str = "-", vram_str = "-";
+            std::string pp_str = "-";
             if (d->status == "matched") {
                 ttft_str = fmt_pct_change(d->ttft_pct_change);
+                if (d->pp_tps_pct_change.has_value()) pp_str = fmt_pct_change(*d->pp_tps_pct_change);
                 tps_str = fmt_pct_change(d->tps_pct_change);
                 vram_str = fmt_vram_change(d->vram_gb_change);
             }
 
             std::cout << std::left << std::setw(22) << d->scenario
                       << std::setw(14) << ttft_str
+                      << std::setw(14) << pp_str
                       << std::setw(14) << tps_str
                       << std::setw(16) << vram_str
                       << "(" << d->status << ")" << std::endl;
@@ -230,6 +243,7 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
 
     std::cout << std::endl;
     std::cout << "Legend: TTFT change > 0 means slower (worse). TPS change > 0 means faster (better)." << std::endl;
+    std::cout << "          PP change is the prefill throughput delta (> 0 means faster prefill, better); '-' when no baseline." << std::endl;
     std::cout << "Status: matched = compared against previous, new = no previous data, removed = not in current run, failed = all runs errored, prev_failed = previous run errored" << std::endl;
     std::cout << std::endl;
 }
@@ -260,6 +274,8 @@ json build_comparison_json(const std::vector<BenchBackendResult>& results,
         d_json["backend_args"] = d.backend_args;
         d_json["scenario"] = d.scenario;
         d_json["ttft_pct_change"] = d.ttft_pct_change;
+        if (d.pp_tps_pct_change.has_value()) d_json["pp_tps_pct_change"] = *d.pp_tps_pct_change;
+        else d_json["pp_tps_pct_change"] = nullptr;
         d_json["tps_pct_change"] = d.tps_pct_change;
         if (d.vram_gb_change.has_value()) d_json["vram_gb_change"] = *d.vram_gb_change;
         else d_json["vram_gb_change"] = nullptr;
