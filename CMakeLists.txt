@@ -3377,6 +3377,14 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_OPTIONS_PRECEDENCE_TEST_SRC}")
     add_cpp_ci_test(RecipeOptionsPrecedence CI ON COMMAND test_recipe_options_precedence)
 endif()
 
+# Shared image-gen request helpers: typed RecipeOptions getters + image_params
+set(_IMAGE_PARAMS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_image_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_IMAGE_PARAMS_TEST_SRC}")
+    add_executable(test_image_params test/cpp/test_image_params.cpp)
+    target_link_libraries(test_image_params PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ImageParamsTest CI ON COMMAND test_image_params)
+endif()
+
 set(_GLIBC_MALLOPT_PROBE_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/glibc_mallopt_probe.cpp"
 )
