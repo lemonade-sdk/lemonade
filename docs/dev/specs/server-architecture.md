@@ -40,7 +40,7 @@ This section shows how a request reaches a route, and how the same routes produc
 flowchart TD
   C(["Client"]) --> L["HttpListener"]
   L --> M["RequestMiddleware<br/>origin check, auth by prefix"]
-  M --> R["RouteRegistry<br/>order, 405 stubs, shadow check"]
+  M --> R["RouteRegistry<br/>order, 405 stubs"]
   R --> MR["ModelRoute subclass<br/>validate(), run()<br/><i>e.g. chat/completions,<br/>images/generations, audio/speech</i>"]
   R --> A["ApiRoute subclass<br/>handle()<br/><i>e.g. load, pull,<br/>system-info</i>"]
   MR --> ML["ModelLoader"]
@@ -270,7 +270,7 @@ Registration follows these rules:
 
 - **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header.
 - **One list per folder.** Each folder's `routes.cpp` declares its factories and adds them to the `RouteRegistry` in registration order. `Server` calls each folder's registration function. CMake collects `routes/` sources with `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`, as it does for `docs/api`, so adding a route edits no CMake file.
-- **Shadow check.** httplib matches routes in registration order, across folders too. At startup, `RouteRegistry` fails if any route's path would be matched by an earlier route. `WebUi` registers its catch-all route after every API route.
+- **Order.** httplib uses the first registered route that matches, so routes register in the order each folder's `routes.cpp` lists them, and a folder lists a specific path before a pattern that also matches it, such as `models/{id}/files` before `models/{id}`. `WebUi` registers its catch-all route after every API route.
 - **Pages.** `router.md` documents the routing concepts and `/routing/validate`. `internal.md` documents all 14 internal routes.
 - **Gateways.** The Anthropic routes live in `routes/anthropic/`, separate from Ollama's. The OpenAI-to-gateway stream conversion both use lives in `services/`. `McpServer`'s HTTP route is a route class in `routes/mcp/`.
 - **Routing context.** `/routing/validate` builds its context with `build_route_context()`, the function that real requests use, so a new routing condition needs no route edit.
@@ -283,7 +283,7 @@ This section lists the core components, each with an interface of a few calls:
 | --- | --- | --- |
 | `HttpListener` | `start()`, `stop()`, `rebind()` | Thread pools, IPv4 and IPv6 bind loop, UDP beacon, rebind on host or port change |
 | `RequestMiddleware` | One pre-routing function | Origin check and CORS, API and admin keys, per-request telemetry and session context |
-| `RouteRegistry` | `add()`, `apply(httplib::Server&)`, `list()` | Prefix expansion, 405 stubs, registration order, the shadow check, the route list for the docs |
+| `RouteRegistry` | `add()`, `apply(httplib::Server&)`, `list()` | Prefix expansion, 405 stubs, registration order, the route list for the docs |
 | `ConfigEffects` | `apply(key)`, called at startup and on every config change | Applies each config key's side effects, at startup and on change |
 | `WebUi` | `register_routes(httplib::Server&)`, called last | The SPA, the legacy status page, static assets and the SPA fallback. Its mock `window.api` lives in the web-app sources |
 | `ModelLoader` | `ensure_loaded()`, `resolve_name()`, `write_load_error()` | Auto-load, collection loading, alias and `:latest` resolution, load errors. Used by `ModelRoute` and the gateways |
