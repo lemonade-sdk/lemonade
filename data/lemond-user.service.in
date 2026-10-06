@@ -16,13 +16,10 @@ Restart=on-failure
 RestartSec=5s
 KillSignal=SIGINT
 
-# Security hardening
-PrivateTmp=yes
-NoNewPrivileges=yes
-ProtectSystem=full
-RestrictRealtime=yes
-RestrictNamespaces=yes
-LockPersonality=yes
+# Rootless Podman needs the setuid newuidmap/newgidmap helpers and the user's
+# full subordinate ID range. In a user manager each sandboxing option takes one
+# of them away, so the service runs with the user's own rights, as a lemond
+# started from a shell does.
 
 [Install]
 WantedBy=default.target
