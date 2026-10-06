@@ -7,6 +7,7 @@
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <nlohmann/json.hpp>
@@ -239,6 +240,47 @@ void test_helpers() {
               !lemon::backends::parse_container_pin("b0001"));
 }
 
+#ifndef _WIN32
+// A Hugging Face cache, where each snapshot file links into blobs/.
+void test_model_mounts() {
+    namespace fs = std::filesystem;
+    const fs::path repo = fs::temp_directory_path() / "lemonade-test-model-mounts";
+    fs::remove_all(repo);
+    const fs::path blobs = repo / "blobs";
+    const fs::path snapshot = repo / "snapshots" / "abc";
+    fs::create_directories(blobs);
+    fs::create_directories(snapshot / "tokenizer" / "extra");
+    for (const char* blob : {"b1", "b2", "b3"}) std::ofstream(blobs / blob) << blob;
+    fs::create_symlink("../../blobs/b1", snapshot / "model.hgn");
+    fs::create_symlink("../../../blobs/b2", snapshot / "tokenizer" / "vocab.json");
+    fs::create_symlink("../../../../blobs/b3", snapshot / "tokenizer" / "extra" / "merges.txt");
+    const std::string real_blobs = fs::canonical(blobs).string();
+
+    const auto file = ContainerManager::model_mounts((snapshot / "model.hgn").string(),
+                                                     "/mnt/models/model.hgn");
+    check("a linked file mounts its blob",
+          file.size() == 1 && file[0].source == real_blobs + "/b1" &&
+              file[0].destination == "/mnt/models/model.hgn");
+
+    const auto dir = ContainerManager::model_mounts((snapshot / "tokenizer").string(),
+                                                    "/mnt/models/tokenizer");
+    check("a directory mounts each file inside it, at the same relative path",
+          dir.size() == 2 && dir[0].source == real_blobs + "/b3" &&
+              dir[0].destination == "/mnt/models/tokenizer/extra/merges.txt" &&
+              dir[1].source == real_blobs + "/b2" &&
+              dir[1].destination == "/mnt/models/tokenizer/vocab.json");
+
+    bool threw = false;
+    try {
+        ContainerManager::model_mounts((repo / "missing").string(), "/mnt/models/missing");
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("a missing model file is refused", threw);
+    fs::remove_all(repo);
+}
+#endif
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -270,6 +312,9 @@ int main() {
     test_tool_choice_and_setup();
     test_install_commands();
     test_helpers();
+#ifndef _WIN32
+    test_model_mounts();
+#endif
     test_descriptors_and_pins();
 
     if (failures == 0) {
