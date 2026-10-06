@@ -378,8 +378,17 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = "${{ matrix.label }}"
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\$label"
           $venvPython = ".\.venv\Scripts\python.exe"
+
+          if (Test-Path $cacheDir) {
+            Write-Host "Removing cache at $cacheDir" -ForegroundColor Cyan
+            Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction Stop
+          }
+          if ($cacheDir.Length -gt 40) {
+            Write-Host "::error::Cache root '$cacheDir' is $($cacheDir.Length) chars; keep it under 40 so ROCm runtime paths stay below MAX_PATH (260)."
+            exit 1
+          }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
@@ -440,6 +449,28 @@ jobs:
             }
           }
 
+      - name: Check ROCm runtime path headroom
+        if: always() && matrix.backend == 'rocm'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:SystemDrive "ci-lem-cache\${{ matrix.label }}\bin\therock-wheels"
+          if (-not (Test-Path $root)) {
+              Write-Host "No TheRock wheel install at $root; nothing to measure." -ForegroundColor Yellow
+              exit 0
+          }
+          $longest = Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
+              Sort-Object { $_.FullName.Length } -Descending | Select-Object -First 5
+          foreach ($f in $longest) {
+              Write-Host ("{0,4}  {1}" -f $f.FullName.Length, $f.FullName)
+          }
+          $max = ($longest | Select-Object -First 1).FullName.Length
+          if ($max -gt 259) {
+              Write-Host "::error::Longest ROCm runtime path is $max chars (limit 259) and files past MAX_PATH cannot be opened. Shorten the lemond cache root."
+              exit 1
+          }
+          Write-Host "Longest ROCm runtime path is $max chars (MAX_PATH headroom: $(259 - $max))." -ForegroundColor Green
+
       - name: Upload validation evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -463,6 +494,23 @@ jobs:
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Remove lemond cache
+        if: always()
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\${{ matrix.label }}"
+          if (-not (Test-Path $cacheDir)) {
+              Write-Host "Nothing to remove at $cacheDir"
+              exit 0
+          }
+          Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+          if (Test-Path $cacheDir) {
+              Write-Host "::warning::Could not fully remove $cacheDir; the next run wipes it before installing."
+          } else {
+              Write-Host "Removed $cacheDir" -ForegroundColor Green
+          }
 
   verify-cuda-assets:
     name: Verify required CUDA assets
