@@ -465,6 +465,17 @@ lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-
 - **--host** — Address to bind (runtime override, does not mutate config.json).
 - **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
 
+## lemonade-tray CLI (Linux/macOS)
+
+```
+lemonade-tray [--port PORT] [--host HOST] [--spawn-server] [--launch-app] [--silent]
+```
+
+- **--port** / **--host** — Server to connect to. Defaults come from the server's `config.json`.
+- **--spawn-server** — Linux only. If no server is reachable at startup, start a local `lemond` and supervise it; quitting the tray stops that `lemond`. If a server is already running, such as the `systemd` service, the tray connects to it and nothing is spawned. On macOS the flag is accepted but ignored; the LaunchDaemon installed by the macOS package runs `lemond`.
+- **--launch-app** / **--open** — Open the desktop app once the server is ready.
+- **--silent** — Suppress the startup notification.
+
 ## API Key and Security
 
 ### Regular API Key
