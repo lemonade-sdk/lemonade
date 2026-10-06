@@ -289,7 +289,7 @@ Lemonade uses Podman when it is installed, and Docker otherwise §. When neither
 
 The user starts `lemond` as their own account, through any of:
 
-- a `systemctl --user` unit
+- a `systemctl --user` unit, `lemond-user.service`, which runs with the user's own rights, as a shell does. Rootless Podman needs the setuid `newuidmap`/`newgidmap` helpers and the user's full subordinate ID range, and in a user manager each of systemd's sandboxing options takes one away: the seccomp-based ones (`NoNewPrivileges`, `RestrictNamespaces`, `LockPersonality`, `RestrictRealtime`) set the no-new-privileges flag, and the mount-based ones (`PrivateTmp`, `ProtectSystem`) confine the service to a user namespace that maps only the user's own UID.
 - a shell, including a `lemond` built from source and run from its build directory
 - an app that embeds `lemond`
 
@@ -367,7 +367,7 @@ When the container tool is Docker, the checks are:
 
 `lemond` runs `podman` as a child process, the same way it runs every native backend. The unit is configured to give rootless Podman what it needs:
 
-- It lets `lemond` create user namespaces and run the setuid `newuidmap`/`newgidmap` helpers that rootless Podman relies on, by running without `NoNewPrivileges` and `RestrictNamespaces`. Removing `NoNewPrivileges` also makes the unit's seccomp-based `LockPersonality` and `RestrictRealtime` inactive; the mount-based protections (`ProtectSystem`, `ProtectHome`, `PrivateTmp`) are unaffected, so the relaxation stops there.
+- It lets `lemond` create user namespaces and run the setuid `newuidmap`/`newgidmap` helpers that rootless Podman relies on, by running without `NoNewPrivileges` and `RestrictNamespaces`. The unit keeps `LockPersonality`, `RestrictRealtime`, `ProtectSystem`, `ProtectHome` and `PrivateTmp`: systemd applies them while it still runs as root, before it switches to the `lemonade` account, so they leave the no-new-privileges flag unset and the account's user namespace unchanged.
 - It points `XDG_RUNTIME_DIR` at the unit's existing `RuntimeDirectory` (`Environment=XDG_RUNTIME_DIR=%t/lemonade`), giving Podman a runtime directory without a login session.
 
 Rootless Podman also needs the `lemonade` account to own a subordinate UID/GID range: a block of host IDs that the container's own users map onto. `useradd` allocates one only for regular accounts, and the packages create `lemonade` as a system account (`useradd -r`), so each package's install script allocates the range right after its `useradd`:
