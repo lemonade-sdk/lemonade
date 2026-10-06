@@ -2686,14 +2686,14 @@
         "checkpoint": "amd/Phi-4-mini-instruct_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat"],
+        "labels": ["chat", "vision"],
         "size": 4.5
     },
     "Phi-4-mini-reasoning-Medusa-NPU": {
         "checkpoint": "amd/Phi-4-mini-reasoning_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "reasoning"],
+        "labels": ["chat", "reasoning", "vision"],
         "size": 4.5
     },
     "Qwen2.5-0.5B-Instruct-Medusa-NPU": {
@@ -2875,7 +2875,7 @@
         "checkpoint": "amd/Qwen3.6-35B_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat"],
+        "labels": ["chat", "vision"],
         "size": 22.0
     },
     "SmolLM-Instruct-Medusa-NPU": {
@@ -2896,7 +2896,7 @@
         "checkpoint": "amd/TranslateGemma4B_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat"],
+        "labels": ["chat", "vision"],
         "size": 5.0
     },
     "Hy-MT2-1.8B-Medusa-NPU": {
@@ -2910,14 +2910,14 @@
         "checkpoint": "amd/gemma-4-e2b-it-mobius-int4_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat"],
+        "labels": ["chat", "vision"],
         "size": 2.5
     },
     "gemma-4-e4b-it-Medusa-NPU": {
         "checkpoint": "amd/gemma-4-e4b-it-mobius-int4_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat"],
+        "labels": ["chat", "vision"],
         "size": 4.5
     },
     "granite-4.1-8b-Medusa-NPU": {
