@@ -5590,10 +5590,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.max_retry_delay_ms = 120000;
         download_opts.resume_partial = true;
         download_opts.low_speed_limit = 1000;
-        // Large LFS files (e.g. Medusa .fconst/.xar kernel caches) redirect through
-        // HF's CDN and stall during redirect negotiation. Give them 120s before
-        // declaring the connection stalled, vs 60s for small files.
-        download_opts.low_speed_time = (file_size > 1 * 1024 * 1024) ? 120 : 60;
+        download_opts.low_speed_time = 60;
         download_opts.connect_timeout = 60;
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
