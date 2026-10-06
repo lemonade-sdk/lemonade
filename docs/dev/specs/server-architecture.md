@@ -141,7 +141,7 @@ Every other route extends `ApiRoute` directly. Routes that take a model name wit
 
 `RouteRequest` holds one request's data: the httplib request, the request body when `json_body` or `form_body` is set, the resolved model name, and the router decision when there is one.
 
-`ServerContext` holds pointers to the subsystems (`Router`, `ModelManager`, `BackendManager`, `CloudProviderRegistry`, `AliasManager`, `RuntimeConfig`, `WebSocketServer`) and to the services in [Core Components](#core-components). It holds no state of its own.
+`ServerContext` holds pointers to the subsystems (`Router`, `ModelManager`, `BackendManager`, `CloudProviderRegistry`, `AliasManager`, `RuntimeConfig`), to `HttpListener`, and to the services in [Core Components](#core-components). It holds no state of its own. Everything it points to lives as long as lemond, so it has no `WebSocketServer` pointer: a `host` or `websocket_port` change replaces that server, and `/health` reads its port from `HttpListener::websocket_port()`.
 
 Route objects are built once at startup and serve concurrent requests, so they hold no per-request state (Invariant #7).
 
@@ -281,7 +281,7 @@ This section lists the core components, each with an interface of a few calls:
 
 | Class | Interface | Responsibilities |
 | --- | --- | --- |
-| `HttpListener` | `start()`, `stop()`, `rebind()` | Thread pools, IPv4 and IPv6 bind loop, UDP beacon, rebind on host or port change |
+| `HttpListener` | `start()`, `stop()`, `rebind()`, `websocket_port()` | Thread pools, IPv4 and IPv6 bind loop, UDP beacon, the `WebSocketServer` and its restart, rebind on host or port change |
 | `RequestMiddleware` | One pre-routing function | Origin check and CORS, API and admin keys, per-request telemetry and session context |
 | `RouteRegistry` | `add()`, `apply(httplib::Server&)`, `list()` | Prefix expansion, 405 stubs, registration order, the route list for the docs |
 | `ConfigEffects` | `apply(key)`, called at startup and on every config change | Applies each config key's side effects, at startup and on change |
