@@ -5626,17 +5626,11 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
-        // For xet files, add the xet access token header so HF redirects to CDN
-        std::map<std::string, std::string> file_headers = headers;
-        if (file_desc.contains("xet_token") && file_desc["xet_token"].is_string()) {
-            file_headers["X-Xet-Access-Token"] = file_desc["xet_token"].get<std::string>();
-        }
-
         auto result = HttpClient::download_file(
             file_url,
             output_path,
             http_progress_cb,
-            file_headers,
+            headers,
             download_opts
         );
 
@@ -5947,32 +5941,10 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     manifest["files_count"] = total_files;
     manifest["files"] = json::array();
 
-    // Cache xet tokens per repo (fetched once per repo, reused for all xet files)
-    std::map<std::string, std::string> xet_tokens;
-
     for (const auto& [repo_id, files] : files_to_download) {
         const auto& repo = repositories.at(repo_id);
         std::map<std::string, RegistryFile> metadata;
         for (const auto& file : repo.files) metadata[file.path] = file;
-
-        // Check if any files in this repo need xet auth
-        bool repo_has_xet = false;
-        for (const auto& filename : files) {
-            const auto it = metadata.find(filename);
-            if (it != metadata.end() && it->second.is_xet) { repo_has_xet = true; break; }
-        }
-
-        // Fetch xet token once for this repo if needed
-        if (repo_has_xet && xet_tokens.find(repo_id) == xet_tokens.end()) {
-            std::string tok = registry.fetch_xet_token(repo_id, repo.revision);
-            if (!tok.empty()) {
-                xet_tokens[repo_id] = tok;
-                LOG(INFO, "ModelManager") << "Fetched xet token for " << repo_id << std::endl;
-            } else {
-                LOG(WARNING, "ModelManager") << "Failed to fetch xet token for "
-                    << repo_id << " — xet files may fail to download" << std::endl;
-            }
-        }
 
         for (const auto& filename : files) {
             json entry;
@@ -5986,13 +5958,6 @@ void ModelManager::download_from_registry(const ModelInfo& info,
                     {"algorithm", it->second.hash_algorithm},
                     {"value", it->second.hash}
                 };
-            }
-            // Stamp xet token on xet files so download_from_manifest can add the header
-            if (it != metadata.end() && it->second.is_xet) {
-                const auto tok_it = xet_tokens.find(repo_id);
-                if (tok_it != xet_tokens.end()) {
-                    entry["xet_token"] = tok_it->second;
-                }
             }
             manifest["files"].push_back(std::move(entry));
         }

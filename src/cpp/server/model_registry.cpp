@@ -416,10 +416,6 @@ public:
             file.size = json_size(sibling);
             if (sibling.contains("lfs") && sibling["lfs"].is_object()) {
                 file.hash = first_string(sibling["lfs"], {"oid", "sha256"});
-                // LFS oid may be prefixed with "sha256:" — strip it
-                static const std::string sha256_prefix = "sha256:";
-                if (file.hash.rfind(sha256_prefix, 0) == 0)
-                    file.hash = file.hash.substr(sha256_prefix.size());
                 if (!file.hash.empty()) file.hash_algorithm = "sha256";
                 if (file.size == 0) file.size = json_size(sibling["lfs"]);
             }
@@ -427,36 +423,9 @@ public:
                 file.hash = first_string(sibling, {"blobId", "oid"});
                 if (!file.hash.empty()) file.hash_algorithm = "git-sha1";
             }
-            // Files with no LFS entry and no reported size are stored via git-xet
-            // and require a separate xet access token to download.
-            if (!sibling.contains("lfs") && file.size == 0 && !file.hash.empty() &&
-                file.hash_algorithm == "git-sha1") {
-                file.is_xet = true;
-            }
             result.files.push_back(std::move(file));
         }
         return result;
-    }
-
-    // Fetch a short-lived xet access token for the given repo/revision.
-    // Returns empty string if xet is not supported or HF_TOKEN is absent.
-    std::string fetch_xet_token(const std::string& repo_id,
-                                const std::string& revision) const {
-        const std::string token = env_string("HF_TOKEN");
-        if (token.empty()) return "";
-        std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
-        if (endpoint.empty()) endpoint = "https://huggingface.co";
-        const std::string url = endpoint + "/api/models/" +
-                                percent_encode(repo_id, true) + "/xet-read-token/" +
-                                percent_encode(revision.empty() ? default_revision() : revision, true);
-        const auto response = HttpClient::get(url, auth_headers());
-        if (response.status_code != 200) return "";
-        try {
-            const auto body = JsonUtils::parse(response.body);
-            return body.value("accessToken", std::string());
-        } catch (...) {
-            return "";
-        }
     }
 
     std::string resolve_file_url(const std::string& repo_id,

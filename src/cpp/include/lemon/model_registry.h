@@ -57,7 +57,6 @@ struct RegistryFile {
     std::string hash_algorithm;
     std::string hash;
     bool directory = false;
-    bool is_xet = false;  // true when stored via git-xet (not LFS); needs xet auth to download
 };
 
 struct RegistryRepository {
@@ -172,11 +171,6 @@ public:
     virtual std::string resolve_file_url(const std::string& repo_id,
                                          const std::string& revision,
                                          const std::string& file_path) const = 0;
-
-    // Fetch a short-lived xet access token for downloading xet-stored files.
-    // Returns empty string if unsupported or HF_TOKEN is absent.
-    virtual std::string fetch_xet_token(const std::string& /*repo_id*/,
-                                        const std::string& /*revision*/) const { return ""; }
 };
 
 const ModelRegistry& model_registry(RemoteRegistrySource source);
