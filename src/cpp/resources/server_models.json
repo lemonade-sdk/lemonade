@@ -2896,7 +2896,7 @@
         "checkpoint": "amd/TranslateGemma4B_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "vision"],
+        "labels": ["chat"],
         "size": 5.0
     },
     "Hy-MT2-1.8B-Medusa-NPU": {
