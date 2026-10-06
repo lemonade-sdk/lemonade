@@ -920,7 +920,7 @@ jobs:
   validate-linux:
     name: Validate cuda (Linux ${{ matrix.arch }})
     needs: [get-latest-releases, build-linux]
-    if: always() && needs.build-linux.result == 'success'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.build-linux.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 420
     strategy:
