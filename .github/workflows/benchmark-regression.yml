@@ -552,12 +552,8 @@ jobs:
               "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m 'init benchmark history')"
           fi
           git worktree add bench-history "$HISTORY_BRANCH"
-          # Copy every run file into bench-history/results/<fork_id>/<model>/,
-          # keyed by each file's OWN fork_id field (authoritative) rather than by
-          # parsing the bench-results-<fork>-<run_id> artifact folder name. The
-          # folder-name parsing silently dropped forks whose artifact layout did
-          # not match (e.g. single-fork runs), so a valid fork could vanish from
-          # the leaderboard. The model name is the run file's parent directory.
+          # Route each run file by its own fork_id field — artifact folder-name
+          # parsing silently dropped single-fork runs from the leaderboard.
           python3 - << 'PY'
           import json, shutil
           from pathlib import Path
@@ -602,8 +598,6 @@ jobs:
           lemonade_versions = set()
 
           def quant_from_checkpoint(me, data):
-            # Quantization is encoded in the GGUF filename, e.g.
-            # "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf" -> "Q4_K_XL".
             ck = (me.get("checkpoints") or {}).get("main") or data.get("checkpoint") or ""
             fname = ck.split(":")[-1]
             m = re.search(r"(IQ\d+_\w+|Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4)", fname, re.I)
@@ -625,9 +619,6 @@ jobs:
               continue
             fork_id = data.get("fork_id", "unknown")
             version = data.get("fork_version", "unknown")
-            # Per-run (per-snapshot) lemonade version — do NOT latch a single
-            # value for the whole leaderboard (that pinned an arbitrary/stale
-            # release). Each entry carries its own; meta reports the set + latest.
             hw = data.get("hardware", {}) or {}
             lem_ver = data.get("lemonade_version") or hw.get("lemonade_version")
             if lem_ver:
@@ -657,10 +648,6 @@ jobs:
                   tps_block = sc.get("tps", {})
                   if tps_block.get("mean") is None and tps_block.get("max") is None:
                     continue
-                  # BEST-OF, not average. TG = peak decode = tps.max. PP = peak
-                  # prefill = input_tokens / fastest TTFT. Prefer the driver's
-                  # annotated tg_tps/pp_tps; recompute from max/min for any legacy
-                  # run file that predates the annotation.
                   ttft_block = sc.get("ttft_ms", {})
                   best_ttft = ttft_block.get("min", ttft_block.get("mean", 0))
                   in_tok = sc.get("input_tokens")
@@ -681,16 +668,11 @@ jobs:
                     "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
                     "ttft_ms_best": round(best_ttft, 2),
-                    # Back-compat aliases: the DEPLOYED dashboard still reads the
-                    # old key names. Emit both so an already-published dashboard
-                    # keeps rendering until it's updated to tg_tps/ttft_ms_best.
-                    "tps_mean": tg_tps,
-                    "ttft_ms_mean": round(best_ttft, 2),
+                    "tps_mean": tg_tps,      # back-compat alias
+                    "ttft_ms_mean": round(best_ttft, 2),  # back-compat alias
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
-                    # provenance: which CI run produced this number, on which
-                    # lemonade release and which hardware (per snapshot).
                     "lemonade_version": lem_ver,
                     "hw_id": hw_id,
                     "run_id": data.get("run_id"),
@@ -742,8 +724,7 @@ jobs:
                     "tg_tps": tg_tps,
                     "pp_tps": pp_tps,
                     "ttft_ms_best": round(best_ttft, 2),
-                    # back-compat aliases for the currently-deployed dashboard
-                    "tps_mean": tg_tps,
+                    "tps_mean": tg_tps,      # back-compat alias
                     "ttft_ms_mean": round(best_ttft, 2),
                     "input_tokens": sc.get("input_tokens"),
                     "quant": quant,
@@ -759,8 +740,6 @@ jobs:
 
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo   = os.environ.get("GITHUB_REPOSITORY", "")
-          # "Latest" lemonade version = the one from the most recent entry by
-          # timestamp (NOT an arbitrary first-file latch). Falls back to any seen.
           latest_version = None
           latest_ts = ""
           for entries in leaderboard.values():
@@ -778,8 +757,6 @@ jobs:
             "repo_url": f"{server}/{repo}" if repo else None,
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
-            # Latest release for the header; full set for reference. Per-entry
-            # lemonade_version is authoritative for each snapshot's number.
             "lemonade_version": latest_version,
             "lemonade_versions_seen": sorted(lemonade_versions),
             "systems": list(systems.values()),
