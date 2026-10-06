@@ -12,7 +12,20 @@ fi
 mkdir -p /opt/var/lib/lemonade
 chown lemonade:lemonade /opt/var/lib/lemonade > /dev/null 2>&1 || true
 
-usermod -a -G render lemonade > /dev/null 2>&1 || true
+usermod -a -G video,render lemonade > /dev/null 2>&1 || true
+
+# Rootless Podman maps the container's users onto a subordinate ID range,
+# which useradd allocates only for regular accounts. The range starts past
+# every range already allocated. A subid: line in nsswitch.conf means a
+# central directory allocates ranges, so that is left to its administrator.
+if ! grep -qs '^subid:' /etc/nsswitch.conf; then
+    touch /etc/subuid /etc/subgid
+    subid_start=$(cat /etc/subuid /etc/subgid |
+        awk -F: 'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }')
+    subid_range="$subid_start-$((subid_start + 65535))"
+    grep -qs '^lemonade:' /etc/subuid || usermod --add-subuids "$subid_range" lemonade || true
+    grep -qs '^lemonade:' /etc/subgid || usermod --add-subgids "$subid_range" lemonade || true
+fi
 
 if getent group systemd-journal > /dev/null 2>&1; then
     usermod -a -G systemd-journal lemonade > /dev/null 2>&1 || true

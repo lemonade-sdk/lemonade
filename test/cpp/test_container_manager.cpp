@@ -43,6 +43,8 @@ std::string join(const std::vector<std::string>& argv) {
 struct FakeHost {
     std::set<std::string> tools;
     std::set<std::string> groups;
+    std::string account = "alice";
+    std::map<std::string, std::string> subids;  // getsubids arguments -> output
     bool docker_socket = true;
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
 
@@ -50,6 +52,7 @@ struct FakeHost {
         ContainerHost h;
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
         h.in_group = [this](const std::string& group) { return groups.count(group) > 0; };
+        h.account = [this]() { return account; };
         h.group_id = [](const std::string& group) {
             return group == "video" ? std::string("44") : std::string("990");
         };
@@ -58,7 +61,15 @@ struct FakeHost {
             const auto it = files.find(path);
             return it == files.end() ? std::string() : it->second;
         };
-        h.run = [](const std::vector<std::string>&, int) { return lemon::utils::CommandResult{}; };
+        h.run = [this](const std::vector<std::string>& argv, int) {
+            lemon::utils::CommandResult result;
+            if (argv.front() == "getsubids") {
+                const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
+                result.exit_code = it == subids.end() ? 1 : 0;
+                if (it != subids.end()) result.output = it->second;
+            }
+            return result;
+        };
         return h;
     }
 };
@@ -172,6 +183,47 @@ void test_tool_choice_and_setup() {
     docker.docker_socket = true;
     check("Docker passes once the daemon accepts the account",
           !ContainerManager(docker.host()).check_setup());
+}
+
+// lemond.service runs as the lemonade account, so each fix names it and
+// restarts the service.
+void test_system_service_setup() {
+    FakeHost podman;
+    podman.account = "lemonade";
+    podman.tools = {"podman", "getsubids"};
+    podman.groups = {"render"};
+    const auto groups = ContainerManager(podman.host()).check_setup();
+    check("the service's group fix names lemonade and restarts lemond",
+          groups && groups->message == "The lemonade account is not in both video and render" &&
+              groups->action == "1. sudo usermod -aG video,render lemonade\n"
+                                "2. sudo systemctl restart lemond");
+
+    podman.groups = {"video", "render"};
+    podman.subids = {{"lemonade", "0: lemonade 165536 65536\n"}};
+    const auto subids = ContainerManager(podman.host()).check_setup();
+    check("the service needs subordinate GIDs as well as UIDs",
+          subids && subids->message == "getsubids lemonade or getsubids -g lemonade prints no range" &&
+              subids->action == "1. Ask the host's administrator to allocate 65,536 subordinate "
+                                "UIDs and GIDs to lemonade\n"
+                                "2. sudo systemctl restart lemond");
+    podman.subids["-g lemonade"] = "0: lemonade 165536 65536\n";
+    check("the service passes with both ranges", !ContainerManager(podman.host()).check_setup());
+
+    FakeHost user = podman;
+    user.account = "alice";
+    user.subids.clear();
+    check("a user-started lemond skips the subordinate ID check",
+          !ContainerManager(user.host()).check_setup());
+
+    FakeHost docker;
+    docker.account = "lemonade";
+    docker.tools = {"docker"};
+    docker.docker_socket = false;
+    const auto refused = ContainerManager(docker.host()).check_setup();
+    check("the service's Docker fix names lemonade and restarts lemond",
+          refused && refused->message == "The Docker daemon refuses the lemonade account" &&
+              refused->action == "1. sudo usermod -aG docker lemonade\n"
+                                 "2. sudo systemctl restart lemond");
 }
 
 void test_install_commands() {
@@ -347,6 +399,7 @@ void test_descriptors_and_pins() {
 int main() {
     test_run_command();
     test_tool_choice_and_setup();
+    test_system_service_setup();
     test_install_commands();
     test_helpers();
 #ifndef _WIN32
