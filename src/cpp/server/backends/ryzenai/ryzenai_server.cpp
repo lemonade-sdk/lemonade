@@ -76,7 +76,7 @@ void RyzenAIServer::load(const std::string& model_name,
         throw std::runtime_error("Model path is required for RyzenAI-Server. Call set_model_path() before load()");
     }
 
-    if (!fs::exists(model_path_)) {
+    if (!fs::exists(path_from_utf8(model_path_))) {
         throw std::runtime_error("Model path does not exist: " + model_path_);
     }
 

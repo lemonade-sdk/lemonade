@@ -50,12 +50,43 @@ public:
         return wstring_to_utf8(value);
     }
 
+    // Windows limits ordinary paths to MAX_PATH (260 chars). Deep HF cache paths
+    // for models with very long filenames (e.g. Medusa .meta kernel caches) exceed
+    // this once the ".partial" suffix is added, making _wfopen/rename fail with an
+    // instant error that the downloader mistakes for a transient fault and retries
+    // forever. Prefixing an absolute path with \\?\ switches Win32 to the
+    // extended-length form (~32767 chars). The prefix is purely an internal Win32
+    // concern, so path_to_utf8 strips it back out to keep logs/JSON/UI clean.
+    static constexpr const wchar_t* kLongPathPrefix = L"\\\\?\\";
+
+    static bool is_absolute_drive_path(const std::wstring& w) {
+        // e.g. C:\...  — a drive letter, colon, then a backslash.
+        return w.size() >= 3 && ((w[0] >= L'A' && w[0] <= L'Z') || (w[0] >= L'a' && w[0] <= L'z')) &&
+               w[1] == L':' && (w[2] == L'\\' || w[2] == L'/');
+    }
+
     fs::path path_from_utf8(const std::string& path) override {
-        return fs::u8path(path);
+        std::wstring w = utf8_to_wstring(path);
+        // Only extend absolute drive paths that aren't already extended or UNC.
+        if (is_absolute_drive_path(w) && w.compare(0, 4, kLongPathPrefix) != 0) {
+            // \\?\ disables Win32 path normalization, so '.'/'..'/mixed separators
+            // would be taken literally. Normalize first via fs::path, then prefix
+            // the clean native (backslash) form.
+            std::wstring native = fs::path(w).lexically_normal().make_preferred().wstring();
+            if (!native.empty()) {
+                return fs::path(std::wstring(kLongPathPrefix) + native);
+            }
+        }
+        return fs::path(w);
     }
 
     std::string path_to_utf8(const fs::path& path) override {
-        return wstring_to_utf8(path.wstring());
+        std::wstring w = path.wstring();
+        // Strip the internal \\?\ prefix so callers never see it.
+        if (w.compare(0, 4, kLongPathPrefix) == 0) {
+            w.erase(0, 4);
+        }
+        return wstring_to_utf8(w);
     }
 
     std::string get_executable_dir() override {
