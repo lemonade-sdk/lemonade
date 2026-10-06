@@ -417,7 +417,12 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = "${{ matrix.label }}"
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $PWD "ci-cache-$label"
+          # rocBLAS opens its per-solution Tensile files with plain Win32 calls,
+          # which still cap at MAX_PATH. Those filenames run ~90-105 chars and sit
+          # 98 chars below the cache root, so a cache under the runner workspace
+          # (…\_work\lemonade\lemonade\ci-cache-rocm-stable, 73 chars) pushes them
+          # past 260 and rocBLAS faults. Keep the cache root near the drive root.
+          $cacheDir = Join-Path $env:SystemDrive "lc\$label"
           $venvPython = ".\.venv\Scripts\python.exe"
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
@@ -477,6 +482,28 @@ jobs:
             } catch {
               Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
             }
+          }
+
+      - name: Report ROCm runtime path headroom
+        if: always() && matrix.backend == 'rocm'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $root = Join-Path $env:SystemDrive "lc\${{ matrix.label }}\bin\therock-wheels"
+          if (-not (Test-Path $root)) {
+              Write-Host "No TheRock wheel install at $root" -ForegroundColor Yellow
+              exit 0
+          }
+          $longest = Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
+              Sort-Object { $_.FullName.Length } -Descending | Select-Object -First 5
+          foreach ($f in $longest) {
+              Write-Host ("{0,4}  {1}" -f $f.FullName.Length, $f.FullName)
+          }
+          $max = ($longest | Select-Object -First 1).FullName.Length
+          if ($max -ge 260) {
+              Write-Host "WARNING: longest ROCm runtime path is $max chars; rocBLAS opens these with plain Win32 calls and faults past 259." -ForegroundColor Red
+          } else {
+              Write-Host "Longest ROCm runtime path is $max chars (MAX_PATH headroom: $(259 - $max))." -ForegroundColor Green
           }
 
       - name: Upload validation evidence
