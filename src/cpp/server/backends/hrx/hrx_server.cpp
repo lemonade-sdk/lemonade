@@ -134,9 +134,6 @@ void HrxServer::load(const std::string& model_name,
     const bool info_logging_enabled = log_level_ == "info";
     const bool inherit_output = info_logging_enabled || is_debug();
     start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command);
-
-    LOG(DEBUG, "HRX") << "Model loaded on port "
-                       << get_backend_port() << std::endl;
 }
 
 }  // namespace backends

@@ -136,10 +136,6 @@ OnnxRuntimeServer::OnnxRuntimeServer(const std::string& log_level, ModelManager*
     : WrappedServer("ort-server", log_level, model_manager, backend_manager) {
 }
 
-OnnxRuntimeServer::~OnnxRuntimeServer() {
-    unload();
-}
-
 void OnnxRuntimeServer::load(const std::string& model_name,
                              const ModelInfo& model_info,
                              const RecipeOptions& options,
@@ -220,11 +216,6 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         throw std::runtime_error(std::string(e.what()) +
                                  (details.empty() ? "" : ": " + details));
     }
-    LOG(INFO, "OnnxRuntimeServer") << "Server is ready!" << std::endl;
-}
-
-void OnnxRuntimeServer::unload() {
-    stop_server();
 }
 
 json OnnxRuntimeServer::forward_classify(const std::string& text, const json& params) {

@@ -220,7 +220,6 @@ void OpenMossServer::start_speech_process(long timeout_seconds) {
 void OpenMossServer::unload() {
     std::unique_lock<std::shared_mutex> lock(request_mutex_);
     stop_server();
-    reference_cache_.clear();
 }
 
 std::string OpenMossServer::design_reference_sample(

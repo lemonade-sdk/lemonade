@@ -8,13 +8,13 @@
 
 namespace lemon {
 
-// What a backend runs. It has the same shape wherever the server runs; the
-// ServerProcess that starts it decides where.
 struct ServerCommand {
     std::string program;
     std::vector<std::string> args;
     std::vector<std::pair<std::string, std::string>> env;
     int port = 0;
+    // Polled until it answers before the load completes, then polled by the
+    // backend watchdog for as long as the server runs.
     std::string ready_endpoint = "/health";
 };
 
@@ -23,8 +23,8 @@ struct ProcessOutput {
     bool filter_health_logs = false;
 };
 
-// One running backend server. Destroying it stops the server, so a load that
-// fails after starting one cannot leave it running.
+// Destroying a ServerProcess stops its server, so a load that throws after
+// start() cannot leave the process running.
 class ServerProcess {
 public:
     explicit ServerProcess(ProcessOutput output) : output_(output) {}
@@ -53,7 +53,6 @@ private:
     ProcessOutput output_;
 };
 
-// A backend server that runs as a binary on the host.
 class NativeProcess : public ServerProcess {
 public:
     explicit NativeProcess(ProcessOutput output, std::string working_dir = "")

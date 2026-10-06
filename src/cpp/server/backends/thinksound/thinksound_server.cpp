@@ -41,10 +41,6 @@ ThinkSoundServer::ThinkSoundServer(const std::string& log_level,
                                    BackendManager* backend_manager)
     : WrappedServer("thinksound-server", log_level, model_manager, backend_manager) {}
 
-ThinkSoundServer::~ThinkSoundServer() {
-    unload();
-}
-
 std::string ThinkSoundServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = thinksound::spec();
     std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
@@ -128,10 +124,6 @@ void ThinkSoundServer::load(const std::string& model_name,
     command.env = std::move(env_vars);
     command.port = port_;
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
-}
-
-void ThinkSoundServer::unload() {
-    stop_server();
 }
 
 void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink& sink) {

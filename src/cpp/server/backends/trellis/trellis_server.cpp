@@ -44,10 +44,6 @@ TrellisServer::TrellisServer(const std::string& log_level,
                              BackendManager* backend_manager)
     : WrappedServer("trellis-server", log_level, model_manager, backend_manager) {}
 
-TrellisServer::~TrellisServer() {
-    unload();
-}
-
 std::string TrellisServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = trellis::spec();
     std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
@@ -144,10 +140,6 @@ void TrellisServer::load(const std::string& model_name,
     command.env = std::move(env_vars);
     command.port = port_;
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
-}
-
-void TrellisServer::unload() {
-    stop_server();
 }
 
 void TrellisServer::model_3d_generations(const json& request, httplib::DataSink& sink) {

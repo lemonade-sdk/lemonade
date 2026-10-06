@@ -1,10 +1,9 @@
-// Proves /health reads a backend's PID and launch command as one snapshot of the
-// ServerProcess the WrappedServer owns: starting a server publishes both, a
-// restart replaces the previous command, and stopping or failing to start
-// clears both together. None of this is reachable from /health: a restart needs
-// a backend to be started twice (in production, a watchdog reset), and cleanup
-// is invisible because Router::get_all_loaded_models() drops dead backends
-// before it builds any JSON.
+// Checks that WrappedServer::get_process_info(), which /health reports, takes the
+// PID and launch command from the same ServerProcess: a start publishes both, a
+// restart replaces the previous command, and a stop or failed start clears both.
+// An integration test against /health cannot reach these states: a restart only
+// happens on a watchdog reset, and Router::get_all_loaded_models() drops dead
+// backends before it builds the response.
 
 #include "lemon/wrapped_server.h"
 
@@ -59,8 +58,6 @@ public:
     StubWrappedServer() : WrappedServer("stub", "error", nullptr, nullptr) {}
 
     void load(const std::string&, const ModelInfo&, const RecipeOptions&, bool) override {}
-
-    void unload() override { stop_server(); }
 
     using WrappedServer::start_server;
     using WrappedServer::stop_server;

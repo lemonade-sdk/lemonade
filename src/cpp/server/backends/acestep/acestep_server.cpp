@@ -71,10 +71,6 @@ AceStepServer::AceStepServer(const std::string& log_level,
                              BackendManager* backend_manager)
     : WrappedServer("acestep-server", log_level, model_manager, backend_manager) {}
 
-AceStepServer::~AceStepServer() {
-    unload();
-}
-
 std::string AceStepServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = acestep::spec();
     std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
@@ -159,10 +155,6 @@ void AceStepServer::load(const std::string& model_name,
     command.env = std::move(env_vars);
     command.port = port_;
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
-}
-
-void AceStepServer::unload() {
-    stop_server();
 }
 
 bool AceStepServer::run_job(const std::string& path, const std::string& body,

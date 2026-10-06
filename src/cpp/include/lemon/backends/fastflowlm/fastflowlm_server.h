@@ -17,8 +17,6 @@ public:
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);
 
-    ~FastFlowLMServer() override;
-
     std::string download_model(const std::string& checkpoint,
                               bool do_not_upgrade = false,
                               RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
@@ -27,8 +25,6 @@ public:
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
@@ -52,8 +48,6 @@ public:
 private:
     // Get the path to the flm executable from the install directory
     std::string get_flm_path();
-
-    bool is_loaded_ = false;
 };
 
 namespace fastflowlm {

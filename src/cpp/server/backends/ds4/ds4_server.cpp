@@ -59,10 +59,6 @@ Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
     : WrappedServer("ds4-server", log_level, model_manager, backend_manager) {
 }
 
-Ds4Server::~Ds4Server() {
-    unload();
-}
-
 void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                      const RecipeOptions& options, bool do_not_upgrade) {
     (void)do_not_upgrade;  // install_backend() is a no-op once the pin is present
@@ -155,10 +151,6 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     const bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
     start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
                  HttpClient::get_default_timeout());
-}
-
-void Ds4Server::unload() {
-    stop_server();
 }
 
 json Ds4Server::chat_completion(const json& request) {

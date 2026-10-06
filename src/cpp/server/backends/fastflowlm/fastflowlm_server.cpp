@@ -66,10 +66,6 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
     : WrappedServer("FastFlowLM", log_level, model_manager, backend_manager) {
 }
 
-FastFlowLMServer::~FastFlowLMServer() {
-    unload();
-}
-
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
                                              RemoteRegistrySource source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
@@ -236,15 +232,6 @@ void FastFlowLMServer::load(const std::string& model_name,
         LOG(ERROR, "FastFlowLM") << "  3. Check NPU drivers are installed (Windows only)" << std::endl;
         throw;
     }
-
-    is_loaded_ = true;
-    LOG(INFO, "FastFlowLM") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void FastFlowLMServer::unload() {
-    LOG(INFO, "FastFlowLM") << "Unloading model..." << std::endl;
-    stop_server();
-    is_loaded_ = false;
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {

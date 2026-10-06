@@ -58,10 +58,6 @@ MoonshineServer::MoonshineServer(const std::string& log_level, ModelManager* mod
     : WrappedServer("moonshine-server", log_level, model_manager, backend_manager) {
 }
 
-MoonshineServer::~MoonshineServer() {
-    unload();
-}
-
 void MoonshineServer::load(const std::string& model_name,
                           const ModelInfo& model_info,
                           const RecipeOptions& options,
@@ -166,11 +162,6 @@ void MoonshineServer::load(const std::string& model_name,
     command.env = std::move(env_vars);
     command.port = port_;
     start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}), command);
-}
-
-void MoonshineServer::unload() {
-    stop_server();
-    tcp_port_ = 0;
 }
 
 std::string MoonshineServer::get_streaming_address() {

@@ -267,10 +267,6 @@ LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model
     : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
 }
 
-LlamaCppServer::~LlamaCppServer() {
-    unload();
-}
-
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
@@ -582,13 +578,6 @@ void LlamaCppServer::load(const std::string& model_name,
     start_server(
         std::make_unique<NativeProcess>(ProcessOutput{inherit_llama_output, true}, working_dir),
         command);
-
-    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void LlamaCppServer::unload() {
-    LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
-    stop_server();
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {

@@ -66,7 +66,7 @@ WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_m
 }
 
 WhisperServer::~WhisperServer() {
-    unload();
+    stop_server();
 
     try {
         if (fs::exists(temp_dir_)) {
@@ -327,10 +327,6 @@ void WhisperServer::load(const std::string& model_name,
     command.env = std::move(env_vars);
     command.port = port_;
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
-}
-
-void WhisperServer::unload() {
-    stop_server();
 }
 
 // ICompletionServer implementation - not supported for Whisper
@@ -607,7 +603,6 @@ namespace whispercpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<WhisperServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
-
 
 namespace {
 class WhisperOps : public BackendOps {

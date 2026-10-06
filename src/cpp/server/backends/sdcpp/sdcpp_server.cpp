@@ -28,7 +28,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-
 namespace {
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
@@ -176,10 +175,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
-}
-
-SDServer::~SDServer() {
-    unload();
 }
 
 void SDServer::load(const std::string& model_name,
@@ -388,12 +383,6 @@ void SDServer::load(const std::string& model_name,
     command.ready_endpoint = "/";
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}, working_dir),
                  command);
-
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
-}
-
-void SDServer::unload() {
-    stop_server();
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
@@ -807,7 +796,6 @@ namespace sdcpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<SDServer>(ctx);
 }
-
 
 const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
 const BackendOps* ops() { return default_backend_ops(); }

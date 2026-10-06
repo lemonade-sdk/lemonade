@@ -546,15 +546,11 @@ void VLLMServer::load(const std::string& model_name,
         }
         throw std::runtime_error(err);
     }
-
-    LOG(DEBUG, "vLLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void VLLMServer::unload() {
-    LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
     stop_server();
     cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
-    max_model_len_ = 0;
 }
 
 json VLLMServer::chat_completion(const json& request) {

@@ -174,7 +174,7 @@ json create_backend_error_response(const std::string& server_name, int status_co
 } // namespace
 
 WrappedServer::~WrappedServer() {
-    stop_backend_watchdog();
+    stop_server();
 }
 
 WrappedServer::BackendRequestScope::BackendRequestScope(WrappedServer& server, BackendRequestKind kind)
@@ -444,8 +444,9 @@ void WrappedServer::request_backend_reset_from_watchdog(const std::string& reaso
         watchdog_reset_reason_ = reason;
     }
 
-    // After take_process() this call is the process's only owner, and its stale
-    // PID and port have already left status output.
+    // take_process() moves the process out under process_mutex_, so a
+    // concurrent unload() cannot stop it a second time, and /health stops
+    // reporting its PID and port before the stop below finishes.
     if (auto process = take_process()) {
         LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
                                       << reason << "; stopping backend process PID "
@@ -600,7 +601,7 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
         // Try health endpoint
         if (utils::HttpClient::is_reachable(
                 health_url, 1, utils::HttpSecurityPolicy::TrustedLoopback)) {
-            LOG(INFO, "WrappedServer") << server_name_ + " is ready!" << std::endl;
+            LOG(INFO, "WrappedServer") << server_name_ << " is ready at " << get_base_url() << std::endl;
             return true;
         }
 

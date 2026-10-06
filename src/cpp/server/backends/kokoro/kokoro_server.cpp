@@ -65,10 +65,6 @@ KokoroServer::KokoroServer(const std::string& log_level, ModelManager* model_man
 
 }
 
-KokoroServer::~KokoroServer() {
-    unload();
-}
-
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
     LOG(INFO, "KokoroServer") << "Loading model: " << model_name << std::endl;
 
@@ -132,10 +128,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
-void KokoroServer::unload() {
-    stop_server();
-}
-
 // ICompletionServer implementation (not supported - return errors)
 json KokoroServer::chat_completion(const json& request) {
     return json{
@@ -190,7 +182,6 @@ namespace kokoro {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<KokoroServer>(ctx);
 }
-
 
 namespace {
 class KokoroOps : public BackendOps {

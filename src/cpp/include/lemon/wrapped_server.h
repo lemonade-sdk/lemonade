@@ -439,7 +439,7 @@ public:
                      bool do_not_upgrade = false) = 0;
 
     // Unload the model and stop the server
-    virtual void unload() = 0;
+    virtual void unload() { stop_server(); }
 
     void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
 
