@@ -21,7 +21,7 @@ If you ever post a PR comment, create a PR body, open or comment on an issue, or
 
 ### Backend Abstraction
 
-`WrappedServer` (`src/cpp/include/lemon/wrapped_server.h`) is the abstract base class. Each backend inherits it and implements `load()`, `unload()`, `chat_completion()`, `completion()`, `responses()`, and optionally `install()` / `download_model()`. Backends run as **subprocesses** — Lemonade forwards HTTP requests to them.
+`WrappedServer` (`src/cpp/include/lemon/wrapped_server.h`) is the abstract base class. Each backend inherits it, implements `load()` (which starts the backend process through `start_server()`), `chat_completion()`, `completion()`, and `responses()`, and optionally overrides `unload()`, `install()`, or `download_model()`. Backends run as **subprocesses** — Lemonade forwards HTTP requests to them.
 
 Learn more in `docs/dev/adding-a-backend.md` and `docs/dev/backends-reference.md`.
 
