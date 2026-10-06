@@ -314,30 +314,33 @@ private:
     // Resolve the refine / upscale_model flags. Absent values fall back to the
     // recipe options of the loaded model instance, then to the model's saved
     // recipe options. An explicit request value (including false/empty) is
-    // never overridden. When refine resolves to true it is forwarded to the
-    // backend as "refine"; backends that don't support it ignore the field.
+    // never overridden. The resolved refine value is written into the request
+    // whenever the request set it explicitly (so false beats a backend
+    // recipe-options fallback) or when it resolves to true; backends that
+    // don't support it ignore the field.
     void resolve_refine_options(
         const std::string& model_name,
         nlohmann::json& request_json,
         std::optional<bool>& refine,
         std::optional<std::string>& upscale_model);
 
-    // Auto-upscale response image(s) per the loaded model's "upscale_model"
-    // recipe option (saved options as fallback), or upscale_model_override.
-    // Failed upscales leave the original image in place;
-    // skip_upscale_request forces the pass-through.
+    // Auto-upscale response image(s) to upscale_model (resolved beforehand,
+    // e.g. via resolve_refine_options; empty means none). Failed upscales
+    // leave the original image in place. skip_upscale_request suppresses only
+    // recipe/config-derived upscaling; an upscale_model named by the request
+    // (upscale_from_request) still applies. Error responses are untouched.
     void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
-        bool skip_upscale_request = false,
-        const std::optional<std::string>& upscale_model_override = std::nullopt);
+        const std::optional<std::string>& upscale_model,
+        bool upscale_from_request,
+        bool skip_upscale_request);
 
     // Returns the upscaled base64 image, or std::nullopt on failure
     // (error written to res if res is not null).
     std::optional<std::string> do_upscale(
         const std::string& b64_image,
         const std::string& upscale_model_name,
-        const std::string& main_model_name,
         httplib::Response* res);
 
     // True for "true"/"1"/"yes"/"on" (case-insensitive), false otherwise.

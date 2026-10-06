@@ -1,5 +1,6 @@
 #pragma once
 
+#include <climits>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -36,16 +37,16 @@ inline std::optional<std::tuple<int, int>> get_png_dimensions(const std::string&
     const char sig[] = "\x89PNG\r\n\x1a\n";
     if (bytes.compare(0, 8, sig, 8) != 0) return std::nullopt;
     if (bytes.compare(12, 4, "IHDR", 4) != 0) return std::nullopt;
-    int width  = (static_cast<unsigned char>(bytes[16]) << 24) |
-                 (static_cast<unsigned char>(bytes[17]) << 16) |
-                 (static_cast<unsigned char>(bytes[18]) <<  8) |
-                 static_cast<unsigned char>(bytes[19]);
-    int height = (static_cast<unsigned char>(bytes[20]) << 24) |
-                 (static_cast<unsigned char>(bytes[21]) << 16) |
-                 (static_cast<unsigned char>(bytes[22]) <<  8) |
-                 static_cast<unsigned char>(bytes[23]);
-    if (width <= 0 || height <= 0) return std::nullopt;
-    return std::make_tuple(width, height);
+    unsigned width  = (static_cast<unsigned>(static_cast<unsigned char>(bytes[16])) << 24) |
+                      (static_cast<unsigned>(static_cast<unsigned char>(bytes[17])) << 16) |
+                      (static_cast<unsigned>(static_cast<unsigned char>(bytes[18])) <<  8) |
+                       static_cast<unsigned>(static_cast<unsigned char>(bytes[19]));
+    unsigned height = (static_cast<unsigned>(static_cast<unsigned char>(bytes[20])) << 24) |
+                      (static_cast<unsigned>(static_cast<unsigned char>(bytes[21])) << 16) |
+                      (static_cast<unsigned>(static_cast<unsigned char>(bytes[22])) <<  8) |
+                       static_cast<unsigned>(static_cast<unsigned char>(bytes[23]));
+    if (width == 0 || height == 0 || width > INT_MAX || height > INT_MAX) return std::nullopt;
+    return std::make_tuple(static_cast<int>(width), static_cast<int>(height));
 }
 
 }  // namespace utils
