@@ -55,4 +55,9 @@ assert.match(effectiveSource, /value=\{draft\}[\s\S]*?disabled=\{busy\}/,
 assert.match(effectiveSource, /onClick=\{resetOverride\} disabled=\{busy \|\| runtimeStatePending\}/,
   'reset must wait for fresh runtime state before choosing reload behavior');
 
+assert.match(effectiveSource, /Backend launch command/,
+  'the launch command section must use the server-facing name');
+assert.doesNotMatch(effectiveSource, /Effective load command/,
+  'the retired "Effective load command" wording must not return');
+
 console.log('Effective Settings runtime contract checks passed.');
