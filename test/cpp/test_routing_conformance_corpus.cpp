@@ -475,7 +475,7 @@ static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContex
 
     // A backend call the case did not stub means the decision rests on a
     // placeholder default, so it fails regardless of whether the fields matched.
-    const std::vector<std::string>& unexpected = fake.unexpected_calls();
+    const std::vector<std::string> unexpected = fake.unexpected_calls();
     // The mirror: a declared answer no call consumed. The case names a model, text
     // or service the engine never asks for, so the stub is a typo or left over from
     // an earlier version of the case.

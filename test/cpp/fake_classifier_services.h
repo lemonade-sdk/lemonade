@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -53,12 +54,16 @@ public:
 
     // Number of embed() calls observed for `text` (across all models).
     int embed_calls(const std::string& text) const {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = embed_calls_.find(text);
         return it == embed_calls_.end() ? 0 : it->second;
     }
 
     // Total embed() calls observed.
-    int total_embed_calls() const { return total_embed_calls_; }
+    int total_embed_calls() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return total_embed_calls_;
+    }
 
     // Configure a fixed label->score map returned for `model`.
     void set_classifier_scores(const std::string& model,
@@ -95,13 +100,17 @@ public:
     // placeholder default. A caller that must declare every backend answer (the
     // conformance corpus) checks this is empty and fails the test otherwise, so a
     // missing stub cannot pass on a default value.
-    const std::vector<std::string>& unexpected_calls() const { return unexpected_calls_; }
+    std::vector<std::string> unexpected_calls() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return unexpected_calls_;
+    }
 
     // Configured stubs that no call consumed, sorted. The same strict caller checks
     // this is empty: an answer the engine never asks for means the case declares a
     // model, text or service it does not exercise, so a typo'd or stale stub cannot
     // sit in the corpus looking like coverage.
     std::vector<std::string> unused_stubs() const {
+        std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::string> unused;
         std::set_difference(declared_stubs_.begin(), declared_stubs_.end(), used_stubs_.begin(),
                             used_stubs_.end(), std::back_inserter(unused));
@@ -115,8 +124,11 @@ public:
         ClassifierServices svc;
         FakeClassifierServices* self = this;
         svc.embed = [self](const std::string& model, const std::string& text) {
-            ++self->total_embed_calls_;
-            ++self->embed_calls_[text];
+            {
+                std::lock_guard<std::mutex> lock(self->mutex_);
+                ++self->total_embed_calls_;
+                ++self->embed_calls_[text];
+            }
             if (self->failing_embeds_.count({model, text}) != 0) {
                 self->mark_used("embed", model + " / " + text);
                 throw std::runtime_error("fake embed failure: " + model + " / " + text);
@@ -177,13 +189,18 @@ private:
     }
 
     void mark_used(const std::string& service, const std::string& target) {
+        std::lock_guard<std::mutex> lock(mutex_);
         used_stubs_.insert(stub_key(service, target));
     }
 
     void record_unexpected(const std::string& service, const std::string& target) {
+        std::lock_guard<std::mutex> lock(mutex_);
         unexpected_calls_.push_back(stub_key(service, target));
     }
 
+    // Guards unexpected_calls_, used_stubs_ and the embed counters: concurrent
+    // route() tests write them from many threads.
+    mutable std::mutex mutex_;
     std::vector<std::string> unexpected_calls_;
     std::set<std::string> declared_stubs_;
     std::set<std::string> used_stubs_;
