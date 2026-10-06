@@ -11,6 +11,28 @@ on:
         description: "Optional lemonade-sdk CUDA tag, e.g. master-714-db48014. Empty = latest CUDA release."
         required: false
         type: string
+      runner_override:
+        description: "Debug: pin every validation leg to one runner host instead of label-based selection."
+        required: false
+        default: default
+        type: choice
+        options:
+          - default
+          - sjlab-stx-halo-06
+          - sjlab-stx-halo-07
+          - sjlab-stx-halo-08
+          - sjlab-stx-halo-09
+          - sjlab-stx-halo-17
+      only_leg:
+        description: "Debug: run a single validation leg instead of all of them."
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - cpu
+          - vulkan
+          - rocm-stable
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   merge_group:
@@ -200,6 +222,8 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          RUNNER_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_override || 'default' }}
+          ONLY_LEG: ${{ github.event_name == 'workflow_dispatch' && inputs.only_leg || 'all' }}
         run: |
           # SDCPP_TEST_MODELS peaks at ~18 GB resident, so these legs never needed
           # the 128gb runner; the sd-cpp suite in cpp_server_build_test_release.yml
@@ -225,9 +249,24 @@ jobs:
             *) matrix=$(jq -c '[.[] | select(.label != "cpu")]' <<<"$legs") ;;
           esac
 
+          # Debug overrides. Pinning by hostname label deliberately drops the
+          # capability labels, so a host can be tested even when it is missing
+          if [ "${ONLY_LEG}" != "all" ]; then
+            matrix=$(jq -c --arg leg "${ONLY_LEG}" '[.[] | select(.label == $leg)]' <<<"$matrix")
+            if [ "$(jq -r 'length' <<<"$matrix")" -eq 0 ]; then
+              echo "only_leg='${ONLY_LEG}' matches no leg for event '${EVENT_NAME}'." >&2
+              exit 1
+            fi
+          fi
+
+          if [ "${RUNNER_OVERRIDE}" != "default" ]; then
+            matrix=$(jq -c --arg host "${RUNNER_OVERRIDE}" \
+              '[.[] | .runner = ["self-hosted", $host]]' <<<"$matrix")
+          fi
+
           echo "validate_matrix=${matrix}" >> "$GITHUB_OUTPUT"
           echo "Validation legs for ${EVENT_NAME}:"
-          jq -r '.[].label' <<<"$matrix"
+          jq -r '.[] | "\(.label) -> \(.runner | join(","))"' <<<"$matrix"
 
   build:
     name: Build Lemonade with sd-cpp pins
@@ -516,8 +555,13 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    # A debug dispatch validates a subset of legs or a hand-picked host, so its
+    # evidence must never qualify a release for the update PR.
     if: >-
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' &&
+         inputs.runner_override == 'default' &&
+         inputs.only_leg == 'all')) &&
       needs.validate.result == 'success' &&
       needs.verify-cuda-assets.result == 'success'
     steps:
