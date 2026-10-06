@@ -54,6 +54,30 @@ static bool has_backend_selection(const std::string& config_section) {
     return false;
 }
 
+// A "<variant>_bin" / "<variant>_args" key is valid when <variant> is declared
+// in the section's defaults schema or is one of its support-row backends, which
+// the runtime also resolves (e.g. flm reads "npu_bin", llamacpp "cuda_args").
+static bool is_backend_variant_key(const std::string& config_section,
+                                   const std::string& key,
+                                   const std::string& suffix) {
+    if (key.size() <= suffix.size() ||
+        key.compare(key.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    const std::string variant = key.substr(0, key.size() - suffix.size());
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->effective_config_section() != config_section) continue;
+        const auto& declared = (suffix == "_bin") ? desc->bin_variants : desc->arg_variants;
+        if (std::find(declared.begin(), declared.end(), variant) != declared.end()) {
+            return true;
+        }
+        for (const auto& row : desc->support) {
+            if (row.backend == variant) return true;
+        }
+    }
+    return false;
+}
+
 static void validate_extra_models_dir_access(const std::string& raw_dir) {
     if (raw_dir.empty()) {
         return;
@@ -1115,7 +1139,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         }
         validate_backend_choice(backend, value.get<std::string>());
     }
-    else if (key == "args" || key.find("_args") != std::string::npos) {
+    else if (key == "args" || is_backend_variant_key(backend, key, "_args")) {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
@@ -1125,7 +1149,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
     }
-    else if (key.find("_bin") != std::string::npos) {
+    else if (is_backend_variant_key(backend, key, "_bin")) {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
