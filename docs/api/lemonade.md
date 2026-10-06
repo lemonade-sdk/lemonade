@@ -167,11 +167,6 @@ Provide either the flattened preview fields (`prompt`/`has_images`/`has_tools`) 
 a real request body (`messages`/`input`/`tools`/array `prompt`) — combining the
 two is rejected with `400`.
 
-### Example request
-
-```bash
-curl -X POST http://localhost:13305/api/v1/routing/validate \
-
 ### Example request (flattened preview)
 
 ```bash
@@ -235,7 +230,7 @@ curl -X POST http://localhost:13305/v1/routing/validate \
       "rules": [
         {
           "id": "code-to-big",
-          "match": {"keywords_any": ["def ", "function", "compile"]},
+          "match": {"keywords_any": ["def ", "function"]},
           "route_to": "vllm.qwen3-32b"
         }
       ]
