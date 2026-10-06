@@ -251,29 +251,25 @@ static bool is_unmetered_recipe(const std::string& recipe) {
     return slot_policy_for_recipe(recipe) == SlotPolicy::Unmetered;
 }
 
-// llama.cpp non-streaming responses carry a "timings" block alongside (or instead of) "usage".
+// Non-streaming responses report counts and speed in backend-specific places: llama.cpp in a
+// "timings" block, FLM inside "usage". Token counts here only need the llama.cpp case.
 static void apply_timings(const json& response, nlohmann::json& usage_payload, telemetry::InferenceSpan& span) {
-    if (!response.contains("timings")) return;
-    const auto& timings = response["timings"];
-    if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
-    if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
-    if (timings.contains("cache_n")) usage_payload["cached_tokens"] = timings["cache_n"].get<int>();
-    if (!usage_payload.contains("prompt_tokens_total") && timings.contains("prompt_n")) {
-        usage_payload["prompt_tokens_total"] = timings["prompt_n"].get<int>() + timings.value("cache_n", 0);
+    if (response.contains("timings")) {
+        const auto& timings = response["timings"];
+        if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
+        if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
+        if (timings.contains("cache_n")) usage_payload["cached_tokens"] = timings["cache_n"].get<int>();
+        if (!usage_payload.contains("prompt_tokens_total") && timings.contains("prompt_n")) {
+            usage_payload["prompt_tokens_total"] = timings["prompt_n"].get<int>() + timings.value("cache_n", 0);
+        }
     }
 
-    if (timings.contains("prompt_ms") && timings.contains("prompt_n")) {
-        double prompt_ms = timings["prompt_ms"].get<double>();
-        if (prompt_ms > 0) {
-            span.set_attribute("llm.performance.time_to_first_token", prompt_ms / 1000.0);
-        }
+    auto perf = StreamingProxy::extract_telemetry(response);
+    if (perf.time_to_first_token > 0) {
+        span.set_attribute("llm.performance.time_to_first_token", perf.time_to_first_token);
     }
-    if (timings.contains("predicted_ms") && timings.contains("predicted_n")) {
-        double predicted_ms = timings["predicted_ms"].get<double>();
-        int predicted_n = timings["predicted_n"].get<int>();
-        if (predicted_ms > 0 && predicted_n > 0) {
-            span.set_attribute("llm.performance.tokens_per_second", (predicted_n / (predicted_ms / 1000.0)));
-        }
+    if (perf.tokens_per_second > 0) {
+        span.set_attribute("llm.performance.tokens_per_second", perf.tokens_per_second);
     }
 }
 

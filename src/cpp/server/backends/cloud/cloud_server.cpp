@@ -722,7 +722,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
             StreamingProxy::TelemetryData telemetry;
             double time_to_first_token = 0.0;
-            bool has_first_token = false;
             const auto start_time = std::chrono::steady_clock::now();
             std::string sse_line_buffer;
 
@@ -733,7 +732,12 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 }
                 if (!json_str.empty() && json_str != "[DONE]") {
                     try {
+                        const int chunks_before = telemetry.output_chunks;
                         StreamingProxy::accumulate_telemetry(json::parse(json_str), telemetry);
+                        if (chunks_before == 0 && telemetry.output_chunks > 0) {
+                            time_to_first_token = std::chrono::duration<double>(
+                                std::chrono::steady_clock::now() - start_time).count();
+                        }
                     } catch (...) {}
                 }
             };
@@ -782,11 +786,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             has_done_marker = true;
                         }
 
-                        if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
-                            has_first_token = true;
-                            time_to_first_token = std::chrono::duration<double>(
-                                std::chrono::steady_clock::now() - start_time).count();
-                        }
 
                         if (!injected_usage) {
                             // Parse SSE lines for telemetry; the client asked for
