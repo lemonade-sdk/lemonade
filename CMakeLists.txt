@@ -2947,6 +2947,20 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_DOWNLOAD_STATE_TEST_SRC}")
     add_cpp_ci_test(ModelDownloadStateTest CI ON COMMAND test_model_download_state)
 endif()
 
+set(_MODEL_DELETE_SHARED_REPO_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_delete_shared_repo.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_DELETE_SHARED_REPO_TEST_SRC}")
+    add_executable(test_model_delete_shared_repo
+        test/cpp/test_model_delete_shared_repo.cpp
+    )
+    target_link_libraries(test_model_delete_shared_repo PRIVATE lemonade-server-core)
+    add_dependencies(test_model_delete_shared_repo copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelDeleteSharedRepoTest CI ON COMMAND test_model_delete_shared_repo)
+endif()
+
 
 # Recipe hiding: a backend with every built-in model dropped by the system-memory
 # heuristic (and no user model left) is hidden from the recipe/backends listing.
