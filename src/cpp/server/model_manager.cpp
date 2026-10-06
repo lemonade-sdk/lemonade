@@ -60,7 +60,8 @@ static bool safe_is_directory(const fs::path& p) {
 // skip_permission_denied tells it to skip inaccessible entries instead of throwing.
 static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
 // MSVC's create_directories also fails on symlinks crossing volume boundaries
-// ("untrusted mount point"). SHCreateDirectoryExW does not have this restriction.
+// ("untrusted mount point"). A per-component CreateDirectoryW fallback avoids that
+// restriction while honoring the \\?\ long-path prefix.
 // Throws on failure to preserve the fail-fast semantics of fs::create_directories.
 static void ensure_create_directories(const fs::path& p) {
     if (p.empty()) return;
@@ -72,23 +73,34 @@ static void ensure_create_directories(const fs::path& p) {
     std::error_code ec;
     fs::create_directories(p, ec);
     if (!ec) return;
-    // Fall back to Win32 API which handles cross-volume symlinks gracefully
+    // Fallback: create each component with CreateDirectoryW. Unlike the previous
+    // SHCreateDirectoryExW call, CreateDirectoryW honors the \\?\ extended-length
+    // prefix, so this works for both cross-volume symlinks AND paths >260 chars
+    // (SHCreateDirectoryExW is a Shell API that rejects \\?\ and caps at 248).
     std::wstring wpath = p.wstring();
-    DWORD result = SHCreateDirectoryExW(NULL, wpath.c_str(), NULL);
-    if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
-        char error_msg[256];
-        FormatMessageA(
-            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr,
-            result,
-            0,
-            error_msg,
-            sizeof(error_msg),
-            nullptr
-        );
-        std::string desc = error_msg[0] ? error_msg : "unknown error";
-        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
-                                 "': " + desc);
+    // Determine the root prefix length to skip (don't try to create the drive root).
+    size_t start = 0;
+    const std::wstring ext_prefix = L"\\\\?\\";
+    if (wpath.compare(0, ext_prefix.size(), ext_prefix) == 0) {
+        start = ext_prefix.size();            // skip \\?\
+    }
+    // Skip the drive letter + colon (C:) and any leading backslash after it.
+    if (wpath.size() >= start + 2 && wpath[start + 1] == L':') {
+        start += 2;
+        if (start < wpath.size() && wpath[start] == L'\\') ++start;
+    }
+    for (size_t i = start; i <= wpath.size(); ++i) {
+        if (i == wpath.size() || wpath[i] == L'\\') {
+            if (i == 0) continue;
+            std::wstring sub = wpath.substr(0, i);
+            if (!CreateDirectoryW(sub.c_str(), nullptr)) {
+                DWORD err = GetLastError();
+                if (err != ERROR_ALREADY_EXISTS && err != ERROR_SUCCESS) {
+                    throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                             "': Win32 error " + std::to_string(err));
+                }
+            }
+        }
     }
 }
 #else
