@@ -339,6 +339,7 @@ What the package does:
 | Action | Debian (`.deb`/PPA) | Fedora (`.rpm`) |
 | --- | --- | --- |
 | Adds `lemonade` to `video` and `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
+| Allocates `lemonade` a subordinate UID/GID range (see [`lemond.service` and rootless Podman](#lemondservice-and-rootless-podman)) | `lemonade-server.postinst` | `postinst-rpm` |
 | Pulls in Podman by default | `debian/control` declares `Recommends: podman` | `CPackRPM.cmake` sets `CPACK_RPM_PACKAGE_RECOMMENDS` to `podman` |
 
 Containers are started by:
@@ -354,6 +355,7 @@ When the container tool is Podman, the checks are:
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
+| Subordinate IDs allocated | `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 
 When the container tool is Docker, the checks are:
 
@@ -367,13 +369,12 @@ When the container tool is Docker, the checks are:
 
 - It lets `lemond` create user namespaces and run the setuid `newuidmap`/`newgidmap` helpers that rootless Podman relies on, by running without `NoNewPrivileges` and `RestrictNamespaces`. Removing `NoNewPrivileges` also makes the unit's seccomp-based `LockPersonality` and `RestrictRealtime` inactive; the mount-based protections (`ProtectSystem`, `ProtectHome`, `PrivateTmp`) are unaffected, so the relaxation stops there.
 - It points `XDG_RUNTIME_DIR` at the unit's existing `RuntimeDirectory` (`Environment=XDG_RUNTIME_DIR=%t/lemonade`), giving Podman a runtime directory without a login session.
-- It allocates the `lemonade` account's subordinate UID/GID range on first start:
 
-  ```ini
-  ExecStartPre=+/bin/sh -c 'grep -q "^lemonade:" /etc/subuid || usermod --add-subuids 200000-265535 --add-subgids 200000-265535 lemonade'
-  ```
+Rootless Podman also needs the `lemonade` account to own a subordinate UID/GID range: a block of host IDs that the container's own users map onto. `useradd` allocates one only for regular accounts, and the packages create `lemonade` as a system account (`useradd -r`), so each package's install script allocates the range right after its `useradd`:
 
-  The `+` prefix runs this one step as root. `sysusers.d` cannot allocate subordinate ranges, and a service start is the first point at which every package type (`.deb`, `.rpm`) has created the `lemonade` account, so this lives in the unit rather than in each package's install script.
+- When `/etc/subuid` and `/etc/subgid` both already have a `lemonade` entry, the script leaves them as they are, so upgrades and reinstalls keep the existing range.
+- Otherwise it reads both files, takes the highest end (start plus count) of every range in them, with a minimum of 100000, and allocates the 65,536 IDs from there to whichever file lacks a `lemonade` entry, with `usermod --add-subuids <start>-<start+65535> lemonade` and `usermod --add-subgids <start>-<start+65535> lemonade`. The range sits past every account's existing block, and `useradd` allocates later accounts past it in turn.
+- When `/etc/nsswitch.conf` has a `subid:` line, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.
 
 `lemond` starts, stops and sweeps the containers as children in its own cgroup, so stopping `lemond.service` tears down its containers with it.
 
