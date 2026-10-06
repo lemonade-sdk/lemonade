@@ -84,6 +84,7 @@ struct RouteSpec {
     nlohmann::json response_schema;   // from the response type; part of the docs cache key
     bool json_body = false;           // parse the body first; 400 on an empty or invalid body
     bool form_body = false;           // unpack the multipart form first; 400 when not multipart
+    bool model_defaults_to_loaded = false;  // ModelRoute only; see ModelRoute below
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
 };
@@ -126,8 +127,11 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 1. Builds `req.body`. For a `form_body` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, and answers 400 when a value does not convert. File parts stay on the httplib request.
 2. Resolves the request's model name: aliases, then the `:latest` suffix.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
-4. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
-5. Calls `run()`.
+4. Requires a model. With no `model` in the request, it answers 400, unless the route sets `model_defaults_to_loaded` and a model is loaded, in which case that model serves the request.
+5. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
+6. Calls `run()`.
+
+OpenAI requires `model` on every route `ModelRoute` serves. `model_defaults_to_loaded` is a Lemonade extension, set only on chat/completions, completions, embeddings and responses, and those routes document `model` as optional.
 
 `validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), attach uploaded files in the shape its backend expects (transcription's raw `file`, images/edits' base64 `image` and `mask`), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
 
@@ -176,7 +180,7 @@ public:
         s.summary = "Chat Completions";
         s.description = "Generates the next assistant message for a conversation.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, true, "Model to run; loaded on first use."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, true, "Model to run; loaded on first use. Defaults to the loaded model."},
             {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, true, "Conversation in OpenAI format."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, true, "Stream tokens as server-sent events."},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, false, "Return the log probability of each output token."},
@@ -185,6 +189,7 @@ public:
                      {"messages", {{{"role", "user"}, {"content", "What is the capital of France?"}}}}};
         s.response_schema = openai_schemas::chat_completion();
         s.json_body = true;
+        s.model_defaults_to_loaded = true;
         return s;
     }
 
@@ -353,7 +358,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | No | Model to run; loaded on first use. Defaults to the loaded model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | Yes | Conversation in OpenAI format. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream tokens as server-sent events. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Return the log probability of each output token. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
