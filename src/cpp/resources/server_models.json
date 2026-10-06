@@ -2686,14 +2686,14 @@
         "checkpoint": "amd/Phi-4-mini-instruct_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "vision"],
+        "labels": ["chat"],
         "size": 4.5
     },
     "Phi-4-mini-reasoning-Medusa-NPU": {
         "checkpoint": "amd/Phi-4-mini-reasoning_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "reasoning", "vision"],
+        "labels": ["chat", "reasoning"],
         "size": 4.5
     },
     "Qwen2.5-0.5B-Instruct-Medusa-NPU": {
@@ -2875,7 +2875,7 @@
         "checkpoint": "amd/Qwen3.6-35B_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "vision"],
+        "labels": ["chat"],
         "size": 22.0
     },
     "SmolLM-Instruct-Medusa-NPU": {
