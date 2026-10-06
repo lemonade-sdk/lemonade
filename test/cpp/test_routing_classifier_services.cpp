@@ -570,6 +570,8 @@ static void test_build_route_context_all_image_user_turn_contributes_zero() {
     RouteContext ctx = lemon::build_route_context(request, "router");
     check("all-image user turn contributes 0 bytes, not a crash",
           ctx.user_turn_chars == std::vector<std::size_t>{0});
+}
+
 // total_chars is the whole-conversation counterpart of chars (#2958): every
 // text part the request carries, across every role, so a policy can route on
 // conversation size rather than on the size of the latest turn.

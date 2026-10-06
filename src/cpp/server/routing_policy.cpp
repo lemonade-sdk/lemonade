@@ -925,24 +925,22 @@ public:
         : threshold_(threshold), bound_(bound), source_(source) {}
 
     bool evaluate(EvalContext& ctx) const override {
-        const bool momentum_active = ctx.effective_chars.has_value();
-        const double n = momentum_active ? *ctx.effective_chars
-                                          : static_cast<double>(ctx.request.params.chars);
+        const bool momentum_active =
+            source_ == Source::Input && ctx.effective_chars.has_value();
+        const double n = momentum_active
+                             ? *ctx.effective_chars
+                             : static_cast<double>(source_ == Source::Input
+                                                       ? ctx.request.params.chars
+                                                       : ctx.request.params.total_chars);
         const bool result = bound_ == Bound::Min ? (n >= static_cast<double>(threshold_))
                                                   : (n <= static_cast<double>(threshold_));
-        const char* name = bound_ == Bound::Min ? "min_chars" : "max_chars";
         if (momentum_active) {
-            trace_leaf(ctx, name, result,
+            trace_leaf(ctx, op_name(), result,
                        "effective_chars=" + json(*ctx.effective_chars).dump() +
                            " raw_chars=" + std::to_string(ctx.request.params.chars));
         } else {
-            const std::size_t n = source_ == Source::Input ? ctx.request.params.chars
-                                                       : ctx.request.params.total_chars;
-        const bool result =
-            bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
-        trace_leaf(ctx, op_name(), result);
+            trace_leaf(ctx, op_name(), result);
         }
-        
         return result;
     }
 

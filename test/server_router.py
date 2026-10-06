@@ -524,7 +524,7 @@ class RouterTests(ServerTestBase):
         """routing.momentum keeps a short follow-up on the escalated route.
 
         Reproduces the issue's headline scenario: a long first turn escalates
-        via min_chars, then an 11-byte follow-up ("yes, do it") alone would
+        via min_chars, then an 11-byte follow-up ("yes, do it!") alone would
         fall below the threshold -- but with momentum enabled and the full
         conversation history resent (there is no session state), the
         momentum-filtered effective length keeps the route on the capable
@@ -565,8 +565,9 @@ class RouterTests(ServerTestBase):
 
             followup = first_turn + [
                 {"role": "assistant", "content": "Here is my review."},
-                {"role": "user", "content": "yes, do it"},
+                {"role": "user", "content": "yes, do it!"},
             ]
+            self.assertEqual(len(followup[-1]["content"].encode("utf-8")), 11)
             _, decision_b, _ = self._route_messages(followup, collection=collection)
             self.assertEqual(
                 decision_b.get("route_to"),
@@ -623,7 +624,7 @@ class RouterTests(ServerTestBase):
             followup = [
                 {"role": "user", "content": long_prompt},
                 {"role": "assistant", "content": "Here is my review."},
-                {"role": "user", "content": "yes, do it"},
+                {"role": "user", "content": "yes, do it!"},
             ]
             _, decision, _ = self._route_messages(followup, collection=collection)
             self.assertEqual(
@@ -635,6 +636,7 @@ class RouterTests(ServerTestBase):
             print(f"[OK] momentum absent: short follow-up alone -> {DEFAULT_MODEL}")
         finally:
             self._delete_collection(collection)
+
     def test_605_total_chars_routes_long_conversation(self):
         """A long history with a short final turn routes via min_total_chars.
 
