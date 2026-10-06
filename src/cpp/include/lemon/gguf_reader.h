@@ -40,6 +40,8 @@ struct GgufMetadata {
     int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
+    bool causal_attention = true;    // "<arch>.attention.causal"; false for encoders
+    std::string decision_type;       // "<arch>.decision.type"; set only on SystemOne decision models
     GgufCapabilities caps;
 
     // ── Raw per-layer arrays (stored as read from GGUF) ───────────────
@@ -296,6 +298,16 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.full_attention_interval = value;
+                continue;
+            }
+            if (key == out.architecture + ".attention.causal" && type == 7) {
+                uint8_t value = 1;
+                if (!read_gguf_le(in, value)) return false;
+                out.causal_attention = (value != 0);
+                continue;
+            }
+            if (key == out.architecture + ".decision.type" && type == 8) {
+                if (!read_gguf_string(in, out.decision_type)) return false;
                 continue;
             }
         }

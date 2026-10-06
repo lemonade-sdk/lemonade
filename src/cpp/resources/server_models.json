@@ -2828,6 +2828,52 @@
         ],
         "size": 0.27
     },
+    "Julia-1-GGUF": {
+        "checkpoint": "ggml-org/Julia-1-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 0.17
+    },
+    "Laya-GGUF": {
+        "checkpoint": "ggml-org/Laya-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 0.45
+    },
+    "Kev-4B-GGUF": {
+        "checkpoint": "ggml-org/Kev-4B-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 4.48
+    },
+    "lev-GGUF": {
+        "checkpoint": "ggml-org/lev-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 4.48
+    },
+    "OpenJev-GGUF": {
+        "checkpoint": "ggml-org/OpenJev-GGUF:Q4_K_M",
+        "mmproj": "mmproj-OpenJev-Q8_0.gguf",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 19.6
+    },
     "DeepSeek-V4-Flash-IQ2XXS-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
         "recipe": "ds4",

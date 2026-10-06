@@ -1092,6 +1092,11 @@ jobs:
             extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
             runner: [self-hosted, Windows, X64, lemon-prod]
+          - name: systemone-llamacpp
+            script: server_systemone.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "cpu"
+            runner: [self-hosted, Windows, X64, lemon-prod]
           - name: router-onnxruntime
             script: server_router.py
             extra_args: "--wrapped-server onnxruntime"
@@ -1379,6 +1384,11 @@ jobs:
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Linux, X64, lemon-prod]
+          - name: systemone-llamacpp
+            script: server_systemone.py
+            extra_args: "--wrapped-server llamacpp"
             backends: "cpu"
             runner: [self-hosted, Linux, X64, lemon-prod]
           - name: flm

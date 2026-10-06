@@ -96,6 +96,8 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
+| `zero_shot` | A zero-shot encoder that scores the input against the `labels` **you** declare, rather than a label set baked into the model. Needs a classification model: an `onnxruntime` zero-shot export or a llama.cpp decision model (`systemone` label); no LLM fallback. |
+| `systemone` | One typed question (`choice`, `noul`, or `score`) with your own instructions, answered by a llama.cpp decision model through `/v1/systemone`. Its labels are the question's options. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
@@ -156,6 +158,52 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
+- `zero_shot` sends your `labels` to the model on every request, because the
+  model has no per-label head to read them off, the label list is an input to
+  the graph:
+
+  ```json
+  {
+    "id": "route",
+    "type": "zero_shot",
+    "model": "Prompt-Router-ONNX",
+    "labels": ["coding", "math", "creative writing"]
+  }
+  ```
+
+  ```json
+  { "id": "code-to-big", "match": { "classifier": "route", "label": "coding", "min_score": 0.5 }, "route_to": "Big-GGUF" }
+  ```
+
+  Unlike `classifier`, there is no LLM-as-classifier fallback: the `model` must be a
+  classification model, checked when the policy is registered rather than on the
+  first request. A llama.cpp decision model such as `Laya-GGUF` also serves
+  `zero_shot`: Lemonade asks it one `choice` question whose options are your
+  labels, with the fixed instruction "Which category does this text belong
+  to?". To ask your own instruction, use `systemone`.
+- `systemone` asks a llama.cpp decision model one typed question. Its labels come from the question, so the classifier takes no `labels`:
+  the criteria keys of a `choice`, `"true"` and `"false"` for a `noul`, the level
+  strings of a `score`:
+
+  ```json
+  {
+    "id": "pii",
+    "type": "systemone",
+    "model": "Laya-GGUF",
+    "default_label": "true",
+    "question": { "type": "noul", "instructions": "Does the message contain personal data?" }
+  }
+  ```
+
+  ```json
+  { "id": "pii-local", "match": { "classifier": "pii", "min_score": 0.5 }, "route_to": "Local-GGUF" }
+  ```
+
+  The `model` must be a classification model, checked when the policy is
+  registered. A classification model without the `systemone` label (an ONNX
+  classifier) fails each request and the rule applies `on_error`. Answers depend
+  on the model and on the question's wording, so test a question with its model.
+  Only `systemone` accepts `question`.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
@@ -263,6 +311,14 @@ The `classifier` condition runs a real encoder classifier: a model of type
 directly; any other model backing a `classifier` is used as an LLM-as-classifier
 via chat. The classifier's model must be able to serve one of those paths, and
 that capability is checked when the collection is registered.
+
+The `zero_shot` condition runs the same backend, but only
+`ModelType::CLASSIFICATION` satisfies it, a chat model cannot score a label
+list it is handed at request time, so there is no fallback to substitute.
+
+The `systemone` condition calls `/v1/systemone` on a llama.cpp decision model,
+which deploys as `ModelType::CLASSIFICATION`. llama-server builds the prompt from
+the template in the GGUF; Lemonade forwards the question unchanged.
 
 ## LLM-as-router (`routing.router`)
 

@@ -1232,6 +1232,16 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
 endif()
 
+set(LLAMACPP_SYSTEMONE_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_systemone.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
+    add_executable(test_llamacpp_systemone
+        ${LLAMACPP_SYSTEMONE_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_systemone.cpp
+    )
+    target_link_libraries(test_llamacpp_systemone PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
+endif()
+
 # libwebsockets for the realtime and log-stream WebSocket server
 if(USE_SYSTEM_LWS)
     target_link_libraries(lemonade-server-core PUBLIC ${LWS_LIBRARIES})

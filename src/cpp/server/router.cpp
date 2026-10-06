@@ -812,6 +812,13 @@ void Router::load_model(const std::string& model_name,
         residency_class_for_load_purpose(load_purpose);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
 
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        const std::string refusal = ops->validate_load(model_info);
+        if (!refusal.empty()) {
+            throw std::invalid_argument(refusal);
+        }
+    }
+
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
@@ -2082,6 +2089,54 @@ json Router::classify(const json& request) {
             } else {
                 // Label scores classify user content; keep them out of telemetry.
                 span->end_with_success(nlohmann::json::object(), "");
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
+}
+
+nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) {
+    const json routing_request(request);
+    std::string requested_model = routing_request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, routing_request);
+
+    try {
+        nlohmann::ordered_json response = execute_inference(
+            routing_request, [&](WrappedServer* server) -> nlohmann::ordered_json {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("classifier.backend", identity.recipe);
+                span->set_attribute("classifier.device_type", identity.device);
+                span->set_attribute("classifier.checkpoint", identity.checkpoint);
+                span->set_attribute("classifier.recipe", identity.recipe);
+            }
+            auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
+            if (!systemone_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return systemone_server->systemone(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (response.contains("usage") && response["usage"].is_object() &&
+                    response["usage"].contains("input_tokens") &&
+                    response["usage"]["input_tokens"].is_number_integer()) {
+                    usage_payload["prompt_tokens"] = response["usage"]["input_tokens"].get<int>();
+                }
+                span->end_with_success(usage_payload, "");
             }
         }
         return response;

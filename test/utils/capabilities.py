@@ -262,6 +262,23 @@ CAPABILITIES = {
             },
         },
     },
+    # SystemOne decision models: a llama.cpp model that deploys as
+    # classification and answers /v1/systemone (llama.cpp b11361 or later).
+    "systemone": {
+        "llamacpp": {
+            "backends": ["cpu", "vulkan", "rocm", "metal"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+            },
+            "test_models": {
+                "systemone": "Julia-1-GGUF",
+                "systemone_router": "Laya-GGUF",
+                "llm": "Tiny-Test-Model-GGUF",
+                "llm_capable": "Qwen3-0.6B-GGUF",
+            },
+        },
+    },
     "tts": {
         "openmoss": {
             "backends": ["vulkan", "cuda"],

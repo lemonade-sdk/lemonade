@@ -18,6 +18,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/model_types.h"
 #include <cstring>
@@ -42,6 +43,7 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <thread>
@@ -1208,6 +1210,10 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
         handle_classify(req, res);
+    });
+
+    register_post("systemone", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_systemone(req, res);
     });
 
     // Slots (llama.cpp backend information)
@@ -3475,8 +3481,15 @@ void Server::respond_with_model_options(
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const nlohmann::json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+        int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        // LlamaCppServer::load caps it there; the Router cannot, because the
+        // stored options must keep matching later requests or every load reloads.
+        if (is_encoder_decision_model(info)) {
+            resolved_ctx = backends::llamacpp::encoder_decision_ctx_size(
+                static_cast<int>(std::min<int64_t>(resolved_ctx, std::numeric_limits<int>::max())),
+                info.max_context_window);
+        }
 
         nlohmann::json response = {
             {"model_name", model_id},
@@ -4332,6 +4345,32 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     }
 }
 
+namespace {
+// Shape check for the optional `labels` list of a zero-shot classify request.
+std::string validate_classify_labels(const nlohmann::json& labels) {
+    if (!labels.is_array()) {
+        return "'labels' must be an array of strings";
+    }
+    if (labels.empty()) {
+        return "'labels' must contain at least one label";
+    }
+    std::set<std::string> seen;
+    for (const auto& label : labels) {
+        if (!label.is_string()) {
+            return "'labels' must be an array of strings";
+        }
+        const std::string value = label.get<std::string>();
+        if (value.find_first_not_of(" \t\r\n") == std::string::npos) {
+            return "'labels' entries must not be empty";
+        }
+        if (!seen.insert(value).second) {
+            return "'labels' contains a duplicate entry: '" + value + "'";
+        }
+    }
+    return "";
+}
+}  // namespace
+
 void Server::handle_classify(const httplib::Request& req, httplib::Response& res) {
     try {
         nlohmann::json request_json;
@@ -4371,6 +4410,8 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
                     request_json["top_k"].get<long long>() < 1 ||
                     request_json["top_k"].get<long long>() > 1000000)) {
             validation_error = "'top_k' must be a positive integer";
+        } else if (request_json.contains("labels")) {
+            validation_error = validate_classify_labels(request_json["labels"]);
         }
         if (!validation_error.empty()) {
             res.status = 400;
@@ -4384,6 +4425,18 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
             requested_model = request_json["model"].get<std::string>();
+        }
+        // Refused before the load: loading a chat model would take an LLM slot
+        // (and evict a loaded chat model) only to fail.
+        if (!requested_model.empty() && model_manager_->model_exists(requested_model) &&
+            model_manager_->get_model_info(requested_model).type != ModelType::CLASSIFICATION) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "model '" + requested_model + "' is not a classification model "
+                            "(it has no 'classification' label)"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
         }
         auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request_json);
 
@@ -4474,6 +4527,108 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_classify: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_systemone(const httplib::Request& req, httplib::Response& res) {
+    auto reject = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", message},
+            {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    };
+
+    try {
+        nlohmann::json request_json;
+        // Forwarded instead of request_json, which sorts keys: the order of a
+        // choice question's options changes the model's scores.
+        nlohmann::ordered_json body;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+            body = nlohmann::ordered_json::parse(req.body);
+        } catch (const nlohmann::json::parse_error& e) {
+            reject(std::string("Invalid JSON in request body: ") + e.what());
+            return;
+        }
+        if (!request_json.is_object()) {
+            reject("Request body must be a JSON object");
+            return;
+        }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
+
+        // Shape only, before any model gets loaded; llama-server validates the
+        // questions themselves.
+        if (request_json.contains("model") && !request_json["model"].is_string()) {
+            reject("'model' must be a string");
+            return;
+        }
+        if (!request_json.contains("state") || request_json["state"].is_null()) {
+            reject("\"state\" must be provided");
+            return;
+        }
+        if (!request_json.contains("questions") || !request_json["questions"].is_object() ||
+            request_json["questions"].empty()) {
+            reject("\"questions\" must be a non-empty object");
+            return;
+        }
+
+        std::string requested_model;
+        if (request_json.contains("model")) {
+            requested_model = request_json["model"].get<std::string>();
+        } else {
+            requested_model = router_->get_sole_loaded_model_of_type(ModelType::CLASSIFICATION);
+            if (requested_model.empty()) {
+                reject("No 'model' specified and no single classification model is loaded "
+                       "(load one, or name it in the request)");
+                return;
+            }
+            request_json["model"] = requested_model;
+        }
+
+        if (model_manager_->model_exists(requested_model)) {
+            const ModelInfo info = model_manager_->get_model_info(requested_model);
+            if (!has_label(info.labels, "systemone") || info.type != ModelType::CLASSIFICATION) {
+                reject("model '" + requested_model +
+                       "' is not a SystemOne decision model (it needs the 'classification' "
+                       "and 'systemone' labels)");
+                return;
+            }
+        }
+
+        auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "systemone", requested_model, request_json);
+        try {
+            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
+            if (span) {
+                span->cancel();
+            }
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = get_http_status_from_error(error_code);
+            res.set_content(error_response.dump(), "application/json");
+            if (span) {
+                span->end_with_error(e.what());
+            }
+            return;
+        }
+
+        body["model"] = requested_model;
+        auto response = router_->systemone(body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_systemone: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
