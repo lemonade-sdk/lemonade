@@ -83,6 +83,7 @@ struct RouteSpec {
     nlohmann::json example;           // canonical example request; see Generated Docs
     nlohmann::json response_schema;   // from the response type; part of the docs cache key
     bool json_body = false;           // parse the body first; 400 on an empty or invalid body
+    bool form_body = false;           // unpack the multipart form first; 400 when not multipart
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
 };
@@ -122,18 +123,19 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 
 `ModelRoute` is the base for routes that run a model: chat, completions, responses, embeddings, rerank, classify, images, transcription, speech, audio generation and 3D generation. Its `handle()` is final and runs these steps:
 
-1. Resolves the request's model name: aliases, then the `:latest` suffix.
-2. Calls `validate()`. Returning false means `validate()` already wrote the response.
-3. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
-4. Calls `run()`.
+1. Builds `req.body`. For a `form_body` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, and answers 400 when a value does not convert. File parts stay on the httplib request.
+2. Resolves the request's model name: aliases, then the `:latest` suffix.
+3. Calls `validate()`. Returning false means `validate()` already wrote the response.
+4. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
+5. Calls `run()`.
 
-`validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
+`validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), attach uploaded files in the shape its backend expects (transcription's raw `file`, images/edits' base64 `image` and `mask`), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
 
 Every other route extends `ApiRoute` directly. Routes that take a model name without running it, such as `/load`, `/unload`, `/delete` and `/internal/pin`, call `ApiRoute::resolve_model_name()`.
 
 ### Request and Context
 
-`RouteRequest` holds one request's data: the httplib request, the parsed body when `json_body` is set, the resolved model name, and the router decision when there is one.
+`RouteRequest` holds one request's data: the httplib request, the request body when `json_body` or `form_body` is set, the resolved model name, and the router decision when there is one.
 
 `ServerContext` holds pointers to the subsystems (`Router`, `ModelManager`, `BackendManager`, `CloudProviderRegistry`, `AliasManager`, `RuntimeConfig`, `WebSocketServer`) and to the services in [Core Components](#core-components). It holds no state of its own.
 
