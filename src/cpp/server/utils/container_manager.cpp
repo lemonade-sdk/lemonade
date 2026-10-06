@@ -18,6 +18,7 @@
 
 #ifndef _WIN32
 #include <grp.h>
+#include <pwd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -31,6 +32,7 @@ namespace utils {
 namespace {
 
 constexpr const char* kLabel = "ai.lemonade";
+constexpr const char* kServiceAccount = "lemonade";
 constexpr const char* kDockerSocket = "/var/run/docker.sock";
 constexpr const char* kKfdTopologyNodes = "/sys/devices/virtual/kfd/kfd/topology/nodes";
 constexpr int kStopSeconds = 10;
@@ -81,6 +83,16 @@ bool process_in_group(const std::string& group) {
     std::vector<gid_t> groups(static_cast<size_t>(count));
     if (::getgroups(count, groups.data()) < 0) return false;
     return std::find(groups.begin(), groups.end(), gid) != groups.end();
+}
+
+std::string process_account() {
+    struct passwd entry = {};
+    struct passwd* found = nullptr;
+    std::vector<char> buffer(16384);
+    if (::getpwuid_r(::geteuid(), &entry, buffer.data(), buffer.size(), &found) != 0 || !found) {
+        return "";
+    }
+    return found->pw_name;
 }
 
 std::string host_group_id(const std::string& group) {
@@ -140,10 +152,12 @@ ContainerHost ContainerHost::real() {
     host.on_path = [](const std::string& name) { return !find_executable_in_path(name).empty(); };
 #ifdef _WIN32
     host.in_group = [](const std::string&) { return false; };
+    host.account = []() { return std::string(); };
     host.group_id = [](const std::string&) { return std::string(); };
     host.docker_socket_accepts = []() { return false; };
 #else
     host.in_group = process_in_group;
+    host.account = process_account;
     host.group_id = host_group_id;
     host.docker_socket_accepts = docker_socket_accepts_connection;
 #endif
@@ -171,18 +185,34 @@ std::optional<SetupFailure> ContainerManager::check_setup() const {
         return SetupFailure{"podman is not on PATH",
                             podman_install_command(host_.read_file("/etc/os-release"))};
     }
+    const bool service = host_.account() == kServiceAccount;
+    const std::string account = service ? "lemonade account" : "user's account";
+    const std::string member = service ? kServiceAccount : "$USER";
+    const std::string apply = service ? "2. sudo systemctl restart lemond" : "2. Log out and back in";
     if (*chosen == ContainerTool::Podman) {
         if (!host_.in_group("video") || !host_.in_group("render")) {
-            return SetupFailure{"The user's account is not in both video and render",
-                                "1. sudo usermod -aG video,render $USER\n"
-                                "2. Log out and back in"};
+            return SetupFailure{"The " + account + " is not in both video and render",
+                                "1. sudo usermod -aG video,render " + member + "\n" + apply};
+        }
+        if (service && host_.on_path("getsubids")) {
+            const auto has_range = [this](const std::vector<std::string>& argv) {
+                const CommandResult result = host_.run(argv, kCommandTimeoutSeconds);
+                return result.exit_code == 0 && !trim(result.output).empty();
+            };
+            if (!has_range({"getsubids", kServiceAccount}) ||
+                !has_range({"getsubids", "-g", kServiceAccount})) {
+                return SetupFailure{
+                    "getsubids lemonade or getsubids -g lemonade prints no range",
+                    "1. Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs "
+                    "to lemonade\n" +
+                        apply};
+            }
         }
         return std::nullopt;
     }
     if (!host_.docker_socket_accepts()) {
-        return SetupFailure{"The Docker daemon refuses the user's account",
-                            "1. sudo usermod -aG docker $USER\n"
-                            "2. Log out and back in"};
+        return SetupFailure{"The Docker daemon refuses the " + account,
+                            "1. sudo usermod -aG docker " + member + "\n" + apply};
     }
     return std::nullopt;
 }
