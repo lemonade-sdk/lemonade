@@ -5557,6 +5557,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Detect bytes already on disk before downloading (for resume/skip tracking)
         size_t bytes_on_disk = 0;
         std::string partial_path = output_path + ".partial";
+        // Long Windows paths (>260 chars) need the \\?\ extended form to resolve.
+        fs::path output_path_fs = path_from_utf8(output_path);
+        fs::path partial_path_fs = path_from_utf8(partial_path);
 
         // GGUF models are consumed directly by llama-server. If a previous
         // download accidentally saved an HTML/error/pointer file, the backend
@@ -5565,12 +5568,12 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // as already complete. SHA validation still remains the primary check
         // when Hugging Face exposes an LFS object id.
         if (gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") &&
-            fs::exists(output_path) && !fs::exists(partial_path) &&
+            fs::exists(output_path_fs) && !fs::exists(partial_path_fs) &&
             !gguf_reader_detail::has_gguf_magic(output_path)) {
             LOG(WARNING, "ModelManager") << "Removing invalid GGUF cache file before download: "
                                          << filename << std::endl;
             std::error_code remove_ec;
-            fs::remove(path_from_utf8(output_path), remove_ec);
+            fs::remove(output_path_fs, remove_ec);
             if (remove_ec) {
                 throw std::runtime_error(
                     "Invalid GGUF cache file could not be removed: " + output_path +
@@ -5578,10 +5581,10 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             }
         }
 
-        if (fs::exists(output_path) && !fs::exists(partial_path)) {
+        if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
             bytes_on_disk = file_size;  // File already complete
-        } else if (fs::exists(partial_path)) {
-            bytes_on_disk = fs::file_size(partial_path);  // Partial download
+        } else if (fs::exists(partial_path_fs)) {
+            bytes_on_disk = fs::file_size(partial_path_fs);  // Partial download
         }
 
         utils::DownloadOptions download_opts;
@@ -5665,8 +5668,8 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             error_msg << result.error_message;
 
             // If there's a partial file, provide helpful information
-            if (fs::exists(output_path)) {
-                size_t partial_size = fs::file_size(output_path);
+            if (fs::exists(output_path_fs)) {
+                size_t partial_size = fs::file_size(output_path_fs);
                 if (partial_size > 0) {
                     error_msg << "\n\n[INFO] Partial download preserved at: " << output_path;
                     error_msg << "\n[INFO] Partial size: " << std::fixed << std::setprecision(1)
@@ -5689,14 +5692,19 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         std::string file_download_path = file_desc.value("download_path", download_path);
         std::string expected_path = file_download_path + "/" + filename;
         std::string partial_path = expected_path + ".partial";
+        // Use path_from_utf8 so Windows long paths (>260 chars) resolve via the
+        // \\?\ extended-length form; bare std::string paths would spuriously fail
+        // fs::exists here and report a false "validation failed" after a good download.
+        fs::path expected_path_fs = path_from_utf8(expected_path);
+        fs::path partial_path_fs = path_from_utf8(partial_path);
 
         // Check for .partial file (incomplete download)
-        if (fs::exists(partial_path)) {
-            if (fs::exists(expected_path)) {
+        if (fs::exists(partial_path_fs)) {
+            if (fs::exists(expected_path_fs)) {
                 // Final file exists alongside stale .partial - clean up the leftover
                 LOG(INFO, "ModelManager") << "Removing stale partial file: " << filename << ".partial" << std::endl;
                 std::error_code ec;
-                fs::remove(partial_path, ec);
+                fs::remove(partial_path_fs, ec);
             } else {
                 all_valid = false;
                 LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
@@ -5704,7 +5712,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             }
         }
 
-        if (!fs::exists(expected_path)) {
+        if (!fs::exists(expected_path_fs)) {
             all_valid = false;
             LOG(ERROR, "ModelManager") << "Missing file: " << filename << std::endl;
             continue;
@@ -5712,7 +5720,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         // Verify file size if we have expected size from tree API
         if (expected_size > 0) {
-            size_t actual_size = fs::file_size(expected_path);
+            size_t actual_size = fs::file_size(expected_path_fs);
             if (actual_size != expected_size) {
                 // Log mismatch but don't fail - tree API sizes can differ from
                 // actual LFS object sizes in some edge cases
@@ -5726,12 +5734,13 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // an HTML/error/pointer file. Surface that as download validation
         // failure instead, and remove the invalid final file so the next pull
         // starts fresh.
-        if (gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") && !gguf_reader_detail::has_gguf_magic(expected_path)) {
+        if (gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") &&
+            !gguf_reader_detail::has_gguf_magic(path_to_utf8(expected_path_fs))) {
             all_valid = false;
             LOG(ERROR, "ModelManager") << "Invalid GGUF file: " << filename
                                        << " (missing GGUF magic header)" << std::endl;
             std::error_code remove_ec;
-            fs::remove(path_from_utf8(expected_path), remove_ec);
+            fs::remove(expected_path_fs, remove_ec);
             if (remove_ec) {
                 LOG(ERROR, "ModelManager") << "Failed to remove invalid GGUF file: "
                                            << remove_ec.message() << std::endl;
