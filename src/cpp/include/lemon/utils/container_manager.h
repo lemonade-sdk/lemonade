@@ -16,7 +16,7 @@ namespace utils {
 
 enum class ContainerTool { Podman, Docker };
 
-// A host file or directory the container reads, mounted read-only.
+// A host file the container reads, mounted read-only.
 struct ContainerMount {
     std::string source;       // path on the host
     std::string destination;  // path inside the container, under /mnt/models
@@ -127,6 +127,12 @@ public:
                                  const std::string& arch);
     // The same, read from /sys/devices/virtual/kfd/kfd/topology/nodes.
     static std::string kfd_gpu_index(const std::string& arch);
+    // Read-only mounts that put `host_path` at `destination`, each source
+    // resolved through symlinks. A directory becomes one mount per file inside
+    // it, because a Hugging Face cache's links point into a blobs/ folder the
+    // container would not see. Throws when `host_path` does not exist.
+    static std::vector<ContainerMount> model_mounts(const std::string& host_path,
+                                                    const std::string& destination);
 
 private:
     CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds) const;

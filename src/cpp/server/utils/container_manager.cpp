@@ -535,5 +535,38 @@ std::string ContainerManager::kfd_gpu_index(const std::string& arch) {
     return gpu_index(versions, arch);
 }
 
+std::vector<ContainerMount> ContainerManager::model_mounts(const std::string& host_path,
+                                                           const std::string& destination) {
+    std::error_code ec;
+    const fs::path source = fs::canonical(fs::path(host_path), ec);
+    if (ec) {
+        throw std::runtime_error("Model file '" + host_path + "' does not exist");
+    }
+    if (!fs::is_directory(source, ec)) {
+        return {{source.string(), destination}};
+    }
+    std::vector<ContainerMount> mounts;
+    const fs::path named = fs::path(host_path).lexically_normal();
+    for (const auto& entry : fs::recursive_directory_iterator(named, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        const fs::path file = fs::canonical(entry.path(), ec);
+        if (ec) {
+            throw std::runtime_error("Model file '" + entry.path().string() +
+                                     "' links to a file that does not exist");
+        }
+        const std::string relative = entry.path().lexically_relative(named).generic_string();
+        mounts.push_back({file.string(), destination + "/" + relative});
+    }
+    if (ec) {
+        throw std::runtime_error("Cannot read model directory '" + host_path + "': " +
+                                 ec.message());
+    }
+    std::sort(mounts.begin(), mounts.end(),
+              [](const ContainerMount& a, const ContainerMount& b) {
+                  return a.destination < b.destination;
+              });
+    return mounts;
+}
+
 }  // namespace utils
 }  // namespace lemon
