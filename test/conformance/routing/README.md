@@ -117,6 +117,11 @@ object of the row — the first value would be lost silently. The runner reports
 case as `<major>/<tier>::<policy_name>::<case_name>`, for example
 `1/l3::classifier_band::band-inside`.
 
+A case must not set `route_trace` when the policy has a leaf with several keys
+that the request can reach. The engine evaluates such a leaf as an implicit `all`,
+but the order of its keys is not part of the contract, and the trace would record
+that order. To test evaluation order, use an explicit `all`.
+
 A `note` is strongly encouraged. The best notes say which alternative behavior
 would have produced a different decision, so a reader knows what the case
 protects against.
@@ -267,7 +272,8 @@ Unless stated otherwise, candidates are `local` (the `default_model`) and
 `keywords_all: ["Charlie", "delta"]`, `regex: "echo-[0-9]+"`, an `any` over
 `foxtrot` / `golf`, an `all` over `hotel` / `india`, an `all` of `juliett` and
 `not(kilo)`, an implicit-all leaf `{keywords_any: ["lima"], max_chars: 1000}`,
-`keywords_any: ["café"]`, and `regex: "id-\d"`.
+`keywords_any: ["café"]`, `regex: "id-\d"`, and a three-key implicit-all leaf
+`{keywords_any: ["mike"], regex: "[0-9]{3}", min_chars: 12}`.
 
 | Behavior | Case |
 |----------|------|
@@ -290,18 +296,22 @@ Unless stated otherwise, candidates are `local` (the `default_model`) and
 | "juliett and kilo" makes `not(kilo)` false, so the rule fails. | `not-child-present-no-match` |
 | A short input with `lima` satisfies both keys of the two-key leaf, which is read as an implicit `all`. | `implicit-all-both-keys` |
 | `lima` plus more than 1000 bytes of padding fails `max_chars`, so the whole leaf is false even though `keywords_any` holds. | `implicit-all-one-key-no-match` |
+| "mike build 123" satisfies all three keys of the three-key leaf. | `three-key-leaf-all-keys-hold` |
+| "mike build abc" fails only `regex`, so the leaf is false. | `three-key-leaf-regex-fails` |
+| "nova build 123" fails only `keywords_any`, so the leaf is false. | `three-key-leaf-keyword-fails` |
+| "mike 123" (8 bytes) fails only `min_chars`, so the leaf is false. | `three-key-leaf-min_chars-fails` |
 | With `route_trace`, a `keywords_any` hit is recorded as `{"condition": "keywords_any", "result": true}`. | `keywords_any-trace` |
 | The trace lists `keywords_any` false, then `keywords_all` true. | `keywords_all-trace` |
 | The trace lists `keywords_any` false, `keywords_all` false, then `regex` true. | `regex-trace` |
 
-**`leaf_order`** — one rule whose leaf is authored as `regex: "delta-[0-9]"`,
-`keywords_any: ["delta"]`, `min_chars: 4`, in that order.
+**`all_order`** — one rule: an explicit `all` of `regex: "delta-[0-9]"`,
+`keywords_any: ["delta"]` and `min_chars: 4`, listed in that order. The list
+order is deliberately not alphabetical.
 
 | Behavior | Case |
 |----------|------|
-| "delta-7 ready" satisfies all three keys. The trace reads `keywords_any`, `min_chars`, `regex`: children run in alphabetical op-name order, not the authored order. | `all-ops-match-order-is-by-op-name` |
-| "gamma-7 ready" fails `keywords_any`, the first child in that order. The implicit `all` stops there, so the trace has one entry although `min_chars` would have passed. | `first-op-false-short-circuits-rest` |
-| "delta" passes `keywords_any` and `min_chars` (5 ≥ 4) and fails `regex`. The trace has three entries ending in `regex`, which shows `min_chars` was evaluated before `regex`. | `min_chars-runs-before-regex` |
+| "delta-7 ready" satisfies all three children. The trace reads `regex`, `keywords_any`, `min_chars`: an explicit `all` runs its children in list order. | `children-run-in-list-order` |
+| "delta ready" fails `regex`, the first listed child. The `all` stops there, so the trace has one entry although the other two children would pass. | `first-listed-child-false-short-circuits` |
 
 **`conditions_char_bounds`** — `min_chars: 10` then `max_chars: 6`, both on the
 routing input.
