@@ -1,4 +1,5 @@
 #include "lemon/backends/ryzenai/ryzenai_server.h"
+#include "lemon/backends/ryzenai/ryzenai_request.h"
 #include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
@@ -138,12 +139,34 @@ void RyzenAIServer::unload() {
     model_path_.clear();
 }
 
+void RyzenAIServer::validate_chat_request(const json& request) const {
+    ryzenai::normalize_chat_request(request);
+}
+
 json RyzenAIServer::chat_completion(const json& request) {
     if (!is_loaded_) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
 
-    return forward_request("/v1/chat/completions", request);
+    return forward_request("/v1/chat/completions", ryzenai::normalize_chat_request(request));
+}
+
+void RyzenAIServer::forward_streaming_request(const std::string& endpoint,
+                                              const std::string& request_body,
+                                              httplib::DataSink& sink,
+                                              bool sse,
+                                              long timeout_seconds,
+                                              TelemetryCallback telemetry_callback) {
+    std::string modified_body = request_body;
+    if (endpoint == "/v1/chat/completions") {
+        try {
+            json request = json::parse(request_body);
+            modified_body = ryzenai::normalize_chat_request(request).dump();
+        } catch (...) {
+            // If parsing fails, fall back to unmodified body
+        }
+    }
+    WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds, telemetry_callback);
 }
 
 json RyzenAIServer::completion(const json& request) {
