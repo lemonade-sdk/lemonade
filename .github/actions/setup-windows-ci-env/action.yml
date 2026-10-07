@@ -25,6 +25,14 @@ runs:
         $installPath = Join-Path $installRoot $runKey
         $tmpDir = Join-Path $tmpRoot $runKey
 
+        # Keep CI roots well inside the 67-char ROCm wheel budget so these jobs keep
+        # exercising the wheel layout rather than silently falling back to the tarball.
+        # Worst current leg is 42 chars.
+        if ($cacheDir.Length -gt 49) {
+          Write-Host "::error::LEMONADE_CACHE_DIR '$cacheDir' is $($cacheDir.Length) chars; shorten the matrix name so CI keeps exercising the ROCm wheel layout."
+          exit 1
+        }
+
         foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
           New-Item -ItemType Directory -Force -Path $path | Out-Null
         }

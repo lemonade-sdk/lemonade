@@ -143,6 +143,40 @@ namespace lemon::backends {
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
 
+        /** Longest cache directory that still keeps every rocBLAS Tensile
+         *  solution file inside Windows' 259-character path limit, for the
+         *  wheel or tarball layout. Pure arithmetic over the measured layout
+         *  constants; exposed for unit testing. */
+        static size_t rocm_cache_dir_budget(const std::string& arch,
+                                            const std::string& version,
+                                            bool wheel_layout);
+
+        /** Throw ConfigurationException when cache_dir (default: the resolved
+         *  cache dir) is too long for the given ROCm layout. Runs before any
+         *  download, so the constants above are a prediction; see
+         *  ensure_rocm_tensile_reachable() for the authoritative check.
+         *  No-op off Windows. */
+        static void ensure_rocm_path_budget(const std::string& arch,
+                                            const std::string& version,
+                                            bool wheel_layout,
+                                            const std::string& cache_dir = "");
+
+        /** Throw ConfigurationException when an installed ROCm tree puts a
+         *  rocBLAS Tensile file past MAX_PATH. Measures what is on disk rather
+         *  than predicting, so it stays correct across upstream layout changes
+         *  and also catches trees installed before the budget check existed.
+         *  Memoized per layout. No-op off Windows. */
+        static void ensure_rocm_tensile_reachable(const std::string& arch,
+                                                  const std::string& version,
+                                                  bool wheel_layout);
+
+        /** Shared wording for both ROCm path-length failures. tarball_budget of
+         *  0 means the tarball is not an option worth suggesting. */
+        static std::string rocm_path_budget_message(const std::string& cache_dir,
+                                                    size_t cache_dir_len,
+                                                    size_t budget,
+                                                    size_t tarball_budget);
+
         /** See backend_utils.cpp:install_rocm_runtime() for install method details */
         static void install_rocm_runtime(const std::string& arch, const std::string& version,
                                          DownloadProgressCallback progress_cb = nullptr);

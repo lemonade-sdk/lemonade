@@ -1,0 +1,95 @@
+name: Check ROCm path depth
+description: >-
+  Compare the depth of the installed rocBLAS Tensile files below the lemond
+  cache root against the depth BackendUtils::rocm_cache_dir_budget() assumes,
+  and fail when the shipped budget has gone stale.
+
+inputs:
+  cache-dir:
+    description: lemond cache root that was used for this run
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: PowerShell
+      env:
+        CACHE_DIR: ${{ inputs.cache-dir }}
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        # Depths that rocm_cache_dir_budget() derives its advertised cache-dir
+        # limit from, for the pinned gfx1151/10.0.0. Comparing depth rather than
+        # absolute length is what makes this fire: CI's root is short enough
+        # that an absolute >259 check has ~22 chars of slack it never consumes.
+        $expectedWheelDepth = 192
+        $expectedTarballDepth = 142
+
+        $cacheDir = $env:CACHE_DIR
+        if (-not $cacheDir) {
+            Write-Host "::warning::Cache dir was never set; the job likely failed before lemond started."
+            exit 0
+        }
+        $cacheDir = $cacheDir.TrimEnd('\')
+
+        function Measure-Layout($root, $expected, $name) {
+            if (-not (Test-Path -LiteralPath $root)) { return $null }
+
+            # Windows PowerShell cannot enumerate past MAX_PATH, and swallowing
+            # that would under-measure exactly when the answer matters.
+            $errs = @()
+            $files = @(Get-ChildItem -LiteralPath $root -Recurse -File `
+                           -ErrorAction SilentlyContinue -ErrorVariable +errs |
+                       Where-Object { $_.FullName -like '*\rocblas\library\*' } |
+                       Sort-Object { $_.FullName.Length } -Descending)
+            if ($errs.Count -gt 0) {
+                Write-Host "::error::Could not fully enumerate $root ($($errs.Count) error(s)); a path may be past MAX_PATH. First: $($errs[0].Exception.Message)"
+                exit 1
+            }
+            if ($files.Count -eq 0) {
+                Write-Host "::warning::No rocBLAS Tensile files under $root; $name depth not checked."
+                return $null
+            }
+
+            foreach ($f in ($files | Select-Object -First 3)) {
+                Write-Host ("{0,4}  {1}" -f $f.FullName.Length, $f.FullName)
+            }
+            $depth = $files[0].FullName.Length - $cacheDir.Length
+            if ($depth -gt $expected) {
+                Write-Host "::error::Deepest rocBLAS path in the $name layout is $depth chars below the cache root, over the $expected that rocm_cache_dir_budget() assumes. Update kRocblasTailFixed/kWheelRootFixed/kTarballRootFixed in src/cpp/server/backends/backend_utils.cpp, the expectations in test/cpp/test_rocm_path_budget.cpp, and the depths in this action."
+                exit 1
+            }
+            Write-Host "$name rocBLAS depth is $depth chars below the cache root (budget assumes $expected)." -ForegroundColor Green
+            return $depth
+        }
+
+        $measured = @()
+        $m = Measure-Layout (Join-Path $cacheDir "bin\therock-wheels") $expectedWheelDepth "wheel"
+        if ($null -ne $m) { $measured += $m }
+        $m = Measure-Layout (Join-Path $cacheDir "bin\therock") $expectedTarballDepth "tarball"
+        if ($null -ne $m) { $measured += $m }
+
+        if ($measured.Count -eq 0) {
+            Write-Host "::warning::No ROCm runtime found under $cacheDir; nothing to measure."
+            exit 0
+        }
+
+        # The depth checks above cover rocBLAS, the only library that faults
+        # rather than reporting a failed open. Everything else still has to be
+        # openable, so keep an absolute check over the whole cache.
+        $errs = @()
+        $all = @(Get-ChildItem -LiteralPath $cacheDir -Recurse -File `
+                     -ErrorAction SilentlyContinue -ErrorVariable +errs |
+                 Sort-Object { $_.FullName.Length } -Descending | Select-Object -First 1)
+        if ($errs.Count -gt 0) {
+            Write-Host "::error::Could not fully enumerate $cacheDir ($($errs.Count) error(s)); a path is likely past MAX_PATH. First: $($errs[0].Exception.Message)"
+            exit 1
+        }
+        if ($all.Count -gt 0) {
+            $max = $all[0].FullName.Length
+            if ($max -gt 259) {
+                Write-Host "::error::Longest path in the cache is $max chars (limit 259): $($all[0].FullName)"
+                exit 1
+            }
+            Write-Host "Longest path anywhere in the cache is $max chars (MAX_PATH headroom: $(259 - $max))." -ForegroundColor Green
+        }

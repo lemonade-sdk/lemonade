@@ -1,5 +1,6 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/install_staging.h"
+#include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
@@ -17,6 +18,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <lemon/utils/aixlog.hpp>
@@ -1228,6 +1231,158 @@ namespace lemon::backends {
 #endif
     }
 
+    namespace {
+        // Windows resolves a full path against MAX_PATH (260) including the
+        // terminator, so 259 usable characters.
+        constexpr size_t kMaxPathChars = 259;
+
+        // Arch/version-independent part of "\bin\rocblas\library\<arch>\<name>",
+        // where <name> is the longest Tensile solution filename and itself ends in the arch token.
+        // Limit is set against rocBLAS rather than the deeper hipBLASLt and header files.
+        constexpr size_t kRocblasTailFixed = 101;
+
+        // "\bin\therock-wheels\<arch>-<version>\venv\Lib\site-packages\_rocm_sdk_libraries"
+        constexpr size_t kWheelRootFixed = 64;
+
+        // "\bin\therock\<arch>-<version>"
+        constexpr size_t kTarballRootFixed = 14;
+
+        std::string resolved_cache_dir(const std::string& cache_dir) {
+            const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
+            std::error_code ec;
+            fs::path p = fs::absolute(utils::path_from_utf8(raw), ec);
+            if (ec) {
+                p = utils::path_from_utf8(raw);
+            }
+            return utils::path_to_utf8(p.lexically_normal().make_preferred());
+        }
+
+        fs::path rocblas_library_dir(const std::string& arch, const std::string& version,
+                                     bool wheel_layout) {
+            if (wheel_layout) {
+                return fs::path(BackendUtils::get_therock_wheel_dir(arch, version)) / "venv" /
+                       "Lib" / "site-packages" / "_rocm_sdk_libraries" / "bin" / "rocblas" /
+                       "library";
+            }
+            return fs::path(BackendUtils::get_therock_install_dir(arch, version)) / "bin" /
+                   "rocblas" / "library";
+        }
+
+        std::mutex g_tensile_probe_mutex;
+        std::map<std::string, size_t> g_tensile_probe_cache;
+    }
+
+    size_t BackendUtils::rocm_cache_dir_budget(const std::string& arch,
+                                               const std::string& version,
+                                               bool wheel_layout) {
+        const size_t layout_root =
+            (wheel_layout ? kWheelRootFixed : kTarballRootFixed) + arch.size() + version.size();
+        const size_t deepest = layout_root + kRocblasTailFixed + 2 * arch.size();
+        return deepest >= kMaxPathChars ? 0 : kMaxPathChars - deepest;
+    }
+
+    void BackendUtils::ensure_rocm_path_budget(const std::string& arch,
+                                               const std::string& version,
+                                               bool wheel_layout,
+                                               const std::string& cache_dir) {
+#ifdef _WIN32
+        const fs::path root = utils::path_from_utf8(resolved_cache_dir(cache_dir));
+        // MAX_PATH counts UTF-16 code units, which is what native() holds.
+        const size_t root_len = root.native().size();
+        const size_t budget = rocm_cache_dir_budget(arch, version, wheel_layout);
+        if (root_len <= budget) {
+            return;
+        }
+        throw ConfigurationException(rocm_path_budget_message(
+            utils::path_to_utf8(root), root_len, budget,
+            wheel_layout ? rocm_cache_dir_budget(arch, version, false) : 0));
+#else
+        (void)arch;
+        (void)version;
+        (void)wheel_layout;
+        (void)cache_dir;
+#endif
+    }
+
+    std::string BackendUtils::rocm_path_budget_message(const std::string& cache_dir,
+                                                       size_t cache_dir_len,
+                                                       size_t budget,
+                                                       size_t tarball_budget) {
+        std::string msg = "ROCm cannot run from this cache directory: \"" + cache_dir + "\" is " +
+                          std::to_string(cache_dir_len) +
+                          " characters, and ROCm's library files need it to be " +
+                          std::to_string(budget) + " or fewer.";
+        if (tarball_budget > budget && cache_dir_len <= tarball_budget) {
+            msg += " Run 'lemonade config set rocm_install_method=tarball' to use the ROCm layout"
+                   " that fits here, then reinstall the ROCm backend.";
+        } else {
+            msg += " Point LEMONADE_CACHE_DIR at a shorter path and restart Lemonade Server."
+                   " Downloaded models live in the Hugging Face cache and are not affected, but"
+                   " backends will be re-downloaded.";
+        }
+        return msg;
+    }
+
+    void BackendUtils::ensure_rocm_tensile_reachable(const std::string& arch,
+                                                     const std::string& version,
+                                                     bool wheel_layout) {
+#ifdef _WIN32
+        const fs::path dir = rocblas_library_dir(arch, version, wheel_layout);
+        const std::string key = utils::path_to_utf8(dir);
+
+        size_t deepest = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_tensile_probe_mutex);
+            auto it = g_tensile_probe_cache.find(key);
+            if (it != g_tensile_probe_cache.end()) {
+                deepest = it->second;
+            } else {
+                std::error_code ec;
+                if (!fs::is_directory(dir, ec)) {
+                    return;  // Nothing installed for this layout yet.
+                }
+                // Scoped to rocBLAS rather than the whole ROCm tree: this is the
+                // only library that faults instead of reporting the failed open,
+                // and the subtree is small enough to walk on a model load.
+                for (fs::recursive_directory_iterator it2(dir, ec), end; it2 != end && !ec;
+                     it2.increment(ec)) {
+                    if (it2->is_regular_file(ec)) {
+                        deepest = std::max(deepest, it2->path().native().size());
+                    }
+                }
+                if (ec) {
+                    // A failed walk under-measures exactly when it matters, so
+                    // don't cache a verdict we can't stand behind.
+                    LOG(WARNING, "BackendUtils")
+                        << "Could not fully scan " << key << " (" << ec.message()
+                        << "); skipping the ROCm path-length check" << std::endl;
+                    return;
+                }
+                g_tensile_probe_cache[key] = deepest;
+            }
+        }
+
+        if (deepest <= kMaxPathChars) {
+            return;
+        }
+
+        // Derive the limit from what is actually on disk rather than the
+        // compiled-in constant, so an upstream layout change reports the real
+        // number instead of a stale one.
+        const fs::path root = utils::path_from_utf8(resolved_cache_dir(""));
+        const size_t root_len = root.native().size();
+        const size_t depth = deepest - root_len;
+        const size_t budget = kMaxPathChars > depth ? kMaxPathChars - depth : 0;
+        throw ConfigurationException(rocm_path_budget_message(
+            utils::path_to_utf8(root), root_len, budget,
+            wheel_layout ? rocm_cache_dir_budget(arch, version, false) : 0));
+#else
+        (void)arch;
+        (void)version;
+        (void)wheel_layout;
+#endif
+    }
+
     void BackendUtils::install_rocm_runtime(const std::string& arch, const std::string& version,
                                             DownloadProgressCallback progress_cb) {
         // rocm_install_method lets Python-averse environments (ISV/OEM images,
@@ -1244,8 +1399,28 @@ namespace lemon::backends {
 
         reset_therock_wheels_cancelled();
 
+        // The wheel layout sits exactly 50 characters deeper than the tarball,
+        // so a cache dir can be too long for one and fine for the other.
+        // Therefore, take the fallback under "auto".
+        bool wheels_fit = true;
         if (method != "tarball") {
+            try {
+                ensure_rocm_path_budget(arch, version, /*wheel_layout=*/true);
+            } catch (const ConfigurationException&) {
+                if (method == "wheel") {
+                    throw;
+                }
+                wheels_fit = false;
+                LOG(INFO, "BackendUtils")
+                    << "Cache directory is longer than the ROCm wheel layout allows ("
+                    << rocm_cache_dir_budget(arch, version, true)
+                    << " characters); installing the TheRock tarball instead." << std::endl;
+            }
+        }
+
+        if (method != "tarball" && wheels_fit) {
             if (install_therock_wheels(arch, version, progress_cb)) {
+                ensure_rocm_tensile_reachable(arch, version, /*wheel_layout=*/true);
                 // Drop the other tree so its method.txt can't re-trigger the
                 // mismatch reinstall on every load.
                 if (method == "wheel") {
@@ -1267,10 +1442,14 @@ namespace lemon::backends {
                     "disables the TheRock tarball fallback");
             }
         }
+        ensure_rocm_path_budget(arch, version, /*wheel_layout=*/false);
         install_therock(arch, version, progress_cb);
+        ensure_rocm_tensile_reachable(arch, version, /*wheel_layout=*/false);
         // Drop the other tree so its method.txt can't re-trigger the mismatch
-        // reinstall on every load.
-        if (method == "tarball") {
+        // reinstall on every load. When the wheel layout was rejected for being
+        // too deep, dropping it is what makes the fallback stick: otherwise
+        // get_therock_lib_paths() keeps preferring the over-long wheel runtime.
+        if (method == "tarball" || !wheels_fit) {
             std::error_code ec;
             fs::remove_all(get_therock_wheel_dir(arch, version), ec);
         }
@@ -1826,6 +2005,9 @@ namespace lemon::backends {
                     }
                 }
                 if (!lib_paths.empty()) {
+                    // Catches a tree installed before the budget check existed:
+                    // without this rocBLAS would access-violate mid-inference.
+                    ensure_rocm_tensile_reachable(rocm_arch, version, /*wheel_layout=*/true);
                     LOG(DEBUG, "BackendUtils")
                         << "Returning " << lib_paths.size()
                         << " ROCm wheel runtime path(s); first: " << lib_paths.front() << std::endl;
@@ -1838,6 +2020,7 @@ namespace lemon::backends {
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
         std::error_code ec;
         if (fs::exists(install_dir, ec)) {
+            ensure_rocm_tensile_reachable(rocm_arch, version, /*wheel_layout=*/false);
             // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
             // On Linux, shared libraries are in lib/
             // Both are under the common tarball root which also keeps LLVM in lib/llvm/.

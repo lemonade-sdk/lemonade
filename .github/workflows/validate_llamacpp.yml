@@ -317,7 +317,7 @@ jobs:
           "lite=$env:LITE_MODE" |
             Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
@@ -649,7 +649,7 @@ jobs:
             (Join-Path $workspaceRoot "build\Release\lemond.exe")
           )
           $cachePrefix = [IO.Path]::GetFullPath(
-            (Join-Path $workspaceRoot "ci-cache-")
+            (Join-Path $env:SystemDrive "ci-lem-cache\llamacpp-")
           )
           $staleProcesses = @(
             Get-CimInstance Win32_Process `
@@ -725,7 +725,8 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = if ($channel) { "$backend-$channel" } else { $backend }
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\llamacpp-$label"
+          "LEMONADE_CI_CACHE_DIR=$cacheDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $cachePrefix = [IO.Path]::GetFullPath($cacheDir)
           $separator = [string][IO.Path]::DirectorySeparatorChar
           if (-not $cachePrefix.EndsWith($separator)) { $cachePrefix += $separator }
@@ -742,6 +743,18 @@ jobs:
                   [StringComparison]::OrdinalIgnoreCase
                 )
               }
+          }
+
+          # Checked before the wipe so a rejected root isn't deleted first.
+          # 49 keeps CI well inside the 67-char ROCm wheel budget, so CI keeps
+          # exercising the wheel layout rather than silently falling back.
+          if ($cacheDir.Length -gt 49) {
+            Write-Host "::error::Cache root '$cacheDir' is $($cacheDir.Length) chars; keep it under 49 so CI keeps exercising the ROCm wheel layout."
+            exit 1
+          }
+          if (Test-Path $cacheDir) {
+            Write-Host "Removing cache at $cacheDir" -ForegroundColor Cyan
+            Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction Stop
           }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
@@ -879,6 +892,12 @@ jobs:
           path: llamacpp_validation_${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}.json
           retention-days: 30
 
+      - name: Check ROCm runtime path headroom
+        if: always() && runner.os == 'Windows' && matrix.backend == 'rocm'
+        uses: ./.github/actions/check-rocm-path-depth
+        with:
+          cache-dir: ${{ env.LEMONADE_CI_CACHE_DIR }}
+
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -887,6 +906,23 @@ jobs:
           path: server-logs-${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}/
           retention-days: 30
           if-no-files-found: ignore
+
+      - name: Remove lemond cache
+        if: always() && runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $cacheDir = $env:LEMONADE_CI_CACHE_DIR
+          if (-not $cacheDir -or -not (Test-Path $cacheDir)) {
+              Write-Host "Nothing to remove at '$cacheDir'"
+              exit 0
+          }
+          Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+          if (Test-Path $cacheDir) {
+              Write-Host "::warning::Could not fully remove $cacheDir; the next run wipes it before installing."
+          } else {
+              Write-Host "Removed $cacheDir" -ForegroundColor Green
+          }
 
       - name: Cleanup
         if: always()

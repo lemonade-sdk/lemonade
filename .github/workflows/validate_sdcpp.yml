@@ -236,7 +236,7 @@ jobs:
     if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
@@ -311,7 +311,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-release.outputs.validate_matrix) }}
     steps:
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
@@ -378,16 +378,20 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = "${{ matrix.label }}"
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\$label"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\sdcpp-$label"
+          "LEMONADE_CI_CACHE_DIR=$cacheDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $venvPython = ".\.venv\Scripts\python.exe"
 
+          # Checked before the wipe so a rejected root isn't deleted first.
+          # 49 keeps CI well inside the 67-char ROCm wheel budget, so CI keeps
+          # exercising the wheel layout rather than silently falling back.
+          if ($cacheDir.Length -gt 49) {
+            Write-Host "::error::Cache root '$cacheDir' is $($cacheDir.Length) chars; keep it under 49 so CI keeps exercising the ROCm wheel layout."
+            exit 1
+          }
           if (Test-Path $cacheDir) {
             Write-Host "Removing cache at $cacheDir" -ForegroundColor Cyan
             Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction Stop
-          }
-          if ($cacheDir.Length -gt 40) {
-            Write-Host "::error::Cache root '$cacheDir' is $($cacheDir.Length) chars; keep it under 40 so ROCm runtime paths stay below MAX_PATH (260)."
-            exit 1
           }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
@@ -451,25 +455,9 @@ jobs:
 
       - name: Check ROCm runtime path headroom
         if: always() && matrix.backend == 'rocm'
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $root = Join-Path $env:SystemDrive "ci-lem-cache\${{ matrix.label }}\bin\therock-wheels"
-          if (-not (Test-Path $root)) {
-              Write-Host "No TheRock wheel install at $root; nothing to measure." -ForegroundColor Yellow
-              exit 0
-          }
-          $longest = Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
-              Sort-Object { $_.FullName.Length } -Descending | Select-Object -First 5
-          foreach ($f in $longest) {
-              Write-Host ("{0,4}  {1}" -f $f.FullName.Length, $f.FullName)
-          }
-          $max = ($longest | Select-Object -First 1).FullName.Length
-          if ($max -gt 259) {
-              Write-Host "::error::Longest ROCm runtime path is $max chars (limit 259) and files past MAX_PATH cannot be opened. Shorten the lemond cache root."
-              exit 1
-          }
-          Write-Host "Longest ROCm runtime path is $max chars (MAX_PATH headroom: $(259 - $max))." -ForegroundColor Green
+        uses: ./.github/actions/check-rocm-path-depth
+        with:
+          cache-dir: ${{ env.LEMONADE_CI_CACHE_DIR }}
 
       - name: Upload validation evidence
         if: always()
@@ -500,7 +488,7 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Continue"
-          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\${{ matrix.label }}"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\sdcpp-${{ matrix.label }}"
           if (-not (Test-Path $cacheDir)) {
               Write-Host "Nothing to remove at $cacheDir"
               exit 0
