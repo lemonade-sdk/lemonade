@@ -2227,7 +2227,7 @@ endif()
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${EMBEDDABLE_STAGING_DIR}/resources"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${EMBEDDABLE_STAGING_DIR}/resources/schemas"
 
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
@@ -2255,6 +2255,9 @@ add_custom_target(embeddable
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/schemas/decision.schema.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/schemas/"
 
     # Create archive
     COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_BINARY_DIR}" ${EMBEDDABLE_TAR_CMD}

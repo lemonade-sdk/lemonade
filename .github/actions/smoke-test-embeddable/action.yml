@@ -37,6 +37,7 @@ runs:
         test -f "$DIR/resources/backend_versions.json"
         test -f "$DIR/resources/defaults.json"
         test -f "$DIR/resources/toolDefinitions.json"
+        test -f "$DIR/resources/schemas/decision.schema.json"
         echo "All expected files present"
 
         # Verify NO forbidden files
