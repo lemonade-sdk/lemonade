@@ -90,6 +90,44 @@
       "experimental": true,
       "tracked": true,
       "notes": "Experimental HRX backend. Linux gfx1151 only. Auto-discovers all 'llamacpp-hrx' models from server_models.json; add an optional model_filter to pin a subset."
+    },
+    {
+      "fork_id": "halo-box-strix",
+      "label": "llama.cpp Halo-box",
+      "recipe": "llamacpp",
+      "backend": "halo-box-strix",
+      "install_as": "rocm",
+      "rocm_channel": "nightly",
+      "repo": "halo-box/strix-llama.cpp",
+      "version_source": "github_latest",
+      "version_fallback": "b1000",
+      "binary_url_windows": "",
+      "binary_url_linux": "https://github.com/halo-box/strix-llama.cpp/releases/download/{version}/llama-{version}-ubuntu-rocm-{arch}-x64.zip",
+      "binary_exe_windows": "",
+      "binary_exe_linux": "llama-server",
+      "runner_os": "linux",
+      "arch": "gfx1151",
+      "tracked": true,
+      "enabled": true,
+      "experimental": true,
+      "model_filter": [
+        "Qwen3.5-4B-GGUF",
+        "Qwen3.6-35B-A3B-GGUF",
+        "Qwen3.6-27B-MTP-GGUF",
+        "Qwen3.8-27B-GGUF",
+        "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        "Gemma-4-26B-A4B-it-GGUF",
+        "Gemma-4-26B-A4B-it-MTP-GGUF",
+        "Gemma-4-31B-it-GGUF",
+        "Gemma-4-31B-it-MTP-GGUF",
+        "MiniCPM-V-4.6-GGUF",
+        "MiniCPM5-1B-GGUF",
+        "Muse-Glimmer-30B-GGUF",
+        "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF"
+      ],
+      "bench_scenarios": ["chat-short", "context-4k", "context-32k"],
+      "ctx_size": 32768,
+      "notes": "Community llamacpp fork for gfx1151 (Ryzen AI Max). ROCm binary swap via llamacpp.rocm_bin, same mechanism as amd-ecosystem-gfx11. Experimental so model_filter pins the hot set (avoids pulling oversized models). context-32k adds prefill/PP measurement at ctx 32768."
     }
   ]
 }
