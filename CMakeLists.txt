@@ -995,8 +995,17 @@ include_directories(
 # ============================================================
 # Server core sources (everything except entry points)
 # ============================================================
+# lemond's HTTP server: core components, shared services, and one file per route. The
+# globs pick up a new route or service without a CMake edit.
+file(GLOB_RECURSE HTTP_SERVER_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/core/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/services/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/routes/*.cpp
+)
+
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    ${HTTP_SERVER_SOURCES}
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/jobs/job_ops.cpp
     src/cpp/server/jobs/job_manager.cpp
@@ -1040,8 +1049,6 @@ set(SOURCES_CORE
     src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
-    src/cpp/server/ollama_api.cpp
-    src/cpp/server/anthropic_api.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
@@ -2852,18 +2859,12 @@ set(_ROUTE_DECISION_RESPONSE_TEST_SRC
 if(BUILD_TESTING AND EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
     add_executable(test_route_decision_response
         test/cpp/test_route_decision_response.cpp
-        src/cpp/server/route_decision_response.cpp
     )
     target_include_directories(test_route_decision_response PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
-    target_link_libraries(test_route_decision_response PRIVATE nlohmann_json::nlohmann_json)
-    if(USE_SYSTEM_HTTPLIB)
-        target_link_libraries(test_route_decision_response PRIVATE lemonade-httplib)
-    else()
-        target_link_libraries(test_route_decision_response PRIVATE httplib::httplib)
-    endif()
+    target_link_libraries(test_route_decision_response PRIVATE lemonade-server-core)
 
     include(CTest)
     add_cpp_ci_test(RouteDecisionResponseTest CI OFF COMMAND test_route_decision_response)
@@ -2878,22 +2879,12 @@ set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
 if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     add_executable(test_routing_conformance_corpus
         test/cpp/test_routing_conformance_corpus.cpp
-        src/cpp/server/route_decision_response.cpp
-        src/cpp/server/routing_classifier_services.cpp
-        src/cpp/server/thinking_controls.cpp
-        src/cpp/server/routing_policy.cpp
-        src/cpp/server/routing_policy_parser.cpp
     )
     target_include_directories(test_routing_conformance_corpus PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
-    target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
-    if(USE_SYSTEM_HTTPLIB)
-        target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-httplib)
-    else()
-        target_link_libraries(test_routing_conformance_corpus PRIVATE httplib::httplib)
-    endif()
+    target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-server-core)
     target_compile_definitions(test_routing_conformance_corpus PRIVATE
         CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/conformance/routing"
     )

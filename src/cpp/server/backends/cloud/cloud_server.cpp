@@ -550,7 +550,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             creds.policy,
             cancel_token);
         if (response.status_code == 200) {
-            // Return the body unchanged so the server.cpp handler picks up the
+            // Return the body unchanged so the chat/completions route picks up the
             // `usage` telemetry like every other backend.
             return json::parse(response.body);
         }

@@ -199,7 +199,7 @@ client.chat.completions.create(model="user.My-Router", messages=[...])
 
 ## Testing a policy before registering it
 
-[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) evaluates a
+[`POST /v1/routing/validate`](../api/router.md#post-v1routingvalidate) evaluates a
 policy document against a prompt and returns the decision plus its full trace,
 without registering the policy or dispatching the user request to the selected
 candidate. Component names are accepted without resolving against the model

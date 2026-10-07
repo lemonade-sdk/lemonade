@@ -469,7 +469,10 @@ src/cpp/
 │
 ├── server/                     # Server implementation
 │   ├── main.cpp                # Entry point, CLI routing
-│   ├── server.cpp              # HTTP server (cpp-httplib)
+│   ├── server.cpp              # HTTP server: builds and starts the parts below
+│   ├── core/                   # Listener, middleware, route registry, route base classes
+│   ├── services/               # Model loading, model JSON, downloads, shared helpers
+│   ├── routes/                 # One file per HTTP route, one folder per docs/api page
 │   ├── router.cpp              # Routes requests to backends
 │   ├── model_manager.cpp       # Model registry, downloads, caching
 │   ├── cli_parser.cpp          # Command-line argument parsing (CLI11)

@@ -1597,7 +1597,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             }
         }
 
-        // Note: release_url and download_size_mb are added by Server::handle_system_info()
+        // Note: release_url and download_size_mb are added by the system-info route
         // using BackendManager as the single source of truth for repo/version mappings.
 
         set_backend_status(def.recipe, def.backend, backend, kCurrentOsUnsupportedPriority);
