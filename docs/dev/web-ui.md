@@ -43,7 +43,7 @@ cmake --build --preset default --target web-app
 | Dependencies | Node.js + webpack | Node.js + webpack + Rust + webkit2gtk (Linux) |
 | Output | `web-app/dist/renderer/` | `app/dist/renderer/` (renderer) + `app/src-tauri/target/release/lemonade-app` (binary) |
 | Purpose | Browser via `/app` endpoint | Desktop application |
-| window.api | Mock injected by `lemond` (`src/cpp/server/server.cpp`) | Installed by `tauriShim.ts` → Tauri `invoke()` |
+| window.api | Mock installed by `src/web-app/mock-api.js` | Installed by `tauriShim.ts` → Tauri `invoke()` |
 
 Both builds share the same 55+ React files under `src/app/src/renderer/`. The renderer checks `window.api?.isWebApp` to differentiate the two modes at runtime.
 

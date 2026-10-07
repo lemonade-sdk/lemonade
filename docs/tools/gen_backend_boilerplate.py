@@ -66,11 +66,19 @@ def find_lemond(explicit: str | None) -> Path:
 class Lemond:
     """Boots a throwaway lemond on a free port with an isolated cache dir."""
 
-    def __init__(self, binary: Path):
+    def __init__(self, binary: Path, bin_dir: str | None = None):
         self.binary = binary
         self.port = free_port()
         self._cache = tempfile.TemporaryDirectory(prefix="lemond-docs-")
         self._proc: subprocess.Popen | None = None
+        # Reusing installed backends saves gen_api_boilerplate.py from downloading
+        # every backend its examples load.
+        if bin_dir:
+            os.symlink(
+                os.path.abspath(bin_dir),
+                os.path.join(self._cache.name, "bin"),
+                target_is_directory=True,
+            )
 
     def __enter__(self):
         self._proc = subprocess.Popen(
@@ -93,7 +101,7 @@ class Lemond:
     def __exit__(self, *exc):
         if self._proc and self._proc.poll() is None:
             try:
-                self._get("/internal/shutdown", timeout=2)
+                self._get("/internal/shutdown", timeout=2, method="POST")
             except Exception:
                 pass
             try:
@@ -102,9 +110,9 @@ class Lemond:
                 self._proc.kill()
         self._cache.cleanup()
 
-    def _get(self, path: str, timeout: float = 5):
+    def _get(self, path: str, timeout: float = 5, method: str = "GET"):
         url = f"http://127.0.0.1:{self.port}{path}"
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, method=method)
         api_key = os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
             "LEMONADE_API_KEY"
         )

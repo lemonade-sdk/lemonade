@@ -86,6 +86,8 @@ Prefer confident statements. Reserve qualifiers for genuine uncertainty.
 6. Response format.
 7. Error notes, if non-obvious.
 
+`docs/tools/gen_api_boilerplate.py` writes this structure for every HTTP route in `docs/api/` from the route's `RouteSpec`, with real requests and recorded responses. Edit the `RouteSpec`, not the generated region; prose between regions stays hand-written.
+
 **Integration guide**
 1. Brief description of what the integration does (one sentence).
 2. Prerequisites.

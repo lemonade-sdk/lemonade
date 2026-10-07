@@ -156,7 +156,7 @@ async function installTauriApi(): Promise<void> {
 
 // Exported so other modules (ServerConfig) can await window.api being ready
 // before reading from it. In pure-web mode the promise resolves immediately
-// (window.api is injected synchronously by the C++ server's HTML template).
+// (src/web-app/mock-api.js installs window.api before the renderer loads).
 export let tauriReady: Promise<void> = Promise.resolve();
 
 if (typeof window !== 'undefined' && isTauri() && !(window as unknown as { api?: unknown }).api) {

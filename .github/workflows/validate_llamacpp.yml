@@ -871,6 +871,30 @@ jobs:
             exit $validationExitCode
           }
 
+      - name: Record the API examples these pins invalidate
+        # The update PR carries examples recorded with the new backend, so the API
+        # reference keeps showing what lemond returns. One leg records them; when it
+        # fails, the PR's API docs check reports the stale examples instead.
+        if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item build\resources\backend_versions.json src\cpp\resources\backend_versions.json -Force
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload recorded API examples
+        if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-examples
+          path: |
+            docs/tools/api_examples_cache.json
+            docs/api/
+          retention-days: 7
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
@@ -908,6 +932,13 @@ jobs:
       needs.verify-release-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
+
+      - name: Download recorded API examples
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: api-examples
+          path: docs
 
       - name: Download validation results
         uses: actions/download-artifact@v7
@@ -1119,7 +1150,8 @@ jobs:
           fi
 
           git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h
+          git add src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h \
+            docs/tools/api_examples_cache.json docs/api
           git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 

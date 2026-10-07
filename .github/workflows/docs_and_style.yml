@@ -34,7 +34,8 @@ jobs:
 
   backend-docs-drift:
     # Server reference docs are generated from live self-describing endpoints.
-    # Build lemond, regenerate, and fail if committed docs are stale.
+    # Build lemond, regenerate, and fail if committed docs are stale. The API
+    # reference check runs no examples, so this hosted runner loads no model.
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
@@ -45,8 +46,8 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v5
-      - name: Install ccache
-        run: sudo apt-get update && sudo apt-get install -y ccache
+      - name: Install ccache and jsonschema
+        run: sudo apt-get update && sudo apt-get install -y ccache python3-jsonschema
       - name: Cache compiler objects
         uses: actions/cache@v5
         with:
@@ -63,6 +64,8 @@ jobs:
         run: python3 docs/tools/gen_backend_boilerplate.py --check
       - name: Check MCP reference docs are up to date
         run: python3 docs/tools/gen_mcp_boilerplate.py --check
+      - name: Check API reference docs and recorded examples are up to date
+        run: python3 docs/tools/gen_api_boilerplate.py --check
 
   pre-commit:
     runs-on: ubuntu-latest

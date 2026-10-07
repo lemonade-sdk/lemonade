@@ -2,14 +2,141 @@
 
 Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
 
-The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only. All traffic flows through a single endpoint:
+The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only. All traffic flows through the single `/mcp` endpoint.
 
-| Endpoint | Status | Notes |
-|----------|--------|-------|
-| `POST /mcp` | Supported | JSON-RPC 2.0 envelope. Accepts a single message or a batch array. |
-| `GET /mcp` | `405 Method Not Allowed` | Server-initiated SSE channel is not supported. |
+<!-- BEGIN GENERATED: mcp.summary -->
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | [`/mcp`](#post-mcp) | Model Context Protocol endpoint |
+| `GET` | [`/mcp`](#get-mcp) | Server-initiated event stream (not supported) |
+<!-- END GENERATED: mcp.summary -->
 
-> **Why a single path?** The MCP specification mandates one endpoint URL per server, so `/mcp` is an intentional exception to Lemonade's quad-prefix convention.
+<!-- BEGIN GENERATED: mcp.rpc -->
+## `POST /mcp`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Serves the Model Context Protocol over JSON-RPC 2.0 (the Streamable HTTP transport, spec `2025-06-18`), so MCP clients can call Lemonade's models as tools.
+
+The MCP specification mandates a single endpoint URL, so `/mcp` has no `/v1` prefix.
+
+The body is one JSON-RPC message or a batch array of them. The reply is `200` with the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `jsonrpc` | Yes | JSON-RPC version: `"2.0"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` | No | Request id, echoed in the reply. Omit it to send a notification, which gets no reply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `method` | Yes | One of the [supported methods](#supported-methods), e.g. `initialize`, `tools/list` or `tools/call`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `params` | No | Method parameters; `tools/call` takes `name` and `arguments`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Response: `Json`
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/mcp" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {"capabilities": {}, "protocolVersion": "2025-06-18"}
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/mcp \
+      -H "Content-Type: application/json" \
+      -d '{
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {"capabilities": {}, "protocolVersion": "2025-06-18"}
+        }'
+    ```
+
+=== "Response"
+
+    `200`
+
+    ```json
+    {
+      "id": 1,
+      "jsonrpc": "2.0",
+      "result": {
+        "capabilities": {"tools": {}},
+        "protocolVersion": "2025-06-18",
+        "serverInfo": {"name": "lemonade-mcp", "version": "2026.43.0~1686.1553ede6"}
+      }
+    }
+    ```
+
+=== "Schema"
+
+    ```json
+    {
+      "description": "One JSON-RPC 2.0 response, or an array of them for a batch.",
+      "type": ["object", "array"],
+      "required": ["jsonrpc", "id"],
+      "properties": {
+        "error": {
+          "description": "A JSON-RPC error, such as -32601 for an unknown method.",
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {"code": {"type": "integer"}, "message": {"type": "string"}}
+        },
+        "id": {"type": ["string", "integer", "null"]},
+        "jsonrpc": {"const": "2.0"},
+        "result": {
+          "description": "The method's result; tool failures arrive here with isError: true.",
+          "type": "object"
+        }
+      }
+    }
+    ```
+
+### Response: `Empty`
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/mcp" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/mcp \
+      -H "Content-Type: application/json" \
+      -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+    ```
+
+=== "Response"
+
+    `202`
+<!-- END GENERATED: mcp.rpc -->
+
+<!-- BEGIN GENERATED: mcp.sse -->
+## `GET /mcp`
+<sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
+
+Not supported: Lemonade opens no server-initiated event stream, so tools return their full result in the `POST /mcp` reply.
+
+Answers `405` with `Allow: POST` and a JSON-RPC `-32600` error.
+
+Requires `LEMONADE_API_KEY` when it is set.
+<!-- END GENERATED: mcp.sse -->
 
 ## Authentication
 

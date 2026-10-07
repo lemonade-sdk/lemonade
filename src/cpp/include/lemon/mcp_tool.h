@@ -60,6 +60,12 @@ public:
         return handler_(arguments);
     }
 
+    // HTTP routes that set RouteSpec::validate_args check their arguments with the same
+    // JSON-Schema subset. Throws std::invalid_argument naming the first mismatch.
+    static void validate(const nlohmann::json& value, const nlohmann::json& schema) {
+        validate_value(value, schema, "$");
+    }
+
 private:
     // Validate the JSON-Schema subset used by the current MCP descriptors.
     // This keeps the advertised contract on tools/list on the actual call path.
