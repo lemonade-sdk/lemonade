@@ -5642,9 +5642,8 @@ void Server::resolve_refine_options(
             }
         }
     }
-    // Forward an explicit request value (true or false) so it overrides the
-    // backend's own recipe-options fallback; recipe-derived values only ever
-    // resolve to true.
+    // Forward an explicit false too, so it beats the backend's own fallback;
+    // see the resolve_refine_options declaration in lemon/server.h.
     if (refine.has_value()) {
         request_json["refine"] = refine.value();
     }

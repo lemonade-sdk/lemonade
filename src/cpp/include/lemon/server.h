@@ -324,10 +324,10 @@ private:
         std::optional<bool>& refine,
         std::optional<std::string>& upscale_model);
 
-    // Auto-upscale response image(s) to upscale_model (resolved beforehand,
-    // e.g. via resolve_refine_options; empty means none). Failed upscales
-    // leave the original image in place. skip_upscale_request suppresses only
-    // recipe/config-derived upscaling; an upscale_model named by the request
+    // Auto-upscale response image(s) to upscale_model (empty means none; see
+    // resolve_refine_options). Failed upscales leave the original image in
+    // place. skip_upscale_request suppresses only recipe/config-derived
+    // upscaling; an upscale_model named by the request
     // (upscale_from_request) still applies. Error responses are untouched.
     void apply_upscale_if_configured(
         const std::string& model_name,
