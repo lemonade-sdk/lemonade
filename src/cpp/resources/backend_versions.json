@@ -45,7 +45,7 @@
       },
       "lemonade-sdk/ryzenai-server": {
         "medusa-v1.0": {
-          "medusa-server.zip": "sha256:c67855a90cc0766938d2d82917ad899da64ed4fcc4685dfc1f9fa511446e0259"
+          "medusa-server.zip": "sha256:daabb9d48bb1c73caad8beabb98b9e1cea244bc24fb064baff3e5db79553aa47"
         }
       },
       "lemonade-sdk/ds4-rocm": {
