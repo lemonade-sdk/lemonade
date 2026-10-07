@@ -14,7 +14,7 @@ If you used an installer from the Lemonade release your `config.json` will be at
   > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), downloaded backends go to `/var/cache/lemonade` (CacheDirectory), and models are cached under `/var/lib/lemonade/.cache/huggingface`. For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
 - **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.config/config.json`
+- **macOS:** `~/.config/lemonade/config.json` (user install) or `/Library/Application Support/lemonade/.config/config.json` (system install)
 
 If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 
@@ -464,6 +464,17 @@ lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-
 - **--port** — Port to serve on (runtime override, does not mutate config.json).
 - **--host** — Address to bind (runtime override, does not mutate config.json).
 - **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
+
+## lemonade-tray CLI (Linux/macOS)
+
+```
+lemonade-tray [--port PORT] [--host HOST] [--spawn-server] [--launch-app] [--silent]
+```
+
+- **--port** / **--host** — Server to connect to. Defaults come from the server's `config.json`.
+- **--spawn-server** — Linux only. If no server is reachable at startup, start a local `lemond` and supervise it; quitting the tray stops that `lemond`. If a server is already running, such as the `systemd` service, the tray connects to it and nothing is spawned. On macOS the flag is accepted but ignored; the LaunchDaemon installed by the macOS package runs `lemond`.
+- **--launch-app** / **--open** — Open the desktop app once the server is ready.
+- **--silent** — Suppress the startup notification.
 
 ## API Key and Security
 

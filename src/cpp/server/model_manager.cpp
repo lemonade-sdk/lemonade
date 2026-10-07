@@ -3903,6 +3903,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                 << "Your system has " << system_ram_gb << " GB.";
             filter_reason = oss.str();
         }
+
+        // Special rule: filter out qwen3.6-moe-35b-a3b-FLM on Windows systems with less than 64 GB RAM
+        if (!filter_out && name == "qwen3.6-moe-35b-a3b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
+            filter_out = true;
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1);
+            oss << "The qwen3.6-moe-35b-a3b-FLM model requires at least 64 GB of RAM. "
+                << "Your system has " << system_ram_gb << " GB.";
+            filter_reason = oss.str();
+        }
 #endif
 
         if (filter_out) {

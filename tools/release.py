@@ -4,8 +4,8 @@
 
 Guards against the classic hand-tagging mistake (picking the wrong patch
 number) by computing the version from the release branch itself using
-``tools/version.py``, then asking for confirmation before it creates a signed
-tag and pushes it.
+``tools/version.py``, then asking for confirmation before it creates an
+annotated tag and pushes it.
 
 Steps:
 
@@ -14,8 +14,8 @@ Steps:
    hotfix on an older branch).
 3. Compute the version from that branch tip via ``tools/version.py``.
 4. Confirm ``Create and push vYYYY.WW.N?`` with the operator.
-5. Create a signed tag on that exact commit and push it, aborting if the branch
-   advanced in the meantime or the tag already exists.
+5. Create an annotated tag on that exact commit and push it, aborting if the
+   branch advanced in the meantime or the tag already exists.
 
 Usage::
 
@@ -82,7 +82,7 @@ def confirm(prompt):
     return reply in ("y", "yes")
 
 
-def create_release(repo, remote, explicit, message, assume_yes, dry_run, sign=True):
+def create_release(repo, remote, explicit, message, assume_yes, dry_run, sign=False):
     fetch(repo, remote)
 
     branch = select_branch(repo, remote, explicit)
@@ -99,8 +99,9 @@ def create_release(repo, remote, explicit, message, assume_yes, dry_run, sign=Tr
     if tag_exists(repo, remote, tag):
         raise RuntimeError(f"tag {tag} already exists")
 
+    tag_kind = "signed" if sign else "annotated"
     if dry_run:
-        print(f"[dry-run] would create and push signed tag {tag} on {sha[:12]}")
+        print(f"[dry-run] would create and push {tag_kind} tag {tag} on {sha[:12]}")
         return
 
     if not assume_yes and not confirm(f"Create and push {tag}?"):
@@ -108,7 +109,16 @@ def create_release(repo, remote, explicit, message, assume_yes, dry_run, sign=Tr
         return
 
     sign_flag = "--sign" if sign else "--annotate"
-    git("tag", sign_flag, "--message", message.format(tag=tag), tag, sha, cwd=repo)
+    try:
+        git("tag", sign_flag, "--message", message.format(tag=tag), tag, sha, cwd=repo)
+    except subprocess.CalledProcessError as error:
+        stderr = error.stderr.strip() if error.stderr else str(error)
+        if sign:
+            raise RuntimeError(
+                f"failed to create signed tag {tag}: {stderr}. "
+                "Configure git tag signing or rerun without --sign."
+            ) from error
+        raise RuntimeError(f"failed to create tag {tag}: {stderr}") from error
     try:
         current = git("rev-parse", ref, cwd=repo)
         if current != sha:
@@ -134,16 +144,11 @@ def main():
     parser.add_argument(
         "--message",
         default="Lemonade {tag}",
-        help="signed tag message ('{tag}' is substituted)",
+        help="tag message ('{tag}' is substituted)",
     )
     parser.add_argument("--yes", action="store_true", help="skip confirmation")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument(
-        "--no-sign",
-        dest="sign",
-        action="store_false",
-        help="create an annotated (unsigned) tag instead of a signed one",
-    )
+    parser.add_argument("--sign", action="store_true", help="create a signed tag")
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parent.parent

@@ -145,7 +145,7 @@ A new capability, a request type with no existing endpoint, is a larger change. 
 | Capability interface `I<Thing>Server` | `src/cpp/include/lemon/server_capabilities.h` |
 | A `ModelType` value and its label mapping | `src/cpp/include/lemon/model_types.h`. Add it to `Router::get_pinned_model_counts` so loaded models of the new type are counted. |
 | Router method that `dynamic_cast`s to your interface and dispatches | `src/cpp/server/router.h`, `src/cpp/server/router.cpp` |
-| Endpoint handler, registered with `register_post` or `register_get` | `src/cpp/server/server.cpp`. One call registers all four `/api/v0`, `/api/v1`, `/v0`, `/v1` prefixes ([invariant 1](../../AGENTS.md)). |
+| Endpoint handler, registered with `register_post` or `register_get` | `src/cpp/server/server.cpp`. One call registers all four `/api/v0`, `/api/v1`, `/v0`, `/v1` prefixes ([invariant 1](https://github.com/lemonade-sdk/lemonade/blob/main/AGENTS.md)). |
 | API documentation | `docs/api/` |
 
 Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-compatible endpoint, add a file alongside `docs/api/llamacpp.md` when you mirror another server's standard, or use `docs/api/lemonade.md` for a Lemonade-specific endpoint. Follow the API reference structure from the [documentation guide](documentation.md): an H2 `METHOD /path` heading, a status badge, a one-sentence description, a parameters table, a curl example, and the response format.

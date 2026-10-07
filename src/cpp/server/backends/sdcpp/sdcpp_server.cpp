@@ -88,7 +88,7 @@ int generate_random_seed() {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "leejet/stable-diffusion.cpp";
+    params.repo = "lemonade-sdk/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform generated sd.cpp versions for asset names:
@@ -142,7 +142,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
     } else if (is_cuda_backend(resolved_backend)) {
-        params.repo = "lemonade-sdk/stable-diffusion.cpp";
         std::string target_arch = SystemInfo::get_cuda_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
