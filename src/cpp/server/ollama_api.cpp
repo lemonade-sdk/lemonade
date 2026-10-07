@@ -492,6 +492,8 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
     // Stream flag is handled by the caller
     openai_req["stream"] = false;
 
+    normalize_thinking_controls(openai_req);
+
     return openai_req;
 }
 
@@ -757,7 +759,6 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
 
         // Convert to OpenAI format
         auto openai_req = convert_ollama_to_openai_chat(request_json);
-        normalize_thinking_controls(openai_req);
 
         bool has_tools = request_json.contains("tools") &&
                          request_json["tools"].is_array() &&
