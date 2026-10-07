@@ -502,7 +502,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title">Settings by source</h5>
             <p className="effective-settings__note">
               <Icon name="info" size={12} />
-              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is the authoritative command reported by the running server.</span>
+              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Backend launch command</strong> below is the authoritative command reported by the running server.</span>
             </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
@@ -588,7 +588,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
           </section>
 
           <section className="effective-settings__section">
-            <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Effective load command</h5>
+            <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Backend launch command</h5>
             {loading && <p className="effective-settings__empty">Resolving…</p>}
             {error && <p className="effective-settings__error">{error}</p>}
             {!loading && !error && launchCommand && (
