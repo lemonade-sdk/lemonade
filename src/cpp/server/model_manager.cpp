@@ -6090,14 +6090,16 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         << repo_download_paths.at(main_repo_id) << std::endl;
 }
 
-static bool repo_has_download_partial(const fs::path& repo_dir) {
+static bool repo_has_unfinished_download(const fs::path& repo_dir) {
     if (!safe_exists(repo_dir)) return false;
     std::error_code ec;
     fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
     if (ec) return true;
     const fs::recursive_directory_iterator end;
     while (it != end) {
-        if (it->path().extension() == ".partial") return true;
+        const fs::path& entry = it->path();
+        if (entry.extension() == ".partial") return true;
+        if (entry.filename() == ".download_manifest.json") return true;
         it.increment(ec);
         if (ec) return true;
     }
@@ -6219,7 +6221,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Check if the main repo is still occupied by another model on disk
     const bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_, true);
-    const bool main_busy = !main_shared && repo_has_download_partial(model_cache_path_fs);
+    const bool main_busy = !main_shared && repo_has_unfinished_download(model_cache_path_fs);
 
     if (!main_shared && !main_busy) {
         // No other model uses this repo - safe to delete the entire directory
@@ -6267,7 +6269,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         std::string cp_cache_dir = get_hf_cache_dir() + "/" + repo_id_to_cache_dir_name(cp_repo, effective_registry_source(info));
         fs::path cp_cache_path = path_from_utf8(cp_cache_dir);
 
-        if (repo_has_download_partial(cp_cache_path)) {
+        if (repo_has_unfinished_download(cp_cache_path)) {
             LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
                         << " (unfinished download in progress)" << std::endl;
             continue;

@@ -68,6 +68,8 @@ int main() {
     // aux-b's main file is here and intact, but its vae checkpoint never arrived.
     // That makes aux-b incomplete as a model while it still owns a file in the repo.
     fs::path aux_repo = make_repo(hf_root, "models--org--aux", {"a.gguf", "b.gguf"});
+    fs::path manifest_repo = make_repo(hf_root, "models--org--manifest", {"a.gguf"});
+    write_file(manifest_repo / "snapshots" / "other" / ".download_manifest.json", "{}");
 
     json user_models = {
         {"solo-a", json{{"checkpoint", "org/solo:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -80,6 +82,8 @@ int main() {
         {"aux-b", json{{"checkpoints", json{{"main", "org/aux:b.gguf"},
                                             {"vae", "org/aux:never-downloaded-vae.bin"}}},
                        {"recipe", "llamacpp"}}},
+        {"manifest-a", json{{"checkpoint", "org/manifest:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"manifest-b", json{{"checkpoint", "org/manifest:b.gguf"}, {"recipe", "llamacpp"}}},
     };
     write_file(temp / "user_models.json", user_models.dump(2));
 
@@ -120,6 +124,14 @@ int main() {
               fs::exists(aux_repo / "snapshots" / "snap" / "b.gguf"));
         check("deleted model's own file is removed from the aux repo",
               !fs::exists(aux_repo / "snapshots" / "snap" / "a.gguf"));
+
+        // No .partial is left here. The manifest is the only evidence that a
+        // download stopped part way, and it has to be enough on its own.
+        manager.delete_model("user.manifest-a");
+        check("manifest without a partial keeps the repo alive",
+              fs::exists(manifest_repo));
+        check("download manifest is preserved",
+              fs::exists(manifest_repo / "snapshots" / "other" / ".download_manifest.json"));
     }
 
     std::error_code ec;
