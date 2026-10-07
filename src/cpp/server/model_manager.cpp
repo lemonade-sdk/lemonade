@@ -82,7 +82,7 @@ static void ensure_create_directories(const fs::path& p) {
     size_t start = 0;
     const std::wstring ext_prefix = L"\\\\?\\";
     if (wpath.compare(0, ext_prefix.size(), ext_prefix) == 0) {
-        start = ext_prefix.size();            // skip \\?\
+        start = ext_prefix.size();            // skip the extended-length prefix
     }
     // Skip the drive letter + colon (C:) and any leading backslash after it.
     if (wpath.size() >= start + 2 && wpath[start + 1] == L':') {
