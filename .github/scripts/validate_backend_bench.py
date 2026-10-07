@@ -490,18 +490,35 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
 
 
 def annotate_tg_pp(data: dict) -> None:
-    """Annotate each scenario with peak TG (tps.max) and PP (input_tokens/ttft.min)."""
+    """Annotate each scenario with peak TG and PP, normalised to scalar fields.
+
+    After PR #3759, bench.cpp emits pp_tps as a stats block {mean,min,max,p50,p95}
+    using prompt_per_second (llama.cpp's own prefill rate — accurate even on short
+    prompts). We promote pp_tps.max as the canonical scalar pp_tps for the
+    leaderboard. For legacy run files that predate the PR, fall back to deriving PP
+    from input_tokens/ttft.min (the old workaround — only meaningful at large
+    context). TG = tps.max (peak decode, unchanged).
+    """
     for br in backend_results(data):
         for sc in br.get("scenarios", []):
             tps = sc.get("tps", {})
             tg = tps.get("max", tps.get("mean"))
             if tg is not None:
                 sc["tg_tps"] = round(tg, 2)
-            in_tok = sc.get("input_tokens")
-            ttft = sc.get("ttft_ms", {})
-            best_ttft = ttft.get("min", ttft.get("mean", 0))
-            if in_tok and best_ttft and best_ttft > 0:
-                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
+            # Native pp_tps from PR #3759: emitted as a stats block.
+            native_pp = sc.get("pp_tps")
+            if isinstance(native_pp, dict):
+                # Use max (best-of) from the native distribution.
+                pp_val = native_pp.get("max", native_pp.get("mean"))
+                if pp_val and pp_val > 0:
+                    sc["pp_tps"] = round(pp_val, 2)
+            elif not native_pp:
+                # Legacy fallback: derive from input_tokens / fastest TTFT.
+                in_tok = sc.get("input_tokens")
+                ttft = sc.get("ttft_ms", {})
+                best_ttft = ttft.get("min", ttft.get("mean", 0))
+                if in_tok and best_ttft and best_ttft > 0:
+                    sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
 
 
 def check_regression(

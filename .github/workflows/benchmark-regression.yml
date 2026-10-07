@@ -608,6 +608,22 @@ jobs:
             gpu_name = gpu[0].get("name") if gpu and isinstance(gpu[0], dict) else None
             return "|".join(str(x) for x in (hw.get("cpu"), gpu_name, hw.get("ram_gb"), hw.get("os")))
 
+          def resolve_pp(sc, in_tok, best_ttft):
+            # After PR #3759 bench emits pp_tps as {mean,min,max,p50,p95} using
+            # prompt_per_second — exact prefill rate, accurate on short prompts.
+            # Promote max (best-of) as the leaderboard scalar.
+            # Legacy run files emit pp_tps as a scalar (driver-derived workaround).
+            # Older files have no pp_tps; fall back to input_tokens/ttft.
+            raw = sc.get("pp_tps")
+            if isinstance(raw, dict):
+              v = raw.get("max", raw.get("mean"))
+              return round(v, 2) if v and v > 0 else None
+            if raw and isinstance(raw, (int, float)) and raw > 0:
+              return round(raw, 2)
+            if in_tok and best_ttft and best_ttft > 0:
+              return round(in_tok * 1000.0 / best_ttft, 2)
+            return None
+
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
           for run_file in sorted(results_dir.rglob("run-*.json")):
@@ -654,9 +670,7 @@ jobs:
                   tg_tps = sc.get("tg_tps")
                   if tg_tps is None:
                     tg_tps = round(tps_block.get("max", tps_block.get("mean", 0)), 2)
-                  pp_tps = sc.get("pp_tps")
-                  if pp_tps is None and in_tok and best_ttft and best_ttft > 0:
-                    pp_tps = round(in_tok * 1000.0 / best_ttft, 2)
+                  pp_tps = resolve_pp(sc, in_tok, best_ttft)
                   key = f"{model}|{sc['name']}"
                   entry = {
                     "model": model, "scenario": sc["name"],
@@ -715,9 +729,7 @@ jobs:
                   tg_tps = sc.get("tg_tps")
                   if tg_tps is None:
                     tg_tps = round(tps_block.get("max", tps_block.get("mean", 0)), 2)
-                  pp_tps = sc.get("pp_tps")
-                  if pp_tps is None and in_tok and best_ttft and best_ttft > 0:
-                    pp_tps = round(in_tok * 1000.0 / best_ttft, 2)
+                  pp_tps = resolve_pp(sc, in_tok, best_ttft)
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
