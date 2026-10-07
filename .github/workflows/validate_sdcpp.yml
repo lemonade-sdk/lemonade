@@ -212,7 +212,9 @@ jobs:
             {"label":"cpu","backend":"cpu","channel":"",
              "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
             {"label":"vulkan","backend":"vulkan","channel":"",
-             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]}
+             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
+            {"label":"rocm-stable","backend":"rocm","channel":"stable",
+             "runner":["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]}
           ]'
 
           # cpp_server_build_test_release.yml already exercises sd-cpp on CPU
@@ -405,7 +407,8 @@ jobs:
               "--seed", "${{ env.SDCPP_TEST_SEED }}",
               "--warmup",
               "--output", "sdcpp_validation_$label.json",
-              "--images-dir", "sdcpp-images-$label"
+              "--images-dir", "sdcpp-images-$label",
+              "--logs-dir", $logsDir
             )
             foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
               $model = $model.Trim()
@@ -711,12 +714,29 @@ jobs:
               --head "$BRANCH"
           fi
 
+  gpu-offload-gate:
+    name: GPU offload gate
+    needs: validate
+    if: always() && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: sdcpp-validation-*
+          merge-multiple: true
+
+      - name: Enforce GPU offload
+        run: python3 .github/scripts/check_gpu_offload.py 'sdcpp_validation_*.json'
+
   # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
   # successfully (otherwise the merge is blocked), and 2. these jobs do not need
   # to run on ordinary pull request pushes.
   validation-gate:
     name: stable-diffusion.cpp validation
-    needs: [discover-release, build, validate, verify-cuda-assets]
+    needs: [discover-release, build, validate, verify-cuda-assets, gpu-offload-gate]
     if: always()
     runs-on: ubuntu-latest
     steps:

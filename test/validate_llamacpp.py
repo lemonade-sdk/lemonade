@@ -3,10 +3,19 @@
 Validate a llama.cpp backend release against all "hot" llamacpp models.
 
 Usage:
-    python test/validate_llamacpp.py --backend vulkan
-    python test/validate_llamacpp.py --backend rocm
+    python test/validate_llamacpp.py --backend cpu
+    python test/validate_llamacpp.py --backend vulkan --logs-dir <dir>
+    python test/validate_llamacpp.py --backend rocm --channel stable --logs-dir <dir>
 
-This script expects `lemond` to already be running on the target port.
+This script expects `lemond` to already be running on the target port, in debug
+mode (env `LEMONADE_CI_MODE=1`, or `log_level=debug`), with its stdout and stderr
+saved as `lemond.stdout.log` / `lemond.stderr.log` inside `--logs-dir`.
+
+GPU backends (vulkan, rocm, cuda, metal) REQUIRE `--logs-dir`: the per-model GPU
+offload check scans those logs for llama-server's device lines (which lemond
+captures and re-emits to its stdout), and the script exits 1 if the flag is
+unset or no log file is found. Debug mode is required so the device lines,
+raised to verbosity `-lv 4`, are actually emitted.
 
 This script:
 1. Queries `/api/v1/models?show_all=true` and selects models with recipe
@@ -21,12 +30,18 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
 
 import requests
 
+from utils.gpu_offload import (
+    GPU_LOG_FILENAMES,
+    gpu_offload_confirmed,
+    read_new_log_text,
+)
 from utils.server_base import _auth_headers, unload_all_models, wait_for_server
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
@@ -35,6 +50,31 @@ TIMEOUT_INFERENCE = 1800  # 30 minutes; large models may need 60+ GB download
 CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
 ]
+
+# Raise llama-server log verbosity to atleast -lv 4 so the device-selection lines are emitted.
+LOAD_VERBOSITY_ARGS = "-lv 4"
+
+# Token that must appear in the llama-server device log when a GPU backend
+# actually runs on the GPU. Absence signals a silent CPU fallback.
+GPU_DEVICE_TOKENS = {
+    "vulkan": "Vulkan",
+    "rocm": "ROCm",
+    "cuda": "CUDA",
+    "metal": "Metal",
+}
+
+
+def gpu_offload_patterns(gpu_token):
+    """Device/offload lines that confirm llama-server placed work on the GPU.
+
+    Either the device-selection line ("using device ROCm0") or
+    a layer-offload line with a non-zero count (e.g., "offloaded 33/33 layers to GPU").
+    Partial offload is acceptable.
+    """
+    return (
+        re.compile(rf"using device {re.escape(gpu_token)}"),
+        re.compile(r"offloaded\s+[1-9]\d*/\d+\s+layers to GPU"),
+    )
 
 
 def collect_server_logs(output_dir):
@@ -172,7 +212,11 @@ def test_model(base_url, model_name, backend, max_tokens=50):
             "POST",
             f"{base_url}/load",
             timeout=TIMEOUT_INFERENCE,
-            json={"model_name": model_name, "llamacpp_backend": backend},
+            json={
+                "model_name": model_name,
+                "llamacpp_backend": backend,
+                "llamacpp_args": LOAD_VERBOSITY_ARGS,
+            },
         )
         if load_resp.status_code != 200:
             return (
@@ -292,7 +336,11 @@ def main():
     parser.add_argument(
         "--logs-dir",
         default=None,
-        help="Directory to collect server log files into (for CI artifact upload)",
+        help=(
+            "Directory (NOT a file path) where lemond's captured logs are saved as lemond.stdout.log and lemond.stderr.log."
+            "REQUIRED for GPU backends: vulkan, rocm, cuda, metal. "
+            "The GPU-offload check scans those logs and the script exits 1 if this is unset or no log file is found there."
+        ),
     )
     parser.add_argument(
         "--lite",
@@ -341,6 +389,45 @@ def main():
 
     results = []
     all_passed = True
+    gpu_token = GPU_DEVICE_TOKENS.get(args.backend)
+    gpu_patterns = gpu_offload_patterns(gpu_token) if gpu_token else None
+    # llama-server's device lines are captured by lemond and re-emitted through
+    # lemond's own logger, which writes to stdout. stderr is read too as a fallback.
+    gpu_log_paths = (
+        [os.path.join(args.logs_dir, name) for name in GPU_LOG_FILENAMES]
+        if args.logs_dir
+        else []
+    )
+    log_offsets = {path: 0 for path in gpu_log_paths}
+    if gpu_token:
+        if not args.logs_dir:
+            print(
+                f"ERROR: '{args.backend}' runs on the GPU, so --logs-dir is required "
+                "to verify GPU offload.\n"
+                f"Pass the DIRECTORY that holds lemond's captured logs.\n"
+                "Make sure to start lemond in debug mode (set env LEMONADE_CI_MODE=1, or log_level=debug) "
+                "with its output (stdout/stderr) saved into that directory, e.g.:\n"
+                f"  lemond <cache_dir> --port {args.port} "
+                "1><dir>/lemond.stdout.log 2><dir>/lemond.stderr.log\n"
+                "Then re-run this script with: --logs-dir <dir>",
+                file=sys.stderr,
+                flush=True,
+            )
+            sys.exit(1)
+        if not any(os.path.isfile(path) for path in gpu_log_paths):
+            joined = " or ".join(os.path.basename(p) for p in gpu_log_paths)
+            print(
+                f"ERROR: --logs-dir is '{args.logs_dir}' but no {joined} was found "
+                "there, so GPU offload cannot be verified.\n"
+                f"Start lemond in debug mode (set env LEMONADE_CI_MODE=1, or "
+                "log_level=debug) with its stdout/stderr saved into that directory, e.g.:\n"
+                f"  lemond <cache_dir> --port {args.port} "
+                f'1>{os.path.join(args.logs_dir, "lemond.stdout.log")} '
+                f'2>{os.path.join(args.logs_dir, "lemond.stderr.log")}',
+                file=sys.stderr,
+                flush=True,
+            )
+            sys.exit(1)
     try:
         for model in hot_models:
             model_name = model["id"]
@@ -348,9 +435,21 @@ def main():
             success, response_text, stats = test_model(
                 base_url, model_name, args.backend
             )
+            gpu_status = "N/A"
+            if gpu_patterns is not None:
+                log_chunk = ""
+                for path in gpu_log_paths:
+                    chunk, log_offsets[path] = read_new_log_text(
+                        path, log_offsets[path]
+                    )
+                    log_chunk += chunk
+                gpu_status = (
+                    "PASS" if gpu_offload_confirmed(log_chunk, gpu_patterns) else "FAIL"
+                )
             result = {
                 "model": model_name,
                 "pass": success,
+                "gpu": gpu_status,
                 "response": response_text,
                 "input_tokens": stats.get("input_tokens", "N/A"),
                 "output_tokens": stats.get("output_tokens", "N/A"),
@@ -359,7 +458,15 @@ def main():
             }
             results.append(result)
             status = "PASS" if success else "FAIL"
-            print(f"  Result: {status}", flush=True)
+            print(f"  Inference: {status}  GPU Offload: {gpu_status}", flush=True)
+            if gpu_status == "FAIL":
+                print(
+                    f"  [WARN] {model_name} on {label}: requested backend "
+                    f"'{args.backend}' but no GPU device banner appeared in the "
+                    "server logs for this model (possible silent CPU fallback).",
+                    file=sys.stderr,
+                    flush=True,
+                )
             if not success:
                 all_passed = False
                 print(f"  Error: {response_text}", flush=True)
