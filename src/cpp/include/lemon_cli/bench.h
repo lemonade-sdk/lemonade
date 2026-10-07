@@ -34,6 +34,7 @@ struct BenchScenario {
 
 struct BenchRunResult {
     double ttft_ms = 0.0;
+    double pp_tps = 0.0;        // Prefill throughput (prompt tokens / TTFT)
     double tps = 0.0;
     int input_tokens = 0;
     int output_tokens = 0;
@@ -56,6 +57,11 @@ struct BenchScenarioResult {
     double ttft_max_ms() const;
     double ttft_p50_ms() const;
     double ttft_p95_ms() const;
+    double pp_tps_mean() const;
+    double pp_tps_min() const;
+    double pp_tps_max() const;
+    double pp_tps_p50() const;
+    double pp_tps_p95() const;
     double tps_mean() const;
     double tps_min() const;
     double tps_max() const;
