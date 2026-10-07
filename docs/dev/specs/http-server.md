@@ -1,4 +1,4 @@
-# Server Architecture Spec
+# HTTP Server Spec
 
 - [Summary](#summary)
 - [Scope](#scope)
