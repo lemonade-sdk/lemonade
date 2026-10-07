@@ -62,6 +62,7 @@ import {
   saveLastReadyModelName,
   savePreferredDefaultModelName,
 } from '../features/chatDefaultModels';
+import { activateConversationModel, releaseConversationModel } from '../features/chatModelOverride';
 import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
@@ -2153,6 +2154,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (activeId && !conversations.some(c => c.id === activeId)) {
       setActiveId(null);
+      setFallbackModelOverride(null);
     }
   }, [activeId, conversations]);
 
@@ -2188,6 +2190,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const handleNewChat = useCallback(() => {
     setShowLoadedOverview(true);
     setActiveId(null);
+    setFallbackModelOverride(null);
     inputRef.current?.focus();
   }, []);
 
@@ -2195,17 +2198,14 @@ const ChatView: React.FC<ChatViewProps> = ({
   // app-level selection leaks across conversations and an old thread silently
   // continues on whatever model was picked last.
   const applyConversationModel = useCallback((convoModel: string | undefined) => {
-    if (!convoModel || convoModel === currentModel) return;
-    if (loadedModels.some(m => m.model_name.toLowerCase() === convoModel.toLowerCase())) {
-      setFallbackModelOverride(null);
-      onModelSelect(convoModel);
-    } else {
-      // Not loaded: show it now, let the send path's ensureChatModelReady load it.
-      // The override also outranks App's "pick a loaded model" effect, which would
-      // otherwise snap the selection back to whatever happens to be resident.
-      setFallbackModelOverride(convoModel);
-    }
-  }, [currentModel, loadedModels, onModelSelect]);
+    const { override, select } = activateConversationModel(fallbackModelOverride, {
+      model: convoModel,
+      currentModel,
+      loaded: !!convoModel && loadedModels.some(m => m.model_name.toLowerCase() === convoModel.toLowerCase()),
+    });
+    setFallbackModelOverride(override);
+    if (select) onModelSelect(select);
+  }, [currentModel, fallbackModelOverride, loadedModels, onModelSelect]);
 
   // Restoring the active conversation from storage sets activeId directly rather
   // than going through handleSelectConversation, so the model needs restoring too.
@@ -2232,7 +2232,9 @@ const ChatView: React.FC<ChatViewProps> = ({
     streaming.stop(id);
     delete streamModelsRef.current[id];
     setConversations(prev => prev.filter(c => c.id !== id));
-    if (activeId === id) setActiveId(null);
+    const wasActive = activeId === id;
+    if (wasActive) setActiveId(null);
+    setFallbackModelOverride(prev => releaseConversationModel(prev, wasActive));
   }, [activeId, streaming.stop]);
 
 
