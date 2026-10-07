@@ -451,7 +451,6 @@ class OllamaTests(ServerTestBase):
     ):
         """Test think:false controls reach the backend after a tool response."""
         from http.server import BaseHTTPRequestHandler, HTTPServer
-        import socket
         import threading
 
         captured = {}
@@ -503,11 +502,10 @@ class OllamaTests(ServerTestBase):
             def log_message(self, *_args):
                 pass
 
-        httpd = HTTPServer(("0.0.0.0", 0), FakeProvider)
+        httpd = HTTPServer(("127.0.0.1", 0), FakeProvider)
         provider_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         provider_thread.start()
-        provider_host = socket.gethostbyname(socket.gethostname())
-        base_url = f"http://{provider_host}:{httpd.server_address[1]}/v1"
+        base_url = f"http://127.0.0.1:{httpd.server_address[1]}/v1"
         public_model = f"{provider}.{upstream_id}"
 
         try:
