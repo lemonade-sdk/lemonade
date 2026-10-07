@@ -734,16 +734,22 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_022_loaded_upscale_option_applies_without_save(self):
         """upscale_model passed at /load (no save_options) auto-upscales generations."""
-        resp = load_model(SD_MODEL, upscale_model=ESRGAN_MODEL)
-        self.assertEqual(
-            resp.status_code, 200, f"Load with upscale_model failed: {resp.text}"
-        )
-        try:
-            saved = get_model_options(SD_MODEL)["saved"]
-            self.assertNotIn(
-                "upscale_model",
-                saved,
-                "A load without save_options must not persist upscale_model",
+        with model_recipe_options(SD_MODEL, steps=2):
+            saved_before = get_model_options(SD_MODEL)["saved"]
+            self.assertTrue(
+                saved_before,
+                "Test precondition: the model should have saved options on file",
+            )
+
+            resp = load_model(SD_MODEL, upscale_model=ESRGAN_MODEL)
+            self.assertEqual(
+                resp.status_code, 200, f"Load with upscale_model failed: {resp.text}"
+            )
+
+            self.assertEqual(
+                get_model_options(SD_MODEL)["saved"],
+                saved_before,
+                "A load without save_options must not change the saved options",
             )
 
             item = self._generate()
@@ -766,8 +772,6 @@ class StableDiffusionTests(ServerTestBase):
                 "Response height field should match the returned PNG",
             )
             print(f"[OK] Loaded-only upscale_model option applied ({width}px wide)")
-        finally:
-            unload_model(SD_MODEL)
 
     def test_023_explicit_empty_upscale_model_clears_loaded_option(self):
         """upscale_model: '' in the request disables a loaded upscale_model option."""
