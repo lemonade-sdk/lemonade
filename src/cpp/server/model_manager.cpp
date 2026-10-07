@@ -373,16 +373,17 @@ static bool is_repo_shared(const std::string& repo_id,
                            const std::string& registry_source,
                            const std::string& exclude_model,
                            const std::map<std::string, ModelInfo>& cache,
-                           bool require_downloaded = false) {
+                           bool require_files_on_disk = false) {
     const std::string normalized_source = remote_registry_source_name(
         parse_remote_registry_source(registry_source));
     for (const auto& [name, info] : cache) {
         if (name == exclude_model || !info.source.empty()) continue;
-        if (require_downloaded && !info.downloaded) continue;
         if (effective_registry_source(info) != normalized_source) continue;
         for (const auto& [type, cp] : info.checkpoints) {
-            (void)type;
-            if (checkpoint_to_repo_id(cp) == repo_id) return true;
+            if (checkpoint_to_repo_id(cp) != repo_id) continue;
+            if (!require_files_on_disk) return true;
+            const std::string rpath = info.resolved_path(type);
+            if (!rpath.empty() && safe_exists(path_from_utf8(rpath))) return true;
         }
     }
     return false;
@@ -6090,11 +6091,15 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 }
 
 static bool repo_has_download_partial(const fs::path& repo_dir) {
+    if (!safe_exists(repo_dir)) return false;
     std::error_code ec;
     fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
-    if (ec) return false;
-    for (const auto& entry : it) {
-        if (entry.path().extension() == ".partial") return true;
+    if (ec) return true;
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        if (it->path().extension() == ".partial") return true;
+        it.increment(ec);
+        if (ec) return true;
     }
     return false;
 }

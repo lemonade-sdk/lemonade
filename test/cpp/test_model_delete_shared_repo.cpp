@@ -65,6 +65,9 @@ int main() {
     fs::path both_repo = make_repo(hf_root, "models--org--both", {"a.gguf", "b.gguf"});
     fs::path partial_repo = make_repo(hf_root, "models--org--partial", {"a.gguf"});
     write_file(partial_repo / "snapshots" / "snap" / "b.gguf.partial", "partial");
+    // aux-b's main file is here and intact, but its vae checkpoint never arrived.
+    // That makes aux-b incomplete as a model while it still owns a file in the repo.
+    fs::path aux_repo = make_repo(hf_root, "models--org--aux", {"a.gguf", "b.gguf"});
 
     json user_models = {
         {"solo-a", json{{"checkpoint", "org/solo:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -73,6 +76,10 @@ int main() {
         {"both-b", json{{"checkpoint", "org/both:b.gguf"}, {"recipe", "llamacpp"}}},
         {"partial-a", json{{"checkpoint", "org/partial:a.gguf"}, {"recipe", "llamacpp"}}},
         {"partial-b", json{{"checkpoint", "org/partial:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"aux-a", json{{"checkpoint", "org/aux:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"aux-b", json{{"checkpoints", json{{"main", "org/aux:b.gguf"},
+                                            {"vae", "org/aux:never-downloaded-vae.bin"}}},
+                       {"recipe", "llamacpp"}}},
     };
     write_file(temp / "user_models.json", user_models.dump(2));
 
@@ -102,6 +109,17 @@ int main() {
               fs::exists(partial_repo));
         check("resumable partial is preserved",
               fs::exists(partial_repo / "snapshots" / "snap" / "b.gguf.partial"));
+
+        // aux-b counts as incomplete because its vae is missing, but the file it
+        // owns in this repo is real. A model-wide "is it downloaded" test skips
+        // aux-b here and takes its main file with the repo.
+        manager.delete_model("user.aux-a");
+        check("incomplete sibling still holding a file keeps the repo alive",
+              fs::exists(aux_repo));
+        check("incomplete sibling's intact main file is preserved",
+              fs::exists(aux_repo / "snapshots" / "snap" / "b.gguf"));
+        check("deleted model's own file is removed from the aux repo",
+              !fs::exists(aux_repo / "snapshots" / "snap" / "a.gguf"));
     }
 
     std::error_code ec;
