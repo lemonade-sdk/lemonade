@@ -2910,14 +2910,14 @@
         "checkpoint": "amd/gemma-4-e2b-it-mobius-int4_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "vision", "chat-transcription"],
+        "labels": ["chat", "vision"],
         "size": 2.5
     },
     "gemma-4-e4b-it-Medusa-NPU": {
         "checkpoint": "amd/gemma-4-e4b-it-mobius-int4_rai_1.8.0_medusa_1.0_npu",
         "recipe": "ryzenai-llm-medusa",
         "suggested": true,
-        "labels": ["chat", "vision", "chat-transcription"],
+        "labels": ["chat", "vision"],
         "size": 4.5
     },
     "granite-4.1-8b-Medusa-NPU": {
