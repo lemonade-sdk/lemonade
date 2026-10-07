@@ -715,7 +715,6 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `skip_implicit_upscaling` | No | Boolean. If `true`, skip the auto-upscale derived from the model-level `upscale_model` recipe option. Does not affect an `upscale_model` passed in the same request. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `upscale_model`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation. An explicit `false` overrides a model-level `refine: true`. Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale_model` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `upscale_model` recipe option. Pass an empty string to explicitly disable the model-level option. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Requires a configured `thenoise.upscaler_dir` to work. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -777,7 +776,6 @@ Image Variations API. You provide a source image and receive a variation of it.
 | `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `skip_implicit_upscaling` | No | Boolean. If `true`, skip the auto-upscale derived from the model-level `upscale_model` recipe option. Does not affect an `upscale_model` passed in the same request. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `upscale_model`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation. An explicit `false` overrides a model-level `refine: true`. Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `upscale_model` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `upscale_model` recipe option. Pass an empty string to explicitly disable the model-level option. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pixel_upscaler` | No | `thenoise` models only. Passed through to the backend untouched for native upscaling during generation. Requires a configured `thenoise.upscaler_dir` to work. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -941,9 +939,9 @@ A typical workflow is to generate an image first, then upscale it:
 | Status Code | Condition | Example |
 |-------------|-----------|---------|
 | 400 | Missing `image` field | `{"error": {"message": "Missing 'image' field (base64 encoded)", "type": "invalid_request_error"}}` |
-| 400 | Missing `model` field | `{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}` |
+| 400 | Missing `model` field | `{"error": {"message": "Missing 'model' (or 'upscale_model') field", "type": "invalid_request_error"}}` |
 | 404 | Unknown model name | `{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}` |
-| 500 | Upscale failed | `{"error": {"message": "ESRGAN upscale failed", "type": "server_error"}}` |
+| 500 | Upscale failed | `{"error": {"message": "Upscale failed", "type": "server_error"}}` |
 
 ---
 

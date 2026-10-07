@@ -392,11 +392,11 @@ This file contains a JSON object where each key is a model name and each value d
 | `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
-| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
+| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `thenoise`, `collection.omni`. |
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
-| `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
+| `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` and `thenoise` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -467,12 +467,16 @@ For `sd-cpp` and `thenoise` recipe models, you can specify default image generat
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
-            "height": 512,
+            "height": 512
+        },
+        "recipe_options": {
             "upscale_model": "RealESRGAN-x4plus"
         }
     }
 }
 ```
+
+`upscale_model` is a recipe option, not an image default — it must live in `recipe_options` for the server to apply it.
 
 ### Model naming
 

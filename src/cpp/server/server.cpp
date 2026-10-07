@@ -5199,6 +5199,25 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
+        if (request_json.contains("refine") && !request_json["refine"].is_boolean()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Field 'refine' must be a boolean"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (request_json.contains("upscale_model") && !request_json["upscale_model"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Field 'upscale_model' must be a string"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         std::optional<bool> refine;
         if (request_json.contains("refine") && request_json["refine"].is_boolean()) {
             refine = request_json["refine"].get<bool>();
@@ -5701,14 +5720,26 @@ std::optional<std::string> Server::do_upscale(
     ModelInfo info;
     try {
         info = model_manager_->get_model_info(upscale_model_name);
-        if (!lemon::has_label(info.labels, "upscaling")) {
-            if (res) {
-                res->status = 400;
-                nlohmann::json error = {{"error", {{"message", "Upscale model is not labeled 'upscaling': " + upscale_model_name}, {"type", "invalid_request_error"}}}};
-                res->set_content(error.dump(), "application/json");
-            }
-            return std::nullopt;
+    } catch (const std::exception& e) {
+        if (res) {
+            res->status = 404;
+            nlohmann::json error = {{"error", {{"message", "Upscale model not found: " + upscale_model_name}, {"type", "invalid_request_error"}}}};
+            res->set_content(error.dump(), "application/json");
         }
+        return std::nullopt;
+    }
+    if (!lemon::has_label(info.labels, "upscaling")) {
+        if (res) {
+            res->status = 400;
+            nlohmann::json error = {{"error", {{"message", "Upscale model is not labeled 'upscaling': " + upscale_model_name}, {"type", "invalid_request_error"}}}};
+            res->set_content(error.dump(), "application/json");
+        }
+        return std::nullopt;
+    }
+    try {
+        // A registered but undownloaded upscaling model is downloaded here, on
+        // the request thread — reachable by any client that can post to
+        // /images/upscale.
         if (!model_manager_->is_model_downloaded(upscale_model_name)) {
             LOG(INFO, "Server") << "Upscale model not cached, downloading..." << std::endl;
             model_manager_->download_registered_model(info, true);
@@ -5718,8 +5749,8 @@ std::optional<std::string> Server::do_upscale(
         recipe = info.recipe;
     } catch (const std::exception& e) {
         if (res) {
-            res->status = 404;
-            nlohmann::json error = {{"error", {{"message", "Upscale model not found: " + upscale_model_name}, {"type", "invalid_request_error"}}}};
+            res->status = 500;
+            nlohmann::json error = {{"error", {{"message", std::string("Upscale model setup failed: ") + e.what()}, {"type", "server_error"}}}};
             res->set_content(error.dump(), "application/json");
         }
         return std::nullopt;
