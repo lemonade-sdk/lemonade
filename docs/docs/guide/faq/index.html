@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/faq/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/guide/faq/">
       
       
         <link rel="prev" href="../telemetry/">
@@ -1714,6 +1714,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -3541,21 +3569,21 @@
 </ul>
 <h3 id="2-what-are-the-use-cases-for-different-audiences">2. <strong>What are the use cases for different audiences?</strong></h3>
 <ul>
-<li><strong>LLM Enthusiasts</strong>: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed <a href="https://lemonade-server.ai/docs/server/apps/">here</a>.</li>
-<li><strong>Developers</strong>: Integrate LLMs into apps using standard APIs with no device-specific code. See the <a href="https://lemonade-server.ai/docs/server/server_integration/">Server Integration Guide</a>.</li>
+<li><strong>LLM Enthusiasts</strong>: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed <a href="../../integrations/">here</a>.</li>
+<li><strong>Developers</strong>: Integrate LLMs into apps using standard APIs with no device-specific code. See the <a href="../../api/">Server Integration Guide</a>.</li>
 <li><strong>Agent Developers</strong>: Use <a href="https://github.com/amd/gaia">GAIA</a> to quickly develop local-first agents.</li>
 </ul>
 <h2 id="installation-compatibility">Installation &amp; Compatibility</h2>
 <h3 id="1-how-do-i-install-lemonade-sdk-or-server">1. <strong>How do I install Lemonade SDK or Server?</strong></h3>
-<p>Visit https://lemonade-server.ai/docs/guide/install/ and click the options that apply to you.</p>
+<p>Visit the <a href=".././install/">installation guide</a> and click the options that apply to you.</p>
 <h3 id="2-which-devices-are-supported">2. <strong>Which devices are supported?</strong></h3>
 <p>👉 <a href="https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations">Supported Configurations</a></p>
 <p>For more information on AMD Ryzen AI NPU Support, see the section <a href="#hybrid-and-npu-questions">Hybrid/NPU</a>.</p>
 <h3 id="3-is-linux-supported-what-about-macos">3. <strong>Is Linux supported? What about macOS?</strong></h3>
 <p>Yes, both Linux and macOS are supported!</p>
 <ul>
-<li><strong>Linux</strong>: Visit https://lemonade-server.ai/docs/guide/install/ for installation instructions.</li>
-<li><strong>macOS</strong>: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/docs/guide/install/ to download. macOS support uses the llama.cpp backend with Metal acceleration.</li>
+<li><strong>Linux</strong>: Visit the <a href=".././install/">installation guide</a> for installation instructions.</li>
+<li><strong>macOS</strong>: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit the <a href=".././install/">installation guide</a> to download. macOS support uses the llama.cpp backend with Metal acceleration.</li>
 </ul>
 <p>Visit the <a href="https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations">Supported Configurations</a> section to see the support matrix for CPU, GPU, and NPU.</p>
 <h3 id="4-how-do-i-uninstall-lemonade-server-windows">4. <strong>How do I uninstall Lemonade Server? (Windows)</strong></h3>
@@ -3591,7 +3619,7 @@
 <h3 id="2-what-models-are-supported">2. <strong>What models are supported?</strong></h3>
 <p>Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the <code>pull</code> command on the CLI.</p>
 <p>👉 <a href="https://lemonade-server.ai/models.html">Supported Models List</a>
-   👉 <a href="https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull">pull command</a></p>
+   👉 <a href=".././cli/#options-for-pull">pull command</a></p>
 <h3 id="3-how-do-i-know-what-size-model-will-work-with-my-setup">3. <strong>How do I know what size model will work with my setup?</strong></h3>
 <p>Model compatibility depends on your system's RAM, VRAM, and NPU availability. <strong>The actual file size varies significantly between models</strong> due to different quantization techniques and architectures.</p>
 <p><strong>To check if a model will work:</strong>
@@ -3603,7 +3631,7 @@
 <p>If a model isn't listed, it may not be compatible with your PC due to device or RAM limitations, or we just haven't added it to the <code>server_models.json</code> file yet.</p>
 <p>You can:</p>
 <ul>
-<li>Add a custom model manually via the app's "Add a Model" interface or the <a href="https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull">CLI pull command</a>. For advanced manual configuration, see the <a href="https://lemonade-server.ai/docs/server/custom-models/">Custom Model Configuration Guide</a>.</li>
+<li>Add a custom model manually via the app's "Add a Model" interface or the <a href=".././cli/#options-for-pull">CLI pull command</a>. For advanced manual configuration, see the <a href=".././configuration/custom-models/">Custom Model Configuration Guide</a>.</li>
 <li>Use a pull request to add the model to the built-in <code>server_models.json</code> file.</li>
 <li>Request support by opening a <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub issue</a>.</li>
 </ul>

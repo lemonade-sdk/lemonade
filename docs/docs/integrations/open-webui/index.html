@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/integrations/open-webui/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/integrations/open-webui/">
       
       
         <link rel="prev" href="../open-hands/">
@@ -1181,6 +1181,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -3029,7 +3057,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>LMX-Omni-5.5B-Lite
 </li>
 </ol>
 <h3 id="image-generation">Image Generation</h3>
-<p>Open WebUI supports <a href="https://docs.openwebui.com/features/image-generation-and-editing/usage/">image generation</a> using Stable Diffusion <a href="https://lemonade-server.ai/models.html">models</a> through Lemonade Server.</p>
+<p>Open WebUI supports <a href="https://docs.openwebui.com/features/chat-conversations/image-generation-and-editing/usage/">image generation</a> using Stable Diffusion <a href="https://lemonade-server.ai/models.html">models</a> through Lemonade Server.</p>
 <p><strong>Configuring Image Generation</strong></p>
 <ol>
 <li>Navigate to Admin &gt; Settings &gt; Images in Open WebUI to configure image generation:<ol>
@@ -3063,7 +3091,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>LMX-Omni-5.5B-Lite
 <li>Go to <code>Advanced Parameters</code> and toggle <code>Function Calling</code> to <code>Native</code>.</li>
 </ol>
 <blockquote>
-<p>Note: Open WebUI recommends using native mode only for high-quality models. See <a href="https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native">Tool Calling Modes</a> for more information. (try out &gt;30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)</p>
+<p>Note: Native is the default tool-calling mode in Open WebUI as of v0.10.0. The former Default mode is now called Legacy. Use a model that supports tool calling. See <a href="https://docs.openwebui.com/features/extensibility/plugin/tools/">Tool Calling Modes</a> for more information. (try out &gt;30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)</p>
 </blockquote>
 </li>
 <li>

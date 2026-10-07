@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/configuration/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/guide/configuration/">
       
       
         <link rel="prev" href="../cli-chat/">
@@ -1051,6 +1051,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#lemonade-tray-cli-linuxmacos" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        lemonade-tray CLI (Linux/macOS)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-key-and-security" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1605,6 +1616,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -3131,6 +3170,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#lemonade-tray-cli-linuxmacos" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        lemonade-tray CLI (Linux/macOS)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-key-and-security" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3323,7 +3373,7 @@
 </blockquote>
 <ul>
 <li><strong>Windows:</strong> <code>%USERPROFILE%\.config\lemonade\config.json</code></li>
-<li><strong>macOS:</strong> <code>/Library/Application Support/lemonade/.config/config.json</code></li>
+<li><strong>macOS:</strong> <code>~/.config/lemonade/config.json</code> (user install) or <code>/Library/Application Support/lemonade/.config/config.json</code> (system install)</li>
 </ul>
 <p>If you are using a standalone <code>lemond</code> executable, the default location is <code>~/.config/lemonade/config.json</code>.</p>
 <p>On startup, Lemonade automatically migrates persistent JSON files from the legacy <code>.cache</code> location into the new <code>.config</code> location.</p>
@@ -3997,6 +4047,15 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
 <li><strong>--port</strong> — Port to serve on (runtime override, does not mutate config.json).</li>
 <li><strong>--host</strong> — Address to bind (runtime override, does not mutate config.json).</li>
 <li><strong>--broadcast</strong> / <strong>--no-broadcast</strong> — Enable or disable UDP broadcasting for server discovery (non-persistent override).</li>
+</ul>
+<h2 id="lemonade-tray-cli-linuxmacos">lemonade-tray CLI (Linux/macOS)</h2>
+<div class="highlight"><pre><span></span><code>lemonade-tray [--port PORT] [--host HOST] [--spawn-server] [--launch-app] [--silent]
+</code></pre></div>
+<ul>
+<li><strong>--port</strong> / <strong>--host</strong> — Server to connect to. Defaults come from the server's <code>config.json</code>.</li>
+<li><strong>--spawn-server</strong> — Linux only. If no server is reachable at startup, start a local <code>lemond</code> and supervise it; quitting the tray stops that <code>lemond</code>. If a server is already running, such as the <code>systemd</code> service, the tray connects to it and nothing is spawned. On macOS the flag is accepted but ignored; the LaunchDaemon installed by the macOS package runs <code>lemond</code>.</li>
+<li><strong>--launch-app</strong> / <strong>--open</strong> — Open the desktop app once the server is ready.</li>
+<li><strong>--silent</strong> — Suppress the startup notification.</li>
 </ul>
 <h2 id="api-key-and-security">API Key and Security</h2>
 <h3 id="regular-api-key">Regular API Key</h3>

@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/api/lemonade/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/api/lemonade/">
       
       
         <link rel="prev" href="../llamacpp/">
@@ -1181,6 +1181,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -6841,12 +6869,12 @@ returns HTTP 409 and does not make network requests.</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 </code></pre></div>
 <h3 id="response-format_4">Response format</h3>
-<p><code>effective</code> is the exact request body a <a href="#post-v1load"><code>POST /v1/load</code></a> for this model uses right now, with every option the recipe accepts resolved through the full priority chain. <code>defaults</code> is what a reset model would get. For <code>llamacpp</code>, with <code>--no-mmap</code> saved and the context size left automatic:</p>
+<p><code>effective</code> is the exact request body a <a href="#post-v1load"><code>POST /v1/load</code></a> for this model uses right now, with every option the recipe accepts resolved through the full priority chain. <code>defaults</code> is what a reset model would get. For <code>llamacpp</code>, with <code>--load-mode none</code> saved and the context size left automatic:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"saved"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--no-mmap"</span>
+<span class="w">    </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--load-mode none"</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"effective"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">"auto_evict"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
@@ -6854,7 +6882,7 @@ returns HTTP 409 and does not make network requests.</p>
 <span class="w">    </span><span class="nt">"downsize_idle_timeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"evict_idle_timeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"evict_weight_factor"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--no-mmap"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--load-mode none"</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"llamacpp_backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vulkan"</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"llamacpp_device"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"merge_args"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
@@ -7906,7 +7934,7 @@ data: {"file_index":2,"total_files":2,"percent":100}
 <span class="s1">    "model_name": "Qwen3-0.6B-GGUF",</span>
 <span class="s1">    "ctx_size": 8192,</span>
 <span class="s1">    "llamacpp_backend": "rocm",</span>
-<span class="s1">    "llamacpp_args": "--flash-attn on --no-mmap"</span>
+<span class="s1">    "llamacpp_args": "--flash-attn on --load-mode none"</span>
 <span class="s1">  }'</span>
 </code></pre></div>
 <p>Load and save settings:</p>
@@ -7916,7 +7944,7 @@ data: {"file_index":2,"total_files":2,"percent":100}
 <span class="s1">    "model_name": "Qwen3-0.6B-GGUF",</span>
 <span class="s1">    "ctx_size": 8192,</span>
 <span class="s1">    "llamacpp_backend": "vulkan",</span>
-<span class="s1">    "llamacpp_args": "--no-context-shift --no-mmap",</span>
+<span class="s1">    "llamacpp_args": "--no-context-shift --load-mode none",</span>
 <span class="s1">    "save_options": true</span>
 <span class="s1">  }'</span>
 </code></pre></div>
@@ -8285,11 +8313,11 @@ which mirrors the path used on the documentation website; the <code>.md</code> s
 <span class="w">        </span><span class="s2">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s2">"~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--ctx-size"</span><span class="p">,</span><span class="w"> </span><span class="s2">"8192"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--port"</span><span class="p">,</span><span class="w"> </span><span class="s2">"8002"</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">"--no-mmap"</span>
+<span class="w">        </span><span class="s2">"--load-mode none"</span>
 <span class="w">      </span><span class="p">],</span>
 <span class="w">      </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--no-mmap"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--load-mode none"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"llamacpp_backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rocm"</span>
 <span class="w">      </span><span class="p">},</span>
 <span class="w">      </span><span class="nt">"backend_url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://127.0.0.1:8002/v1"</span>
@@ -8448,7 +8476,7 @@ lemonade_server_info{version="10.4.0"} 1
 <div class="highlight"><pre><span></span><code>text/plain; version=0.0.4; charset=utf-8
 </code></pre></div>
 <h3 id="lemonade-metric-families">Lemonade Metric Families</h3>
-<p>The authoritative metric-family list is generated by the <code>/metrics</code> implementation in <a href="../../../src/cpp/server/server.cpp"><code>src/cpp/server/server.cpp</code></a>. Search for <code>handle_metrics</code> and <code>metrics.describe(...)</code> to see the current names, types, labels, and descriptions.</p>
+<p>The authoritative metric-family list is generated by the <code>/metrics</code> implementation in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/server/server.cpp"><code>src/cpp/server/server.cpp</code></a>. Search for <code>handle_metrics</code> and <code>metrics.describe(...)</code> to see the current names, types, labels, and descriptions.</p>
 <p>Unsupported, unavailable, null, NaN, and infinity values are omitted rather than emitted as samples.</p>
 <h3 id="llamacpp-backend-metrics">llama.cpp Backend Metrics</h3>
 <p>When a loaded model uses the <code>llamacpp</code> recipe, Lemonade makes a best-effort scrape of the loaded backend process's private <code>/metrics</code> endpoint. Backend scrape failures do not fail the Lemonade <code>/metrics</code> response.</p>

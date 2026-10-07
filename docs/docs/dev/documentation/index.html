@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/dev/documentation/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/dev/documentation/">
       
       
         <link rel="prev" href="../contribute/">
@@ -1203,6 +1203,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../working-groups/" class="md-nav__link">
         
   
@@ -1452,6 +1480,17 @@
   
     <nav class="md-nav" aria-label="Formatting">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#links" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Links
+      </span>
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#code-blocks" class="md-nav__link">
@@ -3046,6 +3085,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#links" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Links
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#code-blocks" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3416,6 +3466,8 @@
 <p>Add a ToC only if the document has <strong>5 or more H2 sections</strong>. Use a plain markdown list with anchor links. Place it directly after the opening paragraph.</p>
 <hr />
 <h2 id="formatting">Formatting</h2>
+<h3 id="links">Links</h3>
+<p>Link to documentation in this repository using relative Markdown file paths, including the <code>.md</code> extension (for example, <code>../guide/install/windows.md</code>). Avoid published website URLs and hardcoded <code>blob/main</code> URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. Use the same convention in generated documentation. For repository-only files outside <code>docs/</code>, use explicit GitHub URLs so links also work on the published website. Pages that exist only on the website, such as the <a href="https://lemonade-server.ai/models.html">model browser</a> and the <a href="https://lemonade-server.ai/marketplace">marketplace</a>, have no in-repo equivalent, so link to them on the website.</p>
 <h3 id="code-blocks">Code blocks</h3>
 <p>Always include a language tag.</p>
 <div class="highlight"><pre><span></span><code><span class="sb">```bash</span>

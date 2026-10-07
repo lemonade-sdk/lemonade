@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/dev/getting-started/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/dev/getting-started/">
       
       
         <link rel="prev" href="../testing/">
@@ -1183,6 +1183,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -4217,6 +4245,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 - Zero console output or CLI interface
 - Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users</p>
+<p><strong><code>lemonade-tray</code> options (Linux/macOS):</strong>
+- <code>--port, -p &lt;port&gt;</code> / <code>--host &lt;host&gt;</code> - server to connect to (defaults read from the server's <code>config.json</code>).
+- <code>--spawn-server</code> - Linux only; ignored with a warning on macOS. If no server is reachable, spawn a local <code>lemond</code> and supervise it. The tray opens a watchdog pipe and passes <code>--watchdog-fd &lt;FD&gt;</code> to the child; when the tray exits for any reason (including SIGKILL), the OS closes the pipe and <code>lemond</code> shuts itself down, so no orphaned server is left behind. This flag is intended for standalone environments where <code>lemond</code> is not already managed by a service manager such as <code>systemd</code>; when running alongside a managed daemon, the existing server is detected and no child is spawned.
+- <code>--launch-app, --open</code> - open the desktop app once the server is ready.
+- <code>--silent</code> - suppress the startup notification.</p>
 <h3 id="client-server-communication">Client-Server Communication</h3>
 <p>The <code>lemonade</code> client communicates with <code>lemond</code> server via HTTP:
 - <strong>Model operations:</strong> <code>/api/v1/models</code>, <code>/api/v1/pull</code>, <code>/api/v1/delete</code>
@@ -4582,6 +4615,10 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <td>HTTP endpoints (health, models, pull, load, unload, system-info, stats)</td>
 </tr>
 <tr>
+<td><code>server_cancellation.py</code></td>
+<td>Client disconnect robustness (server stays healthy; prompt-abort regression lives in <code>test_request_cancellation</code>)</td>
+</tr>
+<tr>
 <td><code>server_llm.py</code></td>
 <td>LLM inference (chat completions, embeddings, reranking)</td>
 </tr>
@@ -4601,6 +4638,9 @@ python<span class="w"> </span>test/server_cli2.py
 
 <span class="c1"># Endpoint tests (no inference backend needed)</span>
 python<span class="w"> </span>test/server_endpoints.py
+
+<span class="c1"># Client disconnect robustness tests (health checks; prompt-abort regression lives in the C++ suite)</span>
+python<span class="w"> </span>test/server_cancellation.py
 
 <span class="c1"># LLM tests (specify wrapped server and backend)</span>
 python<span class="w"> </span>test/server_llm.py<span class="w"> </span>--wrapped-server<span class="w"> </span>llamacpp<span class="w"> </span>--backend<span class="w"> </span>vulkan

@@ -10,36 +10,36 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/docs/integrations/wut/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/dev/specs/spec-writing-guide/">
       
       
-        <link rel="prev" href="../open-webui/">
+        <link rel="prev" href="../../spec-driven-dev/">
       
       
-        <link rel="next" href="../../api/">
+        <link rel="next" href="../../working-groups/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/favicon.ico">
+      <link rel="icon" href="../../../assets/favicon.ico">
       <meta name="generator" content="zensical-0.0.39">
     
     
       
-        <title>wut Terminal Assistant - Lemonade Server Documentation</title>
+        <title>Spec Writing Guide - Lemonade Server Documentation</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.1e981d71.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.1e981d71.min.css">
       
         
           
         
-        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
       
       
 
@@ -53,11 +53,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 
     
-      <link rel="stylesheet" href="../../assets/website-styles.css">
+      <link rel="stylesheet" href="../../../assets/website-styles.css">
     
-      <link rel="stylesheet" href="../../assets/zest-theme.css">
+      <link rel="stylesheet" href="../../../assets/zest-theme.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#wut-terminal-assistant" class="md-skip">
+        <a href="#spec-writing-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -100,7 +100,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
@@ -117,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              wut Terminal Assistant
+              Spec Writing Guide
             
           </span>
         </div>
@@ -208,7 +208,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     Lemonade Server Documentation
@@ -235,7 +235,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -309,7 +309,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/" class="md-nav__link">
+      <a href="../../../guide/" class="md-nav__link">
         
   
   
@@ -384,7 +384,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/" class="md-nav__link">
+      <a href="../../../guide/install/" class="md-nav__link">
         
   
   
@@ -412,7 +412,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/windows/" class="md-nav__link">
+      <a href="../../../guide/install/windows/" class="md-nav__link">
         
   
   
@@ -440,7 +440,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/linux/" class="md-nav__link">
+      <a href="../../../guide/install/linux/" class="md-nav__link">
         
   
   
@@ -468,7 +468,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/ubuntu/" class="md-nav__link">
+      <a href="../../../guide/install/ubuntu/" class="md-nav__link">
         
   
   
@@ -496,7 +496,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/arch/" class="md-nav__link">
+      <a href="../../../guide/install/arch/" class="md-nav__link">
         
   
   
@@ -524,7 +524,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/fedora/" class="md-nav__link">
+      <a href="../../../guide/install/fedora/" class="md-nav__link">
         
   
   
@@ -552,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/debian/" class="md-nav__link">
+      <a href="../../../guide/install/debian/" class="md-nav__link">
         
   
   
@@ -580,7 +580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/docker/" class="md-nav__link">
+      <a href="../../../guide/install/docker/" class="md-nav__link">
         
   
   
@@ -608,7 +608,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/install/macos/" class="md-nav__link">
+      <a href="../../../guide/install/macos/" class="md-nav__link">
         
   
   
@@ -644,7 +644,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/concepts/" class="md-nav__link">
+      <a href="../../../guide/concepts/" class="md-nav__link">
         
   
   
@@ -672,7 +672,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/cli/" class="md-nav__link">
+      <a href="../../../guide/cli/" class="md-nav__link">
         
   
   
@@ -700,7 +700,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/cli-chat/" class="md-nav__link">
+      <a href="../../../guide/cli-chat/" class="md-nav__link">
         
   
   
@@ -775,7 +775,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/" class="md-nav__link">
+      <a href="../../../guide/configuration/" class="md-nav__link">
         
   
   
@@ -803,7 +803,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/custom-models/" class="md-nav__link">
+      <a href="../../../guide/configuration/custom-models/" class="md-nav__link">
         
   
   
@@ -831,7 +831,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/multi-model/" class="md-nav__link">
+      <a href="../../../guide/configuration/multi-model/" class="md-nav__link">
         
   
   
@@ -859,7 +859,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/llamacpp/" class="md-nav__link">
+      <a href="../../../guide/configuration/llamacpp/" class="md-nav__link">
         
   
   
@@ -887,7 +887,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/vllm/" class="md-nav__link">
+      <a href="../../../guide/configuration/vllm/" class="md-nav__link">
         
   
   
@@ -915,7 +915,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/moonshine/" class="md-nav__link">
+      <a href="../../../guide/configuration/moonshine/" class="md-nav__link">
         
   
   
@@ -943,7 +943,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/configuration/cloud/" class="md-nav__link">
+      <a href="../../../guide/configuration/cloud/" class="md-nav__link">
         
   
   
@@ -979,7 +979,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/telemetry/" class="md-nav__link">
+      <a href="../../../guide/telemetry/" class="md-nav__link">
         
   
   
@@ -1007,7 +1007,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/faq/" class="md-nav__link">
+      <a href="../../../guide/faq/" class="md-nav__link">
         
   
   
@@ -1015,564 +1015,6 @@
     
   
     FAQ
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overview
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/philosophy/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Philosophy
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/ai-content-policy/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    AI Content Policy
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/spec-driven-dev/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Spec Driven Development Policy
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Spec Writing Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/working-groups/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Working Groups
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/contribute/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Contribute
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/documentation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Documentation Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/testing/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Testing
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/getting-started/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    C++
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/adding-a-backend/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Adding a Backend
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/backends-reference/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Backends Reference
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/app/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Desktop App
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/web-ui/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Web UI
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/lemonade-omni/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lemonade Omni Models
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/router-policy/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Router Policies
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/self-hosted-runners/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Infrastructure
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../dev/release/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Release Process
   
 
     
@@ -1610,17 +1052,17 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   
   <span class="md-ellipsis">
     
   
-    App Integrations
+    Development
   
 
     
@@ -1631,12 +1073,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_4">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
   
-    App Integrations
+    Development
   
 
           </label>
@@ -1649,7 +1091,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../" class="md-nav__link">
         
   
   
@@ -1677,14 +1119,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../ai-toolkit/" class="md-nav__link">
+      <a href="../../philosophy/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    AI Toolkit
+    Philosophy
   
 
     
@@ -1705,14 +1147,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../anythingLLM/" class="md-nav__link">
+      <a href="../../ai-content-policy/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    AnythingLLM
+    AI Content Policy
   
 
     
@@ -1733,266 +1175,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../claude-code/" class="md-nav__link">
+      <a href="../../spec-driven-dev/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Claude Code
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../codeGPT/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CodeGPT
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../continue/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Continue
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interviewer/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Interviewer
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../junie/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Junie
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../langchain/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LangChain
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../lemon-zest/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lemon Zest
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../mindcraft/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Mindcraft
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../open-hands/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Open Hands
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../open-webui/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Open WebUI
+    Spec Driven Development Policy
   
 
     
@@ -2029,7 +1219,7 @@
   <span class="md-ellipsis">
     
   
-    Wut
+    Spec Writing Guide
   
 
     
@@ -2047,7 +1237,7 @@
   <span class="md-ellipsis">
     
   
-    Wut
+    Spec Writing Guide
   
 
     
@@ -2074,10 +1264,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#structure" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Overview
+        Structure
       </span>
     </span>
   </a>
@@ -2085,10 +1275,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#expectations" class="md-nav__link">
+  <a href="#precision" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Expectations
+        Precision
       </span>
     </span>
   </a>
@@ -2096,119 +1286,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
+  <a href="#content" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Setup
+        Content
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Setup">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Prerequisites
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Prerequisites">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#install-lemonade-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Install Lemonade Server
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#installing-windows-subsystem-for-linux-wsl" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Installing Windows Subsystem for Linux (WSL)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#installing-wut" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Installing Wut
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Usage
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#start-a-terminal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Start a terminal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#help-with-lemonade-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Help with Lemonade Server
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#bad-git-command" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Bad Git Command
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2216,6 +1300,816 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../working-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working Groups
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../documentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Desktop App
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../lemonade-omni/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade Omni Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../self-hosted-runners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Infrastructure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    App Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    App Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/ai-toolkit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Toolkit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/anythingLLM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AnythingLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/codeGPT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/langchain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LangChain
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/lemon-zest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemon Zest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/mindcraft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindcraft
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/open-hands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Hands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/open-webui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open WebUI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/wut/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wut
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2282,7 +2176,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/" class="md-nav__link">
+      <a href="../../../api/" class="md-nav__link">
         
   
   
@@ -2310,7 +2204,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/openai/" class="md-nav__link">
+      <a href="../../../api/openai/" class="md-nav__link">
         
   
   
@@ -2338,7 +2232,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/ollama/" class="md-nav__link">
+      <a href="../../../api/ollama/" class="md-nav__link">
         
   
   
@@ -2366,7 +2260,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/anthropic/" class="md-nav__link">
+      <a href="../../../api/anthropic/" class="md-nav__link">
         
   
   
@@ -2394,7 +2288,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/mcp/" class="md-nav__link">
+      <a href="../../../api/mcp/" class="md-nav__link">
         
   
   
@@ -2422,7 +2316,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/llamacpp/" class="md-nav__link">
+      <a href="../../../api/llamacpp/" class="md-nav__link">
         
   
   
@@ -2450,7 +2344,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/lemonade/" class="md-nav__link">
+      <a href="../../../api/lemonade/" class="md-nav__link">
         
   
   
@@ -2532,7 +2426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../embeddable/" class="md-nav__link">
+      <a href="../../../embeddable/" class="md-nav__link">
         
   
   
@@ -2560,7 +2454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../embeddable/runtime/" class="md-nav__link">
+      <a href="../../../embeddable/runtime/" class="md-nav__link">
         
   
   
@@ -2588,7 +2482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../embeddable/backends/" class="md-nav__link">
+      <a href="../../../embeddable/backends/" class="md-nav__link">
         
   
   
@@ -2616,7 +2510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../embeddable/models/" class="md-nav__link">
+      <a href="../../../embeddable/models/" class="md-nav__link">
         
   
   
@@ -2644,7 +2538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../embeddable/building/" class="md-nav__link">
+      <a href="../../../embeddable/building/" class="md-nav__link">
         
   
   
@@ -2713,10 +2607,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#structure" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Overview
+        Structure
       </span>
     </span>
   </a>
@@ -2724,10 +2618,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#expectations" class="md-nav__link">
+  <a href="#precision" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Expectations
+        Precision
       </span>
     </span>
   </a>
@@ -2735,119 +2629,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
+  <a href="#content" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Setup
+        Content
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Setup">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Prerequisites
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Prerequisites">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#install-lemonade-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Install Lemonade Server
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#installing-windows-subsystem-for-linux-wsl" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Installing Windows Subsystem for Linux (WSL)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#installing-wut" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Installing Wut
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Usage
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#start-a-terminal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Start a terminal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#help-with-lemonade-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Help with Lemonade Server
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#bad-git-command" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Bad Git Command
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2869,87 +2657,32 @@
   
 
 
-<h1 id="wut-terminal-assistant"><code>wut</code> Terminal Assistant</h1>
-<h2 id="overview">Overview</h2>
-<p>The <a href="https://github.com/shobrook/wut"><code>wut</code> terminal assistant</a> uses LLMs to parse your terminal's scrollback, helping you troubleshoot your last command.</p>
-<h2 id="expectations">Expectations</h2>
-<p>We found that <code>wut</code> works nicely with the <code>Llama-3.2-3B-Instruct-Hybrid</code> model.</p>
-<p>It is not especially convenient to use <code>wut</code> with Windows until the developers remove the requirement for <code>tmux</code>, however we do provide instructions for getting set up on Windows in this guide.</p>
-<p><code>wut</code> seems to send the entire terminal scrollback to the LLM, which can produce very long prompts that exceed the LLM's context length. We recommend restricting the terminal scrollback or using a fresh <code>tmux</code> session when trying this out.</p>
-<h2 id="setup">Setup</h2>
-<h3 id="prerequisites">Prerequisites</h3>
-<h4 id="install-lemonade-server">Install Lemonade Server</h4>
+<h1 id="spec-writing-guide">Spec Writing Guide</h1>
+<p>A technical spec tells a reviewer what an important part of the Lemonade design will be, precisely enough to perform the implementation. This guide can help you write specs that meet the expectations of reviewers. It builds on the general voice and formatting guidelines in the <a href="../../documentation/">documentation guide</a>.</p>
+<h2 id="structure">Structure</h2>
 <ol>
-<li>Install Lemonade Server by following the <a href="../../guide/install/">Lemonade Server Instructions</a> and using the installer .exe.</li>
+<li>The first sentence of each section states the scope of the section.</li>
+<li>Describe each component once, in its own section, to produce a tops-down view of the architecture. Avoid organizing content chronologically.</li>
+<li>A significant change gets its own heading, placed before the first content that relies on it.</li>
+<li>Use tables, mermaid diagrams, and lists over prose. Context about a table goes in the sentence that introduces it, not in a sentence trailing after it.</li>
+<li>Title-case headings. Capitalize every major word in a section heading ("Setup Assistant", not "Setup assistant").</li>
+<li>A multi-step process, including one inside a table cell, is an ordered list, and a step with its own sub-steps gets a nested ordered list. A set of alternatives ("through a unit, a shell or an app") is an unordered list.</li>
 </ol>
-<h4 id="installing-windows-subsystem-for-linux-wsl">Installing Windows Subsystem for Linux (WSL)</h4>
-<p><code>wut</code> currently requires a <code>tmux</code> terminal in order to function. We found the simplest way to achieve this on Windows was through the Windows Subsystem for Linux (WSL).</p>
+<h2 id="precision">Precision</h2>
 <ol>
-<li>Install <a href="https://learn.microsoft.com/en-us/windows/wsl/install">Windows Subsystem for Linux</a>.</li>
-<li>Open the <code>WSL Settings</code> app, navigate to <code>Networking</code>, and make sure the <code>Networking mode</code> is <code>Mirrored</code>. This is required for WSL terminals to be able to see the Lemonade server running in Windows.</li>
-<li>If needed: shut down WSL to make sure the changes apply:</li>
+<li>Use precise names. For example: "<code>lemonade-server</code> snap", not "the snap". <code>class::method()</code>, not <code>method()</code>.</li>
+<li>Replace vague values with specifics.</li>
+<li>Keep each table cell self-contained. A cell never contradicts its row and never points at other rows. It holds one recommended option, not a decision tree.</li>
+<li>Split tables by variant when behavior differs. When two variants (Podman and Docker, Windows and Linux) behave identically, use one table. When they differ at all, give each its own table, without exception notes.</li>
 </ol>
-<div class="highlight"><pre><span></span><code><span class="n">wsl</span> <span class="p">-</span><span class="n">-shutdown</span>
-</code></pre></div>
-<h3 id="installing-wut">Installing Wut</h3>
-<ul>
-<li>Start a WSL terminal.</li>
-<li>Install <a href="https://github.com/pypa/pipx"><code>pipx</code></a>, as recommended by the following <code>wut</code> instructions:</li>
-</ul>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>apt<span class="w"> </span>update
-sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>pipx
-pipx<span class="w"> </span>ensurepath
-</code></pre></div>
-<ul>
-<li>Re-launch your terminal to make sure <code>pipx</code> is available, then install <code>wut</code>:</li>
-</ul>
-<div class="highlight"><pre><span></span><code>pipx<span class="w"> </span>install<span class="w"> </span>wut-cli
-</code></pre></div>
-<ul>
-<li>Add <code>wut</code>'s required environment variables to your <code>.bashrc</code> file:</li>
-</ul>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">"-"</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_MODEL</span><span class="o">=</span><span class="s2">"Llama-3.2-3B-Instruct-Hybrid"</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span>
-</code></pre></div>
-<h2 id="usage">Usage</h2>
-<h3 id="start-a-terminal">Start a terminal</h3>
+<h2 id="content">Content</h2>
 <ol>
-<li>Start a WSL terminal.</li>
-<li>Start a <code>tmux</code> session:</li>
+<li>Check every claim against the code, a manifest or the upstream source. State what is unverified.</li>
+<li>Answer researchable questions. Look up anything the source can answer, such as which release added a feature, and cite it. An open question is reserved for a decision the reviewers must make.</li>
+<li>State each fact once. Refer to it elsewhere by section name, and hyperlink every section reference to its heading.</li>
+<li>Leave out the obvious. Omit behavior every reader already expects, such as an install failing while offline.</li>
+<li>Phrase positively: say what the design does, and do not enumerate design alternatives that were not selected.</li>
 </ol>
-<div class="highlight"><pre><span></span><code>tmux
-</code></pre></div>
-<p>Then, try some of these example commands that <code>wut</code> can help explain.</p>
-<h3 id="help-with-lemonade-server">Help with Lemonade Server</h3>
-<p>People often ask exactly what Lemonade Server's <code>models</code> endpoint does. Fortunately, <code>wut</code> is able to intuit the answer!</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/api/v1/models
-wut
-</code></pre></div>
-<p>The terminal response of the <code>curl</code> command is this (only intelligible by machines):</p>
-<div class="highlight"><pre><span></span><code>curl http://localhost:13305/api/v1/models
-{"object":"list","data":[{"id":"Qwen2.5-0.5B-Instruct-CPU","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Llama-3.2-1B-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Llama-3.2-3B-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Phi-3-Mini-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Qwen-1.5-7B-Chat-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"DeepSeek-R1-Distill-Llama-8B-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"DeepSeek-R1-Distill-Qwen-7B-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"}]}
-</code></pre></div>
-<p>But <code>wut</code> does a nice job interpreting:</p>
-<div class="highlight"><pre><span></span><code>The output suggests that the API endpoint is returning a list of models, and the owned_by field indicates that all models are owned by "lemonade". Thecreated timestamp indicates when each model was created.
-
-The output is a valid JSON response, and there is no error or warning message. The command was successful, and the output can be used for further processing or analysis.
-</code></pre></div>
-<h3 id="bad-git-command">Bad Git Command</h3>
-<p>Run a command that doesn't exist, and then ask <code>wut</code> for help:</p>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>pull-request
-wut
-</code></pre></div>
-<p>Results in:</p>
-<blockquote>
-<p>git: 'pull-request' is not a git command. See 'git --help'.</p>
-</blockquote>
-<p>And then <code>wut</code> provides some helpful feedback:</p>
-<blockquote>
-<p>Key takeaway: The command git pull-request is not a valid Git command. The correct command to create a pull request is git request-pull, but it's not a standard Git command. To create a pull request, use git request-pull or git pull with the --pr option.</p>
-</blockquote>
-<!--This file was originally licensed under Apache 2.0. It has been modified.
-Modifications Copyright (c) 2025 AMD-->
 
 
 
@@ -2987,7 +2720,7 @@ Modifications Copyright (c) 2025 AMD-->
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../open-webui/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Open WebUI">
+          <a href="../../spec-driven-dev/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Spec Driven Development Policy">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -2997,20 +2730,20 @@ Modifications Copyright (c) 2025 AMD-->
                 Previous
               </span>
               <div class="md-ellipsis">
-                Open WebUI
+                Spec Driven Development Policy
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../api/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
+          <a href="../../working-groups/" class="md-footer__link md-footer__link--next" aria-label="Next: Working Groups">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Overview
+                Working Groups
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3089,12 +2822,12 @@ Modifications Copyright (c) 2025 AMD-->
     
       
       
-      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
       
-        <script src="../../assets/carousel.js"></script>
+        <script src="../../../assets/carousel.js"></script>
       
     
   </body>

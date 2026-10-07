@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/dev/release/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/dev/release/">
       
       
         <link rel="prev" href="../self-hosted-runners/">
@@ -1183,6 +1183,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -3035,7 +3063,7 @@
 <p>Use a bulleted list with one item per breaking change. Keep it concise and link to a wiki article when users need migration instructions.</p>
 <h3 id="5-promote-a-candidate-to-stable">5. Promote a Candidate to Stable</h3>
 <p>Tag the exact commit that produced the tested candidate. The tag must be <code>v&lt;year&gt;.&lt;week&gt;.&lt;number&gt;</code> and must match that candidate's build version. Pushing the tag is the human gate that starts stable publication; do not create release tags for candidates that should remain only in the candidate/prerelease channels.</p>
-<p>Use <code>tools/release.py</code> to do this deterministically. It fetches the release branches, selects the newest <code>release-v*</code> branch, computes the version from that branch's tip with the same logic as the build (<code>tools/version.py</code>), and — after you confirm — creates a signed tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong <code>number</code>.</p>
+<p>Use <code>tools/release.py</code> to do this deterministically. It fetches the release branches, selects the newest <code>release-v*</code> branch, computes the version from that branch's tip with the same logic as the build (<code>tools/version.py</code>), and — after you confirm — creates an annotated tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong <code>number</code>.</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Promote the newest active release branch</span>
 python<span class="w"> </span>tools/release.py
 
@@ -3044,8 +3072,11 @@ python<span class="w"> </span>tools/release.py<span class="w"> </span>release-v2
 
 <span class="c1"># Preview the tag it would create without pushing anything</span>
 python<span class="w"> </span>tools/release.py<span class="w"> </span>--dry-run
+
+<span class="c1"># Opt into a signed tag when your git signing setup is available</span>
+python<span class="w"> </span>tools/release.py<span class="w"> </span>--sign
 </code></pre></div>
-<p>It prints the selected branch, commit, and computed version, then prompts <code>Create and push v&lt;year&gt;.&lt;week&gt;.&lt;number&gt;?</code> before tagging. Because the version is derived from the branch, you cannot promote a candidate by typing the wrong number.</p>
+<p>It prints the selected branch, commit, and computed version, then prompts <code>Create and push v&lt;year&gt;.&lt;week&gt;.&lt;number&gt;?</code> before tagging. Because the version is derived from the branch, you cannot promote a candidate by typing the wrong number. Signed tags remain available via <code>--sign</code> for operators who have git tag signing configured locally.</p>
 <p>The <a href="https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml">cpp_server_build_test_release.yml workflow</a> creates the stable GitHub release and publishes the stable artifacts.</p>
 <h3 id="6-approve-windows-signing">6. Approve Windows Signing</h3>
 <p>Lemonade .msi artifacts are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!</p>

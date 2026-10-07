@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/cli/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/guide/cli/">
       
       
         <link rel="prev" href="../concepts/">
@@ -1928,6 +1928,34 @@
     
   
     Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
   
 
     
@@ -4878,7 +4906,7 @@ lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span
 lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
 
 <span class="c1"># Load a llama.cpp model with custom arguments</span>
-lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">"--flash-attn on --no-mmap"</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">"--flash-attn on --load-mode none"</span>
 
 <span class="c1"># Load a model without merging global args (per-model args replace global entirely)</span>
 lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--no-merge-args<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">"--flash-attn on"</span>

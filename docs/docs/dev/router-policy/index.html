@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/dev/router-policy/">
+        <link rel="canonical" href="https://lemonade-server.ai/docs/dev/router-policy/">
       
       
         <link rel="prev" href="../lemonade-omni/">
@@ -1203,6 +1203,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../specs/spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Writing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../working-groups/" class="md-nav__link">
         
   
@@ -1614,6 +1642,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         LLM-as-router (<code>routing.router</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-cancellation-connection-robustness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Request Cancellation &amp; Connection Robustness
       </span>
     </span>
   </a>
@@ -2699,6 +2738,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#request-cancellation-connection-robustness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Request Cancellation &amp; Connection Robustness
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3040,6 +3090,12 @@ block is <strong>mutually exclusive</strong> with <code>routing.rules</code> and
 <code>has_images</code>, see above), the router always does: it's the sole decision
 mechanism here, so <code>prompt</code> can rely on them directly — e.g. "use Vision-GGUF
 when the request includes images."</p>
+<h2 id="request-cancellation-connection-robustness">Request Cancellation &amp; Connection Robustness</h2>
+<p>When an OpenAI-compatible HTTP client disconnects or times out mid-request:
+1. <strong>Socket Progress Interception</strong>: <code>utils::HttpClient</code> progress callbacks (<code>CURLOPT_XFERINFOFUNCTION</code>) monitor client socket liveness during prefill and generation for both streaming and non-streaming requests.
+2. <strong>Upstream Transfer Abort</strong>: Detecting client disconnect immediately aborts the active upstream HTTP transfer to the backend, enabling the backend process to reclaim execution slots without re-entering <code>Router</code> mutex scopes.
+3. <strong>Isolated Disconnect Handling</strong>: Non-streaming client disconnects return a clean HTTP 400 "Request cancelled by client" response (<code>ErrorType::INVALID_REQUEST</code>); streaming disconnects end the SSE stream. Neither triggers a nuclear model reload nor disrupts concurrent clients.</p>
+<p>This guarantee currently covers the OpenAI-compatible non-streaming endpoints (<code>chat/completions</code>, <code>completions</code>, <code>responses</code>). Non-streaming paths through the Anthropic/Ollama/MCP gateways and streaming Omni (which runs inside the SSE content-provider after the handler scope ends) are not yet covered.</p>
 
 
 

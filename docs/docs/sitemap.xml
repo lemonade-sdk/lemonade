@@ -1,201 +1,204 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
       <url>
-        <loc>https://lemonade-server.ai/</loc>
+        <loc>https://lemonade-server.ai/docs/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/windows/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/windows/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/linux/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/linux/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/ubuntu/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/ubuntu/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/arch/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/arch/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/fedora/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/fedora/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/debian/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/debian/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/docker/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/docker/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/install/macos/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/install/macos/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/concepts/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/concepts/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/cli/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/cli/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/cli-chat/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/cli-chat/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/custom-models/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/custom-models/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/multi-model/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/multi-model/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/llamacpp/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/llamacpp/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/vllm/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/vllm/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/moonshine/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/moonshine/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/configuration/cloud/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/configuration/cloud/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/telemetry/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/telemetry/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/guide/faq/</loc>
+        <loc>https://lemonade-server.ai/docs/guide/faq/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/philosophy/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/philosophy/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/ai-content-policy/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/ai-content-policy/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/spec-driven-dev/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/spec-driven-dev/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/working-groups/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/specs/spec-writing-guide/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/contribute/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/working-groups/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/documentation/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/contribute/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/testing/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/documentation/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/getting-started/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/testing/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/adding-a-backend/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/getting-started/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/backends-reference/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/adding-a-backend/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/app/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/backends-reference/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/web-ui/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/app/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/lemonade-omni/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/web-ui/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/router-policy/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/lemonade-omni/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/self-hosted-runners/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/router-policy/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/dev/release/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/self-hosted-runners/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/</loc>
+        <loc>https://lemonade-server.ai/docs/dev/release/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/ai-toolkit/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/anythingLLM/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/ai-toolkit/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/claude-code/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/anythingLLM/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/codeGPT/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/claude-code/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/continue/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/codeGPT/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/interviewer/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/continue/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/junie/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/interviewer/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/langchain/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/junie/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/lemon-zest/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/langchain/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/mindcraft/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/lemon-zest/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/open-hands/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/mindcraft/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/open-webui/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/open-hands/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/integrations/wut/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/open-webui/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/</loc>
+        <loc>https://lemonade-server.ai/docs/integrations/wut/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/openai/</loc>
+        <loc>https://lemonade-server.ai/docs/api/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/ollama/</loc>
+        <loc>https://lemonade-server.ai/docs/api/openai/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/anthropic/</loc>
+        <loc>https://lemonade-server.ai/docs/api/ollama/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/mcp/</loc>
+        <loc>https://lemonade-server.ai/docs/api/anthropic/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/llamacpp/</loc>
+        <loc>https://lemonade-server.ai/docs/api/mcp/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/api/lemonade/</loc>
+        <loc>https://lemonade-server.ai/docs/api/llamacpp/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/embeddable/</loc>
+        <loc>https://lemonade-server.ai/docs/api/lemonade/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/embeddable/runtime/</loc>
+        <loc>https://lemonade-server.ai/docs/embeddable/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/embeddable/backends/</loc>
+        <loc>https://lemonade-server.ai/docs/embeddable/runtime/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/embeddable/models/</loc>
+        <loc>https://lemonade-server.ai/docs/embeddable/backends/</loc>
       </url>
       <url>
-        <loc>https://lemonade-server.ai/embeddable/building/</loc>
+        <loc>https://lemonade-server.ai/docs/embeddable/models/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/embeddable/building/</loc>
       </url>
 </urlset>
