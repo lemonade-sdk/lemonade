@@ -61,6 +61,18 @@ This section defines the two base classes every route extends, the `RouteSpec` e
 ```cpp
 enum class Prefixes { Quad, Internal, Root };      // URLs and auth; see Prefixes below
 enum class ArgIn { JsonBody, Query, Path, Form };  // where an argument comes from
+enum class RequestFormat { Raw, Json, OptionalJson, Form };  // how the base class parses the request body
+
+// Clients parse each kind of body differently, and some stream.
+enum class ResponseFormat {
+    Json,          // one JSON body
+    JsonLines,     // newline-delimited JSON objects, streamed (application/x-ndjson)
+    EventStream,   // server-sent events with JSON data, streamed (text/event-stream)
+    Text,          // e.g. Prometheus metrics, markdown, a transcript
+    Binary,        // e.g. audio, a glTF mesh
+    BinaryStream,  // binary, streamed as generated, e.g. speech
+    Empty,         // e.g. the 202 answering an MCP notification
+};
 
 struct RouteArg {
     std::string name;
@@ -69,6 +81,30 @@ struct RouteArg {
     bool required = false;
     bool supported = true;            // false documents it as not available
     std::string description;
+};
+
+// Some examples require lemond to be in a certain state, for example unload requires a loaded
+// model. ExampleRef allows one example to take a dependence on another to achieve that state.
+struct ExampleRef {
+    std::string route;                // RouteSpec::id
+    ResponseFormat format;            // selects which of the route's examples
+};
+
+// Each format a route returns gets its own schema and example in the docs.
+struct RouteResponse {
+    ResponseFormat format;
+
+    // JSON formats only. JSON Schema for the body, each NDJSON line, or each SSE event's data;
+    // --check validates against it. A format with several shapes, such as /load's three, uses oneOf.
+    nlohmann::json schema;
+
+    // Examples to run first, in order, when generating the documentation. Examples can reference
+    // their dependences' responses, for example {"id": "$lemonade.jobs_create/id"}.
+    std::vector<ExampleRef> setup;
+
+    // A request producing this format; gen_api_boilerplate.py records its response into the docs
+    // and --check validates it.
+    nlohmann::json example;
 };
 
 struct RouteSpec {
@@ -80,10 +116,8 @@ struct RouteSpec {
     std::string description;          // reference text for the route's docs section
     std::vector<std::string> notes;
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
-    nlohmann::json example;           // canonical example request; see Generated Docs
-    nlohmann::json response_schema;   // from the response type; part of the docs cache key
-    bool json_body = false;           // parse the body first; 400 on an empty or invalid body
-    bool form_body = false;           // unpack the multipart form first; 400 when not multipart
+    std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
+    RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
     bool model_defaults_to_loaded = false;  // ModelRoute only; see ModelRoute below
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
@@ -96,7 +130,6 @@ public:
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 protected:
-    std::string resolve_model_name(const std::string& name) const;  // aliases, then :latest
     ServerContext& ctx_;
 };
 
@@ -124,8 +157,8 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 
 `ModelRoute` is the base for routes that run a model: chat, completions, responses, embeddings, rerank, classify, images, transcription, speech, audio generation and 3D generation. Its `handle()` is final and runs these steps:
 
-1. Builds `req.body`. For a `form_body` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, and answers 400 when a value does not convert. File parts stay on the httplib request.
-2. Resolves the request's model name: aliases, then the `:latest` suffix.
+1. Builds `req.body`. For a `RequestFormat::Form` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, and answers 400 when a value does not convert. File parts stay on the httplib request. Registration rejects a `ModelRoute` whose `request_format` is `Raw`, since step 2 reads the model from `req.body`.
+2. Resolves the model name.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
 4. Requires a model. With no `model` in the request, it answers 400, unless the route sets `model_defaults_to_loaded` and a model is loaded, in which case that model serves the request.
 5. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
@@ -135,11 +168,11 @@ OpenAI requires `model` on every route `ModelRoute` serves. `model_defaults_to_l
 
 `validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), attach uploaded files in the shape its backend expects (transcription's raw `file`, images/edits' base64 `image` and `mask`), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
 
-Every other route extends `ApiRoute` directly. Routes that take a model name without running it, such as `/load`, `/unload`, `/delete` and `/internal/pin`, call `ApiRoute::resolve_model_name()`.
+Every other route extends `ApiRoute` directly.
 
 ### Request and Context
 
-`RouteRequest` holds one request's data: the httplib request, the request body when `json_body` or `form_body` is set, the resolved model name, and the router decision when there is one.
+`RouteRequest` holds one request's data: the httplib request, the parsed request body unless `request_format` is `Raw`, the resolved model name, and the router decision when there is one.
 
 `ServerContext` holds pointers to the subsystems (`Router`, `ModelManager`, `BackendManager`, `CloudProviderRegistry`, `AliasManager`, `RuntimeConfig`), to `HttpListener`, and to the services in [Core Components](#core-components). It holds no state of its own. Everything it points to lives as long as lemond, so it has no `WebSocketServer` pointer: a `host` or `websocket_port` change replaces that server, and `/health` reads its port from `HttpListener::websocket_port()`.
 
@@ -158,15 +191,97 @@ Routes call these helpers from their own code, so the flow stays visible in the 
 | `record_usage()` | Records token usage and timings for telemetry |
 | `set_error_response()` | Maps a backend error body to its HTTP status |
 
-### Response Types
+### Response Schemas
 
-A response Lemonade builds, such as the model JSON or `/system-info`, is a struct whose field table produces both its JSON and its `response_schema`, so the two cannot drift. A pass-through route's `response_schema` describes the public contract it follows, such as OpenAI's chat completion object.
+This section defines where the schemas in `RouteResponse` come from:
+
+- **In the route class.** Response schemas are JSON Schema, written next to the route's `RouteArg` schemas, so a route's whole contract sits beside its handler. `gen_api_boilerplate.py` reads them from `GET /internal/routes` with the rest of the `RouteSpec`.
+- **Shared shapes.** A shape that more than one route returns has a schema function declared beside the function that builds it, such as `ModelJson::schema()` beside `ModelJson::to_json()`, so the shape and its schema change together.
+- **Pass-through routes.** The schema describes the public contract the route follows, such as OpenAI's chat completion object, limited to the fields Lemonade returns.
+
+`route_decision_schema()`, declared beside `route_decision_to_json()` in `lemon/route_decision_response.h`, returns the schema the routing engine already maintains:
+
+```cpp
+nlohmann::json route_decision_schema() {
+    std::ifstream file(utils::get_resource_path("resources/schemas/decision.schema.json"));
+    return nlohmann::json::parse(file);
+}
+```
 
 ### Complete Example
 
 `routes/openai/text/chat_completions.cpp`:
 
 ```cpp
+nlohmann::json chat_completion_schema() {
+    auto schema = nlohmann::json::parse(R"({
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices", "usage"],
+        "properties": {
+            "id": {"type": "string"},
+            "object": {"const": "chat.completion"},
+            "created": {"type": "integer"},
+            "model": {"type": "string"},
+            "choices": {"type": "array", "items": {
+                "type": "object",
+                "required": ["index", "message", "finish_reason"],
+                "properties": {
+                    "index": {"type": "integer"},
+                    "message": {
+                        "type": "object",
+                        "required": ["role", "content"],
+                        "properties": {
+                            "role": {"const": "assistant"},
+                            "content": {"type": ["string", "null"]}
+                        }
+                    },
+                    "finish_reason": {"type": "string"}
+                }
+            }},
+            "usage": {
+                "type": "object",
+                "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+                "properties": {
+                    "prompt_tokens": {"type": "integer"},
+                    "completion_tokens": {"type": "integer"},
+                    "total_tokens": {"type": "integer"}
+                }
+            }
+        }
+    })");
+    // Router collections add their routing decision to the response.
+    schema["properties"]["x_lemonade_route"] = route_decision_schema();
+    return schema;
+}
+
+nlohmann::json chat_completion_chunk_schema() {
+    return nlohmann::json::parse(R"({
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices"],
+        "properties": {
+            "id": {"type": "string"},
+            "object": {"const": "chat.completion.chunk"},
+            "created": {"type": "integer"},
+            "model": {"type": "string"},
+            "choices": {"type": "array", "items": {
+                "type": "object",
+                "required": ["index", "delta", "finish_reason"],
+                "properties": {
+                    "index": {"type": "integer"},
+                    "delta": {
+                        "type": "object",
+                        "properties": {
+                            "role": {"const": "assistant"},
+                            "content": {"type": ["string", "null"]}
+                        }
+                    },
+                    "finish_reason": {"type": ["string", "null"]}
+                }
+            }}
+        }
+    })");
+}
+
 class ChatCompletionsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -185,10 +300,26 @@ public:
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, true, "Stream tokens as server-sent events."},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, false, "Return the log probability of each output token."},
         };
-        s.example = {{"model", "Qwen3-0.6B-GGUF"},
-                     {"messages", {{{"role", "user"}, {"content", "What is the capital of France?"}}}}};
-        s.response_schema = openai_schemas::chat_completion();
-        s.json_body = true;
+
+        RouteResponse completion;
+        completion.format = ResponseFormat::Json;
+        completion.schema = chat_completion_schema();
+        completion.example = nlohmann::json::parse(R"({
+            "model": "Qwen3-0.6B-GGUF",
+            "messages": [{"role": "user", "content": "What is the capital of France?"}]
+        })");
+
+        RouteResponse stream;
+        stream.format = ResponseFormat::EventStream;
+        stream.schema = chat_completion_chunk_schema();
+        stream.example = nlohmann::json::parse(R"({
+            "model": "Qwen3-0.6B-GGUF",
+            "messages": [{"role": "user", "content": "What is the capital of France?"}],
+            "stream": true
+        })");
+
+        s.responses = {completion, stream};
+        s.request_format = RequestFormat::Json;
         s.model_defaults_to_loaded = true;
         return s;
     }
@@ -286,9 +417,9 @@ This section lists the core components, each with an interface of a few calls:
 | `RouteRegistry` | `add()`, `apply(httplib::Server&)`, `list()` | Prefix expansion, 405 stubs, registration order, the route list for the docs |
 | `ConfigEffects` | `apply(key)`, called at startup and on every config change | Applies each config key's side effects, at startup and on change |
 | `WebUi` | `register_routes(httplib::Server&)`, called last | The SPA, the legacy status page, static assets and the SPA fallback. Its mock `window.api` lives in the web-app sources |
-| `ModelLoader` | `ensure_loaded()`, `resolve_name()`, `write_load_error()` | Auto-load, collection loading, alias and `:latest` resolution, load errors. Used by `ModelRoute` and the gateways |
-| `ModelJson` | `to_json(id, info)` | Builds the model JSON for the models routes, the status page and the job engine |
-| `DownloadManager` | `start()`, `list()`, `control()`, `cancel_all()` | Server-owned download jobs and their threads |
+| `ModelLoader` | `ensure_loaded()`, `write_load_error()` | Auto-load, collection loading, load errors. Used by `ModelRoute` and the gateways |
+| `ModelJson` | `to_json(id, info)`, `schema()` | Builds the model JSON for the models routes, the status page and the job engine |
+| `DownloadManager` | `start()`, `list()`, `control()`, `cancel_all()`, `stream()`, `job_schema()`, `event_schema()` | Server-owned download jobs and their threads, and the download event stream that pull and install send |
 | `JobOps` | `build(ServerContext&)` | Builds the job engine's op providers |
 
 These are internal details of other classes:
@@ -307,29 +438,30 @@ This section specifies how `docs/api` is generated from the routes, including re
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page.
-3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, notes, every prefixed path and its auth, a Parameters table with a status per argument, an Example request with PowerShell and Bash tabs, and the Response format. The badge is `fully_available` when every argument is supported, and `partially_available` otherwise.
-4. Fills each example from the response cache, running the request against lemond only when its cache entry is invalid.
+3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, notes, every prefixed path and its auth, a Parameters table with a status per argument, and one Response subsection per entry in `responses`. The badge is `fully_available` when every argument is supported, `partially_available` when some are not, and `not_available` when `responses` is empty.
+4. Fills each Response subsection from the response cache, running its setup and example against lemond only when its cache entry is invalid.
 
 Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
 
 ### Examples
 
-Each example shows the curl command for the route's `example` request and the response lemond returned:
+Each Response subsection has PowerShell and Bash tabs with the example request, a Response tab with what lemond returned, and, for a JSON format, a Schema tab. The generator builds and records examples by these rules:
 
-- **Files.** A request value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/` and shown in curl as `$(base64 -w0 <file>)`.
-- **Streaming.** For a route with a `stream` argument, the generator also records the same request streamed, and shows the first three and the last two events.
-- **Binary responses.** Audio, images and meshes are recorded as status, headers and byte count.
+- **Arguments.** An `example` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
+- **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
+- **Setup.** The examples in `setup` run first, in order, each after its own setup. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
+- **One lemond.** Every example runs against one lemond started by the `Lemond` harness, which starts it again after an example stops it, as `/internal/shutdown` does. An example that deletes or uninstalls something removes what its own setup added.
+- **Recorded output.** Every response shows its status, plus a JSON body in full, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
 
 ### Response Cache
 
-Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per route. An entry's key is the SHA-256 of:
+Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per entry in a route's `responses`. An entry's key is the SHA-256 of:
 
-- the route `id`
-- the canonical JSON of its `example`
-- its `response_schema`
+- the route `id` and the response's `format`
+- the canonical JSON of its `example` and of every example in its `setup`
 - for a pass-through route, its backend's pinned version from `backend_versions.json`
 
-A new route, a changed request, a changed response format, or a backend version bump changes the key and invalidates the entry. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
+A new response, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
 
 ### Drift Check
 
@@ -338,12 +470,15 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a route has no region, or a region has no route
 - any generated text is stale
 - any cache entry is invalid
+- a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
+- a JSON format has no `schema`, or another format has one
+- an `example` names an argument the route does not have, a `setup` entry names a route or response that does not exist, or a `$<route id>` value names a route that did not run during setup
 
 The author fixes it by running the generator locally and committing the result. The weekly backend-bump workflows (`validate_llamacpp.yml`, `validate_sdcpp.yml`, `validate_vllm.yml`) run each new version on self-hosted runners; their runner job also runs the generator for the entries the bump invalidated, and the PR the workflow opens includes the updated cache.
 
 ### Generated Output
 
-The route in [Complete Example](#complete-example) generates this region of openai.md:
+The route in [Complete Example](#complete-example) generates this region of openai.md. The Schema tabs are shortened here, and hold the full schemas from Complete Example:
 
 ````markdown
 <!-- BEGIN GENERATED: openai.chat_completions -->
@@ -363,7 +498,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 | `stream` | No | Stream tokens as server-sent events. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Return the log probability of each output token. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
-### Example request
+### Response: `Json`
 
 === "PowerShell"
 
@@ -383,18 +518,73 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
     ```
 
-### Response format
+=== "Response"
 
-```json
-{
-  "id": "chatcmpl-a1B2c3D4e5F6",
-  "object": "chat.completion",
-  "created": 1759766400,
-  "model": "Qwen3-0.6B-GGUF",
-  "choices": [{"index": 0, "message": {"role": "assistant", "content": "The capital of France is Paris."}, "finish_reason": "stop"}],
-  "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23}
-}
-```
+    `200`
+
+    ```json
+    {
+      "id": "chatcmpl-a1B2c3D4e5F6",
+      "object": "chat.completion",
+      "created": 1759766400,
+      "model": "Qwen3-0.6B-GGUF",
+      "choices": [{"index": 0, "message": {"role": "assistant", "content": "The capital of France is Paris."}, "finish_reason": "stop"}],
+      "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23}
+    }
+    ```
+
+=== "Schema"
+
+    ```json
+    {
+      "type": "object",
+      "required": ["id", "object", "created", "model", "choices", "usage"],
+      ...
+    }
+    ```
+
+### Response: `EventStream`
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/chat/completions" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
+    ```
+
+=== "Response"
+
+    `200`
+
+    ```text
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": "The"}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": " capital"}, "finish_reason": null}]}
+    ...
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+    data: [DONE]
+    ```
+
+=== "Schema"
+
+    ```json
+    {
+      "type": "object",
+      "required": ["id", "object", "created", "model", "choices"],
+      ...
+    }
+    ```
 <!-- END GENERATED: openai.chat_completions -->
 ````
 
@@ -422,7 +612,6 @@ Findings that shaped specific rules:
 - Across all PRs, 37% edited `server.h` and 24% the include block, the two spots unrelated PRs most often both edit. Route classes have no headers.
 - Replayed against the folder layout, 14 of the 19 PRs that would have touched 3 or more route folders were changing model loading, load errors, router dispatch or telemetry. These have one home in `ModelRoute` or a shared helper.
 - 9 of the open PRs edit collections and routing, and 5 of those edit `/routing/validate` because it builds its routing context by hand. Hence the `router/` folder and the use of `build_route_context()`.
-- Three open PRs (#3536, #3437, #3435) add alias resolution to a gateway, and two of them are the same fix by different authors. `ModelLoader` gives every gateway alias resolution.
 
 ## Appendix B: Error Format Cleanup
 
