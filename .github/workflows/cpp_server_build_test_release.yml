@@ -1761,7 +1761,8 @@ jobs:
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
               "$archiveDir\resources\defaults.json",
-              "$archiveDir\resources\toolDefinitions.json"
+              "$archiveDir\resources\toolDefinitions.json",
+              "$archiveDir\resources\schemas\decision.schema.json"
           )
           $failures = @()
           foreach ($f in $expected) {

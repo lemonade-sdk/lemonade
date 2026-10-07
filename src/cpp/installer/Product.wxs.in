@@ -131,6 +131,7 @@
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
             <Directory Id="DocsDir" Name="docs" />
+            <Directory Id="SchemasDir" Name="schemas" />
             <Directory Id="StaticDir" Name="static" />
             <Directory Id="WebAppDir" Name="web-app" />
           </Directory>
@@ -216,6 +217,10 @@
 
       <Component Id="ArchitectureDefaultsJson" Directory="ResourcesDir" Guid="f04a62d1-8b3e-4c2a-9f5d-7e1b8c3a0d4e">
         <File Id="architecture_defaults.json" Source="$(var.BuildDir)\Release\resources\architecture_defaults.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="DecisionSchemaJson" Directory="SchemasDir" Guid="0af68800-ae04-43b0-9811-aa2d2c48e8b6">
+        <File Id="decision.schema.json" Source="$(var.BuildDir)\Release\resources\schemas\decision.schema.json" KeyPath="yes" />
       </Component>
 
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
