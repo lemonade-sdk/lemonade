@@ -20,6 +20,10 @@ import requests
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    load_model,
+    get_model_options,
+    unload_model,
+    model_recipe_options,
 )
 from utils.test_models import (
     SD_MODEL,
@@ -50,6 +54,12 @@ def create_minimal_png(width=8, height=8):
         + make_chunk(b"IDAT", idat_data)
         + make_chunk(b"IEND", b"")
     )
+
+
+def png_dimensions(b64_image):
+    """Return (width, height) decoded from a base64 PNG's IHDR chunk."""
+    raw = base64.b64decode(b64_image[:32])
+    return struct.unpack(">II", raw[16:24])
 
 
 class StableDiffusionTests(ServerTestBase):
@@ -697,6 +707,197 @@ class StableDiffusionTests(ServerTestBase):
         decoded = base64.b64decode(b64_data)
         self.assertTrue(decoded[:4] == b"\x89PNG", "Result should be a valid PNG")
         print(f"[OK] Image edit successful ({len(decoded)} bytes)")
+
+    # --- Runtime (loaded-instance) upscale_model option resolution ---
+
+    def _generate(self, **overrides):
+        payload = {
+            "model": SD_MODEL,
+            "prompt": "A red circle",
+            "size": "256x256",
+            "steps": 2,
+            "n": 1,
+            "response_format": "b64_json",
+        }
+        payload.update(overrides)
+        response = requests.post(
+            f"{self.base_url}/images/generations",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Image generation failed with status {response.status_code}: {response.text}",
+        )
+        return response.json()["data"][0]
+
+    def test_022_loaded_upscale_option_applies_without_save(self):
+        """upscale_model passed at /load (no save_options) auto-upscales generations."""
+        resp = load_model(SD_MODEL, upscale_model=ESRGAN_MODEL)
+        self.assertEqual(
+            resp.status_code, 200, f"Load with upscale_model failed: {resp.text}"
+        )
+        try:
+            saved = get_model_options(SD_MODEL)["saved"]
+            self.assertNotIn(
+                "upscale_model",
+                saved,
+                "A load without save_options must not persist upscale_model",
+            )
+
+            item = self._generate()
+            self.assertTrue(
+                item.get("upscaled"),
+                "Generation should auto-upscale per the loaded upscale_model option",
+            )
+            width, height = png_dimensions(item["b64_json"])
+            self.assertGreater(
+                width, 256, "Upscaled image should exceed the 256px input"
+            )
+            self.assertEqual(
+                item.get("width"),
+                width,
+                "Response width field should match the returned PNG",
+            )
+            self.assertEqual(
+                item.get("height"),
+                height,
+                "Response height field should match the returned PNG",
+            )
+            print(f"[OK] Loaded-only upscale_model option applied ({width}px wide)")
+        finally:
+            unload_model(SD_MODEL)
+
+    def test_023_explicit_empty_upscale_model_clears_loaded_option(self):
+        """upscale_model: '' in the request disables a loaded upscale_model option."""
+        resp = load_model(SD_MODEL, upscale_model=ESRGAN_MODEL)
+        self.assertEqual(
+            resp.status_code, 200, f"Load with upscale_model failed: {resp.text}"
+        )
+        try:
+            item = self._generate(upscale_model="")
+            self.assertFalse(
+                item.get("upscaled"),
+                "Explicit empty upscale_model must clear the loaded option",
+            )
+            print("[OK] Explicit empty upscale_model cleared the loaded option")
+        finally:
+            unload_model(SD_MODEL)
+
+    def test_024_skip_implicit_upscaling_vs_request_upscale_model(self):
+        """skip_implicit_upscaling suppresses the loaded option but not a request-level one."""
+        resp = load_model(SD_MODEL, upscale_model=ESRGAN_MODEL)
+        self.assertEqual(
+            resp.status_code, 200, f"Load with upscale_model failed: {resp.text}"
+        )
+        try:
+            item = self._generate(skip_implicit_upscaling=True)
+            self.assertFalse(
+                item.get("upscaled"),
+                "skip_implicit_upscaling must suppress the loaded upscale_model option",
+            )
+
+            item = self._generate(
+                skip_implicit_upscaling=True, upscale_model=ESRGAN_MODEL
+            )
+            self.assertTrue(
+                item.get("upscaled"),
+                "A request-level upscale_model must survive skip_implicit_upscaling",
+            )
+            print("[OK] skip_implicit_upscaling respected request-level upscale_model")
+        finally:
+            unload_model(SD_MODEL)
+
+    def test_025_upscale_endpoint_accepts_upscale_model_alias(self):
+        """POST /images/upscale accepts upscale_model as an alias for model."""
+        png_bytes = create_minimal_png()
+        b64_image = base64.b64encode(png_bytes).decode("utf-8")
+
+        response = requests.post(
+            f"{self.base_url}/images/upscale",
+            json={"image": b64_image, "upscale_model": ESRGAN_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Upscale via upscale_model alias failed: {response.status_code} {response.text}",
+        )
+        result = response.json()
+        b64_out = result["data"][0]["b64_json"]
+        self.assertTrue(b64_out[:4] != "", "Should contain base64 image")
+        decoded = base64.b64decode(b64_out)
+        self.assertTrue(decoded[:4] == b"\x89PNG", "Result should be a valid PNG")
+        width, _ = png_dimensions(b64_out)
+        self.assertGreater(width, 8, "Alias upscale should enlarge the 8px input")
+        print(f"[OK] /images/upscale upscale_model alias worked ({width}px wide)")
+
+    def test_026_saved_upscale_option_beats_request_empty(self):
+        """A saved upscale_model option auto-applies; request '' overrides it."""
+        with model_recipe_options(SD_MODEL, upscale_model=ESRGAN_MODEL):
+            item = self._generate()
+            self.assertTrue(
+                item.get("upscaled"),
+                "Saved upscale_model option should auto-upscale on load",
+            )
+
+            item = self._generate(upscale_model="")
+            self.assertFalse(
+                item.get("upscaled"),
+                "Request-level empty upscale_model must override the saved option",
+            )
+            print("[OK] Request-level upscale_model overrode the saved option")
+
+    def test_027_image_edit_upscale_model_field(self):
+        """upscale_model as an /images/edits form field upscales the edited result."""
+        png_bytes = create_minimal_png(256, 256)
+        response = requests.post(
+            f"{self.base_url}/images/edits",
+            files={"image": ("test.png", io.BytesIO(png_bytes), "image/png")},
+            data={
+                "model": SD_MODEL,
+                "prompt": "A red circle",
+                "size": "256x256",
+                "n": "1",
+                "response_format": "b64_json",
+                "upscale_model": ESRGAN_MODEL,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Image edit with upscale_model failed: {response.status_code} {response.text}",
+        )
+        item = response.json()["data"][0]
+        self.assertTrue(
+            item.get("upscaled"),
+            "Edit should be auto-upscaled per the request upscale_model field",
+        )
+        width, _ = png_dimensions(item["b64_json"])
+        self.assertGreater(width, 256, "Upscaled edit should exceed the 256px input")
+        print(f"[OK] /images/edits upscale_model field applied ({width}px wide)")
+
+    def test_028_upscale_refine_type_validation(self):
+        """Non-string upscale_model and non-boolean refine are rejected with 400."""
+        for payload in (
+            {"model": SD_MODEL, "prompt": "x", "upscale_model": 123},
+            {"model": SD_MODEL, "prompt": "x", "refine": "yes"},
+        ):
+            response = requests.post(
+                f"{self.base_url}/images/generations",
+                json=payload,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                response.status_code,
+                400,
+                f"Expected 400 for {payload}, got {response.status_code}: {response.text}",
+            )
+            err = response.json()["error"]
+            self.assertEqual(err["type"], "invalid_request_error")
+        print("[OK] Invalid upscale_model/refine types rejected with 400")
 
 
 if __name__ == "__main__":
