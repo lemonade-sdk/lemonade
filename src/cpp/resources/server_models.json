@@ -2957,5 +2957,63 @@
         ],
         "size": 365.71,
         "min_resident_gb": 16.0
+    },
+    "Qwen3.8-27B-ROCmFP4-FAST": {
+        "checkpoint": "julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:Qwen3.8-27B-ROCmFP4-FAST.gguf",
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 14.6,
+        "uploaded_by": "julianmb"
+    },
+    "Qwen3.8-27B-ROCmFP4-STRIX-MTP": {
+        "checkpoints": {
+            "main": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMFP4_STRIX.gguf",
+            "draft": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mtp-Qwen3.8-27B-Q4_0.gguf",
+            "mmproj": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mmproj-Qwen3.8-27B-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 17.4,
+        "uploaded_by": "kingjones777"
+    },
+    "Qwen3.8-27B-ROCmI4-MTP": {
+        "checkpoints": {
+            "main": "cafonez/Qwen3.8-27B-ROCmI4-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMI4.gguf",
+            "mmproj": "cafonez/Qwen3.8-27B-ROCmI4-MTP-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 15.4,
+        "uploaded_by": "cafonez"
+    },
+    "Qwopus3.6-27B-v2-ROCmFP4-MTP": {
+        "checkpoint": "jcbtc/qwopus3.6-27b-v2-chadrock-rocmfp4-mtp:Qwopus3.6-27B-v2-MTP-BF16-to-ROCmFP4-STRIX_LEAN.gguf",
+        "recipe": "rocmfpx",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 14.8,
+        "uploaded_by": "jcbtc"
     }
 }
