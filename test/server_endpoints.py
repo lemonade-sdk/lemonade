@@ -6452,16 +6452,22 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # kv_count
 
     @contextlib.contextmanager
-    def _extra_models_dir(self, ggufs=(), gguf_sizes=None):
+    def _extra_models_dir(self, ggufs=(), gguf_sizes=None, refs=None):
         """Serve a fresh extra_models_dir holding a stub GGUF at each of `ggufs`,
         padded to `gguf_sizes` ({path: bytes}) where given, all as '/'-separated
-        paths; then restore the prior setting."""
+        paths, and a refs/main naming the commit for each cache repo in `refs`
+        ({repo: commit}); then restore the prior setting."""
         extra_dir = tempfile.mkdtemp(prefix=f"lemon_{self._testMethodName}_")
         for relative in ggufs:
             self._write_stub_gguf_file(os.path.join(extra_dir, *relative.split("/")))
         for relative, size in (gguf_sizes or {}).items():
             with open(os.path.join(extra_dir, *relative.split("/")), "r+b") as f:
                 f.truncate(size)
+        for repo, commit in (refs or {}).items():
+            refs_dir = os.path.join(extra_dir, repo, "refs")
+            os.makedirs(refs_dir, exist_ok=True)
+            with open(os.path.join(refs_dir, "main"), "w") as f:
+                f.write(commit)
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
@@ -6842,6 +6848,241 @@ class EndpointTests(ServerTestBase):
             )
 
             print("[OK] root shard files are one model")
+
+    def test_021yg_extra_shared_folder_name_has_one_owner(self):
+        """When several folders share a name, the first one found owns that name
+        in both its bare and extra. forms."""
+        with self._extra_models_dir(
+            ggufs=[
+                f"{publisher}/Qwen3-8B-GGUF/{name}"
+                for publisher in ("bartowski", "lmstudio-community", "unsloth")
+                for name in ("Qwen3-8B-Q4_K_M.gguf", "Qwen3-8B-Q8_0.gguf")
+            ]
+        ) as extra_dir:
+            for requested in ("Qwen3-8B-GGUF", "extra.Qwen3-8B-GGUF"):
+                self.assertEqual(
+                    self._get_model(requested)["checkpoint"],
+                    os.path.join(
+                        extra_dir, "bartowski", "Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf"
+                    ),
+                    f"{requested} must resolve to the first folder found",
+                )
+
+            print("[OK] a shared folder name has one owner")
+
+    def test_021ygb_extra_shared_folder_name_qualifies_a_later_single_model(self):
+        """A later single-model folder whose name an earlier folder owns is
+        qualified with the folder that contains it, and the earlier folder
+        keeps the name."""
+        with self._extra_models_dir(
+            ggufs=[
+                "alpha/Shared/Llama-Q4_K_M.gguf",
+                "alpha/Shared/Llama-Q8_0.gguf",
+                "beta/Shared/Mistral-Q4_K_M.gguf",
+            ]
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Llama-Q4_K_M": "alpha/Shared/Llama-Q4_K_M.gguf",
+                    "Llama-Q8_0": "alpha/Shared/Llama-Q8_0.gguf",
+                    "beta-Shared": "beta/Shared/",
+                },
+            )
+            for requested in ("Shared", "extra.Shared"):
+                self.assertEqual(
+                    self._get_model(requested)["checkpoint"],
+                    os.path.join(extra_dir, "alpha", "Shared", "Llama-Q4_K_M.gguf"),
+                    f"{requested} must resolve to the first folder found",
+                )
+
+            print("[OK] a later single-model folder is qualified")
+
+    def test_021yb_extra_hf_cache_is_named_after_its_repo(self):
+        """Naming rule: a model in a Hugging Face or ModelScope cache is named
+        after its repo, not after the commit folder it sits in."""
+        hf = "models--lemontest--Hf-7B-GGUF"
+        ms = "modelscope--models--lemontest--Ms-3B-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{hf}/snapshots/commit-1-old/Hf-7B-Q4_K_M.gguf",
+                f"{hf}/snapshots/commit-2-live/Hf-7B-Q4_K_M.gguf",
+                f"{ms}/snapshots/commit-live/Ms-3B-Q4_K_M.gguf",
+            ],
+            refs={hf: "commit-2-live", ms: "commit-live"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Hf-7B-GGUF": f"{hf}/snapshots/commit-2-live/",
+                    "Ms-3B-GGUF": f"{ms}/snapshots/commit-live/",
+                    # An older revision left in the cache is prefixed with its commit.
+                    "commit-1-old-Hf-7B-GGUF": f"{hf}/snapshots/commit-1-old/",
+                },
+            )
+
+            legacy = requests.get(
+                f"{self.base_url}/models/commit-2-live", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 404, "commit folder must not resolve")
+
+            print("[OK] cache folders are named after their repo")
+
+    def test_021yc_extra_hf_cache_collision_qualifies_with_the_org(self):
+        """Naming rule: two orgs shipping one repo name both stay readable,
+        because the second is qualified with its org rather than its commit."""
+        first = "alpha-commit"
+        second = "beta-commit"
+        with self._extra_models_dir(
+            ggufs=[
+                f"models--alpha--Collide-7B-GGUF/snapshots/{first}/Collide-7B-Q4_K_M.gguf",
+                f"models--beta--Collide-7B-GGUF/snapshots/{second}/Collide-7B-Q4_K_M.gguf",
+            ],
+            refs={
+                "models--alpha--Collide-7B-GGUF": first,
+                "models--beta--Collide-7B-GGUF": second,
+            },
+        ) as extra_dir:
+            # Caches sort by directory, so alpha claims the bare name and beta
+            # is qualified with its org, not its commit.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Collide-7B-GGUF": f"models--alpha--Collide-7B-GGUF/snapshots/{first}/",
+                    "beta-Collide-7B-GGUF": f"models--beta--Collide-7B-GGUF/snapshots/{second}/",
+                },
+            )
+
+            print("[OK] a cache collision is qualified with the org")
+
+    def test_021yd_extra_hf_cache_subfolder_takes_the_repo_name(self):
+        """Naming rule: a cache whose GGUFs sit in quantization subfolders names
+        them <repo>-<folder>, and the subfolder name is not kept as a name."""
+        commit = "commit-live"
+        snapshot = f"models--lemontest--Subfolder-235B-GGUF/snapshots/{commit}"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshot}/Q4_K_M/Subfolder-235B-Q4_K_M-00001-of-00002.gguf",
+                f"{snapshot}/Q4_K_M/Subfolder-235B-Q4_K_M-00002-of-00002.gguf",
+                f"{snapshot}/Q8_0/Subfolder-235B-Q8_0.gguf",
+            ],
+            refs={"models--lemontest--Subfolder-235B-GGUF": commit},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Subfolder-235B-GGUF-Q4_K_M": f"{snapshot}/Q4_K_M/",
+                    "Subfolder-235B-GGUF-Q8_0": f"{snapshot}/Q8_0/",
+                },
+            )
+
+            # A bare Q8_0 would collide with every other repo shipping that folder.
+            legacy = requests.get(
+                f"{self.base_url}/models/Q8_0", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 404, "Q8_0 must not resolve")
+
+            print("[OK] cache subfolders carry the repo name")
+
+    def test_021ye_extra_hf_cache_live_revision_owns_the_plain_names(self):
+        """Naming rule: names follow the revision refs/main points at, whatever
+        order the revisions are discovered in."""
+        superseded = "commit-1-old"
+        live = "commit-2-live"
+        repo = "models--lemontest--Revision-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Revision-7B-{quant}.gguf"
+                for commit in (superseded, live)
+                for quant in ("Q4_K_M", "Q8_0")
+            ],
+            refs={repo: live},
+        ) as extra_dir:
+            # The superseded revision sorts first, so this fails if discovery
+            # order decides the winner instead of refs/main.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Revision-7B-Q4_K_M": f"{snapshots}/{live}/Revision-7B-Q4_K_M.gguf",
+                    "Revision-7B-Q8_0": f"{snapshots}/{live}/Revision-7B-Q8_0.gguf",
+                    f"{superseded}-Revision-7B-Q4_K_M": f"{snapshots}/{superseded}/Revision-7B-Q4_K_M.gguf",
+                    f"{superseded}-Revision-7B-Q8_0": f"{snapshots}/{superseded}/Revision-7B-Q8_0.gguf",
+                },
+            )
+
+            print("[OK] the live cache revision owns the plain names")
+
+    def test_021yh_extra_cache_lookalikes_keep_folder_naming(self):
+        """Naming rule: cache naming needs a real cache with a live revision;
+        anything that only resembles one is named like any other folder."""
+        with self._extra_models_dir(
+            ggufs=[
+                # Named like a cache, but has no snapshots/ inside.
+                "models--lemontest--Plain-GGUF/model.gguf",
+                # Has a snapshots/ folder, but is not inside a cache.
+                "projects/snapshots/v1/model.gguf",
+                # A cache whose refs/main names a revision that is not on disk,
+                # so there is no live revision to name the model after.
+                "models--lemontest--Broken-GGUF/snapshots/commit-on-disk/model.gguf",
+            ],
+            refs={"models--lemontest--Broken-GGUF": "commit-not-on-disk"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "models--lemontest--Plain-GGUF": "models--lemontest--Plain-GGUF/",
+                    "v1": "projects/snapshots/v1/",
+                    "commit-on-disk": "models--lemontest--Broken-GGUF/snapshots/commit-on-disk/",
+                },
+            )
+
+            print("[OK] cache lookalikes keep folder naming")
+
+    def test_021yi_extra_hf_cache_follows_a_refs_main_switch(self):
+        """Switching refs/main on a running server moves the repo name to the
+        new revision without resetting extra_models_dir."""
+        repo = "models--lemontest--Switch-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Switch-7B-Q4_K_M.gguf"
+                for commit in ("commit-1", "commit-2")
+            ],
+            refs={repo: "commit-1"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                    "commit-2-Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                },
+            )
+
+            # Written the way llama.cpp updates a ref: a temp file renamed over it.
+            refs_main = os.path.join(extra_dir, repo, "refs", "main")
+            with open(refs_main + ".tmp", "w") as f:
+                f.write("commit-2")
+            os.replace(refs_main + ".tmp", refs_main)
+
+            live = os.path.join(extra_dir, *snapshots.split("/"), "commit-2")
+            deadline = time.time() + 10
+            while (
+                self._get_model("Switch-7B-GGUF")["checkpoint"] != live
+                and time.time() < deadline
+            ):
+                time.sleep(0.25)
+
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                    "commit-1-Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                },
+            )
+            self.assertEqual(self._get_model("Switch-7B-GGUF")["checkpoint"], live)
+
+            print("[OK] the repo name follows a refs/main switch")
 
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
