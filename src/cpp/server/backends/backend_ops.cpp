@@ -4,6 +4,7 @@
 #include <filesystem>
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
 namespace fs = std::filesystem;
@@ -133,6 +134,11 @@ const BackendOps* default_backend_ops() {
 
 std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
                                                            const std::string& backend) {
+    const auto* cfg = RuntimeConfig::global();
+    if (!cfg || !cfg->enable_containers()) {
+        return utils::SetupFailure{"Container backends are disabled",
+                                   "lemonade config set enable_containers=true"};
+    }
     const auto& manager = utils::ContainerManager::global();
     const BackendDescriptor* desc = descriptor_for(recipe);
     const ContainerPolicy* policy = desc ? desc->container_for(backend) : nullptr;
