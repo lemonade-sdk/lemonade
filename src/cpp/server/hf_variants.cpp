@@ -4,11 +4,13 @@
 #include <cctype>
 #include <cstdlib>
 #include <map>
+#include <optional>
 #include <regex>
 #include <stdexcept>
 #include <unordered_map>
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
 #include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
@@ -493,6 +495,28 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             "' manifest exported by 'lemonade export')");
     }
 
+    nlohmann::json compatibility_metadata = repository.raw_metadata;
+    std::optional<nlohmann::json> expanded_metadata;
+    if (source == RemoteRegistrySource::HuggingFace) {
+        expanded_metadata = fetch_huggingface_compatibility_metadata(
+            checkpoint, repository.snapshot_id);
+    }
+    if (expanded_metadata) {
+        for (const char* field : {"gguf", "pipeline_tag"}) {
+            auto value = expanded_metadata->find(field);
+            if (value != expanded_metadata->end()) {
+                compatibility_metadata[field] = *value;
+            }
+        }
+    }
+    const std::string incompatibility = llamacpp_gguf_incompatibility(
+        compatibility_metadata, remote_registry_source_name(source));
+    if (!incompatibility.empty()) {
+        throw std::invalid_argument(
+            "Repository " + checkpoint + " is not compatible with llama.cpp: " +
+            incompatibility);
+    }
+
     // Suggested labels. These are what the client previews before confirming
     // the pull, so they run through the same stamper that /pull applies at
     // registration; otherwise the preview and the registered model disagree.
@@ -538,6 +562,46 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     }
     out["variants"] = std::move(variants_json);
     return out;
+}
+
+std::string llamacpp_gguf_incompatibility(
+    const nlohmann::json& repository_metadata,
+    const std::string& registry_source) {
+    const std::string normalized_source = to_lower(registry_source);
+    if (!normalized_source.empty() &&
+        normalized_source != "huggingface" && normalized_source != "hf") {
+        return {};
+    }
+
+    auto task_it = repository_metadata.find("pipeline_tag");
+    if (task_it != repository_metadata.end() && task_it->is_string()) {
+        const std::string task = task_it->get<std::string>();
+        if (registry_task_is_excluded(task)) {
+            return "repository task '" + task + "' requires a different backend";
+        }
+    }
+
+    auto gguf_it = repository_metadata.find("gguf");
+    if (gguf_it == repository_metadata.end() || !gguf_it->is_object()) {
+        return {};
+    }
+
+    auto architecture_it = gguf_it->find("architecture");
+    if (architecture_it == gguf_it->end() || !architecture_it->is_string() ||
+        architecture_it->get_ref<const std::string&>().empty() ||
+        std::all_of(architecture_it->get_ref<const std::string&>().begin(),
+                    architecture_it->get_ref<const std::string&>().end(),
+                    [](unsigned char c) { return std::isspace(c); })) {
+        return "GGUF metadata does not declare a model architecture";
+    }
+
+    const std::string architecture = architecture_it->get<std::string>();
+    if (!llamacpp_architecture_is_supported_by_all_backends(architecture)) {
+        return "GGUF architecture '" + architecture +
+               "' is not supported by Lemonade's shipped llama.cpp backends";
+    }
+
+    return {};
 }
 
 }  // namespace lemon

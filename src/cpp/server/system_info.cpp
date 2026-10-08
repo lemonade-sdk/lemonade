@@ -213,6 +213,31 @@ std::string to_lower_copy(std::string value) {
     return value;
 }
 
+std::string query_amdgpu_marketing_name(const std::string& drm_render_minor) {
+    const fs::path node = fs::path("/dev/dri") / ("renderD" + drm_render_minor);
+    const int fd = open(node.c_str(), O_RDWR | O_CLOEXEC);
+    if (fd < 0) {
+        return "";
+    }
+
+    uint32_t major_version = 0;
+    uint32_t minor_version = 0;
+    amdgpu_device_handle device = nullptr;
+    const int init_result = amdgpu_device_initialize(
+        fd, &major_version, &minor_version, &device);
+    if (init_result != 0 || device == nullptr) {
+        close(fd);
+        return "";
+    }
+
+    const char* marketing_name = amdgpu_get_marketing_name(device);
+    const std::string name = marketing_name ? trim_copy(marketing_name) : "";
+    amdgpu_device_deinitialize(device);
+    close(fd);
+
+    return name;
+}
+
 bool is_dxg_rocm_environment() {
     return fs::exists("/dev/dxg");
 }
@@ -366,13 +391,7 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
 
     RocmAgentInfo rocm_agent;
     rocm_agent.arch_name = arch;
-    if (!marketing.empty() && marketing != arch) {
-        rocm_agent.display_name = marketing + " (" + arch + ")";
-    } else if (!marketing.empty()) {
-        rocm_agent.display_name = marketing;
-    } else {
-        rocm_agent.display_name = arch;
-    }
+    rocm_agent.display_name = system_info_detail::gpu_display_name(marketing, arch);
 
         uint8_t memory_properties[8] = {0};
     if (context->api->agent_get_info(
@@ -897,7 +916,7 @@ json SystemInfo::get_device_dict() {
         auto amd_igpu = get_amd_igpu_device();
         if (amd_igpu.available) {
             json gpu_json = {
-                {"name", amd_igpu.name},
+                {"name", amd_igpu.display_name.empty() ? amd_igpu.name : amd_igpu.display_name},
                 {"available", amd_igpu.available},
                 {"integrated", true}
             };
@@ -918,7 +937,7 @@ json SystemInfo::get_device_dict() {
         for (const auto& gpu : amd_dgpus) {
             if (gpu.available) {
                 json gpu_json = {
-                    {"name", gpu.name},
+                    {"name", gpu.display_name.empty() ? gpu.name : gpu.display_name},
                     {"available", gpu.available},
                     {"integrated", false}
                 };
@@ -2376,11 +2395,12 @@ struct NvidiaSmiGpuInfo {
     std::string compute_cap;   // e.g. "8.6"
     std::string driver_version;
     double vram_gb = 0.0;
+    double vram_used_gb = -1.0;
 };
 
 // Query nvidia-smi for all GPUs. Returns one entry per GPU or an empty vector
 // if nvidia-smi is not available (e.g. drivers not installed).
-// Uses: nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total
+// Uses: nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used
 //                  --format=csv,noheader,nounits
 static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
     std::vector<NvidiaSmiGpuInfo> result;
@@ -2388,13 +2408,13 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
 
 #ifdef _WIN32
     int rc = lemon::utils::ProcessManager::run_command(
-        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total "
+        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used "
         "--format=csv,noheader,nounits 2>NUL",
         output, 10);
     if (rc != 0 || output.empty()) return result;
 #else
     static const char* smi_query =
-        " --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total"
+        " --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used"
         " --format=csv,noheader,nounits 2>/dev/null";
     for (const char* smi : {"nvidia-smi", "/usr/bin/nvidia-smi"}) {
         std::string cmd = std::string(smi) + smi_query;
@@ -2424,17 +2444,17 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         line = trim(line);
         if (line.empty()) continue;
 
-        // Fields: index, uuid, name, compute_cap, driver_version, memory_mb.
-        // Split the right side first so names with commas are handled.
+        // The four fields after name cannot contain commas, while GPU names can.
+        // Splitting those fields from the right preserves names containing commas.
         std::string remaining = line;
         std::vector<std::string> tail;
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             size_t pos = remaining.rfind(", ");
             if (pos == std::string::npos) break;
             tail.insert(tail.begin(), trim(remaining.substr(pos + 2)));
             remaining = remaining.substr(0, pos);
         }
-        if (tail.size() != 3) continue;
+        if (tail.size() != 4) continue;
 
         NvidiaSmiGpuInfo info;
         size_t first_comma = remaining.find(", ");
@@ -2466,6 +2486,10 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         try {
             double mem_mb = std::stod(tail[2]);
             info.vram_gb = mem_mb / 1024.0;
+        } catch (...) {}
+        try {
+            double used_mb = std::stod(tail[3]);
+            info.vram_used_gb = used_mb / 1024.0;
         } catch (...) {}
         result.push_back(info);
     }
@@ -2564,8 +2588,10 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
 
             if (nvmlGetMem) {
                 NvmlMemory mem{};
-                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS)
+                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS) {
                     info.vram_gb = static_cast<double>(mem.total) / (1024.0 * 1024.0 * 1024.0);
+                    info.vram_used_gb = static_cast<double>(mem.used) / (1024.0 * 1024.0 * 1024.0);
+                }
             }
 
             result.push_back(info);
@@ -2673,6 +2699,7 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
             gpu.compute_capability = smi.compute_cap;
             gpu.driver_version     = smi.driver_version;
             gpu.vram_gb            = smi.vram_gb;
+            gpu.vram_used_gb       = smi.vram_used_gb;
             gpus.push_back(gpu);
         }
         return gpus;
@@ -3153,6 +3180,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
             gpu.compute_capability = smi.compute_cap;
             gpu.driver_version     = smi.driver_version;
             gpu.vram_gb            = smi.vram_gb;
+            gpu.vram_used_gb       = smi.vram_used_gb;
             gpus.push_back(gpu);
         }
         return gpus;
@@ -3177,6 +3205,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                     ? get_nvidia_driver_version() : nvml.driver_version;
                 if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
                 gpu.vram_gb            = nvml.vram_gb;
+                gpu.vram_used_gb       = nvml.vram_used_gb;
                 gpus.push_back(gpu);
             }
             return gpus;
@@ -3489,11 +3518,22 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
 
         GPUInfo gpu;
         gpu.name = gfx_target_version;
+        gpu.display_name = system_info_detail::gpu_display_name(
+            query_amdgpu_marketing_name(drm_render_minor),
+            system_info_detail::gfx_target_version_to_arch(gfx_target_version));
         gpu.available = true;
 
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
         gpu.virtual_gb = get_amd_gtt(drm_render_minor);
+        bool read_used = false;
+        const double vram_used_gb =
+            parse_memory_sysfs(drm_render_minor, "mem_info_vram_used", &read_used);
+        if (read_used) gpu.vram_used_gb = vram_used_gb;
+
+        const double virtual_used_gb =
+            parse_memory_sysfs(drm_render_minor, "mem_info_gtt_used", &read_used);
+        if (read_used) gpu.virtual_used_gb = virtual_used_gb;
 
         gpus.push_back(gpu);
     }
@@ -3617,7 +3657,11 @@ bool LinuxSystemInfo::get_amd_is_igpu(const std::string& drm_render_minor) {
     return !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
 }
 
-double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname){
+double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor,
+                                           const std::string& fname,
+                                           bool* success) {
+    if (success) *success = false;
+
     // Try device-specific path first
     std::string sysfs_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/" + fname;
 
@@ -3631,6 +3675,7 @@ double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, 
 
     try {
         uint64_t memory_bytes = std::stoull(memory_str);
+        if (success) *success = true;
         return std::round(memory_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
     } catch (...) {
         return 0.0;

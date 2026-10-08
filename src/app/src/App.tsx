@@ -387,6 +387,7 @@ const App: React.FC = () => {
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
+  const [composerFocusEpoch, setComposerFocusEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
@@ -955,6 +956,11 @@ const App: React.FC = () => {
     setView('chat');
   }, [setView]);
 
+  const handleModelSelectFromModels = useCallback((modelName: string) => {
+    handleModelSelect(modelName);
+    setComposerFocusEpoch(epoch => epoch + 1);
+  }, [handleModelSelect]);
+
   return (
     <>
       <a href="#main-content" className="skip-link">{t('Skip to main content')}</a>
@@ -1197,6 +1203,7 @@ const App: React.FC = () => {
                 key={clientDataResetNonce}
                 currentModel={currentModel}
                 modelSelectionEpoch={modelSelectionEpoch}
+                composerFocusEpoch={composerFocusEpoch}
                 loadedModels={loadedModels}
                 serverModels={serverModels}
                 connectionStatus={status}
@@ -1213,7 +1220,7 @@ const App: React.FC = () => {
               <Suspense fallback={<ViewLoadingFallback label={t('Loading models')} />}>
                 <ModelManager
                   key={clientDataResetNonce}
-                  onModelSelect={handleModelSelect}
+                  onModelSelect={handleModelSelectFromModels}
                   openModelRequest={modelDetailsRequest}
                 />
               </Suspense>

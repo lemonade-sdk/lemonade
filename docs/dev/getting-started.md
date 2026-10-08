@@ -55,6 +55,7 @@ Lemonade consists of these main executables:
 
 **Windows:**
 - Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
+- Visual Studio -> Tools -> Get Tools and Features -> Install Desktop development with C++
 - WiX 5.x (only required for building the installer)
 
 **Linux:**

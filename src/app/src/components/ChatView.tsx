@@ -508,6 +508,7 @@ function timeAgo(ts: number): string {
 interface ChatViewProps {
   currentModel: string | null;
   modelSelectionEpoch: number;
+  composerFocusEpoch: number;
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
@@ -876,6 +877,7 @@ function friendlyRouterChatError(message: string): string {
 const ChatView: React.FC<ChatViewProps> = ({
   currentModel: selectedModel,
   modelSelectionEpoch,
+  composerFocusEpoch,
   loadedModels,
   serverModels,
   connectionStatus,
@@ -3265,6 +3267,12 @@ ${finalText}`
             : currentCapability === 'tts'
                 ? (isOpenMossCloneMode ? t('Type text to speak, then attach a WAV voice sample…') : t('Text to speak with {model}…', { model: currentModel }))
                 : t('Message {model}…', { model: currentModel });
+
+  useEffect(() => {
+    if (composerFocusEpoch === 0) return;
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [composerFocusEpoch]);
 
   useEffect(() => {
     resizeChatComposerInput(inputRef.current);

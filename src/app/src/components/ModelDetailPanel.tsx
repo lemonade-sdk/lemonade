@@ -1239,6 +1239,18 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
   fieldId, label, value, specs, fallbackArgs, onChange,
 }) => {
   const split = useMemo(() => splitSamplerArgs(specs, value), [specs, value]);
+  const [freeformDraft, setFreeformDraft] = useState(split.rest);
+  const compositionFieldsRef = useRef(split.fields);
+  const lastEmittedValueRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (lastEmittedValueRef.current === value) {
+      lastEmittedValueRef.current = null;
+      return;
+    }
+    lastEmittedValueRef.current = null;
+    compositionFieldsRef.current = split.fields;
+    setFreeformDraft(split.rest);
+  }, [split, value]);
   // A field lemond has a value for cannot be left empty: emptying every one of
   // them would send no args at all, and lemond reads that as "unset" and applies
   // these anyway — so "default" would mean llama.cpp's value in one field and
@@ -1254,6 +1266,19 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
 
   const setSampler = (flag: string, next: string) =>
     onChange(composeSamplerArgs(specs, { ...split.fields, [flag]: next }, split.rest));
+
+  const handleFreeformChange = (nextRest: string) => {
+    setFreeformDraft(nextRest);
+    const nextValue = composeSamplerArgs(specs, compositionFieldsRef.current, nextRest);
+    lastEmittedValueRef.current = nextValue === value ? null : nextValue;
+    onChange(nextValue);
+  };
+
+  const handleFreeformBlur = () => {
+    lastEmittedValueRef.current = null;
+    compositionFieldsRef.current = split.fields;
+    setFreeformDraft(split.rest);
+  };
 
   // Stepping goes through the input so the browser applies the min/max/step it
   // was already given. An empty field starts from the value llama.cpp would
@@ -1375,12 +1400,13 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
         <AutoGrowTextarea
           id={fieldId}
           className="detail-tuning__args"
-          value={split.rest}
+          value={freeformDraft}
           placeholder="Example: --threads 4"
           /* A wrapping label names the field from its text content, which for a
              textarea includes whatever has been typed into it. */
           aria-label={label}
-          onChange={e => onChange(composeSamplerArgs(specs, split.fields, e.target.value))}
+          onChange={e => handleFreeformChange(e.target.value)}
+          onBlur={handleFreeformBlur}
         />
       </label>
 
