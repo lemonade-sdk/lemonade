@@ -59,7 +59,7 @@ inline const BackendDescriptor descriptor = {
 
 ## The server class + factory — `<stem>/<stem>_server.{h,cpp}`
 
-The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`, and only the capability interfaces you serve (`ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default "unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend does not stub them. Alongside it, a free `create()` builds the instance.
+The server class is a `WrappedServer` subclass. Implement `load()` ([Starting the server process](#starting-the-server-process)) and only the capability interfaces you serve (`ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default "unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend does not stub them. Alongside it, a free `create()` builds the instance.
 
 `<stem>_server.h`:
 
@@ -71,7 +71,7 @@ The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`, 
 namespace lemon { namespace backends {
 
 class MyServer : public WrappedServer {
-    // load(), unload(), the capability methods you serve …
+    // load(), the capability methods you serve …
 };
 
 namespace myrecipe {
@@ -95,6 +95,36 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 }}}  // namespace lemon::backends::myrecipe
 ```
+
+## Starting the server process
+
+`load()` builds a `ServerCommand` and passes it to `start_server()` together with the `ServerProcess` that runs it:
+
+```cpp
+void MyServer::load(const std::string& model_name, const ModelInfo& model_info,
+                    const RecipeOptions& options, bool do_not_upgrade) {
+    backend_manager_->install_backend(myrecipe::spec()->recipe, "cpu");
+    port_ = choose_port();
+
+    ServerCommand command;
+    command.program = BackendUtils::get_backend_binary_path(*myrecipe::spec(), "cpu");
+    command.args = {"-m", model_info.resolved_path(), "--port", std::to_string(port_)};
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
+}
+```
+
+`start_server()` launches the process and polls `command.ready_endpoint` until it answers, then starts the backend watchdog on the same endpoint. It throws, with the process stopped, when the process exits, the load is cancelled, or the timeout passes first. These settings cover the differences between servers:
+
+| Setting | Effect |
+|---------|--------|
+| `command.env` | Extra environment variables for the server process. |
+| `command.ready_endpoint` | The path polled for readiness and by the watchdog. Defaults to `/health`; set it when the server has a different always-on route (FLM uses `/api/tags`). |
+| `start_server(process, command, timeout_seconds)` | Startup timeout in seconds. Defaults to 600. |
+| `ProcessOutput{inherit, filter_health_logs}` | `inherit` copies the server's output into the Lemonade log. `filter_health_logs` drops the server's health-check request lines from that output. |
+| `NativeProcess(output, working_dir)` | Working directory for the server process. Defaults to the Lemonade process's own. |
+
+The default `unload()` calls `stop_server()`. Override it when the backend owns resources beyond the process, such as files it created (vLLM's ROCm shim directory), and call `stop_server()` from the override. The router destroys the server object right after `unload()`, so an override cleans up external resources only. The `WrappedServer` destructor stops the server too, so a backend writes a destructor only for its own resources (whisper.cpp removes its temp directory).
 
 ## Register it: one line
 
@@ -160,7 +190,7 @@ Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-com
 | Conditional / grouped checkpoints (sd-cpp flux, whisper npu_cache) | validate in `load()`; list only unconditional files in `required_checkpoints` |
 | Custom per-model fields without editing `ModelInfo` | read `model_info.extra<T>("my_field", fallback)` (populated from unknown `server_models.json` keys) |
 | Models supplied at runtime, not from `server_models.json` | set `dynamic_models = true` and provide them in the class (see cloud's `discover_models()`) |
-| Per-create setup before load (ryzenai `set_model_path`) | do it in `create()` |
+| Per-create setup before load (cloud's provider) | do it in `create()` |
 
 ## The simplest end-to-end example
 
