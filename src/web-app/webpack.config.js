@@ -23,9 +23,14 @@ class EmitAppCssPlugin {
         path.resolve(this.appRoot, 'assets/logo.svg'),
         path.resolve(this.rendererRoot, '../assets/logo.svg'),
       ]);
+      const faviconFile = firstExisting([
+        path.resolve(this.appRoot, 'assets/favicon.ico'),
+        path.resolve(this.rendererRoot, '../assets/favicon.ico'),
+      ]);
 
       for (const file of cssFiles) compilation.fileDependencies.add(file);
       if (logoFile) compilation.fileDependencies.add(logoFile);
+      if (faviconFile) compilation.fileDependencies.add(faviconFile);
 
       compilation.hooks.processAssets.tap(
         {
@@ -43,6 +48,9 @@ class EmitAppCssPlugin {
           }
           if (logoFile) {
             compilation.emitAsset('logo.svg', new webpack.sources.RawSource(fs.readFileSync(logoFile)));
+          }
+          if (faviconFile) {
+            compilation.emitAsset('favicon.ico', new webpack.sources.RawSource(fs.readFileSync(faviconFile)));
           }
         },
       );
@@ -295,7 +303,9 @@ module.exports = (env, argv) => {
         templateContent: () => {
           const template = fs.readFileSync(templateFile, 'utf8');
           const criticalCssFile = path.resolve(sourceRoot, 'styles/critical.generated.css');
-          const criticalCss = fs.existsSync(criticalCssFile) ? fs.readFileSync(criticalCssFile, 'utf8') : '';
+          const criticalCss = fs.existsSync(criticalCssFile)
+            ? fs.readFileSync(criticalCssFile, 'utf8').replaceAll('../../assets/logo.svg', 'logo.svg')
+            : '';
           return template.replace('/*__LEMONADE_CRITICAL_CSS__*/', criticalCss);
         },
       }),

@@ -4,6 +4,16 @@
 
 > You may need additional configuration depending on your environment.
 
+Images are published to `ghcr.io/lemonade-sdk/lemonade-server` under three rolling tags:
+
+| Tag | Contents |
+|-----|----------|
+| `latest` | The current stable release. |
+| `candidate` | The current release candidate, rebuilt on every push to the release branch. |
+| `edge` | The tip of `main`. |
+
+Every stable release also has a `v<version>` tag and every candidate a `candidate-v<version>` tag.
+
 > **Security note**
 >
 > The container runs `lemond` as an unprivileged user and binds `0.0.0.0`

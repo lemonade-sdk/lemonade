@@ -189,6 +189,9 @@ static std::string describe_illegal_labels(const std::string& model_name,
 // Order is most-specific to most-historical.
 
 static void populate_model_metadata(ModelInfo& info) {
+    if (info.recipe == "cloud") {
+        return;
+    }
     info.max_context_window = 0;
     if (!info.downloaded) return;
 
@@ -215,6 +218,20 @@ static std::string strip_user_model_prefix(const std::string& model_name) {
 
 static std::string effective_registry_source(const ModelInfo& info) {
     return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
+}
+
+void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
+    default_model_source_provider_ = std::move(provider);
+}
+
+RemoteRegistrySource ModelManager::download_source_for(const ModelInfo& info) const {
+    if (!info.registry_source.empty()) {
+        return parse_remote_registry_source(info.registry_source);
+    }
+    if (default_model_source_provider_) {
+        return parse_remote_registry_source(default_model_source_provider_());
+    }
+    return RemoteRegistrySource::HuggingFace;
 }
 
 static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
@@ -1096,48 +1113,6 @@ void ModelManager::notify_models_changed() {
     } catch (...) {
         LOG(WARNING, "ModelManager") << "models-changed callback threw a non-standard exception" << std::endl;
     }
-}
-
-bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
-    std::vector<std::string> candidate_keys;
-
-    if (auto canon = parse_canonical_id(model_name)) {
-        if (canon->source == ModelSource::Registered) {
-            candidate_keys.push_back(canon->bare_name);
-        }
-    } else if (!model_name.empty()) {
-        candidate_keys.push_back(model_name);
-    }
-
-    if (candidate_keys.empty()) {
-        return false;
-    }
-
-    json latest_user_models = load_optional_json(get_user_models_file());
-    if (!latest_user_models.is_object()) {
-        return false;
-    }
-
-    bool found = false;
-    for (const auto& key : candidate_keys) {
-        if (latest_user_models.contains(key)) {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        user_models_ = std::move(latest_user_models);
-        cache_valid_ = false;
-    }
-
-    build_cache();
-    return true;
 }
 
 void ModelManager::set_extra_models_dir(const std::string& dir) {
@@ -3779,14 +3754,19 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         // Because we have mixed types this just makes every device_type an array.
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
-        // Expand this later to accommodate mixed pools
-        MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
-        if (dev_type == "amd_igpu")
-            dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
-        if (enable_dgpu_gtt)
-            dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
-
         for (const auto& dev : dev_list) {
+            if (!dev.is_object())
+                continue;
+
+            // Behavior is chosen per device, not per device-type: AMD APUs are
+            // reported under "amd_gpu" with "integrated": true and their GTT
+            // pool in virtual_mem_gb -- an "amd_igpu" container key is never
+            // emitted, so default to integrated when the flag is absent.
+            MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
+            if (dev_type == "amd_gpu" && dev.value("integrated", true))
+                dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
+            if (enable_dgpu_gtt)
+                dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
             curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
             largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
         }
@@ -5000,6 +4980,11 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     auto model_info = get_model_info(model_name);
+
+    const std::string download_source = requested_registry_source(model_data);
+    if (!download_source.empty() && backend_self_manages_downloads(model_info.recipe)) {
+        model_info.registry_source = download_source;
+    }
 
     if (model_data.contains("recipe_options")) {
         // Merge import recipe_options on top of the already-merged options
@@ -6287,16 +6272,6 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
         }
     }
 
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        auto it = models_cache_.find(canonical_name);
-        if (it != models_cache_.end()) {
-            return it->second;
-        }
-    }
-
     throw std::runtime_error("Model not found: " + model_name);
 }
 
@@ -6328,13 +6303,6 @@ bool ModelManager::model_exists(const std::string& model_name) {
         if (models_cache_.find(canonical_name) != models_cache_.end()) {
             return true;
         }
-    }
-
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        return models_cache_.find(canonical_name) != models_cache_.end();
     }
 
     return false;
@@ -6528,16 +6496,6 @@ bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
         return true;
     }
 
-    // If a stale warm cache caused the alias/registry lookup to miss, reload the
-    // persisted user registry before reporting a hard "not found".
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        if (exists_in_registries(model_name)) {
-            return true;
-        }
-        canonical_name = resolve_model_name(model_name);
-        return exists_in_registries(canonical_name) || server_models_.contains(canonical_name);
-    }
-
     return false;
 }
 
@@ -6572,16 +6530,6 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         std::string canonical_name = resolve_model_name(model_name);
         if (canonical_name != model_name) {
             resolved = try_resolve(canonical_name);
-        }
-    }
-
-    if (!resolved && refresh_user_models_from_disk_for_lookup(model_name)) {
-        resolved = try_resolve(model_name);
-        if (!resolved) {
-            std::string canonical_name = resolve_model_name(model_name);
-            if (canonical_name != model_name) {
-                resolved = try_resolve(canonical_name);
-            }
         }
     }
 
