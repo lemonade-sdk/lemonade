@@ -23,7 +23,7 @@ On Windows, clone the current GUI3 beta branch, configure the repository, and
 build the Tauri desktop app:
 
 ```powershell
-git clone --branch kpoineal-sync-main-backend https://github.com/lemonade-sdk/lemonade.git
+git clone --branch GUI3_squashed https://github.com/lemonade-sdk/lemonade.git
 cd lemonade
 .\setup.ps1
 cmake --build --preset windows --target tauri-app --parallel 4
