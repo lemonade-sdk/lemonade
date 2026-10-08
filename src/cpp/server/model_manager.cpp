@@ -372,15 +372,18 @@ static std::string checkpoint_to_variant(std::string checkpoint) {
 static bool is_repo_shared(const std::string& repo_id,
                            const std::string& registry_source,
                            const std::string& exclude_model,
-                           const std::map<std::string, ModelInfo>& cache) {
+                           const std::map<std::string, ModelInfo>& cache,
+                           bool require_files_on_disk = false) {
     const std::string normalized_source = remote_registry_source_name(
         parse_remote_registry_source(registry_source));
     for (const auto& [name, info] : cache) {
         if (name == exclude_model || !info.source.empty()) continue;
         if (effective_registry_source(info) != normalized_source) continue;
         for (const auto& [type, cp] : info.checkpoints) {
-            (void)type;
-            if (checkpoint_to_repo_id(cp) == repo_id) return true;
+            if (checkpoint_to_repo_id(cp) != repo_id) continue;
+            if (!require_files_on_disk) return true;
+            const std::string rpath = info.resolved_path(type);
+            if (!rpath.empty() && safe_exists(path_from_utf8(rpath))) return true;
         }
     }
     return false;
@@ -6087,6 +6090,21 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         << repo_download_paths.at(main_repo_id) << std::endl;
 }
 
+static bool repo_has_unfinished_download(const fs::path& repo_dir) {
+    if (!safe_exists(repo_dir)) return false;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
+    if (ec) return true;
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        const fs::path& entry = it->path();
+        if (entry.extension() == ".partial") return true;
+        if (entry.filename() == ".download_manifest.json") return true;
+        it.increment(ec);
+        if (ec) return true;
+    }
+    return false;
+}
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
@@ -6201,10 +6219,11 @@ void ModelManager::delete_model(const std::string& model_name) {
     fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
     std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
 
-    // Check if the main repo is shared with another model
-    bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_);
+    // Check if the main repo is still occupied by another model on disk
+    const bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_, true);
+    const bool main_busy = !main_shared && repo_has_unfinished_download(model_cache_path_fs);
 
-    if (!main_shared) {
+    if (!main_shared && !main_busy) {
         // No other model uses this repo - safe to delete the entire directory
         if (fs::exists(model_cache_path_fs)) {
             LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
@@ -6214,9 +6233,11 @@ void ModelManager::delete_model(const std::string& model_name) {
             LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
         }
     } else {
-        // Shared repo - only delete this model's specific resolved variant path
+        // Repo still in use - only delete this model's specific resolved variant path
         LOG(INFO, "ModelManager") << "Main repo " << main_repo
-                    << " is shared with other models, deleting variant path only" << std::endl;
+                    << (main_busy ? " has an unfinished download, deleting variant path only"
+                                  : " is shared with other models, deleting variant path only")
+                    << std::endl;
         std::string rpath = info.resolved_path("main");
         if (!rpath.empty()) {
             fs::path variant_path = path_from_utf8(rpath);
@@ -6232,22 +6253,29 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     // Clean up non-main checkpoint files in their own repo dirs (multi-repo models)
-    // Only delete if no other model in the registry references the same repo
+    // Only delete if no other model on disk occupies the same repo
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
 
         std::string cp_repo = checkpoint_to_repo_id(checkpoint);
         if (cp_repo.empty() || cp_repo == main_repo) continue;
 
-        if (is_repo_shared(cp_repo, effective_registry_source(info), canonical_model_name, models_cache_)) {
+        if (is_repo_shared(cp_repo, effective_registry_source(info), canonical_model_name, models_cache_, true)) {
             LOG(INFO, "ModelManager") << "Keeping shared repo " << cp_repo
                         << " (used by other models)" << std::endl;
             continue;
         }
 
-        // Not shared — safe to delete the entire repo directory
         std::string cp_cache_dir = get_hf_cache_dir() + "/" + repo_id_to_cache_dir_name(cp_repo, effective_registry_source(info));
         fs::path cp_cache_path = path_from_utf8(cp_cache_dir);
+
+        if (repo_has_unfinished_download(cp_cache_path)) {
+            LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
+                        << " (unfinished download in progress)" << std::endl;
+            continue;
+        }
+
+        // Not shared — safe to delete the entire repo directory
         if (fs::exists(cp_cache_path)) {
             LOG(INFO, "ModelManager") << "Removing non-main repo directory: " << cp_cache_dir << std::endl;
             fs::remove_all(cp_cache_path);
