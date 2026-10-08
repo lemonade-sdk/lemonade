@@ -66,7 +66,10 @@ json ConfigFile::get_defaults() {
     json defaults = base_defaults();
 
 #ifndef _WIN32
-    fs::path distro_defaults = "/usr/share/lemonade/defaults.json";
+    // The override belongs to the install this binary came from:
+    // <prefix>/bin/lemond reads <prefix>/share/lemonade/defaults.json.
+    fs::path distro_defaults = utils::path_from_utf8(utils::get_executable_dir()) / ".." /
+                               "share" / "lemonade" / "defaults.json";
     if (fs::exists(distro_defaults)) {
         json distro = normalize_legacy_keys(load_json_file(distro_defaults));
         defaults = utils::JsonUtils::merge(defaults, distro);
