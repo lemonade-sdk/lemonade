@@ -49,7 +49,7 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
 // paired WrappedServer subclass (see backend_registry.h for how they bind).
 struct BackendDescriptor {
     std::string recipe;             // "vllm"
-    std::string display_name;       // "vLLM ROCm (experimental)"
+    std::string display_name;       // "vLLM ROCm"
     std::string binary;             // subprocess to launch/install ("" = none, e.g. cloud)
     std::string config_section;     // config.json section; defaults to recipe (sd-cpp -> "sdcpp")
 
@@ -79,7 +79,6 @@ struct BackendDescriptor {
     std::vector<std::string>      default_capabilities;
 
     // Editorial metadata for the generated docs (README support matrix, website).
-    bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
 
     // ROCm release channels this backend publishes (e.g. {"stable","nightly"}).

@@ -179,8 +179,8 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="1"><code>llamacpp-hrx</code> (experimental)</td>
-      <td><code>hrx</code></td>
+      <td rowspan="1"><code>llamacpp-hrx</code></td>
+      <td><code>hrx</code>†</td>
       <td>AMD GPUs (gfx1100, gfx1151)</td>
       <td>Linux</td>
     </tr>
@@ -197,14 +197,14 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows</td>
     </tr>
     <tr>
-      <td rowspan="1"><code>vllm</code> (experimental)</td>
-      <td><code>rocm</code></td>
+      <td rowspan="1"><code>vllm</code></td>
+      <td><code>rocm</code>†</td>
       <td>Strix Halo iGPU (gfx1151)</td>
       <td>Linux</td>
     </tr>
     <tr>
-      <td rowspan="1"><code>ds4</code> (experimental)</td>
-      <td><code>rocm</code></td>
+      <td rowspan="1"><code>ds4</code></td>
+      <td><code>rocm</code>‡</td>
       <td>Prebuilt ds4 for AMD Strix Halo</td>
       <td>Linux</td>
     </tr>
@@ -254,46 +254,46 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="2"><code>openmoss</code> (experimental)</td>
-      <td><code>cuda</code></td>
+      <td rowspan="2"><code>openmoss</code></td>
+      <td><code>cuda</code>†</td>
       <td>NVIDIA GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>vulkan</code></td>
+      <td><code>vulkan</code>†</td>
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="6"><strong>Audio generation</strong></td>
-      <td rowspan="3"><code>thinksound</code> (experimental)</td>
-      <td><code>cuda</code></td>
+      <td rowspan="3"><code>thinksound</code></td>
+      <td><code>cuda</code>†</td>
       <td>NVIDIA GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>vulkan</code></td>
+      <td><code>vulkan</code>†</td>
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>rocm</code></td>
+      <td><code>rocm</code>†</td>
       <td>Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="3"><code>acestep</code> (experimental)</td>
-      <td><code>cuda</code></td>
+      <td rowspan="3"><code>acestep</code></td>
+      <td><code>cuda</code>†</td>
       <td>NVIDIA GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>vulkan</code></td>
+      <td><code>vulkan</code>†</td>
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>rocm</code></td>
+      <td><code>rocm</code>†</td>
       <td>Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)</td>
       <td>Windows, Linux</td>
     </tr>
@@ -325,47 +325,49 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="1"><code>thenoise</code> (experimental)</td>
-      <td><code>rocm</code></td>
+      <td rowspan="1"><code>thenoise</code></td>
+      <td><code>rocm</code>†</td>
       <td>Supported AMD ROCm families</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>3D generation</strong></td>
-      <td rowspan="3"><code>trellis</code> (experimental)</td>
-      <td><code>cuda</code></td>
+      <td rowspan="3"><code>trellis</code></td>
+      <td><code>cuda</code>†</td>
       <td>NVIDIA GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>vulkan</code></td>
+      <td><code>vulkan</code>†</td>
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>rocm</code></td>
+      <td><code>rocm</code>†</td>
       <td>Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>Text classification</strong></td>
-      <td rowspan="3"><code>onnxruntime</code> (experimental)</td>
-      <td><code>cpu</code></td>
+      <td rowspan="3"><code>onnxruntime</code></td>
+      <td><code>cpu</code>†</td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows</td>
     </tr>
     <tr>
-      <td><code>cpu</code></td>
+      <td><code>cpu</code>†</td>
       <td><code>x86_64</code>/<code>arm64</code> CPU</td>
       <td>Linux</td>
     </tr>
     <tr>
-      <td><code>cpu</code></td>
+      <td><code>cpu</code>†</td>
       <td><code>arm64</code> CPU</td>
       <td>macOS</td>
     </tr>
   </tbody>
 </table>
+
+† experimental backend, ‡ guest backend. See [Backend Tiers and Formats](./docs/api/lemonade.md#backend-tiers-and-formats).
 <!-- END GENERATED: backends-matrix -->
 
 To check exactly which recipes/backends are supported on your own machine, run:

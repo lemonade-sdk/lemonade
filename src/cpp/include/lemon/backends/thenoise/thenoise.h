@@ -38,12 +38,11 @@ inline const BackendDescriptor descriptor = {
         {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
     },
     /*support*/ {
-        {"rocm", {"linux", "windows"}, {{"amd_gpu", {"gfx103X", "gfx110X", "gfx120X", "gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm families"},
+        {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux", "windows"}, {{"amd_gpu", {"gfx103X", "gfx110X", "gfx120X", "gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm families"},
     },
     /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "thenoise",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
     /*exposes_prometheus_metrics*/ false,

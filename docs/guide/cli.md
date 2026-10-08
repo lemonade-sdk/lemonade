@@ -382,7 +382,7 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
-#### HRX GPU (experimental) (`llamacpp-hrx` recipe)
+#### HRX GPU (`llamacpp-hrx` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -422,7 +422,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
-#### vLLM ROCm (experimental) (`vllm` recipe)
+#### vLLM ROCm (`vllm` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -436,7 +436,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
 
-#### DwarfStar4 (experimental) (`ds4` recipe)
+#### DwarfStar4 (`ds4` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -627,6 +627,7 @@ lemonade backends uninstall SPEC
 **Notes:**
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
+- Each backend lists its tier and format. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
 
 **Examples:**
 

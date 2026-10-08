@@ -168,6 +168,9 @@ def _ordered_modalities(by_mod: dict[str, list]) -> list[str]:
     return preferred + additional
 
 
+TIER_MARKS = {"experimental": "†", "guest": "‡"}
+
+
 def render_readme_matrix(recipes: dict) -> str:
     # Group descriptor-backed recipes by modality, in descriptor registry order.
     # MODALITY_ORDER controls presentation only; it must never filter recipes.
@@ -182,16 +185,17 @@ def render_readme_matrix(recipes: dict) -> str:
                 f"Backend '{recipe}' has support rows but no documentation modality"
             )
 
-        # Merge support rows sharing a (backend, device summary); union their OS.
+        # Merge support rows sharing a (backend, tier, device summary); union their OS.
         merged: list[dict] = []
         seen: dict[tuple, dict] = {}
         for row in support_rows:
-            key = (row["backend"], row.get("device_summary", ""))
+            key = (row["backend"], row.get("tier", ""), row.get("device_summary", ""))
             if key in seen:
                 seen[key]["os"] |= set(row.get("os", []))
             else:
                 d = {
                     "backend": row["backend"],
+                    "tier": row.get("tier", ""),
                     "summary": row.get("device_summary", ""),
                     "os": set(row.get("os", [])),
                 }
@@ -218,9 +222,7 @@ def render_readme_matrix(recipes: dict) -> str:
         mod_span = sum(len(merged) for _, _, merged in recipes_in)
         first_mod = True
         for recipe, info, merged in recipes_in:
-            engine = f"<code>{recipe}</code>" + (
-                " (experimental)" if info.get("experimental") else ""
-            )
+            engine = f"<code>{recipe}</code>"
             first_recipe = True
             for d in merged:
                 out.append("    <tr>")
@@ -232,11 +234,19 @@ def render_readme_matrix(recipes: dict) -> str:
                 if first_recipe:
                     out.append(f'      <td rowspan="{len(merged)}">{engine}</td>')
                     first_recipe = False
-                out.append(f'      <td><code>{d["backend"]}</code></td>')
+                out.append(
+                    f'      <td><code>{d["backend"]}</code>{TIER_MARKS.get(d["tier"], "")}</td>'
+                )
                 out.append(f"      <td>{_code_devices(d['summary'])}</td>")
                 out.append(f"      <td>{_fmt_os(d['os'])}</td>")
                 out.append("    </tr>")
-    out += ["  </tbody>", "</table>"]
+    out += [
+        "  </tbody>",
+        "</table>",
+        "",
+        "† experimental backend, ‡ guest backend. See "
+        "[Backend Tiers and Formats](./docs/api/lemonade.md#backend-tiers-and-formats).",
+    ]
     return "\n".join(out)
 
 
@@ -384,8 +394,8 @@ def render_overview(recipes: dict) -> str:
 
 def render_support_matrix(recipes: dict) -> str:
     rows = [
-        "| Recipe | Backend | OS | Device families |",
-        "|--------|---------|----|-----------------|",
+        "| Recipe | Backend | Tier | Format | OS | Device families |",
+        "|--------|---------|------|--------|----|-----------------|",
     ]
     for recipe in sorted(recipes):
         info = recipes[recipe]
@@ -395,9 +405,11 @@ def render_support_matrix(recipes: dict) -> str:
                 f = d.get("families") or []
                 fams.append(d["device"] + (f" ({', '.join(f)})" if f else ""))
             rows.append(
-                "| `{r}` | {b} | {o} | {d} |".format(
+                "| `{r}` | {b} | {t} | {f} | {o} | {d} |".format(
                     r=recipe,
                     b=row.get("backend", ""),
+                    t=row.get("tier", "—"),
+                    f=row.get("format", "—"),
                     o=", ".join(sorted(row.get("os", []))),
                     d=md_escape("; ".join(fams)) if fams else "—",
                 )

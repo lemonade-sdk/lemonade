@@ -29,12 +29,11 @@ inline const BackendDescriptor descriptor = {
          "FastFlowLM Options"},
     },
     /*support*/ {
-        {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
     /*supported_modes*/ {"chat", "embeddings", "transcription"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    false,
     /*web_display_name*/ "FastFlowLM NPU",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
