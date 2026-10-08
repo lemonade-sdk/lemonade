@@ -14,7 +14,6 @@
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -44,10 +43,6 @@ TrellisServer::TrellisServer(const std::string& log_level,
                              ModelManager* model_manager,
                              BackendManager* backend_manager)
     : WrappedServer("trellis-server", log_level, model_manager, backend_manager) {}
-
-TrellisServer::~TrellisServer() {
-    unload();
-}
 
 std::string TrellisServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = trellis::spec();
@@ -139,27 +134,12 @@ void TrellisServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "trellis-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path, args, "", is_debug(), true, env_vars);
-    set_process_handle(started_handle, exe_path, args);
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start trellis-server process");
-    }
-    LOG(INFO, "trellis-server") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("trellis-server failed to start or become ready");
-    }
-}
-
-void TrellisServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "trellis-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
 }
 
 void TrellisServer::model_3d_generations(const json& request, httplib::DataSink& sink) {
