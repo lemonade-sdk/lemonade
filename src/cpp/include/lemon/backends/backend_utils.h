@@ -143,39 +143,34 @@ namespace lemon::backends {
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
 
-        /** Longest cache directory that still keeps every rocBLAS Tensile
-         *  solution file inside Windows' 259-character path limit, for the
-         *  wheel or tarball layout. Pure arithmetic over the measured layout
-         *  constants; exposed for unit testing. */
-        static size_t rocm_cache_dir_budget(const std::string& arch,
+        /** Longest absolute path under the installed rocBLAS data directory, or
+         *  0 when it cannot be located or read. rocBLAS resolves its Tensile
+         *  solutions relative to its own binary, so this anchors on that binary
+         *  rather than on a pre-defined layout. */
+        static size_t measure_rocblas_max_path(const std::string& arch,
+                                               const std::string& version,
+                                               bool wheel_layout);
+
+        /** Measure and record the longest rocBLAS path next to the install's
+         *  version.txt, so later checks are one file read instead of a walk. */
+        static void record_rocblas_max_path(const std::string& arch,
                                             const std::string& version,
                                             bool wheel_layout);
 
-        /** Throw ConfigurationException when cache_dir (default: the resolved
-         *  cache dir) is too long for the given ROCm layout. Runs before any
-         *  download, so the constants above are a prediction; see
-         *  ensure_rocm_tensile_reachable() for the authoritative check.
-         *  No-op off Windows. */
-        static void ensure_rocm_path_budget(const std::string& arch,
-                                            const std::string& version,
-                                            bool wheel_layout,
-                                            const std::string& cache_dir = "");
-
-        /** Throw ConfigurationException when an installed ROCm tree puts a
-         *  rocBLAS Tensile file past MAX_PATH. Measures what is on disk rather
-         *  than predicting, so it stays correct across upstream layout changes
-         *  and also catches trees installed before the budget check existed.
-         *  Memoized per layout. No-op off Windows. */
+        /** Throw ConfigurationException when the installed ROCm tree puts a
+         *  rocBLAS Tensile file past MAX_PATH, where it would access-violate
+         *  instead of reporting a failed open. Reads the recorded measurement,
+         *  measuring once when a pre-existing install has none. */
         static void ensure_rocm_tensile_reachable(const std::string& arch,
                                                   const std::string& version,
                                                   bool wheel_layout);
 
-        /** Shared wording for both ROCm path-length failures. tarball_budget of
-         *  0 means the tarball is not an option worth suggesting. */
+        /** Wording for a cache directory that is too long for an installed ROCm
+         *  runtime. All figures are derived from the measurement. */
         static std::string rocm_path_budget_message(const std::string& cache_dir,
                                                     size_t cache_dir_len,
                                                     size_t budget,
-                                                    size_t tarball_budget);
+                                                    bool suggest_tarball);
 
         /** See backend_utils.cpp:install_rocm_runtime() for install method details */
         static void install_rocm_runtime(const std::string& arch, const std::string& version,

@@ -382,13 +382,6 @@ jobs:
           "LEMONADE_CI_CACHE_DIR=$cacheDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $venvPython = ".\.venv\Scripts\python.exe"
 
-          # Checked before the wipe so a rejected root isn't deleted first.
-          # 67 is rocm_cache_dir_budget() for the pinned arch/version, so CI
-          # holds itself to the same limit the product enforces for users.
-          if ($cacheDir.Length -gt 67) {
-            Write-Host "::error::Cache root '$cacheDir' is $($cacheDir.Length) chars; ROCm needs it to be 67 or fewer."
-            exit 1
-          }
           if (Test-Path $cacheDir) {
             Write-Host "Removing cache at $cacheDir" -ForegroundColor Cyan
             Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction Stop
