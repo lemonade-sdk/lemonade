@@ -317,7 +317,7 @@ jobs:
           "lite=$env:LITE_MODE" |
             Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
@@ -649,7 +649,7 @@ jobs:
             (Join-Path $workspaceRoot "build\Release\lemond.exe")
           )
           $cachePrefix = [IO.Path]::GetFullPath(
-            (Join-Path $workspaceRoot "ci-cache-")
+            (Join-Path $env:SystemDrive "ci-lem-cache\llamacpp-")
           )
           $staleProcesses = @(
             Get-CimInstance Win32_Process `
@@ -725,7 +725,8 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = if ($channel) { "$backend-$channel" } else { $backend }
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\llamacpp-$label"
+          "LEMONADE_CI_CACHE_DIR=$cacheDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $cachePrefix = [IO.Path]::GetFullPath($cacheDir)
           $separator = [string][IO.Path]::DirectorySeparatorChar
           if (-not $cachePrefix.EndsWith($separator)) { $cachePrefix += $separator }
@@ -742,6 +743,11 @@ jobs:
                   [StringComparison]::OrdinalIgnoreCase
                 )
               }
+          }
+
+          if (Test-Path $cacheDir) {
+            Write-Host "Removing cache at $cacheDir" -ForegroundColor Cyan
+            Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction Stop
           }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
@@ -879,6 +885,12 @@ jobs:
           path: llamacpp_validation_${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}.json
           retention-days: 30
 
+      - name: Check ROCm runtime path headroom
+        if: always() && runner.os == 'Windows' && matrix.backend == 'rocm'
+        uses: ./.github/actions/check-rocm-path-depth
+        with:
+          cache-dir: ${{ env.LEMONADE_CI_CACHE_DIR }}
+
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -887,6 +899,23 @@ jobs:
           path: server-logs-${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}/
           retention-days: 30
           if-no-files-found: ignore
+
+      - name: Remove lemond cache
+        if: always() && runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $cacheDir = $env:LEMONADE_CI_CACHE_DIR
+          if (-not $cacheDir -or -not (Test-Path $cacheDir)) {
+              Write-Host "Nothing to remove at '$cacheDir'"
+              exit 0
+          }
+          Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+          if (Test-Path $cacheDir) {
+              Write-Host "::warning::Could not fully remove $cacheDir; the next run wipes it before installing."
+          } else {
+              Write-Host "Removed $cacheDir" -ForegroundColor Green
+          }
 
       - name: Cleanup
         if: always()
@@ -1057,32 +1086,70 @@ jobs:
           body_lines.append("")
           body_lines.append("## Validation Results")
           body_lines.append("")
-          body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
-          body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
+          body_lines.append("| Model | Backend | Inference | GPU Offload | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
+          body_lines.append("|-------|---------|-----------|-------------|----------|--------------|---------------|---------------------|-------------------|")
 
-          for backend in ["vulkan", "rocm-stable", "rocm-nightly"]:
-              # Labels match the artifact names produced by the validate job
+          # Labels match the artifact names produced by the validate job.
+          backend_labels = ["vulkan", "rocm-stable", "rocm-nightly"]
+          backend_display = {
+              "vulkan": "vulkan",
+              "rocm-stable": "rocm stable",
+              "rocm-nightly": "rocm nightly",
+          }
+
+          model_order = []
+          per_model = {}
+          available_backends = []
+          for backend in backend_labels:
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
-                  body_lines.append(f"| _{backend}: no results_ | | | | | | |")
                   continue
+              available_backends.append(backend)
               with open(results_file, "r") as f:
                   results = json.load(f)
               for r in results:
-                  status = "PASS" if r["pass"] else "FAIL"
-                  # Truncate response for table readability
-                  resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
-                  ttft = r.get("time_to_first_token", "N/A")
-                  if isinstance(ttft, float):
-                      ttft = f"{ttft:.3f}s"
-                  tps = r.get("tokens_per_second", "N/A")
-                  if isinstance(tps, float):
-                      tps = f"{tps:.1f}"
-                  body_lines.append(
-                      f"| {r['model']} ({backend}) | {status} | {resp} | "
-                      f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
-                      f"{ttft} | {tps} |"
-                  )
+                  model = r["model"]
+                  if model not in per_model:
+                      per_model[model] = {}
+                      model_order.append(model)
+                  per_model[model][backend] = r
+
+          def format_metrics(r):
+              status = "PASS" if r["pass"] else "FAIL"
+              gpu = r.get("gpu", "N/A")
+              if gpu == "PASS":
+                  gpu = "PASS ✅"
+              elif gpu == "FAIL":
+                  gpu = "FAIL ❌"
+              # Truncate response for table readability
+              resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
+              ttft = r.get("time_to_first_token", "N/A")
+              if isinstance(ttft, float):
+                  ttft = f"{ttft:.3f}s"
+              tps = r.get("tokens_per_second", "N/A")
+              if isinstance(tps, float):
+                  tps = f"{tps:.1f}"
+              return (
+                  f"{status} | {gpu} | {resp} | {r.get('input_tokens', 'N/A')} | "
+                  f"{r.get('output_tokens', 'N/A')} | {ttft} | {tps}"
+              )
+
+          if not model_order:
+              body_lines.append("| _no validation results_ | | | | | | | | |")
+          for model in model_order:
+              first = True
+              for backend in available_backends:
+                  r = per_model[model].get(backend)
+                  model_cell = model if first else ""
+                  first = False
+                  if r is None:
+                      body_lines.append(
+                          f"| {model_cell} | {backend_display[backend]} | | | | | | | |"
+                      )
+                  else:
+                      body_lines.append(
+                          f"| {model_cell} | {backend_display[backend]} | {format_metrics(r)} |"
+                      )
 
           body_lines.append("")
           body_lines.append("---")
@@ -1129,12 +1196,29 @@ jobs:
             --base main \
             --head "$BRANCH"
 
+  gpu-offload-gate:
+    name: GPU offload gate
+    needs: validate
+    if: always() && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: validation-results-*
+          merge-multiple: true
+
+      - name: Enforce GPU offload
+        run: python3 .github/scripts/check_gpu_offload.py 'llamacpp_validation_*.json'
+
   # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
   # successfully (otherwise the merge is blocked), and 2. these jobs do not need
   # to run on ordinary pull request pushes.
   validation-gate:
     name: llama.cpp validation
-    needs: [build, validate]
+    needs: [build, validate, gpu-offload-gate]
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -1,5 +1,6 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/install_staging.h"
+#include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
@@ -17,6 +18,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <lemon/utils/aixlog.hpp>
@@ -1228,6 +1231,197 @@ namespace lemon::backends {
 #endif
     }
 
+    namespace {
+        // Windows resolves a full path against MAX_PATH (260) including the
+        // terminator, so 259 usable characters.
+        constexpr size_t kMaxPathChars = 259;
+
+        // Records the measured longest rocBLAS path, written next to version.txt
+        // so a model load costs one file read instead of a tree walk.
+        constexpr const char* kRocblasMaxPathFile = "rocblas_max_path.txt";
+
+        std::string resolved_cache_dir(const std::string& cache_dir) {
+            const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
+            std::error_code ec;
+            fs::path p = fs::absolute(utils::path_from_utf8(raw), ec);
+            if (ec) {
+                p = utils::path_from_utf8(raw);
+            }
+            return utils::path_to_utf8(p.lexically_normal().make_preferred());
+        }
+
+        fs::path therock_root(const std::string& arch, const std::string& version,
+                              bool wheel_layout) {
+            return utils::path_from_utf8(wheel_layout
+                                             ? BackendUtils::get_therock_wheel_dir(arch, version)
+                                             : BackendUtils::get_therock_install_dir(arch, version));
+        }
+
+        // A rocBLAS Tensile solution file: a TensileLibrary* file under a directory named "rocblas".
+        // Locating them by shape rather than by a fixed path keeps the check working if upstream moves them.
+        bool is_rocblas_tensile_file(const fs::path& p) {
+            if (utils::path_to_utf8(p.filename()).rfind("TensileLibrary", 0) != 0) {
+                return false;
+            }
+            for (const fs::path& part : p.parent_path()) {
+                if (part == "rocblas") {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Longest absolute path among the rocBLAS Tensile files under root, or 0
+        // when there are none or the tree cannot be read.
+        // Deliberately does not stat each entry: a status query on a path past
+        // MAX_PATH fails, which would skip the very entries this exists to find.
+        // path() is built from enumeration data and needs no filesystem access.
+        size_t scan_rocblas_tensile_paths(const fs::path& root) {
+            std::error_code ec;
+            if (!fs::is_directory(root, ec)) {
+                return 0;
+            }
+            size_t longest = 0;
+            for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec;
+                 it.increment(ec)) {
+                if (is_rocblas_tensile_file(it->path())) {
+                    longest = std::max(longest, it->path().native().size());
+                }
+            }
+            if (ec) {
+                LOG(WARNING, "BackendUtils")
+                    << "Could not fully scan " << utils::path_to_utf8(root) << " (" << ec.message()
+                    << "); ROCm path length not verified" << std::endl;
+                return 0;
+            }
+            return longest;
+        }
+
+        // MSVC's std::filesystem never applies the \\?\ prefix, so remove_all()
+        // cannot delete a tree containing paths past MAX_PATH -- precisely the
+        // tree this is called on. Without the prefix the deep files survive and
+        // the half-deleted install stays on disk.
+        void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
+            ec.clear();
+#ifdef _WIN32
+            fs::path target = fs::absolute(dir, ec);
+            if (ec) {
+                target = dir;
+                ec.clear();
+            }
+            const std::wstring native = target.make_preferred().native();
+            if (native.rfind(L"\\\\?\\", 0) != 0) {
+                target = fs::path(L"\\\\?\\" + native);
+            }
+            fs::remove_all(target, ec);
+#else
+            fs::remove_all(dir, ec);
+#endif
+        }
+
+        std::mutex g_rocblas_measure_mutex;
+        // Verdict per arch|version|layout, including 0 for "could not measure".
+        // Without caching the zero, a tree whose rocBLAS files cannot be found
+        // would be re-walked on every model load and every upscale request.
+        std::map<std::string, size_t> g_rocblas_measure_cache;
+
+        std::string rocblas_measure_key(const std::string& arch, const std::string& version,
+                                        bool wheel_layout) {
+            return arch + "|" + version + "|" + (wheel_layout ? "wheel" : "tarball");
+        }
+    }
+
+    std::string BackendUtils::rocm_path_budget_message(const std::string& cache_dir,
+                                                       size_t cache_dir_len,
+                                                       size_t budget,
+                                                       bool suggest_tarball) {
+        std::string msg = "ROCm cannot run from this cache directory: \"" + cache_dir + "\" is " +
+                          std::to_string(cache_dir_len) +
+                          " characters, but this ROCm install needs it to be " +
+                          std::to_string(budget) + " or fewer.";
+        if (suggest_tarball) {
+            msg += " Run 'lemonade config set rocm_install_method=tarball' to use the ROCm layout"
+                   " that fits here, then reinstall the ROCm backend.";
+        } else {
+            msg += " Point LEMONADE_CACHE_DIR at a shorter path and restart Lemonade Server."
+                   " Downloaded models live in the Hugging Face cache and are not affected, but"
+                   " backends will be re-downloaded.";
+        }
+        return msg;
+    }
+
+    size_t BackendUtils::measure_rocblas_max_path(const std::string& arch,
+                                                  const std::string& version,
+                                                  bool wheel_layout) {
+        const std::string key = rocblas_measure_key(arch, version, wheel_layout);
+        {
+            std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
+            auto cached = g_rocblas_measure_cache.find(key);
+            if (cached != g_rocblas_measure_cache.end()) {
+                return cached->second;
+            }
+        }
+
+        const fs::path root = therock_root(arch, version, wheel_layout);
+        const size_t longest = scan_rocblas_tensile_paths(root);
+        if (longest == 0) {
+            std::error_code ec;
+            if (fs::is_directory(root, ec)) {
+                // Not fatal: rocBLAS finds its own files relative to its module, so inference may well work.
+                // We just cannot vouch for the lengths. CI fails on this condition so the layout gets fixed.
+                LOG(WARNING, "BackendUtils")
+                    << "ROCm is installed for " << arch << "/" << version
+                    << " but no rocBLAS Tensile files were found inside it; its path lengths "
+                    << "were not verified" << std::endl;
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
+        g_rocblas_measure_cache[key] = longest;
+        return longest;
+    }
+
+    void BackendUtils::record_rocblas_max_path(const std::string& arch, const std::string& version,
+                                               bool wheel_layout) {
+        const size_t longest = measure_rocblas_max_path(arch, version, wheel_layout);
+        if (longest == 0) {
+            return;
+        }
+        std::ofstream f(therock_root(arch, version, wheel_layout) / kRocblasMaxPathFile);
+        f << longest;
+    }
+
+    void BackendUtils::ensure_rocm_tensile_reachable(const std::string& arch,
+                                                     const std::string& version,
+                                                     bool wheel_layout) {
+        // Unsynchronised on purpose: measure_rocblas_max_path() holds the lock
+        // for the scan, and two threads racing here just write the same value.
+        const fs::path marker = therock_root(arch, version, wheel_layout) / kRocblasMaxPathFile;
+        size_t longest = 0;
+        std::ifstream f(marker);
+        if (!(f >> longest) || longest == 0) {
+            // No marker: an install that predates this check, so measure once and record it rather than walking on every load.
+            longest = measure_rocblas_max_path(arch, version, wheel_layout);
+            if (longest > 0) {
+                std::ofstream out(marker);
+                out << longest;
+            }
+        }
+
+        if (longest == 0 || longest <= kMaxPathChars) {
+            return;
+        }
+
+        // Everything below is derived from the install in front of us, so an
+        // upstream layout change reports the real number rather than a stale one.
+        const fs::path root = utils::path_from_utf8(resolved_cache_dir(""));
+        const size_t root_len = root.native().size();
+        const size_t depth = longest > root_len ? longest - root_len : longest;
+        const size_t budget = kMaxPathChars > depth ? kMaxPathChars - depth : 0;
+        throw ConfigurationException(rocm_path_budget_message(utils::path_to_utf8(root), root_len,
+                                                              budget, wheel_layout));
+    }
+
     void BackendUtils::install_rocm_runtime(const std::string& arch, const std::string& version,
                                             DownloadProgressCallback progress_cb) {
         // rocm_install_method lets Python-averse environments (ISV/OEM images,
@@ -1244,36 +1438,65 @@ namespace lemon::backends {
 
         reset_therock_wheels_cancelled();
 
+        // Path lengths are checked against the installed tree rather than
+        // predicted from it. The wheel layout is the deeper of the two, so under
+        // "auto" a cache dir that defeats it can still be fine for the tarball.
+        bool wheels_fit = true;
         if (method != "tarball") {
             if (install_therock_wheels(arch, version, progress_cb)) {
-                // Drop the other tree so its method.txt can't re-trigger the
-                // mismatch reinstall on every load.
-                if (method == "wheel") {
-                    std::error_code ec;
-                    fs::remove_all(get_therock_install_dir(arch, version), ec);
+                record_rocblas_max_path(arch, version, /*wheel_layout=*/true);
+                try {
+                    ensure_rocm_tensile_reachable(arch, version, /*wheel_layout=*/true);
+                } catch (const ConfigurationException&) {
+                    if (method == "wheel") {
+                        throw;
+                    }
+                    wheels_fit = false;
+                    LOG(INFO, "BackendUtils")
+                        << "Cache directory is too long for the ROCm wheel layout; "
+                        << "installing the TheRock tarball instead." << std::endl;
                 }
-                return;
-            }
-            if (get_therock_wheels_cancelled()) {
-                // Throw rather than return: a silent return lets the caller
-                // report the runtime step as complete ("successfully installed")
-                // and would also fall through to the tarball the user cancelled.
-                LOG(INFO, "BackendUtils") << "ROCm install cancelled by user" << std::endl;
-                throw std::runtime_error("ROCm runtime installation cancelled");
-            }
-            if (method == "wheel") {
-                throw std::runtime_error(
-                    "ROCm wheel install failed and rocm_install_method=wheel "
-                    "disables the TheRock tarball fallback");
+                if (wheels_fit) {
+                    // Drop the other tree so its method.txt can't re-trigger the
+                    // mismatch reinstall on every load.
+                    if (method == "wheel") {
+                        std::error_code ec;
+                        fs::remove_all(get_therock_install_dir(arch, version), ec);
+                    }
+                    return;
+                }
+            } else {
+                if (get_therock_wheels_cancelled()) {
+                    // Throw rather than return: a silent return lets the caller
+                    // report the runtime step as complete ("successfully installed")
+                    // and would also fall through to the tarball the user cancelled.
+                    LOG(INFO, "BackendUtils") << "ROCm install cancelled by user" << std::endl;
+                    throw std::runtime_error("ROCm runtime installation cancelled");
+                }
+                if (method == "wheel") {
+                    throw std::runtime_error(
+                        "ROCm wheel install failed and rocm_install_method=wheel "
+                        "disables the TheRock tarball fallback");
+                }
             }
         }
+
         install_therock(arch, version, progress_cb);
-        // Drop the other tree so its method.txt can't re-trigger the mismatch
-        // reinstall on every load.
-        if (method == "tarball") {
+        record_rocblas_max_path(arch, version, /*wheel_layout=*/false);
+        // Dropped before the check so a refusal doesn't leave the over-long
+        // wheel runtime behind for get_therock_lib_paths() to keep preferring.
+        if (method == "tarball" || !wheels_fit) {
             std::error_code ec;
-            fs::remove_all(get_therock_wheel_dir(arch, version), ec);
+            const fs::path wheel_dir = utils::path_from_utf8(get_therock_wheel_dir(arch, version));
+            remove_rocm_tree(wheel_dir, ec);
+            if (ec) {
+                LOG(WARNING, "BackendUtils")
+                    << "Could not remove the superseded ROCm wheel runtime at "
+                    << utils::path_to_utf8(wheel_dir) << " (" << ec.message()
+                    << "); delete it manually to free the space" << std::endl;
+            }
         }
+        ensure_rocm_tensile_reachable(arch, version, /*wheel_layout=*/false);
     }
 
     bool BackendUtils::is_concrete_gfx_arch(const std::string& arch) {
@@ -1826,6 +2049,9 @@ namespace lemon::backends {
                     }
                 }
                 if (!lib_paths.empty()) {
+                    // Catches a tree installed before the budget check existed:
+                    // without this rocBLAS would access-violate mid-inference.
+                    ensure_rocm_tensile_reachable(rocm_arch, version, /*wheel_layout=*/true);
                     LOG(DEBUG, "BackendUtils")
                         << "Returning " << lib_paths.size()
                         << " ROCm wheel runtime path(s); first: " << lib_paths.front() << std::endl;
@@ -1838,6 +2064,7 @@ namespace lemon::backends {
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
         std::error_code ec;
         if (fs::exists(install_dir, ec)) {
+            ensure_rocm_tensile_reachable(rocm_arch, version, /*wheel_layout=*/false);
             // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
             // On Linux, shared libraries are in lib/
             // Both are under the common tarball root which also keeps LLVM in lib/llvm/.
@@ -1962,6 +2189,17 @@ namespace lemon::backends {
     }
 #endif
 
+#ifdef _WIN32
+    static bool is_hip_runtime_dll(const std::string& name) {
+        std::string lower = name;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower.size() < 4 || lower.compare(lower.size() - 4, 4, ".dll") != 0) {
+            return false;
+        }
+        return lower.rfind("amdhip64", 0) == 0 || lower.rfind("amd_comgr", 0) == 0;
+    }
+#endif
+
     bool BackendUtils::stage_therock_hip_runtime(const std::string& rocm_arch,
                                                  const fs::path& target_dir) {
 #ifndef _WIN32
@@ -1977,74 +2215,59 @@ namespace lemon::backends {
         if (therock_dirs.empty()) {
             return false;
         }
-
-        const fs::path therock_dll = utils::path_from_utf8(therock_dirs.front()) / "amdhip64_7.dll";
-        if (!fs::exists(therock_dll)) {
-            return false;
-        }
-
-        const fs::path target_dll = target_dir / "amdhip64_7.dll";
+        const fs::path therock_bin = utils::path_from_utf8(therock_dirs.front());
 
         wchar_t sysdir[MAX_PATH] = {};
         if (GetSystemDirectoryW(sysdir, MAX_PATH) == 0) {
             return false;
         }
-        const fs::path system_dll = fs::path(sysdir) / "amdhip64_7.dll";
+        const fs::path system_dir(sysdir);
 
-        const uint64_t therock_ver = read_dll_version(therock_dll);
-
-        // A previously staged copy may be locked by a running backend process
-        // (Windows blocks overwriting a loaded DLL), so leave it untouched when
-        // it is already at least as new as TheRock's.
-        const uint64_t staged_ver = read_dll_version(target_dll);
-        if (staged_ver != 0 && staged_ver >= therock_ver) {
-            LOG(INFO, "BackendUtils")
-                << "Existing amdhip64_7.dll at " << utils::path_to_utf8(target_dll)
-                << " is at least as new as TheRock's; leaving it in place" << std::endl;
-            return false;
-        }
-
-        // Windows loads DLLs from the exe dir before System32, so the staged
-        // copy wins over System32. Stage System32's runtime first (a plain
-        // path, where GetFileVersionInfoW is reliable) and only overwrite it
-        // with TheRock's when TheRock is newer.
-        std::error_code ec;
-        if (fs::exists(system_dll)) {
-            fs::copy_file(system_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-            if (!ec) {
-                const uint64_t system_ver = read_dll_version(target_dll);
-                if (system_ver != 0 && system_ver >= therock_ver) {
-                    LOG(INFO, "BackendUtils")
-                        << "System32 amdhip64_7.dll is at least as new as TheRock's; staged it at "
-                        << utils::path_to_utf8(target_dll) << std::endl;
-                    return false;
-                }
-                fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                if (!ec) {
-                    LOG(INFO, "BackendUtils")
-                        << "TheRock's amdhip64_7.dll is newer than System32's; staged it at "
-                        << utils::path_to_utf8(target_dll) << std::endl;
-                    return true;
-                }
-                LOG(ERROR, "BackendUtils")
-                    << "Failed to copy amdhip64_7.dll from TheRock: " << ec.message() << std::endl;
-                return false;
+        // amdhip64 loads amd_comgr through the ordinary loader search, which
+        // reaches System32 before PATH. Staging one without the other pairs
+        // TheRock's HIP with the display driver's comgr (or the reverse), and a
+        // mixed pair fails device discovery: hipGetDeviceCount() returns 0.
+        // Stage every member of the set that System32 would otherwise supply so
+        // the exe directory holds one internally consistent runtime.
+        bool staged_any = false;
+        std::error_code iter_ec;
+        for (const auto& entry : fs::directory_iterator(therock_bin, iter_ec)) {
+            std::error_code stat_ec;
+            if (!entry.is_regular_file(stat_ec) || stat_ec) {
+                continue;
             }
-            LOG(WARNING, "BackendUtils")
-                << "Failed to stage System32 amdhip64_7.dll: " << ec.message() << std::endl;
+            const fs::path name = entry.path().filename();
+            if (!is_hip_runtime_dll(utils::path_to_utf8(name))) {
+                continue;
+            }
+            if (!fs::exists(system_dir / name, stat_ec) || stat_ec) {
+                continue;
+            }
+
+            const fs::path target = target_dir / name;
+            if (fs::exists(target, stat_ec) && !stat_ec &&
+                read_dll_version(target) == read_dll_version(entry.path())) {
+                continue;
+            }
+
+            std::error_code copy_ec;
+            fs::copy_file(entry.path(), target, fs::copy_options::overwrite_existing, copy_ec);
+            if (copy_ec) {
+                LOG(WARNING, "BackendUtils")
+                    << "Failed to stage " << utils::path_to_utf8(name) << " from TheRock: "
+                    << copy_ec.message() << std::endl;
+                continue;
+            }
+            staged_any = true;
+            LOG(INFO, "BackendUtils")
+                << "Staged TheRock " << utils::path_to_utf8(name) << " at "
+                << utils::path_to_utf8(target) << std::endl;
         }
 
-        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-        if (!ec) {
-            LOG(INFO, "BackendUtils")
-                << "Copied amdhip64_7.dll from TheRock to " << utils::path_to_utf8(target_dll)
-                << std::endl;
-            return true;
-        }
-        LOG(ERROR, "BackendUtils") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
-        return false;
+        return staged_any;
 #endif
     }
+
     void BackendUtils::apply_cuda_env_vars(
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,

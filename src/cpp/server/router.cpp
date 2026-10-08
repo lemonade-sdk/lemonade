@@ -1045,6 +1045,7 @@ void Router::load_model(const std::string& model_name,
         // Load the backend (this can take 30-60 seconds)
         LOG(DEBUG, "Router") << "Starting backend (this may take a moment)..." << std::endl;
         bool load_success = false;
+        bool unrecoverable_config = false;
         std::string error_message;
         auto load_start = std::chrono::steady_clock::now();
 
@@ -1056,6 +1057,11 @@ void Router::load_model(const std::string& model_name,
             auto load_end = std::chrono::steady_clock::now();
             new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
             LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
+        } catch (const ConfigurationException& e) {
+            error_message = e.what();
+            load_success = false;
+            unrecoverable_config = true;
+            LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
         } catch (const std::exception& e) {
             error_message = e.what();
             load_success = false;
@@ -1112,6 +1118,14 @@ void Router::load_model(const std::string& model_name,
             if (cancel_flag && cancel_flag->load()) {
                 LOG(INFO, "Router") << "Load cancelled, skipping nuclear retry" << std::endl;
                 throw std::runtime_error("load cancelled");
+            }
+
+            // Checked before the substring sniff below: the exception type is
+            // a stronger signal than prose that happens to contain "not found",
+            // and it is what keeps the type intact for the caller.
+            if (unrecoverable_config) {
+                LOG(ERROR, "Router") << "Configuration error, NOT evicting other models" << std::endl;
+                throw ConfigurationException(error_message);
             }
 
             if (is_file_not_found) {

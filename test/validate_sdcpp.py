@@ -14,6 +14,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import struct
 import sys
 import time
@@ -21,6 +22,12 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+from utils.gpu_offload import (
+    GPU_LOG_FILENAMES,
+    gpu_offload_confirmed,
+    read_new_log_text,
+)
 
 DEFAULT_PORT = int(os.environ.get("LEMONADE_PORT", "13305"))
 DEFAULT_TIMEOUT = int(os.environ.get("LEMONADE_VALIDATE_SD_TIMEOUT", "3600"))
@@ -31,6 +38,12 @@ DEFAULT_PROMPT = os.environ.get(
 )
 DEFAULT_MODELS = ("SD-Turbo-GGUF", "Flux-2-Klein-4B")
 DEFAULT_SIZES = ("512x256", "1024x1024")
+
+# Device lines that confirm sd-server placed work on the GPU
+GPU_DEVICE_PATTERNS: dict[str, tuple["re.Pattern[str]", ...]] = {
+    "rocm": (re.compile(r"Initializing backend: ROCm\d+"),),
+    "vulkan": (re.compile(r"Initializing backend: Vulkan\d+"),),
+}
 
 
 def parse_size(value: str) -> tuple[int, int]:
@@ -93,6 +106,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", default="sdcpp_validation.json")
     parser.add_argument("--images-dir", default="sdcpp-validation-images")
+    parser.add_argument(
+        "--logs-dir",
+        default=None,
+        help=(
+            "Directory (NOT a file) holding lemond's captured logs as "
+            "lemond.stdout.log / lemond.stderr.log. REQUIRED for GPU backends with "
+            "a verified device banner (rocm): the per-model GPU-offload check scans "
+            "these logs and the run FAILS if this is unset, no log is found, or any "
+            "model fell back to CPU. lemond must be started in debug mode "
+            "(LEMONADE_CI_MODE=1 or log_level=debug) so the banner is emitted."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -267,7 +292,35 @@ def main() -> int:
     )
     configure_backend(base_url, args.backend, args.channel)
 
+    gpu_patterns = GPU_DEVICE_PATTERNS.get(args.backend)
+    gpu_log_paths = (
+        [os.path.join(args.logs_dir, name) for name in GPU_LOG_FILENAMES]
+        if args.logs_dir
+        else []
+    )
+    log_offsets: dict[str, int] = {path: 0 for path in gpu_log_paths}
+    if gpu_patterns is not None:
+        if not args.logs_dir:
+            print(
+                f"[ERROR] backend '{args.backend}' runs on the GPU, so --logs-dir is "
+                "required to verify per-model GPU offload. Pass the DIRECTORY holding "
+                "lemond's captured logs (lemond.stdout.log / lemond.stderr.log), "
+                "started in debug mode (LEMONADE_CI_MODE=1 or log_level=debug).",
+                file=sys.stderr,
+            )
+            return 1
+        if not any(os.path.isfile(path) for path in gpu_log_paths):
+            joined = " or ".join(GPU_LOG_FILENAMES)
+            print(
+                f"[ERROR] --logs-dir is '{args.logs_dir}' but no {joined} was found "
+                "there, so GPU offload cannot be verified. Start lemond in debug mode "
+                "with its stdout/stderr captured into that directory.",
+                file=sys.stderr,
+            )
+            return 1
+
     for model in models:
+        model_start_idx = len(results)
         if args.warmup:
             try:
                 warmup_elapsed_by_model[model] = warmup_model(
@@ -287,6 +340,11 @@ def main() -> int:
                     results.append(
                         record_failure(args, label, model, size, time.monotonic(), exc)
                     )
+                # Consume this model's log text even though its GPU check is
+                # skipped, or the next model inherits its device banner and is
+                # credited with an offload it never got.
+                for path in gpu_log_paths:
+                    _, log_offsets[path] = read_new_log_text(path, log_offsets[path])
                 continue
 
         for width, height in sizes:
@@ -362,6 +420,26 @@ def main() -> int:
                 )
                 print(f"[FAIL] {model} {width}x{height}: {exc}", file=sys.stderr)
             results.append(record)
+
+        if gpu_patterns is not None:
+            new_text = ""
+            for path in gpu_log_paths:
+                chunk, log_offsets[path] = read_new_log_text(path, log_offsets[path])
+                new_text += chunk
+            model_on_gpu = gpu_offload_confirmed(new_text, gpu_patterns)
+            gpu_status = "PASS" if model_on_gpu else "FAIL"
+            if not model_on_gpu:
+                print(
+                    f"[WARN] {model} on {label}: requested backend '{args.backend}' but "
+                    "no GPU device banner appeared in the server logs for this model "
+                    "(possible silent CPU fallback).",
+                    file=sys.stderr,
+                )
+        else:
+            gpu_status = "N/A"
+        for record in results[model_start_idx:]:
+            record["gpu"] = gpu_status
+        print(f"[INFO] {model} on {label}: GPU offload {gpu_status}")
 
     output_path = Path(args.output)
     output_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
