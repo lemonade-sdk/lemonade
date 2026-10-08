@@ -1296,10 +1296,14 @@ namespace lemon::backends {
             std::error_code ec;
             std::vector<fs::path> dirs = rocblas_dll_candidates(arch, version, wheel_layout);
 
+            // Only the "rocblas" subdirectory counts. Falling back to the
+            // binary's own directory would pull in hipBLASLt, which sits deeper
+            // and tolerates an unopenable file, and would refuse cache dirs
+            // where rocBLAS itself is perfectly fine.
             for (const fs::path& dir : dirs) {
-                if (fs::exists(dir / dll_name, ec)) {
-                    const fs::path data = dir / "rocblas";
-                    return fs::is_directory(data, ec) ? data : dir;
+                const fs::path data = dir / "rocblas";
+                if (fs::exists(dir / dll_name, ec) && fs::is_directory(data, ec)) {
+                    return data;
                 }
             }
 
@@ -1313,7 +1317,9 @@ namespace lemon::backends {
                  it.increment(ec)) {
                 if (it->path().filename() == dll_name) {
                     const fs::path data = it->path().parent_path() / "rocblas";
-                    return fs::is_directory(data, ec) ? data : it->path().parent_path();
+                    if (fs::is_directory(data, ec)) {
+                        return data;
+                    }
                 }
             }
             return {};
