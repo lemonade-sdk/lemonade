@@ -65,11 +65,23 @@ json ConfigFile::base_defaults() {
 json ConfigFile::get_defaults() {
     json defaults = base_defaults();
 
-#ifndef _WIN32
-    fs::path distro_defaults = "/usr/share/lemonade/defaults.json";
-    if (fs::exists(distro_defaults)) {
-        json distro = normalize_legacy_keys(load_json_file(distro_defaults));
-        defaults = utils::JsonUtils::merge(defaults, distro);
+#ifdef __linux__
+    // The override belongs to the install this binary came from:
+    // <prefix>/bin/lemond reads <prefix>/share/lemonade/defaults.json.
+    std::string executable_dir;
+    try {
+        executable_dir = utils::get_executable_dir();
+    } catch (const std::exception& e) {
+        LOG(WARNING) << "Could not resolve executable directory for distro defaults: "
+                     << e.what() << std::endl;
+    }
+    if (!executable_dir.empty()) {
+        fs::path distro_defaults = utils::path_from_utf8(executable_dir) / ".." /
+                                   "share" / "lemonade" / "defaults.json";
+        if (fs::exists(distro_defaults)) {
+            json distro = normalize_legacy_keys(load_json_file(distro_defaults));
+            defaults = utils::JsonUtils::merge(defaults, distro);
+        }
     }
 #endif
 
