@@ -429,6 +429,56 @@ namespace lemon::backends {
         return get_version_file(install_dir);
     }
 
+    std::optional<ContainerPin> parse_container_pin(const std::string& pin) {
+        const auto at = pin.find('@');
+        if (at == std::string::npos || at == 0) {
+            return std::nullopt;
+        }
+        ContainerPin parsed{pin.substr(0, at), pin.substr(at + 1)};
+        const std::string prefix = "sha256:";
+        if (parsed.digest.size() != prefix.size() + 64 ||
+            parsed.digest.compare(0, prefix.size(), prefix) != 0 ||
+            !std::all_of(parsed.digest.begin() + prefix.size(), parsed.digest.end(),
+                         [](unsigned char c) { return std::isdigit(c) || (c >= 'a' && c <= 'f'); })) {
+            return std::nullopt;
+        }
+        return parsed;
+    }
+
+    std::string short_container_pin(const std::string& pin) {
+        const auto parsed = parse_container_pin(pin);
+        return parsed ? parsed->tag + "@" + parsed->digest.substr(7, 12) : pin;
+    }
+
+    std::string BackendUtils::get_backend_image(const std::string& recipe, const std::string& backend) {
+        const BackendDescriptor* descriptor = descriptor_for(recipe);
+        const ContainerPolicy* policy = descriptor ? descriptor->container_for(backend) : nullptr;
+        if (!policy) {
+            throw std::runtime_error(recipe + ":" + backend + " is not a container backend");
+        }
+        const std::string pin = get_backend_version(recipe, backend);
+        const auto parsed = parse_container_pin(pin);
+        if (!parsed) {
+            throw std::runtime_error("backend_versions.json pins " + recipe + ":" + backend +
+                                     " to '" + pin + "', which is not <tag>@sha256:<digest>");
+        }
+        return policy->image + "@" + parsed->digest;
+    }
+
+    std::string BackendUtils::get_installed_backend_image(const std::string& recipe,
+                                                          const std::string& backend) {
+        const BackendDescriptor* descriptor = descriptor_for(recipe);
+        const ContainerPolicy* policy = descriptor ? descriptor->container_for(backend) : nullptr;
+        if (!policy) {
+            return "";
+        }
+        std::ifstream file(fs::path(get_install_directory(recipe, backend)) / "version.txt");
+        std::string pin;
+        std::getline(file, pin);
+        const auto parsed = parse_container_pin(pin.substr(0, pin.find_last_not_of(" \t\r\n") + 1));
+        return parsed ? policy->image + "@" + parsed->digest : "";
+    }
+
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
         if (recipe_has_rocm_channels(recipe) && backend == "rocm") {

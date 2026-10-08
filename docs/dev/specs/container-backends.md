@@ -19,6 +19,7 @@ A **container backend** is a Lemonade backend whose executable is a digest-pinne
 
 - Install, load, unload, `/system-info`, benchmarking and the backend manager work unchanged.
 - The one new host requirement is a container tool on Linux: Podman first, then Docker, each verified by a socket probe. Users will be guided to install Podman if needed.
+- Container backends start disabled. The user enables them once per `lemond`, after a security warning (see [Enabling Container Backends](#enabling-container-backends)).
 
 ## Design Philosophy
 
@@ -55,7 +56,7 @@ Tier and format are set per backend. Examples:
 - `vllm:rocm`: experimental, python
 - `halogen:rocm`: guest, container
 
-Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install a guest backend. Models specific to a guest backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
+Models specific to a guest backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
 
 > Note: tier replaces the descriptor's `experimental` boolean. `/system-info` keeps each recipe's `experimental` field, `true` when its `default_backend` has the `experimental` or `guest` tier.
 
@@ -274,6 +275,24 @@ The setup assistant tells the user which setup step is missing and how to fix it
 
 Each install type below lists its checks in the order they run, in one table per container tool. The `action` cells are the user's setup steps.
 
+### Enabling Container Backends
+
+Container backends start disabled on every install type, and the user enables them once per `lemond`. The `.deb` and `.rpm` packages pull in Podman by default, so a fresh install pulls and runs images only after the user opts in.
+
+- `config.json` gets a global key, `enable_containers`, set to `false` in `src/cpp/resources/defaults.json`.
+- `backends::container_setup_failure()` runs this check first, before the [SELinux Check](#selinux-check), the [Halogen Kernel Check](#halogen-kernel-check) and the checks for the install type. While it fails, `lemond` refuses to install the backend, which pulls its image, and to load its models, which starts its container:
+
+  | Check | Fails when | `action` |
+  | --- | --- | --- |
+  | Containers enabled | `enable_containers` is `false` | `lemonade config set enable_containers=true` |
+
+- `lemonade config set enable_containers=true` prints this warning and asks `Enable container backends? [y/N]` before it sends the change. `--yes` skips the prompt, for scripts and CI:
+
+  > Container backends run images built by community developers, pinned by digest in each Lemonade release. Once they are enabled, every client that reaches this server's API can install and start them. Keep `host` on localhost, or set LEMONADE_API_KEY before serving on the network.
+
+- The Backend Manager in the desktop and web apps shows this check the way it shows every check: `message`, with a help button that copies `action`. The user enables container backends through the CLI and its warning.
+- `lemonade config set` sends the change through `POST /internal/set`, which requires `LEMONADE_ADMIN_API_KEY`, or `LEMONADE_API_KEY` when only that key is set. Enabling container backends leaves the image allowlist unchanged: it is compiled into `lemond` (see [`containers` Descriptor Field](#containers-descriptor-field)).
+
 ### Tool Choice and Install Commands
 
 Lemonade uses Podman when it is installed, and Docker otherwise §. When neither tool is installed, the setup assistant tells the user to install Podman. The install command it gives comes from the host's `/etc/os-release`: Lemonade matches `ID`, then each word of `ID_LIKE`, against this table:
@@ -329,7 +348,7 @@ The Debian (`.deb`/PPA) and Fedora (`.rpm`) packages install `lemond` as `lemond
 
 What the user does:
 
-- **With Podman:** nothing; `podman` installs with the package.
+- **With Podman:** only [Enabling Container Backends](#enabling-container-backends); `podman` installs with the package.
 - **With Docker:**
   1. Runs `sudo usermod -aG docker lemonade`.
   2. Runs `sudo systemctl restart lemond`.

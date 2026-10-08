@@ -53,6 +53,20 @@ namespace lemon::backends {
         return &kSpec;
     }
 
+    // A container backend's pin in backend_versions.json, "<tag>@<digest>": the
+    // digest is what gets pulled, and the tag records where it came from.
+    struct ContainerPin {
+        std::string tag;
+        std::string digest;  // sha256:<64 hex digits>
+    };
+
+    // Splits a pin, or nullopt when `pin` is not "<tag>@sha256:<64 hex digits>".
+    std::optional<ContainerPin> parse_container_pin(const std::string& pin);
+
+    // A pin as people read it: "<tag>@<first 12 hex digits>", the short form
+    // Podman and Docker print. Returns `pin` unchanged when it is not a pin.
+    std::string short_container_pin(const std::string& pin);
+
     // Return the backend spec for recipes that use the standard BackendSpec flow.
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
@@ -204,6 +218,12 @@ namespace lemon::backends {
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);
+
+        /** "<image>@<digest>" for a container backend: its descriptor's image and the digest its backend_versions.json pin names. Throws when the backend has no container policy or no valid pin. */
+        static std::string get_backend_image(const std::string& recipe, const std::string& backend);
+
+        /** The image get_backend_image() gave at install time, or "" when none is installed. */
+        static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);
 
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);
