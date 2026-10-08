@@ -59,6 +59,31 @@ size_t measure(const fs::path& dir) {
     return ec ? 0 : longest;
 }
 
+// Mirrors remove_rocm_tree() in backend_utils.cpp. MSVC's std::filesystem does not apply the
+// long-path prefix, so plain remove_all() cannot delete the very trees this code exists to clean up.
+bool remove_tree(const fs::path& dir, bool prefixed, std::error_code& ec) {
+    ec.clear();
+#ifdef _WIN32
+    if (prefixed) {
+        fs::path target = fs::absolute(dir, ec);
+        if (ec) {
+            target = dir;
+            ec.clear();
+        }
+        const std::wstring native = target.make_preferred().native();
+        if (native.rfind(L"\\\\?\\", 0) != 0) {
+            target = fs::path(L"\\\\?\\" + native);
+        }
+        fs::remove_all(target, ec);
+        return !ec;
+    }
+#else
+    (void)prefixed;
+#endif
+    fs::remove_all(dir, ec);
+    return !ec;
+}
+
 bool write_file(const fs::path& p, std::error_code& ec) {
     fs::create_directories(p.parent_path(), ec);
     if (ec) {
@@ -128,6 +153,17 @@ int main() {
         const bool is_file = fs::is_regular_file(overlong, stat_ec);
         std::cout << "       [diag] is_regular_file -> " << is_file << " ec=" << stat_ec.value()
                   << " (" << stat_ec.message() << ")" << std::endl;
+
+        // Deleting the tree needs the long-path prefix for the same reason.
+        std::error_code plain_ec;
+        remove_tree(long_dir, /*prefixed=*/false, plain_ec);
+        const bool survived = fs::exists(long_dir, plain_ec);
+        expect(survived, "plain remove_all cannot delete a tree with a path past MAX_PATH");
+
+        std::error_code pfx_ec;
+        remove_tree(long_dir, /*prefixed=*/true, pfx_ec);
+        expect(!fs::exists(long_dir, pfx_ec),
+               "prefixed remove_all deletes it");
     } else {
         std::cout << "[SKIP] filesystem refused a >259 char path; cannot test the regression"
                   << std::endl;

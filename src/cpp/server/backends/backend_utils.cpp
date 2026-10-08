@@ -1297,6 +1297,28 @@ namespace lemon::backends {
             return longest;
         }
 
+        // MSVC's std::filesystem never applies the \\?\ prefix, so remove_all()
+        // cannot delete a tree containing paths past MAX_PATH -- precisely the
+        // tree this is called on. Without the prefix the deep files survive and
+        // the half-deleted install stays on disk.
+        void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
+            ec.clear();
+#ifdef _WIN32
+            fs::path target = fs::absolute(dir, ec);
+            if (ec) {
+                target = dir;
+                ec.clear();
+            }
+            const std::wstring native = target.make_preferred().native();
+            if (native.rfind(L"\\\\?\\", 0) != 0) {
+                target = fs::path(L"\\\\?\\" + native);
+            }
+            fs::remove_all(target, ec);
+#else
+            fs::remove_all(dir, ec);
+#endif
+        }
+
         std::mutex g_rocblas_measure_mutex;
         // Verdict per arch|version|layout, including 0 for "could not measure".
         // Without caching the zero, a tree whose rocBLAS files cannot be found
@@ -1465,7 +1487,14 @@ namespace lemon::backends {
         // wheel runtime behind for get_therock_lib_paths() to keep preferring.
         if (method == "tarball" || !wheels_fit) {
             std::error_code ec;
-            fs::remove_all(get_therock_wheel_dir(arch, version), ec);
+            const fs::path wheel_dir = utils::path_from_utf8(get_therock_wheel_dir(arch, version));
+            remove_rocm_tree(wheel_dir, ec);
+            if (ec) {
+                LOG(WARNING, "BackendUtils")
+                    << "Could not remove the superseded ROCm wheel runtime at "
+                    << utils::path_to_utf8(wheel_dir) << " (" << ec.message()
+                    << "); delete it manually to free the space" << std::endl;
+            }
         }
         ensure_rocm_tensile_reachable(arch, version, /*wheel_layout=*/false);
     }
