@@ -59,6 +59,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "ds4": {
     "args": ""
   },
+  "enable_containers": false,
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
@@ -221,6 +222,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
+| `enable_containers` | bool | false | Allow container backends to pull images and start containers. Set it with `lemonade config set enable_containers=true`, which asks for confirmation first. See [Container Backends](./container-backends.md) |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |

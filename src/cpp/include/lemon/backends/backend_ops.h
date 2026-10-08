@@ -167,8 +167,8 @@ public:
 const BackendOps* default_backend_ops();
 
 // The first setup check that fails for the container backend `recipe:backend`,
-// or nullopt: the SELinux check when its devices include /dev/kfd, then the
-// checks for its install type.
+// or nullopt: enable_containers, then the SELinux check when its devices
+// include /dev/kfd, then the checks for its install type.
 std::optional<utils::SetupFailure> container_setup_failure(const std::string& recipe,
                                                            const std::string& backend);
 
