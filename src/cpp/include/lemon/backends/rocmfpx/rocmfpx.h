@@ -33,7 +33,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 // toolboxes image.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "rocmfpx",
-    /*display_name*/    "ROCm FPX (experimental)",
+    /*display_name*/    "ROCm FPX",
     /*binary*/          "llama-server",
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
@@ -46,12 +46,11 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to the ROCm FPX llama-server", "ROCm FPX Options"},
     },
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo"},
+        {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "ROCm FPX",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ true,
@@ -63,9 +62,6 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"rocm", {BackendTier::Experimental, BackendFormat::Container}},
-    },
     /*containers*/ {
         {"rocm", {
             /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",

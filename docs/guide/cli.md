@@ -443,7 +443,7 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
 
-#### ROCm FPX (experimental) (`rocmfpx` recipe)
+#### ROCm FPX (`rocmfpx` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
