@@ -1650,9 +1650,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["uses_ctx_size"] = desc->uses_ctx_size;
         entry["modality"] = lemon::backends::modality_display_for(*desc);
         const std::string selected_backend = entry.value("default_backend", "");
+        const std::string selected_tier =
+            entry["backends"].value(selected_backend, json::object()).value("tier", "");
         entry["experimental"] = !selected_backend.empty() &&
-            entry["backends"].value(selected_backend, json::object()).value("tier", "") ==
-                backend_tier_to_string(BackendTier::Experimental);
+            selected_tier != backend_tier_to_string(BackendTier::Core);
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
         // Machine-independent support matrix (OS + device families + friendly

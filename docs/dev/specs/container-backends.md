@@ -57,7 +57,7 @@ Tier and format are set per backend. Examples:
 
 Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install a guest backend. Models specific to a guest backend should not be displayed in `/v1/models?show_all=true` until the backend has been installed.
 
-> Note: tier replaces the descriptor's `experimental` boolean. `/system-info` keeps each recipe's `experimental` field, `true` when its `default_backend` has the `experimental` tier.
+> Note: tier replaces the descriptor's `experimental` boolean. `/system-info` keeps each recipe's `experimental` field, `true` when its `default_backend` has the `experimental` or `guest` tier.
 
 ## Class Architecture
 

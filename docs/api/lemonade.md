@@ -1928,7 +1928,7 @@ curl "http://localhost:13305/v1/system-info"
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
     - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
-    - `experimental` - `true` when the `default_backend`'s tier is `experimental`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+    - `experimental` - `true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)
