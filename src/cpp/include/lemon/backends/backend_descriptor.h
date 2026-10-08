@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -35,43 +34,6 @@ enum class VersionPolicy {
     AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
 };
 
-// Who stands behind a backend.
-enum class BackendTier {
-    Core,          // supported by Lemonade's maintainers for production use
-    Community,     // provided by Lemonade's maintainers, not supported for production use
-    Experimental,  // developed in the community and listed in Lemonade; use at your own risk
-};
-
-// How a backend's server is packaged.
-enum class BackendFormat {
-    Native,     // a compiled executable binary
-    Python,     // Python, packaged with its own interpreter
-    Container,  // an OCI image, run by a pre-installed Podman or Docker
-};
-
-struct BackendLabels {
-    BackendTier tier;
-    BackendFormat format;
-};
-
-inline const char* backend_tier_to_string(BackendTier tier) {
-    switch (tier) {
-        case BackendTier::Core:         return "core";
-        case BackendTier::Community:    return "community";
-        case BackendTier::Experimental: return "experimental";
-    }
-    return "experimental";
-}
-
-inline const char* backend_format_to_string(BackendFormat format) {
-    switch (format) {
-        case BackendFormat::Native:    return "native";
-        case BackendFormat::Python:    return "python";
-        case BackendFormat::Container: return "container";
-    }
-    return "native";
-}
-
 inline const char* slot_policy_to_string(SlotPolicy p) {
     switch (p) {
         case SlotPolicy::Standard:      return "standard";
@@ -87,7 +49,7 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
 // paired WrappedServer subclass (see backend_registry.h for how they bind).
 struct BackendDescriptor {
     std::string recipe;             // "vllm"
-    std::string display_name;       // "vLLM ROCm (experimental)"
+    std::string display_name;       // "vLLM ROCm"
     std::string binary;             // subprocess to launch/install ("" = none, e.g. cloud)
     std::string config_section;     // config.json section; defaults to recipe (sd-cpp -> "sdcpp")
 
@@ -117,7 +79,6 @@ struct BackendDescriptor {
     std::vector<std::string>      default_capabilities;
 
     // Editorial metadata for the generated docs (README support matrix, website).
-    bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
 
     // ROCm release channels this backend publishes (e.g. {"stable","nightly"}).
@@ -156,14 +117,6 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
-
-    // One entry per backend in `support`, enforced by test_backend_labels.
-    std::map<std::string, BackendLabels> labels;
-
-    const BackendLabels* labels_for(const std::string& backend) const {
-        auto it = labels.find(backend);
-        return it == labels.end() ? nullptr : &it->second;
-    }
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

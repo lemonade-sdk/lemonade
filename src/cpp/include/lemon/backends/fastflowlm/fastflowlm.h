@@ -29,12 +29,11 @@ inline const BackendDescriptor descriptor = {
          "FastFlowLM Options"},
     },
     /*support*/ {
-        {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
     /*supported_modes*/ {"chat", "embeddings", "transcription"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    false,
     /*web_display_name*/ "FastFlowLM NPU",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -45,10 +44,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    {{"prefer_system", false}},
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"npu", {BackendTier::Core, BackendFormat::Native}},
-    },
 };
 
 }  // namespace fastflowlm

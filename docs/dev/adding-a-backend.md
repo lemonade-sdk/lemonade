@@ -43,7 +43,7 @@ inline const BackendDescriptor descriptor = {
         {"myrecipe_args", "--myrecipe-args", "", "ARGS", "Custom args to pass", "My Options"},
     },
     /*support*/ {                           // OS / device families ({} = no local gating)
-        {"myrecipe", "cpu", {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
+        {"cpu", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
     },
     /*supported_modes*/ {"chat"},           // every mode you serve, most-default first
     /*required_checkpoints*/ {"main"},      // unconditional files; conditional ones checked in load()
@@ -55,7 +55,7 @@ inline const BackendDescriptor descriptor = {
 
 `SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
 
-Every backend in `support` also needs an entry in `labels`, the descriptor's last field, giving its `BackendTier` (`Core`, `Community` or `Experimental`) and `BackendFormat` (`Native`, `Python` or `Container`). `BackendLabelsTest` fails the build when one is missing. `lemonade backends install` prints a disclaimer before it installs an experimental backend, and a recipe whose only backends are experimental keeps its models hidden until one of them is installed.
+Each `support` row names its backend's tier (`BackendTier::Core`, `BackendTier::Experimental` or `BackendTier::Guest`) and format (`BackendFormat::Native`, `BackendFormat::Python` or `BackendFormat::Container`) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; `/system-info` reports the labels of the row for the current OS. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
 
 `supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 

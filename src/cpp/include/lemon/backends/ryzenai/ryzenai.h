@@ -24,12 +24,11 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    false,
     /*web_display_name*/ "Ryzen AI SW NPU",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -40,10 +39,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"server"},
     /*config_extra*/    nlohmann::json::object(),
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"npu", {BackendTier::Core, BackendFormat::Native}},
-    },
 };
 
 }  // namespace ryzenai

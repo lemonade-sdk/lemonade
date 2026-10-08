@@ -1928,6 +1928,7 @@ curl "http://localhost:13305/v1/system-info"
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
     - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
+    - `experimental` - `true` when the `default_backend`'s tier is `experimental`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)
@@ -1935,8 +1936,8 @@ curl "http://localhost:13305/v1/system-info"
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
         - `version` - Installed or configured backend version (when available)
-        - `tier` - Who stands behind the backend: `core` (supported by Lemonade's maintainers for production use), `community` (provided by the maintainers, not supported for production use) or `experimental` (developed in the community and listed in Lemonade, used at your own risk)
-        - `format` - How the backend is packaged: `native` (a compiled executable), `python` (Python packaged with its own interpreter) or `container` (an OCI image run by a pre-installed Podman or Docker)
+        - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+        - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
 - `cloud` - Cloud OpenAI-compatible providers configured on this server (omitted when no providers are installed). Contains:
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
@@ -1948,6 +1949,22 @@ curl "http://localhost:13305/v1/system-info"
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
     - `models_discovered` - Number of chat-capable models currently in the catalog for this provider.
+
+### Backend Tiers and Formats
+
+| Tier | Meaning |
+|------|---------|
+| `core` | Supported by Lemonade's maintainers for production use. |
+| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
+| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from `GET /v1/models?show_all=true` until one of those backends is installed. |
+
+| Format | Meaning |
+|--------|---------|
+| `native` | A compiled executable. |
+| `python` | Python, packaged with its own interpreter. |
+| `container` | An OCI image, run by a pre-installed Podman or Docker. |
+
+The same backend can carry different labels on different operating systems. Each entry in a recipe's `backends` object reports the labels for this system's operating system.
 
 ## `POST /v1/install`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

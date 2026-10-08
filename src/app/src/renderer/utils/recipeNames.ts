@@ -19,7 +19,7 @@ export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
   [COLLECTION_OMNI_MODEL_RECIPE]: 'Lemonade',
   [COLLECTION_ROUTER_MODEL_RECIPE]: 'Lemonade Router',
   'cloud': 'Cloud',
-  'vllm': 'vLLM ROCm (experimental)',
+  'vllm': 'vLLM ROCm',
 };
 
 // Merge display names from a /system-info `recipes` object into RECIPE_DISPLAY_NAMES.

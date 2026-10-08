@@ -29,17 +29,16 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to whisper-server", "Whisper.cpp Options"},
     },
     /*support*/ {
-        {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
-        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
-        {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
-        {"rocm", {"windows", "linux"},
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"vulkan", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
+        {"rocm", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
-        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+        {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
     /*supported_modes*/ {"transcription"},
     /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)
     /*default_capabilities*/ {"realtime-transcription"},
-    /*experimental*/    false,
     /*web_display_name*/ "whisper.cpp",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -50,14 +49,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"cpu", "npu"},
     /*bin_variants*/    {"cpu", "npu"},
     /*config_extra*/    nlohmann::json::object(),
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"npu", {BackendTier::Core, BackendFormat::Native}},
-        {"metal", {BackendTier::Core, BackendFormat::Native}},
-        {"vulkan", {BackendTier::Core, BackendFormat::Native}},
-        {"rocm", {BackendTier::Core, BackendFormat::Native}},
-        {"cpu", {BackendTier::Core, BackendFormat::Native}},
-    },
 };
 
 }  // namespace whispercpp

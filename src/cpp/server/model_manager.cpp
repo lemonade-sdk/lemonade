@@ -3940,7 +3940,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         if (!filter_out) {
-            filter_reason = SystemInfo::check_experimental_backend_installed(recipe, system_info);
+            filter_reason = SystemInfo::check_guest_backend_installed(recipe, system_info);
             filter_out = !filter_reason.empty();
         }
 

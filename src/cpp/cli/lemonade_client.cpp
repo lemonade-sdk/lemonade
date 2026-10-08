@@ -1399,27 +1399,7 @@ int LemonadeClient::list_recipes(bool show_all) const {
     }
 }
 
-void LemonadeClient::print_experimental_disclaimer(const std::string& recipe,
-                                                   const std::string& backend) {
-    json backend_info;
-    try {
-        const json system_info = json::parse(make_request("/api/v1/system-info"));
-        backend_info = system_info.at("recipes").at(recipe).at("backends").at(backend);
-    } catch (const std::exception&) {
-        return;
-    }
-    const std::string state = backend_info.value("state", "");
-    if (backend_info.value("tier", "") != "experimental" || state == "installed" ||
-        state == "update_available" || state == "update_required") {
-        return;
-    }
-    std::cout << recipe << ":" << backend << " is an experimental backend: it is developed in "
-              << "the community and listed in Lemonade, and Lemonade's maintainers do not "
-              << "support it. Use it at your own risk." << std::endl;
-}
-
 int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force) {
-    print_experimental_disclaimer(recipe, backend);
     std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
 
     try {

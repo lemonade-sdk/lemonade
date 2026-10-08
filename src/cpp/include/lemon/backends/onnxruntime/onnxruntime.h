@@ -25,14 +25,13 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to ort-server", "ONNX Runtime Options"},
     },
     /*support*/ {
-        {"cpu", {"windows"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
-        {"cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/arm64 CPU"},
-        {"cpu", {"macos"}, {{"cpu", {"arm64"}}}, "arm64 CPU"},
+        {"cpu", BackendTier::Experimental, BackendFormat::Native, {"windows"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+        {"cpu", BackendTier::Experimental, BackendFormat::Native, {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/arm64 CPU"},
+        {"cpu", BackendTier::Experimental, BackendFormat::Native, {"macos"}, {{"cpu", {"arm64"}}}, "arm64 CPU"},
     },
     /*supported_modes*/ {"classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -43,10 +42,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"cpu"},
     /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"cpu", {BackendTier::Community, BackendFormat::Native}},
-    },
 };
 
 }  // namespace onnxruntime

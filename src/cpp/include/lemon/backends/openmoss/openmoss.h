@@ -21,13 +21,12 @@ inline const BackendDescriptor descriptor = {
          "OpenMOSS TTS backend to use", "Text-to-Speech Options"},
     },
     /*support*/ {
-        {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
-        {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+        {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
+        {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
     },
     /*supported_modes*/ {"tts", "audio-generation"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -38,11 +37,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"cuda", {BackendTier::Community, BackendFormat::Native}},
-        {"vulkan", {BackendTier::Community, BackendFormat::Native}},
-    },
 };
 
 }  // namespace openmoss

@@ -963,7 +963,7 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Models of a recipe whose only backends on this system are experimental appear once one of those backends is installed. Defaults to `false`. |
+| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
 
 ### Example request
 
@@ -1134,7 +1134,6 @@ can be corrected by hand.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `experimental` | Not yet validated for production use. |
 
 
 ## `GET /v1/models/{model_id}`

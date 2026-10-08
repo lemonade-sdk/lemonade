@@ -10,11 +10,11 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
-| `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
+| `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
-| `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
+| `llamacpp-hrx` | HRX GPU | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
@@ -23,21 +23,21 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
-| `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `vllm` | vLLM ROCm | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
 ## Support matrix
 
-Each backend has a tier and a format. The tier is `core` (supported by Lemonade's maintainers for production use), `community` (provided by the maintainers, not supported for production use) or `experimental` (developed in the community and listed in Lemonade, used at your own risk). The format is `native` (a compiled executable), `python` (Python packaged with its own interpreter) or `container` (an OCI image run by a pre-installed Podman or Docker).
+Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats).
 
 <!-- BEGIN GENERATED: backends-matrix -->
 | Recipe | Backend | Tier | Format | OS | Device families |
 |--------|---------|------|--------|----|-----------------|
-| `acestep` | cuda | community | native | linux, windows | nvidia_gpu |
-| `acestep` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `acestep` | rocm | community | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `ds4` | rocm | experimental | native | linux | amd_gpu (gfx1151) |
+| `acestep` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `ds4` | rocm | guest | native | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
@@ -47,29 +47,29 @@ Each backend has a tier and a format. The tier is `core` (supported by Lemonade'
 | `llamacpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | core | native | linux, windows | cpu (arm64, x86_64) |
-| `llamacpp-hrx` | hrx | community | native | linux | amd_gpu (gfx1100, gfx1151) |
+| `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | core | python | macos | cpu (arm64) |
-| `onnxruntime` | cpu | community | native | windows | cpu (x86_64) |
-| `onnxruntime` | cpu | community | native | linux | cpu (arm64, x86_64) |
-| `onnxruntime` | cpu | community | native | macos | cpu (arm64) |
-| `openmoss` | cuda | community | native | linux, windows | nvidia_gpu |
-| `openmoss` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `onnxruntime` | cpu | experimental | native | windows | cpu (x86_64) |
+| `onnxruntime` | cpu | experimental | native | linux | cpu (arm64, x86_64) |
+| `onnxruntime` | cpu | experimental | native | macos | cpu (arm64) |
+| `openmoss` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `openmoss` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | core | native | macos | metal |
 | `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | community | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `thinksound` | cuda | community | native | linux, windows | nvidia_gpu |
-| `thinksound` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `thinksound` | rocm | community | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `trellis` | cuda | community | native | linux, windows | nvidia_gpu |
-| `trellis` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `trellis` | rocm | community | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `vllm` | rocm | community | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `thenoise` | rocm | experimental | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `thinksound` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `trellis` | cuda | experimental | native | linux, windows | nvidia_gpu |
+| `trellis` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `trellis` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `vllm` | rocm | experimental | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | npu | core | native | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | core | native | macos | metal |
 | `whispercpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64) |
@@ -93,7 +93,7 @@ Each backend has a tier and a format. The tier is `core` (supported by Lemonade'
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
-#### `ds4` — DwarfStar4 (experimental)
+#### `ds4` — DwarfStar4
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -116,7 +116,7 @@ Each backend has a tier and a format. The tier is `core` (supported by Lemonade'
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
 
-#### `llamacpp-hrx` — HRX GPU (experimental)
+#### `llamacpp-hrx` — HRX GPU
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -183,7 +183,7 @@ Each backend has a tier and a format. The tier is `core` (supported by Lemonade'
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 | `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 
-#### `vllm` — vLLM ROCm (experimental)
+#### `vllm` — vLLM ROCm
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|

@@ -100,10 +100,10 @@ public:
     static std::string check_recipe_supported(const std::string& recipe);
 
     // Why the models of `recipe` stay hidden, or "" when they show. A recipe
-    // whose only backends on this host are experimental keeps its models hidden
+    // whose only backends on this host are guest backends keeps its models hidden
     // until one of those backends is installed.
-    static std::string check_experimental_backend_installed(const std::string& recipe,
-                                                            const json& system_info);
+    static std::string check_guest_backend_installed(const std::string& recipe,
+                                                     const json& system_info);
 
     // Get all recipes with their backend state info
     // Returns a vector of {recipe_name, backends}

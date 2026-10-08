@@ -23,14 +23,13 @@ inline const BackendDescriptor descriptor = {
          "ACE-Step backend to use", "Audio Generation Options"},
     },
     /*support*/ {
-        {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
-        {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
-        {"rocm", {"linux", "windows"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)"},
+        {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
+        {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+        {"rocm", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)"},
     },
     /*supported_modes*/ {"audio-generation"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {"stable"},
     /*exposes_prometheus_metrics*/ false,
@@ -41,12 +40,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"cuda", {BackendTier::Community, BackendFormat::Native}},
-        {"vulkan", {BackendTier::Community, BackendFormat::Native}},
-        {"rocm", {BackendTier::Community, BackendFormat::Native}},
-    },
 };
 
 }  // namespace acestep

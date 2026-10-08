@@ -24,13 +24,12 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
-        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+        {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
     /*supported_modes*/ {"tts"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    false,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -41,11 +40,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
-    /*streams_model_from_storage*/ false,
-    /*labels*/ {
-        {"metal", {BackendTier::Core, BackendFormat::Native}},
-        {"cpu", {BackendTier::Core, BackendFormat::Native}},
-    },
 };
 
 }  // namespace kokoro

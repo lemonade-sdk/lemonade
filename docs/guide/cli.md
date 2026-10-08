@@ -382,7 +382,7 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
-#### HRX GPU (experimental) (`llamacpp-hrx` recipe)
+#### HRX GPU (`llamacpp-hrx` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -422,7 +422,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
-#### vLLM ROCm (experimental) (`vllm` recipe)
+#### vLLM ROCm (`vllm` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -436,7 +436,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
 
-#### DwarfStar4 (experimental) (`ds4` recipe)
+#### DwarfStar4 (`ds4` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -627,8 +627,7 @@ lemonade backends uninstall SPEC
 **Notes:**
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
-- Each backend lists its tier and format. The tier is `core` (supported by Lemonade's maintainers for production use), `community` (provided by the maintainers, not supported for production use) or `experimental` (developed in the community and listed in Lemonade, used at your own risk). The format is `native` (a compiled executable), `python` (Python packaged with its own interpreter) or `container` (an OCI image run by a pre-installed Podman or Docker)
-- Installing an experimental backend prints a disclaimer. The models of a recipe whose only backends are experimental stay hidden from `lemonade list` until one of those backends is installed
+- Each backend lists its tier and format. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
 
 **Examples:**
 
