@@ -446,6 +446,158 @@ class OllamaTests(ServerTestBase):
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup
                 print(f"Warning: cleanup unload_all_models failed: {exc}")
 
+    def test_010a_chat_streaming_with_tools_respects_think_false_after_tool_response(
+        self,
+    ):
+        """Test think:false controls reach the backend after a tool response."""
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import threading
+
+        captured = {}
+        upstream_id = "vendor/ollama-think-regression"
+        provider = f"ollama-think-{uuid.uuid4().hex[:8]}"
+
+        class FakeProvider(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if not self.path.rstrip("/").endswith("/models"):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                payload = json.dumps(
+                    {"object": "list", "data": [{"id": upstream_id, "object": "model"}]}
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_POST(self):  # noqa: N802
+                if not self.path.rstrip("/").endswith("/chat/completions"):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                length = int(self.headers.get("Content-Length", "0"))
+                captured["request"] = json.loads(self.rfile.read(length))
+                payload = json.dumps(
+                    {
+                        "id": "ollama-think-regression",
+                        "object": "chat.completion",
+                        "model": upstream_id,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": "ok"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *_args):
+                pass
+
+        httpd = HTTPServer(("127.0.0.1", 0), FakeProvider)
+        provider_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        provider_thread.start()
+        base_url = f"http://127.0.0.1:{httpd.server_address[1]}/v1"
+        public_model = f"{provider}.{upstream_id}"
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            response = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "test-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": public_model,
+                    "stream": True,
+                    "think": False,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Is the light in the studio on?",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_calculator",
+                                    "type": "function",
+                                    "function": {
+                                        "name": SAMPLE_TOOL["function"]["name"],
+                                        "arguments": {"expression": "1+1"},
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "role": "tool",
+                            "tool_call_id": "call_calculator",
+                            "content": "2",
+                        },
+                    ],
+                    "tools": [SAMPLE_TOOL],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertTrue(response.text.strip())
+
+            forwarded = captured.get("request")
+            self.assertIsNotNone(forwarded, "Ollama request did not reach the backend")
+            self.assertFalse(forwarded.get("stream"))
+            self.assertEqual(forwarded.get("reasoning_effort"), "none")
+            self.assertFalse(
+                forwarded.get("chat_template_kwargs", {}).get("enable_thinking", True)
+            )
+            self.assertNotIn("enable_thinking", forwarded)
+            self.assertNotIn("thinking", forwarded)
+            self.assertTrue(
+                forwarded["messages"][0]["content"].startswith("/no_think\n")
+            )
+        finally:
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": public_model},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            httpd.shutdown()
+            httpd.server_close()
+
     def test_011_chat_missing_model(self):
         """Test /api/chat returns 400 when model is missing."""
         response = requests.post(

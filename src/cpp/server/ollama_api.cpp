@@ -2,6 +2,7 @@
 #include "lemon/error_types.h"
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
+#include "lemon/thinking_controls.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
@@ -490,6 +491,8 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
 
     // Stream flag is handled by the caller
     openai_req["stream"] = false;
+
+    normalize_thinking_controls(openai_req);
 
     return openai_req;
 }
