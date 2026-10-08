@@ -469,6 +469,7 @@ else
                 libjavascriptcoregtk-4.1-dev
                 librsvg2-dev
                 libayatana-appindicator3-dev
+                libudev-dev
                 wget
                 file
             )
@@ -483,6 +484,7 @@ else
                 libsoup3-devel
                 librsvg2-devel
                 libappindicator-gtk3-devel
+                systemd-devel
                 wget
                 file
             )
@@ -497,6 +499,7 @@ else
                 libsoup3-devel
                 librsvg2-devel
                 libappindicator-gtk3-devel
+                systemd-devel
                 wget
                 file
             )
@@ -511,6 +514,7 @@ else
             # inside webkit2gtk-4.1 on Arch so it doesn't need a separate entry.
             tauri_dep_candidates=(
                 webkit2gtk-4.1
+                systemd
                 libsoup3
                 librsvg
                 wget

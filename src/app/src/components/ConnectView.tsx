@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl, type LoadedModel, type ModelInfo } from '../api';
 import { clearClientStorage } from '../storage';
 import { Icon, IconName } from './Icon';
 import GlobalModelSettingsPanel from './GlobalModelSettingsPanel';
 import McpPanel from './McpPanel';
+import NexusPanel from './NexusPanel';
+import { selectNexusInferenceServer } from '../features/nexus/nexus';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type ConnectSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -44,6 +46,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
+  const observedConnection = useRef({ endpoint: api.baseUrl, key: api.apiKey });
   const [canPersistApiKey, setCanPersistApiKey] = useState(api.canPersistApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(api.canPersistApiKey && Boolean(api.apiKey));
   const [connecting, setConnecting] = useState(false);
@@ -123,6 +126,16 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setDirectoryNotice(null);
     setDirectoryError(null);
   }, [isActive, activeSection]);
+
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const connection = { endpoint: api.baseUrl, key: api.apiKey };
+    if (observedConnection.current.endpoint === connection.endpoint && observedConnection.current.key === connection.key) return;
+    observedConnection.current = connection;
+    setHost(connection.endpoint);
+    setApiKey(connection.key);
+    setRememberApiKey(false);
+  }, [status, isActive]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -341,6 +354,14 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         />
 
         <div className="connect__layout workspace-pane__scroll">
+        {activeSection === 'devices-and-mesh' && <NexusPanel isActive={isActive} onConnect={async (nodeId, remoteKey) => {
+          await selectNexusInferenceServer(nodeId, remoteKey);
+          setHost(api.baseUrl);
+          setApiKey(api.apiKey);
+          setRememberApiKey(false);
+          setNotice(`Connected to ${api.baseUrl}.`);
+          onSectionChange('server');
+        }} />}
         {activeSection === 'server' && (
         <section className="connect__section connect__section--server">
           <form className="connect__form" onSubmit={e => { e.preventDefault(); handleConnect(); }}>

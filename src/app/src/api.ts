@@ -1306,7 +1306,9 @@ class LemonadeAPI {
   // ── Endpoints ───────────────────────────────────────────────────
 
   async health(): Promise<HealthData> {
+    const endpoint = this.baseUrl;
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
+    if (endpoint !== this.baseUrl) return data;
     const signature = JSON.stringify(data);
     if (!this._healthData || signature !== this._healthDataSignature) {
       this._healthData = data;
@@ -1496,6 +1498,7 @@ class LemonadeAPI {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
+    const endpoint = this.baseUrl;
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
@@ -1505,7 +1508,7 @@ class LemonadeAPI {
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
-      this._systemInfoData = data;
+      if (endpoint === this.baseUrl) this._systemInfoData = data;
       return data;
     }).finally(() => {
       if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;
@@ -2534,6 +2537,23 @@ class LemonadeAPI {
   }
 
   // ── Connection management ───────────────────────────────────────
+
+  async switchServer(endpoint: string, apiKey: string): Promise<boolean> {
+    await Promise.allSettled([this._connectInFlight, this._refreshInFlight, this._systemInfoInFlight]);
+    this._hostBaseUrl = normalizeBaseUrl(endpoint);
+    this._sessionAdminApiKey = '';
+    this.setSessionApiKey(apiKey);
+    this._healthData = null;
+    this._healthDataSignature = '';
+    this._modelsData = null;
+    this._modelsDataSignature = '';
+    this._systemInfoData = null;
+    this._modelsMutationRevision += 1;
+    this._modelStateGeneration += 1;
+    this._modelsRequestInFlight.clear();
+    this._publishModelState();
+    return this.connect();
+  }
 
   async connect(): Promise<boolean> {
     if (this._connectInFlight) return this._connectInFlight;
