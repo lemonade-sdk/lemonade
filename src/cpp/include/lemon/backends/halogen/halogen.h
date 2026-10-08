@@ -12,7 +12,7 @@ namespace halogen {
 // environment variables rather than a command line.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "halogen",
-    /*display_name*/    "Halogen Flash (experimental)",
+    /*display_name*/    "Halogen Flash",
     /*binary*/          "",  // the image's entrypoint serves the model
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
@@ -22,12 +22,11 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, /*device_summary*/ "AMD Strix Halo"},
+        {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, /*device_summary*/ "AMD Strix Halo"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "Halogen Flash",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
@@ -42,9 +41,6 @@ inline const BackendDescriptor descriptor = {
     // place, so what must fit in the GPU's pool is each model's
     // min_resident_gb, not the checkpoint's size.
     /*streams_model_from_storage*/ true,
-    /*labels*/ {
-        {"rocm", {BackendTier::Experimental, BackendFormat::Container}},
-    },
     /*containers*/ {
         {"rocm", {
             /*image*/   "ghcr.io/peonist-ai/halogen-flash-server",
