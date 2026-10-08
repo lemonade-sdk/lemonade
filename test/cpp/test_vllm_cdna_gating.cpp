@@ -41,6 +41,8 @@ int main() {
            "vllm:rocm still supports gfx1100 via gfx110X wildcard");
     expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx1151"),
            "vllm:rocm still supports gfx1151 (Strix Halo)");
+    expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx1201"),
+           "vllm:rocm supports gfx1201 (RX 9070 XT) via gfx120X wildcard");
 
     expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx906"),
            "vllm:rocm does not support gfx906 (not published)");
@@ -59,6 +61,8 @@ int main() {
            "rocm_asset_family passes gfx942 through unchanged (release tag arch)");
     expect(SystemInfo::rocm_asset_family("gfx1100") == "gfx110X",
            "rocm_asset_family collapses gfx1100 to gfx110X");
+    expect(SystemInfo::rocm_asset_family("gfx1201") == "gfx120X",
+           "rocm_asset_family collapses gfx1201 to gfx120X");
 
     // Per-arch version override: gfx942 (CDNA-dcgpu) pins a distinct vLLM/ROCm
     // release line from the RDNA default, since no single tag carries both.
