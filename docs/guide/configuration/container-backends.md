@@ -10,6 +10,14 @@ Container backends run on Linux with Podman or Docker. Lemonade uses Podman when
 
 ## Setup
 
+Container backends start disabled. Enable them once, after reading the warning the command prints:
+
+```bash
+lemonade config set enable_containers=true
+```
+
+Pass `--yes` to skip the confirmation in scripts.
+
 When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, Podman runs containers as that account. Set `CONTAINER_HOST` to root's Podman socket to run them with rootful Podman instead.
 
 **With Podman:**
