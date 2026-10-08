@@ -26,13 +26,14 @@ public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
     // Aliases live in Server's AliasManager, which the gateway does not own.
     // Injected rather than reached for, so a tool argument resolves the same
-    // way it does on the REST endpoints.
+    // way it does on the REST endpoints. Required: an absent resolver would
+    // leave the gateway silently answering for the alias name itself.
     using ResolveAliasFn = std::function<std::string(const std::string&)>;
 
     McpServer(Router* router,
               ModelManager* model_manager,
               EnsureLoadedFn ensure_loaded,
-              ResolveAliasFn resolve_alias = {});
+              ResolveAliasFn resolve_alias);
     ~McpServer();
 
     // Must be called on a shared_ptr instance — handlers capture shared_from_this().

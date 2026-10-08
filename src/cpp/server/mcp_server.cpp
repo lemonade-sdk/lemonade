@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -225,11 +226,14 @@ McpServer::McpServer(Router* router,
       model_manager_(model_manager),
       ensure_loaded_(std::move(ensure_loaded)),
       resolve_alias_(std::move(resolve_alias)) {
+    if (!resolve_alias_) {
+        throw std::invalid_argument("McpServer requires an alias resolver");
+    }
     tools_ = build_tools();
 }
 
 std::string McpServer::resolve_alias(const std::string& model_name) const {
-    return resolve_alias_ ? resolve_alias_(model_name) : model_name;
+    return resolve_alias_(model_name);
 }
 
 McpServer::~McpServer() = default;
