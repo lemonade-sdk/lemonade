@@ -54,12 +54,12 @@
     }
   },
   "llamacpp": {
-    "vulkan": "b11393",
+    "vulkan": "b11454",
     "rocm-stable": "b11395",
     "rocm-nightly": "b1338",
     "cuda": "b11395",
-    "metal": "b11393",
-    "cpu": "b11393"
+    "metal": "b11454",
+    "cpu": "b11454"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b99"
