@@ -340,6 +340,11 @@ def main() -> int:
                     results.append(
                         record_failure(args, label, model, size, time.monotonic(), exc)
                     )
+                # Consume this model's log text even though its GPU check is
+                # skipped, or the next model inherits its device banner and is
+                # credited with an offload it never got.
+                for path in gpu_log_paths:
+                    _, log_offsets[path] = read_new_log_text(path, log_offsets[path])
                 continue
 
         for width, height in sizes:

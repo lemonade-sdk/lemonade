@@ -1257,91 +1257,40 @@ namespace lemon::backends {
                                              : BackendUtils::get_therock_install_dir(arch, version));
         }
 
-        // Directories that may hold rocblas.dll, best source first. The wheel
-        // layout's are read back from runtime_paths.txt, which the install wrote
-        // from the wheels' own report of where their runtime lives.
-        std::vector<fs::path> rocblas_dll_candidates(const std::string& arch,
-                                                     const std::string& version,
-                                                     bool wheel_layout) {
-            std::vector<fs::path> dirs;
-            const fs::path root = therock_root(arch, version, wheel_layout);
-            if (wheel_layout) {
-                std::ifstream pf(root / "runtime_paths.txt");
-                std::string line;
-                while (std::getline(pf, line)) {
-                    if (!line.empty() && line.back() == '\r') {
-                        line.pop_back();
-                    }
-                    if (!line.empty()) {
-                        dirs.push_back(utils::path_from_utf8(line));
-                    }
-                }
-            } else {
-                dirs.push_back(root / "bin");
+        // A rocBLAS Tensile solution file: a TensileLibrary* file under a directory named "rocblas".
+        // Locating them by shape rather than by a fixed path keeps the check working if upstream moves them.
+        bool is_rocblas_tensile_file(const fs::path& p) {
+            if (utils::path_to_utf8(p.filename()).rfind("TensileLibrary", 0) != 0) {
+                return false;
             }
-            return dirs;
+            for (const fs::path& part : p.parent_path()) {
+                if (part == "rocblas") {
+                    return true;
+                }
+            }
+            return false;
         }
 
-        // rocBLAS keeps its Tensile solutions in a "rocblas" directory beside its own binary
-        // and resolves them relative to its loaded module, so anchor on the binary.
-        // Scoping to rocBLAS matters: hipBLASLt ships deeper files (and files named
-        // TensileLibrary*) but reports failed opens instead of faulting.
-        fs::path find_rocblas_data_dir(const std::string& arch, const std::string& version,
-                                       bool wheel_layout) {
-#ifdef _WIN32
-            const std::string dll_name = "rocblas.dll";
-#else
-            const std::string dll_name = "librocblas.so";
-#endif
-            std::error_code ec;
-            std::vector<fs::path> dirs = rocblas_dll_candidates(arch, version, wheel_layout);
-
-            // Only the "rocblas" subdirectory counts. Falling back to the
-            // binary's own directory would pull in hipBLASLt, which sits deeper
-            // and tolerates an unopenable file, and would refuse cache dirs
-            // where rocBLAS itself is perfectly fine.
-            for (const fs::path& dir : dirs) {
-                const fs::path data = dir / "rocblas";
-                if (fs::exists(dir / dll_name, ec) && fs::is_directory(data, ec)) {
-                    return data;
-                }
-            }
-
-            // Recorded dirs did not pan out; look for the binary anywhere under
-            // the install so a reorganised layout still measures.
-            const fs::path root = therock_root(arch, version, wheel_layout);
-            if (!fs::is_directory(root, ec)) {
-                return {};
-            }
-            for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec;
-                 it.increment(ec)) {
-                if (it->path().filename() == dll_name) {
-                    const fs::path data = it->path().parent_path() / "rocblas";
-                    if (fs::is_directory(data, ec)) {
-                        return data;
-                    }
-                }
-            }
-            return {};
-        }
-
-        // Longest absolute path anywhere under dir, or 0 when it cannot be read.
+        // Longest absolute path among the rocBLAS Tensile files under root, or 0
+        // when there are none or the tree cannot be read.
         // Deliberately does not stat each entry: a status query on a path past
         // MAX_PATH fails, which would skip the very entries this exists to find.
         // path() is built from enumeration data and needs no filesystem access.
-        size_t measure_longest_path(const fs::path& dir) {
+        size_t scan_rocblas_tensile_paths(const fs::path& root) {
             std::error_code ec;
-            if (!fs::is_directory(dir, ec)) {
+            if (!fs::is_directory(root, ec)) {
                 return 0;
             }
-            size_t longest = dir.native().size();
-            for (fs::recursive_directory_iterator it(dir, ec), end; it != end && !ec;
+            size_t longest = 0;
+            for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec;
                  it.increment(ec)) {
-                longest = std::max(longest, it->path().native().size());
+                if (is_rocblas_tensile_file(it->path())) {
+                    longest = std::max(longest, it->path().native().size());
+                }
             }
             if (ec) {
                 LOG(WARNING, "BackendUtils")
-                    << "Could not fully scan " << utils::path_to_utf8(dir) << " (" << ec.message()
+                    << "Could not fully scan " << utils::path_to_utf8(root) << " (" << ec.message()
                     << "); ROCm path length not verified" << std::endl;
                 return 0;
             }
@@ -1349,6 +1298,15 @@ namespace lemon::backends {
         }
 
         std::mutex g_rocblas_measure_mutex;
+        // Verdict per arch|version|layout, including 0 for "could not measure".
+        // Without caching the zero, a tree whose rocBLAS files cannot be found
+        // would be re-walked on every model load and every upscale request.
+        std::map<std::string, size_t> g_rocblas_measure_cache;
+
+        std::string rocblas_measure_key(const std::string& arch, const std::string& version,
+                                        bool wheel_layout) {
+            return arch + "|" + version + "|" + (wheel_layout ? "wheel" : "tarball");
+        }
     }
 
     std::string BackendUtils::rocm_path_budget_message(const std::string& cache_dir,
@@ -1373,21 +1331,32 @@ namespace lemon::backends {
     size_t BackendUtils::measure_rocblas_max_path(const std::string& arch,
                                                   const std::string& version,
                                                   bool wheel_layout) {
-        const fs::path data_dir = find_rocblas_data_dir(arch, version, wheel_layout);
-        if (data_dir.empty()) {
+        const std::string key = rocblas_measure_key(arch, version, wheel_layout);
+        {
+            std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
+            auto cached = g_rocblas_measure_cache.find(key);
+            if (cached != g_rocblas_measure_cache.end()) {
+                return cached->second;
+            }
+        }
+
+        const fs::path root = therock_root(arch, version, wheel_layout);
+        const size_t longest = scan_rocblas_tensile_paths(root);
+        if (longest == 0) {
             std::error_code ec;
-            if (fs::is_directory(therock_root(arch, version, wheel_layout), ec)) {
-                // Not fatal: rocBLAS finds its own files relative to its module,
-                // so inference may well work. We just cannot vouch for the
-                // lengths. CI fails on this condition so the layout gets fixed.
+            if (fs::is_directory(root, ec)) {
+                // Not fatal: rocBLAS finds its own files relative to its module, so inference may well work.
+                // We just cannot vouch for the lengths. CI fails on this condition so the layout gets fixed.
                 LOG(WARNING, "BackendUtils")
                     << "ROCm is installed for " << arch << "/" << version
-                    << " but rocBLAS was not found inside it; its path lengths were not verified"
-                    << std::endl;
+                    << " but no rocBLAS Tensile files were found inside it; its path lengths "
+                    << "were not verified" << std::endl;
             }
-            return 0;
         }
-        return measure_longest_path(data_dir);
+
+        std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
+        g_rocblas_measure_cache[key] = longest;
+        return longest;
     }
 
     void BackendUtils::record_rocblas_max_path(const std::string& arch, const std::string& version,
@@ -1403,19 +1372,17 @@ namespace lemon::backends {
     void BackendUtils::ensure_rocm_tensile_reachable(const std::string& arch,
                                                      const std::string& version,
                                                      bool wheel_layout) {
+        // Unsynchronised on purpose: measure_rocblas_max_path() holds the lock
+        // for the scan, and two threads racing here just write the same value.
+        const fs::path marker = therock_root(arch, version, wheel_layout) / kRocblasMaxPathFile;
         size_t longest = 0;
-        {
-            std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
-            const fs::path marker = therock_root(arch, version, wheel_layout) / kRocblasMaxPathFile;
-            std::ifstream f(marker);
-            if (!(f >> longest) || longest == 0) {
-                // No marker: an install that predates this check, so measure once
-                // and record it rather than walking on every load.
-                longest = measure_rocblas_max_path(arch, version, wheel_layout);
-                if (longest > 0) {
-                    std::ofstream out(marker);
-                    out << longest;
-                }
+        std::ifstream f(marker);
+        if (!(f >> longest) || longest == 0) {
+            // No marker: an install that predates this check, so measure once and record it rather than walking on every load.
+            longest = measure_rocblas_max_path(arch, version, wheel_layout);
+            if (longest > 0) {
+                std::ofstream out(marker);
+                out << longest;
             }
         }
 
@@ -2236,19 +2203,20 @@ namespace lemon::backends {
         bool staged_any = false;
         std::error_code iter_ec;
         for (const auto& entry : fs::directory_iterator(therock_bin, iter_ec)) {
-            if (!entry.is_regular_file()) {
+            std::error_code stat_ec;
+            if (!entry.is_regular_file(stat_ec) || stat_ec) {
                 continue;
             }
             const fs::path name = entry.path().filename();
             if (!is_hip_runtime_dll(utils::path_to_utf8(name))) {
                 continue;
             }
-            if (!fs::exists(system_dir / name)) {
+            if (!fs::exists(system_dir / name, stat_ec) || stat_ec) {
                 continue;
             }
 
             const fs::path target = target_dir / name;
-            if (fs::exists(target) &&
+            if (fs::exists(target, stat_ec) && !stat_ec &&
                 read_dll_version(target) == read_dll_version(entry.path())) {
                 continue;
             }

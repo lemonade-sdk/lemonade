@@ -30,16 +30,31 @@ void expect(bool cond, const std::string& what) {
     }
 }
 
-// Mirrors measure_longest_path() in backend_utils.cpp: walk without stat'ing,
+// Mirrors scan_rocblas_tensile_paths() in backend_utils.cpp: select by shape
+// (TensileLibrary* under a "rocblas" directory) and walk without stat'ing,
 // because a status query on a path past MAX_PATH fails.
+bool is_rocblas_tensile_file(const fs::path& p) {
+    if (p.filename().string().rfind("TensileLibrary", 0) != 0) {
+        return false;
+    }
+    for (const fs::path& part : p.parent_path()) {
+        if (part == "rocblas") {
+            return true;
+        }
+    }
+    return false;
+}
+
 size_t measure(const fs::path& dir) {
     std::error_code ec;
     if (!fs::is_directory(dir, ec)) {
         return 0;
     }
-    size_t longest = dir.native().size();
+    size_t longest = 0;
     for (fs::recursive_directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
-        longest = std::max(longest, it->path().native().size());
+        if (is_rocblas_tensile_file(it->path())) {
+            longest = std::max(longest, it->path().native().size());
+        }
     }
     return ec ? 0 : longest;
 }
@@ -74,29 +89,34 @@ int main() {
     // Missing directory measures as 0 rather than throwing.
     expect(measure(base / "does-not-exist") == 0, "missing directory measures 0");
 
-    // A known-deepest file is reported exactly.
-    const fs::path shallow = base / "tree" / "a.dat";
-    const fs::path deeper = base / "tree" / "nested" / "bbbbbbbbbbbbbbbbbbbb.dat";
-    if (!write_file(shallow, ec) || !write_file(deeper, ec)) {
+    // Only rocBLAS Tensile files count.
+    const fs::path roc = base / "tree" / "bin" / "rocblas" / "library" / "gfx1151";
+    const fs::path hip = base / "tree" / "bin" / "hipblaslt" / "library" / "gfx1151";
+    const fs::path roc_file = roc / "TensileLibrary_Type_fallback_gfx1151.dat";
+    const fs::path hip_file = hip / "TensileLibrary_much_much_longer_name_gfx1151.dat";
+    const fs::path other = roc / "README.txt";
+    if (!write_file(roc_file, ec) || !write_file(hip_file, ec) || !write_file(other, ec)) {
         std::cerr << "[SKIP] could not create fixture tree: " << ec.message() << std::endl;
         fs::remove_all(base, ec);
         return 0;
     }
-    expect(measure(base / "tree") == deeper.native().size(),
-           "deepest file length is reported exactly");
+    expect(hip_file.native().size() > roc_file.native().size(),
+           "fixture: the hipBLASLt path is the longer of the two");
+    expect(measure(base / "tree") == roc_file.native().size(),
+           "measures the rocBLAS file and ignores hipBLASLt and non-Tensile files");
 
 #ifdef _WIN32
-    // The regression this test exists for: an entry whose full path exceeds
-    // MAX_PATH must still be measured. Build one by padding the filename, which
-    // is how the real failure looks (the directory stays well under the limit,
-    // only the Tensile filenames push the total past 259).
-    const fs::path long_dir = base / "overlong";
+    // The regression this test exists for: an entry whose full path exceeds MAX_PATH must still be measured.
+    // Build one by padding the filename, which is how the real failure looks.
+    // The directory stays well under the limit, only the Tensile filenames push the total past 259.
+    const fs::path long_dir = base / "overlong" / "rocblas" / "library";
     fs::create_directories(long_dir, ec);
     const size_t want = 275;
-    const size_t name_len = want - (long_dir.native().size() + 1);
-    const fs::path overlong = long_dir / (std::string(name_len - 4, 'n') + ".dat");
+    const std::string stem = "TensileLibrary_";
+    const size_t pad = want - (long_dir.native().size() + 1 + stem.size() + 4);
+    const fs::path overlong = long_dir / (stem + std::string(pad, 'n') + ".dat");
     if (write_file(overlong, ec) && overlong.native().size() == want) {
-        const size_t got = measure(long_dir);
+        const size_t got = measure(base / "overlong");
         expect(got == want,
                "path past MAX_PATH is measured, not skipped (got " + std::to_string(got) +
                    ", wanted " + std::to_string(want) + ")");

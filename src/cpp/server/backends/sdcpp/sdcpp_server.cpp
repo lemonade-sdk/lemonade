@@ -704,19 +704,7 @@ std::string SDServer::upscale_via_cli(
         env_vars.push_back({"PATH", new_path});
 
         if (!therock_dirs.empty()) {
-            fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
-            fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
-            if (fs::exists(therock_dll)) {
-                std::error_code ec;
-                fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                if (!ec) {
-                    LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to "
-                        << path_to_utf8(target_dll) << std::endl;
-                } else {
-                    LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: "
-                        << ec.message() << std::endl;
-                }
-            }
+            BackendUtils::stage_therock_hip_runtime(rocm_arch, cli_exe.parent_path());
         }
     }
 #endif

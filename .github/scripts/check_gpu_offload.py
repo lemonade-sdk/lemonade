@@ -58,6 +58,7 @@ def main() -> int:
 
     failures: list[str] = []
     passed = 0
+    not_applicable = 0
     for path in paths:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(data, list):
@@ -73,8 +74,13 @@ def main() -> int:
                 failures.append(ident)
             elif gpu == "PASS":
                 passed += 1
+            else:
+                not_applicable += 1
 
-    print(f"Checked {len(paths)} summary file(s): {passed} PASS, {len(failures)} FAIL.")
+    print(
+        f"Checked {len(paths)} summary file(s): {passed} PASS, "
+        f"{len(failures)} FAIL, {not_applicable} N/A."
+    )
     if failures:
         print("GPU offload FAILED for:")
         for item in failures:
@@ -92,7 +98,17 @@ def main() -> int:
             print(f"  {run_url}")
         return 1
 
-    print("GPU offload confirmed for every enforced model/backend combination.")
+    if passed == 0:
+        print(
+            f"No GPU-enforced records found across {len(paths)} summary file(s); "
+            "nothing to confirm."
+        )
+        return 0
+
+    print(
+        f"GPU offload confirmed for every enforced model/backend combination "
+        f"({passed} record(s))."
+    )
     return 0
 
 
