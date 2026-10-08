@@ -3294,15 +3294,15 @@ test.describe('Effective Settings modal accessibility', () => {
     await page.waitForTimeout(200);
   }
 
-  test('A191 — Settings by source has an authority note referencing the Effective load command', async ({ page }) => {
+  test('A191 — Settings by source has an authority note referencing the Backend launch command', async ({ page }) => {
     await openEffectiveSettings(page);
     const note = page.locator('.effective-settings__section').first().locator('.effective-settings__note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('Effective load command');
+    await expect(note).toContainText('Backend launch command');
     await expect(note).toContainText('authoritative');
     const copy = note.locator('.effective-settings__note-copy');
     await expect(copy).toHaveCount(1);
-    await expect(copy.locator('strong')).toHaveText('Effective load command');
+    await expect(copy.locator('strong')).toHaveText('Backend launch command');
     await expect(page.locator('.effective-settings__command')).toHaveText('llama-server --threads 8');
   });
 

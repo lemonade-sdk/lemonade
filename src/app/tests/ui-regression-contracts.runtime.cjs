@@ -99,6 +99,16 @@ assert.match(composerImagesRule, /max-width:\s*var\(--max-content-width\)/);
 assert.match(composerImagesRule, /margin:\s*0 auto/);
 assert.match(composerImagesRule, /overflow-x:\s*auto/);
 
+assert.match(sources.app, /const handleModelSelectFromModels = useCallback\(\(modelName: string\) => \{[\s\S]*?handleModelSelect\(modelName\);[\s\S]*?setComposerFocusEpoch\(epoch => epoch \+ 1\)/);
+assert.match(sources.app, /<ModelManager[\s\S]*?onModelSelect=\{handleModelSelectFromModels\}/);
+assert.match(sources.app, /<ChatView[\s\S]*?onModelSelect=\{handleModelSelect\}/);
+assert.equal(
+  (sources.app.match(/setComposerFocusEpoch\(/g) || []).length,
+  1,
+  'only the Models-workspace handler may bump the composer focus epoch',
+);
+assert.match(sources.chat, /if \(composerFocusEpoch === 0\) return;[\s\S]*?requestAnimationFrame\(\(\) => inputRef\.current\?\.focus\(\)\)/);
+
 assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
 assert.doesNotMatch(sources.connect, /AppsView|app-directory/);
 assert.match(sources.apps, /<WorkspaceCatalogLayout[\s\S]*?railLabel="App categories"/);
