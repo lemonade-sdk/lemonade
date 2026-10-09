@@ -672,6 +672,13 @@ Codex-only option:
 |-----------------|-------------|----------|
 | `--provider,-p [PROVIDER]` | Select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
 
+Pi-only options:
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. | No |
+| `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. | No |
+
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
 - If a model is already provided, launch skips recipe import prompts.
@@ -684,9 +691,9 @@ Codex-only option:
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
-- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`.
+- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
-- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `$LEMONADE_API_KEY`, which launch exports to pi, instead of storing the key.
 
 **Examples:**
 
@@ -699,6 +706,9 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
 
 # Launch codex using a custom provider name from your Codex config.toml
 lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
+
+# Launch pi with Lemonade's MCP tools and codemode
+lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
 
 # Launch junie against a local model (writes the custom:lemonade profile)
 lemonade launch junie --model Qwen3.5-0.8B-GGUF
