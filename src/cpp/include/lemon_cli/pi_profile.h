@@ -8,6 +8,10 @@ namespace lemon_cli {
 
 const AgentConfigProfile& pi_profile();
 
+// The apiKey value written to pi's models.json for a Lemonade API key, which
+// may be empty when the server needs none.
+std::string pi_api_key_value(const std::string& api_key);
+
 // Check if pi already has a defaultProvider and defaultModel configured.
 // Returns true if both are set, false otherwise.
 bool pi_has_default_config();

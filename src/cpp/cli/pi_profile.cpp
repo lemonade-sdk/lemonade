@@ -1,5 +1,6 @@
 #include "lemon_cli/pi_profile.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,8 @@ namespace fs = std::filesystem;
 
 namespace lemon_cli {
 namespace {
+
+constexpr const char* kPiPlaceholderApiKey = "lemonade";
 
 // Pi stores its config under ~/.pi/agent/ (%USERPROFILE%\.pi\agent\ on Windows)
 // by default, or in $PI_CODING_AGENT_DIR if set. It does not honor XDG_CONFIG_HOME.
@@ -45,6 +48,43 @@ std::string resolve_pi_settings_path() {
     return (fs::path(dir) / "settings.json").string();
 }
 
+bool has_label(const AgentModelEntry& model, const std::string& label) {
+    return std::find(model.labels.begin(), model.labels.end(), label) != model.labels.end();
+}
+
+nlohmann::json build_pi_model_entry(const AgentModelEntry& model) {
+    nlohmann::json entry = {{"id", model.id}};
+
+    // Pi drops every custom provider when any value in models.json is invalid,
+    // so only positive windows are written. maxTokens matches the window
+    // because pi clamps it to the room left after the prompt on each request.
+    if (model.context_window > 0) {
+        entry["contextWindow"] = model.context_window;
+        entry["maxTokens"] = model.context_window;
+    }
+
+    entry["input"] = has_label(model, "vision")
+        ? nlohmann::json::array({"text", "image"})
+        : nlohmann::json::array({"text"});
+
+    if (has_label(model, "reasoning")) {
+        entry["reasoning"] = true;
+        // llama.cpp chat templates toggle thinking with enable_thinking and
+        // have no effort levels, so only off and on are offered.
+        entry["thinkingLevelMap"] = {
+            {"off", "off"},
+            {"minimal", nullptr},
+            {"low", nullptr},
+            {"medium", "medium"},
+            {"high", nullptr},
+            {"xhigh", nullptr},
+        };
+        entry["compat"] = {{"thinkingFormat", "qwen-chat-template"}};
+    }
+
+    return entry;
+}
+
 nlohmann::json build_pi_provider_block(
     const std::string& base_url,
     const std::string& api_key,
@@ -52,13 +92,20 @@ nlohmann::json build_pi_provider_block(
     nlohmann::json provider_block = nlohmann::json::object();
     provider_block["baseUrl"] = base_url;
     provider_block["api"] = "openai-completions";
-    if (!api_key.empty()) {
-        provider_block["apiKey"] = api_key;
-    }
+    provider_block["apiKey"] = pi_api_key_value(api_key);
+    // Pi's defaults target OpenAI: a developer role, store, reasoning_effort
+    // and max_completion_tokens. These match what pi's own llama.cpp provider
+    // sends instead.
+    provider_block["compat"] = {
+        {"supportsStore", false},
+        {"supportsDeveloperRole", false},
+        {"supportsReasoningEffort", false},
+        {"maxTokensField", "max_tokens"},
+    };
 
     nlohmann::json models_json = nlohmann::json::array();
     for (const auto& model : models) {
-        models_json.push_back(nlohmann::json{{"id", model.id}});
+        models_json.push_back(build_pi_model_entry(model));
     }
     provider_block["models"] = std::move(models_json);
 
@@ -130,6 +177,14 @@ bool write_json_atomic(const std::string& path,
 }
 
 } // namespace
+
+std::string pi_api_key_value(const std::string& api_key) {
+    // Pi hides a provider whose key resolves to nothing, so without a Lemonade
+    // key a placeholder keeps the models usable when pi runs outside launch.
+    // A real key is referenced from the environment that launch exports, so
+    // it never lands on disk.
+    return api_key.empty() ? kPiPlaceholderApiKey : "${LEMONADE_API_KEY}";
+}
 
 const AgentConfigProfile& pi_profile() {
     static const AgentConfigProfile profile = {

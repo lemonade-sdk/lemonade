@@ -635,17 +635,16 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_chat = false;
+            std::vector<std::string> model_labels;
             const auto labels = model.find("labels");
             if (labels != model.end() && labels->is_array()) {
                 for (const auto& label : *labels) {
-                    if (label.is_string() && label.get<std::string>() == "chat") {
-                        is_chat = true;
-                        break;
+                    if (label.is_string()) {
+                        model_labels.push_back(label.get<std::string>());
                     }
                 }
             }
-            if (!is_chat) {
+            if (std::find(model_labels.begin(), model_labels.end(), "chat") == model_labels.end()) {
                 continue;
             }
 
@@ -655,7 +654,8 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
 			    && model["recipe_options"].contains("ctx_size")) {
                 model_context_window = model["recipe_options"]["ctx_size"].get<int>();
             }
-            models.push_back({model_id, model_id + " (local)", model_context_window});
+            models.push_back({model_id, model_id + " (local)", model_context_window,
+                              std::move(model_labels)});
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -720,7 +720,10 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         return;
     }
 
-    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+    // Pi decides between an env reference and a placeholder itself, so it
+    // needs to know whether a key was configured at all.
+    const std::string config_api_key =
+        (config.agent == "pi" || !config.api_key.empty()) ? config.api_key : "lemonade";
 
     const std::string base_url =
         lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
@@ -738,6 +741,16 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 
     if (config.agent == "pi") {
+        for (const auto& model : models) {
+            if (model.id == config.model && !model.labels.empty() &&
+                std::find(model.labels.begin(), model.labels.end(), "tool-calling") ==
+                    model.labels.end()) {
+                std::cerr << "Warning: " << config.model
+                          << " is not labeled tool-calling; pi may fail to use its tools."
+                          << std::endl;
+            }
+        }
+
         // Only write settings.json if pi doesn't already have a default provider/model.
         // This preserves existing user configuration while providing seamless first-time UX.
         if (!lemon_cli::pi_has_default_config()) {
