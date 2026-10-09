@@ -181,6 +181,7 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+    std::optional<bool> pi_mcp;
 
     // Cloud provider commands
     std::string cloud_provider;
@@ -748,6 +749,24 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                 std::cerr << "Warning: " << config.model
                           << " is not labeled tool-calling; pi may fail to use its tools."
                           << std::endl;
+            }
+        }
+
+        // An existing entry is refreshed so it follows the current host, port and key.
+        if (config.pi_mcp.value_or(lemon_cli::pi_has_mcp_server())) {
+            std::string mcp_error;
+            if (!lemon_cli::sync_pi_mcp_server(
+                    lemon_tray::build_agent_server_base_url(config.host, config.port),
+                    !config.api_key.empty(), mcp_error)) {
+                std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        } else if (config.pi_mcp.has_value()) {
+            std::string mcp_error;
+            if (!lemon_cli::remove_pi_mcp_server(mcp_error)) {
+                std::cerr << "Warning: Failed to remove Lemonade MCP from pi: " << mcp_error
+                          << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
             }
         }
 
@@ -1528,6 +1547,12 @@ int main(int argc, char* argv[]) {
                 ->group("Agents");
         agent_cmd->callback([&config, agent_name]() { config.agent = agent_name; });
         add_common_launch_options(*agent_cmd);
+
+        if (agent_name == "pi") {
+            agent_cmd->add_flag("--mcp,!--no-mcp", config.pi_mcp,
+                "Add (or remove) the Lemonade MCP server in pi's mcp.json; the choice is kept "
+                "for later launches");
+        }
 
         if (agent_name == "codex") {
             codex_provider_opt = agent_cmd->add_option("--provider,-p", config.codex_model_provider,

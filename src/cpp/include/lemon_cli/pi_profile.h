@@ -23,4 +23,16 @@ bool sync_pi_settings_file(const std::string& provider_name,
                            const std::string& default_model,
                            std::string& error_out);
 
+// Whether pi's mcp.json (next to models.json) has a "lemonade" server.
+bool pi_has_mcp_server();
+
+// Add or refresh the "lemonade" server in pi's mcp.json, pointing at
+// <server_origin>/mcp, while keeping other servers and top-level keys.
+bool sync_pi_mcp_server(const std::string& server_origin,
+                        bool has_api_key,
+                        std::string& error_out);
+
+// Remove the "lemonade" server from pi's mcp.json, leaving everything else.
+bool remove_pi_mcp_server(std::string& error_out);
+
 } // namespace lemon_cli
