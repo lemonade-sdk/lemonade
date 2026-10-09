@@ -223,7 +223,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
     setActiveSubTab('optimization');
     setTestModalOpen(false);
     setWhatChangedModalOpen(false);
-    setTestMessage('Tell me a joke about compiler optimizations.');
+    setTestMessage(translateText('Tell me a joke about compiler optimizations.'));
     setTestSelectedModel('');
     setTestRunning(false);
     setTestStreamingText('');

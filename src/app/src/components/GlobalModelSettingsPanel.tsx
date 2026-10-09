@@ -81,7 +81,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     if (!connected) {
       setMemoryDraft(null);
       setAutoCheckModelUpdates(null);
-      setServerError('Connect to a server to manage these settings.');
+      setServerError(t('Connect to a server to manage these settings.'));
       setServerLoading(false);
       return;
     }
@@ -158,7 +158,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     }
 
     if (!connected) {
-      setServerError('Connect to a server to manage these settings.');
+      setServerError(t('Connect to a server to manage these settings.'));
       return;
     }
 
@@ -166,10 +166,10 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     setServerError(null);
     try {
       if (section === 'memory') {
-        if (!memoryDraft) throw new Error('Server memory settings are not available.');
+        if (!memoryDraft) throw new Error(t('Server memory settings are not available.'));
         await api.setRuntimeConfig(memoryRuntimeConfigChanges(memoryDraft));
       } else {
-        if (autoCheckModelUpdates === null) throw new Error('Server update settings are not available.');
+        if (autoCheckModelUpdates === null) throw new Error(t('Server update settings are not available.'));
         await api.setRuntimeConfig({ auto_check_model_updates: autoCheckModelUpdates });
       }
       await refetchServerDraft();

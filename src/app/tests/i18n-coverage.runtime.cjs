@@ -145,6 +145,46 @@ for (const [rel, spec] of Object.entries(DYNAMIC_LABEL_TABLES)) {
   assert.deepEqual(gaps, [], `${rel} ${spec.const}.${spec.field} values missing from ZH_CN: ${gaps.join(', ')}`);
 }
 
+// Display prose assigned straight into component state or props, never reaching
+// t(). This is the shape that kept surfacing in review ("Downloaded · click to
+// load"), because it is a plain string literal rather than JSX text.
+//
+// Out of scope by design, and excluded below:
+//   - tools/ and features/ : prompts and tool descriptions sent to a model or
+//     over MCP. Translating them changes model behaviour and breaks the wire
+//     contract, so they stay English.
+//   - console.* arguments : developer output, never shown in the UI.
+const PROSE_SKIP_DIRS = ['tools/', 'features/router/', 'features/customModels/'];
+const CONSOLE_OR_THROW = /(console\.(log|warn|error|info|debug)|new Error)\s*\($/;
+// Only state setters. A literal in a module-level label table is correct when
+// the render site wraps it (t(section.label)), and no static rule can tell the
+// two apart -- those tables are covered by DYNAMIC_LABEL_TABLES below instead.
+const DISPLAY_SINK = /\bset[A-Z]\w*\(\s*$/;
+
+const strayProse = [];
+for (const file of JSX_FILES) {
+  const rel = path.relative(srcRoot, file).replace(/\\/g, '/');
+  if (PROSE_SKIP_DIRS.some((d) => rel.startsWith(d))) continue;
+  const source = fs.readFileSync(file, 'utf8');
+  for (const match of source.matchAll(new RegExp(SQ, 'g'))) {
+    const value = unescape(match[1]);
+    // Only sentences and multi-word labels: single tokens are usually keys.
+    if (!/^[A-Z][^<>{}=]*[ ·].{4,}$/.test(value) || value.length < 10) continue;
+    const before = source.slice(Math.max(0, match.index - 60), match.index);
+    if (CONSOLE_OR_THROW.test(before)) continue;
+    if (/\b(t|translate|translateText)\(\s*$/.test(before)) continue;
+    if (!DISPLAY_SINK.test(before)) continue;
+    const line = source.slice(0, match.index).split('\n').length;
+    strayProse.push(`${rel}:${line}: ${value}`);
+  }
+}
+
+assert.deepEqual(
+  strayProse,
+  [],
+  `display prose assigned without t():\n  ${strayProse.join('\n  ')}`,
+);
+
 // The locale must stay per-client. Sending it to lemond would break the
 // many-clients-one-server topology.
 assert.match(i18nSource, /localStorage\.getItem\(LOCALE_STORAGE_KEY\)/);

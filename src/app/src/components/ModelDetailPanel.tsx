@@ -1640,7 +1640,7 @@ const ModelConfigurationTab: React.FC<{
 
   const saveConfig = async (showNotice = true): Promise<boolean> => {
     if (!serverOptionsLoaded) {
-      if (showNotice) setNotice('Saved model options are still loading from lemond.');
+      if (showNotice) setNotice(t('Saved model options are still loading from lemond.'));
       return false;
     }
 

@@ -2073,7 +2073,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() !== ROUTER_RECIPE
     );
     exportJsonFile('lemonade-custom-models', exportCustomModelsPayload(customServerModels));
-    setCustomJsonNotice('Exported custom model JSON.');
+    setCustomJsonNotice(t('Exported custom model JSON.'));
     window.setTimeout(() => setCustomJsonNotice(null), 2200);
   };
 
@@ -2205,7 +2205,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
         || availableRecipeOptions[0];
       if (!selectedRecipeOption) {
-        setCustomError('No compatible recipe/backend is available for this capability on the connected Lemonade server.');
+        setCustomError(t('No compatible recipe/backend is available for this capability on the connected Lemonade server.'));
         return;
       }
       const selectedRecipe = selectedRecipeOption.recipe;

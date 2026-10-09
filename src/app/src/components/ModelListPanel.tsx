@@ -616,7 +616,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         ? t('Model download in progress{progress}', { progress: downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.' })
         : status === 'available'
           ? t('Model is available to download.')
-          : backendReadiness?.label;
+          : (backendReadiness?.label ? t(backendReadiness.label) : backendReadiness?.label);
 
     // Only a row doing something, or asking for something, says so. Being
     // downloaded is a fact about the section it sits in, not about the row.

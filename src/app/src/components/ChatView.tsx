@@ -1510,7 +1510,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: true,
       downloaded: true,
       audioInput: audioInputForLoaded(model),
-      detail: `Loaded${model.device ? ` · ${model.device}` : ''}`,
+      detail: model.device ? t('Loaded · {device}', { device: model.device }) : t('Loaded'),
     }));
 
     knownModelInfos.forEach(info => {
@@ -1526,7 +1526,9 @@ const ChatView: React.FC<ChatViewProps> = ({
         downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
-        detail: isRouterModelInfo(info) ? 'Router · routes when you send' : (configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load'),
+        detail: isRouterModelInfo(info)
+          ? t('Router · routes when you send')
+          : (configuredDefault ? t('Downloaded · loads when you send') : t('Downloaded · click to load')),
         deferredUntilSend: isRouterModelInfo(info) || Boolean(configuredDefault),
       });
     });
@@ -2076,7 +2078,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (isStreaming) {
       if (!wasStreamingRef.current) {
-        setStreamStatus('Assistant is responding');
+        setStreamStatus(t('Assistant is responding'));
         liveBufferRef.current = '';
         setLiveText('');
       }
@@ -2091,7 +2093,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       liveTimerRef.current = null;
     }
 
-    setStreamStatus('Response complete');
+    setStreamStatus(t('Response complete'));
     wasStreamingRef.current = false;
   }, [isStreaming]);
 
@@ -2434,7 +2436,7 @@ ${finalText}`
     try {
       const api = await getApiClient();
       if (model.capability === 'image') {
-        if (!text) throw new Error('Image mode needs a text prompt.');
+        if (!text) throw new Error(t('Image mode needs a text prompt.'));
         imageSettingsCommittedRef.current = true;
         const imageOptions: Record<string, unknown> = {
           size: `${imageSettings.width}x${imageSettings.height}`,
@@ -2461,7 +2463,7 @@ ${finalText}`
           model,
         });
       } else if (model.capability === 'audio-generation') {
-        if (!text) throw new Error('Audio generation needs a prompt.');
+        if (!text) throw new Error(t('Audio generation needs a prompt.'));
         const isAceStepModel = String(model.recipe || '').toLowerCase().includes('acestep')
           || /ace[-_ ]?step/.test(String(model.name || '').toLowerCase());
         const audioOptions: Record<string, unknown> = {
@@ -2493,8 +2495,8 @@ ${finalText}`
         let referenceImage = images[0] || '';
         let generatedReference: string[] | undefined;
         if (model3dSettings.sourceMode === 'text') {
-          if (!text) throw new Error('Text-to-3D needs an object description.');
-          if (!model3dSettings.imageModel) throw new Error('Choose a downloaded image model for the text-to-3D reference step.');
+          if (!text) throw new Error(t('Text-to-3D needs an object description.'));
+          if (!model3dSettings.imageModel) throw new Error(t('Choose a downloaded image model for the text-to-3D reference step.'));
           const imageInfo = findModelInfoByName(knownModelInfos, model3dSettings.imageModel) || null;
           if (!loadedModels.some(item => item.model_name.toLowerCase() === model3dSettings.imageModel.toLowerCase())) {
             await loadModelForChat(model3dSettings.imageModel, imageInfo);
@@ -2508,7 +2510,7 @@ ${finalText}`
           generatedReference = [referenceImage];
           await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
         } else if (!referenceImage) {
-          throw new Error('Image-to-3D needs one reference image.');
+          throw new Error(t('Image-to-3D needs one reference image.'));
         }
         const result = await api.model3dGeneration(model.name, referenceImage, {
           resolution: model3dSettings.resolution,
@@ -2525,7 +2527,7 @@ ${finalText}`
           model,
         });
       } else if (model.capability === 'tts') {
-        if (!text) throw new Error('TTS mode needs text to speak.');
+        if (!text) throw new Error(t('TTS mode needs text to speak.'));
         let targetModel = model.name;
         const directOptions = (await api.getModelOptions(model.name)).effective || {};
         let voice = ttsVoiceFromRecipeOptions(directOptions);
@@ -2537,7 +2539,7 @@ ${finalText}`
           voice = openMossSettings.voiceDescription.trim();
           if (openMossSettings.mode === 'describe') {
             if (!openMossVoiceDesignModel) {
-              throw new Error('Install MOSS-VoiceGen to design a voice from a description.');
+              throw new Error(t('Install MOSS-VoiceGen to design a voice from a description.'));
             }
             targetModel = openMossVoiceDesignModel;
             if (openMossCloneModel) {
@@ -2560,17 +2562,17 @@ ${finalText}`
               targetModel = openMossCloneModel;
               voice = '';
               reloadTargetAfterVoiceDesign = true;
-              content = 'Designed a voice from your description and generated speech with it.';
+              content = t('Designed a voice from your description and generated speech with it.');
             } else {
-              content = 'Generated speech with the described voice.';
+              content = t('Generated speech with the described voice.');
             }
           } else if (openMossSettings.mode === 'clone') {
             const sample = audioFiles[0];
-            if (!sample) throw new Error('Attach a WAV voice sample to clone.');
-            if (!openMossCloneModel) throw new Error('Install OpenMOSS-TTS to clone a voice sample.');
+            if (!sample) throw new Error(t('Attach a WAV voice sample to clone.'));
+            if (!openMossCloneModel) throw new Error(t('Install OpenMOSS-TTS to clone a voice sample.'));
             targetModel = openMossCloneModel;
             speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
-            content = 'Generated speech using the attached voice sample.';
+            content = t('Generated speech using the attached voice sample.');
           }
 
           if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
@@ -2591,7 +2593,7 @@ ${finalText}`
         });
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
-        if (!file) throw new Error('Audio mode needs an audio file to transcribe.');
+        if (!file) throw new Error(t('Audio mode needs an audio file to transcribe.'));
         const transcript = await api.audioTranscription(model.name, file);
         appendAssistantMessage(convoId, {
           content: transcript,
@@ -2652,7 +2654,7 @@ ${finalText}`
 
     if (hasImages && modeSupportsChatCompletions && !collectionInfo && !supportsChatImageInput) {
       appendAssistantMessage(convoId, {
-        content: friendlyChatError('The selected text model does not support image input. Choose a vision-capable model to send images.'),
+        content: friendlyChatError(t('The selected text model does not support image input. Choose a vision-capable model to send images.')),
         model: modelSnapshot,
         isError: true,
       });
@@ -2662,7 +2664,7 @@ ${finalText}`
     if (!modeSupportsChatCompletions) {
       if (modelSnapshot.capability === 'audio' && audioFiles.length === 0) {
         appendAssistantMessage(convoId, {
-          content: friendlyChatError('Retrying an audio transcription needs the original audio file. Please attach it again.'),
+          content: friendlyChatError(t('Retrying an audio transcription needs the original audio file. Please attach it again.')),
           model: modelSnapshot,
           isError: true,
         });
@@ -2956,7 +2958,7 @@ ${finalText}`
     const originalUserMessage = convo.messages[userIndex];
     if (originalUserMessage.audioName) {
       appendAssistantMessage(activeId, {
-        content: friendlyChatError('Retrying a request with an audio attachment needs the original file. Please attach it again.'),
+        content: friendlyChatError(t('Retrying a request with an audio attachment needs the original file. Please attach it again.')),
         model: currentModelSnapshot,
         isError: true,
       });

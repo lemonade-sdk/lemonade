@@ -354,8 +354,8 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     setAdminKeyNotice('');
     setAdminAccess('checking');
     const outcome = await probeAccess();
-    if (outcome === 'ok') setAdminKeyNotice('Admin key applied for this app session.');
-    else if (outcome === 'needs-admin') setHostError('Admin API key was rejected.');
+    if (outcome === 'ok') setAdminKeyNotice(t('Admin key applied for this app session.'));
+    else if (outcome === 'needs-admin') setHostError(t('Admin API key was rejected.'));
   };
 
   const runServerAction = async (id: string, action: 'connect' | 'disconnect' | 'refresh' | 'remove') => {
@@ -383,7 +383,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       const toolCount = tested.tools?.length || 0;
       setTestNotice(`Connection successful · ${toolCount} tool${toolCount === 1 ? '' : 's'} · protocol ${tested.protocol_version || 'unknown'}`);
     } catch (error) {
-      setFormError(friendlyErrorMessage(error));
+      setFormError(t(friendlyErrorMessage(error)));
     } finally {
       setBusyId('');
     }
@@ -401,7 +401,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       resetForm();
       setShowForm(false);
     } catch (error) {
-      setFormError(friendlyErrorMessage(error));
+      setFormError(t(friendlyErrorMessage(error)));
     } finally {
       setBusyId('');
     }
@@ -412,7 +412,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       await navigator.clipboard.writeText(mcpUrl);
       setCopyNotice('Copied');
     } catch {
-      setCopyNotice('Select and copy the URL manually');
+      setCopyNotice(t('Select and copy the URL manually'));
     }
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopyNotice(''), 2500);

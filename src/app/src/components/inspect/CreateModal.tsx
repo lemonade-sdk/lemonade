@@ -51,7 +51,7 @@ export default function CreateModal({ isOpen, onClose, availableModels }: Create
 
   const handleCreateRequest = async () => {
     if (!modalSelectedModel) {
-      setValidationError('Please select a model');
+      setValidationError(t('Please select a model'));
       inspectStore.showToast('Please select a model');
       return;
     }

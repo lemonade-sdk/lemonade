@@ -534,7 +534,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
         {filteredLogs.length === 0 ? (
           <div className="logs-empty">
             {logs.length === 0
-              ? (connStatus === 'connected' ? 'Waiting for log entries…' : 'Not connected to log stream')
+              ? (connStatus === 'connected' ? t('Waiting for log entries…') : t('Not connected to log stream'))
               : `No entries match "${searchQuery || filterLevel}+" filter`}
           </div>
         ) : (
