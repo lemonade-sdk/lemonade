@@ -5199,6 +5199,42 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
+        if (request_json.contains("refine") && !request_json["refine"].is_boolean()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Field 'refine' must be a boolean"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (request_json.contains("upscale_model") && !request_json["upscale_model"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Field 'upscale_model' must be a string"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::optional<bool> refine;
+        if (request_json.contains("refine") && request_json["refine"].is_boolean()) {
+            refine = request_json["refine"].get<bool>();
+        }
+        std::optional<std::string> upscale_model;
+        if (request_json.contains("upscale_model") && request_json["upscale_model"].is_string()) {
+            // An explicit empty string is kept: it clears the recipe option.
+            upscale_model = request_json["upscale_model"].get<std::string>();
+        }
+        bool upscale_from_request = upscale_model.has_value();
+        bool skip_upscale = request_json.contains("skip_implicit_upscaling")
+                            && request_json["skip_implicit_upscaling"].is_boolean()
+                            && request_json["skip_implicit_upscaling"].get<bool>();
+        request_json.erase("refine");
+        request_json.erase("upscale_model");
+        request_json.erase("skip_implicit_upscaling");
+
         // Validate required fields
         if (!request_json.contains("prompt")) {
             res.status = 400;
@@ -5233,12 +5269,17 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
+        // Fall back to recipe options when the request doesn't set them.
+        resolve_refine_options(requested_model, request_json, refine, upscale_model);
+
         {
             auto response = router_->image_generations(request_json);
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
                 res.status = 500;
             }
+            apply_upscale_if_configured(requested_model, response, upscale_model,
+                                        upscale_from_request, skip_upscale);
             res.set_content(response.dump(), "application/json");
         }
 
@@ -5335,6 +5376,17 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
         return false;
     }
     return true;
+}
+
+bool Server::parse_bool_form_field(const httplib::MultipartFormData& form,
+                                   const std::string& name) {
+    if (!form.has_field(name)) return false;
+    const std::string& val = form.get_field(name);
+    if (val == "1") return true;
+    std::string lower = val;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lower == "true" || lower == "yes" || lower == "on";
 }
 
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
@@ -5453,11 +5505,25 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         if (!load_image_model(request_json, res)) return;
 
+        std::string edit_model_name = request_json["model"].get<std::string>();
+        std::optional<bool> edit_refine;
+        if (req.form.has_field("refine")) {
+            edit_refine = parse_bool_form_field(req.form, "refine");
+        }
+        std::optional<std::string> edit_upscale_model;
+        if (req.form.has_field("upscale_model")) {
+            edit_upscale_model = req.form.get_field("upscale_model");
+        }
+        bool edit_upscale_from_request = edit_upscale_model.has_value();
+        resolve_refine_options(edit_model_name, request_json, edit_refine, edit_upscale_model);
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
+        apply_upscale_if_configured(edit_model_name, response, edit_upscale_model,
+                                    edit_upscale_from_request,
+                                    parse_bool_form_field(req.form, "skip_implicit_upscaling"));
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -5505,11 +5571,25 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         if (!extract_image_from_form(req, res, request_json)) return;
         if (!load_image_model(request_json, res))             return;
 
+        std::string var_model_name = request_json["model"].get<std::string>();
+        std::optional<bool> var_refine;
+        if (req.form.has_field("refine")) {
+            var_refine = parse_bool_form_field(req.form, "refine");
+        }
+        std::optional<std::string> var_upscale_model;
+        if (req.form.has_field("upscale_model")) {
+            var_upscale_model = req.form.get_field("upscale_model");
+        }
+        bool var_upscale_from_request = var_upscale_model.has_value();
+        resolve_refine_options(var_model_name, request_json, var_refine, var_upscale_model);
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
+        apply_upscale_if_configured(var_model_name, response, var_upscale_model,
+                                    var_upscale_from_request,
+                                    parse_bool_form_field(req.form, "skip_implicit_upscaling"));
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -5531,6 +5611,182 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
     }
 }
 
+void Server::resolve_refine_options(
+    const std::string& model_name,
+    nlohmann::json& request_json,
+    std::optional<bool>& refine,
+    std::optional<std::string>& upscale_model) {
+    if (!refine.has_value() || !upscale_model.has_value()) {
+        // The loaded instance holds the option set merged at load time
+        // (request > saved > config), so prefer it; fall back to saved info
+        // only when no live instance exists.
+        RecipeOptions effective;
+        auto loaded = router_->get_model_recipe_options(model_name);
+        if (!loaded.get_recipe().empty()) {
+            effective = loaded;
+        } else {
+            try {
+                effective = model_manager_->get_model_info(model_name).recipe_options;
+            } catch (const std::exception&) {}
+        }
+        if (!refine.has_value()) {
+            auto opt = effective.get_option("refine");
+            if (opt.is_boolean() && opt.get<bool>()) {
+                refine = true;
+            }
+        }
+        if (!upscale_model.has_value()) {
+            auto opt = effective.get_option("upscale_model");
+            if (opt.is_string() && !opt.get<std::string>().empty()) {
+                upscale_model = opt.get<std::string>();
+            }
+        }
+    }
+    // Forward an explicit false too, so it beats the backend's own fallback;
+    // see the resolve_refine_options declaration in lemon/server.h.
+    if (refine.has_value()) {
+        request_json["refine"] = refine.value();
+    }
+}
+
+void Server::apply_upscale_if_configured(
+    const std::string& model_name,
+    nlohmann::json& response,
+    const std::optional<std::string>& upscale_model,
+    bool upscale_from_request,
+    bool skip_upscale_request) {
+    // A missing value or an explicit empty string (treated as "clear") both
+    // mean no upscaling.
+    if (!upscale_model || upscale_model->empty()) {
+        return;
+    }
+    // skip_implicit_upscaling only suppresses recipe/config-derived upscaling;
+    // an upscale_model named in the request itself still applies.
+    if (skip_upscale_request && !upscale_from_request) {
+        LOG(INFO, "Server") << "Skipping auto-upscale for model '" << model_name
+                            << "' (per-request skip_implicit_upscaling=true)" << std::endl;
+        return;
+    }
+    if (response.contains("error")) {
+        return;
+    }
+    if (!response.contains("data") || !response["data"].is_array()) {
+        LOG(WARNING, "Server") << "Response has no image data to upscale" << std::endl;
+        return;
+    }
+
+    LOG(INFO, "Server") << "Auto-upscaling images for model '" << model_name
+                        << "' using '" << upscale_model.value() << '"' << std::endl;
+
+    int upscaled_count = 0;
+    for (auto& item : response["data"]) {
+        if (!item.is_object() || !item.contains("b64_json") || !item["b64_json"].is_string()) {
+            continue;
+        }
+        std::string b64_image = item["b64_json"].get<std::string>();
+        // res == nullptr: a failed upscale keeps the original image rather than
+        // failing the whole request.
+        auto upscaled = do_upscale(b64_image, upscale_model.value(), nullptr);
+        if (!upscaled.has_value()) {
+            LOG(WARNING, "Server") << "Auto-upscale failed for model '" << model_name
+                                   << "', returning the original image" << std::endl;
+            continue;
+        }
+        item["b64_json"] = upscaled.value();
+        item["upscaled"] = true;
+
+        // Final dimensions from just the PNG header (24 bytes = 32 base64 chars).
+        std::string raw_header = utils::JsonUtils::base64_decode(upscaled.value().substr(0, 32));
+        if (auto dims = lemon::utils::get_png_dimensions(raw_header)) {
+            item["width"] = std::get<0>(*dims);
+            item["height"] = std::get<1>(*dims);
+        }
+        ++upscaled_count;
+    }
+
+    if (upscaled_count > 0) {
+        LOG(INFO, "Server") << "Auto-upscale complete for model '" << model_name
+                            << "' (" << upscaled_count << " image(s))" << std::endl;
+    }
+}
+
+std::optional<std::string> Server::do_upscale(
+    const std::string& b64_image,
+    const std::string& upscale_model_name,
+    httplib::Response* res) {
+    std::string upscale_model_path;
+    std::string recipe;
+    ModelInfo info;
+    try {
+        info = model_manager_->get_model_info(upscale_model_name);
+    } catch (const std::exception& e) {
+        if (res) {
+            res->status = 404;
+            nlohmann::json error = {{"error", {{"message", "Upscale model not found: " + upscale_model_name}, {"type", "invalid_request_error"}}}};
+            res->set_content(error.dump(), "application/json");
+        }
+        return std::nullopt;
+    }
+    if (!lemon::has_label(info.labels, "upscaling")) {
+        if (res) {
+            res->status = 400;
+            nlohmann::json error = {{"error", {{"message", "Upscale model is not labeled 'upscaling': " + upscale_model_name}, {"type", "invalid_request_error"}}}};
+            res->set_content(error.dump(), "application/json");
+        }
+        return std::nullopt;
+    }
+    try {
+        // A registered but undownloaded upscaling model is downloaded here, on
+        // the request thread — reachable by any client that can post to
+        // /images/upscale.
+        if (!model_manager_->is_model_downloaded(upscale_model_name)) {
+            LOG(INFO, "Server") << "Upscale model not cached, downloading..." << std::endl;
+            model_manager_->download_registered_model(info, true);
+            info = model_manager_->get_model_info(upscale_model_name);
+        }
+        upscale_model_path = info.resolved_path("main");
+        recipe = info.recipe;
+    } catch (const std::exception& e) {
+        if (res) {
+            res->status = 500;
+            nlohmann::json error = {{"error", {{"message", std::string("Upscale model setup failed: ") + e.what()}, {"type", "server_error"}}}};
+            res->set_content(error.dump(), "application/json");
+        }
+        return std::nullopt;
+    }
+
+    // Upscaling bypasses the router (no model load): dispatch by recipe straight
+    // to each backend's upscale CLI.
+    backends::BackendContext context;
+    context.log_level = config_->log_level();
+    context.model_manager = model_manager_.get();
+    context.backend_manager = backend_manager_.get();
+    context.cloud_registry = cloud_registry_.get();
+    context.model_info = &info;
+    auto server = backends::create_server(recipe, context);
+    if (!server || !supports_capability<IUpscaleServer>(server.get())) {
+        if (res) {
+            res->status = 400;
+            res->set_content(nlohmann::json{{"error", {{
+                "message", "Upscale is not supported by recipe: " + recipe
+            }}, {"type", "invalid_request_error"}}}.dump(), "application/json");
+        }
+        return std::nullopt;
+    }
+    auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
+    std::string upscaled = upscale_server->upscale_via_cli(b64_image, upscale_model_path);
+    if (upscaled.empty()) {
+        if (res) {
+            res->status = 500;
+            res->set_content(nlohmann::json{{"error", {{
+                "message", "Upscale failed"
+            }}, {"type", "server_error"}}}.dump(), "application/json");
+        }
+        return std::nullopt;
+    }
+    return upscaled;
+}
+
 void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
@@ -5549,81 +5805,28 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::string upscale_model_name = request_json.value("model", "");
         if (upscale_model_name.empty()) {
+            upscale_model_name = request_json.value("upscale_model", "");
+        }
+        if (upscale_model_name.empty()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "Missing 'model' field"},
+                {"message", "Missing 'model' (or 'upscale_model') field"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
             return;
         }
 
-        ModelInfo info;
-        try {
-            info = model_manager_->get_model_info(upscale_model_name);
-
-            if (!lemon::has_label(info.labels, "upscaling")) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", "Upscale model is not labeled 'upscaling': " + upscale_model_name},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-
-            if (!model_manager_->is_model_downloaded(upscale_model_name)) {
-                LOG(INFO, "Server") << "Upscale model not cached, downloading from its remote registry..." << std::endl;
-                model_manager_->download_registered_model(info, true);
-                LOG(INFO, "Server") << "Upscale model download complete: " << upscale_model_name << std::endl;
-                info = model_manager_->get_model_info(upscale_model_name);
-            }
-
-        } catch (const std::exception& e) {
-            res.status = 404;
-            nlohmann::json error = {{"error", {
-                {"message", "Upscale model not found: " + upscale_model_name},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        std::string b64_image = request_json["image"].get<std::string>();
-
-        backends::BackendContext context;
-        context.log_level = config_->log_level();
-        context.model_manager = model_manager_.get();
-        context.backend_manager = backend_manager_.get();
-        context.cloud_registry = cloud_registry_.get();
-        context.model_info = &info;
-        auto server = backends::create_server(info.recipe, context);
-        if (!server || !supports_capability<IUpscaleServer>(server.get())) {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Upscale is not supported by recipe: " + info.recipe},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
-        std::string upscaled = upscale_server->upscale_via_cli(b64_image, info.resolved_path("main"));
-
-        if (upscaled.empty()) {
-            res.status = 500;
-            nlohmann::json error = {{"error", {
-                {"message", "Upscale failed"},
-                {"type", "server_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
+        auto upscaled = do_upscale(
+            request_json["image"].get<std::string>(), upscale_model_name, &res);
+        if (!upscaled.has_value()) {
+            return; // Error response already set by do_upscale
         }
 
         nlohmann::json response;
         response["created"] = static_cast<long long>(std::time(nullptr));
         response["data"] = nlohmann::json::array();
-        response["data"].push_back({{"b64_json", upscaled}});
+        response["data"].push_back({{"b64_json", upscaled.value()}});
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
