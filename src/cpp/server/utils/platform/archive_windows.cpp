@@ -59,9 +59,40 @@ public:
 
         if (is_native_tar_available()) {
             LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
+
+            // Mirror the tarball path: when every entry sits under a single
+            // wrapper folder, strip it so the payload lands at the destination
+            // root where the installer looks for it. Without this, zips such
+            // as FastFlowLM's (payload nested under a wrapper folder) extract
+            // "successfully" but the backend binary is never found. If the
+            // listing fails, fall back to extracting as-is.
+            std::string entries;
+            int list_result = ProcessManager::run_process_with_output(
+                get_native_tar_path(),
+                {"-tf", zip_path},
+                [&entries](const std::string& line) {
+                    entries += line + "\n";
+                    return true;
+                },
+                "",
+                tarball_listing_timeout_seconds,
+                false
+            );
+            const auto strip = resolve_archive_strip_components(list_result, entries);
+            if (strip.has_value()) {
+                LOG(DEBUG, backend_name) << "ZIP strip-components: " << *strip << std::endl;
+            } else {
+                LOG(WARNING, backend_name) << "Could not list ZIP contents, code: "
+                                           << list_result << "; extracting without wrapper stripping" << std::endl;
+            }
+
+            std::vector<std::string> args = {"-xf", zip_path, "-C", dest_dir};
+            if (strip.has_value() && *strip > 0) {
+                args.push_back("--strip-components=" + std::to_string(*strip));
+            }
             result = ProcessManager::run_process_with_output(
                 get_native_tar_path(),
-                {"-xf", zip_path, "-C", dest_dir},
+                args,
                 [&output](const std::string& line) {
                     output += line + "\n";
                     return true;
@@ -87,6 +118,12 @@ public:
                 "",
                 300
             );
+            // Expand-Archive has no strip-components equivalent; flatten a
+            // single wrapper folder (if any) so the payload layout matches
+            // the native-tar path above.
+            if (result == 0 && flatten_single_wrapper_directory(dest_dir)) {
+                LOG(DEBUG, backend_name) << "Flattened single wrapper folder in " << dest_dir << std::endl;
+            }
         }
 
         if (result != 0) {
