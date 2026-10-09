@@ -3447,6 +3447,19 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
 endif()
 
+# What `lemonade launch pi` writes into pi's agent directory. The CLI sources
+# are compiled in directly because the CLI is not a library.
+set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.cpp")
+if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
+    add_executable(test_pi_profile
+        test/cpp/test_pi_profile.cpp
+        src/cpp/cli/pi_profile.cpp
+    )
+    target_include_directories(test_pi_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_pi_profile PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(PiProfileTest CI ON COMMAND test_pi_profile)
+endif()
+
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_and_auto_update.cpp")
 if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
     add_executable(test_model_sync_and_auto_update test/cpp/test_model_sync_and_auto_update.cpp)
