@@ -3251,6 +3251,13 @@ if(BUILD_TESTING AND EXISTS "${_GITHUB_API_TEST_SRC}")
 endif()
 
 # GGUF variant enumeration: grouping, name disambiguation, and quant ordering.
+set(_CHECKPOINT_RESOLVE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_checkpoint_resolve_uncommitted.cpp")
+if(BUILD_TESTING AND EXISTS "${_CHECKPOINT_RESOLVE_TEST_SRC}")
+    add_executable(test_checkpoint_resolve_uncommitted test/cpp/test_checkpoint_resolve_uncommitted.cpp)
+    target_link_libraries(test_checkpoint_resolve_uncommitted PRIVATE lemonade-server-core)
+    add_cpp_ci_test(CheckpointResolveUncommittedTest CI ON COMMAND test_checkpoint_resolve_uncommitted)
+endif()
+
 set(_HF_VARIANTS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_variants.cpp")
 if(BUILD_TESTING AND EXISTS "${_HF_VARIANTS_TEST_SRC}")
     add_executable(test_hf_variants test/cpp/test_hf_variants.cpp)
