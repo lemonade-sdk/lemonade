@@ -96,6 +96,7 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
+| `zero_shot` | A zero-shot encoder that scores the input against the `labels` **you** declare, rather than a label set baked into the model. Needs an `onnxruntime` classification model; no LLM fallback. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
@@ -156,6 +157,26 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
+- `zero_shot` sends your `labels` to the model on every request, because the
+  model has no per-label head to read them off, the label list is an input to
+  the graph:
+
+  ```json
+  {
+    "id": "route",
+    "type": "zero_shot",
+    "model": "Prompt-Router-ONNX",
+    "labels": ["coding", "math", "creative writing"]
+  }
+  ```
+
+  ```json
+  { "id": "code-to-big", "match": { "classifier": "route", "label": "coding", "min_score": 0.5 }, "route_to": "Big-GGUF" }
+  ```
+
+  Unlike `classifier`, there is no LLM-as-classifier fallback: the `model` must be a
+  classification model, checked when the policy is registered rather than on the
+  first request.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
@@ -263,6 +284,10 @@ The `classifier` condition runs a real encoder classifier: a model of type
 directly; any other model backing a `classifier` is used as an LLM-as-classifier
 via chat. The classifier's model must be able to serve one of those paths, and
 that capability is checked when the collection is registered.
+
+The `zero_shot` condition runs the same backend, but only
+`ModelType::CLASSIFICATION` satisfies it, a chat model cannot score a label
+list it is handed at request time, so there is no fallback to substitute.
 
 ## LLM-as-router (`routing.router`)
 

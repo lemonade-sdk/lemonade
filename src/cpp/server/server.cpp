@@ -3811,6 +3811,11 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
             {"normalized_policy", std::move(normalized_policy)},
         };
         res.set_content(response.dump(), "application/json");
+    } catch (const RouterResidencyConflictException& e) {
+        // The policy document is well-formed; the hardware just cannot host its
+        // classifier right now. Reporting that as 400 would send the caller off
+        // to debug a document that has nothing wrong with it.
+        set_router_residency_conflict_response(e, res);
     } catch (const std::exception& e) {
         res.status = 400;
         nlohmann::json error = {{"error", std::string("Invalid routing policy: ") + e.what()}};
@@ -4332,6 +4337,32 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     }
 }
 
+namespace {
+// Shape check for the optional `labels` list of a zero-shot classify request.
+std::string validate_classify_labels(const nlohmann::json& labels) {
+    if (!labels.is_array()) {
+        return "'labels' must be an array of strings";
+    }
+    if (labels.empty()) {
+        return "'labels' must contain at least one label";
+    }
+    std::set<std::string> seen;
+    for (const auto& label : labels) {
+        if (!label.is_string()) {
+            return "'labels' must be an array of strings";
+        }
+        const std::string value = label.get<std::string>();
+        if (value.find_first_not_of(" \t\r\n") == std::string::npos) {
+            return "'labels' entries must not be empty";
+        }
+        if (!seen.insert(value).second) {
+            return "'labels' contains a duplicate entry: '" + value + "'";
+        }
+    }
+    return "";
+}
+}  // namespace
+
 void Server::handle_classify(const httplib::Request& req, httplib::Response& res) {
     try {
         nlohmann::json request_json;
@@ -4371,6 +4402,8 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
                     request_json["top_k"].get<long long>() < 1 ||
                     request_json["top_k"].get<long long>() > 1000000)) {
             validation_error = "'top_k' must be a positive integer";
+        } else if (request_json.contains("labels")) {
+            validation_error = validate_classify_labels(request_json["labels"]);
         }
         if (!validation_error.empty()) {
             res.status = 400;
