@@ -122,6 +122,62 @@ int main() {
         }
     }
 
+    // 7. Rate-limit detection and backoff (issue #2441). Header names are
+    // lowercased per the HttpResponse contract.
+    {
+        lemon::utils::HttpResponse ok;
+        ok.status_code = 200;
+        if (!lemon::utils::github_api::is_rate_limited(ok) &&
+            lemon::utils::github_api::rate_limit_backoff_seconds(ok, 1000) == 0) {
+            result.ok("200 is not rate limited");
+        } else {
+            result.fail("200 is not rate limited");
+        }
+    }
+    {
+        lemon::utils::HttpResponse limited;
+        limited.status_code = 429;
+        limited.headers["retry-after"] = "120";
+        if (lemon::utils::github_api::is_rate_limited(limited) &&
+            lemon::utils::github_api::rate_limit_backoff_seconds(limited, 1000) == 120) {
+            result.ok("429 honors Retry-After");
+        } else {
+            result.fail("429 honors Retry-After");
+        }
+    }
+    {
+        lemon::utils::HttpResponse limited;
+        limited.status_code = 403;
+        limited.headers["x-ratelimit-remaining"] = "0";
+        limited.headers["x-ratelimit-reset"] = "1600";
+        if (lemon::utils::github_api::is_rate_limited(limited) &&
+            lemon::utils::github_api::rate_limit_backoff_seconds(limited, 1000) == 600) {
+            result.ok("403 with exhausted quota backs off until reset");
+        } else {
+            result.fail("403 with exhausted quota backs off until reset");
+        }
+    }
+    {
+        lemon::utils::HttpResponse forbidden;
+        forbidden.status_code = 403;
+        if (!lemon::utils::github_api::is_rate_limited(forbidden) &&
+            lemon::utils::github_api::rate_limit_backoff_seconds(forbidden, 1000) == 0) {
+            result.ok("plain 403 is not a rate limit");
+        } else {
+            result.fail("plain 403 is not a rate limit");
+        }
+    }
+    {
+        lemon::utils::HttpResponse limited;
+        limited.status_code = 429;
+        if (lemon::utils::github_api::rate_limit_backoff_seconds(limited, 1000) ==
+            lemon::utils::github_api::kDefaultRateLimitBackoffSeconds) {
+            result.ok("429 without headers uses the default backoff");
+        } else {
+            result.fail("429 without headers uses the default backoff");
+        }
+    }
+
     // Restore original environment.
     if (orig_github.empty())
         unset_env("GITHUB_TOKEN");

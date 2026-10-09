@@ -10,6 +10,7 @@
 #include "lemon/utils/path_utils.h"
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -398,6 +399,29 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         }
     }
 
+    // Respect a GitHub rate-limit cooldown recorded by an earlier attempt
+    // (issue #2441): fail fast instead of re-hitting api.github.com.
+    {
+        std::lock_guard<std::mutex> lock(latest_rate_limit_mutex_);
+        auto it = latest_rate_limit_until_.find(repo);
+        if (it != latest_rate_limit_until_.end()) {
+            auto now = std::chrono::steady_clock::now();
+            if (now < it->second) {
+                auto wait_s = std::chrono::duration_cast<std::chrono::seconds>(
+                    it->second - now).count();
+                if (throw_on_failure) {
+                    throw std::runtime_error(
+                        "GitHub rate limit for " + repo + " is still in effect; "
+                        "retry in " + std::to_string(wait_s) + "s");
+                }
+                LOG(WARNING, "BackendManager") << "GitHub rate limit for " << repo
+                                               << " still in effect; retry in " << wait_s << "s" << std::endl;
+                return "";
+            }
+            latest_rate_limit_until_.erase(it);
+        }
+    }
+
     auto* cfg = RuntimeConfig::global();
     if (cfg && cfg->no_fetch_executables()) {
         if (throw_on_failure) {
@@ -429,6 +453,20 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         }
         LOG(WARNING, "BackendManager") << "GitHub query for " << repo << " failed: " << e.what() << std::endl;
         return "";
+    }
+    if (utils::github_api::is_rate_limited(resp)) {
+        // Honor the backoff GitHub asked for (issue #2441) so repeated
+        // 'latest' resolutions stop hammering the API until the window
+        // resets.
+        const auto backoff_s = utils::github_api::rate_limit_backoff_seconds(
+            resp, static_cast<int64_t>(std::time(nullptr)));
+        {
+            std::lock_guard<std::mutex> lock(latest_rate_limit_mutex_);
+            latest_rate_limit_until_[repo] =
+                std::chrono::steady_clock::now() + std::chrono::seconds(backoff_s);
+        }
+        LOG(WARNING, "BackendManager") << "GitHub rate limited the latest-release query for "
+                                       << repo << "; backing off for " << backoff_s << "s" << std::endl;
     }
     if (resp.status_code < 200 || resp.status_code >= 300) {
         if (throw_on_failure) {
