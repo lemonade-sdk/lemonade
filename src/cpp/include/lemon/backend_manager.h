@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <functional>
@@ -77,6 +78,15 @@ private:
     // Restart `lemond` to re-resolve.
     std::unordered_map<std::string, std::string> latest_version_cache_;
     std::mutex latest_version_cache_mutex_;
+
+    // Per-repo GitHub rate-limit cooldown deadlines (issue #2441). When the
+    // GitHub API answers 429 (or a rate-limit 403), the deadline from its
+    // Retry-After / X-RateLimit-Reset headers is recorded here and further
+    // 'latest' resolutions for that repo fail fast until it passes, instead
+    // of re-hitting api.github.com on every attempt.
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point>
+        latest_rate_limit_until_;
+    std::mutex latest_rate_limit_mutex_;
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);
