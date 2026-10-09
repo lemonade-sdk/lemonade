@@ -12,6 +12,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
@@ -395,12 +396,19 @@ struct UpdateCheckResult {
 
     // Query model sync status (running state, active/pending targets, completed count, or specific sync_id outcome)
     json get_sync_status(uint64_t sync_id = 0) const;
+    // JSON Schema of get_sync_status()'s result, which both sync routes return.
+    static json sync_status_schema();
 
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
     SyncEnqueueResult enqueue_sync(const std::vector<std::string>& target_models = {}, bool attach_if_running = false);
 
     // Execute background queue processing until empty.
     json execute_sync();
+
+    // Runs execute_sync() on a thread of its own. Shutdown calls cancel_sync() and then
+    // join_background_syncs(), so a sync never outlives the subsystems it uses.
+    void execute_sync_in_background();
+    void join_background_syncs();
 
     // Trigger sync/update of specified or all outdated models.
     // When target_models is empty, targets all downloaded outdated models.
@@ -621,6 +629,13 @@ private:
         int percent = 0;
     };
     mutable ModelSyncState sync_state_;
+
+    struct BackgroundSync {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::mutex background_syncs_mutex_;
+    std::vector<BackgroundSync> background_syncs_;
     std::function<void(const std::string&)> on_model_updated_cb_;
     std::function<void(const std::string&)> sync_phase_callback_;
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;

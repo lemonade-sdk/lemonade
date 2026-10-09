@@ -540,8 +540,8 @@ static void test_server_handle_config_set_direct() {
     }.dump();
     httplib::Response res1;
 
-    server.handle_config_set(req1, res1);
-    check(res1.status == 200 || res1.status == -1, "handle_config_set returns 200 on valid body");
+    server.handle_request(req1, res1);
+    check(res1.status == 200 || res1.status == -1, "/internal/set returns 200 on valid body");
     auto res_json1 = json::parse(res1.body);
     check(res_json1["status"] == "success", "response status is success");
     check(res_json1["updated"]["port"] == 9000, "response updated contains port 9000");
@@ -557,24 +557,26 @@ static void test_server_handle_config_set_direct() {
     check(!disk1.contains("telemetry"), "disk does NOT contain default telemetry");
     check(!disk1.contains("sdcpp"), "disk does NOT contain default sdcpp");
 
-    // 2. Query handle_config_get -> returns full effective config snapshot
+    // 2. GET /internal/config -> returns full effective config snapshot
     httplib::Request req_get;
     req_get.method = "GET";
+    req_get.path = "/internal/config";
     httplib::Response res_get;
-    server.handle_config_get(req_get, res_get);
-    check(res_get.status == 200 || res_get.status == -1, "handle_config_get returns 200");
+    server.handle_request(req_get, res_get);
+    check(res_get.status == 200 || res_get.status == -1, "/internal/config returns 200");
     auto snap = json::parse(res_get.body);
     check(snap["port"] == 9000, "snapshot has overridden port 9000");
     check(snap["max_loaded_models"] == 2, "snapshot has overridden max_loaded_models 2");
     check(snap["host"] == "localhost", "snapshot has default host localhost");
     check(snap.contains("telemetry"), "snapshot has default telemetry section");
 
-    // 3. Query handle_config_defaults_get -> returns factory defaults
+    // 3. GET /internal/config/defaults -> returns factory defaults
     httplib::Request req_def;
     req_def.method = "GET";
+    req_def.path = "/internal/config/defaults";
     httplib::Response res_def;
-    server.handle_config_defaults_get(req_def, res_def);
-    check(res_def.status == 200 || res_def.status == -1, "handle_config_defaults_get returns 200");
+    server.handle_request(req_def, res_def);
+    check(res_def.status == 200 || res_def.status == -1, "/internal/config/defaults returns 200");
     auto base_def = json::parse(res_def.body);
     check(base_def["port"] == 13305, "defaults has factory port 13305");
 
@@ -585,7 +587,7 @@ static void test_server_handle_config_set_direct() {
     req2.body = json{{"port", 13305}}.dump();
     httplib::Response res2;
 
-    server.handle_config_set(req2, res2);
+    server.handle_request(req2, res2);
     check(res2.status == 200 || res2.status == -1, "resetting port returns 200");
 
     json disk2 = ConfigFile::load_raw(temp.string());
@@ -596,17 +598,19 @@ static void test_server_handle_config_set_direct() {
     // 5. Send invalid JSON body -> returns 400
     httplib::Request req_bad_json;
     req_bad_json.method = "POST";
+    req_bad_json.path = "/internal/set";
     req_bad_json.body = "{ invalid json body }";
     httplib::Response res_bad_json;
-    server.handle_config_set(req_bad_json, res_bad_json);
+    server.handle_request(req_bad_json, res_bad_json);
     check(res_bad_json.status == 400, "invalid JSON body returns 400");
 
     // 6. Send invalid config value (e.g. out-of-range port) -> returns 400
     httplib::Request req_bad_val;
     req_bad_val.method = "POST";
+    req_bad_val.path = "/internal/set";
     req_bad_val.body = json{{"port", 999999}}.dump();
     httplib::Response res_bad_val;
-    server.handle_config_set(req_bad_val, res_bad_val);
+    server.handle_request(req_bad_val, res_bad_val);
     check(res_bad_val.status == 400, "invalid port value returns 400");
 
     RuntimeConfig::set_global(nullptr);

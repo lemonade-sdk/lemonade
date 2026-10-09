@@ -7,7 +7,7 @@
 // compatibility fallback for backends/templates that do not consume those
 // controls yet. Client-facing thinking fields are stripped after translation.
 //
-// Shared by the HTTP request path (server.cpp) and by internal
+// Shared by the HTTP request path (chat/completions) and by internal
 // classifier/router invocations (routing_classifier_services.cpp), so a
 // constrained classifier call is normalized exactly like a normal request.
 

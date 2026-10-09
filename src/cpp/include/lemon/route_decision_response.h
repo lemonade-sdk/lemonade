@@ -13,6 +13,9 @@ namespace lemon {
 
 json route_decision_to_json(const Decision& decision);
 
+// The JSON Schema of route_decision_to_json()'s output, as the routing engine maintains it.
+json route_decision_schema();
+
 std::string route_decision_header_value(const Decision& decision);
 
 void attach_route_header(httplib::Response& res, const Decision& decision);

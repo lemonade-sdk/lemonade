@@ -491,7 +491,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
     // Pass 0 so HttpClient falls back to its default timeout, which is kept in
-    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
+    // sync with `global_timeout` in config.json (see core/config_effects.cpp). Hard-coding 300
     // caused long-form audio (~35+ min on slower backends) to fail regardless of
     // the user's configuration.
     utils::HttpResponse res;

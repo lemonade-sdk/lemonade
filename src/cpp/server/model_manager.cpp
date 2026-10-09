@@ -1135,6 +1135,7 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
 
 ModelManager::~ModelManager() {
     directory_watcher_.reset();
+    join_background_syncs();
 }
 
 void ModelManager::start_directory_watcher() {
@@ -2345,6 +2346,45 @@ json ModelManager::get_sync_status_locked() const {
     return j;
 }
 
+json ModelManager::sync_status_schema() {
+    return json::parse(R"({
+        "type": "object",
+        "required": ["status", "sync_id", "completed_sync_id", "already_in_progress"],
+        "properties": {
+            "status": {"enum": ["idle", "in_progress", "success", "failed", "not_found"]},
+            "sync_id": {"type": "integer", "description": "The sync this status describes; 0 before any sync."},
+            "completed_sync_id": {"type": "integer", "description": "The most recent sync that finished."},
+            "already_in_progress": {"type": "boolean", "description": "Whether a sync is running."},
+            "dry_run": {"type": "boolean", "description": "Dry runs only: true."},
+            "async": {"type": "boolean", "description": "Background dispatch only: true."},
+            "message": {"type": "string", "description": "Background dispatch only."},
+            "is_full_sync": {"type": "boolean", "description": "Whether the sync covers every downloaded model."},
+            "active_targets": {"type": "array", "items": {"type": "string"}},
+            "pending_targets": {"type": "array", "items": {"type": "string"}},
+            "completed_targets": {"type": "array", "items": {"type": "string"}},
+            "models_updated": {"type": "array", "items": {"type": "string"}, "description": "Models with an update; downloaded unless dry_run."},
+            "models_up_to_date": {"type": "array", "items": {"type": "string"}},
+            "failed_models": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Error message per model that could not be checked or updated."},
+            "terminal_error": {"type": "string"},
+            "checked_count": {"type": "integer"},
+            "updated_count": {"type": "integer"},
+            "progress": {
+                "type": "object",
+                "description": "While a sync runs: the file downloading now.",
+                "properties": {
+                    "current_model": {"type": "string"},
+                    "file": {"type": "string"},
+                    "file_index": {"type": "integer"},
+                    "total_files": {"type": "integer"},
+                    "bytes_downloaded": {"type": "integer"},
+                    "bytes_total": {"type": "integer"},
+                    "percent": {"type": "number"}
+                }
+            }
+        }
+    })");
+}
+
 json ModelManager::get_sync_status(uint64_t sync_id) const {
     std::lock_guard<std::mutex> lock(sync_state_.mutex);
     if (sync_id > 0) {
@@ -2428,6 +2468,42 @@ ModelManager::SyncEnqueueResult ModelManager::enqueue_sync(const std::vector<std
         sync_state_.pending_targets.insert(pub);
     }
     return SyncEnqueueResult{/*already_running=*/false, /*sync_id=*/sync_state_.current_generation};
+}
+
+void ModelManager::execute_sync_in_background() {
+    std::lock_guard<std::mutex> lock(background_syncs_mutex_);
+
+    for (auto it = background_syncs_.begin(); it != background_syncs_.end(); ) {
+        if (it->finished->load() && it->thread.joinable()) {
+            it->thread.join();
+            it = background_syncs_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto finished_flag = std::make_shared<std::atomic<bool>>(false);
+    std::thread worker([this, finished_flag]() {
+        try {
+            LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
+            execute_sync();
+            LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
+        }
+        finished_flag->store(true);
+    });
+    background_syncs_.push_back({std::move(worker), finished_flag});
+}
+
+void ModelManager::join_background_syncs() {
+    std::lock_guard<std::mutex> lock(background_syncs_mutex_);
+    for (auto& task : background_syncs_) {
+        if (task.thread.joinable()) {
+            task.thread.join();
+        }
+    }
+    background_syncs_.clear();
 }
 
 json ModelManager::execute_sync() {

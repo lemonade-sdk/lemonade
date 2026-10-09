@@ -226,41 +226,8 @@ McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn
 
 McpServer::~McpServer() = default;
 
-void McpServer::register_routes(httplib::Server& server) {
-    auto self = shared_from_this();
-
-    server.Post("/mcp", [self](const httplib::Request& req, httplib::Response& res) {
-        std::string response_body;
-        try {
-            response_body = self->handle_request_body(req.body);
-        } catch (const std::exception& e) {
-            LOG(ERROR, "McpServer") << "Unhandled exception in POST /mcp: " << e.what() << std::endl;
-            res.status = 500;
-            json err = make_error_response(nullptr, kJsonRpcInternalError, e.what());
-            res.set_content(err.dump(), "application/json");
-            return;
-        }
-
-        if (response_body.empty()) {
-            // All messages were notifications — Streamable HTTP expects 202.
-            res.status = 202;
-            return;
-        }
-
-        res.status = 200;
-        res.set_content(response_body, "application/json");
-    });
-
-    server.Get("/mcp", [](const httplib::Request&, httplib::Response& res) {
-        // No SSE channel in this MVP; refuse GET explicitly.
-        res.status = 405;
-        res.set_header("Allow", "POST");
-        res.set_content(
-            "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,"
-            "\"message\":\"GET /mcp not supported; use POST with a JSON-RPC body\"},"
-            "\"id\":null}",
-            "application/json");
-    });
+json McpServer::internal_error_response(const std::string& message) {
+    return make_error_response(nullptr, kJsonRpcInternalError, message);
 }
 
 std::string McpServer::handle_request_body(const std::string& body) {

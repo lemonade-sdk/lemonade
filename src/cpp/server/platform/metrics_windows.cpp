@@ -10,10 +10,8 @@ public:
         return "Windows";
     }
 
-    double get_cpu_usage(std::mutex& cpu_stats_mutex,
-                        uint64_t& last_total,
-                        uint64_t& last_total_idle) override {
-        std::lock_guard<std::mutex> lock(cpu_stats_mutex);
+    double get_cpu_usage() override {
+        std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
 
         FILETIME idle_time, kernel_time, user_time;
         if (!GetSystemTimes(&idle_time, &kernel_time, &user_time)) {
@@ -33,20 +31,20 @@ public:
         uint64_t total = kernel + user;
         uint64_t total_idle = idle;
 
-        if (last_total > 0) {
-            uint64_t idle_diff = total_idle - last_total_idle;
-            uint64_t total_diff = total - last_total;
+        if (last_total_ > 0) {
+            uint64_t idle_diff = total_idle - last_total_idle_;
+            uint64_t total_diff = total - last_total_;
 
-            last_total_idle = total_idle;
-            last_total = total;
+            last_total_idle_ = total_idle;
+            last_total_ = total;
 
             if (total_diff > 0) {
                 return ((total_diff - idle_diff) * 100.0) / total_diff;
             }
         }
 
-        last_total_idle = total_idle;
-        last_total = total;
+        last_total_idle_ = total_idle;
+        last_total_ = total;
         return 0.0; // First call, no delta yet
     }
 
@@ -74,6 +72,11 @@ public:
         // NPU monitoring not implemented for Windows
         return -1.0;
     }
+
+private:
+    std::mutex cpu_stats_mutex_;
+    uint64_t last_total_ = 0;
+    uint64_t last_total_idle_ = 0;
 };
 
 std::unique_ptr<SystemMetricsPlatform> create_metrics_platform() {

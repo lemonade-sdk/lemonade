@@ -11,8 +11,8 @@ const registrySource = fs.readFileSync(
   path.join(repoRoot, 'src/cpp/server/model_registry.cpp'),
   'utf8',
 );
-const serverSource = fs.readFileSync(
-  path.join(repoRoot, 'src/cpp/server/server.cpp'),
+const searchRouteSource = fs.readFileSync(
+  path.join(repoRoot, 'src/cpp/server/routes/lemonade/models/registry_search.cpp'),
   'utf8',
 );
 
@@ -36,7 +36,8 @@ module.exports.tests = [
       );
       assert.match(modelManager, /pull\/variants\?source=modelscope&checkpoint=/);
       assert.doesNotMatch(modelManager, /operation=registry-search/);
-      assert.match(serverSource, /register_get\("registry\/search"/);
+      assert.match(searchRouteSource, /s\.methods = \{"GET"\};/);
+      assert.match(searchRouteSource, /s\.paths = \{"registry\/search"\};/);
     },
   },
   {

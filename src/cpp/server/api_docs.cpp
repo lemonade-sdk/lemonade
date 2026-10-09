@@ -37,7 +37,7 @@ std::string read_title(const fs::path& file_path, const std::string& fallback) {
 }
 
 // Resolves id under docs_dir, rejecting anything that escapes it. Mirrors the
-// confinement checks used for web-app assets in server.cpp.
+// confinement checks used for web-app assets in core/web_ui.cpp.
 bool resolve_doc_path(const fs::path& base, const std::string& id, fs::path& resolved) {
     if (id.empty()) {
         return false;
