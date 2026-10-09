@@ -1,4 +1,5 @@
 #include "telemetry.h"
+#include "usage_log.h"
 #include <mbedtls/md.h>
 #include "lemon/runtime_config.h"
 #include "lemon/utils/aixlog.hpp"
@@ -801,6 +802,7 @@ void initialize() {
 
 void shutdown() {
     get_metrics_worker().stop();
+    usage::shutdown();
     get_queue().shutdown();
 }
 
@@ -940,6 +942,8 @@ InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& na
     } else if (!g_incoming_session_id.empty()) {
         session_id_ = format_namespaced_session(g_incoming_client_id, g_incoming_session_id, max_len);
     }
+    client_ip_ = g_client_ip;
+    stream_ = request_json.contains("stream") && request_json["stream"].is_boolean() && request_json["stream"].get<bool>();
 
     if (span_kind_ == "LLM") {
         if (request_json.contains("messages") && request_json["messages"].is_array()) {
@@ -1169,6 +1173,15 @@ void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, con
     } else if (prompt_tokens >= 0 && completion_tokens >= 0) {
         total_tokens = prompt_tokens + completion_tokens;
     }
+    int cached_tokens = -1;
+    if (usage_or_timings.contains("cached_tokens") && usage_or_timings["cached_tokens"].is_number()) {
+        cached_tokens = usage_or_timings["cached_tokens"].get<int>();
+    }
+    int input_tokens = prompt_tokens;
+    if (usage_or_timings.contains("prompt_tokens_total") && usage_or_timings["prompt_tokens_total"].is_number()) {
+        input_tokens = usage_or_timings["prompt_tokens_total"].get<int>();
+    }
+    record_usage("ok", input_tokens, completion_tokens, cached_tokens, false, complete_output);
 
     if (has_openinference) {
         attributes.push_back({{"key", "output.value"}, {"value", {{"stringValue", truncate_string(final_output, max_len)}}}});
@@ -1252,6 +1265,12 @@ void InferenceSpan::end_with_error(const std::string& error_message) {
     if (ended_) return;
     ended_ = true;
 
+    if (aborted_chunks_) {
+        record_usage("aborted", -1, *aborted_chunks_, -1, *aborted_chunks_ >= 0, "");
+    } else {
+        record_usage("error", -1, -1, -1, false, "");
+    }
+
     auto end_time = get_unix_nano();
     uint64_t start_nano = end_time - std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - start_time_).count();
@@ -1284,8 +1303,52 @@ void InferenceSpan::end_with_error(const std::string& error_message) {
     submit_span(span_json);
 }
 
+void InferenceSpan::end_aborted(int streamed_chunks) {
+    aborted_chunks_ = streamed_chunks;
+    end_with_error("Client disconnected");
+}
+
 void InferenceSpan::cancel() {
     ended_ = true;
+}
+
+void InferenceSpan::record_usage(const std::string& status, int input_tokens, int output_tokens, int cached_tokens,
+                                 bool estimated, const std::string& output) {
+    if (span_kind_ == "CLASSIFIER" || !usage::enabled()) return;
+
+    std::string prefix = span_kind_ == "EMBEDDING" ? "embedding." : span_kind_ == "RERANKER" ? "reranker." : "llm.";
+    auto attribute = [&](const std::string& key) {
+        auto it = custom_attributes_.find(prefix + key);
+        return it != custom_attributes_.end() && it->second.is_string() ? it->second.get<std::string>() : "";
+    };
+    auto number = [&](const std::string& key) {
+        auto it = custom_attributes_.find(key);
+        return it != custom_attributes_.end() && it->second.is_number() ? it->second.get<double>() : -1.0;
+    };
+
+    usage::UsageEvent e;
+    e.end_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    e.request = name_;
+    e.model = model_name_;
+    e.backend = attribute("backend");
+    e.device = attribute("device_type");
+    e.stream = stream_;
+    e.status = status;
+    e.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start_time_).count();
+    double ttft_s = number("llm.performance.time_to_first_token");
+    e.ttft_ms = ttft_s > 0 ? ttft_s * 1000 : -1;
+    e.tokens_per_second = number("llm.performance.tokens_per_second");
+    e.input_tokens = input_tokens;
+    e.output_tokens = output_tokens;
+    e.cached_tokens = cached_tokens;
+    e.output_estimated = estimated;
+    e.session_id = session_id_;
+    e.client_ip = client_ip_;
+    e.input = request_dump_;
+    e.output = output;
+    usage::record(e);
 }
 
 static bool is_valid_header_token(const std::string& str) {
@@ -1385,7 +1448,7 @@ void InferenceSpan::submit_span(const nlohmann::json& span_details) {
 std::shared_ptr<InferenceSpan> TelemetryTracker::start_span(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json) {
     auto* config = RuntimeConfig::global();
     bool otel_enabled = config && config->telemetry_enabled();
-    if (otel_enabled || has_span_listeners()) {
+    if (otel_enabled || has_span_listeners() || usage::enabled()) {
         return std::make_shared<InferenceSpan>(span_kind, name, model_name, request_json);
     }
     return nullptr;
@@ -1502,5 +1565,6 @@ thread_local std::string g_incoming_trace_id;
 thread_local std::string g_incoming_parent_span_id;
 thread_local std::string g_incoming_client_id;
 thread_local std::string g_incoming_session_id;
+thread_local std::string g_client_ip;
 
 } // namespace lemon::telemetry

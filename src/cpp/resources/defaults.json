@@ -119,7 +119,14 @@
         "id": []
       }
     },
-    "trust_incoming_trace_context": false
+    "trust_incoming_trace_context": false,
+    "usage_log": {
+      "content": "none",
+      "enabled": false,
+      "max_days": 90,
+      "max_size_mb": 100,
+      "path": ""
+    }
   },
   "thenoise": {
     "backend": "auto",

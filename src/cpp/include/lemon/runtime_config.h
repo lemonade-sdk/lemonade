@@ -70,6 +70,11 @@ public:
     double telemetry_otlp_batch_timeout_s() const;
     std::vector<std::string> telemetry_session_headers_id() const;
     std::vector<std::string> telemetry_session_headers_client() const;
+    bool telemetry_usage_log_enabled() const;
+    std::string telemetry_usage_log_path() const;
+    std::string telemetry_usage_log_content() const;
+    int telemetry_usage_log_max_size_mb() const;
+    int telemetry_usage_log_max_days() const;
     // Feature flags
     bool offline() const;
     bool auto_check_model_updates() const;

@@ -1566,7 +1566,13 @@ curl http://localhost:13305/v1/health
     "tts":1
   },
   "telemetry": {
-    "enabled": false
+    "enabled": false,
+    "usage_log": {
+      "enabled": true,
+      "path": "/home/user/.config/lemonade/usage",
+      "disk_usage_bytes": 154591,
+      "failed": false
+    }
   },
   "update_check_done": true
 }
@@ -1604,6 +1610,11 @@ curl http://localhost:13305/v1/health
 - `telemetry` - Structured telemetry state object:
   - `enabled` - Boolean indicating if telemetry collection is active
   - `captures` - *(optional)* Array of captured telemetry components (e.g., `["inputs", "outputs", "thinking"]`), only present when `enabled` is `true`.
+  - `usage_log` - State of the [local usage log](../guide/telemetry.md#local-usage-log). Only `enabled` is present when it is off.
+    - `enabled` - Whether `telemetry.usage_log.enabled` is set
+    - `path` - Directory the files are written to
+    - `disk_usage_bytes` - Total size of the usage files in `path`
+    - `failed` - `true` if a write failed and the log disabled itself
 
 ## `GET /v1/stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
