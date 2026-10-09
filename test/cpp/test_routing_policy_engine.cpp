@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -296,6 +297,49 @@ static void test_deterministic_metadata_route() {
           open.route_to == "cloud-llm" && open.default_used);
 }
 
+// Exclusion set (#2959): rules whose route_to is excluded are treated as
+// non-matching, so first-match-wins lands on the next matching rule or the
+// default. The engine stays capacity-agnostic: an excluded default is still
+// returned, and the caller decides what that means.
+static void test_excluded_candidate_falls_through() {
+    // Two rules both match a coding prompt; excluding the first rule's target
+    // must land on the second.
+    RoutePolicy policy;
+    policy.candidates = {"small-llm", "big-llm", "cloud-llm"};
+    policy.default_model = "small-llm";
+    policy.rules = {
+        make_rule("code-to-big",
+                  deterministic_leaf(json{{"keywords_any", json::array({"function"})}}),
+                  "big-llm"),
+        make_rule("code-to-cloud",
+                  deterministic_leaf(json{{"keywords_any", json::array({"function"})}}),
+                  "cloud-llm"),
+    };
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{});
+
+    RouteContext ctx;
+    ctx.input = "write a function that reverses a list";
+
+    Decision unfiltered = engine.route(ctx, false);
+    check("no exclusions keeps first-match behavior",
+          unfiltered.route_to == "big-llm" && unfiltered.matched_rule == "code-to-big");
+
+    std::set<std::string> excluded = {"big-llm"};
+    Decision d = engine.route(ctx, false, &excluded);
+    check("excluded rule falls through to next matching rule",
+          d.route_to == "cloud-llm" && d.matched_rule == "code-to-cloud");
+
+    excluded.insert("cloud-llm");
+    Decision open = engine.route(ctx, false, &excluded);
+    check("all matching rules excluded falls open to default",
+          open.route_to == "small-llm" && open.default_used);
+
+    excluded.insert("small-llm");
+    Decision still_default = engine.route(ctx, false, &excluded);
+    check("excluded default is still returned (caller decides)",
+          still_default.route_to == "small-llm" && still_default.default_used);
+}
+
 // One const engine, many threads: per-request state must live only in the local
 // EvalContext, so concurrent want_trace=true/false calls never corrupt each
 // other's trace and every call returns the same deterministic Decision.
@@ -339,6 +383,7 @@ int main() {
     test_deterministic_keywords_route();
     test_deterministic_min_chars_route();
     test_deterministic_metadata_route();
+    test_excluded_candidate_falls_through();
     test_concurrent_route_is_consistent();
 
     std::printf("\n%s\n", g_failures == 0 ? "ALL ENGINE TESTS PASSED"

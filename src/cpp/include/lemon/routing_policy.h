@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -447,6 +448,22 @@ NamedLeafFactories make_deterministic_leaf_factories();
 // Policy + engine (constructor signature only here)
 // ---------------------------------------------------------------------------
 
+// Knobs for the skip rule in routing_capacity.h (`routing.capacity`, #2959):
+// how conservative the estimate behind it is. Operators mixing a small local
+// model with an expensive cloud default need that boundary, because
+// over-skipping silently shifts traffic (and cost) to the larger one.
+struct CapacitySettings {
+    // Multiplier applied to the estimated prompt size before comparing against
+    // a window. The estimate is a chars/4 approximation, so it undercounts for
+    // code and non-Latin scripts; >1 errs toward skipping a candidate that
+    // would have rejected the request anyway.
+    double safety_margin = 1.25;
+
+    // Tokens reserved for the completion when the request names no
+    // max_tokens / max_completion_tokens of its own.
+    int64_t generation_headroom = 1024;
+};
+
 // The parsed, resolved routing policy (produced by the parser). Classifier
 // condition refs in the rules resolve against `classifiers` by id.
 struct RoutePolicy {
@@ -461,6 +478,9 @@ struct RoutePolicy {
     // without re-walking classifiers. Candidates are excluded — they load as
     // Standard residency when selected, not as helpers.
     std::vector<std::string> helper_models;
+
+    // Capacity-filtering knobs; defaults apply when `routing.capacity` is absent.
+    CapacitySettings capacity;
 };
 
 // Sorted, de-duplicated union of every classifier's referenced_models() — the
@@ -490,7 +510,14 @@ public:
     // outputs["estimated_cost"] when cost_services.cost_of is set and the
     // matched rule didn't already set that key itself; a throwing cost_of is
     // logged and ignored rather than propagated.
-    Decision route(const RouteContext& ctx, bool want_trace) const;
+    //
+    // `excluded_candidates` (engine API only — not policy schema): rules whose
+    // route_to is in the set are treated as non-matching, so first-match-wins
+    // lands on the next rule (or the default). The engine stays
+    // capacity-agnostic: an excluded default_model is still returned, and the
+    // caller decides what an excluded final selection means (#2959).
+    Decision route(const RouteContext& ctx, bool want_trace,
+                   const std::set<std::string>* excluded_candidates = nullptr) const;
 
     const RoutePolicy& policy() const { return policy_; }
 

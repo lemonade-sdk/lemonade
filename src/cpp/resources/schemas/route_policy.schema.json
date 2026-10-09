@@ -46,13 +46,31 @@
         "rules": {
           "type": "array",
           "items": { "$ref": "#/$defs/rule" }
-        }
+        },
+        "capacity": { "$ref": "#/$defs/capacity_settings" }
       },
       "allOf": [
         { "anyOf": [{ "required": ["router"] }, { "required": ["rules"] }] },
         { "if":   { "required": ["router"] },
           "then": { "not": { "anyOf": [{ "required": ["rules"] }, { "required": ["classifiers"] }] } } }
       ],
+      "additionalProperties": false
+    },
+    "capacity_settings": {
+      "description": "Capacity-filtering knobs. Dispatch estimates the request's token footprint and skips candidates whose context window cannot fit it; these control how conservative that estimate is. Absent => safety_margin 1.25, generation_headroom 1024.",
+      "type": "object",
+      "properties": {
+        "safety_margin": {
+          "description": "Multiplier applied to the estimated prompt size before comparing it against a candidate's window. The estimate approximates 4 bytes per token, so it undercounts code and non-Latin scripts.",
+          "type": "number",
+          "minimum": 1.0
+        },
+        "generation_headroom": {
+          "description": "Tokens reserved for the completion when the request names no max_tokens / max_completion_tokens of its own.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
       "additionalProperties": false
     },
     "router_sugar": {
