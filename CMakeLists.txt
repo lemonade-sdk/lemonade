@@ -3308,6 +3308,13 @@ if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
 endif()
 
+set(_EVICTION_IDLE_CLOCK_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_eviction_idle_clock.cpp")
+if(BUILD_TESTING AND EXISTS "${_EVICTION_IDLE_CLOCK_TEST_SRC}")
+    add_executable(test_eviction_idle_clock test/cpp/test_eviction_idle_clock.cpp)
+    target_link_libraries(test_eviction_idle_clock PRIVATE lemonade-server-core)
+    add_cpp_ci_test(EvictionIdleClockTest CI ON COMMAND test_eviction_idle_clock)
+endif()
+
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
 if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)
