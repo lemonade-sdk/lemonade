@@ -438,7 +438,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                 subtitle={pct(sysStats?.cpu_percent ?? null)} />
               {memoryTopology.unified ? (
                 <RingGauge
-                  label="RAM / VRAM"
+                  label={t('RAM / VRAM')}
                   value={ramUsedGb}
                   max={ramGaugeMax}
                   unit="GB"
@@ -527,7 +527,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             {loadedModels.length === 0 ? (
               <div className="dash2-empty">{t('No models loaded')}</div>
             ) : (
-              <WorkspaceList className="dash2-models" label="Loaded models" selectable={false}>
+              <WorkspaceList className="dash2-models" label={t('Loaded models')} selectable={false}>
                 {loadedModels.map(m => (
                   <ModelRow
                     key={m.model_name}

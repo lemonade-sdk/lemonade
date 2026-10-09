@@ -403,7 +403,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                   aria-pressed={active}
                   onClick={() => toggleBackend(backend.value)}
                 >
-                  <span>{backend.label}</span>
+                  <span>{t(backend.label)}</span>
                   <span className="model-nav-rail__chip-count" aria-hidden="true">{backend.count}</span>
                   <span className="sr-only">{`, ${t('{count} models', { count: backend.count })}`}</span>
                 </button>
@@ -432,7 +432,9 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
               const enabled = providerEnabled[provider.key];
               const count = providerCounts[provider.key];
               const showCount = searchActive && primaryFilter === 'all' && enabled;
-              const title = `${provider.label} ${enabled ? 'will be searched' : 'will not be searched'} during online model search`;
+              const title = enabled
+                ? t('{provider} will be searched during online model search', { provider: provider.label })
+                : t('{provider} will not be searched during online model search', { provider: provider.label });
               return (
                 <li key={provider.key}>
                   <label className="backends__toggle model-nav-rail__provider-option" title={title}>

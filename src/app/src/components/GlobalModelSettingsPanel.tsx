@@ -242,17 +242,17 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
               <span>{t('Default TTS model')}</span>
               <select className="select" value={ttsModel || ''} onChange={event => { setTtsModel(event.target.value || null); setSaved(false); }}>
                 <option value="">{t('No default speech model')}</option>
-                <optgroup label="Kokoro · English">
+                <optgroup label={t('Kokoro · English')}>
                   {kokoroModels.length
                     ? kokoroModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
-                    : <option disabled value="__kokoro_missing">Kokoro English · install kokoro-v1</option>}
+                    : <option disabled value="__kokoro_missing">{t('Kokoro English · install kokoro-v1')}</option>}
                 </optgroup>
-                <optgroup label="OpenMOSS · Multilingual">
+                <optgroup label={t('OpenMOSS · Multilingual')}>
                   {openMossModels.length
                     ? openMossModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
-                    : <option disabled value="__openmoss_missing">OpenMOSS multilingual · install OpenMOSS-TTS</option>}
+                    : <option disabled value="__openmoss_missing">{t('OpenMOSS multilingual · install OpenMOSS-TTS')}</option>}
                 </optgroup>
-                {otherTtsModels.length > 0 && <optgroup label="Other TTS models">
+                {otherTtsModels.length > 0 && <optgroup label={t('Other TTS models')}>
                   {otherTtsModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)}
                 </optgroup>}
               </select>

@@ -817,13 +817,13 @@ const HfOverviewTab: React.FC<{
         <>
           {hfVariants.mmproj_files.length > 0 && (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Included components</span>
-              <div className="hf-detail__overview-value">Vision projector (MMProj)</div>
+              <span className="hf-detail__overview-label">{t('Included components')}</span>
+              <div className="hf-detail__overview-value">{t('Vision projector (MMProj)')}</div>
             </div>
           )}
           {hfVariants.variants.length > 0 ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Variants (select one)</span>
+              <span className="hf-detail__overview-label">{t('Variants (select one)')}</span>
               {selectedVariant && (
                 <div className="hf-detail__gguf-primary-action">
                   <WorkspaceActionButton
@@ -861,7 +861,7 @@ const HfOverviewTab: React.FC<{
             </div>
           ) : hfVariants.recipe !== 'llamacpp' ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Repository download</span>
+              <span className="hf-detail__overview-label">{t('Repository download')}</span>
               <div className="hf-detail__gguf-primary-action">
                 <WorkspaceActionButton
                   appearance="primary"
@@ -1029,7 +1029,7 @@ const HfDetailView: React.FC<{
             onClick={() => setActiveTab(tab.id)}
             onKeyDown={e => handleTabKeyDown(e, i)}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>
@@ -1135,6 +1135,7 @@ interface SamplerAxisFieldProps {
 const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
   fieldId, spec, value, fallback, owned, onChange, onStep,
 }) => {
+  const { t } = useI18n();
   const axis = spec.axis!;
   const min = spec.min ?? 0;
   const max = spec.max ?? 2;
@@ -1152,16 +1153,16 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
   return (
     <div className="detail-configuration__axis">
       <div className="detail-configuration__control-head">
-        <label htmlFor={fieldId}>{spec.label}</label>
+        <label htmlFor={fieldId}>{t(spec.label)}</label>
         {caution && (
           <span className="detail-configuration__axis-caution" id={cautionId} role="status">
-            {caution}
+            {t(caution)}
           </span>
         )}
       </div>
       <div className="detail-configuration__axis-row">
         <div className="detail-configuration__axis-scale">
-          <span className="detail-configuration__axis-pole">{axis.low}</span>
+          <span className="detail-configuration__axis-pole">{t(axis.low)}</span>
           <input
             className="slider detail-configuration__axis-slider"
             type="range"
@@ -1170,7 +1171,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
             step={spec.step}
             value={position}
             disabled={owned}
-            aria-label={`${spec.label}, ${axis.low} to ${axis.high}`}
+            aria-label={t('{label}, {low} to {high}', { label: t(spec.label), low: t(axis.low), high: t(axis.high) })}
             aria-describedby={caution ? cautionId : undefined}
             style={{
               '--axis-advised-start': `${((axis.advisedMin - min) / span) * 100}%`,
@@ -1178,7 +1179,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
             } as React.CSSProperties}
             onChange={event => onChange(event.target.value)}
           />
-          <span className="detail-configuration__axis-pole">{axis.high}</span>
+          <span className="detail-configuration__axis-pole">{t(axis.high)}</span>
         </div>
         <div className="detail-configuration__axis-number">
           <input
@@ -1202,7 +1203,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
               type="button"
               onClick={() => onStep(spec, 1)}
               disabled={owned}
-              aria-label={`Increase ${spec.label}`}
+              aria-label={t('Increase {label}', { label: t(spec.label) })}
             >
               <Icon name="chevron-up" size={11} aria-hidden="true" />
             </button>
@@ -1210,7 +1211,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
               type="button"
               onClick={() => onStep(spec, -1)}
               disabled={owned}
-              aria-label={`Decrease ${spec.label}`}
+              aria-label={t('Decrease {label}', { label: t(spec.label) })}
             >
               <Icon name="chevron-down" size={11} aria-hidden="true" />
             </button>
@@ -1238,6 +1239,7 @@ interface BackendArgsFieldProps {
 const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
   fieldId, label, value, specs, fallbackArgs, onChange,
 }) => {
+  const { t } = useI18n();
   const split = useMemo(() => splitSamplerArgs(specs, value), [specs, value]);
   const [freeformDraft, setFreeformDraft] = useState(split.rest);
   const compositionFieldsRef = useRef(split.fields);
@@ -1331,7 +1333,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
             }}
           >
             <Icon name="chevron-right" size={12} className="detail-configuration__sampler-caret" aria-hidden="true" />
-            <span className="detail-configuration__sampler-toggle-label">Detailed sampling parameters</span>
+            <span className="detail-configuration__sampler-toggle-label">{t('Detailed sampling parameters')}</span>
             {!detailsOpen && (
               <span className="detail-configuration__sampler-folded">
                 {foldedFlags || 'All on default'}
@@ -1348,7 +1350,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                   key={spec.flag}
                   className={`detail-tuning__field detail-configuration__field${isText ? ' detail-configuration__sampler-field--wide' : ''}`}
                 >
-                  <span id={`${samplerId}-label`}>{spec.label}</span>
+                  <span id={`${samplerId}-label`}>{t(spec.label)}</span>
                   <div className="detail-configuration__number-control">
                     <input
                       id={samplerId}
@@ -1373,7 +1375,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                           type="button"
                           onClick={() => stepSampler(spec, 1)}
                           disabled={owned}
-                          aria-label={`Increase ${spec.label}`}
+                          aria-label={t('Increase {label}', { label: t(spec.label) })}
                         >
                           <Icon name="chevron-up" size={11} aria-hidden="true" />
                         </button>
@@ -1381,7 +1383,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                           type="button"
                           onClick={() => stepSampler(spec, -1)}
                           disabled={owned}
-                          aria-label={`Decrease ${spec.label}`}
+                          aria-label={t('Decrease {label}', { label: t(spec.label) })}
                         >
                           <Icon name="chevron-down" size={11} aria-hidden="true" />
                         </button>
@@ -1401,7 +1403,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
           id={fieldId}
           className="detail-tuning__args"
           value={freeformDraft}
-          placeholder="Example: --threads 4"
+          placeholder={t('Example: --threads 4')}
           /* A wrapping label names the field from its text content, which for a
              textarea includes whatever has been typed into it. */
           aria-label={label}
@@ -1412,8 +1414,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
 
       {!value.trim() && Boolean(fallbackArgs) && (
         <p className="detail-configuration__args-fallback">
-          Every field is on default, so nothing is sent and lemond applies its own
-          defaults for this model: <code>{fallbackArgs}</code>
+          {t('Every field is on default, so nothing is sent and lemond applies its own defaults for this model:')} <code>{fallbackArgs}</code>
         </p>
       )}
     </div>
@@ -1736,8 +1737,9 @@ const ModelConfigurationTab: React.FC<{
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key));
-    const hint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
+    const label = t(TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key)));
+    const rawHint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
+    const hint = rawHint ? t(rawHint) : rawHint;
     const draftValue = recipeDraft[String(key)] || '';
     const baseValue = defaultOptionValue(key);
 
@@ -1816,7 +1818,7 @@ const ModelConfigurationTab: React.FC<{
             {knownVoiceOptions.map(option => (
               <option key={option.id} value={option.id}>{option.label}</option>
             ))}
-            <option value={customVoiceSentinel}>Custom voice…</option>
+            <option value={customVoiceSentinel}>{t('Custom voice…')}</option>
           </select>
           {showCustomVoice && (
             <input
@@ -1824,12 +1826,12 @@ const ModelConfigurationTab: React.FC<{
               className="input detail-configuration__voice-custom"
               type="text"
               value={isUnknownDraft ? draftValue : ''}
-              placeholder="Enter custom voice ID"
-              aria-label="Custom voice ID"
+              placeholder={t('Enter custom voice ID')}
+              aria-label={t('Custom voice ID')}
               onChange={event => setRecipeDraft(previous => ({ ...previous, [String(key)]: event.target.value }))}
             />
           )}
-          <small>Choose a known voice, or use a custom voice ID when the backend supports one.</small>
+          <small>{t('Choose a known voice, or use a custom voice ID when the backend supports one.')}</small>
         </div>
       );
     }
@@ -1861,8 +1863,8 @@ const ModelConfigurationTab: React.FC<{
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
             <option value="">{baseValue === undefined ? 'Model default' : `Model default (${baseValue ? 'on' : 'off'})`}</option>
-            <option value="true">On</option>
-            <option value="false">Off</option>
+            <option value="true">{t('On')}</option>
+            <option value="false">{t('Off')}</option>
           </select>
           {hint && <small>{hint}</small>}
         </div>
@@ -2199,6 +2201,7 @@ const RouterCollectionSettingsTab: React.FC<{
   models: ModelInfo[];
   onEdit?: (model: ModelInfo) => void;
 }> = ({ model, models, onEdit }) => {
+  const { t } = useI18n();
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -2277,15 +2280,15 @@ const RouterCollectionSettingsTab: React.FC<{
     <div className="detail-tab-content custom-collection-settings router-collection-settings">
       <div className="custom-collection-settings__intro">
         <div>
-          <h3>Router settings</h3>
-          <p>Review every model connected to this virtual model, including provider endpoints used by external candidates.</p>
+          <h3>{t('Router settings')}</h3>
+          <p>{t('Review every model connected to this virtual model, including provider endpoints used by external candidates.')}</p>
         </div>
         {onEdit && (
           <button
             type="button"
             className="btn btn--primary btn--sm custom-collection-settings__edit-button"
-            aria-label="Edit router settings"
-            title="Edit router settings"
+            aria-label={t('Edit router settings')}
+            title={t('Edit router settings')}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2293,30 +2296,30 @@ const RouterCollectionSettingsTab: React.FC<{
             }}
           >
             <Icon name="edit" size={13} aria-hidden="true" />
-            <span>Edit router</span>
+            <span>{t('Edit router')}</span>
           </button>
         )}
       </div>
 
-      <section className="custom-collection-settings__section" aria-label="Router strategy summary">
-        <h4>Routing</h4>
+      <section className="custom-collection-settings__section" aria-label={t('Router strategy summary')}>
+        <h4>{t('Routing')}</h4>
         <div className="custom-collection-settings__summary">
-          <span>Strategy</span><strong>{mode}</strong>
-          <span>Default model</span><strong>{defaultModel || 'Not set'}</strong>
-          <span>Routing targets</span><strong>{candidates.length}</strong>
+          <span>{t('Strategy')}</span><strong>{mode}</strong>
+          <span>{t('Default model')}</span><strong>{defaultModel || 'Not set'}</strong>
+          <span>{t('Routing targets')}</span><strong>{candidates.length}</strong>
         </div>
       </section>
 
-      <section className="custom-collection-settings__section" aria-label="Connected router models">
-        <h4>Connected models</h4>
-        <p className="router-collection-settings__scope-note">Endpoint changes are provider-wide and apply to all models registered through that provider.</p>
+      <section className="custom-collection-settings__section" aria-label={t('Connected router models')}>
+        <h4>{t('Connected models')}</h4>
+        <p className="router-collection-settings__scope-note">{t('Endpoint changes are provider-wide and apply to all models registered through that provider.')}</p>
         <div className="router-collection-settings__connections">
           {connections.map(connection => (
             <article className="router-collection-settings__connection" key={connection.modelName}>
               <div className="router-collection-settings__identity">
                 <div>
                   <strong>{connection.displayName}</strong>
-                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">Default</span>}
+                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">{t('Default')}</span>}
                 </div>
                 <small>{connection.modelName}</small>
                 <small>{(connectedRoles.get(connection.modelName) || []).join(' · ')}</small>
@@ -2340,32 +2343,32 @@ const RouterCollectionSettingsTab: React.FC<{
                       {providerEndpointNeedsInsecureOptIn(endpointDraft) && (
                         <label className="router-editor__insecure-opt-in">
                           <input type="checkbox" checked={allowInsecureDraft} onChange={event => setAllowInsecureDraft(event.target.checked)} />
-                          <span>Allow insecure HTTP</span>
+                          <span>{t('Allow insecure HTTP')}</span>
                         </label>
                       )}
                       <WorkspaceActionButton appearance="primary" size="small" disabled={savingProvider} onClick={() => { void saveEndpoint(); }}>
                         {savingProvider ? 'Saving…' : 'Save'}
                       </WorkspaceActionButton>
-                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>Cancel</WorkspaceActionButton>
+                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>{t('Cancel')}</WorkspaceActionButton>
                     </div>
                   ) : (
                     <>
                       <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
-                      <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                      <small>{connection.authConfigured ? t('Authentication configured') : t('Authentication required')}</small>
                       {connection.provider && (
                         <WorkspaceActionButton size="small" icon="edit" onClick={() => { setEditingProvider(connection.provider); setEditingConnectionModel(connection.modelName); setEndpointDraft(connection.endpoint); setAllowInsecureDraft(connection.allowInsecureHttp); setProviderError(null); }}>
-                          Edit endpoint
+                          {t('Edit endpoint')}
                         </WorkspaceActionButton>
                       )}
                     </>
                   )
                 ) : (
-                  <><span>Managed by Lemonade</span><small>Local registered model</small></>
+                  <><span>{t('Managed by Lemonade')}</span><small>{t('Local registered model')}</small></>
                 )}
               </div>
             </article>
           ))}
-          {connections.length === 0 && <div className="router-editor__empty">No connected models were found in this router definition.</div>}
+          {connections.length === 0 && <div className="router-editor__empty">{t('No connected models were found in this router definition.')}</div>}
         </div>
         {providerError && connections.some(connection => connection.kind === 'external') && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {providerError}</div>}
       </section>
@@ -2378,6 +2381,7 @@ const CustomCollectionSettingsTab: React.FC<{
   models: ModelInfo[];
   onEdit?: (model: ModelInfo) => void;
 }> = ({ model, models, onEdit }) => {
+  const { t } = useI18n();
   if (activeRecipeForModel(model) === 'collection.router') {
     return <RouterCollectionSettingsTab model={model} models={models} onEdit={onEdit} />;
   }
@@ -2394,15 +2398,15 @@ const CustomCollectionSettingsTab: React.FC<{
     <div className="detail-tab-content custom-collection-settings">
       <div className="custom-collection-settings__intro">
         <div>
-          <h3>Collection settings</h3>
-          <p>Components stay editable after the collection has been saved or downloaded.</p>
+          <h3>{t('Collection settings')}</h3>
+          <p>{t('Components stay editable after the collection has been saved or downloaded.')}</p>
         </div>
         {onEdit && (
           <button
             type="button"
             className="btn btn--primary btn--sm custom-collection-settings__edit-button"
-            aria-label="Edit collection settings"
-            title="Edit collection settings"
+            aria-label={t('Edit collection settings')}
+            title={t('Edit collection settings')}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2410,13 +2414,13 @@ const CustomCollectionSettingsTab: React.FC<{
             }}
           >
             <Icon name="edit" size={13} aria-hidden="true" />
-            <span>Edit settings</span>
+            <span>{t('Edit settings')}</span>
           </button>
         )}
       </div>
 
-      <section className="custom-collection-settings__section" aria-label="Collection components">
-        <h4>Components</h4>
+      <section className="custom-collection-settings__section" aria-label={t('Collection components')}>
+        <h4>{t('Components')}</h4>
         <div className="custom-collection-settings__components">
           {Object.entries(COLLECTION_ROLE_LABELS).map(([role, label]) => (
             <div className="custom-collection-settings__component" key={role}>
@@ -2426,19 +2430,19 @@ const CustomCollectionSettingsTab: React.FC<{
           ))}
           {unassigned.map(component => (
             <div className="custom-collection-settings__component" key={component}>
-              <span>Tool model</span>
+              <span>{t('Tool model')}</span>
               <strong>{component}</strong>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="custom-collection-settings__section" aria-label="Advanced collection settings summary">
-        <h4>Advanced</h4>
+      <section className="custom-collection-settings__section" aria-label={t('Advanced collection settings summary')}>
+        <h4>{t('Advanced')}</h4>
         <div className="custom-collection-settings__summary">
-          <span>System prompt</span>
+          <span>{t('System prompt')}</span>
           <strong>{hasCustomPrompt ? 'Customized' : 'Default'}</strong>
-          <span>Custom model tools</span>
+          <span>{t('Custom model tools')}</span>
           <strong>{tools.length}</strong>
         </div>
       </section>
@@ -2857,7 +2861,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             onClick={() => setActiveTab(tab.id)}
             onKeyDown={e => handleTabKeyDown(e, i)}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>

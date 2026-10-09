@@ -690,7 +690,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
         <p className="backend-args-dialog__hint">
           {t('One shell-style argument string. Saving replaces the previous entry for this backend.')}
         </p>
-        <WorkspaceActionGroup className="backend-args-dialog__actions" label="Backend argument actions">
+        <WorkspaceActionGroup className="backend-args-dialog__actions" label={t('Backend argument actions')}>
           {hasSavedArgs && (
             <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onClear(backendKeyValue)} data-backend-args-clear>
               {t('Clear')}

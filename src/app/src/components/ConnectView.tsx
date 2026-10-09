@@ -451,7 +451,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
           <p className="connect__hint">{t('Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.')}</p>
           <div className="connect__directory-grid">
             <label className="form-field"><span className="form-field__label">{t('Models directory')}</span>
-              <input className="input" value={directories.modelsDir} onChange={e => handleDirectoryChange('modelsDir', e.target.value)} placeholder="Default Lemonade model cache" />
+              <input className="input" value={directories.modelsDir} onChange={e => handleDirectoryChange('modelsDir', e.target.value)} placeholder={t('Default Lemonade model cache')} />
             </label>
             <label className="form-field"><span className="form-field__label">{t('External custom models directory')}</span>
               <input className="input" value={directories.extraModelsDir} onChange={e => handleDirectoryChange('extraModelsDir', e.target.value)} placeholder="/path/to/llama.cpp/models" />

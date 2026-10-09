@@ -5,7 +5,7 @@ import ChatView from './components/ChatView';
 import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
 import { preloadInteractionSurfaces } from './interactionPreload';
-import { useI18n } from './i18n';
+import { I18nContext, translate, useI18n, type I18nContextValue } from './i18n';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -182,6 +182,11 @@ interface ErrorBoundaryProps { view: string; children: ReactNode; }
 interface ErrorBoundaryState { error: Error | null; }
 
 class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  // An error boundary must be a class, so the locale arrives through the
+  // context object rather than through useI18n().
+  static contextType = I18nContext;
+  declare context: I18nContextValue | null;
+
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error) { return { error }; }
@@ -196,10 +201,11 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
   render() {
     if (this.state.error) {
+      const t = this.context?.t ?? ((key: string) => translate(key));
       return (
         <div className="view-error">
           <h2>
-            Something went wrong in "{this.props.view}"
+            {t('Something went wrong in "{view}"', { view: t(this.props.view) })}
           </h2>
           <pre>
             {this.state.error.message}
@@ -209,7 +215,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
             className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium"
             onClick={() => this.setState({ error: null })}
           >
-            <span className="workspace-action-button__label">Try again</span>
+            <span className="workspace-action-button__label">{t('Try again')}</span>
           </button>
         </div>
       );
@@ -976,12 +982,12 @@ const App: React.FC = () => {
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
           }`}
             role="status"
-            aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
-            title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+            aria-label={status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : t('Offline')}
+            title={status === 'connected' ? t('Connected') : status === 'connecting' ? t('Connecting…') : t('Offline')}
           />
         </div>
 
-        <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
+        <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label={t('Primary')}>
           {NAVIGATION_DESTINATIONS.map(({ id, label, icon }) => (
             <button
               key={id}
@@ -1190,7 +1196,7 @@ const App: React.FC = () => {
       </header>
 
       {downloadManagerMountedRef.current && (
-        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label="Loading downloads" /> : null}>
+        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label={t('Loading downloads')} /> : null}>
           <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
         </Suspense>
       )}

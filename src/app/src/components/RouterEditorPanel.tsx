@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { type CloudProviderRow, type ModelInfo } from '../api';
+import { useI18n } from '../i18n';
 import { capabilityFromModelInfo, isRouterRecipe } from '../modelCapabilities';
 import { Icon } from './Icon';
 import Modal from './inspect/Modal';
@@ -200,6 +201,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   onDeleted,
   onClose,
 }) => {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<RouterDraft>(() => createEmptyRouterDraft());
   const savedRecords = useMemo(
     () => models
@@ -418,7 +420,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     modelName: candidate,
   })), [connectedModelNames, models, cloudProviders]);
 
-  const validationErrors = useMemo(() => validateRouterDraft(draft), [draft]);
+  const validationErrors = useMemo(() => validateRouterDraft(draft, t), [draft, t]);
   const request = useMemo(() => {
     try { return buildRouterPullRequest(draft); } catch { return null; }
   }, [draft]);
@@ -448,7 +450,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         jsonCopyTimeoutRef.current = null;
       }, 2200);
     } catch (copyError) {
-      setError(copyError instanceof Error ? copyError.message : 'Could not copy router JSON.');
+      setError(copyError instanceof Error ? copyError.message : t('Could not copy router JSON.'));
     }
   };
 
@@ -465,9 +467,9 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     if (draft.mode === 'rules' && routerDraftHasRulesProgress(draft)) {
       setConfirmation({
         kind: 'switch-llm',
-        title: 'Switch routing strategy?',
-        message: 'Switching to the Natural-language router will clear the current ordered rules and classifiers. This cannot be undone.',
-        confirmLabel: 'Switch and clear rules',
+        title: t('Switch routing strategy?'),
+        message: t('Switching to the Natural-language router will clear the current ordered rules and classifiers. This cannot be undone.'),
+        confirmLabel: t('Switch and clear rules'),
         tone: 'danger',
       });
       return;
@@ -475,9 +477,9 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     if (draft.mode === 'llm' && routerDraftHasLlmProgress(draft)) {
       setConfirmation({
         kind: 'switch-rules',
-        title: 'Switch routing strategy?',
-        message: 'Switching to Ordered rules will clear the current routing model and instruction. This cannot be undone.',
-        confirmLabel: 'Switch and clear NL router',
+        title: t('Switch routing strategy?'),
+        message: t('Switching to Ordered rules will clear the current routing model and instruction. This cannot be undone.'),
+        confirmLabel: t('Switch and clear NL router'),
         tone: 'danger',
       });
       return;
@@ -507,9 +509,9 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     if (isDirty) {
       setConfirmation({
         kind: 'reset',
-        title: 'Start a new router?',
-        message: 'This will discard the unsaved routing work currently in the editor. Saved routers are not affected.',
-        confirmLabel: 'Discard draft',
+        title: t('Start a new router?'),
+        message: t('This will discard the unsaved routing work currently in the editor. Saved routers are not affected.'),
+        confirmLabel: t('Discard draft'),
         tone: 'danger',
       });
       return;
@@ -527,7 +529,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         try {
           nextDraft = routerDraftFromModelInfo(detailedModel);
         } catch (loadError) {
-          setError(loadError instanceof Error ? loadError.message : 'Could not load saved router.');
+          setError(loadError instanceof Error ? loadError.message : t('Could not load saved router.'));
           return;
         }
         const commit = () => {
@@ -551,7 +553,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         commit();
       })
       .catch(loadError => {
-        setError(loadError instanceof Error ? loadError.message : 'Could not load saved router.');
+        setError(loadError instanceof Error ? loadError.message : t('Could not load saved router.'));
       });
   };
 
@@ -585,9 +587,17 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setError(null);
     if (removing && (wasDefault || affectedRules > 0)) {
       const updates: string[] = [];
-      if (wasDefault) updates.push(replacement ? `default changed to ${replacement}` : 'default cleared');
-      if (affectedRules > 0) updates.push(`${affectedRules} rule target${affectedRules === 1 ? '' : 's'} ${replacement ? `changed to ${replacement}` : 'cleared'}`);
-      setNotice(`Removed ${name}; ${updates.join('; ')}.`);
+      if (wasDefault) {
+        updates.push(replacement
+          ? t('default changed to {replacement}', { replacement })
+          : t('default cleared'));
+      }
+      if (affectedRules > 0) {
+        updates.push(replacement
+          ? t('{count} rule targets changed to {replacement}', { count: affectedRules, replacement })
+          : t('{count} rule targets cleared', { count: affectedRules }));
+      }
+      setNotice(t('Removed {name}; {updates}.', { name, updates: updates.join('; ') }));
     } else {
       setNotice(null);
     }
@@ -612,7 +622,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     const previous = draft.classifiers[index];
     if (!previous) return false;
     if (!nextId) {
-      setError('Classifier ID cannot be empty.');
+      setError(t('Classifier ID cannot be empty.'));
       return false;
     }
     if (draft.classifiers.some((item, itemIndex) => itemIndex !== index && item.id === nextId)) {
@@ -645,7 +655,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     const classifier = draft.classifiers[classifierIndex];
     if (!classifier || classifier.type !== 'semantic_similarity') return false;
     if (!nextName) {
-      setError('Semantic concept name cannot be empty.');
+      setError(t('Semantic concept name cannot be empty.'));
       return false;
     }
     if (nextName !== previousName && Object.keys(classifier.referencePhrases).some(name => name === nextName)) {
@@ -733,7 +743,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         applyImport();
       }
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : 'Could not import router JSON.');
+      setError(importError instanceof Error ? importError.message : t('Could not import router JSON.'));
     } finally {
       if (importRef.current) importRef.current.value = '';
     }
@@ -765,7 +775,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       setProviderAllowInsecureDraft(false);
       setNotice(`Updated ${editingProvider} endpoint.`);
     } catch (providerError) {
-      setConnectionsError(providerError instanceof Error ? providerError.message : 'Could not update provider endpoint.');
+      setConnectionsError(providerError instanceof Error ? providerError.message : t('Could not update provider endpoint.'));
     } finally {
       setSavingProvider(false);
     }
@@ -781,7 +791,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     try {
       nextRequest = buildRouterPullRequest(submittedDraft);
     } catch (buildError) {
-      setError(buildError instanceof Error ? buildError.message : 'Router validation failed.');
+      setError(buildError instanceof Error ? buildError.message : t('Router validation failed.'));
       return;
     }
     const dependencyPreflight = preflightRouter(nextRequest as any, models, []);
@@ -809,7 +819,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       setNotice(`Registered ${nextRequest.model_name}.`);
 onSaved?.(savedModel);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not register router.');
+      setError(saveError instanceof Error ? saveError.message : t('Could not register router.'));
     } finally {
       setSaving(false);
     }
@@ -820,7 +830,7 @@ onSaved?.(savedModel);
     if (!modelNameValue || deleting) return;
     if (!onDeleted) {
       setConfirmation(null);
-      setError('Router deletion is unavailable in this context.');
+      setError(t('Router deletion is unavailable in this context.'));
       return;
     }
     setDeleting(true);
@@ -834,7 +844,7 @@ onSaved?.(savedModel);
       // Close the modal so the persistent editor error is immediately visible;
       // the router remains loaded and the user can retry intentionally.
       setConfirmation(null);
-      setError(deleteError instanceof Error ? deleteError.message : 'Could not delete router.');
+      setError(deleteError instanceof Error ? deleteError.message : t('Could not delete router.'));
     } finally {
       setDeleting(false);
     }
@@ -844,9 +854,10 @@ onSaved?.(savedModel);
     if (!draft.modelName || saving || deleting) return;
     setConfirmation({
       kind: 'delete',
-      title: 'Delete router?',
-      message: `Delete ${draft.modelName}? This removes the saved router definition from Lemonade.${isDirty ? ' Unsaved edits in this editor will also be discarded.' : ''}`,
-      confirmLabel: 'Delete router',
+      title: t('Delete router?'),
+      message: t('Delete {model}? This removes the saved router definition from Lemonade.', { model: draft.modelName })
+        + (isDirty ? ` ${t('Unsaved edits in this editor will also be discarded.')}` : ''),
+      confirmLabel: t('Delete router'),
       tone: 'danger',
     });
   };
@@ -906,37 +917,37 @@ onSaved?.(savedModel);
   return (
     <WorkspaceDetailPanel
       className="router-editor"
-      ariaLabel="Router editor"
+      ariaLabel={t('Router editor')}
       leading={<Icon name="router" size={20} aria-hidden="true" />}
-      title={<h2 className="workspace-detail-panel__title">Router</h2>}
+      title={<h2 className="workspace-detail-panel__title">{t('Router')}</h2>}
       metadata={<WorkspaceMetadataChip emphasis="high" tone="accent">collection.router</WorkspaceMetadataChip>}
-      description={<p>Build and register a virtual model that routes requests across compatible candidates.</p>}
+      description={<p>{t('Build and register a virtual model that routes requests across compatible candidates.')}</p>}
       descriptionPlacement="identity"
       actions={(
-        <WorkspaceActionGroup label="Router editor actions">
+        <WorkspaceActionGroup label={t('Router editor actions')}>
           <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || deleting || savingProvider || validationErrors.length > 0} onClick={() => { void save(); }}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('Saving…') : t('Save')}
           </WorkspaceActionButton>
           {draft.modelName && (
-            <WorkspaceActionButton appearance="danger" icon="trash" disabled={saving || deleting || savingProvider} onClick={requestDeleteCurrent}>Delete</WorkspaceActionButton>
+            <WorkspaceActionButton appearance="danger" icon="trash" disabled={saving || deleting || savingProvider} onClick={requestDeleteCurrent}>{t('Delete')}</WorkspaceActionButton>
           )}
-          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>Close</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>{t('Close')}</WorkspaceActionButton>
           <span className="workspace-action-group__spacer" />
-          <WorkspaceActionButton appearance="quiet" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
-          <WorkspaceActionButton appearance="quiet" icon="file-up" disabled={saving} onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="quiet" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>{t('Export')}</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="quiet" icon="file-up" disabled={saving} onClick={() => importRef.current?.click()}>{t('Import')}</WorkspaceActionButton>
         </WorkspaceActionGroup>
       )}
       titleExtras={(
-        <div className="router-editor__toolbar" aria-label="Router file actions">
+        <div className="router-editor__toolbar" aria-label={t('Router file actions')}>
           <div className="router-editor__toolbar-row">
-            <WorkspaceActionButton size="small" icon="compose" disabled={saving || deleting || savingProvider} onClick={requestResetDraft}>New</WorkspaceActionButton>
+            <WorkspaceActionButton size="small" icon="compose" disabled={saving || deleting || savingProvider} onClick={requestResetDraft}>{t('New')}</WorkspaceActionButton>
             <label className="router-editor__saved-select">
-              <span className="sr-only">Saved routers</span>
+              <span className="sr-only">{t('Saved routers')}</span>
               <RouterSelect
                 value={draft.modelName || ''}
-                options={[{ value: '', label: 'Unsaved router' }, ...savedRecords.map(r => ({ value: modelName(r), label: modelLabel(r) }))]}
+                options={[{ value: '', label: t('Unsaved router') }, ...savedRecords.map(r => ({ value: modelName(r), label: modelLabel(r) }))]}
                 onChange={(val: string) => loadSaved(val)}
-                ariaLabel="Saved routers"
+                ariaLabel={t('Saved routers')}
                 disabled={saving || deleting || savingProvider}
               />
             </label>
@@ -945,16 +956,16 @@ onSaved?.(savedModel);
         </div>
       )}
     >
-      <div className="router-editor__tabs" role="tablist" aria-label="Router editor view">
-        <button type="button" className={tab === 'builder' ? 'is-active' : ''} role="tab" aria-selected={tab === 'builder'} onClick={() => setTab('builder')}>Builder</button>
-        <button type="button" className={tab === 'json' ? 'is-active' : ''} role="tab" aria-selected={tab === 'json'} onClick={() => setTab('json')}>JSON Preview</button>
+      <div className="router-editor__tabs" role="tablist" aria-label={t('Router editor view')}>
+        <button type="button" className={tab === 'builder' ? 'is-active' : ''} role="tab" aria-selected={tab === 'builder'} onClick={() => setTab('builder')}>{t('Builder')}</button>
+        <button type="button" className={tab === 'json' ? 'is-active' : ''} role="tab" aria-selected={tab === 'json'} onClick={() => setTab('json')}>{t('JSON Preview')}</button>
       </div>
 
       <div className="router-editor__body">
         {tab === 'json' ? (
           <section className="router-editor__json-panel">
             <div className="router-editor__section-head">
-              <div><h3>Registration Payload</h3><p>Exact body sent to <code>/api/v1/pull</code>.</p></div>
+              <div><h3>{t('Registration Payload')}</h3><p>{t('Exact body sent to')} <code>/api/v1/pull</code>.</p></div>
               <WorkspaceActionButton
                 className={`router-editor__copy-button${jsonCopied ? ' is-copied' : ''}`}
                 size="small"
@@ -963,29 +974,29 @@ onSaved?.(savedModel);
                 onClick={() => { void copyJsonPreview(); }}
                 aria-live="polite"
               >
-                {jsonCopied ? 'Copied' : 'Copy'}
+                {jsonCopied ? t('Copied') : t('Copy')}
               </WorkspaceActionButton>
             </div>
-            {jsonPreview ? <pre>{jsonPreview}</pre> : <div className="router-editor__empty">Fix validation errors to generate the payload.</div>}
+            {jsonPreview ? <pre>{jsonPreview}</pre> : <div className="router-editor__empty">{t('Fix validation errors to generate the payload.')}</div>}
           </section>
         ) : (
           <>
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Identity</h3><p>Appears in your model list like any other model.</p></div>
+                <div><h3>{t('Identity')}</h3><p>{t('Appears in your model list like any other model.')}</p></div>
               </div>
               <div className="router-editor__form-grid">
-                <label><span>Router Name</span><input className="input" value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>
-                <label><span>Model ID</span><input className="input" value={draft.modelName || (draft.name ? normalizeRouterModelName(draft.name) : '')} readOnly /></label>
+                <label><span>{t('Router Name')}</span><input className="input" value={draft.name} placeholder={t('Fast-or-smart')} onChange={event => setPatch({ name: event.target.value })} /></label>
+                <label><span>{t('Model ID')}</span><input className="input" value={draft.modelName || (draft.name ? normalizeRouterModelName(draft.name) : '')} readOnly /></label>
               </div>
             </section>
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Candidate Models</h3><p>Traffic is distributed only among these models.</p></div>
+                <div><h3>{t('Candidate Models')}</h3><p>{t('Traffic is distributed only among these models.')}</p></div>
                 <span className="router-editor__count">{draft.candidates.length} selected</span>
               </div>
-              <div className="router-editor__candidate-search"><Icon name="search" size={14} /><input value={candidateSearch} placeholder="Search registered models" onChange={event => setCandidateSearch(event.target.value)} /></div>
+              <div className="router-editor__candidate-search"><Icon name="search" size={14} /><input value={candidateSearch} placeholder={t('Search registered models')} onChange={event => setCandidateSearch(event.target.value)} /></div>
               <div className="router-editor__candidate-list">
                 {filteredCandidateModels.map(model => {
                   const name = modelName(model);
@@ -1000,29 +1011,29 @@ onSaved?.(savedModel);
                         {connection.kind === 'external' && connection.endpoint && <small title={connection.endpoint}>{connection.endpoint}</small>}
                       </span>
                       <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
-                        {connection.kind === 'external' ? `External · ${connection.provider || 'provider'}` : 'Internal'}
+                        {connection.kind === 'external' ? `External · ${connection.provider || 'provider'}` : t('Internal')}
                       </span>
                     </label>
                   );
                 })}
-                {filteredCandidateModels.length === 0 && <div className="router-editor__empty">No compatible models match this search.</div>}
+                {filteredCandidateModels.length === 0 && <div className="router-editor__empty">{t('No compatible models match this search.')}</div>}
               </div>
               <label className="router-editor__default-model">
-                <span>Default Model <small>Used when no rule matches or evaluation fails.</small></span>
+                <span>{t('Default Model')} <small>{t('Used when no rule matches or evaluation fails.')}</small></span>
                 <RouterSelect
                   value={draft.defaultModel}
-                  options={[{ value: '', label: 'Select default' }, ...draft.candidates.map(c => ({ value: c, label: c }))]}
+                  options={[{ value: '', label: t('Select default') }, ...draft.candidates.map(c => ({ value: c, label: c }))]}
                   onChange={(val: string) => setPatch({ defaultModel: val })}
-                  ariaLabel="Default model"
+                  ariaLabel={t('Default model')}
                 />
               </label>
 
-              <div className="router-editor__connections" aria-label="Connected model topology">
+              <div className="router-editor__connections" aria-label={t('Connected model topology')}>
                 <div className="router-editor__mini-head">
-                  <span>Connected Model Topology</span>
+                  <span>{t('Connected Model Topology')}</span>
                 </div>
                 {selectedConnections.length === 0 ? (
-                  <div className="router-editor__empty">Select candidate models to review their connections.</div>
+                  <div className="router-editor__empty">{t('Select candidate models to review their connections.')}</div>
                 ) : (
                   <div className="router-editor__connection-list">
                     {selectedConnections.map(connection => (
@@ -1030,11 +1041,11 @@ onSaved?.(savedModel);
                         <div className="router-editor__connection-main">
                           <div>
                             <strong>{connection.displayName}</strong>
-                            {connection.modelName === draft.defaultModel && <span className="router-editor__default-badge">Default</span>}
+                            {connection.modelName === draft.defaultModel && <span className="router-editor__default-badge">{t('Default')}</span>}
                           </div>
                           <div className="router-editor__connection-source">
                             <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
-                              {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
+                              {connection.kind === 'external' ? t('External') : connection.kind === 'internal' ? t('Internal') : t('Unresolved')}
                             </span>
                             <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Unknown source')}</small>
                           </div>
@@ -1053,21 +1064,21 @@ onSaved?.(savedModel);
                                 {providerEndpointNeedsInsecureOptIn(providerEndpointDraft) && (
                                   <label className="router-editor__insecure-opt-in">
                                     <input type="checkbox" checked={providerAllowInsecureDraft} onChange={event => setProviderAllowInsecureDraft(event.target.checked)} />
-                                    <span>Allow insecure HTTP</span>
+                                    <span>{t('Allow insecure HTTP')}</span>
                                   </label>
                                 )}
                                 <WorkspaceActionButton size="small" appearance="primary" disabled={savingProvider} onClick={() => { void saveProviderEndpoint(); }}>
-                                  {savingProvider ? 'Saving…' : 'Save'}
+                                  {savingProvider ? t('Saving…') : t('Save')}
                                 </WorkspaceActionButton>
-                                <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setProviderAllowInsecureDraft(false); setConnectionsError(null); }}>Cancel</WorkspaceActionButton>
+                                <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setProviderAllowInsecureDraft(false); setConnectionsError(null); }}>{t('Cancel')}</WorkspaceActionButton>
                               </div>
                             ) : (
                               <>
                                 <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
-                                <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                                <small>{connection.authConfigured ? t('Authentication configured') : t('Authentication required')}</small>
                                 {connection.provider && (
                                   <WorkspaceActionButton size="small" icon="edit" onClick={() => startEditingProvider(connection.provider, connection.endpoint, connection.modelName, connection.allowInsecureHttp)}>
-                                    Edit Endpoint
+                                    {t('Edit Endpoint')}
                                   </WorkspaceActionButton>
                                 )}
                               </>
@@ -1083,7 +1094,7 @@ onSaved?.(savedModel);
                               iconOnly
                               onClick={() => toggleCandidate(connection.modelName)}
                               aria-label={`Remove ${connection.displayName} from candidate models`}
-                              title="Remove candidate"
+                              title={t('Remove candidate')}
                             />
                           )}
                         </div>
@@ -1097,9 +1108,9 @@ onSaved?.(savedModel);
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Routing Strategy</h3><p>Pick the mechanism that decides which model handles each request.</p></div>
+                <div><h3>{t('Routing Strategy')}</h3><p>{t('Pick the mechanism that decides which model handles each request.')}</p></div>
               </div>
-              <div className="router-editor__strategy" role="radiogroup" aria-label="Routing strategy">
+              <div className="router-editor__strategy" role="radiogroup" aria-label={t('Routing strategy')}>
                 <button
                   type="button"
                   className={`router-editor__strategy-option ${draft.mode === 'rules' ? 'is-active' : ''}`}
@@ -1108,7 +1119,7 @@ onSaved?.(savedModel);
                   onClick={() => setRoutingMode('rules')}
                 >
                   <Icon name="layers" size={18} />
-                  <span><strong>Ordered Rules</strong><small>Pattern-based rules with optional classifier signals - first match wins.</small></span>
+                  <span><strong>{t('Ordered Rules')}</strong><small>{t('Pattern-based rules with optional classifier signals - first match wins.')}</small></span>
                 </button>
                 <button
                   type="button"
@@ -1118,31 +1129,31 @@ onSaved?.(savedModel);
                   onClick={() => setRoutingMode('llm')}
                 >
                   <Icon name="brain-circuit" size={18} />
-                  <span><strong>Natural-Language Router</strong><small>An LLM model reads your instruction and picks the right candidate for each request.</small></span>
+                  <span><strong>{t('Natural-Language Router')}</strong><small>{t('An LLM model reads your instruction and picks the right candidate for each request.')}</small></span>
                 </button>
               </div>
             </section>
 
             {draft.mode === 'llm' ? (
-              <section className="router-editor__section" aria-label="Natural-Language Router settings">
+              <section className="router-editor__section" aria-label={t('Natural-Language Router settings')}>
                 <div className="router-editor__form-grid">
                   <div className="router-editor__wide router-editor__field">
-                    <span>Routing Model <small>Usually a small, fast chat model.</small></span>
+                    <span>{t('Routing Model')} <small>{t('Usually a small, fast chat model.')}</small></span>
                     <RouterModelPicker
                       models={candidateModels}
                       value={draft.llmRouter.model}
                       onChange={model => setPatch({ llmRouter: { ...draft.llmRouter, model } })}
-                      placeholder="Select routing model"
-                      searchPlaceholder="Search routing models"
-                      ariaLabel="Natural-language routing model"
+                      placeholder={t('Select routing model')}
+                      searchPlaceholder={t('Search routing models')}
+                      ariaLabel={t('Natural-language routing model')}
                     />
                   </div>
                   <label className="router-editor__wide">
-                    <span>Routing Instruction <small>Describe clearly when each candidate should be selected.</small></span>
+                    <span>{t('Routing Instruction')} <small>{t('Describe clearly when each candidate should be selected.')}</small></span>
                     <textarea
                       className="textarea router-editor__prompt"
                       value={draft.llmRouter.prompt}
-                      placeholder="Use the fast model for everyday questions. Use the larger model for difficult reasoning, coding, or long context."
+                      placeholder={t('Use the fast model for everyday questions. Use the larger model for difficult reasoning, coding, or long context.')}
                       spellCheck={false}
                       onChange={event => setPatch({ llmRouter: { ...draft.llmRouter, prompt: event.target.value } })}
                     />
@@ -1153,46 +1164,46 @@ onSaved?.(savedModel);
               <>
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Classifiers</h3><p>Model-scored signals you can reference inside your rules.</p></div>
+                <div><h3>{t('Classifiers')}</h3><p>{t('Model-scored signals you can reference inside your rules.')}</p></div>
                 <div className="router-editor__section-actions">
-                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('classifier')}>Classifier</WorkspaceActionButton>
-                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('semantic_similarity')}>Semantic</WorkspaceActionButton>
-                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('llm')}>LLM signal</WorkspaceActionButton>
+                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('classifier')}>{t('Classifier')}</WorkspaceActionButton>
+                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('semantic_similarity')}>{t('Semantic')}</WorkspaceActionButton>
+                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('llm')}>{t('LLM signal')}</WorkspaceActionButton>
                 </div>
               </div>
-              {draft.classifiers.length === 0 ? <div className="router-editor__empty">No classifiers. Deterministic rules need none.</div> : (
+              {draft.classifiers.length === 0 ? <div className="router-editor__empty">{t('No classifiers. Deterministic rules need none.')}</div> : (
                 <div className="router-editor__classifier-list">
                   {draft.classifiers.map((classifier, index) => {
                     const labels = classifierLabels(classifier);
                     return (
                       <article className="router-editor__classifier" key={index}>
                         <div className="router-editor__card-head">
-                          <strong>{classifier.type === 'semantic_similarity' ? 'Semantic Similarity' : classifier.type === 'llm' ? 'LLM Classifier' : 'Text Classifier'}</strong>
-                          <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly onClick={() => removeClassifier(index)} aria-label="Remove classifier" title="Remove classifier" />
+                          <strong>{classifier.type === 'semantic_similarity' ? t('Semantic Similarity') : classifier.type === 'llm' ? t('LLM Classifier') : t('Text Classifier')}</strong>
+                          <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly onClick={() => removeClassifier(index)} aria-label={t('Remove classifier')} title={t('Remove classifier')} />
                         </div>
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
                           <label><span>ID</span><CommittedTextInput value={classifier.id} ariaLabel={`Classifier ${index + 1} ID`} normalize={input => input} onCommit={nextId => commitClassifierId(index, nextId)} /></label>
-                          <label><span>Type</span><RouterSelect value={classifier.type} options={[{ value: 'classifier', label: 'classifier' }, { value: 'semantic_similarity', label: 'semantic_similarity' }, { value: 'llm', label: 'llm' }]} onChange={(val: string) => updateClassifier(index, { ...createRouterClassifier(index, val as RouterClassifier['type']), id: classifier.id })} ariaLabel="Classifier type" /></label>
+                          <label><span>{t('Type')}</span><RouterSelect value={classifier.type} options={[{ value: 'classifier', label: 'classifier' }, { value: 'semantic_similarity', label: 'semantic_similarity' }, { value: 'llm', label: 'llm' }]} onChange={(val: string) => updateClassifier(index, { ...createRouterClassifier(index, val as RouterClassifier['type']), id: classifier.id })} ariaLabel={t('Classifier type')} /></label>
                           <div className="router-editor__wide router-editor__field">
-                            <span>Model</span>
+                            <span>{t('Model')}</span>
                             <RouterModelPicker
                               models={classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : classifierModels}
                               value={classifier.model}
                               onChange={model => updateClassifier(index, { model })}
-                              placeholder="Select model"
-                              searchPlaceholder={classifier.type === 'semantic_similarity' ? 'Search embedding models' : classifier.type === 'llm' ? 'Search chat models' : 'Search classification models'}
+                              placeholder={t('Select model')}
+                              searchPlaceholder={classifier.type === 'semantic_similarity' ? t('Search embedding models') : classifier.type === 'llm' ? t('Search chat models') : t('Search classification models')}
                               ariaLabel={`${classifier.id || `Classifier ${index + 1}`} model`}
                             />
                           </div>
                           {classifier.type === 'semantic_similarity' ? (
                             <div className="router-editor__wide router-editor__concepts">
-                              <div className="router-editor__mini-head"><span>Concepts and Reference Phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>
+                              <div className="router-editor__mini-head"><span>{t('Concepts and Reference Phrases')}</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>{t('Concept')}</WorkspaceActionButton></div>
                               <div className="router-editor__concept-list">
                                 {Object.entries(classifier.referencePhrases).map(([concept, phrases], conceptIndex) => (
                                   <div className="router-editor__concept" key={conceptIndex}>
-                                    <CommittedTextInput value={concept} ariaLabel="Concept name" onCommit={nextName => commitSemanticConceptName(index, concept, nextName)} />
-                                    <textarea className="textarea" rows={3} value={phrases.join('\n')} aria-label="Reference phrases" placeholder="One reference phrase per line" onChange={event => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [concept]: event.target.value.split(/\r?\n/) } })} />
-                                    <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly title="Remove concept" aria-label="Remove concept" onClick={() => {
+                                    <CommittedTextInput value={concept} ariaLabel={t('Concept name')} onCommit={nextName => commitSemanticConceptName(index, concept, nextName)} />
+                                    <textarea className="textarea" rows={3} value={phrases.join('\n')} aria-label={t('Reference phrases')} placeholder={t('One reference phrase per line')} onChange={event => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [concept]: event.target.value.split(/\r?\n/) } })} />
+                                    <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly title={t('Remove concept')} aria-label={t('Remove concept')} onClick={() => {
                                       const next = { ...classifier.referencePhrases };
                                       delete next[concept];
                                       updateClassifier(index, {
@@ -1208,11 +1219,11 @@ onSaved?.(savedModel);
                             <>
                               {classifier.type === 'llm' && (
                                 <label className="router-editor__wide">
-                                  <span>Classification Prompt <small>Explain when each label applies.</small></span>
-                                  <textarea className="textarea router-editor__prompt" value={classifier.prompt} placeholder="Choose SAFE for routine requests and RISKY for requests that could cause external side effects." spellCheck={false} onChange={event => updateClassifier(index, { prompt: event.target.value })} />
+                                  <span>{t('Classification Prompt')} <small>{t('Explain when each label applies.')}</small></span>
+                                  <textarea className="textarea router-editor__prompt" value={classifier.prompt} placeholder={t('Choose SAFE for routine requests and RISKY for requests that could cause external side effects.')} spellCheck={false} onChange={event => updateClassifier(index, { prompt: event.target.value })} />
                                 </label>
                               )}
-                              <label className="router-editor__wide"><span>Output Labels <small>one per line</small></span><textarea
+                              <label className="router-editor__wide"><span>{t('Output Labels')} <small>{t('one per line')}</small></span><textarea
                                 className="textarea"
                                 rows={3}
                                 value={classifier.labels.join('\n')}
@@ -1229,8 +1240,8 @@ onSaved?.(savedModel);
                               /></label>
                             </>
                           )}
-                          <label><span>Default Label</span><RouterSelect value={classifier.defaultLabel || ''} options={[{ value: '', label: 'None' }, ...labels.map(label => ({ value: label, label }))]} onChange={(val: string) => updateClassifier(index, { defaultLabel: val || undefined })} ariaLabel="Default label" /></label>
-                          <label><span>On Error</span><RouterSelect value={classifier.onError} options={[{ value: 'match_false', label: 'Do not match' }, { value: 'match_true', label: 'Match rule' }]} onChange={(val: string) => updateClassifier(index, { onError: val as RouterClassifier['onError'] })} ariaLabel="On error" /></label>
+                          <label><span>{t('Default Label')}</span><RouterSelect value={classifier.defaultLabel || ''} options={[{ value: '', label: t('None') }, ...labels.map(label => ({ value: label, label }))]} onChange={(val: string) => updateClassifier(index, { defaultLabel: val || undefined })} ariaLabel={t('Default label')} /></label>
+                          <label><span>{t('On Error')}</span><RouterSelect value={classifier.onError} options={[{ value: 'match_false', label: t('Do not match') }, { value: 'match_true', label: t('Match rule') }]} onChange={(val: string) => updateClassifier(index, { onError: val as RouterClassifier['onError'] })} ariaLabel={t('On error')} /></label>
                         </div>
                       </article>
                     );
@@ -1241,11 +1252,11 @@ onSaved?.(savedModel);
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Ordered Rules</h3><p>Evaluated top to bottom - the first match wins, everything else falls back to the default.</p></div>
-                <WorkspaceActionButton size="small" icon="plus" onClick={addRule}>Rule</WorkspaceActionButton>
+                <div><h3>{t('Ordered Rules')}</h3><p>{t('Evaluated top to bottom - the first match wins, everything else falls back to the default.')}</p></div>
+                <WorkspaceActionButton size="small" icon="plus" onClick={addRule}>{t('Rule')}</WorkspaceActionButton>
               </div>
               <div className="router-editor__rules-workspace">
-                <div className="router-editor__rule-list" aria-label="Ordered routing rules">
+                <div className="router-editor__rule-list" aria-label={t('Ordered routing rules')}>
                   {draft.rules.map((rule, index) => (
                     <div
                       className={`router-editor__rule-summary ${selectedRuleIndex === index ? 'is-selected' : ''} ${dragRuleIndex === index ? 'is-dragging' : ''}`}
@@ -1266,7 +1277,7 @@ onSaved?.(savedModel);
                         className="router-editor__drag-handle"
                         draggable
                         aria-hidden="true"
-                        title="Drag to reorder rule"
+                        title={t('Drag to reorder rule')}
                         onDragStart={event => {
                           setDragRuleIndex(index);
                           event.dataTransfer.effectAllowed = 'move';
@@ -1285,23 +1296,23 @@ onSaved?.(savedModel);
                         <span className="router-editor__rule-order">{index + 1}</span>
                         <span className="router-editor__rule-summary-copy">
                           <strong>{rule.id || `Rule ${index + 1}`}</strong>
-                          <small>{rule.routeTo ? `→ ${rule.routeTo}` : 'No route selected'}</small>
+                          <small>{rule.routeTo ? `→ ${rule.routeTo}` : t('No route selected')}</small>
                         </span>
                       </button>
                       <div className="router-editor__rule-actions">
                         <div className="router-editor__rule-stepper">
-                          <button className="router-editor__rule-stepper-button router-editor__rule-stepper-button--up" type="button" disabled={index === 0} onClick={() => moveRuleTo(index, index - 1)} title="Move rule up"><Icon name="chevron-up" size={10} /></button>
-                          <button className="router-editor__rule-stepper-button router-editor__rule-stepper-button--down" type="button" disabled={index === draft.rules.length - 1} onClick={() => moveRuleTo(index, index + 1)} title="Move rule down"><Icon name="chevron-down" size={10} /></button>
+                          <button className="router-editor__rule-stepper-button router-editor__rule-stepper-button--up" type="button" disabled={index === 0} onClick={() => moveRuleTo(index, index - 1)} title={t('Move rule up')}><Icon name="chevron-up" size={10} /></button>
+                          <button className="router-editor__rule-stepper-button router-editor__rule-stepper-button--down" type="button" disabled={index === draft.rules.length - 1} onClick={() => moveRuleTo(index, index + 1)} title={t('Move rule down')}><Icon name="chevron-down" size={10} /></button>
                         </div>
-                        <button className="router-editor__rule-remove" type="button" onClick={() => removeRuleAt(index)} title="Remove rule"><Icon name="trash" size={14} /></button>
+                        <button className="router-editor__rule-remove" type="button" onClick={() => removeRuleAt(index)} title={t('Remove rule')}><Icon name="trash" size={14} /></button>
                       </div>
                     </div>
                   ))}
-                  {draft.rules.length === 0 && <div className="router-editor__empty">At least one rule is required.</div>}
+                  {draft.rules.length === 0 && <div className="router-editor__empty">{t('At least one rule is required.')}</div>}
                   {draft.defaultModel && (
                     <div className="router-editor__default-rule">
                       <span className="router-editor__rule-order">↩</span>
-                      <span><strong>Default</strong><small>→ {draft.defaultModel}</small></span>
+                      <span><strong>{t('Default')}</strong><small>→ {draft.defaultModel}</small></span>
                     </div>
                   )}
                 </div>
@@ -1314,15 +1325,15 @@ onSaved?.(savedModel);
                         <input
                           className="input router-editor__rule-id-input"
                           value={selectedRule.id}
-                          aria-label="Rule ID"
+                          aria-label={t('Rule ID')}
                           onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, id: event.target.value } : item) })}
                         />
                         <RouterSelect
                           className="router-editor__rule-route-select"
                           value={selectedRule.routeTo}
-                          options={[{ value: '', label: 'Route to…' }, ...draft.candidates.map(c => ({ value: c, label: c }))]}
+                          options={[{ value: '', label: t('Route to…') }, ...draft.candidates.map(c => ({ value: c, label: c }))]}
                           onChange={(val: string) => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, routeTo: val } : item) })}
-                          ariaLabel="Route To"
+                          ariaLabel={t('Route To')}
                         />
                       </div>
                       <RouterRuleGraph
@@ -1336,15 +1347,15 @@ onSaved?.(savedModel);
                         onExpand={() => setExpandedRuleIndex(selectedRuleIndex)}
                       />
                       <details className="router-editor__outputs">
-                        <summary>Optional Decision Outputs</summary>
+                        <summary>{t('Optional Decision Outputs')}</summary>
                         <textarea className="textarea" value={selectedRule.outputsText || ''} placeholder={'{\n  "tier": "fast"\n}'} spellCheck={false} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, outputsText: event.target.value } : item) })} />
                       </details>
                     </>
                   ) : (
                     <div className="router-editor__rule-builder-empty">
                       <Icon name="router" size={18} />
-                      <strong>Select or add a rule</strong>
-                      <span>The graph editor will appear here.</span>
+                      <strong>{t('Select or add a rule')}</strong>
+                      <span>{t('The graph editor will appear here.')}</span>
                     </div>
                   )}
                 </div>
@@ -1357,7 +1368,9 @@ onSaved?.(savedModel);
 
         {validationErrors.length > 0 && (
           <section className="router-editor__validation" aria-live="polite">
-            <strong><Icon name="alert" size={14} /> {validationErrors.length} validation {validationErrors.length === 1 ? 'issue' : 'issues'}</strong>
+            <strong><Icon name="alert" size={14} /> {validationErrors.length === 1
+              ? t('{count} validation issue', { count: validationErrors.length })
+              : t('{count} validation issues', { count: validationErrors.length })}</strong>
             <ul>{validationErrors.slice(0, 8).map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul>
           </section>
         )}
@@ -1368,14 +1381,14 @@ onSaved?.(savedModel);
         <div className="router-editor__toast" role="status" aria-live="polite">
           <Icon name="check" size={15} />
           <span>{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notification"><Icon name="x" size={12} /></button>
+          <button type="button" onClick={() => setNotice(null)} aria-label={t('Dismiss notification')}><Icon name="x" size={12} /></button>
         </div>
       )}
 
       <Modal
         isOpen={expandedRule != null && expandedRuleIndex != null}
         onClose={() => setExpandedRuleIndex(null)}
-        title={expandedRule && expandedRuleIndex != null ? `Rule ${expandedRuleIndex + 1}: ${expandedRule.id || 'Untitled Rule'}` : 'Graph Builder'}
+        title={expandedRule && expandedRuleIndex != null ? `Rule ${expandedRuleIndex + 1}: ${expandedRule.id || 'Untitled Rule'}` : t('Graph Builder')}
         maxWidth="calc(100vw - 48px)"
         className="inspect-modal-content--full-height"
         ariaLabelledBy="router-graph-expanded-title"
@@ -1408,9 +1421,9 @@ onSaved?.(savedModel);
           <p>{confirmation?.message}</p>
         </div>
         <div className="inspect-modal-footer">
-          <WorkspaceActionButton appearance="secondary" disabled={deleting} onClick={dismissConfirmation}>Close</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" disabled={deleting} onClick={dismissConfirmation}>{t('Close')}</WorkspaceActionButton>
           <WorkspaceActionButton appearance={confirmation?.tone || 'primary'} disabled={deleting} onClick={confirmPendingAction}>
-            {deleting && confirmation?.kind === 'delete' ? 'Deleting…' : (confirmation?.confirmLabel || 'Continue')}
+            {deleting && confirmation?.kind === 'delete' ? t('Deleting…') : (confirmation?.confirmLabel || 'Continue')}
           </WorkspaceActionButton>
         </div>
       </Modal>

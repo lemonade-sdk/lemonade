@@ -485,7 +485,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             {logSources.sources.map(([tag, count]) => (
               <button key={tag} type="button" className={`workspace-filter-list__item${tagFilter === tag ? ' is-active' : ''}`} onClick={() => setTagFilter(tag)}>
                 <span className="workspace-filter-list__icon"><Icon name="terminal-square" size={14} aria-hidden="true" /></span>
-                <span className="workspace-filter-list__label">{tag}</span><small className="workspace-filter-list__count">{count}</small>
+                <span className="workspace-filter-list__label">{t(tag)}</span><small className="workspace-filter-list__count">{count}</small>
               </button>
             ))}
             {logSources.hiddenCount > 0 && (
@@ -579,7 +579,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             }
           }}
         >
-          Jump to bottom
+          {t('Jump to bottom')}
         </WorkspaceActionButton>
       )}
       </div>

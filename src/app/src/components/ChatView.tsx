@@ -1987,11 +1987,13 @@ const ChatView: React.FC<ChatViewProps> = ({
     const generatedAudioUrl = generatedAudio?.url ? trackGeneratedMediaUrl(generatedAudio.url) : undefined;
     const generated3dUrl = generated3d?.url ? trackGeneratedMediaUrl(generated3d.url) : undefined;
     const mediaFallback = generated3d
-      ? 'Generated a 3D model from the reference image.'
+      ? t('Generated a 3D model from the reference image.')
       : generatedImages.length > 0
-        ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
+        ? (generatedImages.length === 1
+          ? t('Generated 1 image from your prompt.')
+          : t('Generated {count} images from your prompt.', { count: generatedImages.length }))
         : generatedAudio
-          ? 'Generated speech audio from your text.'
+          ? t('Generated speech audio from your text.')
           : '';
     const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls);
     updateConversation(convoId, c => ({
@@ -2324,7 +2326,7 @@ ${finalText}`
     if (!activeId) {
       const newConvo: Conversation = {
         id: generateId(),
-        title: 'Live microphone recording',
+        title: t('Live microphone recording'),
         model: modelSnapshot,
         messages: [userMessage, assistantMessage],
         updatedAt: Date.now(),
@@ -2339,7 +2341,7 @@ ${finalText}`
       ...c,
       messages: [...c.messages, userMessage, assistantMessage],
       model: modelSnapshot,
-      title: c.messages.length === 0 ? 'Live microphone recording' : c.title,
+      title: c.messages.length === 0 ? t('Live microphone recording') : c.title,
       updatedAt: Date.now(),
     }));
   }, [activeId, currentModelSnapshot, modeSupportsChatCompletions, updateConversation]);
@@ -2479,8 +2481,10 @@ ${finalText}`
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
           content: isAceStepModel
-            ? `Generated ${audioGenerationSettings.lyrics.trim() ? 'a vocal track' : 'an instrumental track'} from your prompt.`
-            : 'Generated a sound effect from your prompt.',
+            ? (audioGenerationSettings.lyrics.trim()
+              ? t('Generated a vocal track from your prompt.')
+              : t('Generated an instrumental track from your prompt.'))
+            : t('Generated a sound effect from your prompt.'),
           audioUrl: trackGeneratedMediaUrl(audio.url),
           audioName: audio.filename,
           model,
@@ -2513,8 +2517,8 @@ ${finalText}`
         });
         appendAssistantMessage(convoId, {
           content: model3dSettings.sourceMode === 'text'
-            ? 'Rendered a reference image and reconstructed it as a textured 3D model.'
-            : 'Reconstructed the reference image as a textured 3D model.',
+            ? t('Rendered a reference image and reconstructed it as a textured 3D model.')
+            : t('Reconstructed the reference image as a textured 3D model.'),
           generatedImages: generatedReference,
           model3dUrl: trackGeneratedMediaUrl(result.url),
           model3dName: result.filename,
@@ -3593,7 +3597,7 @@ ${finalText}`
                   <div className="message__avatar"><Icon name="download" size={16} /></div>
                   <div className="message__body">
                     <div className="message__author-row">
-                      <div className="message__author">Lemonade</div>
+                      <div className="message__author">{t('Lemonade')}</div>
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
@@ -3629,7 +3633,7 @@ ${finalText}`
 
       {showInlineLogs && (
         <>
-          <aside className="chat__logs" aria-label="Lemonade logs">
+          <aside className="chat__logs" aria-label={t('Lemonade logs')}>
             <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
               <LogViewer />
             </Suspense>
@@ -3638,7 +3642,7 @@ ${finalText}`
             className="chat__logs-resizer"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize logs panel"
+            aria-label={t('Resize logs panel')}
             aria-valuemin={CHAT_LOGS_MIN_WIDTH}
             aria-valuemax={maxChatLogsWidthForLayout(chatContainerWidth, railExpanded)}
             aria-valuenow={effectiveChatLogsWidth}
@@ -3827,9 +3831,9 @@ ${finalText}`
         )}
         <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
-          <div className="composer__image-settings" aria-label="Image generation settings">
+          <div className="composer__image-settings" aria-label={t('Image generation settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Mode</span>
+              <span>{t('Mode')}</span>
               <select
                 value={imageMode}
                 onChange={e => {
@@ -3839,12 +3843,12 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="generate">Generate</option>
-                {supportsImageEdit && <option value="edit">Edit</option>}
+                <option value="generate">{t('Generate')}</option>
+                {supportsImageEdit && <option value="edit">{t('Edit')}</option>}
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Steps</span>
+              <span>{t('Steps')}</span>
               <input
                 type="number"
                 min={1}
@@ -3855,7 +3859,7 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting">
-              <span>CFG Scale</span>
+              <span>{t('CFG Scale')}</span>
               <input
                 type="number"
                 min={1}
@@ -3867,7 +3871,7 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting">
-              <span>Width</span>
+              <span>{t('Width')}</span>
               <select
                 value={imageSettings.width}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
@@ -3877,7 +3881,7 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Height</span>
+              <span>{t('Height')}</span>
               <select
                 value={imageSettings.height}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
@@ -3887,7 +3891,7 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -3906,22 +3910,22 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting composer__image-setting--upscale">
-              <span>Upscale</span>
+              <span>{t('Upscale')}</span>
               <select
                 value={imageSettings.upscaleModel}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, upscaleModel: e.target.value }))}
                 disabled={isBusy || upscalingModels.length === 0}
               >
-                <option value="">Off</option>
+                <option value="">{t('Off')}</option>
                 {upscalingModels.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
           </div>
         )}
         {currentCapability === 'audio-generation' && (
-          <div className="composer__capability-settings composer__audio-generation-settings" aria-label="Audio generation settings">
+          <div className="composer__capability-settings composer__audio-generation-settings" aria-label={t('Audio generation settings')}>
             <label className="composer__image-setting">
-              <span>Duration</span>
+              <span>{t('Duration')}</span>
               <input
                 type="number"
                 min={1}
@@ -3933,7 +3937,7 @@ ${finalText}`
               <small>s</small>
             </label>
             <label className="composer__image-setting">
-              <span>Steps</span>
+              <span>{t('Steps')}</span>
               <input
                 type="number"
                 min={1}
@@ -3958,7 +3962,7 @@ ${finalText}`
               </label>
             )}
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -3970,7 +3974,7 @@ ${finalText}`
             </label>
             {isAceStepAudio && (
               <label className="composer__image-setting composer__image-setting--language">
-                <span>Lyrics language</span>
+                <span>{t('Lyrics language')}</span>
                 <input
                   type="text"
                   maxLength={12}
@@ -3983,7 +3987,7 @@ ${finalText}`
             )}
             {isAceStepAudio && (
               <label className="composer__audio-lyrics">
-                <span>Lyrics <small>optional · leave empty for instrumental</small></span>
+                <span>{t('Lyrics')} <small>{t('optional · leave empty for instrumental')}</small></span>
                 <textarea
                   value={audioGenerationSettings.lyrics}
                   onChange={e => setAudioGenerationSettings(prev => ({ ...prev, lyrics: e.target.value }))}
@@ -4056,9 +4060,9 @@ ${finalText}`
           </div>
         )}
         {currentCapability === 'model3d' && (
-          <div className="composer__capability-settings composer__model3d-settings" aria-label="3D generation settings">
+          <div className="composer__capability-settings composer__model3d-settings" aria-label={t('3D generation settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Source</span>
+              <span>{t('Source')}</span>
               <select
                 value={model3dSettings.sourceMode}
                 onChange={e => {
@@ -4074,19 +4078,19 @@ ${finalText}`
             </label>
             {model3dSettings.sourceMode === 'text' && (
               <label className="composer__image-setting composer__image-setting--model">
-                <span>Image model</span>
+                <span>{t('Image model')}</span>
                 <select
                   value={model3dSettings.imageModel}
                   onChange={e => setModel3dSettings(prev => ({ ...prev, imageModel: e.target.value }))}
                   disabled={isBusy || imageGenerationModels.length === 0}
                 >
-                  {imageGenerationModels.length === 0 && <option value="">Download an image model first</option>}
+                  {imageGenerationModels.length === 0 && <option value="">{t('Download an image model first')}</option>}
                   {imageGenerationModels.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
               </label>
             )}
             <label className="composer__image-setting">
-              <span>Resolution</span>
+              <span>{t('Resolution')}</span>
               <select
                 value={model3dSettings.resolution}
                 onChange={e => setModel3dSettings(prev => ({ ...prev, resolution: Number(e.target.value) as 512 | 1024 | 1536 }))}
@@ -4098,18 +4102,18 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Background</span>
+              <span>{t('Background')}</span>
               <select
                 value={model3dSettings.backgroundRemoval}
                 onChange={e => setModel3dSettings(prev => ({ ...prev, backgroundRemoval: e.target.value as 'birefnet' | 'threshold' }))}
                 disabled={isBusy}
               >
-                <option value="birefnet">Auto matte</option>
-                <option value="threshold">Plain background</option>
+                <option value="birefnet">{t('Auto matte')}</option>
+                <option value="threshold">{t('Plain background')}</option>
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -4125,12 +4129,12 @@ ${finalText}`
           <div
             className="composer__images"
             role="list"
-            aria-label="Image attachments"
+            aria-label={t('Image attachments')}
           >
             {pendingImages.map((src, i) => (
               <div key={i} className="composer__image-thumb" role="listitem">
                 <img src={src} alt={`Attachment ${i + 1}`} />
-                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label="Remove image">×</button>
+                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label={t('Remove image')}>×</button>
               </div>
             ))}
           </div>
@@ -4140,7 +4144,7 @@ ${finalText}`
             {pendingAudioFiles.map((file, i) => (
               <div key={`${file.name}-${i}`} className="composer__file-chip">
                 <span><Icon name="mic" size={13} /> {file.name}</span>
-                <button onClick={removeAudio} aria-label="Remove audio file">×</button>
+                <button onClick={removeAudio} aria-label={t('Remove audio file')}>×</button>
               </div>
             ))}
           </div>
@@ -4244,9 +4248,9 @@ ${finalText}`
                     }
                   }}
                 >
-                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label="Back to add to chat options">
+                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label={t('Back to add to chat options')}>
                     <span aria-hidden="true">←</span>
-                    <span>Back</span>
+                    <span>{t('Back')}</span>
                   </button>
                   <div className="composer__mcp-header">
                     <label className="composer__mcp-master">
@@ -4541,7 +4545,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
             </p>
           </header>
 
-          <div className="loaded-overview__list" role="list" aria-label="Loaded models">
+          <div className="loaded-overview__list" role="list" aria-label={t('Loaded models')}>
             {loadedModels.map(model => {
               const modelInfo = findModelInfoByName(modelInfos, model.model_name);
               const capability = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(model);
@@ -4603,7 +4607,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                         </span>
                       )}
                       {sizeLabel && (
-                        <span className="loaded-overview__meta-item" title="Known model size">
+                        <span className="loaded-overview__meta-item" title={t('Known model size')}>
                           {sizeLabel}
                         </span>
                       )}
@@ -4627,7 +4631,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                   <div className="loaded-overview__selection">
                     {isActive ? (
                       <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected" aria-current="true">
-                        Selected
+                        {t('Selected')}
                       </span>
                     ) : selectable ? (
                       <button
@@ -4639,11 +4643,11 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                         }}
                         disabled={isUnloading}
                       >
-                        Use
+                        {t('Use')}
                       </button>
                     ) : (
                       <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected">
-                        Loaded
+                        {t('Loaded')}
                       </span>
                     )}
                   </div>
@@ -4691,6 +4695,7 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (text: string) => void }> = ({ calls, onOptionSelect }) => {
+  const { t } = useI18n();
   // Track which choice was selected per call index. Map key is the call's position in the array.
   const [selections, setSelections] = useState<Map<number, string>>(() => new Map());
 
@@ -4732,12 +4737,12 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
                 )}
                 {!selectedChoice && allowCustom && (
                   <div className="options-block__custom">
-                    <input className="options-block__input" placeholder="Or type your own…"
+                    <input className="options-block__input" placeholder={t('Or type your own…')}
                       onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { handleSelect((e.target as HTMLInputElement).value.trim()); } }} />
                     <button className="options-block__submit" onClick={e => {
                       const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
                       if (input?.value.trim()) handleSelect(input.value.trim());
-                    }}>Send</button>
+                    }}>{t('Send')}</button>
                   </div>
                 )}
               </div>
@@ -4813,7 +4818,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             </div>
           ) : null}
           {!isEditing && onEditUser && message.content && (
-            <div className="message__actions" aria-label="Message actions">
+            <div className="message__actions" aria-label={t('Message actions')}>
               <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
                 <Icon name="edit" size={13} /> Edit & resend
               </button>
@@ -4859,7 +4864,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
         )}
         {message.audioUrl && (
           <div className="message__audio">
-            <audio controls src={message.audioUrl}>Your browser does not support audio playback.</audio>
+            <audio controls src={message.audioUrl}>{t('Your browser does not support audio playback.')}</audio>
             <a
               href={message.audioUrl}
               download={(message.audioName || `${displayModel?.name || 'lemonade-audio'}.wav`).replace(/[^a-z0-9._-]+/gi, '-')}
@@ -4870,7 +4875,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           </div>
         )}
         {message.model3dUrl && (
-          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">Preparing 3D result…</div>}>
+          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">{t('Preparing 3D result…')}</div>}>
             <Model3DResult src={message.model3dUrl} name={message.model3dName || displayModel?.name} />
           </Suspense>
         )}
@@ -4886,7 +4891,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             )}
           </div>
         )}
-        <div className="message__actions" aria-label="Message actions">
+        <div className="message__actions" aria-label={t('Message actions')}>
           <button
             type="button"
             className="message__action"
@@ -4902,7 +4907,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           )}
           {onRetry && (
             <button type="button" className="message__action" onClick={onRetry}>
-              ↻ Retry
+              ↻ {t('Retry')}
             </button>
           )}
         </div>
