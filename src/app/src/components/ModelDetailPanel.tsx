@@ -55,6 +55,7 @@ import {
   providerEndpointNeedsInsecureOptIn,
   validateProviderEndpoint,
 } from '../features/router/routerConnections';
+import { useI18n } from '../i18n';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -64,6 +65,7 @@ function mdName(m: ModelInfo | null | undefined): string {
 }
 
 const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const handleClick = async () => {
@@ -76,7 +78,7 @@ const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => 
     }
   };
 
-  const label = copied ? `Copied model name: ${modelName}` : `Copy model name: ${modelName}`;
+  const label = copied ? t('Copied model name: {name}', { name: modelName }) : t('Copy model name: {name}', { name: modelName });
   return (
     <button
       type="button"
@@ -693,6 +695,7 @@ const ReadmeContent: React.FC<{ readme: string; hfRepo: string }> = ({ readme, h
 /* ── README tab ──────────────────────────────────────────────── */
 
 const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const { t } = useI18n();
   const checkpoint = model ? String((model as any).checkpoint || '') : '';
   const checkpoints = model ? ((model as any).checkpoints as Record<string, string> | null ?? null) : null;
   const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
@@ -729,7 +732,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
   if (loading) {
     return (
       <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
-        <span>Loading README…</span>
+        <span>{t('Loading README…')}</span>
       </div>
     );
   }
@@ -738,7 +741,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('README unavailable for this model.')}</p>
       </div>
     );
   }
@@ -749,6 +752,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
 /* ── HF README tab ────────────────────────────────────────────── */
 
 const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isActive }) => {
+  const { t } = useI18n();
   const readmeUrl = `https://huggingface.co/${hfId}/raw/main/README.md`;
   const [readme, setReadme] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -777,7 +781,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
   if (loading) {
     return (
       <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
-        <span>Loading README…</span>
+        <span>{t('Loading README…')}</span>
       </div>
     );
   }
@@ -785,7 +789,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('README unavailable for this model.')}</p>
       </div>
     );
   }
@@ -801,6 +805,7 @@ const HfOverviewTab: React.FC<{
   isPulling: boolean;
   isActive: boolean;
 }> = ({ hfModel, hfVariants, onHfPull, isPulling, isActive }) => {
+  const { t } = useI18n();
   const [selectedVariantName, setSelectedVariantName] = useState('');
   const selectedVariant = hfVariants?.variants.find(v => v.name === selectedVariantName)
     ?? hfVariants?.variants[0];
@@ -812,13 +817,13 @@ const HfOverviewTab: React.FC<{
         <>
           {hfVariants.mmproj_files.length > 0 && (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Included components</span>
-              <div className="hf-detail__overview-value">Vision projector (MMProj)</div>
+              <span className="hf-detail__overview-label">{t('Included components')}</span>
+              <div className="hf-detail__overview-value">{t('Vision projector (MMProj)')}</div>
             </div>
           )}
           {hfVariants.variants.length > 0 ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Variants (select one)</span>
+              <span className="hf-detail__overview-label">{t('Variants (select one)')}</span>
               {selectedVariant && (
                 <div className="hf-detail__gguf-primary-action">
                   <WorkspaceActionButton
@@ -826,9 +831,9 @@ const HfOverviewTab: React.FC<{
                     icon="download"
                     disabled={isPulling}
                     onClick={() => onHfPull?.(hfModel.id, selectedVariant.name, hfVariants.recipe)}
-                    aria-label={`Download ${selectedVariant.name} from ${hfModel.id}`}
+                    aria-label={t('Download {name} from {repo}', { name: selectedVariant.name, repo: hfModel.id })}
                   >
-                    Download {selectedVariant.name}
+                    {t('Download {name}', { name: selectedVariant.name })}
                   </WorkspaceActionButton>
                 </div>
               )}
@@ -856,28 +861,28 @@ const HfOverviewTab: React.FC<{
             </div>
           ) : hfVariants.recipe !== 'llamacpp' ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Repository download</span>
+              <span className="hf-detail__overview-label">{t('Repository download')}</span>
               <div className="hf-detail__gguf-primary-action">
                 <WorkspaceActionButton
                   appearance="primary"
                   icon="download"
                   disabled={isPulling}
                   onClick={() => onHfPull?.(hfModel.id, '', hfVariants.recipe)}
-                  aria-label={`Download ${hfModel.id}`}
+                  aria-label={t('Download {name}', { name: hfModel.id })}
                 >
-                  Download model
+                  {t('Download model')}
                 </WorkspaceActionButton>
               </div>
             </div>
           ) : (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-value hf-detail__overview-value--muted">No downloadable variants found for this repository.</span>
+              <span className="hf-detail__overview-value hf-detail__overview-value--muted">{t('No downloadable variants found for this repository.')}</span>
             </div>
           )}
         </>
       ) : (
         <div className="hf-detail__overview-section">
-          <span className="hf-detail__overview-value hf-detail__overview-value--muted">Loading variant information…</span>
+          <span className="hf-detail__overview-value hf-detail__overview-value--muted">{t('Loading variant information…')}</span>
         </div>
       )}
     </div>
@@ -904,6 +909,7 @@ const HfDetailView: React.FC<{
   onBack?: () => void;
   onClose?: () => void;
 }> = ({ hfModel, provider, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<HfDetailTab>('overview');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -980,7 +986,7 @@ const HfDetailView: React.FC<{
               </div>
               {onCancelHfPull && (
                 <WorkspaceActionButton appearance="secondary" onClick={() => onCancelHfPull(hfModel.id)} aria-label={`Cancel download of ${repoName}`}>
-                  Cancel
+                  {t('Cancel')}
                 </WorkspaceActionButton>
               )}
             </>
@@ -993,7 +999,7 @@ const HfDetailView: React.FC<{
             rel="noopener noreferrer"
             aria-label={`View ${repoName} on ${providerMeta.label} (opens in new tab)`}
           >
-            Open on {providerMeta.label}
+            {t('Open on {provider}', { provider: providerMeta.label })}
           </WorkspaceActionLink>
         </WorkspaceActionGroup>
       )}
@@ -1007,7 +1013,7 @@ const HfDetailView: React.FC<{
       <div
         className="detail-tabs__tablist"
         role="tablist"
-        aria-label="Model details sections"
+        aria-label={t('Model details sections')}
         aria-labelledby="detail-panel-heading"
       >
         {remoteDetailTabs.map((tab, i) => (
@@ -1023,7 +1029,7 @@ const HfDetailView: React.FC<{
             onClick={() => setActiveTab(tab.id)}
             onKeyDown={e => handleTabKeyDown(e, i)}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>
@@ -1129,6 +1135,7 @@ interface SamplerAxisFieldProps {
 const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
   fieldId, spec, value, fallback, owned, onChange, onStep,
 }) => {
+  const { t } = useI18n();
   const axis = spec.axis!;
   const min = spec.min ?? 0;
   const max = spec.max ?? 2;
@@ -1146,16 +1153,16 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
   return (
     <div className="detail-configuration__axis">
       <div className="detail-configuration__control-head">
-        <label htmlFor={fieldId}>{spec.label}</label>
+        <label htmlFor={fieldId}>{t(spec.label)}</label>
         {caution && (
           <span className="detail-configuration__axis-caution" id={cautionId} role="status">
-            {caution}
+            {t(caution)}
           </span>
         )}
       </div>
       <div className="detail-configuration__axis-row">
         <div className="detail-configuration__axis-scale">
-          <span className="detail-configuration__axis-pole">{axis.low}</span>
+          <span className="detail-configuration__axis-pole">{t(axis.low)}</span>
           <input
             className="slider detail-configuration__axis-slider"
             type="range"
@@ -1164,7 +1171,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
             step={spec.step}
             value={position}
             disabled={owned}
-            aria-label={`${spec.label}, ${axis.low} to ${axis.high}`}
+            aria-label={t('{label}, {low} to {high}', { label: t(spec.label), low: t(axis.low), high: t(axis.high) })}
             aria-describedby={caution ? cautionId : undefined}
             style={{
               '--axis-advised-start': `${((axis.advisedMin - min) / span) * 100}%`,
@@ -1172,7 +1179,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
             } as React.CSSProperties}
             onChange={event => onChange(event.target.value)}
           />
-          <span className="detail-configuration__axis-pole">{axis.high}</span>
+          <span className="detail-configuration__axis-pole">{t(axis.high)}</span>
         </div>
         <div className="detail-configuration__axis-number">
           <input
@@ -1196,7 +1203,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
               type="button"
               onClick={() => onStep(spec, 1)}
               disabled={owned}
-              aria-label={`Increase ${spec.label}`}
+              aria-label={t('Increase {label}', { label: t(spec.label) })}
             >
               <Icon name="chevron-up" size={11} aria-hidden="true" />
             </button>
@@ -1204,7 +1211,7 @@ const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
               type="button"
               onClick={() => onStep(spec, -1)}
               disabled={owned}
-              aria-label={`Decrease ${spec.label}`}
+              aria-label={t('Decrease {label}', { label: t(spec.label) })}
             >
               <Icon name="chevron-down" size={11} aria-hidden="true" />
             </button>
@@ -1232,6 +1239,7 @@ interface BackendArgsFieldProps {
 const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
   fieldId, label, value, specs, fallbackArgs, onChange,
 }) => {
+  const { t } = useI18n();
   const split = useMemo(() => splitSamplerArgs(specs, value), [specs, value]);
   const [freeformDraft, setFreeformDraft] = useState(split.rest);
   const compositionFieldsRef = useRef(split.fields);
@@ -1325,7 +1333,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
             }}
           >
             <Icon name="chevron-right" size={12} className="detail-configuration__sampler-caret" aria-hidden="true" />
-            <span className="detail-configuration__sampler-toggle-label">Detailed sampling parameters</span>
+            <span className="detail-configuration__sampler-toggle-label">{t('Detailed sampling parameters')}</span>
             {!detailsOpen && (
               <span className="detail-configuration__sampler-folded">
                 {foldedFlags || 'All on default'}
@@ -1342,7 +1350,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                   key={spec.flag}
                   className={`detail-tuning__field detail-configuration__field${isText ? ' detail-configuration__sampler-field--wide' : ''}`}
                 >
-                  <span id={`${samplerId}-label`}>{spec.label}</span>
+                  <span id={`${samplerId}-label`}>{t(spec.label)}</span>
                   <div className="detail-configuration__number-control">
                     <input
                       id={samplerId}
@@ -1367,7 +1375,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                           type="button"
                           onClick={() => stepSampler(spec, 1)}
                           disabled={owned}
-                          aria-label={`Increase ${spec.label}`}
+                          aria-label={t('Increase {label}', { label: t(spec.label) })}
                         >
                           <Icon name="chevron-up" size={11} aria-hidden="true" />
                         </button>
@@ -1375,7 +1383,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                           type="button"
                           onClick={() => stepSampler(spec, -1)}
                           disabled={owned}
-                          aria-label={`Decrease ${spec.label}`}
+                          aria-label={t('Decrease {label}', { label: t(spec.label) })}
                         >
                           <Icon name="chevron-down" size={11} aria-hidden="true" />
                         </button>
@@ -1395,7 +1403,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
           id={fieldId}
           className="detail-tuning__args"
           value={freeformDraft}
-          placeholder="Example: --threads 4"
+          placeholder={t('Example: --threads 4')}
           /* A wrapping label names the field from its text content, which for a
              textarea includes whatever has been typed into it. */
           aria-label={label}
@@ -1406,8 +1414,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
 
       {!value.trim() && Boolean(fallbackArgs) && (
         <p className="detail-configuration__args-fallback">
-          Every field is on default, so nothing is sent and lemond applies its own
-          defaults for this model: <code>{fallbackArgs}</code>
+          {t('Every field is on default, so nothing is sent and lemond applies its own defaults for this model:')} <code>{fallbackArgs}</code>
         </p>
       )}
     </div>
@@ -1427,6 +1434,7 @@ const ModelConfigurationTab: React.FC<{
       action can apply them without saving them. */
   loadOptionsRef?: React.MutableRefObject<(() => Record<string, unknown>) | null>;
 }> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange, loadOptionsRef }) => {
+  const { t } = useI18n();
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
@@ -1632,7 +1640,7 @@ const ModelConfigurationTab: React.FC<{
 
   const saveConfig = async (showNotice = true): Promise<boolean> => {
     if (!serverOptionsLoaded) {
-      if (showNotice) setNotice('Saved model options are still loading from lemond.');
+      if (showNotice) setNotice(t('Saved model options are still loading from lemond.'));
       return false;
     }
 
@@ -1729,8 +1737,9 @@ const ModelConfigurationTab: React.FC<{
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key));
-    const hint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
+    const label = t(TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key)));
+    const rawHint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
+    const hint = rawHint ? t(rawHint) : rawHint;
     const draftValue = recipeDraft[String(key)] || '';
     const baseValue = defaultOptionValue(key);
 
@@ -1809,7 +1818,7 @@ const ModelConfigurationTab: React.FC<{
             {knownVoiceOptions.map(option => (
               <option key={option.id} value={option.id}>{option.label}</option>
             ))}
-            <option value={customVoiceSentinel}>Custom voice…</option>
+            <option value={customVoiceSentinel}>{t('Custom voice…')}</option>
           </select>
           {showCustomVoice && (
             <input
@@ -1817,12 +1826,12 @@ const ModelConfigurationTab: React.FC<{
               className="input detail-configuration__voice-custom"
               type="text"
               value={isUnknownDraft ? draftValue : ''}
-              placeholder="Enter custom voice ID"
-              aria-label="Custom voice ID"
+              placeholder={t('Enter custom voice ID')}
+              aria-label={t('Custom voice ID')}
               onChange={event => setRecipeDraft(previous => ({ ...previous, [String(key)]: event.target.value }))}
             />
           )}
-          <small>Choose a known voice, or use a custom voice ID when the backend supports one.</small>
+          <small>{t('Choose a known voice, or use a custom voice ID when the backend supports one.')}</small>
         </div>
       );
     }
@@ -1854,8 +1863,8 @@ const ModelConfigurationTab: React.FC<{
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
             <option value="">{baseValue === undefined ? 'Model default' : `Model default (${baseValue ? 'on' : 'off'})`}</option>
-            <option value="true">On</option>
-            <option value="false">Off</option>
+            <option value="true">{t('On')}</option>
+            <option value="false">{t('Off')}</option>
           </select>
           {hint && <small>{hint}</small>}
         </div>
@@ -1916,12 +1925,12 @@ const ModelConfigurationTab: React.FC<{
 
   return (
     <div className="detail-tab-content detail-configuration">
-      <section className="detail-configuration__section" aria-label="Load settings">
+      <section className="detail-configuration__section" aria-label={t('Load settings')}>
         <div className="detail-configuration__section-head">
           <div>
-            <h3 className="detail-configuration__section-heading">Load settings</h3>
+            <h3 className="detail-configuration__section-heading">{t('Load settings')}</h3>
             <p className="detail-configuration__section-copy">
-              Settings used when this model loads or reloads.
+              {t('Settings used when this model loads or reloads.')}
             </p>
           </div>
         </div>
@@ -1930,7 +1939,7 @@ const ModelConfigurationTab: React.FC<{
           {supportsContextSize && (
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
-                <label htmlFor={ctxSliderId}>Context size</label>
+                <label htmlFor={ctxSliderId}>{t('Context size')}</label>
               </div>
               <label
                 className="detail-configuration__autotune"
@@ -1944,7 +1953,7 @@ const ModelConfigurationTab: React.FC<{
                     setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize));
                   }}
                 />
-                <span>Auto tune context size</span>
+                <span>{t('Auto tune context size')}</span>
                 <Icon name="info" size={14} aria-hidden="true" />
               </label>
               <div className="detail-configuration__context-row">
@@ -1974,14 +1983,14 @@ const ModelConfigurationTab: React.FC<{
                     value={isAutoTuning ? String(currentCtxSize) : ctxSizeDraft}
                     disabled={isAutoTuning}
                     onChange={e => setCtxSizeDraft(e.target.value)}
-                    aria-label="Context size tokens"
+                    aria-label={t('Context size tokens')}
                   />
                   <span className="detail-configuration__context-stepper">
                     <button
                       type="button"
                       onClick={() => stepContextSize(1)}
                       disabled={isAutoTuning || currentCtxSize >= ctxMax}
-                      aria-label={`Increase context size by ${ctxStep} tokens`}
+                      aria-label={t('Increase context size by {count} tokens', { count: ctxStep })}
                     >
                       <Icon name="chevron-up" size={11} aria-hidden="true" />
                     </button>
@@ -1989,7 +1998,7 @@ const ModelConfigurationTab: React.FC<{
                       type="button"
                       onClick={() => stepContextSize(-1)}
                       disabled={isAutoTuning || currentCtxSize <= ctxMin}
-                      aria-label={`Decrease context size by ${ctxStep} tokens`}
+                      aria-label={t('Decrease context size by {count} tokens', { count: ctxStep })}
                     >
                       <Icon name="chevron-down" size={11} aria-hidden="true" />
                     </button>
@@ -2028,18 +2037,18 @@ const ModelConfigurationTab: React.FC<{
               disabled={isReloading || isLoadingThis || !serverOptionsLoaded}
               aria-busy={isReloading}
             >
-              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
+              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? t('Reloading…') : t('Reload model')}
             </button>
           ) : (
             <span className="detail-configuration__running-state">
-              <Icon name="check" size={13} aria-hidden="true" /> Running with these settings
+              <Icon name="check" size={13} aria-hidden="true" /> {t('Running with these settings')}
             </span>
           ))}
-          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>Save</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>{t('Save')}</button>
           {hasLoadSettingChanges && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>{t('Discard changes')}</button>
           )}
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig} disabled={!serverOptionsLoaded}>Reset to defaults</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig} disabled={!serverOptionsLoaded}>{t('Reset to defaults')}</button>
         </div>
 
         {notice && (
@@ -2076,6 +2085,7 @@ function roleLabel(role: string): string {
 }
 
 const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const { t } = useI18n();
   const modelId = model ? String(model.id || '') : '';
   const [files, setFiles] = useState<ModelFileInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2103,7 +2113,7 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
   if (loading) {
     return (
       <div className="detail-tab-content detail-files detail-files--loading" aria-live="polite" aria-busy="true">
-        <span>Loading files…</span>
+        <span>{t('Loading files…')}</span>
       </div>
     );
   }
@@ -2112,7 +2122,7 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
     return (
       <div className="detail-tab-content detail-files detail-files--empty">
         <Icon name="hard-drive" size={32} aria-hidden="true" />
-        <p>Unable to load files for this model.</p>
+        <p>{t('Unable to load files for this model.')}</p>
       </div>
     );
   }
@@ -2121,8 +2131,8 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
     return (
       <div className="detail-tab-content detail-files detail-files--empty">
         <Icon name="hard-drive" size={32} aria-hidden="true" />
-        <p>No files found for this model.</p>
-        <small>Files appear here once the model has been downloaded.</small>
+        <p>{t('No files found for this model.')}</p>
+        <small>{t('Files appear here once the model has been downloaded.')}</small>
       </div>
     );
   }
@@ -2133,10 +2143,10 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
         <caption className="sr-only">Files backing {mdName(model) || modelId}</caption>
         <thead>
           <tr>
-            <th scope="col">File</th>
-            <th scope="col">Role</th>
-            <th scope="col" className="detail-files__col-size">Size</th>
-            <th scope="col">Status</th>
+            <th scope="col">{t('File')}</th>
+                <th scope="col">{t('Role')}</th>
+                <th scope="col" className="detail-files__col-size">{t('Size')}</th>
+                <th scope="col">{t('Status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -2154,12 +2164,12 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
                 {file.exists ? (
                   <span className="detail-files__status detail-files__status--present">
                     <Icon name="check" size={14} aria-hidden="true" />
-                    <span>Downloaded</span>
+                    <span>{t('Downloaded')}</span>
                   </span>
                 ) : (
                   <span className="detail-files__status detail-files__status--missing">
                     <Icon name="download" size={14} aria-hidden="true" />
-                    <span>Not downloaded</span>
+                    <span>{t('Not downloaded')}</span>
                   </span>
                 )}
               </td>
@@ -2191,6 +2201,7 @@ const RouterCollectionSettingsTab: React.FC<{
   models: ModelInfo[];
   onEdit?: (model: ModelInfo) => void;
 }> = ({ model, models, onEdit }) => {
+  const { t } = useI18n();
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -2269,15 +2280,15 @@ const RouterCollectionSettingsTab: React.FC<{
     <div className="detail-tab-content custom-collection-settings router-collection-settings">
       <div className="custom-collection-settings__intro">
         <div>
-          <h3>Router settings</h3>
-          <p>Review every model connected to this virtual model, including provider endpoints used by external candidates.</p>
+          <h3>{t('Router settings')}</h3>
+          <p>{t('Review every model connected to this virtual model, including provider endpoints used by external candidates.')}</p>
         </div>
         {onEdit && (
           <button
             type="button"
             className="btn btn--primary btn--sm custom-collection-settings__edit-button"
-            aria-label="Edit router settings"
-            title="Edit router settings"
+            aria-label={t('Edit router settings')}
+            title={t('Edit router settings')}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2285,30 +2296,30 @@ const RouterCollectionSettingsTab: React.FC<{
             }}
           >
             <Icon name="edit" size={13} aria-hidden="true" />
-            <span>Edit router</span>
+            <span>{t('Edit router')}</span>
           </button>
         )}
       </div>
 
-      <section className="custom-collection-settings__section" aria-label="Router strategy summary">
-        <h4>Routing</h4>
+      <section className="custom-collection-settings__section" aria-label={t('Router strategy summary')}>
+        <h4>{t('Routing')}</h4>
         <div className="custom-collection-settings__summary">
-          <span>Strategy</span><strong>{mode}</strong>
-          <span>Default model</span><strong>{defaultModel || 'Not set'}</strong>
-          <span>Routing targets</span><strong>{candidates.length}</strong>
+          <span>{t('Strategy')}</span><strong>{mode}</strong>
+          <span>{t('Default model')}</span><strong>{defaultModel || 'Not set'}</strong>
+          <span>{t('Routing targets')}</span><strong>{candidates.length}</strong>
         </div>
       </section>
 
-      <section className="custom-collection-settings__section" aria-label="Connected router models">
-        <h4>Connected models</h4>
-        <p className="router-collection-settings__scope-note">Endpoint changes are provider-wide and apply to all models registered through that provider.</p>
+      <section className="custom-collection-settings__section" aria-label={t('Connected router models')}>
+        <h4>{t('Connected models')}</h4>
+        <p className="router-collection-settings__scope-note">{t('Endpoint changes are provider-wide and apply to all models registered through that provider.')}</p>
         <div className="router-collection-settings__connections">
           {connections.map(connection => (
             <article className="router-collection-settings__connection" key={connection.modelName}>
               <div className="router-collection-settings__identity">
                 <div>
                   <strong>{connection.displayName}</strong>
-                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">Default</span>}
+                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">{t('Default')}</span>}
                 </div>
                 <small>{connection.modelName}</small>
                 <small>{(connectedRoles.get(connection.modelName) || []).join(' · ')}</small>
@@ -2332,32 +2343,32 @@ const RouterCollectionSettingsTab: React.FC<{
                       {providerEndpointNeedsInsecureOptIn(endpointDraft) && (
                         <label className="router-editor__insecure-opt-in">
                           <input type="checkbox" checked={allowInsecureDraft} onChange={event => setAllowInsecureDraft(event.target.checked)} />
-                          <span>Allow insecure HTTP</span>
+                          <span>{t('Allow insecure HTTP')}</span>
                         </label>
                       )}
                       <WorkspaceActionButton appearance="primary" size="small" disabled={savingProvider} onClick={() => { void saveEndpoint(); }}>
                         {savingProvider ? 'Saving…' : 'Save'}
                       </WorkspaceActionButton>
-                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>Cancel</WorkspaceActionButton>
+                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>{t('Cancel')}</WorkspaceActionButton>
                     </div>
                   ) : (
                     <>
                       <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
-                      <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                      <small>{connection.authConfigured ? t('Authentication configured') : t('Authentication required')}</small>
                       {connection.provider && (
                         <WorkspaceActionButton size="small" icon="edit" onClick={() => { setEditingProvider(connection.provider); setEditingConnectionModel(connection.modelName); setEndpointDraft(connection.endpoint); setAllowInsecureDraft(connection.allowInsecureHttp); setProviderError(null); }}>
-                          Edit endpoint
+                          {t('Edit endpoint')}
                         </WorkspaceActionButton>
                       )}
                     </>
                   )
                 ) : (
-                  <><span>Managed by Lemonade</span><small>Local registered model</small></>
+                  <><span>{t('Managed by Lemonade')}</span><small>{t('Local registered model')}</small></>
                 )}
               </div>
             </article>
           ))}
-          {connections.length === 0 && <div className="router-editor__empty">No connected models were found in this router definition.</div>}
+          {connections.length === 0 && <div className="router-editor__empty">{t('No connected models were found in this router definition.')}</div>}
         </div>
         {providerError && connections.some(connection => connection.kind === 'external') && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {providerError}</div>}
       </section>
@@ -2370,6 +2381,7 @@ const CustomCollectionSettingsTab: React.FC<{
   models: ModelInfo[];
   onEdit?: (model: ModelInfo) => void;
 }> = ({ model, models, onEdit }) => {
+  const { t } = useI18n();
   if (activeRecipeForModel(model) === 'collection.router') {
     return <RouterCollectionSettingsTab model={model} models={models} onEdit={onEdit} />;
   }
@@ -2386,15 +2398,15 @@ const CustomCollectionSettingsTab: React.FC<{
     <div className="detail-tab-content custom-collection-settings">
       <div className="custom-collection-settings__intro">
         <div>
-          <h3>Collection settings</h3>
-          <p>Components stay editable after the collection has been saved or downloaded.</p>
+          <h3>{t('Collection settings')}</h3>
+          <p>{t('Components stay editable after the collection has been saved or downloaded.')}</p>
         </div>
         {onEdit && (
           <button
             type="button"
             className="btn btn--primary btn--sm custom-collection-settings__edit-button"
-            aria-label="Edit collection settings"
-            title="Edit collection settings"
+            aria-label={t('Edit collection settings')}
+            title={t('Edit collection settings')}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2402,13 +2414,13 @@ const CustomCollectionSettingsTab: React.FC<{
             }}
           >
             <Icon name="edit" size={13} aria-hidden="true" />
-            <span>Edit settings</span>
+            <span>{t('Edit settings')}</span>
           </button>
         )}
       </div>
 
-      <section className="custom-collection-settings__section" aria-label="Collection components">
-        <h4>Components</h4>
+      <section className="custom-collection-settings__section" aria-label={t('Collection components')}>
+        <h4>{t('Components')}</h4>
         <div className="custom-collection-settings__components">
           {Object.entries(COLLECTION_ROLE_LABELS).map(([role, label]) => (
             <div className="custom-collection-settings__component" key={role}>
@@ -2418,19 +2430,19 @@ const CustomCollectionSettingsTab: React.FC<{
           ))}
           {unassigned.map(component => (
             <div className="custom-collection-settings__component" key={component}>
-              <span>Tool model</span>
+              <span>{t('Tool model')}</span>
               <strong>{component}</strong>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="custom-collection-settings__section" aria-label="Advanced collection settings summary">
-        <h4>Advanced</h4>
+      <section className="custom-collection-settings__section" aria-label={t('Advanced collection settings summary')}>
+        <h4>{t('Advanced')}</h4>
         <div className="custom-collection-settings__summary">
-          <span>System prompt</span>
+          <span>{t('System prompt')}</span>
           <strong>{hasCustomPrompt ? 'Customized' : 'Default'}</strong>
-          <span>Custom model tools</span>
+          <span>{t('Custom model tools')}</span>
           <strong>{tools.length}</strong>
         </div>
       </section>
@@ -2540,6 +2552,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   pullingHf,
   onCancelHfPull,
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<DetailTab>('config');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -2607,24 +2620,24 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   if (!model) {
     return (
-      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label={t('Model detail')}>
         {onBack && (
           <button
             type="button"
             className="model-detail-panel__back-btn"
             onClick={onBack}
-            aria-label="Back to models list"
+            aria-label={t('Back to models list')}
           >
-            ← Back to models
+            ← {t('Back to models')}
           </button>
         )}
         <div className="model-detail-panel__placeholder">
           <Icon name="model" size={40} aria-hidden="true" />
-          <p>{noModelsAvailable ? 'No models found' : 'No model selected'}</p>
+          <p>{noModelsAvailable ? t('No models found') : t('No model selected')}</p>
           <p className="model-detail-panel__placeholder-sub">
             {noModelsAvailable
-              ? 'No models are available in the registry yet. Pull a model or adjust your filters to get started.'
-              : 'Select a model from the list to view its details.'}
+              ? t('No models are available in the registry yet. Pull a model or adjust your filters to get started.')
+              : t('Select a model from the list to view its details.')}
           </p>
         </div>
       </div>
@@ -2661,11 +2674,11 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       )}
       {isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">
-          <span className="row__pulse" aria-hidden="true" /> Running
+          <span className="row__pulse" aria-hidden="true" /> {t('Running')}
         </WorkspaceMetadataChip>
       )}
       {isDownloaded && !isLoaded && (
-        <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
+        <WorkspaceMetadataChip emphasis="high" tone="success">{t('Ready')}</WorkspaceMetadataChip>
       )}
       {sourceRef && (
         <WorkspaceMetadataChip
@@ -2688,7 +2701,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   );
 
   const detailActions = (
-    <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${name}`}>
+    <WorkspaceActionGroup className="model-detail-panel__actions" label={t('Actions for {name}', { name })}>
       {isPulling ? (
         <>
           <div className="row__progress">
@@ -2698,7 +2711,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
           </div>
           <WorkspaceActionButton appearance="secondary" icon="x" onClick={() => onCancelPull(name)} aria-label={`Cancel download of ${name}`}>
-            Cancel
+            {t('Cancel')}
           </WorkspaceActionButton>
         </>
       ) : isLoaded ? (
@@ -2710,7 +2723,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             disabled={isLoadingThis}
             aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
           >
-            {isLoadingThis ? 'Working…' : 'Unload'}
+            {isLoadingThis ? t('Working…') : t('Unload')}
           </WorkspaceActionButton>
         </>
       ) : (isDownloaded || isRouterCollection) ? (
@@ -2720,9 +2733,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
               appearance="quiet"
               icon="sliders-horizontal"
               onClick={() => setActiveTab('settings')}
-              title="Review Router policy and components"
+              title={t('Review Router policy and components')}
             >
-              Router settings
+              {t('Router settings')}
             </WorkspaceActionButton>
             <WorkspaceActionButton
               appearance="primary"
@@ -2731,7 +2744,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
               disabled={isLoadingThis}
               aria-label={isLoadingThis ? `Preparing Router ${name}…` : `Use Router ${name}`}
             >
-              {isLoadingThis ? 'Preparing…' : 'Use Router'}
+              {isLoadingThis ? t('Preparing…') : t('Use Router')}
             </WorkspaceActionButton>
           </>
         ) : (
@@ -2742,16 +2755,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             disabled={isLoadingThis}
             aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
           >
-            {isLoadingThis ? 'Loading…' : 'Load'}
+            {isLoadingThis ? t('Loading…') : t('Load')}
           </WorkspaceActionButton>
         )
       ) : (
         <>
           <WorkspaceActionButton appearance="primary" icon="download" onClick={() => loadWithShownConfiguration(onPullAndLoad, model)} aria-label={`Get and load ${name}`}>
-            Get & Load
+            {t('Get & Load')}
           </WorkspaceActionButton>
           <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
-            Download
+            {t('Download')}
           </WorkspaceActionButton>
         </>
       )}
@@ -2765,7 +2778,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
           title={isPinned ? 'Unpin model' : 'Pin model'}
         >
-          {isPinned ? 'Pinned' : 'Pin'}
+          {isPinned ? t('Pinned') : t('Pin')}
         </WorkspaceActionButton>
       )}
       {onToggleFavorite && (
@@ -2778,7 +2791,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
           title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
         >
-          {isFavorite ? 'Favorited' : 'Favorite'}
+          {isFavorite ? t('Favorited') : t('Favorite')}
         </WorkspaceActionButton>
       )}
       {!isPulling && (isCustom || isDownloaded || isLoaded) && (
@@ -2790,7 +2803,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           aria-label={isCustom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
           title={isCustom ? 'Delete model definition' : 'Delete downloaded files'}
         >
-          Delete
+          {t('Delete')}
         </WorkspaceActionButton>
       )}
     </WorkspaceActionGroup>
@@ -2809,7 +2822,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   return (
     <WorkspaceDetailPanel
       className="model-detail-panel"
-      ariaLabel={`Model details: ${name}`}
+      ariaLabel={t('Model details: {name}', { name })}
       title={(
         <div className="model-detail-panel__title-line">
           <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
@@ -2822,7 +2835,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       actions={detailActions}
       headerExtras={detailHeaderExtras}
       onBack={onBack}
-      backLabel="Back to models"
+      backLabel={t('Back to models')}
       backClassName="model-detail-panel__back-btn"
       onClose={onClose ? handleDetailClose : undefined}
       closeClassName="model-detail-panel__close-btn"
@@ -2832,7 +2845,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       <div
         className="detail-tabs__tablist"
         role="tablist"
-        aria-label="Model details sections"
+        aria-label={t('Model details sections')}
         aria-labelledby="detail-panel-heading"
       >
         {detailTabs.map((tab, i) => (
@@ -2848,7 +2861,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             onClick={() => setActiveTab(tab.id)}
             onKeyDown={e => handleTabKeyDown(e, i)}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>

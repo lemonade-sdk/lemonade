@@ -7,6 +7,7 @@ import {
   LogViewerPreloaded as LogViewer,
   preloadMonitorSecondarySurfaces,
 } from '../interactionPreload';
+import { useI18n } from '../i18n';
 
 interface MonitorViewProps {
   activeSection: DashboardSection;
@@ -18,11 +19,14 @@ export async function preloadMonitorSections(): Promise<void> {
   await preloadMonitorSecondarySurfaces();
 }
 
-const MonitorSectionFallback = () => (
-  <div className="view-loading" role="status" aria-label="Loading monitor section" aria-live="polite">
-    <span className="spinner" aria-hidden="true" />
-  </div>
-);
+const MonitorSectionFallback = () => {
+  const { t } = useI18n();
+  return (
+    <div className="view-loading" role="status" aria-label={t('Loading monitor section')} aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+    </div>
+  );
+};
 
 export default function MonitorView({
   activeSection,
@@ -30,6 +34,7 @@ export default function MonitorView({
   onSectionChange,
 }: MonitorViewProps) {
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const { t } = useI18n();
   const mountedSectionsRef = useRef<Set<DashboardSection>>(new Set([activeSection]));
   mountedSectionsRef.current.add(activeSection);
 
@@ -53,13 +58,13 @@ export default function MonitorView({
         collapsed={railCollapsed}
         onCollapsedChange={setRailCollapsed}
         panelId="dashboard-views-panel"
-        railLabel="Monitor navigation"
-        navigationLabel="Monitor sections"
+        railLabel={t('Monitor navigation')}
+        navigationLabel={t('Monitor sections')}
         railClassName="monitor-rail"
         navClassName="monitor-nav"
-        headerTitle="Views"
-        sidebarLabel="monitor navigation"
-        mobileMenuLabel="Open monitor views"
+        headerTitle={t('Views')}
+        sidebarLabel={t('monitor navigation')}
+        mobileMenuLabel={t('Open monitor views')}
       />
 
       <div className="monitor-content">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import api, { type ChatMessage } from '../../api';
+import { useI18n } from '../../i18n';
 import { type Trace, inspectStore } from '../../inspectStore';
 import ModelSearchSelector from './ModelSearchSelector';
 import { Icon } from '../Icon';
@@ -55,6 +56,7 @@ function truncateText(text: string, maxChars: number): string {
 }
 
 export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
+  const { t: translateText } = useI18n();
   const serverModelState = useServerModelState();
   const availableModels = serverModelState.models?.data ?? api.allModels;
   const modelCatalogReady = serverModelState.models !== null || api.allModels.length > 0;
@@ -221,7 +223,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
     setActiveSubTab('optimization');
     setTestModalOpen(false);
     setWhatChangedModalOpen(false);
-    setTestMessage('Tell me a joke about compiler optimizations.');
+    setTestMessage(translateText('Tell me a joke about compiler optimizations.'));
     setTestSelectedModel('');
     setTestRunning(false);
     setTestStreamingText('');
@@ -536,10 +538,10 @@ ${truncatedOutput}
           : 'medium';
         const finding = typeof c.finding === 'string' && c.finding.trim() !== ''
           ? c.finding
-          : 'Improvement recommendation';
+          : translateText('Improvement recommendation');
         const rationale = typeof c.rationale === 'string' && c.rationale.trim() !== ''
           ? c.rationale
-          : 'Inferred from prompt execution telemetry';
+          : translateText('Inferred from prompt execution telemetry');
         return { category, severity, finding, rationale } as CritiqueItem;
       });
     } else {
@@ -559,7 +561,7 @@ ${truncatedOutput}
       : trace.temp ?? 0.7;
     const tempRationale = typeof tempObj.rationale === 'string'
       ? tempObj.rationale
-      : 'Maintain optimal creativity index';
+      : translateText('Maintain optimal creativity index');
 
     const systemVsUserSplit = typeof parsed.parameter_diff.system_vs_user_split === 'boolean'
       ? parsed.parameter_diff.system_vs_user_split
@@ -633,17 +635,17 @@ ${truncatedOutput}
           category: 'formatting',
           severity: 'medium',
           finding: isGarbage
-            ? 'Optimizer model failed to generate suggestions'
-            : 'Parsed output using unstructured text backup',
+            ? translateText('Optimizer model failed to generate suggestions')
+            : translateText('Parsed output using unstructured text backup'),
           rationale: isGarbage
-            ? 'The optimizer model returned an invalid response, system instructions, or validation error instead of suggestions.'
+            ? translateText('The optimizer model returned an invalid response, system instructions, or validation error instead of suggestions.')
             : (cleanRawText || 'The optimizer model returned text suggestions rather than JSON schema. Handled by fallback validator.')
         }
       ],
       parameter_diff: {
         temperature: {
           suggested: trace.temp ?? 0.7,
-          rationale: 'Could not suggest temperature optimizations from fallback parse.'
+          rationale: translateText('Could not suggest temperature optimizations from fallback parse.')
         },
         system_vs_user_split: false
       },
@@ -653,8 +655,8 @@ ${truncatedOutput}
       },
       key_improvements: [
         isGarbage
-          ? 'Optimizer model failed to generate suggestions (returned instructions or error).'
-          : 'Could not format detailed critique points. Showing raw response suggestions.'
+          ? translateText('Optimizer model failed to generate suggestions (returned instructions or error).')
+          : translateText('Could not format detailed critique points. Showing raw response suggestions.')
       ]
     };
   };
@@ -942,7 +944,7 @@ ${truncatedOutput}
       {/* Search selection bar & critique query */}
       <div className="improve-inputs-grid">
         <ModelSearchSelector
-          label="Select LLM Optimizer"
+          label={translateText('Select LLM Optimizer')}
           value={improveModel}
           onChange={setImproveModel}
           availableModels={optimizerModels}
@@ -950,13 +952,13 @@ ${truncatedOutput}
         />
 
         <div className="flex-col gap-4">
-          <label className="input-label" htmlFor="improve-critique-input">Critique / Desired Behavior</label>
+          <label className="input-label" htmlFor="improve-critique-input">{translateText('Critique / Desired Behavior')}</label>
           <input
             id="improve-critique-input"
             type="text"
             value={improveCritique}
             onChange={(e) => setImproveCritique(e.target.value)}
-            placeholder="Describe the failure mode or what to fix..."
+            placeholder={translateText('Describe the failure mode or what to fix...')}
             className="critique-input-control"
           />
         </div>
@@ -968,7 +970,7 @@ ${truncatedOutput}
           className="preview-toggle-btn"
           onClick={() => setPreviewOpen(true)}
         >
-          Show Meta-Prompt Payload Details
+          {translateText('Show Meta-Prompt Payload Details')}
         </button>
 
         <button
@@ -978,7 +980,7 @@ ${truncatedOutput}
           onClick={handleRunImprovement}
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
         >
-          {improveRunning ? 'Analyzing...' : <><span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1.5)' }}><Icon name="omni" size={14} /></span>Analyze and Optimize Prompt</>}
+          {improveRunning ? 'Analyzing...' : <><span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1.5)' }}><Icon name="omni" size={14} /></span>{translateText('Analyze and Optimize Prompt')}</>}
         </button>
       </div>
 
@@ -986,7 +988,7 @@ ${truncatedOutput}
       <Modal
         isOpen={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        title="Meta-Prompt Payload Details"
+        title={translateText('Meta-Prompt Payload Details')}
         maxWidth="640px"
       >
         <div className="inspect-modal-body">
@@ -1005,7 +1007,7 @@ ${truncatedOutput}
             className="inspect-footer-btn outline"
             onClick={() => setPreviewOpen(false)}
           >
-            Close
+            {translateText('Close')}
           </button>
         </div>
       </Modal>
@@ -1014,7 +1016,7 @@ ${truncatedOutput}
       <Modal
         isOpen={improveRunning}
         onClose={handleCancelImprovement}
-        title="Analyzing & Optimizing Prompt"
+        title={translateText('Analyzing & Optimizing Prompt')}
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"
       >
@@ -1024,9 +1026,9 @@ ${truncatedOutput}
           style={{ padding: 'var(--space-3)', height: '480px', maxHeight: '480px', overflowY: 'auto' }}
         >
           <div className="flex-row justify-between align-center" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
-            <span className="input-label" style={{ color: 'var(--accent)', fontWeight: 'var(--weight-bold)' }}>Streaming live analysis...</span>
+            <span className="input-label" style={{ color: 'var(--accent)', fontWeight: 'var(--weight-bold)' }}>{translateText('Streaming live analysis...')}</span>
             <span className="replay-loading" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-              Generating tokens...
+              {translateText('Generating tokens...')}
             </span>
           </div>
 
@@ -1034,7 +1036,7 @@ ${truncatedOutput}
             <div className="reasoning-block" style={{ marginBottom: 'var(--space-3)' }}>
               <div className="reasoning-block__header" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1.5)', fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--space-1)' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--accent)' }}><Icon name="omni" size={12} /></span>
-                <span>Reasoning Process</span>
+                <span>{translateText('Reasoning Process')}</span>
               </div>
               <div className="reasoning-block__body" style={{ fontStyle: 'italic', opacity: 0.8, fontSize: 'var(--text-xs)', padding: 'var(--space-2) var(--space-3)', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)', borderLeft: '2px solid var(--accent)', whiteSpace: 'pre-wrap' }}>
                 {improveStreamingReasoning}
@@ -1043,12 +1045,12 @@ ${truncatedOutput}
           )}
 
           <div className="comparison-output-box streaming" ref={improveOutputBoxRef} style={{ height: '300px', overflowY: 'auto', fontFamily: 'var(--font-mono, monospace)', fontSize: 'var(--text-xs)' }}>
-            {improveStreamingText || <span style={{ opacity: 0.5 }}>Waiting for first token...</span>}
+            {improveStreamingText || <span style={{ opacity: 0.5 }}>{translateText('Waiting for first token...')}</span>}
             <span className="cursor-blink">|</span>
           </div>
         </div>
         <div className="inspect-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-disabled)' }}>Please wait while optimization runs...</span>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-disabled)' }}>{translateText('Please wait while optimization runs...')}</span>
         </div>
       </Modal>
 
@@ -1059,29 +1061,29 @@ ${truncatedOutput}
           setImproveError(null);
           setWhatChangedModalOpen(false);
         }}
-        title="Prompt Optimization Failed"
+        title={translateText('Prompt Optimization Failed')}
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"
       >
         <div className="inspect-modal-body flex-col gap-14" style={{ height: '480px', maxHeight: '480px', overflowY: 'auto', padding: 'var(--space-4)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--danger)', marginBottom: 'var(--space-1)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--danger)' }}><Icon name="alert" size={24} /></span>
-            <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>The optimization model failed to generate compliant JSON suggestions.</strong>
+            <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{translateText('The optimization model failed to generate compliant JSON suggestions.')}</strong>
           </div>
 
           <div style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase', display: 'block', marginBottom: 'var(--space-1.5)' }}>Error Details</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase', display: 'block', marginBottom: 'var(--space-1.5)' }}>{translateText('Error Details')}</span>
             <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-primary)', lineHeight: '1.5', fontFamily: 'var(--font-mono, monospace)', whiteSpace: 'pre-wrap' }}>
               {improveError}
             </p>
           </div>
 
           <div style={{ background: 'var(--surface-base)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Recommended Actions</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{translateText('Recommended Actions')}</span>
             <ul style={{ margin: 0, paddingLeft: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1.5)' }}>
-              <li><strong>Use a larger model</strong>: Select a model with stronger schema compliance and reasoning.</li>
-              <li><strong>Reduce context length</strong>: The telemetry trace data might be too long. Try selecting a shorter trace to optimize.</li>
-              <li><strong>Adjust server parameters</strong>: Ensure the backend model loaded has a sufficient context limit (<code>n_ctx</code>).</li>
+              <li><strong>{translateText('Use a larger model')}</strong>: {translateText('Select a model with stronger schema compliance and reasoning.')}</li>
+              <li><strong>{translateText('Reduce context length')}</strong>: {translateText('The telemetry trace data might be too long. Try selecting a shorter trace to optimize.')}</li>
+              <li><strong>{translateText('Adjust server parameters')}</strong>: {translateText('Ensure the backend model loaded has a sufficient context limit')} (<code>n_ctx</code>).</li>
             </ul>
           </div>
         </div>
@@ -1095,7 +1097,7 @@ ${truncatedOutput}
               setWhatChangedModalOpen(false);
             }}
           >
-            Close
+            {translateText('Close')}
           </button>
         </div>
       </Modal>
@@ -1104,7 +1106,7 @@ ${truncatedOutput}
       <Modal
         isOpen={!improveRunning && whatChangedModalOpen && !!improveParsedData}
         onClose={() => setWhatChangedModalOpen(false)}
-        title="Prompt Optimization Delta"
+        title={translateText('Prompt Optimization Delta')}
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"
       >
@@ -1115,7 +1117,7 @@ ${truncatedOutput}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-3)' }}>
                 {/* Metric 1: System Instructions Chars */}
                 <div style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>System Instructions</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{translateText('System Instructions')}</span>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', marginTop: 'var(--space-1)' }}>
                     {(() => {
                       const origSysLength = (originalSystemPrompt || '').length;
@@ -1137,7 +1139,7 @@ ${truncatedOutput}
 
                 {/* Metric 2: Temperature */}
                 <div style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Temperature</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{translateText('Temperature')}</span>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', marginTop: 'var(--space-1)' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>{(selectedTrace.temp ?? 0.7).toFixed(2)}</span>
                     <span style={{ margin: '0 var(--space-1.5)', color: 'var(--text-tertiary)' }}>→</span>
@@ -1150,7 +1152,7 @@ ${truncatedOutput}
 
               {/* Key Improvements Checklist */}
               <div className="flex-col gap-6" style={{ marginTop: 'var(--space-2)' }}>
-                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Key Improvements</span>
+                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{translateText('Key Improvements')}</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                   {improveParsedData.key_improvements && improveParsedData.key_improvements.map((improvement, index) => (
                     <div
@@ -1176,7 +1178,7 @@ ${truncatedOutput}
 
               {/* Summary / Config Details Section */}
               <div className="flex-col gap-6" style={{ marginTop: 'var(--space-2)' }}>
-                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Configuration Summary</span>
+                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{translateText('Configuration Summary')}</span>
                 <div
                   style={{
                     display: 'flex',
@@ -1189,7 +1191,7 @@ ${truncatedOutput}
                   }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>System-vs-User Split Suggestion</span>
+                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>{translateText('System-vs-User Split Suggestion')}</span>
                     <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                       {improveParsedData.parameter_diff.system_vs_user_split
                         ? 'Migrating instructions into system context is recommended for better adherence and safety.'
@@ -1198,7 +1200,7 @@ ${truncatedOutput}
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-2.5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>Temperature Tuning Rationale</span>
+                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>{translateText('Temperature Tuning Rationale')}</span>
                     <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
                       {improveParsedData.parameter_diff.temperature.rationale}
                     </span>
@@ -1213,7 +1215,7 @@ ${truncatedOutput}
                 className="inspect-footer-btn outline"
                 onClick={() => setWhatChangedModalOpen(false)}
               >
-                Close
+                {translateText('Close')}
               </button>
             </div>
           </>
@@ -1228,21 +1230,21 @@ ${truncatedOutput}
                 className={`detail-tab ${activeSubTab === 'optimization' ? 'active' : ''}`}
                 onClick={() => setActiveSubTab('optimization')}
               >
-                Prompt
+                {translateText('Prompt')}
               </button>
               <button
                 type="button"
                 className={`detail-tab ${activeSubTab === 'critiques' ? 'active' : ''}`}
                 onClick={() => setActiveSubTab('critiques')}
               >
-                Feedback
+                {translateText('Feedback')}
               </button>
               <button
                 type="button"
                 className={`detail-tab ${activeSubTab === 'config' ? 'active' : ''}`}
                 onClick={() => setActiveSubTab('config')}
               >
-                Config
+                {translateText('Config')}
               </button>
               {selectedTrace.improveRawOutput && (
                 <button
@@ -1250,7 +1252,7 @@ ${truncatedOutput}
                   className={`detail-tab ${activeSubTab === 'raw-output' ? 'active' : ''}`}
                   onClick={() => setActiveSubTab('raw-output')}
                 >
-                  Raw Response
+                  {translateText('Raw Response')}
                 </button>
               )}
             </div>
@@ -1272,7 +1274,7 @@ ${truncatedOutput}
                   {/* Grouped Critique Ledger categories vertically stacked */}
                   {Object.keys(groupedCritiques).length === 0 ? (
                     <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', padding: 'var(--space-4)', textAlign: 'center' }}>
-                      No critiques generated.
+                      {translateText('No critiques generated.')}
                     </div>
                   ) : (
                     Object.keys(groupedCritiques).map((cat) => (
@@ -1308,7 +1310,7 @@ ${truncatedOutput}
                                     className={`critique-rationale ${crit.severity}`}
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                    <strong>Trace Delta Reasoning:</strong> {crit.rationale}
+                                    <strong>{translateText('Trace Delta Reasoning:')}</strong> {crit.rationale}
                                   </div>
                                 )}
                               </div>
@@ -1326,12 +1328,12 @@ ${truncatedOutput}
                   <div className="diff-columns">
                     {/* Left Viewport: Immutable original prompt */}
                     <div className="diff-col">
-                      <h5 style={{ height: '24px', display: 'flex', alignItems: 'center', margin: 0 }}>Original Prompt (Read-only)</h5>
+                      <h5 style={{ height: '24px', display: 'flex', alignItems: 'center', margin: 0 }}>{translateText('Original Prompt (Read-only)')}</h5>
                       <div ref={leftBoxRef} onScroll={handleLeftScroll} className="diff-box" style={{ background: 'var(--surface-base)', opacity: 0.85, marginTop: 'var(--space-1.5)' }}>
                         <textarea
                           readOnly
                           value={originalSystemPrompt}
-                          placeholder="No system instructions..."
+                          placeholder={translateText('No system instructions...')}
                           style={{ width: '100%', height: '100%', resize: 'none' }}
                         />
                       </div>
@@ -1340,7 +1342,7 @@ ${truncatedOutput}
                     {/* Right Viewport: Optimized Prompt (Editable) */}
                     <div className="diff-col">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '24px' }}>
-                        <h5 style={{ margin: 0 }}>Optimized Prompt (Editable)</h5>
+                        <h5 style={{ margin: 0 }}>{translateText('Optimized Prompt (Editable)')}</h5>
                         <div className="diff-actions" style={{ margin: 0, display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
                           <button
                             type="button"
@@ -1366,7 +1368,7 @@ ${truncatedOutput}
                           value={editedSystemPrompt}
                           onChange={(e) => setEditedSystemPrompt(e.target.value)}
                           onBlur={() => saveEditsToStore()}
-                          placeholder="Add system prompt instructions..."
+                          placeholder={translateText('Add system prompt instructions...')}
                           style={{ width: '100%', height: '100%', resize: 'none' }}
                         />
                       </div>
@@ -1378,25 +1380,25 @@ ${truncatedOutput}
               {activeSubTab === 'config' && (
                 <div className="config-workspace flex-col gap-14" style={{ padding: 'var(--space-4)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                   <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
-                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>Configuration Tuning & Parameter Recommendations</h4>
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Adjust parameters and architectural boundaries suggested by the prompt optimization models.</p>
+                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>{translateText('Configuration Tuning & Parameter Recommendations')}</h4>
+                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{translateText('Adjust parameters and architectural boundaries suggested by the prompt optimization models.')}</p>
                   </div>
 
                   {/* System-vs-User Split Card */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-3)', background: 'var(--surface-base)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>System-vs-User Content Split</span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>{translateText('System-vs-User Content Split')}</span>
                     {improveParsedData.parameter_diff.system_vs_user_split ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1.5)' }}>
                          <div className="attention-badge" style={{ display: 'inline-flex', alignItems: 'center', width: 'fit-content', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger, #f87171)', padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: '10px', fontWeight: 'bold' }}>
                            <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1)' }}><Icon name="alert" size={12} /></span> Separation Enforced
                          </div>
                          <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                           The optimizer suggests isolating prompt variables/user inputs into distinct system instructions to minimize leakage and maximize instruction adherence.
+                           {translateText('The optimizer suggests isolating prompt variables/user inputs into distinct system instructions to minimize leakage and maximize instruction adherence.')}
                          </p>
                       </div>
                     ) : (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                        Separation patterns optimal. No splitting/migration required.
+                        {translateText('Separation patterns optimal. No splitting/migration required.')}
                       </span>
                     )}
                   </div>
@@ -1404,7 +1406,7 @@ ${truncatedOutput}
                   {/* Temperature Card */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--surface-base)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>Temperature Optimization</span>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>{translateText('Temperature Optimization')}</span>
                       <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--accent)' }}>{sliderTemp.toFixed(2)}</strong>
                     </div>
                     <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
@@ -1428,7 +1430,7 @@ ${truncatedOutput}
                       <span>Suggested: {improveParsedData.parameter_diff.temperature.suggested.toFixed(2)}</span>
                     </div>
                     <div style={{ borderLeft: '2px solid var(--accent)', paddingLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontStyle: 'italic', marginTop: 'var(--space-1)' }}>
-                      <strong>Tuning Rationale:</strong> {improveParsedData.parameter_diff.temperature.rationale}
+                      <strong>{translateText('Tuning Rationale:')}</strong> {improveParsedData.parameter_diff.temperature.rationale}
                     </div>
                   </div>
                 </div>
@@ -1437,8 +1439,8 @@ ${truncatedOutput}
               {activeSubTab === 'raw-output' && (
                 <div className="raw-response-workspace" style={{ padding: 'var(--space-4)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, boxSizing: 'border-box' }}>
                   <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>Raw Optimization Response</h4>
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Full completion payload returned by the LLM prompt optimizer.</p>
+                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>{translateText('Raw Optimization Response')}</h4>
+                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{translateText('Full completion payload returned by the LLM prompt optimizer.')}</p>
                   </div>
                   <div className="raw-response-markdown" style={{ padding: 'var(--space-3)', background: 'var(--surface-base)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', flex: 1, overflowY: 'auto', minHeight: 0 }} onClick={(e) => e.stopPropagation()}>
                     <MarkdownMessage content={selectedTrace.improveRawOutput || ''} />
@@ -1454,7 +1456,7 @@ ${truncatedOutput}
       {/* Fallback to simple suggestions if improveParsedData is empty but improveOutput has content */}
       {!improveRunning && !improveError && !improveParsedData && improveOutput && (
         <div className="improvement-results-panel">
-          <h4 style={{ margin: 0 }}>Raw Response Suggestions</h4>
+          <h4 style={{ margin: 0 }}>{translateText('Raw Response Suggestions')}</h4>
           <div style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: 'var(--space-3)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)' }}>
             {improveOutput}
           </div>
@@ -1463,7 +1465,7 @@ ${truncatedOutput}
             className="improve-btn outline"
             onClick={() => copySuggestions(improveOutput)}
           >
-            Copy Suggestions
+            {translateText('Copy Suggestions')}
           </button>
         </div>
       )}
@@ -1472,7 +1474,7 @@ ${truncatedOutput}
       <Modal
         isOpen={testModalOpen}
         onClose={() => setTestModalOpen(false)}
-        title="Test Optimized Prompt"
+        title={translateText('Test Optimized Prompt')}
         ariaLabelledBy="test-modal-title"
         maxWidth="640px"
       >
@@ -1480,7 +1482,7 @@ ${truncatedOutput}
           {!testRunning && !testStreamingText && !testError ? (
             <>
               <ModelSearchSelector
-                label="Select Test Model"
+                label={translateText('Select Test Model')}
                 value={testSelectedModel}
                 onChange={setTestSelectedModel}
                 availableModels={availableModels}
@@ -1488,7 +1490,7 @@ ${truncatedOutput}
 
               {!availableModels || availableModels.length === 0 ? (
                 <div style={{ color: 'var(--danger)', fontSize: 'var(--text-xs)', marginTop: '-8px' }}>
-                  No models available. Please pull or install a model first.
+                  {translateText('No models available. Please pull or install a model first.')}
                 </div>
               ) : testValidationError ? (
                 <div style={{ color: 'var(--danger)', fontSize: 'var(--text-xs)', marginTop: '-8px' }}>
@@ -1497,12 +1499,12 @@ ${truncatedOutput}
               ) : null}
 
               <div className="flex-col gap-4">
-                <label className="input-label" htmlFor="test-message-input">Test Input Message</label>
+                <label className="input-label" htmlFor="test-message-input">{translateText('Test Input Message')}</label>
                 <textarea
                   id="test-message-input"
                   value={testMessage}
                   onChange={(e) => setTestMessage(e.target.value)}
-                  placeholder="Type a test query to send with your optimized prompts..."
+                  placeholder={translateText('Type a test query to send with your optimized prompts...')}
                   rows={5}
                   className="system-prompt-textarea"
                   style={{ width: '100%' }}
@@ -1512,7 +1514,7 @@ ${truncatedOutput}
           ) : (
             <div className="flex-col gap-12" style={{ padding: 'var(--space-2)' }}>
               <div className="flex-col gap-4" style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                <span className="input-label" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>TEST INPUT QUERY</span>
+                <span className="input-label" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{translateText('TEST INPUT QUERY')}</span>
                 <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>{testMessage}</p>
               </div>
 
@@ -1522,7 +1524,7 @@ ${truncatedOutput}
                 </span>
                 {testRunning && (
                   <span className="replay-loading" style={{ fontSize: 'var(--text-xs)' }}>
-                    Generating tokens...
+                    {translateText('Generating tokens...')}
                   </span>
                 )}
               </div>
@@ -1563,7 +1565,7 @@ ${truncatedOutput}
               {testStreamingReasoning && (
                 <div className="reasoning-block" style={{ marginBottom: 'var(--space-2)' }}>
                   <div className="reasoning-block__header">
-                    <span>Reasoning Process</span>
+                    <span>{translateText('Reasoning Process')}</span>
                   </div>
                   <div className="reasoning-block__body" style={{ fontStyle: 'italic', opacity: 0.8 }}>
                     {testStreamingReasoning}
@@ -1572,7 +1574,7 @@ ${truncatedOutput}
               )}
 
               <div ref={testOutputBoxRef} className="comparison-output-box streaming">
-                {testStreamingText || <span style={{ opacity: 0.5 }}>Waiting for first token...</span>}
+                {testStreamingText || <span style={{ opacity: 0.5 }}>{translateText('Waiting for first token...')}</span>}
                 {testRunning && <span className="cursor-blink">|</span>}
               </div>
             </div>
@@ -1592,7 +1594,7 @@ ${truncatedOutput}
               }}
               style={{ marginRight: 'auto' }}
             >
-              Test Again
+              {translateText('Test Again')}
             </button>
           )}
 
@@ -1602,7 +1604,7 @@ ${truncatedOutput}
               className="inspect-footer-btn primary"
               onClick={handleRunTest}
             >
-              Send
+              {translateText('Send')}
             </button>
           ) : null}
 
@@ -1612,7 +1614,7 @@ ${truncatedOutput}
             onClick={() => setTestModalOpen(false)}
             disabled={testRunning}
           >
-            Close
+            {translateText('Close')}
           </button>
         </div>
       </Modal>

@@ -27,6 +27,7 @@ import Modal from './inspect/Modal';
 import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';import { backendLabel } from '../modelPresentation';
 import { useServerModelState } from '../features/models/modelState';
+import { useI18n } from '../i18n';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
   RouterEditorPanelPreloaded as RouterEditorPanel,
@@ -260,11 +261,14 @@ const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
   },
 };
 
-const InlineCheckpointExample: React.FC<{ checkpoint: string; note?: string }> = ({ checkpoint, note }) => (
-  <span className="custom-model-form__inline-example" title={note || checkpoint}>
-    Example: <code>{checkpoint}</code>
-  </span>
-);
+const InlineCheckpointExample: React.FC<{ checkpoint: string; note?: string }> = ({ checkpoint, note }) => {
+  const { t } = useI18n();
+  return (
+    <span className="custom-model-form__inline-example" title={note ? t(note) : checkpoint}>
+      {t('Example:')} <code>{checkpoint}</code>
+    </span>
+  );
+};
 
 function optionValue(recipe: string, backend?: string): string {
   return backend ? `${recipe}:${backend}` : recipe;
@@ -898,6 +902,7 @@ interface OmniComponentPickerProps {
 }
 
 const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, options, onChange, onHuggingFaceSearch }) => {
+  const { t } = useI18n();
   const config = OMNI_COMPONENT_ROLE_CONFIG[role];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -986,7 +991,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
           onChange={e => { setQuery(e.target.value); setOpen(true); setActiveIndex(-1); }}
           onBlur={() => window.setTimeout(() => { setOpen(false); setActiveIndex(-1); }, 120)}
           onKeyDown={handleKeyDown}
-          placeholder={config.placeholder}
+          placeholder={t(config.placeholder)}
           autoComplete="off"
         />
         {value && !config.required && (
@@ -1027,7 +1032,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 </div>
               )) : (
                 <div className="omni-component-picker__empty">
-                  No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
+                  {t('No compatible {capability} model found. Use the main search or HuggingFace zone to download/register one first.', { capability: t(config.label).toLowerCase() })}
                 </div>
               )}
             </div>
@@ -1038,7 +1043,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); setActiveIndex(-1); }}
               >
-                Search HuggingFace for "{query.trim()}"
+                {t('Search HuggingFace for "{query}"', { query: query.trim() })}
               </button>
             )}
           </div>
@@ -1056,6 +1061,7 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
+  const { t } = useI18n();
   useEffect(() => {
     // Direct/deep-linked Models loads must also warm the details/editor modules
     // automatically. Never make selecting a model the event that starts them.
@@ -2067,7 +2073,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() !== ROUTER_RECIPE
     );
     exportJsonFile('lemonade-custom-models', exportCustomModelsPayload(customServerModels));
-    setCustomJsonNotice('Exported custom model JSON.');
+    setCustomJsonNotice(t('Exported custom model JSON.'));
     window.setTimeout(() => setCustomJsonNotice(null), 2200);
   };
 
@@ -2199,7 +2205,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
         || availableRecipeOptions[0];
       if (!selectedRecipeOption) {
-        setCustomError('No compatible recipe/backend is available for this capability on the connected Lemonade server.');
+        setCustomError(t('No compatible recipe/backend is available for this capability on the connected Lemonade server.'));
         return;
       }
       const selectedRecipe = selectedRecipeOption.recipe;
@@ -2624,7 +2630,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
   const selectedCustomRecipeSuggestion = CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
-  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || 'org/model:Q4_K_M.gguf or /path/to/model.gguf';
+  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || t('org/model:Q4_K_M.gguf or /path/to/model.gguf');
   const mmprojCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'mmproj');
   const textEncoderCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'text_encoder');
   const vaeCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'vae');
@@ -2694,17 +2700,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         {loading ? (
           <div className="hf-zone__loading" role="status" aria-live="polite">
             <span className="hf-zone__spinner" aria-hidden="true" />
-            <span>Searching {meta.label}…</span>
+            <span>{t('Searching {provider}…', { provider: t(meta.label) })}</span>
           </div>
         ) : error ? (
           <div className="hf-zone__empty hf-zone__empty--error">
             <Icon name="alert" size={16} />
-            <span>{meta.label} search is unavailable: {error}</span>
+            <span>{t('{provider} search is unavailable: {error}', { provider: t(meta.label), error })}</span>
           </div>
         ) : results.length === 0 ? (
           <div className="hf-zone__empty">
             <Icon name="cloud-off" size={16} />
-            <span>No compatible {meta.label} models match the active filters.</span>
+            <span>{t('No compatible {provider} models match the active filters.', { provider: t(meta.label) })}</span>
           </div>
         ) : (
           <WorkspaceList
@@ -2726,7 +2732,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const renderRegistryZones = () => !hasRemoteActivity ? null : (
-    <div className="registry-zones" aria-label="Remote model search results">
+    <div className="registry-zones" aria-label={t('Remote model search results')}>
       {renderProviderZone('huggingface')}
       {renderProviderZone('modelscope')}
     </div>
@@ -2742,21 +2748,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       {externalModelDeleteNotice && (
         <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
           <span className="manager__toast-message">
-            {externalModelDeleteNotice.displayName} is managed in your external models folder. Delete it directly from that folder.
+            {t('{name} is managed in your external models folder. Delete it directly from that folder.', { name: externalModelDeleteNotice.displayName })}
           </span>
           <button
             type="button"
             className="manager__toast-dismiss"
             onClick={() => setExternalModelDeleteNotice(null)}
-            aria-label="Dismiss notification"
-            title="Dismiss"
+            aria-label={t('Dismiss notification')}
+            title={t('Dismiss')}
           >
             <Icon name="x" size={14} aria-hidden="true" />
           </button>
         </div>
       )}
       <WorkspaceMobileMenuButton
-        menuLabel="Open model filters"
+        menuLabel={t('Open model filters')}
         panelId="model-nav-rail"
         expanded={mobileRail.isOpen}
         onClick={mobileRail.toggle}
@@ -2770,17 +2776,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           setRouterDeleteCandidate(null);
           setRouterDeleteError(null);
         }}
-        title="Delete router definition?"
+        title={t('Delete router definition?')}
         maxWidth="480px"
       >
         <div className="inspect-modal-body">
-          <p>Delete <strong>{routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate)}</strong>? This removes the saved router definition.</p>
+          <p>{t('Delete {name}? This removes the saved router definition.', { name: routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate) })}</p>
           {routerDeleteError && <div className="manager__inline-notice" role="alert">{routerDeleteError}</div>}
         </div>
         <div className="inspect-modal-footer">
-          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>{t('Cancel')}</WorkspaceActionButton>
           <WorkspaceActionButton appearance="danger" disabled={deletingRouterDefinition} onClick={() => { void confirmRouterDefinitionDelete(); }}>
-            {deletingRouterDefinition ? 'Deleting…' : 'Delete router'}
+            {deletingRouterDefinition ? t('Deleting…') : t('Delete router')}
           </WorkspaceActionButton>
         </div>
       </Modal>
@@ -2844,7 +2850,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         systemInfo={systemInfo}
       />
 
-      <WorkspacePanelResizer label="Resize model list panel" {...panelResize.resizerProps} />
+      <WorkspacePanelResizer label={t('Resize model list panel')} {...panelResize.resizerProps} />
 
       {/* Right panel: router editor, custom form, or model detail */}
       {showRouterEditor ? (
@@ -2874,9 +2880,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             leading={<Icon name="compose" size={20} aria-hidden="true" />}
             title={<h2 className="workspace-detail-panel__title custom-model-editor__title">{customFormTitle}</h2>}
             metadata={editingCustomModelName ? (
-              <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>
+              <WorkspaceMetadataChip emphasis="medium">{t('Editing saved definition')}</WorkspaceMetadataChip>
             ) : undefined}
-            description={<p>Register a model or collection that is not included in the Lemonade catalog.</p>}
+            description={<p>{t('Register a model or collection that is not included in the Lemonade catalog.')}</p>}
             descriptionPlacement="identity"
             actions={(
               <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
@@ -2887,28 +2893,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   form="custom-model-editor-form"
                   disabled={customRecipeOptions.length === 0}
                 >
-                  Save
+                  {t('Save')}
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Close</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>{t('Close')}</WorkspaceActionButton>
                 <span className="workspace-action-group__spacer" />
-                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
-                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>{t('Export')}</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>{t('Import')}</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
           >
             <div className="custom-model-form__body">
             <div className="custom-model-form__toolbar">
               {editingCustomModelName ? (
-                <span className="custom-model-form__editing-badge">Editing saved collection</span>
+                <span className="custom-model-form__editing-badge">{t('Editing saved collection')}</span>
               ) : (
-                <div className="custom-model-form__mode-switch" role="group" aria-label="Custom model type">
+                <div className="custom-model-form__mode-switch" role="group" aria-label={t('Custom model type')}>
                   <button
                     type="button"
                     className={!isCustomOmniCollectionDraft ? 'is-active' : ''}
                     aria-pressed={!isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('model')}
                   >
-                    Custom Model
+                    {t('Custom Model')}
                   </button>
                   <button
                     type="button"
@@ -2916,7 +2922,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     aria-pressed={isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('omni-collection')}
                   >
-                    Omni Collection
+                    {t('Omni Collection')}
                   </button>
                 </div>
               )}
@@ -2931,7 +2937,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 />
               </label>
               <label className="custom-model-form__field">Extra labels
-                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
+                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder={t('tool-calling, reasoning')} />
               </label>
 
               {!isCustomOmniCollectionDraft && (
@@ -2951,7 +2957,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   <label className="custom-model-form__field">Recipe/backend
                     <select className="select" value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
                       {customRecipeOptions.length === 0
-                        ? <option value="">No compatible backend available</option>
+                        ? <option value="">{t('No compatible backend available')}</option>
                         : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
@@ -2979,7 +2985,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                         className="input"
                         value={customDraft.mmproj}
                         onChange={e => handleCustomDraftChange({ mmproj: e.target.value })}
-                        placeholder="Optional"
+                        placeholder={t('Optional')}
                       />
                     </label>
                   )}
@@ -2994,7 +3000,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           className="input"
                           value={customDraft.imageTextEncoder}
                           onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
-                          placeholder="Optional"
+                          placeholder={t('Optional')}
                         />
                       </label>
                       <label className="custom-model-form__field">VAE checkpoint
@@ -3006,7 +3012,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           className="input"
                           value={customDraft.imageVae}
                           onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
-                          placeholder="Optional"
+                          placeholder={t('Optional')}
                         />
                       </label>
                     </>
@@ -3017,7 +3023,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
               {isCustomOmniCollectionDraft && (
                 <>
                   <div className="custom-model-form__hint custom-model-form__wide">
-                    Choose the models that make up this collection. Only the planner LLM is required.
+                    {t('Choose the models that make up this collection. Only the planner LLM is required.')}
                   </div>
                   <OmniComponentPicker role="llm" value={customDraft.llmComponent} options={omniComponentOptions.llm} onChange={value => updateOmniComponent('llm', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="vision" value={customDraft.visionComponent} options={omniComponentOptions.vision} onChange={value => updateOmniComponent('vision', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
@@ -3028,8 +3034,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
                   <details className="custom-model-form__advanced custom-model-form__wide">
                     <summary>
-                      <span>Advanced settings</span>
-                      <small>System prompt and custom model tools</small>
+                      <span>{t('Advanced settings')}</span>
+                      <small>{t('System prompt and custom model tools')}</small>
                     </summary>
                     <div className="custom-model-form__advanced-body">
                       <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">Omni tool system prompt
@@ -3042,23 +3048,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                         />
                       </label>
                       <div className="custom-model-form__prompt-actions custom-model-form__wide">
-                        <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</WorkspaceActionButton>
+                        <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>{t('Reset to default')}</WorkspaceActionButton>
                       </div>
                       <div className="custom-model-form__tools custom-model-form__wide">
                         <div className="custom-model-form__section-head">
                           <div>
-                            <strong>Custom model tools</strong>
-                            <span>Add an editable example, choose its endpoint, then select one of the models configured in this collection.</span>
+                            <strong>{t('Custom model tools')}</strong>
+                            <span>{t('Add an editable example, choose its endpoint, then select one of the models configured in this collection.')}</span>
                           </div>
                           <div className="custom-model-form__section-actions">
-                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('generic')}>LLM example</WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('vision')}>Vision example</WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('image')}>Image example</WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" icon="plus" onClick={addCoderReviewerPair}>Coding pair</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('generic')}>{t('LLM example')}</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('vision')}>{t('Vision example')}</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('image')}>{t('Image example')}</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={addCoderReviewerPair}>{t('Coding pair')}</WorkspaceActionButton>
                           </div>
                         </div>
                         {customDraft.omniCustomTools.length === 0 ? (
-                          <div className="custom-model-form__empty-tools">No custom model tools configured. The buttons above insert working examples that you can rename and adapt.</div>
+                          <div className="custom-model-form__empty-tools">{t('No custom model tools configured. The buttons above insert working examples that you can rename and adapt.')}</div>
                         ) : customDraft.omniCustomTools.map((tool, index) => {
                           const targetOptions = omniCustomToolTargetOptions[tool.targetType];
                           const selectedTarget = targetOptions.find(option => option.id.toLowerCase() === tool.targetModel.trim().toLowerCase())?.id || '';
@@ -3070,7 +3076,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                   <strong>Tool {index + 1}</strong>
                                   <small>Editable example · {tool.targetType === 'chat' ? 'Chat / LLM' : tool.targetType === 'vision' ? 'Vision' : 'Image generation'}</small>
                                 </div>
-                                <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => removeOmniCustomTool(tool.id)}>Remove</WorkspaceActionButton>
+                                <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => removeOmniCustomTool(tool.id)}>{t('Remove')}</WorkspaceActionButton>
                               </div>
                               <label className="custom-model-form__field">Tool name
                                 <input
@@ -3086,11 +3092,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                   value={tool.targetType}
                                   onChange={e => changeOmniCustomToolTargetType(tool, e.target.value as CustomOmniToolTargetType)}
                                 >
-                                  <option value="chat">Chat / LLM</option>
-                                  <option value="vision">Vision LLM</option>
-                                  <option value="image">Image generation</option>
+                                  <option value="chat">{t('Chat / LLM')}</option>
+                                  <option value="vision">{t('Vision LLM')}</option>
+                                  <option value="image">{t('Image generation')}</option>
                                 </select>
-                                <small>Selects the Lemonade endpoint used for this model.</small>
+                                <small>{t('Selects the Lemonade endpoint used for this model.')}</small>
                               </label>
                               <label className="custom-model-form__field custom-model-form__wide">Target model
                                 <select
@@ -3104,14 +3110,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                     <option key={option.id} value={option.id}>{option.label}</option>
                                   ))}
                                 </select>
-                                <small>Only models configured in this Omni collection are available as targets.</small>
+                                <small>{t('Only models configured in this Omni collection are available as targets.')}</small>
                               </label>
                               <label className="custom-model-form__field custom-model-form__wide">Description
                                 <input
                                   className="input"
                                   value={tool.description}
                                   onChange={e => updateOmniCustomTool(tool.id, { description: e.target.value })}
-                                  placeholder="When should the planner use this tool?"
+                                  placeholder={t('When should the planner use this tool?')}
                                 />
                               </label>
                               {promptDriven && (
@@ -3144,7 +3150,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                   rows={5}
                                   spellCheck={false}
                                 />
-                                <small>This editable schema tells the planner which arguments it may send.</small>
+                                <small>{t('This editable schema tells the planner which arguments it may send.')}</small>
                               </label>
                               {promptDriven && (
                                 <label className="custom-model-form__field">Max tokens
@@ -3153,7 +3159,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                     value={tool.maxTokens}
                                     inputMode="numeric"
                                     onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}
-                                    placeholder="Optional"
+                                    placeholder={t('Optional')}
                                   />
                                 </label>
                               )}
@@ -3178,14 +3184,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           </WorkspaceDetailPanel>
         </div>
       ) : (!selectedDetailModel && !selectedRemoteModel) ? (
-        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label={t('Model detail')}>
           <div className="model-detail-panel__placeholder">
             <Icon name="model" size={40} aria-hidden="true" />
-            <p>{allModels.length === 0 ? 'Loading model catalog…' : 'No model selected'}</p>
+            <p>{allModels.length === 0 ? t('Loading model catalog…') : t('No model selected')}</p>
             <p className="model-detail-panel__placeholder-sub">
               {allModels.length === 0
-                ? 'Downloaded models appear first while the full Lemonade catalog finishes loading.'
-                : 'Select a model from the list to view its details.'}
+                ? t('Downloaded models appear first while the full Lemonade catalog finishes loading.')
+                : t('Select a model from the list to view its details.')}
             </p>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -241,27 +242,31 @@ const ScoreInput: React.FC<{
   label: string;
   value: number | undefined;
   onChange: (value: number | undefined) => void;
-}> = ({ label, value, onChange }) => (
-  <label className="router-node__compact-field">
-    <span>{label}</span>
-    <input
-      className="input"
-      type="number"
-      min="0"
-      max="1"
-      step="0.05"
-      value={value ?? ''}
-      placeholder="Any"
-      onChange={event => onChange(event.target.value === '' ? undefined : Number(event.target.value))}
-    />
-  </label>
-);
+}> = ({ label, value, onChange }) => {
+  const { t } = useI18n();
+  return (
+    <label className="router-node__compact-field">
+      <span>{label}</span>
+      <input
+        className="input"
+        type="number"
+        min="0"
+        max="1"
+        step="0.05"
+        value={value ?? ''}
+        placeholder={t('Any')}
+        onChange={event => onChange(event.target.value === '' ? undefined : Number(event.target.value))}
+      />
+    </label>
+  );
+};
 
 const RouterLeafEditor: React.FC<{
   node: RouterLeafNode;
   classifiers: RouterClassifier[];
   onChange: (next: RouterNode) => void;
 }> = ({ node, classifiers, onChange }) => {
+  const { t } = useI18n();
   const update = (patch: Partial<RouterLeafNode>) => onChange({ ...node, ...patch });
   const selectedClassifier = classifiers.find(item => item.id === node.classifierId);
   const labels = classifierLabels(selectedClassifier);
@@ -275,12 +280,12 @@ const RouterLeafEditor: React.FC<{
     <div className="router-node router-node--leaf">
       <div className="router-node__leaf-row">
         <label className="router-node__type-field">
-          <span className="sr-only">Condition type</span>
+          <span className="sr-only">{t('Condition type')}</span>
           <RouterSelect
             value={node.type}
-            options={LEAF_TYPES}
+            options={LEAF_TYPES.map(option => ({ ...option, label: t(option.label) }))}
             onChange={val => changeType(val as RouterLeafType)}
-            ariaLabel="Condition type"
+            ariaLabel={t('Condition type')}
           />
         </label>
 
@@ -289,7 +294,7 @@ const RouterLeafEditor: React.FC<{
             className="textarea router-node__grow"
             rows={3}
             value={node.textValue ?? ''}
-            placeholder="One keyword per line"
+            placeholder={t('One keyword per line')}
             onChange={event => update({ textValue: event.target.value })}
           />
         )}
@@ -297,7 +302,7 @@ const RouterLeafEditor: React.FC<{
           <input
             className="input router-node__grow router-node__mono"
             value={node.textValue ?? ''}
-            placeholder="ECMAScript regex"
+            placeholder={t('ECMAScript regex')}
             onChange={event => update({ textValue: event.target.value })}
           />
         )}
@@ -314,7 +319,7 @@ const RouterLeafEditor: React.FC<{
         {(node.type === 'has_tools' || node.type === 'has_images') && (
           <RouterSelect
             value={node.booleanValue === false ? 'false' : 'true'}
-            options={[{ value: 'true', label: 'is true' }, { value: 'false', label: 'is false' }]}
+            options={[{ value: 'true', label: t('is true') }, { value: 'false', label: t('is false') }]}
             onChange={val => update({ booleanValue: val === 'true' })}
           />
         )}
@@ -323,19 +328,19 @@ const RouterLeafEditor: React.FC<{
       {node.type === 'classifier' && (
         <div className="router-node__details router-node__details--classifier">
           <label>
-            <span>Classifier</span>
+            <span>{t('Classifier')}</span>
             <RouterSelect
               value={node.classifierId ?? ''}
               options={[
-                { value: '', label: 'Select classifier' },
+                { value: '', label: t('Select classifier') },
                 ...classifiers.map(item => ({ value: item.id, label: item.id })),
               ]}
               onChange={val => update({ classifierId: val, label: undefined })}
-              ariaLabel="Classifier"
+              ariaLabel={t('Classifier')}
             />
           </label>
           <label>
-            <span>Label</span>
+            <span>{t('Label')}</span>
             <RouterSelect
               value={node.label ?? ''}
               options={[
@@ -343,64 +348,64 @@ const RouterLeafEditor: React.FC<{
                   value: '',
                   label: selectedClassifier?.defaultLabel
                     ? `Use classifier default (${selectedClassifier.defaultLabel})`
-                    : labels.length > 0 ? 'Select label' : 'Use classifier output',
+                    : labels.length > 0 ? t('Select label') : t('Use classifier output'),
                   disabled: labels.length > 0 && !selectedClassifier?.defaultLabel,
                 },
                 ...labels.map(label => ({ value: label, label })),
               ]}
               onChange={val => update({ label: val || undefined })}
-              ariaLabel="Label"
+              ariaLabel={t('Label')}
             />
           </label>
-          <ScoreInput label="Min score" value={node.minScore} onChange={minScore => update({ minScore })} />
-          <ScoreInput label="Max score" value={node.maxScore} onChange={maxScore => update({ maxScore })} />
+          <ScoreInput label={t('Min score')} value={node.minScore} onChange={minScore => update({ minScore })} />
+          <ScoreInput label={t('Max score')} value={node.maxScore} onChange={maxScore => update({ maxScore })} />
         </div>
       )}
 
       {node.type === 'metadata' && (
         <div className="router-node__details router-node__details--metadata">
           <label>
-            <span>Metadata key</span>
+            <span>{t('Metadata key')}</span>
             <input className="input" value={node.metadataKey ?? ''} placeholder="task_class" onChange={event => update({ metadataKey: event.target.value })} />
           </label>
           <label>
-            <span>Comparator</span>
+            <span>{t('Comparator')}</span>
             <RouterSelect
               value={node.metadataComparator ?? 'equals'}
               options={[
                 { value: 'equals', label: 'equals' },
-                { value: 'any', label: 'contains any token' },
+                { value: 'any', label: t('contains any token') },
                 { value: 'exists', label: 'exists' },
               ]}
               onChange={val => update({ metadataComparator: val as RouterMetadataComparator })}
-              ariaLabel="Comparator"
+              ariaLabel={t('Comparator')}
             />
           </label>
           {(node.metadataComparator ?? 'equals') === 'exists' ? (
             <label>
-              <span>Expected</span>
+              <span>{t('Expected')}</span>
               <RouterSelect
                 value={node.booleanValue === false ? 'false' : 'true'}
                 options={[{ value: 'true', label: 'present' }, { value: 'false', label: 'missing' }]}
                 onChange={val => update({ booleanValue: val === 'true' })}
-                ariaLabel="Expected"
+                ariaLabel={t('Expected')}
               />
             </label>
           ) : node.metadataComparator === 'any' ? (
             <label className="router-node__grow-field">
-              <span>Values <small>one per line</small></span>
+              <span>{t('Values')} <small>{t('one per line')}</small></span>
               <textarea className="textarea" rows={3} value={node.metadataValues ?? ''} onChange={event => update({ metadataValues: event.target.value })} />
             </label>
           ) : (
             <label className="router-node__grow-field">
-              <span>Value</span>
+              <span>{t('Value')}</span>
               <input className="input" value={node.metadataValues ?? ''} onChange={event => update({ metadataValues: event.target.value })} />
             </label>
           )}
         </div>
       )}
-      <div className="router-node__wrap-actions" aria-label="Combine condition">
-        <span>Combine:</span>
+      <div className="router-node__wrap-actions" aria-label={t('Combine condition')}>
+        <span>{t('Combine:')}</span>
         <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'all', children: [node, createRouterLeaf(node.type === 'keywords_any' ? 'keywords_all' : 'keywords_any')] })}>AND</button>
         <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'any', children: [node, createRouterLeaf(node.type === 'keywords_any' ? 'keywords_all' : 'keywords_any')] })}>OR</button>
         <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'not', children: [node] })}>NOT</button>
@@ -410,6 +415,7 @@ const RouterLeafEditor: React.FC<{
 };
 
 export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classifiers, onChange, onRemoveSelf, depth = 0 }) => {
+  const { t } = useI18n();
   if (node.kind === 'leaf') {
     return <RouterLeafEditor node={node} classifiers={classifiers} onChange={onChange} />;
   }
@@ -443,22 +449,22 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
     <div className="router-node router-node--group" style={{ '--router-depth': depth } as React.CSSProperties}>
       <div className="router-node__group-head">
         <div className="router-node__operator">
-          <span>Match</span>
+          <span>{t('Match')}</span>
           <RouterSelect
             value={node.operator}
             options={[
-              { value: 'all', label: 'ALL conditions' },
-              { value: 'any', label: 'ANY condition' },
-              { value: 'not', label: 'NOT condition' },
+              { value: 'all', label: t('ALL conditions') },
+              { value: 'any', label: t('ANY condition') },
+              { value: 'not', label: t('NOT condition') },
             ]}
             onChange={val => changeOperator(val as RouterGroupNode['operator'])}
-            ariaLabel="Group operator"
+            ariaLabel={t('Group operator')}
           />
         </div>
         {node.operator !== 'not' && (
           <div className="router-node__group-actions">
-            <WorkspaceActionButton size="small" icon="plus" disabled={!unusedConditionType} title={unusedConditionType ? "Add condition" : "Every available condition identity is already used in this gate"} onClick={addCondition}>Condition</WorkspaceActionButton>
-            <WorkspaceActionButton size="small" icon="plus" onClick={addGroup}>Group</WorkspaceActionButton>
+            <WorkspaceActionButton size="small" icon="plus" disabled={!unusedConditionType} title={unusedConditionType ? "Add condition" : "Every available condition identity is already used in this gate"} onClick={addCondition}>{t('Condition')}</WorkspaceActionButton>
+            <WorkspaceActionButton size="small" icon="plus" onClick={addGroup}>{t('Group')}</WorkspaceActionButton>
           </div>
         )}
       </div>
@@ -466,9 +472,9 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
         {node.children.map((child, index) => (
           <div className="router-node__child" key={child.id}>
             <div className="router-node__child-actions" aria-label={`Condition ${index + 1} controls`}>
-              <button type="button" disabled={index === 0} title="Move up" aria-label="Move condition up" onClick={() => onChange(moveChild(node, index, -1))}><Icon name="chevron-up" size={13} /></button>
-              <button type="button" disabled={index === node.children.length - 1} title="Move down" aria-label="Move condition down" onClick={() => onChange(moveChild(node, index, 1))}><Icon name="chevron-down" size={13} /></button>
-              <button type="button" title="Remove condition" aria-label="Remove condition" onClick={() => handleRemoveChild(index)}><Icon name="trash" size={13} /></button>
+              <button type="button" disabled={index === 0} title={t('Move up')} aria-label={t('Move condition up')} onClick={() => onChange(moveChild(node, index, -1))}><Icon name="chevron-up" size={13} /></button>
+              <button type="button" disabled={index === node.children.length - 1} title={t('Move down')} aria-label={t('Move condition down')} onClick={() => onChange(moveChild(node, index, 1))}><Icon name="chevron-down" size={13} /></button>
+              <button type="button" title={t('Remove condition')} aria-label={t('Remove condition')} onClick={() => handleRemoveChild(index)}><Icon name="trash" size={13} /></button>
             </div>
             <RouterNodeEditor
               node={child}

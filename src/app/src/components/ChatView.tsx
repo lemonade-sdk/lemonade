@@ -8,6 +8,7 @@ import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
+import { useI18n } from '../i18n';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -884,6 +885,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   onOpenModelDetails,
   onRefresh,
 }) => {
+  const { t } = useI18n();
   const [showLoadedOverview, setShowLoadedOverview] = useState(
     () => modelSelectionEpoch === 0,
   );
@@ -1508,7 +1510,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       loaded: true,
       downloaded: true,
       audioInput: audioInputForLoaded(model),
-      detail: `Loaded${model.device ? ` · ${model.device}` : ''}`,
+      detail: model.device ? t('Loaded · {device}', { device: model.device }) : t('Loaded'),
     }));
 
     knownModelInfos.forEach(info => {
@@ -1524,7 +1526,9 @@ const ChatView: React.FC<ChatViewProps> = ({
         downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
-        detail: isRouterModelInfo(info) ? 'Router · routes when you send' : (configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load'),
+        detail: isRouterModelInfo(info)
+          ? t('Router · routes when you send')
+          : (configuredDefault ? t('Downloaded · loads when you send') : t('Downloaded · click to load')),
         deferredUntilSend: isRouterModelInfo(info) || Boolean(configuredDefault),
       });
     });
@@ -1985,11 +1989,13 @@ const ChatView: React.FC<ChatViewProps> = ({
     const generatedAudioUrl = generatedAudio?.url ? trackGeneratedMediaUrl(generatedAudio.url) : undefined;
     const generated3dUrl = generated3d?.url ? trackGeneratedMediaUrl(generated3d.url) : undefined;
     const mediaFallback = generated3d
-      ? 'Generated a 3D model from the reference image.'
+      ? t('Generated a 3D model from the reference image.')
       : generatedImages.length > 0
-        ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
+        ? (generatedImages.length === 1
+          ? t('Generated 1 image from your prompt.')
+          : t('Generated {count} images from your prompt.', { count: generatedImages.length }))
         : generatedAudio
-          ? 'Generated speech audio from your text.'
+          ? t('Generated speech audio from your text.')
           : '';
     const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls);
     updateConversation(convoId, c => ({
@@ -2072,7 +2078,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (isStreaming) {
       if (!wasStreamingRef.current) {
-        setStreamStatus('Assistant is responding');
+        setStreamStatus(t('Assistant is responding'));
         liveBufferRef.current = '';
         setLiveText('');
       }
@@ -2087,7 +2093,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       liveTimerRef.current = null;
     }
 
-    setStreamStatus('Response complete');
+    setStreamStatus(t('Response complete'));
     wasStreamingRef.current = false;
   }, [isStreaming]);
 
@@ -2322,7 +2328,7 @@ ${finalText}`
     if (!activeId) {
       const newConvo: Conversation = {
         id: generateId(),
-        title: 'Live microphone recording',
+        title: t('Live microphone recording'),
         model: modelSnapshot,
         messages: [userMessage, assistantMessage],
         updatedAt: Date.now(),
@@ -2337,7 +2343,7 @@ ${finalText}`
       ...c,
       messages: [...c.messages, userMessage, assistantMessage],
       model: modelSnapshot,
-      title: c.messages.length === 0 ? 'Live microphone recording' : c.title,
+      title: c.messages.length === 0 ? t('Live microphone recording') : c.title,
       updatedAt: Date.now(),
     }));
   }, [activeId, currentModelSnapshot, modeSupportsChatCompletions, updateConversation]);
@@ -2430,7 +2436,7 @@ ${finalText}`
     try {
       const api = await getApiClient();
       if (model.capability === 'image') {
-        if (!text) throw new Error('Image mode needs a text prompt.');
+        if (!text) throw new Error(t('Image mode needs a text prompt.'));
         imageSettingsCommittedRef.current = true;
         const imageOptions: Record<string, unknown> = {
           size: `${imageSettings.width}x${imageSettings.height}`,
@@ -2457,7 +2463,7 @@ ${finalText}`
           model,
         });
       } else if (model.capability === 'audio-generation') {
-        if (!text) throw new Error('Audio generation needs a prompt.');
+        if (!text) throw new Error(t('Audio generation needs a prompt.'));
         const isAceStepModel = String(model.recipe || '').toLowerCase().includes('acestep')
           || /ace[-_ ]?step/.test(String(model.name || '').toLowerCase());
         const audioOptions: Record<string, unknown> = {
@@ -2477,8 +2483,10 @@ ${finalText}`
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
           content: isAceStepModel
-            ? `Generated ${audioGenerationSettings.lyrics.trim() ? 'a vocal track' : 'an instrumental track'} from your prompt.`
-            : 'Generated a sound effect from your prompt.',
+            ? (audioGenerationSettings.lyrics.trim()
+              ? t('Generated a vocal track from your prompt.')
+              : t('Generated an instrumental track from your prompt.'))
+            : t('Generated a sound effect from your prompt.'),
           audioUrl: trackGeneratedMediaUrl(audio.url),
           audioName: audio.filename,
           model,
@@ -2487,8 +2495,8 @@ ${finalText}`
         let referenceImage = images[0] || '';
         let generatedReference: string[] | undefined;
         if (model3dSettings.sourceMode === 'text') {
-          if (!text) throw new Error('Text-to-3D needs an object description.');
-          if (!model3dSettings.imageModel) throw new Error('Choose a downloaded image model for the text-to-3D reference step.');
+          if (!text) throw new Error(t('Text-to-3D needs an object description.'));
+          if (!model3dSettings.imageModel) throw new Error(t('Choose a downloaded image model for the text-to-3D reference step.'));
           const imageInfo = findModelInfoByName(knownModelInfos, model3dSettings.imageModel) || null;
           if (!loadedModels.some(item => item.model_name.toLowerCase() === model3dSettings.imageModel.toLowerCase())) {
             await loadModelForChat(model3dSettings.imageModel, imageInfo);
@@ -2502,7 +2510,7 @@ ${finalText}`
           generatedReference = [referenceImage];
           await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
         } else if (!referenceImage) {
-          throw new Error('Image-to-3D needs one reference image.');
+          throw new Error(t('Image-to-3D needs one reference image.'));
         }
         const result = await api.model3dGeneration(model.name, referenceImage, {
           resolution: model3dSettings.resolution,
@@ -2511,15 +2519,15 @@ ${finalText}`
         });
         appendAssistantMessage(convoId, {
           content: model3dSettings.sourceMode === 'text'
-            ? 'Rendered a reference image and reconstructed it as a textured 3D model.'
-            : 'Reconstructed the reference image as a textured 3D model.',
+            ? t('Rendered a reference image and reconstructed it as a textured 3D model.')
+            : t('Reconstructed the reference image as a textured 3D model.'),
           generatedImages: generatedReference,
           model3dUrl: trackGeneratedMediaUrl(result.url),
           model3dName: result.filename,
           model,
         });
       } else if (model.capability === 'tts') {
-        if (!text) throw new Error('TTS mode needs text to speak.');
+        if (!text) throw new Error(t('TTS mode needs text to speak.'));
         let targetModel = model.name;
         const directOptions = (await api.getModelOptions(model.name)).effective || {};
         let voice = ttsVoiceFromRecipeOptions(directOptions);
@@ -2531,7 +2539,7 @@ ${finalText}`
           voice = openMossSettings.voiceDescription.trim();
           if (openMossSettings.mode === 'describe') {
             if (!openMossVoiceDesignModel) {
-              throw new Error('Install MOSS-VoiceGen to design a voice from a description.');
+              throw new Error(t('Install MOSS-VoiceGen to design a voice from a description.'));
             }
             targetModel = openMossVoiceDesignModel;
             if (openMossCloneModel) {
@@ -2554,17 +2562,17 @@ ${finalText}`
               targetModel = openMossCloneModel;
               voice = '';
               reloadTargetAfterVoiceDesign = true;
-              content = 'Designed a voice from your description and generated speech with it.';
+              content = t('Designed a voice from your description and generated speech with it.');
             } else {
-              content = 'Generated speech with the described voice.';
+              content = t('Generated speech with the described voice.');
             }
           } else if (openMossSettings.mode === 'clone') {
             const sample = audioFiles[0];
-            if (!sample) throw new Error('Attach a WAV voice sample to clone.');
-            if (!openMossCloneModel) throw new Error('Install OpenMOSS-TTS to clone a voice sample.');
+            if (!sample) throw new Error(t('Attach a WAV voice sample to clone.'));
+            if (!openMossCloneModel) throw new Error(t('Install OpenMOSS-TTS to clone a voice sample.'));
             targetModel = openMossCloneModel;
             speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
-            content = 'Generated speech using the attached voice sample.';
+            content = t('Generated speech using the attached voice sample.');
           }
 
           if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
@@ -2585,7 +2593,7 @@ ${finalText}`
         });
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
-        if (!file) throw new Error('Audio mode needs an audio file to transcribe.');
+        if (!file) throw new Error(t('Audio mode needs an audio file to transcribe.'));
         const transcript = await api.audioTranscription(model.name, file);
         appendAssistantMessage(convoId, {
           content: transcript,
@@ -2646,7 +2654,7 @@ ${finalText}`
 
     if (hasImages && modeSupportsChatCompletions && !collectionInfo && !supportsChatImageInput) {
       appendAssistantMessage(convoId, {
-        content: friendlyChatError('The selected text model does not support image input. Choose a vision-capable model to send images.'),
+        content: friendlyChatError(t('The selected text model does not support image input. Choose a vision-capable model to send images.')),
         model: modelSnapshot,
         isError: true,
       });
@@ -2656,7 +2664,7 @@ ${finalText}`
     if (!modeSupportsChatCompletions) {
       if (modelSnapshot.capability === 'audio' && audioFiles.length === 0) {
         appendAssistantMessage(convoId, {
-          content: friendlyChatError('Retrying an audio transcription needs the original audio file. Please attach it again.'),
+          content: friendlyChatError(t('Retrying an audio transcription needs the original audio file. Please attach it again.')),
           model: modelSnapshot,
           isError: true,
         });
@@ -2950,7 +2958,7 @@ ${finalText}`
     const originalUserMessage = convo.messages[userIndex];
     if (originalUserMessage.audioName) {
       appendAssistantMessage(activeId, {
-        content: friendlyChatError('Retrying a request with an audio attachment needs the original file. Please attach it again.'),
+        content: friendlyChatError(t('Retrying a request with an audio attachment needs the original file. Please attach it again.')),
         model: currentModelSnapshot,
         isError: true,
       });
@@ -3245,26 +3253,26 @@ ${finalText}`
             ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
-    ? 'Draft a message. Connect and load a model to send…'
+    ? t('Draft a message. Connect and load a model to send…')
     : currentIsOmniCollection
-      ? `Message ${currentModel} through the Omni collection…`
+        ? t('Message {model} through the Omni collection…', { model: currentModel })
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
-        ? `Message ${currentModel} with text, images, or audio…`
+          ? t('Message {model} with text, images, or audio…', { model: currentModel })
       : currentCapability === 'chat' && supportsChatImageInput
-        ? `Message ${currentModel} with text or images…`
+          ? t('Message {model} with text or images…', { model: currentModel })
       : currentCapability === 'chat' && supportsChatAudioInput
-        ? `Message ${currentModel} with text or audio…`
+          ? t('Message {model} with text or audio…', { model: currentModel })
       : currentCapability === 'image'
-      ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
+        ? (imageMode === 'edit' ? t('Describe the edit for {model}…', { model: currentModel }) : t('Describe an image for {model}…', { model: currentModel }))
       : currentCapability === 'audio'
-        ? `Attach audio or use the mic with ${currentModel}…`
+          ? t('Attach audio or use the mic with {model}…', { model: currentModel })
         : currentCapability === 'audio-generation'
-          ? (isAceStepAudio ? 'Describe the music style, mood, tempo, instruments, and voice…' : 'Describe the sound effect to generate…')
+            ? (isAceStepAudio ? t('Describe the music style, mood, tempo, instruments, and voice…') : t('Describe the sound effect to generate…'))
           : currentCapability === 'model3d'
-            ? (model3dSettings.sourceMode === 'image' ? 'Attach a reference image for 3D reconstruction…' : 'Describe the object to render and reconstruct in 3D…')
+              ? (model3dSettings.sourceMode === 'image' ? t('Attach a reference image for 3D reconstruction…') : t('Describe the object to render and reconstruct in 3D…'))
             : currentCapability === 'tts'
-              ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
-              : `Message ${currentModel}…`;
+                ? (isOpenMossCloneMode ? t('Type text to speak, then attach a WAV voice sample…') : t('Text to speak with {model}…', { model: currentModel }))
+                : t('Message {model}…', { model: currentModel });
 
   useEffect(() => {
     if (composerFocusEpoch === 0) return;
@@ -3321,8 +3329,11 @@ ${finalText}`
 
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
-      ? `Loading ${modelPreparation.modelName} for chat…`
-      : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`)
+      ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
+      : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
+        model: modelPreparation.modelName,
+        progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+      }))
     : supportsChatAudioInput && modeSupportsChatCompletions
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
@@ -3345,7 +3356,7 @@ ${finalText}`
                   ? 'OpenMOSS · attach one WAV sample to clone its voice'
                   : 'OpenMOSS · optional voice style instruction via /audio/speech'
               : 'TTS mode · text becomes /audio/speech')
-            : 'Enter to send · Shift+Enter for newline · Paste or drop images';
+            : t('Enter to send · Shift+Enter for newline · Paste or drop images');
 
   const upscalingModels = useMemo(
     () => knownModelInfos
@@ -3409,27 +3420,27 @@ ${finalText}`
       {/* Conversation rail */}
       <aside className={`rail workspace-rail${railExpanded ? '' : ' is-collapsed'}`}>
         <WorkspaceRailHeader
-          title="History"
-          sidebarLabel="conversation"
+          title={t('History')}
+          sidebarLabel={t('conversation')}
           purpose="history"
           collapsed={!railExpanded}
           onToggle={handleRailToggle}
         />
 
         <div className="rail__new-wrap">
-          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label="New chat">
+          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label={t('New chat')}>
             <Icon name="compose" size={14} aria-hidden="true" />
-            <span className="workspace-action-button__label">New chat</span>
+            <span className="workspace-action-button__label">{t('New chat')}</span>
           </button>
         </div>
 
-        <WorkspaceList className="rail__list" label="Conversations" wrap onRowActivate={handleSelectConversation}>
+        <WorkspaceList className="rail__list" label={t('Conversations')} wrap onRowActivate={handleSelectConversation}>
           {conversations.map((c, idx) => renderConversationRow(
             c, idx, 'rail', () => handleSelectConversation(c.id),
           ))}
         </WorkspaceList>
         {conversations.length === 0 && (
-          <p className="rail__empty">No conversations yet</p>
+          <p className="rail__empty">{t('No conversations yet')}</p>
         )}
 
       </aside>
@@ -3443,7 +3454,7 @@ ${finalText}`
         id="conversation-history-panel"
         className={`bottom-sheet ${mobileSheetOpen ? 'bottom-sheet--open' : ''}`}
         role={mobileSheetOpen ? 'dialog' : undefined}
-        aria-label="Conversations"
+        aria-label={t('Conversations')}
         aria-modal={mobileSheetOpen ? true : undefined}
         aria-hidden={!mobileSheetOpen}
       >
@@ -3451,13 +3462,13 @@ ${finalText}`
           <div className="bottom-sheet__handle-pill" />
         </div>
         <div className="bottom-sheet__header">
-          <strong>Conversations</strong>
+          <strong>{t('Conversations')}</strong>
           <button
             type="button"
             className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only"
             onClick={closeMobileSheet}
-            aria-label="Close conversation history"
-            title="Close panel"
+            aria-label={t('Close conversation history')}
+            title={t('Close panel')}
           >
             <Icon name="x" size={16} aria-hidden="true" />
           </button>
@@ -3472,12 +3483,12 @@ ${finalText}`
           }}
         >
           <Icon name="compose" size={14} aria-hidden="true" />
-          <span className="workspace-action-button__label">New chat</span>
+          <span className="workspace-action-button__label">{t('New chat')}</span>
         </button>
 
         <WorkspaceList
           className="bottom-sheet__list rail__list"
-          label="Conversations"
+          label={t('Conversations')}
           wrap
           onRowActivate={id => {
             handleSelectConversation(id);
@@ -3498,14 +3509,14 @@ ${finalText}`
         </WorkspaceList>
 
         {conversations.length === 0 && (
-          <p className="rail__empty">No conversations yet</p>
+          <p className="rail__empty">{t('No conversations yet')}</p>
         )}
       </div>
 
       {/* Main pane */}
       <div className="chat__main" ref={threadRef}>
         <WorkspaceMobileMenuButton
-          menuLabel="Open conversation history"
+          menuLabel={t('Open conversation history')}
           panelId="conversation-history-panel"
           expanded={mobileSheetOpen}
           onClick={() => { if (mobileSheetOpen) closeMobileSheet(); else setMobileSheetOpen(true); }}
@@ -3552,7 +3563,7 @@ ${finalText}`
                     </div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
-                        <summary>Thinking…</summary>
+                        <summary>{t('Thinking…')}</summary>
                         <div
                           className="message__thinking-content"
                           ref={thinkingContentRef}
@@ -3588,13 +3599,16 @@ ${finalText}`
                   <div className="message__avatar"><Icon name="download" size={16} /></div>
                   <div className="message__body">
                     <div className="message__author-row">
-                      <div className="message__author">Lemonade</div>
+                      <div className="message__author">{t('Lemonade')}</div>
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       {modelPreparation.phase === 'loading'
-                        ? `Loading ${modelPreparation.modelName} for chat…`
-                        : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
+                        ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
+                        : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
+                          model: modelPreparation.modelName,
+                          progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+                        })}
                     </div>
                   </div>
                 </article>
@@ -3621,7 +3635,7 @@ ${finalText}`
 
       {showInlineLogs && (
         <>
-          <aside className="chat__logs" aria-label="Lemonade logs">
+          <aside className="chat__logs" aria-label={t('Lemonade logs')}>
             <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
               <LogViewer />
             </Suspense>
@@ -3630,7 +3644,7 @@ ${finalText}`
             className="chat__logs-resizer"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize logs panel"
+            aria-label={t('Resize logs panel')}
             aria-valuemin={CHAT_LOGS_MIN_WIDTH}
             aria-valuemax={maxChatLogsWidthForLayout(chatContainerWidth, railExpanded)}
             aria-valuenow={effectiveChatLogsWidth}
@@ -3647,7 +3661,7 @@ ${finalText}`
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
             <div className="composer__model-picker" ref={modelPickerRef}>
-              <span className="composer__model-label">Model</span>
+              <span className="composer__model-label">{t('Model')}</span>
               <button
                 type="button"
                 className="composer__model-button"
@@ -3678,13 +3692,13 @@ ${finalText}`
                 <span className="composer__model-button-caret">▾</span>
               </button>
               {modelPickerOpen && (
-                <div className="composer__model-menu" role="dialog" aria-label="Search models">
+                <div className="composer__model-menu" role="dialog" aria-label={t('Search models')}>
                   <label className="composer__model-search">
                     <Icon name="search" size={14} />
                     <input
                       autoFocus
                       value={modelPickerQuery}
-                      placeholder="Search ready or Lemonade default models…"
+                      placeholder={t('Search ready or Lemonade default models…')}
                       onChange={e => setModelPickerQuery(e.target.value)}
                       // Typing filters, then Down hands off to the list's own
                       // roving-tabindex navigation.
@@ -3700,7 +3714,7 @@ ${finalText}`
                   <WorkspaceList
                     listRef={modelPickerListRef}
                     className="composer__model-results"
-                    label="Models"
+                    label={t('Models')}
                     onRowActivate={name => {
                       const option = modelPickerOptions.find(item => item.name === name);
                       if (option) handleModelPickerSelect(option);
@@ -3758,9 +3772,9 @@ ${finalText}`
                         />
                       );
                     })}
-                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">No matching models</li>}
+                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">{t('No matching models')}</li>}
                   </WorkspaceList>
-                  {modelPickerLoading && <div className="composer__model-loading-bar">Loading {modelPickerLoading}…</div>}
+                  {modelPickerLoading && <div className="composer__model-loading-bar">{t('Loading {model}…', { model: modelPickerLoading })}</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>
               )}
@@ -3771,8 +3785,8 @@ ${finalText}`
               type="button"
               className="composer__tools-toggle composer__effective-settings"
               onClick={() => setEffectiveSettingsOpen(true)}
-              title="Effective settings"
-              aria-label="Effective settings"
+              title={t('Effective settings')}
+              aria-label={t('Effective settings')}
             >
               <Icon name="sliders-horizontal" size={13} />
             </button>
@@ -3781,9 +3795,9 @@ ${finalText}`
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={handleToggleInlineLogs}
             aria-pressed={showInlineLogs}
-            title={showInlineLogs ? 'Hide logs' : 'Show logs'}
+            title={showInlineLogs ? t('Hide logs') : t('Show logs')}
           >
-            <Icon name="logs" size={13} /> Logs
+            <Icon name="logs" size={13} /> {t('Logs')}
           </button>
         </div>
         {canShowEffectiveSettings && effectiveSettingsOpen && (
@@ -3819,9 +3833,9 @@ ${finalText}`
         )}
         <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
-          <div className="composer__image-settings" aria-label="Image generation settings">
+          <div className="composer__image-settings" aria-label={t('Image generation settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Mode</span>
+              <span>{t('Mode')}</span>
               <select
                 value={imageMode}
                 onChange={e => {
@@ -3831,12 +3845,12 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="generate">Generate</option>
-                {supportsImageEdit && <option value="edit">Edit</option>}
+                <option value="generate">{t('Generate')}</option>
+                {supportsImageEdit && <option value="edit">{t('Edit')}</option>}
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Steps</span>
+              <span>{t('Steps')}</span>
               <input
                 type="number"
                 min={1}
@@ -3847,7 +3861,7 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting">
-              <span>CFG Scale</span>
+              <span>{t('CFG Scale')}</span>
               <input
                 type="number"
                 min={1}
@@ -3859,7 +3873,7 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting">
-              <span>Width</span>
+              <span>{t('Width')}</span>
               <select
                 value={imageSettings.width}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
@@ -3869,7 +3883,7 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Height</span>
+              <span>{t('Height')}</span>
               <select
                 value={imageSettings.height}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
@@ -3879,7 +3893,7 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -3898,22 +3912,22 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting composer__image-setting--upscale">
-              <span>Upscale</span>
+              <span>{t('Upscale')}</span>
               <select
                 value={imageSettings.upscaleModel}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, upscaleModel: e.target.value }))}
                 disabled={isBusy || upscalingModels.length === 0}
               >
-                <option value="">Off</option>
+                <option value="">{t('Off')}</option>
                 {upscalingModels.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
           </div>
         )}
         {currentCapability === 'audio-generation' && (
-          <div className="composer__capability-settings composer__audio-generation-settings" aria-label="Audio generation settings">
+          <div className="composer__capability-settings composer__audio-generation-settings" aria-label={t('Audio generation settings')}>
             <label className="composer__image-setting">
-              <span>Duration</span>
+              <span>{t('Duration')}</span>
               <input
                 type="number"
                 min={1}
@@ -3925,7 +3939,7 @@ ${finalText}`
               <small>s</small>
             </label>
             <label className="composer__image-setting">
-              <span>Steps</span>
+              <span>{t('Steps')}</span>
               <input
                 type="number"
                 min={1}
@@ -3950,7 +3964,7 @@ ${finalText}`
               </label>
             )}
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -3962,7 +3976,7 @@ ${finalText}`
             </label>
             {isAceStepAudio && (
               <label className="composer__image-setting composer__image-setting--language">
-                <span>Lyrics language</span>
+                <span>{t('Lyrics language')}</span>
                 <input
                   type="text"
                   maxLength={12}
@@ -3975,7 +3989,7 @@ ${finalText}`
             )}
             {isAceStepAudio && (
               <label className="composer__audio-lyrics">
-                <span>Lyrics <small>optional · leave empty for instrumental</small></span>
+                <span>{t('Lyrics')} <small>{t('optional · leave empty for instrumental')}</small></span>
                 <textarea
                   value={audioGenerationSettings.lyrics}
                   onChange={e => setAudioGenerationSettings(prev => ({ ...prev, lyrics: e.target.value }))}
@@ -3988,9 +4002,9 @@ ${finalText}`
           </div>
         )}
         {currentCapability === 'tts' && isOpenMossTts && (
-          <div className="composer__capability-settings composer__openmoss-settings" aria-label="OpenMOSS voice settings">
+          <div className="composer__capability-settings composer__openmoss-settings" aria-label={t('OpenMOSS voice settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Voice mode</span>
+              <span>{t('Voice mode')}</span>
               <select
                 value={openMossSettings.mode}
                 onChange={event => {
@@ -4000,19 +4014,19 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="plain">Plain</option>
-                <option value="describe">Describe voice</option>
-                <option value="clone">Clone WAV sample</option>
+                <option value="plain">{t('Plain')}</option>
+                <option value="describe">{t('Describe voice')}</option>
+                <option value="clone">{t('Clone WAV sample')}</option>
               </select>
             </label>
             <label className="composer__openmoss-description">
               <span>
                 {openMossSettings.mode === 'describe'
-                  ? 'Voice description'
+                  ? t('Voice description')
                   : openMossSettings.mode === 'clone'
-                    ? 'Style note'
-                    : 'Voice style'}
-                <small>{openMossSettings.mode === 'clone' ? 'optional' : 'optional instruction'}</small>
+                    ? t('Style note')
+                    : t('Voice style')}
+                <small>{openMossSettings.mode === 'clone' ? t('optional') : t('optional instruction')}</small>
               </span>
               <input
                 type="text"
@@ -4033,24 +4047,24 @@ ${finalText}`
             >
               {openMossSettings.mode === 'describe'
                 ? openMossDescribeUnavailable
-                  ? 'Install MOSS-VoiceGen to enable described voices.'
+                  ? t('Install MOSS-VoiceGen to enable described voices.')
                   : openMossCloneModel
-                    ? `Voice design: ${openMossVoiceDesignModel} → speech: ${openMossCloneModel}`
-                    : `Using ${openMossVoiceDesignModel} directly for described speech.`
+                    ? t('Voice design: {design} → speech: {speech}', { design: openMossVoiceDesignModel, speech: openMossCloneModel })
+                    : t('Using {model} directly for described speech.', { model: openMossVoiceDesignModel })
                 : openMossSettings.mode === 'clone'
                   ? !openMossCloneModel
-                    ? 'Install OpenMOSS-TTS to clone a WAV voice sample.'
+                    ? t('Install OpenMOSS-TTS to clone a WAV voice sample.')
                     : pendingAudioFiles.length > 0
-                      ? `Voice sample ready: ${pendingAudioFiles[0].name}`
-                      : 'Attach one WAV voice sample with the paperclip below.'
-                  : 'The selected OpenMOSS model receives the optional voice style directly.'}
+                      ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
+                      : t('Attach one WAV voice sample with the paperclip below.')
+                  : t('The selected OpenMOSS model receives the optional voice style directly.')}
             </div>
           </div>
         )}
         {currentCapability === 'model3d' && (
-          <div className="composer__capability-settings composer__model3d-settings" aria-label="3D generation settings">
+          <div className="composer__capability-settings composer__model3d-settings" aria-label={t('3D generation settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Source</span>
+              <span>{t('Source')}</span>
               <select
                 value={model3dSettings.sourceMode}
                 onChange={e => {
@@ -4066,19 +4080,19 @@ ${finalText}`
             </label>
             {model3dSettings.sourceMode === 'text' && (
               <label className="composer__image-setting composer__image-setting--model">
-                <span>Image model</span>
+                <span>{t('Image model')}</span>
                 <select
                   value={model3dSettings.imageModel}
                   onChange={e => setModel3dSettings(prev => ({ ...prev, imageModel: e.target.value }))}
                   disabled={isBusy || imageGenerationModels.length === 0}
                 >
-                  {imageGenerationModels.length === 0 && <option value="">Download an image model first</option>}
+                  {imageGenerationModels.length === 0 && <option value="">{t('Download an image model first')}</option>}
                   {imageGenerationModels.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
               </label>
             )}
             <label className="composer__image-setting">
-              <span>Resolution</span>
+              <span>{t('Resolution')}</span>
               <select
                 value={model3dSettings.resolution}
                 onChange={e => setModel3dSettings(prev => ({ ...prev, resolution: Number(e.target.value) as 512 | 1024 | 1536 }))}
@@ -4090,18 +4104,18 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Background</span>
+              <span>{t('Background')}</span>
               <select
                 value={model3dSettings.backgroundRemoval}
                 onChange={e => setModel3dSettings(prev => ({ ...prev, backgroundRemoval: e.target.value as 'birefnet' | 'threshold' }))}
                 disabled={isBusy}
               >
-                <option value="birefnet">Auto matte</option>
-                <option value="threshold">Plain background</option>
+                <option value="birefnet">{t('Auto matte')}</option>
+                <option value="threshold">{t('Plain background')}</option>
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -4117,12 +4131,12 @@ ${finalText}`
           <div
             className="composer__images"
             role="list"
-            aria-label="Image attachments"
+            aria-label={t('Image attachments')}
           >
             {pendingImages.map((src, i) => (
               <div key={i} className="composer__image-thumb" role="listitem">
                 <img src={src} alt={`Attachment ${i + 1}`} />
-                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label="Remove image">×</button>
+                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label={t('Remove image')}>×</button>
               </div>
             ))}
           </div>
@@ -4132,7 +4146,7 @@ ${finalText}`
             {pendingAudioFiles.map((file, i) => (
               <div key={`${file.name}-${i}`} className="composer__file-chip">
                 <span><Icon name="mic" size={13} /> {file.name}</span>
-                <button onClick={removeAudio} aria-label="Remove audio file">×</button>
+                <button onClick={removeAudio} aria-label={t('Remove audio file')}>×</button>
               </div>
             ))}
           </div>
@@ -4141,7 +4155,7 @@ ${finalText}`
           <div className={`composer__live${liveError || micError ? ' composer__live--error' : ''}`}>
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
-              <span>{isLiveRecording ? (isLiveConnected ? 'Live microphone' : 'Connecting microphone…') : 'Microphone'}</span>
+              <span>{isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone')}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
             <div className="composer__live-text">
@@ -4162,15 +4176,15 @@ ${finalText}`
                 });
               }}
               disabled={!currentModel || isBusy || (!modeSupportsMcp && (!canAttach || imageAttachmentLimitReached))}
-              title="Add files, photos, or tools"
-              aria-label="Add files, photos, or tools"
+              title={t('Add files, photos, or tools')}
+              aria-label={t('Add files, photos, or tools')}
               aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
               <Icon name="plus" size={20} />
             </button>
             {addMenuOpen && !mcpPickerOpen && (
-              <div className="composer__add-menu" role="menu" aria-label="Add to chat">
+              <div className="composer__add-menu" role="menu" aria-label={t('Add to chat')}>
                 <button
                   type="button"
                   className="composer__add-row"
@@ -4183,7 +4197,7 @@ ${finalText}`
                 >
                   <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Add files</strong>
+                    <strong>{t('Add files')}</strong>
                     <small>{isOpenMossCloneMode
                       ? 'WAV audio file'
                       : currentCapability === 'model3d'
@@ -4204,12 +4218,12 @@ ${finalText}`
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
-                  aria-label="Tools"
+                  aria-label={t('Tools')}
                   aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Tools</strong>
+                    <strong>{t('Tools')}</strong>
                     <small>{useMcp
                       ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
                       : 'Lemonade tools and external MCP servers'}</small>
@@ -4236,9 +4250,9 @@ ${finalText}`
                     }
                   }}
                 >
-                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label="Back to add to chat options">
+                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label={t('Back to add to chat options')}>
                     <span aria-hidden="true">←</span>
-                    <span>Back</span>
+                    <span>{t('Back')}</span>
                   </button>
                   <div className="composer__mcp-header">
                     <label className="composer__mcp-master">
@@ -4249,13 +4263,13 @@ ${finalText}`
                         onChange={event => persistMcpEnabled(event.target.checked)}
                       />
                       <span>
-                        <strong id="composer-mcp-dialog-title">Tools for this chat</strong>
+                        <strong id="composer-mcp-dialog-title">{t('Tools for this chat')}</strong>
                         <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
                       </span>
                     </label>
-                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>Built-in default</button>
+                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>{t('Built-in default')}</button>
                   </div>
-                  <div className="composer__mcp-tabs" role="tablist" aria-label="Tool providers">
+                  <div className="composer__mcp-tabs" role="tablist" aria-label={t('Tool providers')}>
                     <button
                       type="button"
                       role="tab"
@@ -4263,7 +4277,7 @@ ${finalText}`
                       className={`composer__mcp-tab${mcpPickerTab === 'lemonade' ? ' is-active' : ''}`}
                       onClick={() => setMcpPickerTab('lemonade')}
                     >
-                      Lemonade tools
+                      {t('Lemonade tools')}
                     </button>
                     <button
                       type="button"
@@ -4272,16 +4286,16 @@ ${finalText}`
                       className={`composer__mcp-tab${mcpPickerTab === 'external' ? ' is-active' : ''}`}
                       onClick={() => setMcpPickerTab('external')}
                     >
-                      External MCP servers
+                      {t('External MCP servers')}
                     </button>
                   </div>
                   {mcpPickerLoading ? (
-                    <p className="composer__mcp-empty">Loading MCP tools…</p>
+                    <p className="composer__mcp-empty">{t('Loading MCP tools…')}</p>
                   ) : mcpPickerError ? (
                     <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
                   ) : visibleMcpOptions.length === 0 ? (
                     <p className="composer__mcp-empty">
-                      {mcpPickerTab === 'external' ? 'No external MCP servers are connected.' : 'No Lemonade tools available.'}
+                      {mcpPickerTab === 'external' ? t('No external MCP servers are connected.') : t('No Lemonade tools available.')}
                     </p>
                   ) : (
                     <div className="composer__mcp-servers">
@@ -4307,7 +4321,7 @@ ${finalText}`
                             {serverSelected && (
                               <div className="composer__mcp-tools">
                                 {server.toolOptions.length === 0 ? (
-                                  <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                                  <p className="composer__mcp-empty">{t('No tools discovered for this server.')}</p>
                                 ) : server.toolOptions.map(tool => {
                                   const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
                                   return (
@@ -4333,7 +4347,7 @@ ${finalText}`
                     </div>
                   )}
                   <div className="composer__mcp-footer">
-                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('Select all tools for selected servers')}</button>
                   </div>
                 </div>
               </div>
@@ -4357,7 +4371,7 @@ ${finalText}`
             onPaste={handlePaste}
             disabled={isBusy}
             rows={1}
-            aria-label="Message"
+            aria-label={t('Message')}
           />
           {modeSupportsChatCompletions && (
             <div
@@ -4380,21 +4394,21 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
+                aria-label={`${t('Reasoning')}: ${thinkingMode === 'off' ? t('Off') : t('Thinking')}`}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
+                <span>{thinkingMode === 'off' ? t('Off') : t('Thinking')}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
               {!thinkingMenuOpen && (
                 <div className="composer__thinking-tooltip" role="tooltip" aria-hidden="true">
-                  <span>Reasoning</span>
+                  <span>{t('Reasoning')}</span>
                   <kbd>Ctrl ⇧ M</kbd>
                 </div>
               )}
               {thinkingMenuOpen && (
-                <div className="composer__thinking-menu" role="menu" aria-label="Reasoning">
+                <div className="composer__thinking-menu" role="menu" aria-label={t('Reasoning')}>
                   {(['normal', 'off'] as const).map(mode => {
                     const selected = thinkingMode === mode;
                     const enabled = mode !== 'off';
@@ -4408,9 +4422,9 @@ ${finalText}`
                         onClick={() => selectThinkingMode(mode)}
                       >
                         <span className="composer__thinking-option-copy">
-                          <span className="composer__thinking-option-label">{enabled ? 'Thinking' : 'Off'}</span>
+                          <span className="composer__thinking-option-label">{enabled ? t('Thinking') : t('Off')}</span>
                           <span className="composer__thinking-option-description">
-                            {enabled ? 'Model thinks before answering' : 'Direct answer'}
+                            {enabled ? t('Model thinks before answering') : t('Direct answer')}
                           </span>
                         </span>
                         {selected && <Icon name="check" size={13} aria-hidden="true" />}
@@ -4426,21 +4440,21 @@ ${finalText}`
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
               disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
-              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
+              title={isLiveRecording ? t('Stop live microphone transcription') : supportsRealtimeAudio ? t('Start live microphone transcription') : t('Live microphone needs HTTPS/localhost and a realtime-capable audio model')}
+              aria-label={isLiveRecording ? t('Stop live microphone transcription') : t('Start live microphone transcription')}
               aria-pressed={isLiveRecording}
             >
               <Icon name="mic" size={16} />
             </button>
           )}
           {isStreaming ? (
-            <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
+            <button className="composer__stop" onClick={handleStop} aria-label={t('Stop generating')} title={t('Stop')}><Icon name="stop" size={16} /></button>
           ) : (
             <button
               className="composer__send"
               onClick={() => handleSend()}
               disabled={!canSubmit}
-              aria-label="Send"
+              aria-label={t('Send')}
             ><Icon name="send" size={16} /></button>
           )}
         </div>
@@ -4485,6 +4499,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   modelInfos,
   onRefresh,
 }) => {
+  const { t } = useI18n();
   const togglePinnedModel = async (model: LoadedModel) => {
     const api = await getApiClient();
     await api.setModelPinned(model.model_name, model.pinned !== true);
@@ -4495,29 +4510,29 @@ const EmptyState: React.FC<EmptyStateProps> = ({
     <>
       {!(showLoadedOverview && loadedModels.length > 0) && (
       <div className="hero">
-        <h1 className="hero__title">Get to know Lemonade</h1>
+        <h1 className="hero__title">{t('Get to know Lemonade')}</h1>
         <p className="hero__subtitle">
           {loadedModels.length > 0
-            ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
-            : 'Ask a question to learn how Lemonade works and get started with your first model.'}
+            ? t('{count} models ready. Ask a question or explore what Lemonade can do.', { count: loadedModels.length })
+            : t('Ask a question to learn how Lemonade works and get started with your first model.')}
         </p>
 
         <div className="chips" role="list">
           <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
-            How do I use Lemonade?
+            {t('How do I use Lemonade?')}
           </button>
           <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-            How do I add a model?
+            {t('How do I add a model?')}
           </button>
           <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
-            What are Lemonade tools?
+            {t('What are Lemonade tools?')}
           </button>
           <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-            What can my hardware run?
+            {t('What can my hardware run?')}
           </button>
         </div>
       </div>
@@ -4526,13 +4541,13 @@ const EmptyState: React.FC<EmptyStateProps> = ({
       {showLoadedOverview && loadedModels.length > 0 && (
         <section className="loaded-overview" aria-labelledby="loaded-overview-title">
           <header className="loaded-overview__header">
-            <h2 id="loaded-overview-title" className="loaded-overview__title">Loaded now</h2>
+            <h2 id="loaded-overview-title" className="loaded-overview__title">{t('Loaded now')}</h2>
             <p className="loaded-overview__subtitle">
-              {loadedModels.length} model{loadedModels.length === 1 ? '' : 's'} ready for use
+              {t('{count} models ready for use', { count: loadedModels.length })}
             </p>
           </header>
 
-          <div className="loaded-overview__list" role="list" aria-label="Loaded models">
+          <div className="loaded-overview__list" role="list" aria-label={t('Loaded models')}>
             {loadedModels.map(model => {
               const modelInfo = findModelInfoByName(modelInfos, model.model_name);
               const capability = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(model);
@@ -4594,7 +4609,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                         </span>
                       )}
                       {sizeLabel && (
-                        <span className="loaded-overview__meta-item" title="Known model size">
+                        <span className="loaded-overview__meta-item" title={t('Known model size')}>
                           {sizeLabel}
                         </span>
                       )}
@@ -4618,7 +4633,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                   <div className="loaded-overview__selection">
                     {isActive ? (
                       <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected" aria-current="true">
-                        Selected
+                        {t('Selected')}
                       </span>
                     ) : selectable ? (
                       <button
@@ -4630,11 +4645,11 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                         }}
                         disabled={isUnloading}
                       >
-                        Use
+                        {t('Use')}
                       </button>
                     ) : (
                       <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected">
-                        Loaded
+                        {t('Loaded')}
                       </span>
                     )}
                   </div>
@@ -4682,6 +4697,7 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (text: string) => void }> = ({ calls, onOptionSelect }) => {
+  const { t } = useI18n();
   // Track which choice was selected per call index. Map key is the call's position in the array.
   const [selections, setSelections] = useState<Map<number, string>>(() => new Map());
 
@@ -4723,12 +4739,12 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
                 )}
                 {!selectedChoice && allowCustom && (
                   <div className="options-block__custom">
-                    <input className="options-block__input" placeholder="Or type your own…"
+                    <input className="options-block__input" placeholder={t('Or type your own…')}
                       onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { handleSelect((e.target as HTMLInputElement).value.trim()); } }} />
                     <button className="options-block__submit" onClick={e => {
                       const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
                       if (input?.value.trim()) handleSelect(input.value.trim());
-                    }}>Send</button>
+                    }}>{t('Send')}</button>
                   </div>
                 )}
               </div>
@@ -4753,6 +4769,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 /* ── Message bubble ──────────────────────────────────────── */
 
 const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+  const { t } = useI18n();
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
@@ -4793,8 +4810,8 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
                 autoFocus
               />
               <div className="message__edit-actions">
-                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> Save & resend</button>
-                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> Cancel</button>
+                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> {t('Save & resend')}</button>
+                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> {t('Cancel')}</button>
               </div>
             </div>
           ) : message.content ? (
@@ -4803,7 +4820,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             </div>
           ) : null}
           {!isEditing && onEditUser && message.content && (
-            <div className="message__actions" aria-label="Message actions">
+            <div className="message__actions" aria-label={t('Message actions')}>
               <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
                 <Icon name="edit" size={13} /> Edit & resend
               </button>
@@ -4832,7 +4849,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             open={thinkingOpen}
             onToggle={e => setThinkingOpen((e.target as HTMLDetailsElement).open)}
           >
-            <summary>Reasoning{reasoningSummary(message.stats)}</summary>
+            <summary>{t('Reasoning')}{reasoningSummary(message.stats)}</summary>
             <div className="message__thinking-content">
               <MarkdownMessage content={message.thinking} />
             </div>
@@ -4849,18 +4866,18 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
         )}
         {message.audioUrl && (
           <div className="message__audio">
-            <audio controls src={message.audioUrl}>Your browser does not support audio playback.</audio>
+            <audio controls src={message.audioUrl}>{t('Your browser does not support audio playback.')}</audio>
             <a
               href={message.audioUrl}
               download={(message.audioName || `${displayModel?.name || 'lemonade-audio'}.wav`).replace(/[^a-z0-9._-]+/gi, '-')}
               className="message__action message__audio-download"
             >
-              <Icon name="download" size={13} /> Download audio
+              <Icon name="download" size={13} /> {t('Download audio')}
             </a>
           </div>
         )}
         {message.model3dUrl && (
-          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">Preparing 3D result…</div>}>
+          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">{t('Preparing 3D result…')}</div>}>
             <Model3DResult src={message.model3dUrl} name={message.model3dName || displayModel?.name} />
           </Suspense>
         )}
@@ -4876,23 +4893,23 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             )}
           </div>
         )}
-        <div className="message__actions" aria-label="Message actions">
+        <div className="message__actions" aria-label={t('Message actions')}>
           <button
             type="button"
             className="message__action"
             onClick={() => copyTextToClipboard(message.content || message.thinking || '')}
             disabled={!(message.content || message.thinking)}
           >
-            <Icon name="copy" size={13} /> Copy
+            <Icon name="copy" size={13} /> {t('Copy')}
           </button>
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
-              <Icon name="tts" size={13} /> Read aloud
+              <Icon name="tts" size={13} /> {t('Read aloud')}
             </button>
           )}
           {onRetry && (
             <button type="button" className="message__action" onClick={onRetry}>
-              ↻ Retry
+              ↻ {t('Retry')}
             </button>
           )}
         </div>

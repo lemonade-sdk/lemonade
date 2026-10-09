@@ -466,146 +466,157 @@ function nestedUnboundedQuantifier(pattern: string): boolean {
   return false;
 }
 
+/** Validation runs in a pure module, so the locale arrives as an argument.
+    The identity default keeps non-UI callers on the English wording. */
+export type RouterTranslate = (key: string, values?: Record<string, string | number>) => string;
+
+const identityTranslate: RouterTranslate = (key, values) => (
+  values
+    ? key.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name] ?? `{${name}}`))
+    : key
+);
+
 function validateNode(
   node: RouterNode,
   classifiers: RouterClassifier[],
   path: string,
   depth: number,
   errors: string[],
+  t: RouterTranslate = identityTranslate,
 ): void {
   if (depth > MAX_ROUTER_TREE_DEPTH) {
-    errors.push(`${path}: nesting exceeds ${MAX_ROUTER_TREE_DEPTH} levels.`);
+    errors.push(`${path}: ${t('nesting exceeds {max} levels.', { max: MAX_ROUTER_TREE_DEPTH })}`);
     return;
   }
   if (node.kind === 'group') {
-    if (node.operator === 'not' && node.children.length !== 1) errors.push(`${path}: NOT requires exactly one condition.`);
-    if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 0) errors.push(`${path}: ${node.operator.toUpperCase()} gate requires at least one condition.`);
-    if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 1) errors.push(`${path}: ${node.operator.toUpperCase()} gate needs at least 2 conditions - add another or remove the gate.`);
+    if (node.operator === 'not' && node.children.length !== 1) errors.push(`${path}: ${t('NOT requires exactly one condition.')}`);
+    if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 0) errors.push(`${path}: ${t('{gate} gate requires at least one condition.', { gate: node.operator.toUpperCase() })}`);
+    if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 1) errors.push(`${path}: ${t('{gate} gate needs at least 2 conditions - add another or remove the gate.', { gate: node.operator.toUpperCase() })}`);
 
     const directConditions = new Set<string>();
     node.children.forEach((child, index) => {
       const identity = routerConditionIdentity(child);
       if (identity && directConditions.has(identity)) {
-        errors.push(`${path}: duplicate ${identity.replace(':', ' ')} conditions are not allowed in the same gate.`);
+        errors.push(`${path}: ${t('duplicate {identity} conditions are not allowed in the same gate.', { identity: identity.replace(':', ' ') })}`);
       }
       if (identity) directConditions.add(identity);
-      validateNode(child, classifiers, `${path}.${node.operator}[${index}]`, depth + 1, errors);
+      validateNode(child, classifiers, `${path}.${node.operator}[${index}]`, depth + 1, errors, t);
     });
     return;
   }
 
   const text = String(node.textValue ?? '');
   if ((node.type === 'keywords_any' || node.type === 'keywords_all') && splitList(node.textValue).length === 0) {
-    errors.push(`${path}: add at least one keyword.`);
+    errors.push(`${path}: ${t('add at least one keyword.')}`);
   }
   if (node.type === 'regex') {
-    if (!text) errors.push(`${path}: regex cannot be empty.`);
+    if (!text) errors.push(`${path}: ${t('regex cannot be empty.')}`);
     else {
-      try { new RegExp(text); } catch { errors.push(`${path}: regex is invalid.`); }
-      if (nestedUnboundedQuantifier(text)) errors.push(`${path}: regex contains a nested unbounded quantifier rejected by the server.`);
+      try { new RegExp(text); } catch { errors.push(`${path}: ${t('regex is invalid.')}`); }
+      if (nestedUnboundedQuantifier(text)) errors.push(`${path}: ${t('regex contains a nested unbounded quantifier rejected by the server.')}`);
     }
   }
   if (node.type === 'min_chars' || node.type === 'max_chars') {
     const value = Number(node.numberValue);
-    if (!Number.isInteger(value) || value < 0) errors.push(`${path}: UTF-8 byte bound must be a non-negative integer.`);
+    if (!Number.isInteger(value) || value < 0) errors.push(`${path}: ${t('UTF-8 byte bound must be a non-negative integer.')}`);
   }
   if (node.type === 'classifier') {
     const classifier = classifiers.find(item => item.id === node.classifierId);
     if (!classifier) {
-      errors.push(`${path}: select a declared classifier.`);
+      errors.push(`${path}: ${t('select a declared classifier.')}`);
       return;
     }
     const labels = classifierLabels(classifier);
     if (node.label && (labels.length === 0 || !labels.includes(node.label))) {
-      errors.push(`${path}: label "${node.label}" is not declared by classifier "${classifier.id}".`);
+      errors.push(`${path}: ${t('label "{label}" is not declared by classifier "{id}".', { label: String(node.label), id: classifier.id })}`);
     }
     if (!node.label && labels.length > 0 && !classifier.defaultLabel) {
-      errors.push(`${path}: select a label or configure a default label on classifier "${classifier.id}".`);
+      errors.push(`${path}: ${t('select a label or configure a default label on classifier "{id}".', { id: classifier.id })}`);
     }
     if (node.minScore !== undefined && (!Number.isFinite(node.minScore) || node.minScore < 0 || node.minScore > 1)) {
-      errors.push(`${path}: min score must be in [0, 1].`);
+      errors.push(`${path}: ${t('min score must be in [0, 1].')}`);
     }
     if (node.maxScore !== undefined && (!Number.isFinite(node.maxScore) || node.maxScore < 0 || node.maxScore > 1)) {
-      errors.push(`${path}: max score must be in [0, 1].`);
+      errors.push(`${path}: ${t('max score must be in [0, 1].')}`);
     }
     if (node.minScore !== undefined && node.maxScore !== undefined && node.minScore > node.maxScore) {
-      errors.push(`${path}: min score cannot exceed max score.`);
+      errors.push(`${path}: ${t('min score cannot exceed max score.')}`);
     }
   }
   if (node.type === 'metadata') {
-    if (!String(node.metadataKey ?? '').length) errors.push(`${path}: metadata key is required.`);
+    if (!String(node.metadataKey ?? '').length) errors.push(`${path}: ${t('metadata key is required.')}`);
     if ((node.metadataComparator || 'equals') === 'any' && splitList(node.metadataValues).length === 0) {
-      errors.push(`${path}: metadata "any" requires at least one value.`);
+      errors.push(`${path}: ${t('metadata "any" requires at least one value.')}`);
     }
   }
 }
 
-export function validateRouterDraft(draft: RouterDraft): string[] {
+export function validateRouterDraft(draft: RouterDraft, t: RouterTranslate = identityTranslate): string[] {
   const errors: string[] = [];
   const mode: RouterRoutingMode = draft.mode === 'llm' ? 'llm' : 'rules';
-  if (!draft.name.trim() && !draft.modelName?.trim()) errors.push('Router name is required.');
-  if (draft.candidates.length === 0) errors.push('Select at least one candidate model.');
+  if (!draft.name.trim() && !draft.modelName?.trim()) errors.push(t('Router name is required.'));
+  if (draft.candidates.length === 0) errors.push(t('Select at least one candidate model.'));
   const candidateSet = new Set<string>();
   draft.candidates.forEach((candidate, index) => {
     const value = candidate;
-    if (!value.length) errors.push(`Candidate ${index + 1} is empty.`);
-    if (candidateSet.has(value)) errors.push(`Candidate "${value}" is duplicated.`);
+    if (!value.length) errors.push(t('Candidate {n} is empty.', { n: index + 1 }));
+    if (candidateSet.has(value)) errors.push(t('Candidate "{value}" is duplicated.', { value }));
     candidateSet.add(value);
   });
-  if (!draft.defaultModel || !candidateSet.has(draft.defaultModel)) errors.push('Default model must be one of the selected candidates.');
+  if (!draft.defaultModel || !candidateSet.has(draft.defaultModel)) errors.push(t('Default model must be one of the selected candidates.'));
 
   if (mode === 'llm') {
-    if (!String(draft.llmRouter?.model || '').trim()) errors.push('Natural-language router: model is required.');
-    if (!String(draft.llmRouter?.prompt || '').trim()) errors.push('Natural-language router: routing instruction is required.');
+    if (!String(draft.llmRouter?.model || '').trim()) errors.push(t('Natural-language router: model is required.'));
+    if (!String(draft.llmRouter?.prompt || '').trim()) errors.push(t('Natural-language router: routing instruction is required.'));
     return errors;
   }
 
   const classifierIds = new Set<string>();
   draft.classifiers.forEach((classifier, index) => {
-    const prefix = `Classifier ${index + 1}`;
-    if (!classifier.id.length) errors.push(`${prefix}: ID is required.`);
-    if (classifierIds.has(classifier.id)) errors.push(`${prefix}: duplicate ID "${classifier.id}".`);
+    const prefix = t('Classifier {n}', { n: index + 1 });
+    if (!classifier.id.length) errors.push(`${prefix}: ${t('ID is required.')}`);
+    if (classifierIds.has(classifier.id)) errors.push(`${prefix}: ${t('duplicate ID "{id}".', { id: classifier.id })}`);
     classifierIds.add(classifier.id);
-    if (!classifier.model.trim()) errors.push(`${prefix}: model is required.`);
+    if (!classifier.model.trim()) errors.push(`${prefix}: ${t('model is required.')}`);
     if (classifier.type === 'classifier' || classifier.type === 'llm') {
       const labels = classifier.labels.map(label => label.trim()).filter(Boolean);
-      if (classifier.type === 'llm' && labels.length === 0) errors.push(`${prefix}: add at least one output label.`);
-      if (new Set(labels).size !== labels.length) errors.push(`${prefix}: labels must be unique after trimming whitespace.`);
+      if (classifier.type === 'llm' && labels.length === 0) errors.push(`${prefix}: ${t('add at least one output label.')}`);
+      if (new Set(labels).size !== labels.length) errors.push(`${prefix}: ${t('labels must be unique after trimming whitespace.')}`);
       const defaultLabel = classifier.defaultLabel?.trim();
-      if (defaultLabel && !labels.includes(defaultLabel)) errors.push(`${prefix}: default label must be declared in labels.`);
-      if (classifier.type === 'llm' && !classifier.prompt.trim()) errors.push(`${prefix}: prompt is required for an LLM classifier.`);
+      if (defaultLabel && !labels.includes(defaultLabel)) errors.push(`${prefix}: ${t('default label must be declared in labels.')}`);
+      if (classifier.type === 'llm' && !classifier.prompt.trim()) errors.push(`${prefix}: ${t('prompt is required for an LLM classifier.')}`);
     } else {
       const concepts = Object.entries(classifier.referencePhrases);
-      if (concepts.length === 0) errors.push(`${prefix}: add at least one semantic concept.`);
+      if (concepts.length === 0) errors.push(`${prefix}: ${t('add at least one semantic concept.')}`);
       const normalizedConcepts: string[] = [];
       for (const [concept, phrases] of concepts) {
         const normalizedConcept = concept.trim();
-        if (!normalizedConcept) errors.push(`${prefix}: concept names cannot be empty.`);
+        if (!normalizedConcept) errors.push(`${prefix}: ${t('concept names cannot be empty.')}`);
         else normalizedConcepts.push(normalizedConcept);
-        if (!phrases.map(item => item.trim()).filter(Boolean).length) errors.push(`${prefix}: concept "${concept}" needs at least one phrase.`);
+        if (!phrases.map(item => item.trim()).filter(Boolean).length) errors.push(`${prefix}: ${t('concept "{concept}" needs at least one phrase.', { concept })}`);
       }
-      if (new Set(normalizedConcepts).size !== normalizedConcepts.length) errors.push(`${prefix}: concept names must be unique after trimming whitespace.`);
+      if (new Set(normalizedConcepts).size !== normalizedConcepts.length) errors.push(`${prefix}: ${t('concept names must be unique after trimming whitespace.')}`);
       const defaultLabel = classifier.defaultLabel?.trim();
-      if (defaultLabel && !normalizedConcepts.includes(defaultLabel)) errors.push(`${prefix}: default label must be one of the concept names.`);
+      if (defaultLabel && !normalizedConcepts.includes(defaultLabel)) errors.push(`${prefix}: ${t('default label must be one of the concept names.')}`);
     }
   });
 
-  if (draft.rules.length === 0) errors.push('Add at least one routing rule.');
+  if (draft.rules.length === 0) errors.push(t('Add at least one routing rule.'));
   const ruleIds = new Set<string>();
   draft.rules.forEach((rule, index) => {
-    const prefix = `Rule ${index + 1}`;
-    if (!rule.id.trim()) errors.push(`${prefix}: ID is required.`);
-    if (!SAFE_ROUTER_ID.test(rule.id)) errors.push(`${prefix}: ID may contain only letters, numbers, dot, underscore, and hyphen.`);
-    if (ruleIds.has(rule.id)) errors.push(`${prefix}: duplicate ID "${rule.id}".`);
+    const prefix = t('Rule {n}', { n: index + 1 });
+    if (!rule.id.trim()) errors.push(`${prefix}: ${t('ID is required.')}`);
+    if (!SAFE_ROUTER_ID.test(rule.id)) errors.push(`${prefix}: ${t('ID may contain only letters, numbers, dot, underscore, and hyphen.')}`);
+    if (ruleIds.has(rule.id)) errors.push(`${prefix}: ${t('duplicate ID "{id}".', { id: rule.id })}`);
     ruleIds.add(rule.id);
-    if (!candidateSet.has(rule.routeTo)) errors.push(`${prefix}: route target must be a selected candidate.`);
+    if (!candidateSet.has(rule.routeTo)) errors.push(`${prefix}: ${t('route target must be a selected candidate.')}`);
     if (rule.outputsText?.trim()) {
       try {
         const parsed = JSON.parse(rule.outputsText);
-        if (!isRecord(parsed)) errors.push(`${prefix}: outputs JSON must be an object.`);
-      } catch { errors.push(`${prefix}: outputs JSON is invalid.`); }
+        if (!isRecord(parsed)) errors.push(`${prefix}: ${t('outputs JSON must be an object.')}`);
+      } catch { errors.push(`${prefix}: ${t('outputs JSON is invalid.')}`); }
     }
-    validateNode(rule.condition, draft.classifiers, prefix, 0, errors);
+    validateNode(rule.condition, draft.classifiers, prefix, 0, errors, t);
   });
   return errors;
 }

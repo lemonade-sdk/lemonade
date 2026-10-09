@@ -15,12 +15,14 @@ import CurlModal from './inspect/CurlModal';
 import { WorkspaceActionButton, WorkspaceDetailEmpty } from './WorkspacePanels';
 import { isMobileLayout } from '../styles/breakpoints';
 import { useServerModelState } from '../features/models/modelState';
+import { useI18n } from '../i18n';
 
 interface InspectViewProps {
   embedded?: boolean;
 }
 
 export default function InspectView({ embedded = false }: InspectViewProps) {
+  const { t } = useI18n();
   const { traces, selectedTraceId, capturing, captureReady, searchQuery, filterKind, toast } = useInspectStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'replay' | 'improve'>('overview');
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -174,8 +176,8 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
         {!selectedTrace ? (
           <WorkspaceDetailEmpty
             icon="scan-eye"
-            title="Select a request"
-            description="Choose a captured request to review its timeline, prompts, metrics, and optimization suggestions."
+            title={t('Select a request')}
+            description={t('Choose a captured request to review its timeline, prompts, metrics, and optimization suggestions.')}
           />
         ) : (
           <>
@@ -188,7 +190,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                 icon="chevron-right"
                 onClick={closeMobileDetail}
               >
-                Requests
+                {t('Requests')}
               </WorkspaceActionButton>
               <div className="inspect-detail__identity">
                 <span className={`detail-kind-badge ${selectedTrace.kind.toLowerCase()}`}>{selectedTrace.kind}</span>
@@ -199,14 +201,14 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                 <div className="inspect-detail__status">
                   <span className={`trace-row__status-dot ${selectedTrace.status}`} aria-hidden="true"></span>
                   <span className="trace-row__status-label">
-                    {selectedTrace.status === 'ok' ? 'OK' : selectedTrace.status.charAt(0).toUpperCase() + selectedTrace.status.slice(1)}
+                    {selectedTrace.status === 'ok' ? t('OK') : t(selectedTrace.status.charAt(0).toUpperCase() + selectedTrace.status.slice(1))}
                   </span>
                 </div>
               </div>
 
               <div className="inspect-metrics-strip">
                 <div className="metric-card">
-                  <span className="metric-card__label">TTFT</span>
+                  <span className="metric-card__label">{t('TTFT')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.ttft ? (
                       <>
@@ -217,7 +219,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">THROUGHPUT</span>
+                  <span className="metric-card__label">{t('THROUGHPUT')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.tps ? (
                       <>
@@ -228,7 +230,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">INPUT</span>
+                  <span className="metric-card__label">{t('INPUT')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.prompt !== undefined ? (
                       <>
@@ -239,7 +241,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">OUTPUT</span>
+                  <span className="metric-card__label">{t('OUTPUT')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.completion !== undefined ? (
                       <>
@@ -250,7 +252,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card highlight">
-                  <span className="metric-card__label">TOTAL</span>
+                  <span className="metric-card__label">{t('TOTAL')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.prompt !== undefined && selectedTrace.completion !== undefined ? (
                       <>
@@ -261,7 +263,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">DURATION</span>
+                  <span className="metric-card__label">{t('DURATION')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.dur ? (
                       <>
@@ -295,12 +297,12 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   >
                     {tab === 'improve' ? (
                       <span className="detail-tab__label">
-                        <Icon name="omni" size={14} /> Improve
+                        <Icon name="omni" size={14} /> {t('Improve')}
                       </span>
                     ) : tab === 'replay' ? (
-                      'Replay & compare'
+                      t('Replay & compare')
                     ) : (
-                      tab.charAt(0).toUpperCase() + tab.slice(1)
+                      t(tab.charAt(0).toUpperCase() + tab.slice(1))
                     )}
                   </button>
                 ))}

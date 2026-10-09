@@ -3,6 +3,7 @@ import { Icon, type IconName } from './Icon';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
+import { useI18n } from '../i18n';
 
 export interface WorkspaceSectionDefinition<Section extends string> {
   id: Section;
@@ -47,6 +48,7 @@ export default function WorkspaceSectionRail<Section extends string>({
   footer,
 }: WorkspaceSectionRailProps<Section>) {
   const mobileRail = useWorkspaceMobileRail();
+  const { t } = useI18n();
 
   return (
     <>
@@ -55,32 +57,32 @@ export default function WorkspaceSectionRail<Section extends string>({
         ref={mobileRail.panelRef}
         id={panelId}
         className={`workspace-rail mobile-context-panel${railClassName ? ` ${railClassName}` : ''}${collapsed && !mobileRail.isOpen ? ' is-collapsed' : ''}${mobileRail.isOpen ? ' is-mobile-open' : ''}`}
-        aria-label={railLabel}
+        aria-label={t(railLabel)}
         role={mobileRail.isOpen ? 'dialog' : undefined}
         aria-modal={mobileRail.isOpen ? true : undefined}
       >
         <WorkspaceRailHeader
-          title={headerTitle}
-          sidebarLabel={sidebarLabel}
+          title={t(headerTitle)}
+          sidebarLabel={t(sidebarLabel)}
           icon={headerIcon}
           purpose="navigation"
           collapsed={collapsed && !mobileRail.isOpen}
           onToggle={() => onCollapsedChange(!collapsed)}
           onMobileClose={mobileRail.isOpen ? mobileRail.close : undefined}
         />
-        <nav className={`workspace-nav${navClassName ? ` ${navClassName}` : ''}`} aria-label={navigationLabel}>
+        <nav className={`workspace-nav${navClassName ? ` ${navClassName}` : ''}`} aria-label={t(navigationLabel)}>
           {sections.map(section => (
             <button
               key={section.id}
               type="button"
               className={activeSection === section.id ? 'is-active' : ''}
               aria-current={activeSection === section.id ? 'page' : undefined}
-              aria-label={section.label}
+              aria-label={t(section.label)}
               // aria-label keeps the name short and stable across the collapsed
               // state; the description reaches assistive tech as a description
               // rather than being swallowed by the label override.
               aria-describedby={collapsed ? undefined : `${panelId}-${section.id}-description`}
-              title={collapsed ? section.label : undefined}
+              title={collapsed ? t(section.label) : undefined}
               onClick={() => {
                 onSectionChange(section.id);
                 mobileRail.close();
@@ -88,8 +90,8 @@ export default function WorkspaceSectionRail<Section extends string>({
             >
               <span className="workspace-nav__icon"><Icon name={section.icon} size={15} aria-hidden="true" /></span>
               <span className="workspace-nav__copy">
-                <strong>{section.label}</strong>
-                <small id={`${panelId}-${section.id}-description`}>{section.description}</small>
+                <strong>{t(section.label)}</strong>
+                <small id={`${panelId}-${section.id}-description`}>{t(section.description)}</small>
               </span>
               <Icon className="workspace-nav__chevron" name="chevron-right" size={13} aria-hidden="true" />
             </button>
@@ -98,7 +100,7 @@ export default function WorkspaceSectionRail<Section extends string>({
         {footer}
       </aside>
       <WorkspaceMobileMenuButton
-        menuLabel={mobileMenuLabel}
+        menuLabel={t(mobileMenuLabel)}
         panelId={panelId}
         expanded={mobileRail.isOpen}
         onClick={mobileRail.toggle}

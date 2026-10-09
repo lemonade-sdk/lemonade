@@ -76,7 +76,7 @@ assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/spa
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
 assert.match(sources.app, /className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
-assert.match(sources.app, /className="titlebar__window-btn titlebar__window-btn--minimize"[\s\S]*?onClick=\{\(\) => window\.api\?\.minimizeWindow\?\.\(\)\}[\s\S]*?aria-label="Minimize"/);
+assert.match(sources.app, /className="titlebar__window-btn titlebar__window-btn--minimize"[\s\S]*?onClick=\{\(\) => window\.api\?\.minimizeWindow\?\.\(\)\}[\s\S]*?aria-label=(?:"Minimize"|\{t\('Minimize'\)\})/);
 assert.match(styles, /\.titlebar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
 assert.match(styles, /\.titlebar__utilities-toggle\s*\{[\s\S]*?border:\s*1px solid var\(--border-subtle\)/);
 assert.match(styles, /\.titlebar--desktop \.titlebar__utilities-toggle,[\s\S]*?\.titlebar--desktop \.titlebar__utilities-toggle:hover,[\s\S]*?\.titlebar--desktop \.titlebar__utilities-toggle\[aria-expanded="true"\]\s*\{\s*border-color:\s*transparent/);
@@ -89,7 +89,7 @@ assert.match(styles, /\.titlebar--desktop \.titlebar__right,[\s\S]*?\.titlebar--
 assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
 assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav button\s*\{[\s\S]*?min-width:\s*30px/);
 
-assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="tools"[\s\S]*?aria-label="Tools"/);
+assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="tools"[\s\S]*?aria-label=(?:"Tools"|\{t\('Tools'\)\})/);
 assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);
 assert.match(sources.chat, /const openMcpPicker = useCallback\(\(\) => \{[\s\S]*?setMcpPickerOpen\(true\)/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?Lemonade tools[\s\S]*?<\/button>/);
@@ -111,7 +111,7 @@ assert.match(sources.chat, /if \(composerFocusEpoch === 0\) return;[\s\S]*?reque
 
 assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
 assert.doesNotMatch(sources.connect, /AppsView|app-directory/);
-assert.match(sources.apps, /<WorkspaceCatalogLayout[\s\S]*?railLabel="App categories"/);
+assert.match(sources.apps, /<WorkspaceCatalogLayout[\s\S]*?railLabel=(?:"App categories"|\{t\(.App categories.\)\})/);
 assert.match(sources.apps, /className="apps-workspace"/);
 assert.doesNotMatch(sources.apps, /embedded\?: boolean|apps__category-filters|WorkspaceMetadataChip/);
 assert.match(sources.catalogLayout, /workspace-catalog-layout\$\{railCollapsed \? ' workspace--rail-collapsed' : ''\}/);
@@ -119,7 +119,7 @@ assert.match(sources.catalogLayout, /className="workspace-filter-list"/);
 
 assert.match(sources.backendManager, /const \[showLogos, setShowLogos\] = useState\(true\)/);
 assert.match(sources.backendManager, /data-backends-unsupported-toggle[\s\S]*?data-backends-logo-toggle/);
-assert.match(sources.backendManager, /checked=\{showLogos\}[\s\S]*?<span>Show logos<\/span>/);
+assert.match(sources.backendManager, /checked=\{showLogos\}[\s\S]*?<span>(?:Show logos|\{t\('Show logos'\)\})<\/span>/);
 assert.match(sources.backendManager, /showLogos \? \([\s\S]*?data-backend-logo[\s\S]*?: \([\s\S]*?workspace-card__name backend-card__name/);
 
 assert.match(sources.modelManager, /EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir'/);
@@ -128,10 +128,10 @@ assert.match(sources.modelManager, /managed in your external models folder\. Del
 assert.doesNotMatch(sources.modelManager, /openExternalModelsFolder|manager__toast-folder-action/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
-assert.match(sources.mcpPanel, />HTTP endpoint</);
-assert.match(sources.mcpPanel, />Local process</);
+assert.match(sources.mcpPanel, />(?:HTTP endpoint|\{t\('HTTP endpoint'\)\})</);
+assert.match(sources.mcpPanel, />(?:Local process|\{t\('Local process'\)\})</);
 assert.match(sources.mcpPanel, /placeholder="http:\/\/127\.0\.0\.1:3000\/mcp"/);
-assert.match(sources.mcpPanel, />Bearer token from environment</);
+assert.match(sources.mcpPanel, />(?:Bearer token from environment|\{t\('Bearer token from environment'\)\})</);
 assert.match(sources.mcpPanel, /Test connection/);
 assert.match(sources.mcpPanel, /api\.testMcpServer\(serverPayload\(draft\)\)/);
 assert.match(sources.mcpPanel, /External MCP connections are temporarily unavailable/);

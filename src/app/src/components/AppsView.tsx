@@ -10,11 +10,13 @@ import {
   WorkspaceActionGroup,
   WorkspacePaneHeader,
 } from './WorkspacePanels';
+import { useI18n, type Locale } from '../i18n';
 
 export type MarketplaceApp = {
   id: string;
   name: string;
   description?: string;
+  localizedDescriptions?: Partial<Record<Locale, string>>;
   category?: string[];
   logo?: string;
   pinned?: boolean;
@@ -29,6 +31,35 @@ export type MarketplaceCategory = {
 export const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 const ALL_APPS_SECTION = 'all-apps';
 const FEATURED_APP_LIMIT = 4;
+
+const ZH_CN_APP_DESCRIPTIONS: Record<string, string> = {
+  anythingllm: '使用本地设备模型的一体化 AI 生产力应用',
+  'open-webui': '功能丰富的 Web 界面，用于在本地与 LLM 聊天',
+  hermes: '具备自我改进能力的自主代理，支持持久化记忆和定时自动化',
+  pi: '使用 Lemonade 本地模型的极简终端编程代理',
+  'Claude Code': '代理式编程工具，可读取代码库、编辑文件、运行命令并集成开发工具',
+  n8n: '原生集成 Lemonade 的工作流自动化平台，用于 AI 驱动的自动化',
+  'github-copilot': '用于本地 AI 编程辅助的 VS Code Copilot 扩展',
+  gaia: '用于设计本地优先代理的 SDK',
+  dify: '构建基于节点的 AI 代理和 RAG 工作流',
+  'fx-chatbot': '在 Firefox 浏览器中运行 Lemonade',
+  'lemonade-mobile': '适用于自托管 Lemonade 服务器的 iOS 和 Android 聊天应用',
+  'infinity-arcade': '生成并游玩无限的复古风格街机游戏重混作品',
+  modelscope: '在 ModelScope 上浏览和发现 GGUF 模型，可直接从 Lemonade 下载',
+  openclaw: '能够编写和运行代码、管理文件并完成多步骤任务的自主代理',
+  listenr: '完全在本地录音、转写并微调自己的音频模型，由 Lemonade 提供支持',
+  'dream-server': '私有本地 AI 服务器，支持聊天、代理、RAG、工作流和自托管应用，并由 Lemonade 提供 AMD 推理支持',
+  'lemon-zest': '使用本地 Stable Diffusion 模型的开源图像编辑器',
+  interviewer: '支持语音模拟面试的 AI 面试练习应用',
+  codegpt: '支持本地 LLM 的 VS Code AI 编程助手',
+  'deep-tutor': '提供个性化学习体验的 AI 辅导平台',
+  'hugging-face': '在 Hugging Face Hub 上浏览和发现兼容 Lemonade 的模型',
+  'iterate-ai': '用于构建和部署 AI 解决方案的企业级 AI 平台',
+  'ai-toolkit': '在 VS Code 扩展中大规模试验 LLM',
+  morphik: '集中管理业务知识，构建可靠的 AI 代理来自动化处理任务',
+  openhands: '能够编写代码、修复错误等的 AI 软件开发代理',
+  vane: '支持本地 LLM 的开源 AI 搜索引擎',
+};
 
 function categorySectionId(categoryKey: string): string {
   const safeCategory = encodeURIComponent(categoryKey)
@@ -179,6 +210,7 @@ const AppsView: React.FC<AppsViewProps> = ({
   loading: marketplaceLoading,
   error: marketplaceError,
 }) => {
+  const { locale, t } = useI18n();
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const featuredApps = useMemo(
@@ -217,23 +249,23 @@ const AppsView: React.FC<AppsViewProps> = ({
   const categoryFilters = useMemo<CatalogFilterDefinition<string>[]>(() => [
     {
       id: ALL_APPS_SECTION,
-      label: 'All Apps',
+      label: t('All Apps'),
       description: marketplaceLoading
-        ? 'Loading directory'
+        ? t('Loading directory')
         : marketplaceError
-          ? 'Directory unavailable'
-          : 'Compatible clients and tools',
+          ? t('Directory unavailable')
+          : t('Compatible clients and tools'),
       icon: 'globe',
       count: marketplaceLoading || marketplaceError ? undefined : marketplaceApps.length,
     },
     ...categoryOptions.map(group => ({
       id: categorySectionId(group.key),
-      label: group.label,
-      description: appCountLabel(group.apps.length),
+      label: t(group.label),
+      description: t('{count} compatible apps', { count: group.apps.length }),
       icon: categoryIcon(group.key),
       count: group.apps.length,
     })),
-  ], [categoryOptions, marketplaceApps.length, marketplaceError, marketplaceLoading]);
+  ], [categoryOptions, marketplaceApps.length, marketplaceError, marketplaceLoading, t]);
 
   const categoryBySection = useMemo(() => new Map(
     categoryOptions.map(group => [categorySectionId(group.key), group.key]),
@@ -254,8 +286,8 @@ const AppsView: React.FC<AppsViewProps> = ({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const paneTitle = 'Apps Marketplace';
-  const paneSubtitle = 'Lemonade works best as the inference server for applications. Try out this curated list of apps!';
+  const paneTitle = t('Apps Marketplace');
+  const paneSubtitle = t('Lemonade works best as the inference server for applications. Try out this curated list of apps!');
 
   const showFeatured = !activeGroup && featuredApps.length > 0;
   const visibleGroups = (activeGroup ? [activeGroup] : categoryGroups)
@@ -274,16 +306,21 @@ const AppsView: React.FC<AppsViewProps> = ({
         <span className="app-card__identity">
           <h3 className="workspace-card__name app-card__name">{app.name}</h3>
           {app.category && app.category.length > 0 && (
-            <span className="app-card__category">{app.category.map(displayLabel).join(' · ')}</span>
+            <span className="app-card__category">{app.category.map(category => t(displayLabel(category))).join(' · ')}</span>
           )}
         </span>
       </header>
-      <p className="app-card__description">{app.description || 'No description available.'}</p>
+      <p className="app-card__description">
+        {app.localizedDescriptions?.[locale]
+          ?? (locale === 'zh-CN' ? ZH_CN_APP_DESCRIPTIONS[app.id] : undefined)
+          ?? app.description
+          ?? t('No description available.')}
+      </p>
       <footer className="app-card__footer">
-        <WorkspaceActionGroup className="app-card__actions" label={`Links for ${app.name}`}>
-          {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
-          {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
-          {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
+        <WorkspaceActionGroup className="app-card__actions" label={t('Links for {name}', { name: app.name })}>
+          {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>{t('Visit')}</WorkspaceActionButton>}
+          {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>{t('Guide')}</WorkspaceActionButton>}
+          {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>{t('Video')}</WorkspaceActionButton>}
         </WorkspaceActionGroup>
       </footer>
     </article>
@@ -294,10 +331,10 @@ const AppsView: React.FC<AppsViewProps> = ({
       view="apps"
       className="apps-workspace"
       panelId="apps-types-panel"
-      railTitle="Filters"
-      railLabel="App categories"
-      sidebarLabel="app categories"
-      mobileMenuLabel="Open app categories"
+      railTitle={t('Filters')}
+      railLabel={t('App categories')}
+      sidebarLabel={t('app categories')}
+      mobileMenuLabel={t('Open app categories')}
       filters={categoryFilters}
       activeFilter={activeCategorySection}
       onFilterChange={section => setCategoryFilter(categoryBySection.get(section) ?? null)}
@@ -311,27 +348,27 @@ const AppsView: React.FC<AppsViewProps> = ({
       }
     >
       {marketplaceLoading ? (
-        <div className="apps__empty" role="status">Loading apps...</div>
+        <div className="apps__empty" role="status">{t('Loading apps...')}</div>
       ) : marketplaceError ? (
-        <div className="apps__error" role="alert">Apps unavailable: {marketplaceError}</div>
+        <div className="apps__error" role="alert">{t('Apps unavailable: {error}', { error: marketplaceError })}</div>
       ) : (
         <div className="workspace-catalog" aria-label={`${paneTitle} directory`}>
           {showFeatured && (
             <WorkspaceCatalogSection
-              title="Featured"
-              description="Picks from the Lemonade team."
+              title={t('Featured')}
+              description={t('Picks from the Lemonade team.')}
             >
               {featuredApps.map(renderAppCard)}
             </WorkspaceCatalogSection>
           )}
           {visibleGroups.map(group => (
-            <WorkspaceCatalogSection key={group.key} title={group.label}>
+            <WorkspaceCatalogSection key={group.key} title={t(group.label)}>
               {group.apps.map(renderAppCard)}
             </WorkspaceCatalogSection>
           ))}
           {marketplaceApps.length === 0 && (
             <div className="apps__empty">
-              No apps are available yet.
+              {t('No apps are available yet.')}
             </div>
           )}
         </div>
