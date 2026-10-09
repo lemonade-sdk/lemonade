@@ -182,6 +182,7 @@ struct CliConfig {
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
     std::optional<bool> pi_mcp;
+    bool pi_codemode = false;
 
     // Cloud provider commands
     std::string cloud_provider;
@@ -821,6 +822,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: no API key provided; using default agent auth token." << std::endl;
     } else {
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
+    }
+
+    if (config.agent == "pi" && config.pi_codemode) {
+        agent_config.extra_args.push_back("--tools");
+        agent_config.extra_args.push_back("+codemode");
     }
 
     if (!config.agent_args.empty()) {
@@ -1552,6 +1558,8 @@ int main(int argc, char* argv[]) {
             agent_cmd->add_flag("--mcp,!--no-mcp", config.pi_mcp,
                 "Add (or remove) the Lemonade MCP server in pi's mcp.json; the choice is kept "
                 "for later launches");
+            agent_cmd->add_flag("--codemode", config.pi_codemode,
+                "Enable pi's codemode tool for this launch");
         }
 
         if (agent_name == "codex") {
