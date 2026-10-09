@@ -68,7 +68,7 @@ static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb) 
 /// Get the amount of memory currently in use by the platform.
 /// For GPU: VRAM in use. For CPU/NPU: system RAM in use.
 /// Returns 0.0 if not measurable.
-static double get_used_memory_gb(DeviceType device_type) {
+inline double get_used_memory_gb(DeviceType device_type) {
     auto metrics = create_metrics_platform();
     if (!metrics) return 0.0;
 
@@ -90,7 +90,8 @@ static double get_used_memory_gb(DeviceType device_type) {
 /// NPU  → system RAM minus currently-used RAM
 inline double get_available_memory_gb(DeviceType device_type,
                                       GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
-                                      const std::string& gpu_device = "") {
+                                      const std::string& gpu_device = "",
+                                      std::string* out_device_label = nullptr) {
     auto si = create_system_info();
 
     // Subtract currently-used memory
@@ -120,11 +121,12 @@ inline double get_available_memory_gb(DeviceType device_type,
                                    << ") total=" << std::fixed << std::setprecision(2)
                                    << pool.total_gb << " GB, used=" << used_gb
                                    << " GB → " << available << " GB available" << " ";
+            if (out_device_label) *out_device_label = pool.label;
             return available;
         }
 
         if (gpu_vendor != GpuMemoryVendor::Any) {
-            LOG(DEBUG, "AutoTune") << "get_available_memory_gb: selected GPU vendor unavailable";
+            LOG(WARNING, "AutoTune") << "get_available_memory_gb: selected GPU vendor unavailable";
             return 0.0;
         }
 
@@ -173,10 +175,13 @@ inline double get_available_memory_gb(DeviceType device_type,
 }
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
-                                          bool is_embedding = false) {
+                                          bool is_embedding = false,
+                                          bool* out_is_memory_fallback = nullptr) {
+    if (out_is_memory_fallback) *out_is_memory_fallback = false;
     if (available_memory_gb <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
+        if (out_is_memory_fallback) *out_is_memory_fallback = true;
         return AUTO_CTX_FALLBACK;
     }
 
@@ -236,6 +241,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                << " — no memory for KV after weights (" << std::fixed
                                << std::setprecision(2) << model_weight_gb
                                << " GB), returning " << AUTO_CTX_FALLBACK  << " ";
+        if (out_is_memory_fallback) *out_is_memory_fallback = true;
         return AUTO_CTX_FALLBACK;
     }
 
@@ -243,6 +249,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     int64_t max_ctx_from_memory = static_cast<int64_t>(std::floor(available_bytes / kv_bytes_per_token));
 
     if (max_ctx_from_memory <= 0) {
+        if (out_is_memory_fallback) *out_is_memory_fallback = true;
         return AUTO_CTX_FALLBACK;
     }
 
@@ -300,17 +307,68 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();
     if (device_json.is_string()) device = device_json.get<std::string>();
-    double available_gb = get_available_memory_gb(
-        model_info.device, gpu_memory_vendor_for_target(backend, device), device);
+    const GpuMemoryVendor gpu_vendor = gpu_memory_vendor_for_target(backend, device);
+
+    std::string device_label;
+    double available_gb =
+        get_available_memory_gb(model_info.device, gpu_vendor, device, &device_label);
+
+    if (model_info.device & DEVICE_GPU) {
+        auto si = create_system_info();
+        CtxMemoryScope scope;
+        scope.is_gpu = true;
+        scope.per_device = gpu_indices_for_target(device, "ROCm").targets_vendor
+            ? !gpu_indices_for_target(device, "ROCm").indices.empty()
+            : !gpu_indices_for_target(device, "CUDA").indices.empty();
+        scope.device_named = gpu_vendor != GpuMemoryVendor::Any;
+        scope.reachable_gpu_count = count_gpu_candidates(
+            gpu_vendor, si->get_amd_igpu_device(), si->get_amd_dgpu_devices(),
+            si->get_nvidia_gpu_devices(), si->get_apple_silicon_device());
+        scope.ambiguous = !scope.device_named && scope.reachable_gpu_count > 1;
+
+        const std::string target_desc = device.empty() ? backend : device;
+        switch (classify_ctx_scope(scope)) {
+            case CtxScopeWarning::Unscoped:
+                LOG(WARNING, "AutoTune")
+                    << model_info.model_name << ": could not scope VRAM headroom to '"
+                    << target_desc
+                    << "'; auto-tuned ctx_size is based on a machine-wide estimate "
+                       "and may be far smaller than this GPU can hold. "
+                       "Pass --ctx-size to set it explicitly.";
+                break;
+            case CtxScopeWarning::Ambiguous:
+                LOG(WARNING, "AutoTune")
+                    << model_info.model_name
+                    << ": no target GPU specified; auto-tuning ctx_size against the "
+                       "most constrained GPU"
+                    << (device_label.empty() ? "" : " (" + device_label + ")")
+                    << ". Pass --" << recipe << "-device or --ctx-size to override.";
+                break;
+            case CtxScopeWarning::None:
+                break;
+        }
+    }
 
     if (available_gb <= 0) {
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
-        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
-                               << " — memory undetectable, returning " << fallback;
+        LOG(WARNING, "AutoTune") << model_info.model_name
+                                 << ": available memory could not be determined; falling back to "
+                                    "ctx_size=" << fallback << ". Pass --ctx-size to set it explicitly.";
         return fallback;
     }
 
-    int64_t result = compute_auto_context_size(model_info, available_gb, is_embedding);
+    bool is_memory_fallback = false;
+    int64_t result = compute_auto_context_size(model_info, available_gb, is_embedding,
+                                                &is_memory_fallback);
+    if (!is_embedding && is_memory_fallback) {
+        LOG(WARNING, "AutoTune")
+            << model_info.model_name << ": only " << std::fixed << std::setprecision(2)
+            << available_gb << " GB free"
+            << (device_label.empty() ? "" : " on " + device_label)
+            << " — not enough for the model weights plus a larger KV cache, so ctx_size "
+               "fell back to " << AUTO_CTX_FALLBACK
+            << ". Free VRAM or pass --ctx-size to override.";
+    }
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;
