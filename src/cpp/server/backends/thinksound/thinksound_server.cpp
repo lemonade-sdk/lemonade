@@ -10,7 +10,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cstdlib>
@@ -41,10 +40,6 @@ ThinkSoundServer::ThinkSoundServer(const std::string& log_level,
                                    ModelManager* model_manager,
                                    BackendManager* backend_manager)
     : WrappedServer("thinksound-server", log_level, model_manager, backend_manager) {}
-
-ThinkSoundServer::~ThinkSoundServer() {
-    unload();
-}
 
 std::string ThinkSoundServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = thinksound::spec();
@@ -123,27 +118,12 @@ void ThinkSoundServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path, args, "", is_debug(), false, env_vars);
-    set_process_handle(started_handle, exe_path, args);
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start thinksound-server process");
-    }
-    LOG(INFO, "thinksound-server") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("thinksound-server failed to start or become ready");
-    }
-}
-
-void ThinkSoundServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "thinksound-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
 void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink& sink) {
