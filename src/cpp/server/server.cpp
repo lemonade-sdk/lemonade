@@ -89,6 +89,30 @@ namespace lemon {
 
 namespace {
 
+nlohmann::json gpu_device_details_json(const SystemGpuMetrics& snapshot) {
+    nlohmann::json result;
+    result["primary_gpu_id"] = snapshot.primary_gpu_id.empty()
+        ? nlohmann::json() : nlohmann::json(snapshot.primary_gpu_id);
+    result["gpus"] = nlohmann::json::array();
+    for (const auto& gpu : snapshot.gpus) {
+        nlohmann::json entry;
+        entry["id"] = gpu.id;
+        entry["vendor"] = gpu.vendor;
+        entry["name"] = gpu.name;
+        entry["memory_type"] = gpu.memory_type;
+        entry["gpu_percent"] = gpu.gpu_percent >= 0.0
+            ? nlohmann::json(gpu.gpu_percent) : nlohmann::json();
+        entry["memory_total_gb"] = gpu.memory_total_gb >= 0.0
+            ? nlohmann::json(gpu.memory_total_gb) : nlohmann::json();
+        entry["memory_used_gb"] = gpu.memory_used_gb >= 0.0
+            ? nlohmann::json(gpu.memory_used_gb) : nlohmann::json();
+        result["gpus"].push_back(std::move(entry));
+    }
+    return result;
+}
+
+
+
 
 
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
@@ -453,6 +477,10 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
                 ? lemon::jobs::json(gpu_metrics.vram_used_gb)
                 : lemon::jobs::json();
+            const auto gpu_details = gpu_device_details_json(gpu_metrics);
+            stats["primary_gpu_id"] = lemon::jobs::json::parse(
+                gpu_details["primary_gpu_id"].dump());
+            stats["gpus"] = lemon::jobs::json::parse(gpu_details["gpus"].dump());
             const double npu_percent = get_npu_utilization();
             stats["npu_percent"] =
                 npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
@@ -6998,6 +7026,9 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
         ? nlohmann::json(gpu_metrics.vram_used_gb)
         : nlohmann::json();
+    const auto gpu_details = gpu_device_details_json(gpu_metrics);
+    stats["primary_gpu_id"] = gpu_details["primary_gpu_id"];
+    stats["gpus"] = gpu_details["gpus"];
 
     // NPU Utilization
     double npu_percent = get_npu_utilization();

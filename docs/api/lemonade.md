@@ -1689,6 +1689,40 @@ curl http://localhost:13305/v1/system-stats
 
 GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
+The `primary_gpu_id` and `gpus` fields describe the individual host GPUs. The legacy
+`gpu_percent` and `vram_gb` values now come from the same primary device: the GPU
+with the largest known GPU-accessible memory capacity (ties broken by stable ID).
+Selection does not depend on current GPU utilization. Device IDs remain stable
+across ordinary telemetry failures; unavailable live measurements become `null`.
+The primary GPU for this display is **not** necessarily the GPU targeted by a
+model recipe. `vram_gb` retains its historical name but represents GPU memory
+usage, which can be shared system memory for AMD APUs.
+
+Example `gpus` entry (all measurement fields can be `null`):
+
+```json
+{
+  "primary_gpu_id": "amd:0000:c1:00.0",
+  "gpus": [
+    {
+      "id": "amd:0000:c1:00.0",
+      "vendor": "amd",
+      "name": "AMD GPU (card0)",
+      "memory_type": "shared",
+      "gpu_percent": 25.0,
+      "memory_total_gb": 120.0,
+      "memory_used_gb": 18.0
+    }
+  ]
+}
+```
+
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows this
+change provides NVIDIA NVML telemetry; other vendors still require their own
+platform implementation. On macOS the new per-GPU list is empty.
+NVML alone does not establish whether memory is dedicated or shared, so
+NVIDIA devices report `memory_type` as `unknown`.
+
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

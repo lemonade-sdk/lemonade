@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <utility>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -26,8 +27,6 @@ struct NvidiaNvmlDevice {
     double vram_total_gb = -1.0;
     double vram_used_gb = -1.0;
 };
-
-using NvidiaMetrics = SystemGpuMetrics;
 
 namespace nvidia_metrics_detail {
 
@@ -351,7 +350,7 @@ inline void invalidate_nvml_library(
     if (cache.library == library) {
         cache.library.reset();
         cache.retry_after =
-            std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            std::chrono::steady_clock::now() + std::chrono::seconds(30);
     }
 }
 
@@ -372,38 +371,29 @@ inline std::vector<NvidiaNvmlDevice> query_nvidia_nvml_devices(
     return devices;
 }
 
-inline NvidiaMetrics primary_nvidia_metrics(
-    const std::vector<NvidiaNvmlDevice>& devices) {
-    for (const auto& device : devices) {
-        if (!device.name.empty()) {
-            return {device.gpu_percent, device.vram_used_gb};
-        }
-    }
-    return {};
-}
-
-inline NvidiaMetrics query_primary_nvidia_metrics() {
-    return primary_nvidia_metrics(query_nvidia_nvml_devices());
-}
-
-inline NvidiaMetrics aggregate_nvidia_metrics(
-    const std::vector<NvidiaNvmlDevice>& devices) {
-    NvidiaMetrics result;
-
-    // Independent device pools are not additive for this scalar API. Keep the
-    // largest observed value for each resource, independently of device activity.
-    for (const auto& device : devices) {
-        if (device.name.empty()) {
-            continue;
-        }
-        system_metrics_detail::merge_max(
-            result, {device.gpu_percent, device.vram_used_gb});
-    }
+inline GpuDeviceMetrics nvidia_device_metrics(const NvidiaNvmlDevice& device) {
+    GpuDeviceMetrics result;
+    if (device.name.empty()) return result;
+    result.id = !device.uuid.empty()
+        ? "nvidia:" + device.uuid
+        : "nvidia:index:" + std::to_string(device.index);
+    result.name = device.name;
+    result.vendor = "nvidia";
+    // NVML memory totals do not establish dedicated vs. unified memory.
+    result.memory_type = "unknown";
+    result.gpu_percent = device.gpu_percent;
+    result.memory_total_gb = device.vram_total_gb;
+    result.memory_used_gb = device.vram_used_gb;
     return result;
 }
 
-inline NvidiaMetrics query_nvidia_metrics() {
-    return aggregate_nvidia_metrics(query_nvidia_nvml_devices());
+inline std::vector<GpuDeviceMetrics> query_nvidia_gpu_metrics() {
+    std::vector<GpuDeviceMetrics> result;
+    for (const auto& device : query_nvidia_nvml_devices()) {
+        auto metrics = nvidia_device_metrics(device);
+        if (!metrics.id.empty()) result.push_back(std::move(metrics));
+    }
+    return result;
 }
 
 } // namespace lemon
