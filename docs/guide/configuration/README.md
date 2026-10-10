@@ -289,6 +289,9 @@ Backend-specific settings are nested under their backend name:
 | `auth_header_name` | Header the API key is sent in. Omitted when it is the default `Authorization`. |
 | `auth_header_prefix` | Value prefix before the key. Omitted when it is the default `"Bearer "`. |
 | `wire_format` | `openai` or `anthropic`. Omitted when it is the default `openai`. |
+| `alpha_generate_fallback` | Retry model-not-found class errors through the vendor's proprietary agent endpoint. Omitted when `false`. |
+| `alpha_generate_url` | Proprietary endpoint URL override. Omitted when empty (derived from `base_url` at request time). |
+| `alpha_cli_version` | Version sent as `x-command-code-version` on fallback requests. Omitted when it is the default `"1.15.1"`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 

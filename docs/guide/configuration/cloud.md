@@ -90,7 +90,7 @@ default. When enabled:
   `--alpha-cli-version VERSION`. The endpoint refuses callers without a
   current CLI version.
 - Optional fields are sticky like the auth settings: re-installing without
-  them keeps the stored values, and defaults are omitted from `config.json`. `lemonade cloud list` prints the header when either value isn't the default. They are sticky: a later `cloud install` for the same provider that omits these flags keeps the configured header rather than reverting to `Authorization: Bearer`.
+  them keeps the stored values, and defaults are omitted from `config.json`.
 
 ### Providers that speak the Anthropic Messages format
 
@@ -193,6 +193,7 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | `POST /v1/cloud/auth` returns 409 | Env var is set for that provider. Unset it or use the env-var value going forward. |
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
 | Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
+| Chat returns `404 model_not_found` for a model listed in `/v1/models` | Stale provider catalog — the model id isn't served behind the OpenAI-compatible endpoint. If the vendor still serves it on their agent endpoint, re-install with `--alpha-generate-fallback` (see above). |
 | Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. With `stream: true` this arrives as an SSE error frame on a `200`, not a `400`. |
 | An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. With `stream: true` on `/v1/messages` the `401` appears as an SSE `error` event on a `200`, so check the event body rather than the status code. |
 
