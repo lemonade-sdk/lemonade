@@ -3061,6 +3061,12 @@ if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_cpp_ci_test(TelemetryHelpersTest CI ON COMMAND test_telemetry_helpers)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_live_throughput.cpp")
+    add_executable(test_live_throughput test/cpp/test_live_throughput.cpp)
+    target_include_directories(test_live_throughput PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include")
+    add_cpp_ci_test(LiveThroughputTest CI ON COMMAND test_live_throughput)
+endif()
+
 set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")
 if(BUILD_TESTING AND EXISTS "${_SUSPEND_INHIBITOR_TEST_SRC}")
     add_executable(test_suspend_inhibitor test/cpp/test_suspend_inhibitor.cpp)
