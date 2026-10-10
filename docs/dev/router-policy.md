@@ -71,8 +71,9 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `regex` | ECMAScript regex over the input. |
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
 | `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
+| `min_turns` / `max_turns` | Conversation depth (**whole-conversation scope**, like `total_chars` — not just the latest turn like `chars`) — count of `role:"user"` turns in `messages`/`input`. |
 | `has_tools` / `has_images` | Boolean - request carries a non-empty `tools` array / image content parts. |
-| `metadata` | `{ key, equals \| any \| exists }` over the request's OpenAI `metadata`. |
+| `metadata` | `{ key, equals \| any \| exists \| gte \| lte }` over the request's OpenAI `metadata`. `gte`/`lte` parse the value as a number — useful for a harness-precomputed signal like a tool-error streak (see [trajectory-signal routing](#trajectory-signal-routing) below). |
 
 The text conditions above - `keywords_any` / `keywords_all`, `regex`, and the
 `chars` pair - see only the **routing input**: the last user message (or the
@@ -178,6 +179,62 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+
+## Trajectory-signal routing
+
+`min_turns`/`max_turns` and `metadata`'s `gte`/`lte` comparators exist to
+route on *how a conversation is going*, not just the current request's text
+— e.g. escalate to a bigger model once a coding agent has stalled or hit
+repeated tool errors.
+
+`min_turns`/`max_turns` are native: the engine counts `role:"user"` turns in
+`messages`/`input` itself, no caller work required.
+
+Anything harness-specific — a tool-call error streak, "no edits in the last N
+turns", a result-pattern match — is intentionally **not** parsed by the
+engine itself. Different agent harnesses format tool results differently and
+name their own tools differently (there's no universal "error" field on an
+OpenAI tool-result message), and baking harness assumptions into the router
+would make it not-generic. Instead, the calling harness — which already
+knows its own tool/error conventions — computes the signal itself and sends
+it as a plain number in `metadata`:
+
+```json
+{
+  "messages": [...],
+  "metadata": { "tool_error_streak": "3" }
+}
+```
+
+```json
+"routing": {
+  "rules": [
+    {
+      "id": "escalate-after-stalls",
+      "match": {
+        "all": [
+          { "min_turns": 4 },
+          { "metadata": { "key": "tool_error_streak", "gte": 2 } }
+        ]
+      },
+      "route_to": "Big-GGUF"
+    }
+  ]
+}
+```
+
+A missing or non-numeric `metadata` value never satisfies `gte`/`lte` (same
+"absent counts as no match" posture as `equals`/`any`).
+
+A single `metadata` leaf allows exactly one comparator, so a numeric range
+needs **two** leaves under `all` rather than `{"gte": 1, "lte": 5}` on one:
+
+```json
+{ "all": [
+  { "metadata": { "key": "tool_error_streak", "gte": 1 } },
+  { "metadata": { "key": "tool_error_streak", "lte": 5 } }
+] }
+```
 
 ## Registering and invoking
 

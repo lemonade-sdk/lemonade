@@ -329,7 +329,32 @@ static void test_concurrent_route_is_consistent() {
     check("concurrent route() calls stay consistent", mismatches.load() == 0);
 }
 
+// route() is reachable with a context built by hand, not only with one from
+// build_route_context, and a hand-built one leaves turn_count at zero. The
+// engine floors it to one so a min_turns: 1 rule still matches, which is the
+// depth every real request carries.
+static void test_hand_built_context_counts_as_one_turn() {
+    lemon::testing::FakeClassifierServices fake;
+
+    RoutePolicy policy;
+    policy.candidates = {"deep-llm", "fallback-llm"};
+    policy.default_model = "fallback-llm";
+    policy.rules = {
+        make_rule("at-least-one-turn", deterministic_leaf(json{{"min_turns", 1}}), "deep-llm"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), fake.make());
+
+    RouteContext ctx;
+    ctx.input = "hello";
+    Decision d = engine.route(ctx, /*want_trace=*/false);
+
+    check("a hand-built context floors turn_count to one, so min_turns: 1 matches",
+          d.route_to == "deep-llm" && d.matched_rule == "at-least-one-turn" && !d.default_used);
+}
+
 int main() {
+    test_hand_built_context_counts_as_one_turn();
     test_rule_match_path();
     test_default_path();
     test_first_match_wins();
