@@ -469,6 +469,10 @@ export interface StatsData {
   tokens_per_second: number;
   decode_token_times: number[];
   prompt_tokens: number;
+  live?: {
+    active_requests: number;
+    estimated_tokens_per_second: number;
+  };
 }
 
 export interface SystemStatsData {
