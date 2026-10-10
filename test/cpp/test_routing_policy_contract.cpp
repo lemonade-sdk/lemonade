@@ -328,9 +328,9 @@ static void validate_fixture(const std::string& name) {
 }
 
 static void test_fixtures() {
-    for (const char* name : {"l0a_llm_router.json", "l1_keywords.json",
-                             "l1_metadata.json", "l2_semantic.json",
-                             "l3_classifier.json"}) {
+    for (const char* name : {"l0a_llm_router.json", "l0b_cost_select.json",
+                             "l1_keywords.json", "l1_metadata.json",
+                             "l2_semantic.json", "l3_classifier.json"}) {
         validate_fixture(name);
     }
     // Decision example parses and carries the locked keys.
