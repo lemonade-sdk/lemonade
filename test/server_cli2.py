@@ -355,6 +355,8 @@ sys.exit(0)
         # Outranks HOME, so a machine that sets it would have its real junie
         # config rewritten instead of the stub directory.
         env.pop("JUNIE_HOME", None)
+        # Same for pi: it would point launch at the real pi agent directory.
+        env.pop("PI_CODING_AGENT_DIR", None)
         env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
         env["HOME"] = stub_dir
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
@@ -2157,6 +2159,87 @@ sys.exit(0)
                 os.path.exists(capture_path),
                 "junie.bat was not executed",
             )
+
+    def _launch_pi(self, temp_dir, extra_args=None):
+        """Launch a fake pi from temp_dir and return its captured argv/env payload."""
+        capture_path = os.path.join(temp_dir, "pi_capture.json")
+        self._write_fake_agent(temp_dir, "pi", capture_path)
+        result = run_cli_command(
+            ["launch", "pi", "--model", ENDPOINT_TEST_MODEL] + (extra_args or []),
+            timeout=TIMEOUT_DEFAULT,
+            env=self._build_stubbed_agent_env(temp_dir),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with open(capture_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    @staticmethod
+    def _read_pi_agent_json(temp_dir, name, default=None):
+        path = os.path.join(temp_dir, ".pi", "agent", name)
+        if default is not None and not os.path.exists(path):
+            return default
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_128_launch_pi_configures_and_starts_pi(self):
+        """Launch pi should pass the model and flags to pi and write the model's window."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--codemode"])
+
+            argv = payload["argv"]
+            self.assertEqual(argv[argv.index("--provider") + 1], "Lemonade")
+            self.assertEqual(argv[argv.index("--model") + 1], ENDPOINT_TEST_MODEL)
+            self.assertEqual(argv[argv.index("--tools") + 1], "+codemode")
+
+            provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
+                "Lemonade"
+            ]
+            model = next(
+                m for m in provider["models"] if m["id"] == ENDPOINT_TEST_MODEL
+            )
+            self.assertEqual(model["contextWindow"], ENDPOINT_TEST_MODEL_CTX_SIZE)
+
+            settings = self._read_pi_agent_json(temp_dir, "settings.json")
+            self.assertEqual(settings["defaultProvider"], "Lemonade")
+            self.assertEqual(settings["defaultModel"], ENDPOINT_TEST_MODEL)
+
+    def test_129_launch_pi_keeps_api_key_off_disk(self):
+        """With an API key, pi gets it from the environment, not from models.json."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+        if os.environ.get("LEMONADE_ADMIN_API_KEY"):
+            self.skipTest("LEMONADE_ADMIN_API_KEY overrides --api-key")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--api-key", "real-secret-key"])
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "real-secret-key")
+            provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
+                "Lemonade"
+            ]
+            self.assertEqual(provider["apiKey"], "${LEMONADE_API_KEY}")
+
+    def test_130_launch_pi_mcp_flags(self):
+        """--mcp adds the lemonade MCP server, later launches keep it, --no-mcp removes it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        def mcp_servers(temp_dir):
+            return self._read_pi_agent_json(temp_dir, "mcp.json", {}).get(
+                "mcpServers", {}
+            )
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            self._launch_pi(temp_dir)
+            self.assertNotIn("lemonade", mcp_servers(temp_dir))
+            self._launch_pi(temp_dir, ["--mcp"])
+            self.assertIn("lemonade", mcp_servers(temp_dir))
+            self._launch_pi(temp_dir)
+            self.assertIn("lemonade", mcp_servers(temp_dir))
+            self._launch_pi(temp_dir, ["--no-mcp"])
+            self.assertNotIn("lemonade", mcp_servers(temp_dir))
 
     # =============================================================================
     # Unload Tests

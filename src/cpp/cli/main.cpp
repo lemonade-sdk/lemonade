@@ -181,6 +181,8 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+    std::optional<bool> pi_mcp;
+    bool pi_codemode = false;
 
     // Cloud provider commands
     std::string cloud_provider;
@@ -635,17 +637,16 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_chat = false;
+            std::vector<std::string> model_labels;
             const auto labels = model.find("labels");
             if (labels != model.end() && labels->is_array()) {
                 for (const auto& label : *labels) {
-                    if (label.is_string() && label.get<std::string>() == "chat") {
-                        is_chat = true;
-                        break;
+                    if (label.is_string()) {
+                        model_labels.push_back(label.get<std::string>());
                     }
                 }
             }
-            if (!is_chat) {
+            if (std::find(model_labels.begin(), model_labels.end(), "chat") == model_labels.end()) {
                 continue;
             }
 
@@ -655,7 +656,8 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
 			    && model["recipe_options"].contains("ctx_size")) {
                 model_context_window = model["recipe_options"]["ctx_size"].get<int>();
             }
-            models.push_back({model_id, model_id + " (local)", model_context_window});
+            models.push_back({model_id, model_id + " (local)", model_context_window,
+                              std::move(model_labels)});
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -720,7 +722,10 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         return;
     }
 
-    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+    // Pi decides between an env reference and a placeholder itself, so it
+    // needs to know whether a key was configured at all.
+    const std::string config_api_key =
+        (config.agent == "pi" || !config.api_key.empty()) ? config.api_key : "lemonade";
 
     const std::string base_url =
         lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
@@ -738,6 +743,34 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 
     if (config.agent == "pi") {
+        for (const auto& model : models) {
+            if (model.id == config.model && !model.labels.empty() &&
+                std::find(model.labels.begin(), model.labels.end(), "tool-calling") ==
+                    model.labels.end()) {
+                std::cerr << "Warning: " << config.model
+                          << " is not labeled tool-calling; pi may fail to use its tools."
+                          << std::endl;
+            }
+        }
+
+        // An existing entry is refreshed so it follows the current host, port and key.
+        if (config.pi_mcp.value_or(lemon_cli::pi_has_mcp_server())) {
+            std::string mcp_error;
+            if (!lemon_cli::sync_pi_mcp_server(
+                    lemon_tray::build_agent_server_base_url(config.host, config.port),
+                    !config.api_key.empty(), mcp_error)) {
+                std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        } else if (config.pi_mcp.has_value()) {
+            std::string mcp_error;
+            if (!lemon_cli::remove_pi_mcp_server(mcp_error)) {
+                std::cerr << "Warning: Failed to remove Lemonade MCP from pi: " << mcp_error
+                          << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        }
+
         // Only write settings.json if pi doesn't already have a default provider/model.
         // This preserves existing user configuration while providing seamless first-time UX.
         if (!lemon_cli::pi_has_default_config()) {
@@ -789,6 +822,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: no API key provided; using default agent auth token." << std::endl;
     } else {
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
+    }
+
+    if (config.agent == "pi" && config.pi_codemode) {
+        agent_config.extra_args.push_back("--tools");
+        agent_config.extra_args.push_back("+codemode");
     }
 
     if (!config.agent_args.empty()) {
@@ -1515,6 +1553,14 @@ int main(int argc, char* argv[]) {
                 ->group("Agents");
         agent_cmd->callback([&config, agent_name]() { config.agent = agent_name; });
         add_common_launch_options(*agent_cmd);
+
+        if (agent_name == "pi") {
+            agent_cmd->add_flag("--mcp,!--no-mcp", config.pi_mcp,
+                "Add (or remove) the Lemonade MCP server in pi's mcp.json; the choice is kept "
+                "for later launches");
+            agent_cmd->add_flag("--codemode", config.pi_codemode,
+                "Enable pi's codemode tool for this launch");
+        }
 
         if (agent_name == "codex") {
             codex_provider_opt = agent_cmd->add_option("--provider,-p", config.codex_model_provider,
