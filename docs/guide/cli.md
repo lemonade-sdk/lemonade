@@ -430,6 +430,15 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### EXTENSOR ROCm (experimental) (`extensor` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--extensor BACKEND` | EXTENSOR backend to use | Auto-detected |
+| `--extensor-model-path PATH` | Path to an EXTENSOR model image | `""` |
+| `--extensor-preset PRESET` | EXTENSOR runtime preset: exact, balanced, fast, or demo | `balanced` |
+
 #### TheNoise ROCm (`thenoise` recipe)
 
 | Option | Description | Default |

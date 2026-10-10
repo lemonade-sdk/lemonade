@@ -1183,7 +1183,25 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         validate_path(backend, key, value.get<std::string>());
     }
     else {
-        throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");
+        const auto* descriptor =
+            backends::descriptor_for(config_section_to_recipe(backend));
+        const json declared = descriptor
+            ? descriptor->config_defaults()
+            : json::object();
+        if (!declared.contains(key)) {
+            throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");
+        }
+
+        const json& default_value = declared[key];
+        const bool valid_type = default_value.is_null() ||
+            (default_value.is_string() && value.is_string()) ||
+            (default_value.is_boolean() && value.is_boolean()) ||
+            (default_value.is_number_integer() && value.is_number_integer()) ||
+            (default_value.is_number_float() && value.is_number());
+        if (!valid_type) {
+            throw std::invalid_argument(
+                "'" + backend + "." + key + "' has the wrong value type");
+        }
     }
 }
 

@@ -4,7 +4,7 @@
 // incomplete install (interrupted download, truncated/garbage archive, wrong
 // contents) must NEVER destroy a previously-working binary. The fix stages the
 // new install in a sibling directory and only swaps it into place once the
-// executable is verified present; before the fix, install_from_github removed
+// executable is verified present; before the fix, the installer removed
 // the working install_dir up front, so a failed download left no usable binary.
 //
 // Compile with:
@@ -173,12 +173,39 @@ static void test_swap_failure_preserves_working_binary(TestResult& r) {
 }
 #endif
 
+static void test_extensor_runtime_assets(TestResult& r) {
+    const fs::path root = make_temp_root("extensor");
+    const fs::path install_dir = root / "extensor" / "rocm";
+    const fs::path staging_dir = install_dir.string() + ".staging";
+    const fs::path package = staging_dir / "extensor-strixhalo-v2.3.2";
+    const fs::path profile = "share/extensor/deepseek4-mxfp4-tile16-runtime-v2";
+
+    write_file(package / "bin/extensor-server", "binary");
+    write_file(package / profile / "presets/balanced.toml", "version = 1\n");
+    write_file(package / profile / "ds4flash.freq", "frequency profile");
+    write_file(package / "BUILD-MANIFEST.json", "{}");
+    write_file(staging_dir / "version.txt", "v2.3.2");
+
+    const std::string executable = commit_staged_install(
+        staging_dir.string(), install_dir.string(), "extensor-server");
+    const fs::path installed_package = fs::path(executable).parent_path().parent_path();
+    r.check(!executable.empty(), "finds EXTENSOR inside a nested archive directory");
+    r.check(read_file(installed_package / profile / "presets/balanced.toml") == "version = 1\n",
+            "preserves EXTENSOR presets relative to bin/");
+    r.check(read_file(installed_package / profile / "ds4flash.freq") == "frequency profile",
+            "preserves EXTENSOR frequency profiles");
+    r.check(fs::exists(installed_package / "BUILD-MANIFEST.json"), "preserves the build manifest");
+    r.check(read_file(install_dir / "version.txt") == "v2.3.2", "records the installed version");
+    fs::remove_all(root);
+}
+
 int main() {
     TestResult r;
     printf("=== commit_staged_install atomicity tests ===\n");
     test_successful_swap(r);
     test_failed_install_preserves_working_binary(r);
     test_fresh_install(r);
+    test_extensor_runtime_assets(r);
 #ifndef _WIN32
     test_swap_failure_preserves_working_binary(r);
 #endif
