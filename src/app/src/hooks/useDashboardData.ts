@@ -280,6 +280,10 @@ export function useDashboardData(isActive = true): DashboardData {
       setSlots(slotData);
 
       const { aggTps, aggPromptTps, perSlotLive } = computeAggregates(slotData);
+      // Slot counters can stall even while the backend is streaming output.
+      const liveTps = st?.live?.estimated_tokens_per_second ?? 0;
+      const totalTps = Math.max(aggTps, Number.isFinite(liveTps) ? Math.max(0, liveTps) : 0);
+      countersRef.current.peakTps = Math.max(countersRef.current.peakTps, totalTps);
 
       const liveObj: Record<number, SlotLiveTps> = {};
       for (const [id, v] of perSlotLive) liveObj[id] = v;
@@ -313,14 +317,20 @@ export function useDashboardData(isActive = true): DashboardData {
       const cacheUtil = totalCtx > 0 ? (totalCache / totalCtx) * 100 : null;
 
       const tgt = targetAggRef.current;
-      tgt.tps = smoothTarget(tgt.tps, aggTps);
+      if (!supportsSlots && !(st?.live?.active_requests ?? 0)) {
+        // No current output: clear the live reading immediately, not over multiple polls.
+        tgt.tps = 0;
+        interpAggRef.current.tps = 0;
+      } else {
+        tgt.tps = smoothTarget(tgt.tps, totalTps);
+      }
       tgt.ppTps = smoothTarget(tgt.ppTps, aggPromptTps);
       tgt.cpu = ss?.cpu_percent ?? null;
       tgt.ram = ss?.memory_gb ?? null;
       tgt.gpu = ss?.gpu_percent ?? null;
       tgt.vram = ss?.vram_gb ?? null;
       tgt.npu = ss?.npu_percent ?? null;
-      tgt.activeSlots = activeSlots;
+      tgt.activeSlots = Math.max(activeSlots, st?.live?.active_requests ?? 0);
       tgt.totalSlots = totalSlots;
       tgt.cacheUtil = cacheUtil;
 
@@ -530,11 +540,11 @@ export function useDashboardData(isActive = true): DashboardData {
   const counters = countersRef.current;
   const latestTps = history.length > 0 ? history[history.length - 1].aggregateTps : 0;
   const latestPP = history.length > 0 ? history[history.length - 1].aggregatePromptTps : 0;
-  const activeSlotCount = slots.filter(s => {
+  const activeSlotCount = Math.max(slots.filter(s => {
     const live = slotLive[s.id];
     const target = targetSlotRef.current.get(s.id);
     return live?.isActive || target?.isActive || s.is_processing;
-  }).length;
+  }).length, stats?.live?.active_requests ?? 0);
   const totalCacheTokens = slots.reduce((a, s) => a + getCacheTokenCount(s), 0);
   const totalCtx = slots.reduce((a, s) => a + s.n_ctx, 0);
   const overallCacheUtil = totalCtx > 0 ? (totalCacheTokens / totalCtx) * 100 : null;
