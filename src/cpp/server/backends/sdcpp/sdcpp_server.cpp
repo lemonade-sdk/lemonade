@@ -28,7 +28,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-
 namespace {
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
@@ -88,7 +87,7 @@ int generate_random_seed() {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "leejet/stable-diffusion.cpp";
+    params.repo = "lemonade-sdk/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform generated sd.cpp versions for asset names:
@@ -142,7 +141,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
     } else if (is_cuda_backend(resolved_backend)) {
-        params.repo = "lemonade-sdk/stable-diffusion.cpp";
         std::string target_arch = SystemInfo::get_cuda_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
@@ -177,10 +175,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
-}
-
-SDServer::~SDServer() {
-    unload();
 }
 
 void SDServer::load(const std::string& model_name,
@@ -381,37 +375,14 @@ void SDServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        process_exe_path,
-        args,
-        working_dir,
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, process_exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start sd-server process");
-    }
-
-    LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/")) {
-        unload();
-        throw std::runtime_error("sd-server failed to start or become ready");
-    }
-
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
-}
-
-void SDServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = process_exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    command.ready_endpoint = "/";
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}, working_dir),
+                 command);
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
@@ -825,7 +796,6 @@ namespace sdcpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<SDServer>(ctx);
 }
-
 
 const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
 const BackendOps* ops() { return default_backend_ops(); }

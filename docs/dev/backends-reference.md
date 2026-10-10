@@ -60,7 +60,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thenoise` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
@@ -218,9 +218,9 @@ The model download fetches the DiT checkpoint variant plus three companions when
 
 The legacy `MOSS-VoiceGen` registry entry remains as a compatibility model for existing clients; integrated voice design on `OpenMOSS-TTS` and `MOSS-TTS-Local` does not depend on that standalone entry.
 
-`request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. `start_speech_process()` therefore calls `stop_speech_process()` rather than `unload()` on a failed readiness wait, because `unload()` takes the same exclusive lock.
+`request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. When the speech process fails its readiness wait, `start_server()` stops it, so the voice-design path does not call `unload()`, which would take the same exclusive lock again.
 
-The transient design process is polled for readiness through its own `/health` rather than the shared `wait_for_ready()`, since it does not own `port_`; the poll also checks `ProcessManager::is_running()` each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. `spawn()` uses `find_free_port()` instead of `choose_port()` for the same reason — `choose_port()` assigns `port_`, and the caller decides which process `port_` addresses.
+The transient design process is a local `NativeProcess` in `render_reference_sample()` rather than a `start_server()` call, because it does not own `port_`. Its readiness loop polls its own `/health` and checks `designer.running()` each round, so a subprocess that dies during model loading fails the request at once instead of polling to the deadline, and destroying `designer` stops the process and logs its exit code. `server_command()` picks the port with `find_free_port()` instead of `choose_port()` for the same reason: `choose_port()` assigns `port_`, and `start_server()` points `port_` at the speech process only.
 
 Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit `n_ctx`; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.
 

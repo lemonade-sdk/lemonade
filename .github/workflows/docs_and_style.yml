@@ -126,12 +126,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f src/app/src/renderer/vendor/model-viewer.min.js.sha256 ]; then
-            cd src/app/src/renderer/vendor
-            sha256sum -c model-viewer.min.js.sha256
-          else
-            echo "Skipping legacy vendor integrity check; this branch uses the GUI3 frontend layout."
-          fi
+          cd src/app/src/renderer/vendor
+          sha256sum -c model-viewer.min.js.sha256
 
   markdown-link-check:
     runs-on: ubuntu-latest

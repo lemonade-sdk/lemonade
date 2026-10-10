@@ -13,16 +13,15 @@
 
 ### 2. **What are the use cases for different audiences?**
 
-   - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](https://lemonade-server.ai/docs/server/apps/).
-   - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
-   ).
+   - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](../integrations/README.md).
+   - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](../api/README.md).
    - **Agent Developers**: Use [GAIA](https://github.com/amd/gaia) to quickly develop local-first agents.
 
 ## Installation & Compatibility
 
 ### 1. **How do I install Lemonade SDK or Server?**
 
-   Visit https://lemonade-server.ai/docs/guide/install/ and click the options that apply to you.
+   Visit the [installation guide](./install/README.md) and click the options that apply to you.
 
 ### 2. **Which devices are supported?**
 
@@ -34,8 +33,8 @@
 
    Yes, both Linux and macOS are supported!
 
-   - **Linux**: Visit https://lemonade-server.ai/docs/guide/install/ for installation instructions.
-   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/docs/guide/install/ to download. macOS support uses the llama.cpp backend with Metal acceleration.
+   - **Linux**: Visit the [installation guide](./install/README.md) for installation instructions.
+   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit the [installation guide](./install/README.md) to download. macOS support uses the llama.cpp backend with Metal acceleration.
 
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
@@ -66,20 +65,18 @@
 
    **Secondary: Extra Models Directory (GGUF)**
 
-   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
+   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, so a library you already have works without downloading anything again. Suggested paths:
 
-   - **Windows:**
-       - LM Studio: `C:\Users\You\.lmstudio\models`
-       - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
-   - **Linux:** `~/.cache/llama.cpp`
+   - **LM Studio:** `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` on Windows
+   - **A Hugging Face cache:** `~/.cache/huggingface/hub`
 
    Set `extra_models_dir` (see [Server Configuration](./configuration/README.md)):
 
    ```bash
-   lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
+   lemonade config set extra_models_dir="/home/you/.lmstudio/models"
    ```
 
-   Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
+   Any `.gguf` files in this directory, including its subdirectories, appear in Lemonade's model list in the `custom` category. For how they are named and how the folder layout selects the way they run, see [Imported models](./configuration/custom-models.md#imported-models-extra_models_dir).
 
    **FastFlowLM**
 
@@ -90,7 +87,7 @@
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the `pull` command on the CLI.
 
    👉 [Supported Models List](https://lemonade-server.ai/models.html)
-   👉 [pull command](https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull)
+   👉 [pull command](./cli.md#options-for-pull)
 
 ### 3. **How do I know what size model will work with my setup?**
 
@@ -108,7 +105,7 @@
 
    You can:
 
-   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](https://lemonade-server.ai/docs/server/custom-models/).
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](./cli.md#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](./configuration/custom-models.md).
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 

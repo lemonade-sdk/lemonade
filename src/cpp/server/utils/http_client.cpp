@@ -312,10 +312,17 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
-static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
-                                    curl_off_t) {
-    auto* flag = static_cast<std::atomic<bool>*>(clientp);
-    return (flag && flag->load()) ? 1 : 0;
+static int post_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
+                                         curl_off_t) {
+    if (!clientp) return 0;
+    auto* token = static_cast<const RequestCancelToken*>(clientp);
+    try {
+        return token->cancelled();
+    } catch (...) {
+        // Never allow a C++ exception to cross libcurl's C callback boundary.
+        // Failing closed is safer than leaving an orphaned upstream request.
+        return 1;
+    }
 }
 
 static int stream_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t,
@@ -338,6 +345,7 @@ struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;
     bool stalled = false;
+    long stalled_after = 0;
     bool waiting_for_first_byte = false;
     long current_response_code = 0;
     int no_progress_timeout = 0;
@@ -436,6 +444,7 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 
         if (idle_seconds >= stall_timeout) {
             data->stalled = true;
+            data->stalled_after = stall_timeout;
             return 1;
         }
     }
@@ -490,6 +499,17 @@ bool apply_http_security_policy(
         return set(CURLOPT_MAXREDIRS, 5L) &&
                set_proto(CURLOPT_REDIR_PROTOCOLS_STR, CURLOPT_REDIR_PROTOCOLS, redirect_protocols, redir_mask);
     };
+
+#ifdef _WIN32
+    // Schannel (the Windows TLS backend) checks certificate revocation by
+    // default and hard-fails when no CRL/OCSP endpoint is reachable, which is
+    // the common case for internal/private CAs. Best-effort still checks
+    // revocation when the info is available; it only stops treating an
+    // absent CRL/OCSP responder as fatal.
+    if (!set(CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_REVOKE_BEST_EFFORT))) {
+        return false;
+    }
+#endif
 
     switch (policy) {
         case HttpSecurityPolicy::TrustedLoopback:
@@ -563,7 +583,7 @@ HttpResponse HttpClient::post(const std::string& url,
                               const std::map<std::string, std::string>& headers,
                               long timeout_seconds,
                               HttpSecurityPolicy policy,
-                              std::atomic<bool>* cancel_flag) {
+                              const RequestCancelToken& cancel) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -587,9 +607,9 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
-    if (cancel_flag) {
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -620,7 +640,10 @@ HttpResponse HttpClient::post(const std::string& url,
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
-        throw std::runtime_error(error);
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            throw HttpClientCancellationException(res, error);
+        }
+        throw HttpClientException(res, error);
     }
 
     long response_code;
@@ -637,7 +660,8 @@ HttpResponse HttpClient::post(const std::string& url,
 HttpResponse HttpClient::post_multipart(const std::string& url,
                                          const std::vector<MultipartField>& fields,
                                          long timeout_seconds,
-                                         HttpSecurityPolicy policy) {
+                                         HttpSecurityPolicy policy,
+                                         const RequestCancelToken& cancel) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -664,6 +688,11 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
     if (!apply_http_security_policy(curl, policy, false)) {
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
@@ -679,7 +708,10 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
-        throw std::runtime_error(error);
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            throw HttpClientCancellationException(res, error);
+        }
+        throw HttpClientException(res, error);
     }
 
     long response_code;
@@ -897,7 +929,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    const int no_progress_timeout = options.no_progress_timeout;
+    const int no_progress_timeout = static_cast<int>(effective_timeout(options.no_progress_timeout));
     std::unique_ptr<ProgressData> prog_data;
     if (callback || no_progress_timeout > 0) {
         prog_data = std::make_unique<ProgressData>();
@@ -953,7 +985,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         result.can_resume = current_file_size > 0;
         std::ostringstream oss;
         oss << "Download stalled: no bytes received for "
-            << no_progress_timeout << " seconds";
+            << prog_data->stalled_after << " seconds";
         if (current_file_size > 0) {
             oss << "\n  Partial file size: " << (current_file_size / (1024.0 * 1024.0)) << " MB (resumable)";
         }

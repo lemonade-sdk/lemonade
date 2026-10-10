@@ -22,14 +22,10 @@ public:
                                ModelManager* model_manager,
                                BackendManager* backend_manager);
 
-    ~OnnxRuntimeServer() override;
-
     void load(const std::string& model_name,
               const ModelInfo& model_info,
               const RecipeOptions& options,
               bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // IClassificationServer
     json classify(const json& request) override;
