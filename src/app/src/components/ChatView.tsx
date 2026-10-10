@@ -44,7 +44,7 @@ import {
   modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
-import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
+import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
@@ -62,6 +62,7 @@ import {
   saveLastReadyModelName,
   savePreferredDefaultModelName,
 } from '../features/chatDefaultModels';
+import { activateConversationModel, releaseConversationModel } from '../features/chatModelOverride';
 import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
@@ -897,6 +898,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
   const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
+  const [historyNoticeDismissed, setHistoryNoticeDismissed] = useState(false);
   // Large persisted conversations are not required to draw the first usable
   // frame.  Hydrate them after paint instead of JSON-parsing the full history
   // synchronously inside the initial React render.
@@ -2122,6 +2124,25 @@ const ChatView: React.FC<ChatViewProps> = ({
     try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
   }, [conversations, historyHydrated, persistHistory]);
 
+  const hasUnsavedConversations = !persistHistory && conversations.some(c => c.messages.length > 0);
+
+  // The browser owns this dialog's wording, so it cannot say what is at stake.
+  // The composer notice carries the explanation; this only catches the reflex refresh.
+  useEffect(() => {
+    if (!hasUnsavedConversations) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedConversations]);
+
+  const handleEnableHistoryPersistence = useCallback(() => {
+    saveChatHistoryPreference(true);
+  }, []);
+
   // Persist active conversation id only after the initial stored value has been
   // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
@@ -2133,6 +2154,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (activeId && !conversations.some(c => c.id === activeId)) {
       setActiveId(null);
+      setFallbackModelOverride(null);
     }
   }, [activeId, conversations]);
 
@@ -2168,18 +2190,51 @@ const ChatView: React.FC<ChatViewProps> = ({
   const handleNewChat = useCallback(() => {
     setShowLoadedOverview(true);
     setActiveId(null);
+    setFallbackModelOverride(null);
     inputRef.current?.focus();
   }, []);
 
+  // Each conversation answers with the model it was started on. Without this the
+  // app-level selection leaks across conversations and an old thread silently
+  // continues on whatever model was picked last.
+  const applyConversationModel = useCallback((convoModel: string | undefined) => {
+    const { override, select } = activateConversationModel(fallbackModelOverride, {
+      model: convoModel,
+      currentModel,
+      loaded: !!convoModel && loadedModels.some(m => m.model_name.toLowerCase() === convoModel.toLowerCase()),
+    });
+    setFallbackModelOverride(override);
+    if (select) onModelSelect(select);
+  }, [currentModel, fallbackModelOverride, loadedModels, onModelSelect]);
+
+  // Restoring the active conversation from storage sets activeId directly rather
+  // than going through handleSelectConversation, so the model needs restoring too.
+  const startupModelRestoredRef = useRef(false);
+  useEffect(() => {
+    if (startupModelRestoredRef.current || !historyHydrated || !activeId) return;
+    startupModelRestoredRef.current = true;
+    applyConversationModel(conversations.find(c => c.id === activeId)?.model?.name);
+  }, [activeId, applyConversationModel, conversations, historyHydrated]);
+
   const handleSelectConversation = useCallback((id: string) => {
     setActiveId(id);
-  }, []);
+    applyConversationModel(conversations.find(c => c.id === id)?.model?.name);
+  }, [applyConversationModel, conversations]);
+
+  // An explicit pick outranks a conversation-restored override, which would
+  // otherwise keep winning and make the click look like it did nothing.
+  const handleEmptyStateModelSelect = useCallback((model: string) => {
+    setFallbackModelOverride(null);
+    onModelSelect(model);
+  }, [onModelSelect]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     streaming.stop(id);
     delete streamModelsRef.current[id];
     setConversations(prev => prev.filter(c => c.id !== id));
-    if (activeId === id) setActiveId(null);
+    const wasActive = activeId === id;
+    if (wasActive) setActiveId(null);
+    setFallbackModelOverride(prev => releaseConversationModel(prev, wasActive));
   }, [activeId, streaming.stop]);
 
 
@@ -3517,7 +3572,7 @@ ${finalText}`
               loadedModels={loadedModels}
               currentModel={currentModel}
               showLoadedOverview={showLoadedOverview}
-              onModelSelect={onModelSelect}
+              onModelSelect={handleEmptyStateModelSelect}
               onOpenModelDetails={onOpenModelDetails}
               onUnloadModel={handleLoadedCardUnload}
               unloadingModel={modelPickerUnloading}
@@ -3815,6 +3870,25 @@ ${finalText}`
           <div className="composer__tool-status">
             <span className="composer__tool-status-dot" />
             {streamingToolStatus}
+          </div>
+        )}
+        {!persistHistory && messages.length > 0 && !historyNoticeDismissed && (
+          <div className="composer__history-notice" role="status">
+            <Icon name="alert" size={13} aria-hidden="true" />
+            <span className="composer__history-notice-copy">
+              Chat history is not saved. Refreshing clears this conversation. Turning saving on keeps the text of what is already here, but not images or audio.
+            </span>
+            <button type="button" className="composer__history-notice-action" onClick={handleEnableHistoryPersistence}>
+              Save chat history
+            </button>
+            <button
+              type="button"
+              className="composer__history-notice-dismiss"
+              onClick={() => setHistoryNoticeDismissed(true)}
+              aria-label="Dismiss chat history warning"
+            >
+              <Icon name="x" size={12} aria-hidden="true" />
+            </button>
           </div>
         )}
         <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
@@ -4380,11 +4454,11 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
+                aria-label={`Thinking: ${thinkingMode === 'off' ? 'Off' : 'On'}`}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
+                <span>{thinkingMode === 'off' ? 'Thinking: Off' : 'Thinking: On'}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
               {!thinkingMenuOpen && (

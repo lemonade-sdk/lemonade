@@ -1667,6 +1667,48 @@ input[type="checkbox"]:disabled {
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+.composer__history-notice {
+  max-width: var(--max-content-width);
+  margin: 0 auto var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  animation: fadeIn var(--duration-normal) var(--ease-out);
+}
+
+.composer__history-notice .app-icon { flex-shrink: 0; color: var(--warning); }
+
+.composer__history-notice-copy { flex: 1; min-width: 0; }
+
+.composer__history-notice-action {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-fg);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.composer__history-notice-action:hover { opacity: 0.85; }
+
+.composer__history-notice-dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.composer__history-notice-dismiss:hover { color: var(--text-secondary); }
+
 .composer__model-label {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
