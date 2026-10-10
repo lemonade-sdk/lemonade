@@ -71,6 +71,27 @@ static bool expect_has_flag(const char* name, const std::string& input,
     return ok;
 }
 
+static bool expect_tokens(const char* name, const std::string& input,
+                          const std::vector<std::string>& expected) {
+    std::vector<std::string> actual = parse_custom_args(input);
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  [");
+        for (size_t i = 0; i < actual.size(); ++i) {
+            if (i) std::printf(", ");
+            std::printf("\"%s\"", actual[i].c_str());
+        }
+        std::printf("]\n  want: [");
+        for (size_t i = 0; i < expected.size(); ++i) {
+            if (i) std::printf(", ");
+            std::printf("\"%s\"", expected[i].c_str());
+        }
+        std::printf("]\n");
+    }
+    return ok;
+}
+
 int main() {
     int failures = 0;
 
@@ -159,6 +180,16 @@ int main() {
     failures += !expect_has_flag(
         "missing alias does not match",
         "--threads 8", "--mmap", false);
+
+    // Newlines are stored so the UI can read one flag per line, but the argv a
+    // backend is launched with must see them as separators, never glued inside a
+    // token (mirrors the TS port in src/app/src/samplerArgs.ts).
+    failures += !expect_tokens(
+        "newline splits argv tokens", "--threads 4\n--temp 0.8",
+        {"--threads", "4", "--temp", "0.8"});
+    failures += !expect_tokens(
+        "carriage return splits argv tokens", "--threads 4\r\n--temp 0.8",
+        {"--threads", "4", "--temp", "0.8"});
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
