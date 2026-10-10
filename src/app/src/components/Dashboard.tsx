@@ -223,7 +223,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
     health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
     counters, getSlotTarget, loadedModels, refresh,
-    latestTps, latestPP, activeSlotCount, overallCacheUtil,
+    latestTps, latestPP, activeSlotCount, completedRequestFallback,
+    nonSlotGraphMode, latestLiveEstimate, liveEstimateChartData, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
     aggChartData, slotChartData, sysChartData, cacheChartData,
   } = useDashboardData(isActive);
@@ -270,6 +271,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   const evictionThresholdText = evictionThresholdPercent == null
     ? null
     : `Eviction threshold: ${Number(evictionThresholdPercent.toFixed(2))}%`;
+  const showingLiveEstimate = nonSlotGraphMode === 'live-estimate';
 
   /* ── Render ──────────────────────────────────────────────── */
 
@@ -305,16 +307,22 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
       <div className="dash2-scroll">
         {/* ═══ HERO — Aggregate Throughput ═══ */}
         <div className="dash2-card">
-          <h2 className="dash2-card__h">Aggregate Throughput</h2>
+          <h2 className="dash2-card__h">
+            {showingLiveEstimate
+              ? 'Live FLM Stream Estimate'
+              : (completedRequestFallback ? 'Completed Request Throughput' : 'Aggregate Throughput')}
+          </h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}
           <div className="dash2-hero-metrics">
             <div className="dash2-hero-metric">
               <span className="dash2-hero-metric__val dash2-hero-metric__val--tps">
-                {latestTps > 0.05 ? latestTps.toFixed(1) : (counters.peakTps > 0 ? '0.0' : '—')}
+                {showingLiveEstimate
+                  ? (latestLiveEstimate > 0 ? latestLiveEstimate.toFixed(1) : '—')
+                  : (latestTps > 0.05 ? latestTps.toFixed(1) : (counters.peakTps > 0 ? '0.0' : '—'))}
               </span>
-              <span className="dash2-hero-metric__unit">tok/s</span>
-              {counters.peakTps > 0 && (
+              <span className="dash2-hero-metric__unit">{showingLiveEstimate ? 'chunks/s' : 'tok/s'}</span>
+              {!showingLiveEstimate && counters.peakTps > 0 && (
                 <span className="dash2-hero-metric__peak">
                   peak {counters.peakTps.toFixed(1)}
                 </span>
@@ -322,41 +330,52 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             </div>
             <div className="dash2-hero-metric">
               <span className="dash2-hero-metric__val dash2-hero-metric__val--pp">
-                {latestPP > 0.05 ? latestPP.toFixed(0) : (counters.peakPromptTps > 0 ? '0' : '—')}
+                {completedRequestFallback ? '—' : (latestPP > 0.05 ? latestPP.toFixed(0) : (counters.peakPromptTps > 0 ? '0' : '—'))}
               </span>
               <span className="dash2-hero-metric__unit">pp/s</span>
             </div>
             <div className="dash2-hero-metric">
               <span className="dash2-hero-metric__val dash2-hero-metric__val--stream">
-                {activeSlotCount}
+                {completedRequestFallback ? '—' : activeSlotCount}
               </span>
               <span className="dash2-hero-metric__unit">
-                {activeSlotCount === 1 ? 'stream' : 'streams'}
+                {completedRequestFallback ? 'streams' : (activeSlotCount === 1 ? 'stream' : 'streams')}
               </span>
             </div>
             <div className="dash2-hero-metric__totals">
               <span>{fmtNum(counters.totalTokensGenerated)} total tokens</span>
             </div>
           </div>
+          {showingLiveEstimate ? (
+            <p className="dash2-card__text">Reasoning and response updates per second. Final token rate appears after completion.</p>
+          ) : completedRequestFallback && (
+            <p className="dash2-card__text">Rates update when requests complete.</p>
+          )}
 
           <SmoothChart
-            data={aggChartData}
-            series={[
-              { key: 'genTps', color: 'var(--chart-series-1)', name: 'Generation TPS' },
-              { key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' },
-            ]}
+            data={showingLiveEstimate ? liveEstimateChartData : aggChartData}
+            series={showingLiveEstimate
+              ? [{ key: 'liveEstimate', color: 'var(--chart-series-1)', name: 'Live stream estimate (chunks/s)' }]
+              : [
+                { key: 'genTps', color: 'var(--chart-series-1)', name: completedRequestFallback ? 'Completed Generation TPS' : 'Generation TPS' },
+                ...(completedRequestFallback ? [] : [{ key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' }]),
+              ]}
             height={120}
-            unit=" tok/s"
+            unit={showingLiveEstimate ? ' chunks/s' : ' tok/s'}
           />
           <div className="dash2-chart-legend">
             <span className="dash2-chart-legend__item">
               <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--tps" />
-              Generation TPS
+              {showingLiveEstimate
+                ? 'Live stream estimate (chunks/s)'
+                : (completedRequestFallback ? 'Completed Generation TPS' : 'Generation TPS')}
             </span>
-            <span className="dash2-chart-legend__item">
-              <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--pp" />
-              Prompt Processing
-            </span>
+            {!showingLiveEstimate && !completedRequestFallback && (
+              <span className="dash2-chart-legend__item">
+                <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--pp" />
+                Prompt Processing
+              </span>
+            )}
           </div>
         </div>
 

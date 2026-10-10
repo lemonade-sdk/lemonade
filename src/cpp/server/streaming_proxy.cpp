@@ -539,6 +539,58 @@ void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<v
     }
 }
 
+void StreamingProxy::process_sse_events(std::string& line_buffer,
+                                        std::string& event_data,
+                                        bool& has_data_field,
+                                        std::function<void(const std::string&)> event_callback,
+                                        bool end_of_stream) {
+    process_sse_lines(line_buffer, [&](const std::string& line) {
+        if (line.empty()) {
+            if (has_data_field) {
+                event_callback(event_data);
+            }
+            event_data.clear();
+            has_data_field = false;
+            return;
+        }
+
+        if (line.front() == ':') {
+            return;
+        }
+
+        const Field field = parse_field(line);
+        if (field.name != "data") {
+            return;
+        }
+
+        if (has_data_field) {
+            event_data.push_back('\n');
+        }
+        event_data.append(field.value.data(), field.value.size());
+        has_data_field = true;
+    }, end_of_stream);
+}
+
+bool StreamingProxy::is_semantic_generation_delta(const nlohmann::json& payload) {
+    if (!payload.is_object() || !payload.contains("choices") || !payload["choices"].is_array()) {
+        return false;
+    }
+
+    for (const auto& choice : payload["choices"]) {
+        if (!choice.is_object() || !choice.contains("delta") || !choice["delta"].is_object()) {
+            continue;
+        }
+        const auto& delta = choice["delta"];
+        for (const char* field_name : {"content", "reasoning_content", "thinking"}) {
+            const auto field = delta.find(field_name);
+            if (field != delta.end() && field->is_string() && !field->get_ref<const std::string&>().empty()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void StreamingProxy::accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text) {
     if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
         auto choice = parsed["choices"][0];

@@ -72,6 +72,14 @@ public:
     static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback,
                                   bool end_of_stream = false);
 
+    static void process_sse_events(std::string& line_buffer,
+                                   std::string& event_data,
+                                   bool& has_data_field,
+                                   std::function<void(const std::string&)> event_callback,
+                                   bool end_of_stream = false);
+
+    static bool is_semantic_generation_delta(const nlohmann::json& payload);
+
     static TelemetryData parse_telemetry(const std::string& buffer);
 
     // Extract telemetry from a complete (non-streaming) response body or a

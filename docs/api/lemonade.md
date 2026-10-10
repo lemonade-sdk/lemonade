@@ -1652,6 +1652,18 @@ curl http://localhost:13305/v1/stats
 - `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
 - `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
 
+While an NPU FastFlowLM LLM chat-completion stream is active, `/v1/stats` also includes live stream fields. They describe complete response or reasoning SSE updates, not token throughput; the completed request's `tokens_per_second` remains the final token rate.
+
+- `inference_active` - Whether one or more qualifying FastFlowLM streams are active
+- `live_active_requests` - Number of active qualifying streams
+- `live_generated_chunks` - Complete semantic SSE updates emitted by active streams
+- `live_generation_rate_estimate` - Trailing five-second estimate in `semantic_sse_chunks_per_second`
+- `live_generation_rate_unit` - Always `semantic_sse_chunks_per_second`
+- `live_generation_recipe` / `live_generation_device` - Always `flm` / `npu`
+- `live_generation_model` - Present only when all active qualifying streams use the same public model name
+
+When no qualifying stream is active, the live boolean is `false` and the live counters and estimate are zero.
+
 ## `GET /v1/system-stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

@@ -37,6 +37,8 @@ function loadChatModelOverride() {
   return loaded.exports;
 }
 
+const dashboardFallback = require('./dashboardFallback.test.cjs');
+
 const tests = [
   {
     name: 'collection helpers preserve component order and collection identity',
@@ -225,6 +227,7 @@ const tests = [
       );
     },
   },
+  ...dashboardFallback.tests,
 ];
 
 module.exports = { tests };

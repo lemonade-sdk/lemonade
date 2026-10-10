@@ -469,6 +469,15 @@ export interface StatsData {
   tokens_per_second: number;
   decode_token_times: number[];
   prompt_tokens: number;
+  request_count_total?: number;
+  inference_active?: boolean;
+  live_active_requests?: number;
+  live_generated_chunks?: number;
+  live_generation_rate_estimate?: number;
+  live_generation_rate_unit?: 'semantic_sse_chunks_per_second';
+  live_generation_recipe?: 'flm';
+  live_generation_device?: 'npu';
+  live_generation_model?: string;
 }
 
 export interface SystemStatsData {

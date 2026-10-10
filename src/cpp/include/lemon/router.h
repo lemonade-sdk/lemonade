@@ -21,6 +21,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "runtime_config.h"
+#include "live_generation_stats.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
 // indefinite blocking if a backend is stuck.
@@ -294,6 +295,7 @@ private:
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
     std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;
+    LiveGenerationStats live_generation_stats_;
 
     uint64_t routing_decisions_total_ = 0;
     uint64_t routing_switches_total_ = 0;
