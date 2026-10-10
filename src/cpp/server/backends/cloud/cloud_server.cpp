@@ -1216,7 +1216,7 @@ bool CloudServer::alpha_error_qualifies(int http_status,
             }
         }
     }
-    return alpha::is_model_not_found(status, error_response);
+    return cloud::alpha::is_model_not_found(status, error_response);
 }
 
 namespace {
@@ -1236,13 +1236,13 @@ std::map<std::string, std::string> alpha_headers(
 // JSON objects, one event per line. A trailing partial line is left in
 // line_buffer for the next chunk; end_of_stream flushes it.
 void feed_alpha_text(const std::string& text, bool end_of_stream,
-                     alpha::StreamState& state, std::string& line_buffer) {
+                     cloud::alpha::StreamState& state, std::string& line_buffer) {
     auto feed_line = [&](const std::string& line) {
         if (line.empty()) {
             return;
         }
         try {
-            alpha::feed_event(json::parse(line), state);
+            cloud::alpha::feed_event(json::parse(line), state);
         } catch (const json::exception&) {
         }
     };
@@ -1279,7 +1279,7 @@ json CloudServer::alpha_chat_completion(const json& openai_request,
             ErrorType::BACKEND_ERROR, {{"provider", provider_}});
     }
 
-    const json envelope = alpha::build_envelope(upstream_model_, openai_request);
+    const json envelope = cloud::alpha::build_envelope(upstream_model_, openai_request);
     auto cancel_token = current_request_cancel_context();
     if (cancel_token.cancelled()) {
         return ErrorResponse::create("Request cancelled by client",
@@ -1312,7 +1312,7 @@ json CloudServer::alpha_chat_completion(const json& openai_request,
             {{"status_code", response.status_code}, {"response", error_details}});
     }
 
-    alpha::StreamState state;
+    cloud::alpha::StreamState state;
     std::string line_buffer;
     feed_alpha_text(response.body, /*end_of_stream=*/true, state, line_buffer);
     if (state.error) {
@@ -1321,12 +1321,12 @@ json CloudServer::alpha_chat_completion(const json& openai_request,
                 state.error_message,
             ErrorType::BACKEND_ERROR, {{"provider", provider_}});
     }
-    const std::string completion_id = alpha::new_completion_id();
+    const std::string completion_id = cloud::alpha::new_completion_id();
     const auto created = static_cast<int64_t>(std::time(nullptr));
     const std::string model =
         openai_request.value("model", upstream_model_.empty() ? provider_ : upstream_model_);
-    return legacy ? alpha::to_text_completion(state, model, completion_id, created)
-                  : alpha::to_chat_completion(state, model, completion_id, created);
+    return legacy ? cloud::alpha::to_text_completion(state, model, completion_id, created)
+                  : cloud::alpha::to_chat_completion(state, model, completion_id, created);
 }
 
 void CloudServer::forward_alpha_stream(const std::string& openai_body,
@@ -1365,8 +1365,8 @@ void CloudServer::forward_alpha_stream(const std::string& openai_body,
     } catch (const json::exception&) {
         openai_request = json::object();
     }
-    const json envelope = alpha::build_envelope(upstream_model_, openai_request);
-    const std::string completion_id = alpha::new_completion_id();
+    const json envelope = cloud::alpha::build_envelope(upstream_model_, openai_request);
+    const std::string completion_id = cloud::alpha::new_completion_id();
     const auto created = static_cast<int64_t>(std::time(nullptr));
     const std::string model =
         openai_request.value("model", upstream_model_.empty() ? provider_ : upstream_model_);
@@ -1374,7 +1374,7 @@ void CloudServer::forward_alpha_stream(const std::string& openai_body,
     const auto headers =
         alpha_headers(creds.auth_header, creds.api_key, target.cli_version);
 
-    alpha::StreamState state;
+    cloud::alpha::StreamState state;
     std::string line_buffer;
     bool role_sent = false;
     bool client_ok = true;
@@ -1387,7 +1387,7 @@ void CloudServer::forward_alpha_stream(const std::string& openai_body,
             return;
         }
         if (!role_sent && (!state.text.empty() || !state.reasoning.empty())) {
-            const std::string role = alpha::sse_role_chunk(completion_id, created, model,
+            const std::string role = cloud::alpha::sse_role_chunk(completion_id, created, model,
                                                            legacy);
             if (!sink.write(role.data(), role.size())) {
                 client_ok = false;
@@ -1400,7 +1400,7 @@ void CloudServer::forward_alpha_stream(const std::string& openai_body,
                 state.reasoning.substr(last_reasoning_len);
             last_reasoning_len = state.reasoning.size();
             if (!legacy && !reasoning_delta.empty()) {
-                const std::string chunk = alpha::sse_reasoning_chunk(
+                const std::string chunk = cloud::alpha::sse_reasoning_chunk(
                     completion_id, created, model, reasoning_delta);
                 if (!sink.write(chunk.data(), chunk.size())) {
                     client_ok = false;
@@ -1412,7 +1412,7 @@ void CloudServer::forward_alpha_stream(const std::string& openai_body,
             const std::string text_delta = state.text.substr(last_text_len);
             last_text_len = state.text.size();
             if (!text_delta.empty()) {
-                const std::string chunk = alpha::sse_content_chunk(
+                const std::string chunk = cloud::alpha::sse_content_chunk(
                     completion_id, created, model, text_delta, legacy);
                 if (!sink.write(chunk.data(), chunk.size())) {
                     client_ok = false;
@@ -1475,11 +1475,11 @@ void CloudServer::forward_alpha_stream(const std::string& openai_body,
             return;
         }
         if (!role_sent) {
-            const std::string role = alpha::sse_role_chunk(completion_id, created, model,
+            const std::string role = cloud::alpha::sse_role_chunk(completion_id, created, model,
                                                            legacy);
             sink.write(role.data(), role.size());
         }
-        const std::string final_chunk = alpha::sse_final_chunk(
+        const std::string final_chunk = cloud::alpha::sse_final_chunk(
             state, completion_id, created, model, legacy, include_usage);
         sink.write(final_chunk.data(), final_chunk.size());
         const char* done_marker = "data: [DONE]\n\n";
