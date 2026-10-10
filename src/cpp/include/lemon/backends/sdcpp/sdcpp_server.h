@@ -18,19 +18,14 @@ class SDServer : public WrappedServer, public IImageServer, public IUpscaleServe
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-
     explicit SDServer(const std::string& log_level,
                       ModelManager* model_manager,
                       BackendManager* backend_manager);
-
-    ~SDServer() override;
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;

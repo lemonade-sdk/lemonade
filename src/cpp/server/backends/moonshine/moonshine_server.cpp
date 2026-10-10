@@ -58,10 +58,6 @@ MoonshineServer::MoonshineServer(const std::string& log_level, ModelManager* mod
     : WrappedServer("moonshine-server", log_level, model_manager, backend_manager) {
 }
 
-MoonshineServer::~MoonshineServer() {
-    unload();
-}
-
 void MoonshineServer::load(const std::string& model_name,
                           const ModelInfo& model_info,
                           const RecipeOptions& options,
@@ -126,7 +122,6 @@ void MoonshineServer::load(const std::string& model_name,
     LOG(INFO, "MoonshineServer") << "Starting server on port " << port_
                                  << " (TCP streaming on " << tcp_port_ << ")" << std::endl;
 
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "--model-path", model_path,
         "--model-arch", std::to_string(model_arch),
@@ -161,38 +156,12 @@ void MoonshineServer::load(const std::string& model_name,
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     bool inherit_output = (log_level_ == "info") || is_debug();
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        executable,
-        args,
-        "",     // working_dir
-        inherit_output,
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, executable, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start moonshine-server process");
-    }
-
-    LOG(INFO, "MoonshineServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("moonshine-server failed to start or become ready");
-    }
-
-    LOG(INFO, "MoonshineServer") << "Server is ready!" << std::endl;
-}
-
-void MoonshineServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "MoonshineServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
-    tcp_port_ = 0;
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}), command);
 }
 
 std::string MoonshineServer::get_streaming_address() {
