@@ -192,6 +192,9 @@ struct CliConfig {
     std::optional<std::string> cloud_auth_header_name;
     std::optional<std::string> cloud_auth_header_prefix;
     std::optional<std::string> cloud_wire_format;
+    bool cloud_alpha_generate_fallback = false;
+    std::optional<std::string> cloud_alpha_generate_url;
+    std::optional<std::string> cloud_alpha_cli_version;
 
     // Alias management options
     std::string alias_name;
@@ -1374,6 +1377,17 @@ int main(int argc, char* argv[]) {
         "'anthropic' providers are reachable via /v1/messages only.")
         ->check(CLI::IsMember({"openai", "anthropic"}))
         ->type_name("FORMAT");
+    cloud_install_cmd->add_flag("--alpha-generate-fallback", config.cloud_alpha_generate_fallback,
+        "Retry model-not-found errors through the vendor's proprietary agent "
+        "endpoint (/alpha/generate), translated back to the OpenAI shape.");
+    cloud_install_cmd->add_option("--alpha-generate-url", config.cloud_alpha_generate_url,
+        "Proprietary endpoint URL override. Defaults to "
+        "scheme://host/alpha/generate derived from --base-url.")
+        ->type_name("URL");
+    cloud_install_cmd->add_option("--alpha-cli-version", config.cloud_alpha_cli_version,
+        "Version sent as x-command-code-version on fallback requests "
+        "(default: 1.15.1).")
+        ->type_name("VERSION");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1662,7 +1676,10 @@ int main(int argc, char* argv[]) {
                                                   config.cloud_allow_insecure_http,
                                                   config.cloud_auth_header_name,
                                                   config.cloud_auth_header_prefix,
-                                                  config.cloud_wire_format);
+                                                  config.cloud_wire_format,
+                                                  config.cloud_alpha_generate_fallback,
+                                                  config.cloud_alpha_generate_url,
+                                                  config.cloud_alpha_cli_version);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);
