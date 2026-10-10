@@ -246,28 +246,9 @@ bool sync_pi_settings_file(const std::string& provider_name,
         return false;
     }
 
-    nlohmann::json settings = nlohmann::json::object();
-
-    if (fs::exists(settings_path)) {
-        std::ifstream file(settings_path);
-        if (!file.is_open()) {
-            error_out = "Cannot open " + settings_path + " for reading";
-            return false;
-        }
-
-        try {
-            settings = nlohmann::json::parse(file);
-        } catch (const nlohmann::json::exception& e) {
-            error_out = "Cannot parse existing " + settings_path + ": " +
-                        std::string(e.what()) +
-                        ". Refusing to overwrite. Fix or remove the file manually.";
-            return false;
-        }
-
-        if (!settings.is_object()) {
-            error_out = settings_path + " is not a JSON object. Refusing to overwrite.";
-            return false;
-        }
+    nlohmann::json settings;
+    if (!read_json_object(settings_path, settings, error_out)) {
+        return false;
     }
 
     settings["defaultProvider"] = provider_name;
