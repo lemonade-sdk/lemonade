@@ -1013,6 +1013,7 @@ set(SOURCES_CORE
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
+    src/cpp/server/live_generation_stats.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/routing_classifier_services.cpp
@@ -3313,6 +3314,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_SILENT_STREAM_TEST_SRC}")
     add_executable(test_streaming_silent_stream test/cpp/test_streaming_silent_stream.cpp)
     target_link_libraries(test_streaming_silent_stream PRIVATE lemonade-server-core)
     add_cpp_ci_test(StreamingSilentStreamTest CI ON COMMAND test_streaming_silent_stream)
+endif()
+
+set(_LIVE_GENERATION_STATS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_live_generation_stats.cpp")
+if(BUILD_TESTING AND EXISTS "${_LIVE_GENERATION_STATS_TEST_SRC}")
+    add_executable(test_live_generation_stats test/cpp/test_live_generation_stats.cpp)
+    target_link_libraries(test_live_generation_stats PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LiveGenerationStatsTest CI ON COMMAND test_live_generation_stats)
 endif()
 
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")

@@ -25,6 +25,7 @@ export interface HistoryPoint {
   npu: number | null;
   aggregateTps: number;
   aggregatePromptTps: number;
+  liveEstimate: number;
   activeSlots: number;
   totalSlots: number;
   cacheUtil: number | null;
@@ -70,6 +71,70 @@ function smoothTarget(current: number, raw: number): number {
   const alpha = raw >= current ? ATTACK_ALPHA : RELEASE_ALPHA;
   const result = current + (raw - current) * alpha;
   return result < 0.5 ? 0 : result;
+}
+
+function completedRequestTps(stats: StatsData | null, previousCount: number | null) {
+  const requestCount = stats?.request_count_total;
+  if (typeof requestCount !== 'number' || !Number.isSafeInteger(requestCount) || requestCount < 0) {
+    return { requestCount: previousCount, tps: 0 };
+  }
+
+  const rate = stats?.tokens_per_second;
+  const isNewRequest = requestCount > 0 && (previousCount === null || requestCount > previousCount);
+  const isReset = previousCount !== null && requestCount < previousCount;
+  return {
+    requestCount,
+    tps: !isReset && isNewRequest && typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : 0,
+  };
+}
+
+const LIVE_FLM_UNIT = 'semantic_sse_chunks_per_second' as const;
+
+type LiveFlmEstimate = {
+  active: boolean;
+  rate: number;
+  unit: typeof LIVE_FLM_UNIT | null;
+};
+
+function isNpuFlm(model: LoadedModel): boolean {
+  return model.recipe === 'flm' && model.device.trim().toLowerCase() === 'npu';
+}
+
+function getLiveFlmEstimate(
+  stats: StatsData | null,
+  loadedModels: LoadedModel[],
+  activeModel: LoadedModel | undefined,
+  supportsSlots: boolean,
+): LiveFlmEstimate {
+  if (supportsSlots || stats?.inference_active !== true) return { active: false, rate: 0, unit: null };
+
+  const activeRequests = stats.live_active_requests;
+  const generatedChunks = stats.live_generated_chunks;
+  const rate = stats.live_generation_rate_estimate;
+  const hasValidCounts = typeof activeRequests === 'number'
+    && Number.isSafeInteger(activeRequests)
+    && activeRequests > 0
+    && typeof generatedChunks === 'number'
+    && Number.isSafeInteger(generatedChunks)
+    && generatedChunks >= 0;
+  const hasValidRate = typeof rate === 'number' && Number.isFinite(rate) && rate >= 0;
+  if (!hasValidCounts || !hasValidRate
+    || stats.live_generation_rate_unit !== LIVE_FLM_UNIT
+    || stats.live_generation_recipe !== 'flm'
+    || stats.live_generation_device !== 'npu') {
+    return { active: false, rate: 0, unit: null };
+  }
+
+  const loadedFlmModels = loadedModels.filter(isNpuFlm);
+  const reportedModel = typeof stats.live_generation_model === 'string'
+    ? stats.live_generation_model.trim()
+    : '';
+  const hasMatchingModel = reportedModel
+    ? loadedFlmModels.some(model => model.model_name === reportedModel)
+    : Boolean(activeModel && isNpuFlm(activeModel)) || loadedFlmModels.length === 1;
+  if (!hasMatchingModel) return { active: false, rate: 0, unit: null };
+
+  return { active: true, rate, unit: LIVE_FLM_UNIT };
 }
 
 /** Parse llama.cpp slot print_timing log lines for real-time throughput. */
@@ -119,6 +184,12 @@ export interface DashboardData {
   latestTps: number;
   latestPP: number;
   activeSlotCount: number;
+  completedRequestFallback: boolean;
+  nonSlotGraphMode: 'slots' | 'live-estimate' | 'completed';
+  liveEstimateActive: boolean;
+  liveEstimateUnit: typeof LIVE_FLM_UNIT | null;
+  latestLiveEstimate: number;
+  liveEstimateChartData: Record<string, number>[];
   overallCacheUtil: number | null;
   hasGpu: boolean;
   hasNpu: boolean;
@@ -162,16 +233,19 @@ export function useDashboardData(isActive = true): DashboardData {
 
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollGenerationRef = useRef(0);
+  const lastAppliedPollGenerationRef = useRef(0);
   const failureCountRef = useRef(0);
+  const lastCompletedRequestCountRef = useRef<number | null>(null);
   const slotWindowRef = useRef(new Map<number, { ts: number; decoded: number; prompted: number }[]>());
   const targetAggRef = useRef({
-    tps: 0, ppTps: 0,
+    tps: 0, ppTps: 0, liveEstimate: 0,
     cpu: null as number | null, ram: null as number | null,
     gpu: null as number | null, vram: null as number | null, npu: null as number | null,
     activeSlots: 0, totalSlots: 0, cacheUtil: null as number | null,
   });
   const targetSlotRef = useRef(new Map<number, SlotTarget>());
-  const interpAggRef = useRef({ tps: 0, ppTps: 0 });
+  const interpAggRef = useRef({ tps: 0, ppTps: 0, liveEstimate: 0 });
   const interpSlotRef = useRef(new Map<number, { tps: number; ppTps: number }>());
 
   /* ── Aggregate throughput from all slots ──────────────────── */
@@ -233,6 +307,7 @@ export function useDashboardData(isActive = true): DashboardData {
   /* ── Polling ─────────────────────────────────────────────── */
 
   const poll = useCallback(async () => {
+    const pollGeneration = ++pollGenerationRef.current;
     try {
       let healthError: unknown = null;
       const [h, st, ss] = await Promise.all([
@@ -241,12 +316,8 @@ export function useDashboardData(isActive = true): DashboardData {
         api.systemStats().catch(() => null),
       ]);
 
+      if (pollGeneration < lastAppliedPollGenerationRef.current) return;
       if (!h) throw healthError || new Error(api.lastConnectionError || 'Server health endpoint is unavailable.');
-      failureCountRef.current = 0;
-
-      setHealth(h);
-      if (st) setStats(st);
-      if (ss) setSysStats(ss);
 
       let slotData: SlotData[] = [];
       const loaded = Array.isArray(h.all_models_loaded) ? h.all_models_loaded : [];
@@ -260,24 +331,40 @@ export function useDashboardData(isActive = true): DashboardData {
       const supportsSlots = Boolean(
         activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
       );
+      const liveEstimate = getLiveFlmEstimate(st, loaded, activeModel, supportsSlots);
+      let nextSlotsUnsupported = Boolean(activeModel);
+      let nextSlotStatus = activeModel
+        ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
+        : 'Load a llama.cpp or vLLM chat model to see slot telemetry.';
       if (supportsSlots) {
         try {
           const response = await api.slots();
           slotData = Array.isArray(response) ? response : [];
-          setSlotsUnsupported(false);
-          setSlotStatus(slotData.length > 0 ? 'Slot telemetry is live.' : 'Compatible backend loaded, but no slot activity is currently reported.');
+          nextSlotsUnsupported = false;
+          nextSlotStatus = slotData.length > 0
+            ? 'Slot telemetry is live.'
+            : 'Compatible backend loaded, but no slot activity is currently reported.';
         } catch (err) {
-          slotData = [];
-          setSlotsUnsupported(true);
-          setSlotStatus(`Slot telemetry unavailable: ${friendlyErrorMessage(err)}`);
+          nextSlotsUnsupported = true;
+          nextSlotStatus = `Slot telemetry unavailable: ${friendlyErrorMessage(err)}`;
         }
-      } else {
-        setSlotsUnsupported(Boolean(activeModel));
-        setSlotStatus(activeModel
-          ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
-          : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
       }
+      if (pollGeneration < lastAppliedPollGenerationRef.current) return;
+
+      lastAppliedPollGenerationRef.current = pollGeneration;
+      failureCountRef.current = 0;
+      setHealth(h);
+      if (st) setStats(st);
+      if (ss) setSysStats(ss);
+      setSlotsUnsupported(nextSlotsUnsupported);
+      setSlotStatus(nextSlotStatus);
       setSlots(slotData);
+
+      const completedRequest = completedRequestTps(st, lastCompletedRequestCountRef.current);
+      lastCompletedRequestCountRef.current = completedRequest.requestCount;
+      const completedRequestFallback = Boolean(activeModel) && !supportsSlots;
+      const fallbackTps = completedRequestFallback ? completedRequest.tps : 0;
+      if (fallbackTps > countersRef.current.peakTps) countersRef.current.peakTps = fallbackTps;
 
       const { aggTps, aggPromptTps, perSlotLive } = computeAggregates(slotData);
 
@@ -313,8 +400,9 @@ export function useDashboardData(isActive = true): DashboardData {
       const cacheUtil = totalCtx > 0 ? (totalCache / totalCtx) * 100 : null;
 
       const tgt = targetAggRef.current;
-      tgt.tps = smoothTarget(tgt.tps, aggTps);
+      tgt.tps = smoothTarget(tgt.tps, completedRequestFallback ? fallbackTps : aggTps);
       tgt.ppTps = smoothTarget(tgt.ppTps, aggPromptTps);
+      tgt.liveEstimate = liveEstimate.active ? liveEstimate.rate : 0;
       tgt.cpu = ss?.cpu_percent ?? null;
       tgt.ram = ss?.memory_gb ?? null;
       tgt.gpu = ss?.gpu_percent ?? null;
@@ -326,6 +414,7 @@ export function useDashboardData(isActive = true): DashboardData {
 
       setLastError(null);
     } catch (err) {
+      if (pollGeneration < lastAppliedPollGenerationRef.current) return;
       failureCountRef.current += 1;
       setLastError(`${friendlyErrorMessage(err)}${failureCountRef.current >= 3 ? ' Polling paused after repeated failures.' : ''}`);
       setSlots([]);
@@ -472,6 +561,7 @@ export function useDashboardData(isActive = true): DashboardData {
 
       aI.tps += (aTarget.tps - aI.tps) * LERP_SPEED;
       aI.ppTps += (aTarget.ppTps - aI.ppTps) * LERP_SPEED;
+      aI.liveEstimate = aTarget.liveEstimate;
       if (Math.abs(aI.tps) < 0.05) aI.tps = 0;
       if (Math.abs(aI.ppTps) < 0.05) aI.ppTps = 0;
 
@@ -485,6 +575,7 @@ export function useDashboardData(isActive = true): DashboardData {
           npu: aTarget.npu,
           aggregateTps: aI.tps,
           aggregatePromptTps: aI.ppTps,
+          liveEstimate: aI.liveEstimate,
           activeSlots: aTarget.activeSlots,
           totalSlots: aTarget.totalSlots,
           cacheUtil: aTarget.cacheUtil,
@@ -527,9 +618,22 @@ export function useDashboardData(isActive = true): DashboardData {
   /* ── Derived ─────────────────────────────────────────────── */
 
   const loadedModels = health?.all_models_loaded || [];
+  const activeModelName = String(health?.model_loaded || '').trim();
+  const activeModel = activeModelName
+    ? loadedModels.find(m => m.model_name === activeModelName)
+    : undefined;
+  const supportsSlots = Boolean(
+    activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
+  );
+  const completedRequestFallback = Boolean(activeModel) && !supportsSlots;
+  const liveEstimate = getLiveFlmEstimate(stats, loadedModels, activeModel, supportsSlots);
+  const nonSlotGraphMode = liveEstimate.active
+    ? 'live-estimate'
+    : completedRequestFallback ? 'completed' : 'slots';
   const counters = countersRef.current;
   const latestTps = history.length > 0 ? history[history.length - 1].aggregateTps : 0;
   const latestPP = history.length > 0 ? history[history.length - 1].aggregatePromptTps : 0;
+  const latestLiveEstimate = history.length > 0 ? history[history.length - 1].liveEstimate : 0;
   const activeSlotCount = slots.filter(s => {
     const live = slotLive[s.id];
     const target = targetSlotRef.current.get(s.id);
@@ -550,6 +654,11 @@ export function useDashboardData(isActive = true): DashboardData {
 
   const aggChartData = useMemo(() =>
     history.map(h => ({ genTps: h.aggregateTps, ppTps: h.aggregatePromptTps })),
+    [history]
+  );
+
+  const liveEstimateChartData = useMemo(() =>
+    history.map(h => ({ liveEstimate: h.liveEstimate })),
     [history]
   );
 
@@ -593,7 +702,9 @@ export function useDashboardData(isActive = true): DashboardData {
     // tick of the poll interval.
     refresh: poll,
     counters, getSlotTarget, loadedModels,
-    latestTps, latestPP, activeSlotCount, overallCacheUtil,
+    latestTps, latestPP, activeSlotCount, completedRequestFallback,
+    nonSlotGraphMode, liveEstimateActive: liveEstimate.active, liveEstimateUnit: liveEstimate.unit,
+    latestLiveEstimate, liveEstimateChartData, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
     aggChartData, slotChartData, sysChartData, cacheChartData,
   };

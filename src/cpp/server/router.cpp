@@ -53,6 +53,10 @@ private:
     SuspendInhibitor* inhibitor_;
 };
 
+bool is_live_flm_npu_stream(const ModelTelemetryIdentity& identity) {
+    return identity.type == "llm" && identity.recipe == "flm" && identity.device == "npu";
+}
+
 } // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
@@ -2357,10 +2361,13 @@ void Router::model_3d_generations(const json& request, httplib::DataSink& sink) 
 }
 
 json Router::get_stats() const {
+    const LiveGenerationStats::Snapshot live_generation = live_generation_stats_.snapshot();
+
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     json stats = aggregate_telemetry_.to_json();
     stats["routing_decisions_total"] = routing_decisions_total_;
     stats["routing_switches_total"] = routing_switches_total_;
+    stats.update(live_generation.to_json());
     return stats;
 }
 
@@ -2556,9 +2563,35 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     auto accumulated_reasoning = std::make_shared<std::string>();
     auto accumulated_tool_calls = std::make_shared<std::map<int, telemetry::ToolCall>>();
     auto line_buffer = std::make_shared<std::string>();
+    struct LiveStreamState {
+        std::weak_ptr<LiveGenerationStats::Request> request;
+        std::string line_buffer;
+        std::string event_data;
+        bool has_data_field = false;
+    };
+    auto live_state = std::make_shared<LiveStreamState>();
+    auto record_live_events = [live_state](bool end_of_stream) {
+        const auto request = live_state->request.lock();
+        if (!request) {
+            return;
+        }
+        StreamingProxy::process_sse_events(
+            live_state->line_buffer, live_state->event_data, live_state->has_data_field,
+            [request](const std::string& complete_event) {
+                try {
+                    const json event = json::parse(complete_event);
+                    if (StreamingProxy::is_semantic_generation_delta(event)) {
+                        request->record_semantic_chunk();
+                    }
+                } catch (...) {
+                }
+            }, end_of_stream);
+    };
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, accumulated_reasoning, accumulated_tool_calls, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, accumulated_reasoning, accumulated_tool_calls, line_buffer,
+                            live_state, record_live_events,
+                            &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
@@ -2607,6 +2640,10 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                 }
             }
         });
+        if (success && !live_state->request.expired()) {
+            live_state->line_buffer.append(data, len);
+            record_live_events(false);
+        }
         return success;
     };
 
@@ -2614,13 +2651,15 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
         return sink.is_writable ? sink.is_writable() : true;
     };
 
-    telemetry_sink.done = [&sink]() {
+    telemetry_sink.done = [&sink, record_live_events]() {
+        record_live_events(true);
         if (sink.done) {
             sink.done();
         }
     };
 
-    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+    telemetry_sink.done_with_trailer = [&sink, record_live_events](const httplib::Headers& trailer) {
+        record_live_events(true);
         if (sink.done_with_trailer) {
             sink.done_with_trailer(trailer);
         } else if (sink.done) {
@@ -2631,6 +2670,18 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     try {
         execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            std::shared_ptr<LiveGenerationStats::Request> live_request;
+            if (is_live_flm_npu_stream(identity)) {
+                const std::string public_model_name = model_manager_
+                    ? model_manager_->get_public_model_name(identity.model_name)
+                    : identity.model_name;
+                live_state->line_buffer.clear();
+                live_state->event_data.clear();
+                live_state->has_data_field = false;
+                live_request = std::make_shared<LiveGenerationStats::Request>(
+                    live_generation_stats_.track(public_model_name));
+                live_state->request = live_request;
+            }
 
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);
@@ -2644,8 +2695,11 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
             }
 
             server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
-                [this, identity, span, accumulated_text, accumulated_reasoning, accumulated_tool_calls, server](
+                [this, identity, span, accumulated_text, accumulated_reasoning, accumulated_tool_calls, server, live_request](
                     const StreamingProxy::TelemetryData& telemetry) {
+                    if (live_request) {
+                        live_request->reset();
+                    }
                     if (!telemetry.error_message.empty()) {
                         if (span) {
                             span->end_with_error(telemetry.error_message);
