@@ -11,7 +11,7 @@ permissions:
 jobs:
 
   app-regression-tests:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
     concurrency:
       group: ${{ github.workflow }}-app-regression-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -65,7 +65,7 @@ jobs:
         run: python3 docs/tools/gen_mcp_boilerplate.py --check
 
   pre-commit:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
     concurrency:
       group: ${{ github.workflow }}-pre-commit-${{ github.ref }}
       cancel-in-progress: true
