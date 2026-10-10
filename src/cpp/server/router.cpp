@@ -53,6 +53,48 @@ private:
     SuspendInhibitor* inhibitor_;
 };
 
+// Only OpenAI output-delta events count. Generic SSE payloads, keepalives,
+// request state, usage and complete/cumulative "response" fields are not tokens.
+void observe_stream_content(LiveThroughput::Request& live, const json& event) {
+    if (!event.is_object()) return;
+
+    const auto object = event.value("object", std::string{});
+    if (object == "chat.completion.chunk" || object == "text_completion") {
+        if (!event.contains("choices") || !event["choices"].is_array()) return;
+        for (const auto& choice : event["choices"]) {
+            if (!choice.is_object()) continue;
+            if (object == "text_completion") {
+                if (choice.contains("text") && choice["text"].is_string())
+                    live.observe(choice["text"].get_ref<const std::string&>());
+                continue;
+            }
+            if (!choice.contains("delta") || !choice["delta"].is_object()) continue;
+            const auto& delta = choice["delta"];
+            for (const auto* field : {"content", "reasoning_content", "thinking"}) {
+                if (delta.contains(field) && delta[field].is_string())
+                    live.observe(delta[field].get_ref<const std::string&>());
+            }
+            if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
+                for (const auto& call : delta["tool_calls"]) {
+                    if (call.is_object() && call.contains("function") && call["function"].is_object()) {
+                        const auto& function = call["function"];
+                        if (function.contains("arguments") && function["arguments"].is_string())
+                            live.observe(function["arguments"].get_ref<const std::string&>());
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    const auto type = event.value("type", std::string{});
+    if (type == "response.output_text.delta" || type == "response.reasoning_text.delta" ||
+        type == "response.function_call_arguments.delta") {
+        if (event.contains("delta") && event["delta"].is_string())
+            live.observe(event["delta"].get_ref<const std::string&>());
+    }
+}
+
 } // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
@@ -2355,6 +2397,9 @@ json Router::get_stats() const {
     json stats = aggregate_telemetry_.to_json();
     stats["routing_decisions_total"] = routing_decisions_total_;
     stats["routing_switches_total"] = routing_switches_total_;
+    const auto live = live_throughput_.snapshot();
+    stats["live"] = {{"active_requests", live.active_requests},
+                     {"estimated_tokens_per_second", live.estimated_tokens_per_second}};
     return stats;
 }
 
@@ -2538,6 +2583,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+    auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
     bool hide_thinking = false;
@@ -2552,18 +2598,19 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, accumulated_reasoning, accumulated_tool_calls, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, accumulated_reasoning, accumulated_tool_calls, line_buffer, &sink, hide_outputs, hide_thinking, &live_request](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, accumulated_tool_calls, hide_outputs, hide_thinking](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, accumulated_tool_calls, hide_outputs, hide_thinking, &live_request](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
                     try {
                         auto parsed = json::parse(json_str);
+                        observe_stream_content(live_request, parsed);
                         if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
                             auto delta = parsed["choices"][0]["delta"];
                             if (!hide_thinking) {
@@ -2692,6 +2739,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+    auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
     if (auto* config = RuntimeConfig::global()) {
@@ -2702,18 +2750,19 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs, &live_request](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs, &live_request](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
                     try {
                         auto parsed = json::parse(json_str);
+                        observe_stream_content(live_request, parsed);
                         if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
                             auto choice = parsed["choices"][0];
                             if (!hide_outputs) {
@@ -2807,6 +2856,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+    auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
     if (auto* config = RuntimeConfig::global()) {
@@ -2817,18 +2867,19 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs, &live_request](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs, &live_request](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
                     try {
                         auto parsed = json::parse(json_str);
+                        observe_stream_content(live_request, parsed);
                         if (!hide_outputs) {
                             StreamingProxy::accumulate_responses_delta(parsed, *accumulated_text);
                         }
