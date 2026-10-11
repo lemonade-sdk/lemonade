@@ -636,9 +636,10 @@ int LemonadeClient::status(int display_port) const {
                       << std::setw(10) << "Device"
                       << std::setw(14) << "Recipe"
                       << std::setw(9) << "Ctx"
+                      << std::setw(7) << "KV"
                       << std::setw(10) << "Status"
                       << "Checkpoint" << std::endl;
-            std::cout << std::string(119, '-') << std::endl;
+            std::cout << std::string(126, '-') << std::endl;
 
             for (const auto& model : json_response["all_models_loaded"]) {
                 if (!model.is_object()) continue;
@@ -654,12 +655,19 @@ int LemonadeClient::status(int display_port) const {
                     ctx_size = std::to_string(recipe_options["ctx_size"].get<int>());
                 }
 
+                std::string kv_tier = "-";
+                if (recipe_options.contains("resolved_kv_cache_tier") &&
+                    recipe_options["resolved_kv_cache_tier"].is_string()) {
+                    kv_tier = recipe_options["resolved_kv_cache_tier"].get<std::string>();
+                }
+
                 std::cout << std::left
                           << std::setw(30) << model_name
                           << std::setw(10) << model.value("type", "-")
                           << std::setw(10) << model.value("device", "-")
                           << std::setw(14) << model.value("recipe", "-")
                           << std::setw(9) << ctx_size
+                          << std::setw(7) << kv_tier
                           << std::setw(10) << model.value("status", "-")
                           << model.value("checkpoint", "-") << std::endl;
             }
