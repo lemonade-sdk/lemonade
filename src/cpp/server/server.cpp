@@ -5293,16 +5293,32 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
     return true;
 }
 
-bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, bool allow_multiple) {
+    nlohmann::json images = nlohmann::json::array();
     for (const auto& file_pair : req.form.files) {
         if (file_pair.first == "image" || file_pair.first == "image[]") {
             const auto& file = file_pair.second;
-            out["image_data"] = utils::JsonUtils::base64_encode(file.content);
-            out["image_filename"] = file.filename;
+            const std::string encoded = utils::JsonUtils::base64_encode(file.content);
+            if (!out.contains("image_data")) {
+                // Keep the existing single-image contract for other callers.
+                out["image_data"] = encoded;
+                out["image_filename"] = file.filename;
+                out["image_content_type"] = file.content_type;
+            }
             LOG(INFO, "Server") << "Image file: " << file.filename
                       << " (" << file.content.size() << " bytes)" << std::endl;
-            return true;
+            if (!allow_multiple) return true;
+            // Preserve original upload bytes, MIME and reference order.
+            images.push_back({
+                {"data", encoded},
+                {"filename", file.filename},
+                {"content_type", file.content_type},
+            });
         }
+    }
+    if (!images.empty()) {
+        out["image_files"] = std::move(images);
+        return true;
     }
     res.status = 400;
     nlohmann::json error = {{"error", {
@@ -5427,7 +5443,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (!parse_int_field("seed"))      return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
-        if (!extract_image_from_form(req, res, request_json)) return;
+        if (!extract_image_from_form(req, res, request_json, /*allow_multiple=*/true)) return;
 
         // Extract optional mask file
         for (const auto& file_pair : req.form.files) {

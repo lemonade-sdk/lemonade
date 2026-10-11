@@ -12,7 +12,11 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include <ctime>
+#include <cstdint>
 #include <filesystem>
+#include <limits>
+#include <optional>
+#include <utility>
 #include <fstream>
 #include <random>
 #include <set>
@@ -26,6 +30,51 @@ namespace lemon {
 namespace backends {
 
 namespace {
+
+std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
+    auto at = [&bytes](size_t i) -> std::uint8_t {
+        return static_cast<std::uint8_t>(bytes[i]);
+    };
+    if (bytes.size() >= 24 &&
+        bytes.compare(0, 8, "\x89PNG\r\n\x1a\n", 8) == 0 &&
+        bytes.compare(12, 4, "IHDR", 4) == 0) {
+        auto be32 = [&](size_t i) -> std::uint32_t {
+            return (std::uint32_t(at(i)) << 24) | (std::uint32_t(at(i + 1)) << 16) |
+                   (std::uint32_t(at(i + 2)) << 8) | std::uint32_t(at(i + 3));
+        };
+        const auto width = be32(16);
+        const auto height = be32(20);
+        if (width > 0 && height > 0 &&
+            width <= static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
+            height <= static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            return std::pair<int, int>{static_cast<int>(width), static_cast<int>(height)};
+        }
+    }
+    if (bytes.size() >= 4 && at(0) == 0xff && at(1) == 0xd8) {
+        size_t pos = 2;
+        while (pos < bytes.size()) {
+            if (at(pos) != 0xff) break;
+            while (pos < bytes.size() && at(pos) == 0xff) ++pos;
+            if (pos >= bytes.size()) break;
+            const auto marker = at(pos++);
+            if (marker == 0xd9 || marker == 0xda) break;
+            if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+            if (bytes.size() - pos < 2) break;
+            const size_t segment_len = (size_t(at(pos)) << 8) | at(pos + 1);
+            if (segment_len < 2 || segment_len > bytes.size() - pos) break;
+            const bool sof = marker >= 0xc0 && marker <= 0xcf &&
+                             marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
+            if (sof && segment_len >= 7) {
+                const int height = (int(at(pos + 3)) << 8) | at(pos + 4);
+                const int width = (int(at(pos + 5)) << 8) | at(pos + 6);
+                if (width > 0 && height > 0) return std::pair<int, int>{width, height};
+            }
+            pos += segment_len;
+        }
+    }
+    return std::nullopt;
+}
+
 int generate_random_seed() {
     return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
@@ -376,13 +425,49 @@ json TheNoiseServer::image_edits(const json& request) {
     json data = json::array();
     for (int i = 0; i < n; ++i) {
         json body = build_request(request);
+        // Unlike sd.cpp, TheNoise's edit() uses a 1024 px long-edge default
+        // when size is absent. So derive real original image dimensions here.
+        if (!request.contains("size") &&
+            !(request.contains("width") && request.contains("height"))) {
+            body.erase("width");
+            body.erase("height");
+            std::string first_reference;
+            if (request.contains("image_files") && request["image_files"].is_array() &&
+                !request["image_files"].empty()) {
+                first_reference = request["image_files"][0].at("data").get<std::string>();
+            } else if (request.contains("image_data") && request["image_data"].is_string()) {
+                first_reference = request["image_data"].get<std::string>();
+            }
+            if (!first_reference.empty()) {
+                const auto original_size = image_dimensions_from_bytes(
+                    JsonUtils::base64_decode(first_reference));
+                if (original_size) {
+                    body["width"] = original_size->first;
+                    body["height"] = original_size->second;
+                } else {
+                    LOG(WARNING, "TheNoise") << "Cannot determine the source image size; "
+                          "the backend may use its default output resolution" << std::endl;
+                }
+            }
+        }
         body["out"] = "json";
 
-        if (request.contains("image_data") && !request["image_data"].is_null()) {
-            body["image"] = request["image_data"];
-        }
+        // build_request passes unknown fields through; strip internal upload data.
+        body.erase("image_files");
         body.erase("image_data");
         body.erase("image_filename");
+        body.erase("image_content_type");
+        if (request.contains("image_files") && request["image_files"].is_array()
+            && !request["image_files"].empty()) {
+            json references = json::array();
+            for (const auto& image : request["image_files"]) {
+                references.push_back(image.at("data"));
+            }
+            // TheNoise accepts a single base64 string or an array of strings.
+            body["image"] = references.size() == 1 ? references[0] : references;
+        } else if (request.contains("image_data") && !request["image_data"].is_null()) {
+            body["image"] = request["image_data"];
+        }
 
         LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
 
