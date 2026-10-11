@@ -5294,6 +5294,17 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
 }
 
 bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, bool allow_multiple) {
+    // A multipart map groups files by field name, losing mixed upload order.
+    if (allow_multiple && req.form.files.count("image") > 0 &&
+        req.form.files.count("image[]") > 0) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Use either 'image' or 'image[]', not both"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
     nlohmann::json images = nlohmann::json::array();
     for (const auto& file_pair : req.form.files) {
         if (file_pair.first == "image" || file_pair.first == "image[]") {
