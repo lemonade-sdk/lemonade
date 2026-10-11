@@ -57,6 +57,17 @@ namespace lemon::backends {
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
 
+    // Map "rocm" to the recipe's configured channel (e.g. "rocm-stable"),
+    // for recipes that publish ROCm channels (BackendDescriptor::rocm_channels
+    // non-empty). Passes every other backend name through unchanged, including
+    // an already-normalized channel name ("rocm-stable", "rocm-nightly") and
+    // non-ROCm backends ("cuda", "metal", "vulkan", "cpu", "system").
+    //
+    // Reads global runtime config, so this must not be called from a context
+    // that needs to stay link-free or pure (see kv_cache_quant.h's eligibility
+    // gates, which take an already-normalized backend string for that reason).
+    std::string normalize_backend_name(const std::string& recipe, const std::string& backend);
+
     /**
     * Utility functions for backend management
     */
