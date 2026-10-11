@@ -424,6 +424,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "downsize_idle_timeout": 60,
     "evict_idle_timeout": 300,
     "evict_weight_factor": 1.0,
+    "kv_cache_quantization": "auto",
     "llamacpp_args": "--load-mode none",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
@@ -436,13 +437,16 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "downsize_idle_timeout": 60,
     "evict_idle_timeout": 300,
     "evict_weight_factor": 1.0,
+    "kv_cache_quantization": "auto",
     "llamacpp_args": "",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
     "merge_args": true,
     "model_name": "Qwen3-0.6B-GGUF"
   },
-  "resolved_ctx_size": 32768
+  "resolved_ctx_size": 32768,
+  "resolved_kv_cache_tier": "f16",
+  "resolved_kv_cache_ineligible_reason": "No KV cache quant tier below f16 is eligible on backend 'vulkan' for this model (backend kernel support or model head dimensions)."
 }
 ```
 
@@ -451,9 +455,11 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body. |
 | `recipe` | The recipe the option names belong to. |
 | `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
-| `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
+| `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. `kv_cache_quantization` always shows the configured value (`auto`, `off`, `q8_0`, `q4_0`) here, never the resolved tier — replaying `effective` must reproduce the same request, not freeze a point-in-time decision. |
 | `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
 | `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
+| `resolved_kv_cache_tier` | The KV cache quant tier (`f16`, `q8_0`, or `q4_0`) a load right now would launch with. When `kv_cache_quantization` is `auto`, this is the ladder's choice; an explicit `q8_0`/`q4_0` request that fails its eligibility gates also reports `f16` here (see `resolved_kv_cache_ineligible_reason`). |
+| `resolved_kv_cache_ineligible_reason` | Present only when no KV cache quant tier below `f16` is eligible for the resolved backend or model — a structural condition (unsupported fused-attention kernel, or a head dimension not divisible by the tier's block size), not a memory-fit shortfall. Absent whenever `f16` was reached normally, so the two `f16` outcomes stay distinguishable. See [KV cache quantization](#kv-cache-quantization-llamacpp) below. |
 
 > Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
@@ -1134,7 +1140,8 @@ Recipe option fields on `/v1/load` have three-state semantics. Omitting a field 
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](#post-v1modelsidoptions) instead. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically instead of using a saved value; omit it to use the saved value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
-| `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
+| `kv_cache_quantization` | No | llamacpp | KV cache quantization: `auto` (default; quantize only when an unquantized cache cannot reach the target context), `off` (never quantize), `q8_0`, or `q4_0`. See [KV cache quantization](#kv-cache-quantization-llamacpp) below. |
+| `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. `--cache-type-k`/`-ctk` and `--cache-type-v`/`-ctv` are allowed, and setting them turns off Lemonade's own KV cache tier management for that load. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
 | `whispercpp_args` | No | whispercpp | Custom arguments to pass to whisper-server. The following are NOT allowed: `-m`, `--model`, `--port`. Example: `--convert`. |
 | `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
@@ -1150,6 +1157,72 @@ When loading a model, settings are applied in this priority order:
 2. Per-model values configurable in `recipe_options.json` (see below for details)
 3. Values from environment variables or server startup arguments (see [Server Configuration](../guide/configuration/README.md))
 4. Default hardcoded values in `lemond` (lowest priority)
+
+### KV cache quantization (llamacpp)
+
+`kv_cache_quantization: auto` extends context-size auto-sizing to also pick a
+KV cache quant tier. It prefers an unquantized (`f16`) cache and only steps
+down to `q8_0` when `f16` cannot reach the target context — the model's
+declared context window, or an explicit `ctx_size` when you set one. `auto`
+never selects `q4_0`: that step costs enough quality that it is only ever
+applied when you name it.
+
+An explicit `q8_0`/`q4_0` request applies that tier directly (no
+ladder-walking) but is still subject to the same eligibility gates as `auto`.
+Set `off` to keep an unquantized cache no matter what; context sizing then
+behaves exactly as it did before this feature existed.
+
+Because `auto` quantizes only when the alternative is a context shorter than
+the model supports, a load that already fits at `f16` is unaffected by the
+default.
+
+An explicit `ctx_size` that does not fit at any eligible tier is rejected at
+load time, naming the largest context that would fit, instead of being passed
+to `llama-server` to fail as an out-of-memory error during startup.
+
+**Which backends can actually quantize the KV cache today:**
+
+| Backend | `q8_0` / `q4_0` |
+|---|---|
+| `cuda`, `rocm` (stable and nightly), `metal` | Eligible, when the model's head dimensions allow it |
+| `vulkan`, `cpu`, `system` | Never — no known-safe fused-attention kernel for a quantized KV cache on these backends |
+
+**Vulkan is the default GPU backend on Windows and Linux and gets nothing
+from this feature today.** Its fused-attention support is gated on
+per-device GPU feature bits rather than on the shipped binary, so no static
+table can assert it is safe; a rejected op on llama.cpp silently falls back
+to CPU-side attention (25–45x slower prefill). Setting `kv_cache_quantization: auto`
+on Vulkan resolves to `f16` and reports why: the options endpoint's
+`resolved_kv_cache_ineligible_reason` field is present and the server logs
+a warning, rather than leaving you to infer it from a `resolved_kv_cache_tier`
+that looks identical to the untouched default. A model with a key or value
+head dimension that is not a multiple of 32 gets the same `f16` fallback
+and reason, on any backend.
+
+When a quant tier is actually selected, Lemonade passes it as both
+`--cache-type-k` and `--cache-type-v` to `llama-server` (never asymmetric —
+there is no way to request that), and the launch command reports it exactly
+as run. Query the resolved tier ahead of a load with
+[`GET /v1/models/{id}/options`](#get-v1modelsidoptions)'s `resolved_kv_cache_tier`
+field; after loading, it is in the `POST /v1/load` response as `kv_cache_tier`,
+in `lemonade status`'s `KV` column, and in `/v1/health`'s
+`launch_command`/`recipe_options`.
+
+If `llamacpp_args` already sets `--cache-type-k`/`-ctk` or
+`--cache-type-v`/`-ctv` yourself, those flags win: Lemonade leaves tier
+management off for that load, sizes the context for an unquantized cache, and
+logs a warning. Configurations that predate this feature keep working
+unchanged.
+
+```bash
+curl -X POST http://localhost:13305/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "Qwen3-0.6B-GGUF",
+    "llamacpp_backend": "rocm",
+    "kv_cache_quantization": "q4_0"
+  }'
+```
 
 
 ### Per-model options
@@ -1591,7 +1664,7 @@ curl http://localhost:13305/v1/health
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `launch_command` - *(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included.
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+  - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`). For `llamacpp` models it also carries `resolved_kv_cache_tier`, the concrete tier a `kv_cache_quantization: auto`/`q8_0`/`q4_0` load resolved to — a live-process detail, not part of the replayable `/v1/load` body from [`GET /v1/models/{id}/options`](#get-v1modelsidoptions).
 - `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
