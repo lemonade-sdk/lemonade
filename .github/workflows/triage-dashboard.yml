@@ -21,6 +21,7 @@ on:
     branches: [main]
     paths:
       - ".github/scripts/triage_dashboard.py"
+      - ".github/scripts/triage_maintainer.py"
       - ".github/scripts/test_triage_dashboard.py"
       - ".github/workflows/triage-dashboard.yml"
 
@@ -31,6 +32,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
+      discussions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +50,11 @@ jobs:
           mkdir -p _site
           python .github/scripts/triage_dashboard.py \
             --repo "${{ github.repository }}" \
-            --output _site/index.html
+            --output _site/index.html \
+            --include-discussions
+          python .github/scripts/triage_maintainer.py \
+            --repo "${{ github.repository }}" \
+            --output _site/maintainer.html
 
       - name: Publish to triage dashboard repo
         env:
