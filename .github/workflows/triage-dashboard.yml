@@ -50,8 +50,7 @@ jobs:
           mkdir -p _site
           python .github/scripts/triage_dashboard.py \
             --repo "${{ github.repository }}" \
-            --output _site/index.html \
-            --include-discussions
+            --output _site/index.html
           python .github/scripts/triage_maintainer.py \
             --repo "${{ github.repository }}" \
             --output _site/maintainer.html
