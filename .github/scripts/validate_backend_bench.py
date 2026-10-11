@@ -370,7 +370,6 @@ def run_bench(
         "--output",
         str(output_file),
     ]
-    # Use the repo's scenario file so context-4k resolves even on older lemonade builds.
     if SCENARIO_FILE.exists():
         cmd += ["--scenario-file", str(SCENARIO_FILE)]
     if ctx_size is not None:

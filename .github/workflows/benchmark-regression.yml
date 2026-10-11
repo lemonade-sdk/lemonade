@@ -552,8 +552,6 @@ jobs:
               "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m 'init benchmark history')"
           fi
           git worktree add bench-history "$HISTORY_BRANCH"
-          # Route each run file by its own fork_id field — artifact folder-name
-          # parsing silently dropped single-fork runs from the leaderboard.
           python3 - << 'PY'
           import json, shutil
           from pathlib import Path
@@ -606,8 +604,20 @@ jobs:
 
           def hw_fingerprint(hw):
             gpu = hw.get("gpu") or []
-            gpu_name = gpu[0].get("name") if gpu and isinstance(gpu[0], dict) else None
-            return "|".join(str(x) for x in (hw.get("cpu"), gpu_name, hw.get("ram_gb"), hw.get("os")))
+            vram = gpu[0].get("vram_gb") if gpu and isinstance(gpu[0], dict) else None
+            return "|".join(str(x) for x in (hw.get("cpu"), vram, hw.get("os")))
+
+          def _gpu_label(gpu_list):
+            for g in (gpu_list or []):
+              name = g.get("name", "") if isinstance(g, dict) else ""
+              m = re.search(r"gfx\d+", name)
+              if m:
+                return m.group(0)
+            for g in (gpu_list or []):
+              name = g.get("name", "") if isinstance(g, dict) else ""
+              if name and not name.strip().isdigit():
+                return name
+            return (gpu_list or [{}])[0].get("name") if gpu_list else None
 
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
@@ -625,17 +635,22 @@ jobs:
             if lem_ver:
               lemonade_versions.add(lem_ver)
             hw_id = hw_fingerprint(hw) if hw else None
-            if hw_id and hw_id not in systems:
-              systems[hw_id] = {
-                "id": hw_id,
-                "cpu": hw.get("cpu"),
-                "gpu": (hw.get("gpu") or [{}])[0].get("name") if hw.get("gpu") else None,
-                "gpu_full": hw.get("gpu"),
-                "vram_gb": (hw.get("gpu") or [{}])[0].get("vram_gb") if hw.get("gpu") else None,
-                "ram_gb": hw.get("ram_gb"),
-                "os": hw.get("os"),
-                "lemonade_version": lem_ver,
-              }
+            if hw_id:
+              readable = _gpu_label(hw.get("gpu"))
+              if hw_id not in systems:
+                systems[hw_id] = {
+                  "id": hw_id,
+                  "cpu": hw.get("cpu"),
+                  "gpu": readable,
+                  "gpu_full": hw.get("gpu"),
+                  "vram_gb": (hw.get("gpu") or [{}])[0].get("vram_gb") if hw.get("gpu") else None,
+                  "ram_gb": hw.get("ram_gb"),
+                  "os": hw.get("os"),
+                  "lemonade_version": lem_ver,
+                }
+              elif readable and systems[hw_id].get("gpu", "").strip().isdigit():
+                systems[hw_id]["gpu"] = readable
+                systems[hw_id]["gpu_full"] = hw.get("gpu")
             # The bench writes a top-level "models" array (one entry per model),
             # each with its own model name + results[]. Fall back to the flat
             # top-level shape for any legacy files.

@@ -127,7 +127,7 @@
       ],
       "bench_scenarios": ["chat-short", "context-4k"],
       "ctx_size": 8192,
-      "notes": "Community llamacpp fork for gfx1151 (Ryzen AI Max). ROCm binary swap via llamacpp.rocm_bin, same mechanism as amd-ecosystem-gfx11. Experimental so model_filter pins the hot set (avoids pulling oversized models). ctx_size=8192 covers context-4k; context-32k deferred until per-scenario ctx override is supported in the driver."
+      "notes": "Community llamacpp fork for gfx1151 (Ryzen AI Max). ROCm binary swap via llamacpp.rocm_bin, same mechanism as amd-ecosystem-gfx11."
     }
   ]
 }
