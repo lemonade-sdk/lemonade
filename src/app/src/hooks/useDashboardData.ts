@@ -280,7 +280,7 @@ export function useDashboardData(isActive = true): DashboardData {
       setSlots(slotData);
 
       const { aggTps, aggPromptTps, perSlotLive } = computeAggregates(slotData);
-      // Slot counters can stall even while the backend is streaming output.
+      // Prefer slot telemetry; use live estimates for backends without slots.
       const liveTps = st?.live?.estimated_tokens_per_second ?? 0;
       const totalTps = supportsSlots
         ? aggTps
@@ -546,7 +546,7 @@ export function useDashboardData(isActive = true): DashboardData {
     const live = slotLive[s.id];
     const target = targetSlotRef.current.get(s.id);
     return live?.isActive || target?.isActive || s.is_processing;
-  }).length, stats?.live?.active_requests ?? 0);
+  }).length, targetAggRef.current.activeSlots);
   const totalCacheTokens = slots.reduce((a, s) => a + getCacheTokenCount(s), 0);
   const totalCtx = slots.reduce((a, s) => a + s.n_ctx, 0);
   const overallCacheUtil = totalCtx > 0 ? (totalCacheTokens / totalCtx) * 100 : null;
