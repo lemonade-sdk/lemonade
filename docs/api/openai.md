@@ -678,7 +678,7 @@ Image Editing API. Provide one or more reference images and a prompt describing 
 | `image` / `image[]` | Yes | PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files are forwarded without re-encoding. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, the first reference image sets the output dimensions, subject to model alignment and limits. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, use the first reference image's dimensions, scaling down proportionally if its area exceeds 2048x2048 pixels (~4 MP). An explicit size bypasses this soft cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside this range are rejected with `400 Bad Request`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

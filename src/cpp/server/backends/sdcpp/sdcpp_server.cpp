@@ -548,13 +548,7 @@ json SDServer::image_edits(const json& request) {
     std::vector<MultipartField> fields;
     fields.push_back({"prompt", prompt, "", ""});
     fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
-    // For edits, no requested size means use the first reference image's
-    // dimensions. Model/recipe generation defaults must not override this.
-    std::string size;
-    if (request.contains("size") ||
-        (request.contains("width") && request.contains("height"))) {
-        size = resolve_size(request);
-    }
+    std::string size = resolve_size(request);
     if (!size.empty()) {
         fields.push_back({"size", size, "", ""});
     }
