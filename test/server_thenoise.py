@@ -17,6 +17,7 @@ LEMONADE_TEST_HEAVY=1 to run them.
 """
 
 import base64
+import struct
 
 import requests
 
@@ -26,6 +27,7 @@ from utils.capabilities import (
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    model_recipe_options,
 )
 from utils.test_models import (
     THENOISE_MODEL,
@@ -45,6 +47,12 @@ def assert_valid_png(testcase, b64_data, label=""):
         "Decoded data should be a valid PNG",
     )
     print(f"[OK] {label} produced a valid PNG ({len(decoded)} bytes)")
+
+
+def png_dimensions(b64_image):
+    """Return (width, height) decoded from a base64 PNG's IHDR chunk."""
+    raw = base64.b64decode(b64_image[:32])
+    return struct.unpack(">II", raw[16:24])
 
 
 class TheNoiseTests(ServerTestBase):
@@ -288,6 +296,49 @@ class TheNoiseTests(ServerTestBase):
             self.assertIn("b64_json", entry)
             assert_valid_png(self, entry["b64_json"], "multi-image")
         print(f"[OK] Image generation with n=2 successful")
+
+    @skip_heavy
+    def test_013_refine_param(self):
+        """refine=true runs the native latent-space 2x refine (doubles output size)."""
+        result = self._generate(
+            {
+                "model": THENOISE_MODEL,
+                "prompt": "a city at night",
+                "size": "256x256",
+                "steps": 4,
+                "refine": True,
+                "response_format": "b64_json",
+            }
+        )
+        item = result["data"][0]
+        assert_valid_png(self, item["b64_json"], "refine")
+        width, _ = png_dimensions(item["b64_json"])
+        self.assertEqual(width, 512, "refine=true should double 256px output to 512px")
+        print(f"[OK] refine=true produced {width}px output")
+
+    @skip_heavy
+    def test_014_explicit_refine_false_overrides_recipe(self):
+        """An explicit refine=false in the request beats a saved refine=true option."""
+        with model_recipe_options(THENOISE_MODEL, refine=True):
+            result = self._generate(
+                {
+                    "model": THENOISE_MODEL,
+                    "prompt": "a field of flowers",
+                    "size": "256x256",
+                    "steps": 4,
+                    "refine": False,
+                    "response_format": "b64_json",
+                }
+            )
+            item = result["data"][0]
+            assert_valid_png(self, item["b64_json"], "explicit refine=false")
+            width, _ = png_dimensions(item["b64_json"])
+            self.assertEqual(
+                width,
+                256,
+                "explicit refine=false must not inherit the saved refine=true",
+            )
+            print(f"[OK] Explicit refine=false overrode the saved recipe option")
 
 
 if __name__ == "__main__":
