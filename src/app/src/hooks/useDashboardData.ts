@@ -88,53 +88,24 @@ function completedRequestTps(stats: StatsData | null, previousCount: number | nu
   };
 }
 
-const LIVE_FLM_UNIT = 'semantic_sse_chunks_per_second' as const;
+const LIVE_ESTIMATE_UNIT = 'estimated_tokens_per_second' as const;
 
-type LiveFlmEstimate = {
+type LiveEstimate = {
   active: boolean;
   rate: number;
-  unit: typeof LIVE_FLM_UNIT | null;
+  unit: typeof LIVE_ESTIMATE_UNIT | null;
 };
 
-function isNpuFlm(model: LoadedModel): boolean {
-  return model.recipe === 'flm' && model.device.trim().toLowerCase() === 'npu';
-}
-
-function getLiveFlmEstimate(
-  stats: StatsData | null,
-  loadedModels: LoadedModel[],
-  activeModel: LoadedModel | undefined,
-  supportsSlots: boolean,
-): LiveFlmEstimate {
-  if (supportsSlots || stats?.inference_active !== true) return { active: false, rate: 0, unit: null };
-
-  const activeRequests = stats.live_active_requests;
-  const generatedChunks = stats.live_generated_chunks;
-  const rate = stats.live_generation_rate_estimate;
-  const hasValidCounts = typeof activeRequests === 'number'
-    && Number.isSafeInteger(activeRequests)
-    && activeRequests > 0
-    && typeof generatedChunks === 'number'
-    && Number.isSafeInteger(generatedChunks)
-    && generatedChunks >= 0;
-  const hasValidRate = typeof rate === 'number' && Number.isFinite(rate) && rate >= 0;
-  if (!hasValidCounts || !hasValidRate
-    || stats.live_generation_rate_unit !== LIVE_FLM_UNIT
-    || stats.live_generation_recipe !== 'flm'
-    || stats.live_generation_device !== 'npu') {
+function getLiveEstimate(stats: StatsData | null, supportsSlots: boolean): LiveEstimate {
+  const live = stats?.live;
+  if (supportsSlots || !live) return { active: false, rate: 0, unit: null };
+  const activeRequests = live.active_requests;
+  const rate = live.estimated_tokens_per_second;
+  if (!Number.isSafeInteger(activeRequests) || activeRequests <= 0
+    || typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0) {
     return { active: false, rate: 0, unit: null };
   }
-
-  const loadedFlmModels = loadedModels.filter(isNpuFlm);
-  const reportedModel = typeof stats.live_generation_model === 'string'
-    ? stats.live_generation_model.trim()
-    : '';
-  const hasMatchingModel = reportedModel
-    ? loadedFlmModels.some(model => model.model_name === reportedModel)
-    : Boolean(activeModel && isNpuFlm(activeModel)) || loadedFlmModels.length === 1;
-  if (!hasMatchingModel) return { active: false, rate: 0, unit: null };
-
-  return { active: true, rate, unit: LIVE_FLM_UNIT };
+  return { active: true, rate, unit: LIVE_ESTIMATE_UNIT };
 }
 
 /** Parse llama.cpp slot print_timing log lines for real-time throughput. */
@@ -187,7 +158,7 @@ export interface DashboardData {
   completedRequestFallback: boolean;
   nonSlotGraphMode: 'slots' | 'live-estimate' | 'completed';
   liveEstimateActive: boolean;
-  liveEstimateUnit: typeof LIVE_FLM_UNIT | null;
+  liveEstimateUnit: typeof LIVE_ESTIMATE_UNIT | null;
   latestLiveEstimate: number;
   liveEstimateChartData: Record<string, number>[];
   overallCacheUtil: number | null;
@@ -331,7 +302,7 @@ export function useDashboardData(isActive = true): DashboardData {
       const supportsSlots = Boolean(
         activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
       );
-      const liveEstimate = getLiveFlmEstimate(st, loaded, activeModel, supportsSlots);
+      const liveEstimate = getLiveEstimate(st, supportsSlots);
       let nextSlotsUnsupported = Boolean(activeModel);
       let nextSlotStatus = activeModel
         ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
@@ -626,7 +597,7 @@ export function useDashboardData(isActive = true): DashboardData {
     activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
   );
   const completedRequestFallback = Boolean(activeModel) && !supportsSlots;
-  const liveEstimate = getLiveFlmEstimate(stats, loadedModels, activeModel, supportsSlots);
+  const liveEstimate = getLiveEstimate(stats, supportsSlots);
   const nonSlotGraphMode = liveEstimate.active
     ? 'live-estimate'
     : completedRequestFallback ? 'completed' : 'slots';

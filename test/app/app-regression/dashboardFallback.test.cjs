@@ -48,16 +48,8 @@ const stats = (requestCount, tokensPerSecond = 33.3, overrides = {}) => ({
   ...overrides,
 });
 
-const liveFlm = (overrides = {}) => ({
-  inference_active: true,
-  live_active_requests: 1,
-  live_generated_chunks: 12,
-  live_generation_rate_estimate: 6.5,
-  live_generation_rate_unit: 'semantic_sse_chunks_per_second',
-  live_generation_recipe: 'flm',
-  live_generation_device: 'npu',
-  live_generation_model: 'test-model',
-  ...overrides,
+const liveThroughput = (overrides = {}) => ({
+  live: { active_requests: 1, estimated_tokens_per_second: 6.5, ...overrides },
 });
 
 const systemStats = {
@@ -270,6 +262,22 @@ function createDashboardHarness({
 
 const tests = [
   {
+    name: 'Dashboard uses generic server throughput for non-FLM backends',
+    async run() {
+      const dashboard = createDashboardHarness({
+        healthValues: [health('ryzenai-llm')],
+        statsValues: [stats(0, 0, liveThroughput())],
+      });
+      try {
+        await dashboard.mount();
+        dashboard.tick(20);
+        assert.equal(dashboard.data().nonSlotGraphMode, 'live-estimate');
+        assert.equal(dashboard.data().liveEstimateUnit, 'estimated_tokens_per_second');
+        assert.equal(dashboard.data().latestLiveEstimate, 6.5);
+      } finally { dashboard.dispose(); }
+    },
+  },
+  {
     name: 'Dashboard aggregates completed FastFlowLM requests when slots are unsupported',
     async run() {
       const dashboard = createDashboardHarness({ statsValues: [stats(1), stats(1)] });
@@ -292,15 +300,14 @@ const tests = [
     },
   },
   {
-    name: 'Dashboard keeps live FLM chunk estimates separate from exact completed throughput',
+    name: 'Dashboard keeps live token estimates separate from exact completed throughput',
     async run() {
       const dashboard = createDashboardHarness({
         statsValues: [
-          stats(0, 0, liveFlm()),
-          stats(1, 33.3, liveFlm({
-            inference_active: false,
-            live_active_requests: 0,
-            live_generation_rate_estimate: 0,
+          stats(0, 0, liveThroughput()),
+          stats(1, 33.3, liveThroughput({
+            active_requests: 0,
+            estimated_tokens_per_second: 0,
           })),
         ],
       });
@@ -310,11 +317,11 @@ const tests = [
         let data = dashboard.data();
         assert.equal(data.nonSlotGraphMode, 'live-estimate');
         assert.equal(data.liveEstimateActive, true);
-        assert.equal(data.liveEstimateUnit, 'semantic_sse_chunks_per_second');
+        assert.equal(data.liveEstimateUnit, 'estimated_tokens_per_second');
         assert.ok(data.latestLiveEstimate > 0.05, 'active FLM streams should expose the server estimate');
-        assert.equal(data.latestTps, 0, 'a live chunk estimate must not become exact completed tok/s');
+        assert.equal(data.latestTps, 0, 'a live token estimate must not become exact completed tok/s');
         assert.ok(data.liveEstimateChartData.some((point) => point.liveEstimate > 0.05),
-          'live estimate history should have its own chunks/s series');
+          'live estimate history should have its own estimated tok/s series');
         assert.ok(data.aggChartData.every((point) => point.genTps === 0),
           'the exact tok/s history must remain separate while streaming');
 
@@ -324,7 +331,7 @@ const tests = [
         assert.equal(data.nonSlotGraphMode, 'completed');
         assert.equal(data.liveEstimateActive, false);
         assert.ok(data.latestTps > 0.05, 'completion should return to the exact completed tok/s sample');
-        assert.ok(data.latestLiveEstimate < 0.05, 'completed data must not retain a live chunk estimate');
+        assert.ok(data.latestLiveEstimate < 0.05, 'completed data must not retain a live token estimate');
         assert.ok(data.aggChartData.some((point) => point.genTps > 0.05),
           'the exact completed history should receive the final server rate');
       } finally {
@@ -333,19 +340,16 @@ const tests = [
     },
   },
   {
-    name: 'Dashboard does not fabricate a live FLM rate before stream events or after abort',
+    name: 'Dashboard accepts a warming live estimate and clears it after abort',
     async run() {
       const dashboard = createDashboardHarness({
         statsValues: [
-          stats(0, 0, liveFlm({
-            live_generated_chunks: 0,
-            live_generation_rate_estimate: 0,
+          stats(0, 0, liveThroughput({
+            estimated_tokens_per_second: 0,
           })),
-          stats(0, 0, liveFlm({
-            inference_active: false,
-            live_active_requests: 0,
-            live_generated_chunks: 0,
-            live_generation_rate_estimate: 0,
+          stats(0, 0, liveThroughput({
+            active_requests: 0,
+            estimated_tokens_per_second: 0,
           })),
         ],
       });
@@ -355,7 +359,7 @@ const tests = [
         let data = dashboard.data();
         assert.equal(data.nonSlotGraphMode, 'live-estimate');
         assert.equal(data.liveEstimateActive, true);
-        assert.equal(data.latestLiveEstimate, 0, 'zero events must remain an empty estimate');
+        assert.equal(data.latestLiveEstimate, 0, 'a warming estimator must remain zero');
         assert.equal(data.latestTps, 0, 'zero events must not create a completed rate');
 
         await dashboard.poll();
@@ -371,38 +375,22 @@ const tests = [
     },
   },
   {
-    name: 'Dashboard ignores incompatible live FLM metadata and uses exact completed throughput',
+    name: 'Dashboard ignores invalid live throughput and uses completed throughput',
     async run() {
-      const dashboard = createDashboardHarness({
-        statsValues: [
-          stats(1, 33.3, liveFlm({ live_generation_rate_unit: 'tokens_per_second' })),
-          stats(2, 24, liveFlm({ live_generation_recipe: 'llamacpp' })),
-          stats(3, 18, liveFlm({ live_generation_model: 'other-model' })),
-        ],
-      });
-      try {
-        await dashboard.mount();
-        dashboard.tick(20);
-        let data = dashboard.data();
-        assert.equal(data.nonSlotGraphMode, 'completed');
-        assert.equal(data.liveEstimateActive, false, 'an unknown rate unit must not be rendered as chunks/s');
-        assert.ok(data.latestTps > 0.05);
-
-        await dashboard.poll();
-        dashboard.tick(20);
-        data = dashboard.data();
-        assert.equal(data.nonSlotGraphMode, 'completed');
-        assert.equal(data.liveEstimateActive, false, 'a non-FLM recipe must not drive the FLM estimate');
-        assert.ok(data.latestTps > 0.05);
-
-        await dashboard.poll();
-        dashboard.tick(20);
-        data = dashboard.data();
-        assert.equal(data.nonSlotGraphMode, 'completed');
-        assert.equal(data.liveEstimateActive, false, 'an unknown FLM model must not drive a server-global estimate');
-        assert.ok(data.latestTps > 0.05);
-      } finally {
-        dashboard.dispose();
+      for (const live of [undefined, {}, {active_requests: -1, estimated_tokens_per_second: 6},
+        {active_requests: 1, estimated_tokens_per_second: NaN},
+        {active_requests: 1.5, estimated_tokens_per_second: 6},
+        {active_requests: 0, estimated_tokens_per_second: 6},
+        {active_requests: "1", estimated_tokens_per_second: 6},
+        {active_requests: 1, estimated_tokens_per_second: -1}]) {
+        const dashboard = createDashboardHarness({ statsValues: [stats(1, 33.3, {live})] });
+        try {
+          await dashboard.mount();
+          dashboard.tick(20);
+          assert.equal(dashboard.data().nonSlotGraphMode, 'completed');
+          assert.equal(dashboard.data().liveEstimateActive, false);
+          assert.ok(dashboard.data().latestTps > 0.05);
+        } finally { dashboard.dispose(); }
       }
     },
   },
@@ -590,7 +578,7 @@ const tests = [
     async run() {
       const dashboard = createDashboardHarness({
         recipe: 'llamacpp',
-        statsValues: [stats(1, 33.3, liveFlm())],
+        statsValues: [stats(1, 33.3, liveThroughput())],
         slotsValues: [
           [slot({ decoded: 10, prompted: 80, promptPerSecond: 11 })],
           [slot({ decoded: 30, prompted: 80, promptPerSecond: 11 })],

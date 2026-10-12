@@ -309,7 +309,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         <div className="dash2-card">
           <h2 className="dash2-card__h">
             {showingLiveEstimate
-              ? 'Live FLM Stream Estimate'
+              ? 'Live Throughput Estimate'
               : (completedRequestFallback ? 'Completed Request Throughput' : 'Aggregate Throughput')}
           </h2>
 
@@ -321,7 +321,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                   ? (latestLiveEstimate > 0 ? latestLiveEstimate.toFixed(1) : '—')
                   : (latestTps > 0.05 ? latestTps.toFixed(1) : (counters.peakTps > 0 ? '0.0' : '—'))}
               </span>
-              <span className="dash2-hero-metric__unit">{showingLiveEstimate ? 'chunks/s' : 'tok/s'}</span>
+              <span className="dash2-hero-metric__unit">{showingLiveEstimate ? 'estimated tok/s' : 'tok/s'}</span>
               {!showingLiveEstimate && counters.peakTps > 0 && (
                 <span className="dash2-hero-metric__peak">
                   peak {counters.peakTps.toFixed(1)}
@@ -347,7 +347,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             </div>
           </div>
           {showingLiveEstimate ? (
-            <p className="dash2-card__text">Reasoning and response updates per second. Final token rate appears after completion.</p>
+            <p className="dash2-card__text">Estimated tokens per second from streamed output text. Backend-reported token rate appears after completion.</p>
           ) : completedRequestFallback && (
             <p className="dash2-card__text">Rates update when requests complete.</p>
           )}
@@ -355,19 +355,19 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           <SmoothChart
             data={showingLiveEstimate ? liveEstimateChartData : aggChartData}
             series={showingLiveEstimate
-              ? [{ key: 'liveEstimate', color: 'var(--chart-series-1)', name: 'Live stream estimate (chunks/s)' }]
+              ? [{ key: 'liveEstimate', color: 'var(--chart-series-1)', name: 'Estimated Generation TPS' }]
               : [
                 { key: 'genTps', color: 'var(--chart-series-1)', name: completedRequestFallback ? 'Completed Generation TPS' : 'Generation TPS' },
                 ...(completedRequestFallback ? [] : [{ key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' }]),
               ]}
             height={120}
-            unit={showingLiveEstimate ? ' chunks/s' : ' tok/s'}
+            unit={showingLiveEstimate ? ' estimated tok/s' : ' tok/s'}
           />
           <div className="dash2-chart-legend">
             <span className="dash2-chart-legend__item">
               <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--tps" />
               {showingLiveEstimate
-                ? 'Live stream estimate (chunks/s)'
+                ? 'Estimated Generation TPS'
                 : (completedRequestFallback ? 'Completed Generation TPS' : 'Generation TPS')}
             </span>
             {!showingLiveEstimate && !completedRequestFallback && (
