@@ -7306,6 +7306,121 @@ class EndpointTests(ServerTestBase):
                     timeout=TIMEOUT_DEFAULT,
                 )
 
+    def test_021yp_legacy_auxiliary_in_managed_main_repo(self):
+        """Deletion must still work for an old multi-repo cache layout."""
+        # Use an isolated daemon/cache so no developer or CI model files are touched.
+        with tempfile.TemporaryDirectory(prefix="lemond_legacy_aux_") as root:
+            models_root = os.path.join(root, "models")
+            repo = "models--lemon-test--Legacy-Main-GGUF"
+            repo_dir = os.path.join(models_root, repo)
+            snapshot = os.path.join(repo_dir, "snapshots", "active")
+            os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+            with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
+                f.write("active")
+            main_file = "Legacy-Main-Q4_K_M.gguf"
+            mmproj_file = "mmproj-legacy.gguf"
+            self._write_stub_gguf_file(os.path.join(snapshot, main_file))
+            self._write_stub_gguf_file(os.path.join(snapshot, mmproj_file))
+
+            with _running_lemond(
+                config={"models_dir": models_root, "disable_model_filtering": True},
+                cache_prefix="lemond_legacy_layout_",
+            ) as (proc, port, headers, log_path):
+                self.assertTrue(
+                    _wait_until_healthy(proc, port, headers),
+                    f"isolated lemond did not start (log: {log_path})",
+                )
+                url = f"http://127.0.0.1:{port}/api/v1"
+                name = f"user.Legacy-Aux-{uuid.uuid4().hex[:8]}"
+                response = requests.post(
+                    f"{url}/models/register",
+                    headers=headers,
+                    json={
+                        "model_name": name,
+                        "recipe": "llamacpp",
+                        "checkpoints": {
+                            "main": f"lemon-test/Legacy-Main-GGUF:{main_file}",
+                            "mmproj": f"lemon-test/Legacy-Aux-GGUF:{mmproj_file}",
+                        },
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                response = requests.get(
+                    f"{url}/models/{name}", headers=headers, timeout=TIMEOUT_DEFAULT
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()["downloaded"], response.text)
+                response = requests.post(
+                    f"{url}/delete",
+                    headers=headers,
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertFalse(
+                    os.path.exists(repo_dir),
+                    "managed legacy cache must be deleted, not just unregistered",
+                )
+                response = requests.get(
+                    f"{url}/models?show_all=true",
+                    headers=headers,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertNotIn(name, [m["id"] for m in response.json()["data"]])
+
+    def test_021yq_legacy_external_auxiliary_preserves_identity(self):
+        """Relocated legacy auxiliary files keep the registration and remain user-managed."""
+        name = f"user.Legacy-Extra-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Legacy-Extra-GGUF"
+        snap = f"{repo}/snapshots/active"
+        main_file = "Legacy-Extra-Q4_K_M.gguf"
+        mmproj_file = "mmproj-legacy-extra.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "main": f"lemon-test/Legacy-Extra-GGUF:{main_file}",
+                    "mmproj": f"lemon-test/Legacy-Other-GGUF:{mmproj_file}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}", f"{snap}/{mmproj_file}"],
+                refs={repo: "active"},
+            ) as extra_dir:
+                info = self._get_model(name)
+                self.assertTrue(info["downloaded"], info)
+                self.assertNotEqual(info.get("source"), "extra_models_dir")
+                self.assertExtraModelsListed(extra_dir, {})
+                response = requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(
+                    os.path.isfile(os.path.join(extra_dir, *snap.split("/"), main_file))
+                )
+                self.assertTrue(
+                    os.path.isfile(
+                        os.path.join(extra_dir, *snap.split("/"), mmproj_file)
+                    )
+                )
+        finally:
+            if name.removeprefix("user.") in self._listed_models():
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously

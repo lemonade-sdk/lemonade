@@ -1744,9 +1744,14 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
             }
             // Reject escaped refs/main entries and symlinks, including redirects
             // into a *different* repository under the same extra models root.
-            if (resolved.empty() || !path_inside(expected_repo, root) ||
-                !path_inside(path_from_utf8(resolved), expected_repo) ||
-                !collect_registered_shards(path_from_utf8(resolved), expected_repo, owned_paths)) {
+            const fs::path resolved_path = path_from_utf8(resolved);
+            const bool own_repo = path_inside(expected_repo, root) &&
+                path_inside(resolved_path, expected_repo);
+            const bool legacy_main_repo = type != "main" &&
+                path_inside(resolved_path, main_repo);
+            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
+                !collect_registered_shards(resolved_path,
+                    own_repo ? expected_repo : main_repo, owned_paths)) {
                 return false;
             }
         }
@@ -6284,6 +6289,9 @@ void ModelManager::delete_model(const std::string& model_name) {
     if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
         !is_model_collection_recipe(info.recipe)) {
         const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
+        const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+        const fs::path managed_main_repo = main_repo.empty() ? fs::path() :
+            managed_root / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
         for (const auto& [type, checkpoint] : info.checkpoints) {
             if (type == "npu_cache" || info.resolved_path(type).empty()) continue;
             const std::string repo = checkpoint_to_repo_id(checkpoint);
@@ -6292,8 +6300,15 @@ void ModelManager::delete_model(const std::string& model_name) {
             }
             const fs::path managed_repo = managed_root /
                 repo_id_to_cache_dir_name(repo, effective_registry_source(info));
-            if (!path_inside(managed_repo, managed_root) ||
-                !path_inside(path_from_utf8(info.resolved_path(type)), managed_repo)) {
+            const fs::path resolved_path = path_from_utf8(info.resolved_path(type));
+            const bool own_repo = path_inside(managed_repo, managed_root) &&
+                path_inside(resolved_path, managed_repo);
+            // Legacy downloads placed auxiliary files in the main repo cache.
+            // Never extend that exception to main files or external paths.
+            const bool legacy_main_repo = type != "main" && !main_repo.empty() &&
+                path_inside(managed_main_repo, managed_root) &&
+                path_inside(resolved_path, managed_main_repo);
+            if (!own_repo && !legacy_main_repo) {
                 if (!is_user_model_name(canonical_model_name)) {
                     throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
                                              "External files are user-managed; remove them manually.");
