@@ -6452,14 +6452,17 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # kv_count
 
     @contextlib.contextmanager
-    def _extra_models_dir(self, ggufs=(), gguf_sizes=None, refs=None):
-        """Serve a fresh extra_models_dir holding a stub GGUF at each of `ggufs`,
-        padded to `gguf_sizes` ({path: bytes}) where given, all as '/'-separated
-        paths, and a refs/main naming the commit for each cache repo in `refs`
-        ({repo: commit}); then restore the prior setting."""
+    def _extra_models_dir(self, ggufs=(), gguf_sizes=None, refs=None, other_files=()):
+        """Serve a fresh extra_models_dir holding stub GGUFs, optional other
+        files, and refs/main entries. Then restore the previous setting."""
         extra_dir = tempfile.mkdtemp(prefix=f"lemon_{self._testMethodName}_")
         for relative in ggufs:
             self._write_stub_gguf_file(os.path.join(extra_dir, *relative.split("/")))
+        for relative in other_files:
+            path = os.path.join(extra_dir, *relative.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(b"\x00" * 128)
         for relative, size in (gguf_sizes or {}).items():
             with open(os.path.join(extra_dir, *relative.split("/")), "r+b") as f:
                 f.truncate(size)
@@ -7083,6 +7086,100 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(self._get_model("Switch-7B-GGUF")["checkpoint"], live)
 
             print("[OK] the repo name follows a refs/main switch")
+
+    def test_021yj_extra_cache_keeps_registered_identity(self):
+        """Relocating a complete registered cache must not turn it into extra.*."""
+        candidates = [
+            (
+                "LFM2.5-8B-A1B",
+                "LiquidAI",
+                "LFM2.5-8B-A1B-GGUF",
+                "LFM2.5-8B-A1B-Q4_K_M.gguf",
+            ),
+            (
+                "MiniCPM5-1B-GGUF",
+                "OpenBMB",
+                "MiniCPM5-1B-GGUF",
+                "MiniCPM5-1B-Q4_K_M.gguf",
+            ),
+            ("Jan-v1-4B-GGUF", "janhq", "Jan-v1-4B-GGUF", "Jan-v1-4B-Q4_K_M.gguf"),
+        ]
+        models = self._listed_models()
+        chosen = next(
+            (
+                entry
+                for entry in candidates
+                if entry[0] in models and not models[entry[0]].get("downloaded")
+            ),
+            None,
+        )
+        if chosen is None:
+            self.skipTest("no uninstalled registered GGUF available")
+
+        name, org, repo_name, filename = chosen
+        repo = f"models--{org}--{repo_name}"
+        rel = f"{repo}/snapshots/test-active/{filename}"
+        checkpoint = self._get_model(name)["checkpoint"]
+        with self._extra_models_dir(
+            ggufs=[rel], refs={repo: "test-active"}
+        ) as extra_dir:
+            info = self._get_model(name)
+            self.assertEqual(info["checkpoint"], checkpoint)
+            self.assertTrue(info["downloaded"], f"registered model missing: {info}")
+            self.assertNotEqual(info.get("source"), "extra_models_dir")
+            self.assertExtraModelsListed(extra_dir, {})
+
+            # A registered alias must not allow deletion of external files.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertNotEqual(response.status_code, 200)
+            self.assertTrue(os.path.exists(os.path.join(extra_dir, *rel.split("/"))))
+
+    def test_021yk_extra_cache_draft_files_are_not_main_models(self):
+        """MTP/DFlash companions do not create duplicate standalone entries."""
+        repo = "models--lemontest--Draft-7B-GGUF"
+        snap = f"{repo}/snapshots/test-active"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snap}/Draft-7B-Q4_K_M.gguf",
+                f"{snap}/Draft-7B-Q8_0.gguf",
+                f"{snap}/MTP-Draft-7B-Q4_K_M.gguf",
+                f"{snap}/DFlash.gguf",
+                "standalone/MTP-Orphan.gguf",
+            ],
+            refs={repo: "test-active"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Draft-7B-Q4_K_M": f"{snap}/Draft-7B-Q4_K_M.gguf",
+                    "Draft-7B-Q8_0": f"{snap}/Draft-7B-Q8_0.gguf",
+                },
+            )
+
+    def test_021yl_extra_cache_restores_multifile_image_model(self):
+        """Non-GGUF catalog models keep their recipes after cache relocation."""
+        name = "Krea-2-Turbo"
+        models = self._listed_models()
+        if name not in models or models[name].get("downloaded"):
+            self.skipTest("Krea-2-Turbo unavailable or already in managed cache")
+        repo = "models--Comfy-Org--Krea-2"
+        snap = f"{repo}/snapshots/test-active"
+        files = [
+            f"{snap}/diffusion_models/krea2_turbo_bf16.safetensors",
+            f"{snap}/text_encoders/qwen3vl_4b_bf16.safetensors",
+            f"{snap}/vae/qwen_image_vae.safetensors",
+        ]
+        with self._extra_models_dir(
+            other_files=files, refs={repo: "test-active"}
+        ) as extra_dir:
+            info = self._get_model(name)
+            self.assertEqual(info["recipe"], "thenoise")
+            self.assertTrue(info["downloaded"], f"moved Krea files not found: {info}")
+            self.assertNotEqual(info.get("source"), "extra_models_dir")
 
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
