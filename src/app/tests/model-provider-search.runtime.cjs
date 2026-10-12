@@ -109,6 +109,54 @@ assert.match(manager, /const fallbackBase = safeOwner \? `\$\{defaultName\}-\$\{
   'colliding remote model names must fall back to the repository owner');
 assert.match(manager, /existingCandidate && !matchesCheckpoint\(existingCandidate\)/,
   'collision suffixes must remain idempotent for the same checkpoint');
+assert.match(manager, /findRegisteredRemoteModel\(allModels, provider, modelId, variantName, recipe, vdata\)/,
+  'online downloads must check server-owned registrations before generating user.* names');
+assert.match(manager, /if \(registeredModel\) \{\s*await handlePull\(registeredModel\);\s*return;/,
+  'known models must use the existing name-only download flow without re-registration');
+
+const { findRegisteredRemoteModel } = loadTypeScriptModule(
+  path.join(root, 'src/features/models/registeredRemoteModel.ts'),
+);
+const repo = 'Qwen/Qwen3-Embedding-0.6B-GGUF';
+const builtin = {
+  id: 'Qwen3-Embedding-0.6B-GGUF',
+  recipe: 'llamacpp',
+  checkpoint: `${repo}:Qwen3-Embedding-0.6B-Q8_0.gguf`,
+};
+const variants = {
+  variants: [{ name: 'Q8_0', primary_file: 'Qwen3-Embedding-0.6B-Q8_0.gguf' }],
+  mmproj_files: [],
+};
+const find = (models, provider = 'huggingface', variant = 'Q8_0', metadata = variants, recipe = 'llamacpp') =>
+  findRegisteredRemoteModel(models, provider, repo, variant, recipe, metadata);
+assert.equal(find([builtin]), builtin, 'existing catalog GGUF must preserve its server ID');
+assert.equal(find([{ ...builtin, checkpoint: `${repo}:Q8_0` }])?.id, builtin.id,
+  'a registered quantization checkpoint must also match the selected GGUF');
+assert.equal(find([{ ...builtin, checkpoint: undefined, checkpoints: { main: builtin.checkpoint } }])?.id, builtin.id,
+  'server records carrying only checkpoints.main are supported');
+assert.equal(find([builtin], 'modelscope'), undefined,
+  'identical repo/file names from another provider are not interchangeable');
+assert.equal(find([{ ...builtin, source: 'modelscope', registry_source: 'modelscope' }], 'modelscope')?.id, builtin.id,
+  'explicit ModelScope catalog registrations can be reused');
+assert.equal(find([builtin], 'huggingface', 'Q4_K_M', {
+  variants: [{ name: 'Q4_K_M', primary_file: 'Qwen3-Embedding-0.6B-Q4_K_M.gguf' }],
+}), undefined, 'different quantizations must not be silently substituted');
+assert.equal(find([builtin], 'huggingface', 'Q8_0', { variants: [], mmproj_files: [] }), undefined,
+  'unknown variant metadata must not be guessed');
+assert.equal(find([builtin], 'huggingface', 'Q8_0', {
+  ...variants, mmproj_files: ['mmproj.gguf'],
+}), undefined, 'multimodal variants require their own registration');
+assert.equal(find([{ ...builtin, checkpoints: { main: builtin.checkpoint, mmproj: 'other.gguf' } }]), undefined,
+  'a registered multimodal model is not equivalent to a bare GGUF');
+assert.equal(find([{ ...builtin, source: 'extra_models_dir' }]), undefined,
+  'external unmanaged files must not be treated as registry registrations');
+assert.equal(find([{ ...builtin, id: 'user.MyEmbedding' }])?.id, 'user.MyEmbedding',
+  'a server-registered user model must be reused without replacing its definition');
+assert.equal(find([], 'huggingface'), undefined,
+  'genuinely new online models must keep the normal registration flow');
+assert.equal(find([builtin], 'huggingface', 'Q8_0', variants, 'flm'), undefined,
+  'non-llamacpp recipes must not be matched with GGUF rules');
+
 assert.match(manager, /active\.downloadId \|\| `model:\$\{active\.modelName\}`/,
   'remote cancellation must address the exact resolved download id');
 assert.ok(remoteCapabilitiesSource.includes('remoteCapabilityEvidence'), 'remote capabilities must use structured evidence');
