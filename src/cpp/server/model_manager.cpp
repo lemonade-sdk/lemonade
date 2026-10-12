@@ -397,6 +397,10 @@ static void parse_image_defaults(ModelInfo& info, const json& model_json) {
         info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
         info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
+        const auto edit_cap = img_defaults.find("soft_pixel_cap");
+        if (edit_cap != img_defaults.end() && edit_cap->is_number_unsigned()) {
+            info.image_defaults.soft_pixel_cap = edit_cap->get<std::uint64_t>();
+        }
     }
 }
 

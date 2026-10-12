@@ -3325,6 +3325,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
             img_def["sampling_method"] = info.image_defaults.sampling_method;
         if (info.image_defaults.flow_shift > 0.0f)
             img_def["flow_shift"] = info.image_defaults.flow_shift;
+        if (info.image_defaults.soft_pixel_cap > 0)
+            img_def["soft_pixel_cap"] = info.image_defaults.soft_pixel_cap;
         model_json["image_defaults"] = img_def;
     }
 
@@ -5522,12 +5524,20 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         // The first uploaded image sets the output size unless explicitly provided.
         if (!request_json.contains("size")) {
+            std::uint64_t soft_pixel_cap = kDefaultMaxEditPixels;
+            if (request_json.contains("model") && request_json["model"].is_string()) {
+                const auto model = router_->try_get_model_info(
+                    resolve_alias_target(request_json["model"].get<std::string>()));
+                if (model && model->image_defaults.soft_pixel_cap > 0) {
+                    soft_pixel_cap = model->image_defaults.soft_pixel_cap;
+                }
+            }
             for (const auto& file_pair : req.form.files) {
                 if (file_pair.first != "image" && file_pair.first != "image[]") continue;
                 const auto original = image_dimensions_from_bytes(file_pair.second.content);
                 if (original) {
                     const auto [width, height] = cap_image_area(
-                        original->first, original->second, kDefaultMaxEditPixels);
+                        original->first, original->second, soft_pixel_cap);
                     request_json["size"] = std::to_string(width) + "x" + std::to_string(height);
                 } else {
                     LOG(WARNING, "Server") << "Cannot determine source image dimensions; "
