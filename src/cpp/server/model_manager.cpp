@@ -859,8 +859,41 @@ static bool partial_belongs_to_variant(const fs::path& partial_path,
 
 // A resume marker that this model's own download did not create belongs to
 // another download, which must outlive the delete.
-static bool repo_has_foreign_partial(const fs::path& repo_dir,
-                                     const std::string& variant) {
+// Matches a repo-relative file name, the form a download manifest records.
+static bool name_matches_variant(std::string name, const std::string& variant) {
+    if (name.empty() || variant.empty()) return false;
+    std::replace(name.begin(), name.end(), '\\', '/');
+
+    std::string normalized_variant = variant;
+    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
+
+    if (name == normalized_variant) return true;
+    const std::string suffix = "/" + normalized_variant;
+    return name.size() > suffix.size() &&
+           name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+static bool manifest_covers_variant(const fs::path& manifest_path,
+                                    const std::string& variant) {
+    if (variant.empty()) return false;
+    try {
+        const json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
+        if (!manifest.contains("files") || !manifest["files"].is_array()) return false;
+        for (const auto& file_desc : manifest["files"]) {
+            if (!file_desc.is_object() || !file_desc.contains("name")) continue;
+            if (!file_desc["name"].is_string()) continue;
+            if (name_matches_variant(file_desc["name"].get<std::string>(), variant)) {
+                return true;
+            }
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+    return false;
+}
+
+static bool repo_has_foreign_download(const fs::path& repo_dir,
+                                      const std::string& variant) {
     if (variant.empty()) return false;
 
     const fs::path snapshots_dir = repo_dir / "snapshots";
@@ -871,9 +904,10 @@ static bool repo_has_foreign_partial(const fs::path& repo_dir,
     const fs::recursive_directory_iterator end;
     while (it != end) {
         const fs::path entry = it->path();
-        if (entry.extension() == ".partial" &&
-            !partial_belongs_to_variant(entry, snapshots_dir, variant)) {
-            return true;
+        if (entry.extension() == ".partial") {
+            if (!partial_belongs_to_variant(entry, snapshots_dir, variant)) return true;
+        } else if (entry.filename() == ".download_manifest.json") {
+            if (!manifest_covers_variant(entry, variant)) return true;
         }
         it.increment(ec);
         if (ec) return true;
@@ -898,8 +932,9 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
 
     // Nothing else lives here, so the whole incomplete repo cache goes: .partial
     // files, stale manifests, any files that finished before cancellation, refs,
-    // and blobs in one atomic intent.
-    if (!repo_occupied && !repo_has_foreign_partial(model_cache_path, variant)) {
+    // and blobs in one atomic intent. A download that is not this model's is the
+    // one thing that still holds the repo back.
+    if (!repo_occupied && !repo_has_foreign_download(model_cache_path, variant)) {
         LOG(INFO, "ModelManager") << "Removing incomplete model cache: "
                                   << path_to_utf8(model_cache_path) << std::endl;
         std::error_code ec;
@@ -6592,10 +6627,22 @@ void ModelManager::delete_model(const std::string& model_name) {
             remove_shared_checkpoint_dir(variant_path, model_cache_path_fs,
                                          main_repo_occupants);
         } else if (safe_exists(variant_path)) {
-            // Clean any HF symlink blobs before removing the snapshot entries.
-            cleanup_orphaned_blobs_under(variant_path, model_cache_path_fs);
-            remove_resolved_path_or_throw(variant_path, "variant path");
-            cleanup_empty_parents(variant_path, model_cache_path_fs);
+            // Two catalog entries can name the exact same checkpoint, so the file
+            // under this model's name is not always this model's alone.
+            const bool owned_by_sibling = std::any_of(
+                main_repo_occupants.begin(), main_repo_occupants.end(),
+                [&variant_path](const fs::path& owned) {
+                    return path_is_within(variant_path, owned);
+                });
+            if (owned_by_sibling) {
+                LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(variant_path)
+                            << " (another model resolves to the same file)" << std::endl;
+            } else {
+                // Clean any HF symlink blobs before removing the snapshot entries.
+                cleanup_orphaned_blobs_under(variant_path, model_cache_path_fs);
+                remove_resolved_path_or_throw(variant_path, "variant path");
+                cleanup_empty_parents(variant_path, model_cache_path_fs);
+            }
         }
         LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
     }

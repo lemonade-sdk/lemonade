@@ -86,11 +86,24 @@ int main() {
     // is listed but was never downloaded, so nothing else lives here.
     fs::path cancel_repo = hf_root / "models--org--cancel";
     write_file(cancel_repo / "snapshots" / "snap" / "a.gguf.partial", "partial");
-    write_file(cancel_repo / "snapshots" / "snap" / ".download_manifest.json", "{}");
+    write_file(cancel_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"files":[{"name":"a.gguf"}]})");
 
     // Only busy-b's download lives here, and it has not produced a file yet.
     fs::path busy_repo = hf_root / "models--org--busy";
     write_file(busy_repo / "snapshots" / "snap" / "other.gguf.partial", "partial");
+
+    // stale-b's multi-file download stopped between files: every .partial was
+    // already renamed away, so its manifest is the only resume marker left.
+    // stale-a owns nothing here, and its shards do not match stale-b's variant.
+    fs::path stale_repo = hf_root / "models--org--stale";
+    write_file(stale_repo / "snapshots" / "snap" / "b-00001-of-00002.gguf");
+    write_file(stale_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"files":[{"name":"b-00001-of-00002.gguf"},)"
+               R"({"name":"b-00002-of-00002.gguf"}]})");
+
+    // Two catalog entries that name the exact same checkpoint.
+    fs::path twin_repo = make_repo(hf_root, "models--org--twin", {"x.gguf"});
 
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
@@ -115,6 +128,10 @@ int main() {
         {"cancel-b", json{{"checkpoint", "org/cancel:b.gguf"}, {"recipe", "llamacpp"}}},
         {"busy-a", json{{"checkpoint", "org/busy:a.gguf"}, {"recipe", "llamacpp"}}},
         {"busy-b", json{{"checkpoint", "org/busy:other.gguf"}, {"recipe", "llamacpp"}}},
+        {"stale-a", json{{"checkpoint", "org/stale:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"stale-b", json{{"checkpoint", "org/stale:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"twin-a", json{{"checkpoint", "org/twin:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twin-b", json{{"checkpoint", "org/twin:x.gguf"}, {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -199,6 +216,19 @@ int main() {
         manager.delete_model("user.busy-a");
         check("incomplete-cache path keeps another model's download",
               fs::exists(busy_repo / "snapshots" / "snap" / "other.gguf.partial"));
+
+        // stale-a has no file either. A manifest with no .partial beside it is
+        // still a live download, and the files it already fetched are real.
+        manager.delete_model("user.stale-a");
+        check("manifest without a partial keeps another model's download",
+              fs::exists(stale_repo / "snapshots" / "snap" / ".download_manifest.json"));
+        check("files already fetched by that download are preserved",
+              fs::exists(stale_repo / "snapshots" / "snap" / "b-00001-of-00002.gguf"));
+
+        // twin-b names the very same file, so deleting twin-a must leave it.
+        manager.delete_model("user.twin-a");
+        check("a file two models resolve to is not removed with one of them",
+              fs::exists(twin_repo / "snapshots" / "snap" / "x.gguf"));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache
