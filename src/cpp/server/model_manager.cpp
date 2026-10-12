@@ -1688,7 +1688,7 @@ static bool collect_registered_shards(const fs::path& resolved, const fs::path& 
     }
 
     std::set<int> indices;
-    std::set<fs::path> family;
+    bool complete = true;
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
         if (ec) return false;
@@ -1697,19 +1697,19 @@ static bool collect_registered_shards(const fs::path& resolved, const fs::path& 
 
         int index = 0;
         is_gguf_shard_filename(filename, nullptr, nullptr, &index);
-        const std::string path = path_to_utf8(entry.path());
         if (!entry.is_regular_file(ec) || ec ||
-            !path_inside(entry.path(), repo_root) ||
-            !is_checkpoint_path_complete(path) ||
-            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
+            !path_inside(entry.path(), repo_root)) {
             return false;
         }
+        owned_paths.insert(entry.path().lexically_normal());
+        const std::string path = path_to_utf8(entry.path());
+        if (!is_checkpoint_path_complete(path) ||
+            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
+            complete = false;  // Still scan remaining siblings for discovery exclusion.
+        }
         indices.insert(index);
-        family.insert(entry.path().lexically_normal());
     }
-    if (ec || indices.size() != static_cast<size_t>(total)) return false;
-    owned_paths.insert(family.begin(), family.end());
-    return true;
+    return !ec && complete && indices.size() == static_cast<size_t>(total);
 }
 
 // Only complete repository caches can reclaim registered model identities;
@@ -1730,7 +1730,10 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
     }
 
     ModelInfo candidate = info;
-    std::set<fs::path> owned_paths;
+    // Discovery must also exclude matched shards when the family is incomplete.
+    // Resolved model paths are still only committed after full validation.
+    std::set<fs::path> local_owned_paths;
+    std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
     try {
         for (const auto& [type, checkpoint] : info.checkpoints) {
             if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
@@ -1764,7 +1767,6 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
         return false;  // An optional directory must never break catalog discovery.
     }
     info.resolved_paths = std::move(candidate.resolved_paths);
-    if (registered_paths) registered_paths->insert(owned_paths.begin(), owned_paths.end());
     return true;
 }
 

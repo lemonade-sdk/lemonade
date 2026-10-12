@@ -7188,6 +7188,7 @@ class EndpointTests(ServerTestBase):
         repo = "models--lemon-test--Shards-GGUF"
         snap = f"{repo}/snapshots/active"
         first = "Shards-Q4_K_M-00001-of-00002.gguf"
+        second = "Shards-Q4_K_M-00002-of-00002.gguf"
         response = requests.post(
             f"{self.base_url}/models/register",
             json={
@@ -7202,7 +7203,7 @@ class EndpointTests(ServerTestBase):
             with self._extra_models_dir(
                 ggufs=[
                     f"{snap}/{first}",
-                    f"{snap}/Shards-Q4_K_M-00002-of-00002.gguf",
+                    f"{snap}/{second}",
                     f"{snap}/Shards-Q8_0.gguf",
                     f"{snap}/Shards-Q5_K_M.gguf",
                 ],
@@ -7217,11 +7218,45 @@ class EndpointTests(ServerTestBase):
                     },
                 )
 
-            # The first shard alone must never make the registered model downloaded.
+            # Missing shards must not create an extra.* duplicate of the
+            # registered model, while unrelated quantizations remain discoverable.
             with self._extra_models_dir(
-                ggufs=[f"{snap}/{first}"], refs={repo: "active"}
-            ):
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
                 self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # Corrupting either shard must suppress the whole registered family.
+            for damaged in (first, second):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{first}",
+                        f"{snap}/{second}",
+                        f"{snap}/Shards-Q8_0.gguf",
+                        f"{snap}/Shards-Q5_K_M.gguf",
+                    ],
+                    gguf_sizes={f"{snap}/{damaged}": 1},
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                            "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                        },
+                    )
         finally:
             # Restore the original extra directory before removing registration.
             response = requests.post(
