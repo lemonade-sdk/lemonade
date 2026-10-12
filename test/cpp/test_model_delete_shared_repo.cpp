@@ -71,6 +71,31 @@ int main() {
     fs::path manifest_repo = make_repo(hf_root, "models--org--manifest", {"a.gguf"});
     write_file(manifest_repo / "snapshots" / "other" / ".download_manifest.json", "{}");
 
+    // ThinkSound and ONNX Runtime resolve "main" to a folder rather than a file.
+    // dir-b's download is mid-flight in the same snapshot folder.
+    fs::path dir_repo = make_repo(hf_root, "models--org--dir", {"model.safetensors"});
+    write_file(dir_repo / "snapshots" / "snap" / "other.bin.partial", "partial");
+
+    // Same, with no refs/main: the backend then falls back to the repo root, so
+    // the resolved "variant path" is the whole repo directory.
+    fs::path rootfb_repo = hf_root / "models--org--rootfb";
+    write_file(rootfb_repo / "snapshots" / "snap" / "model.safetensors");
+    write_file(rootfb_repo / "snapshots" / "snap" / "other.bin.partial", "partial");
+
+    // cancel-a's own download was interrupted and never produced a file. cancel-b
+    // is listed but was never downloaded, so nothing else lives here.
+    fs::path cancel_repo = hf_root / "models--org--cancel";
+    write_file(cancel_repo / "snapshots" / "snap" / "a.gguf.partial", "partial");
+    write_file(cancel_repo / "snapshots" / "snap" / ".download_manifest.json", "{}");
+
+    // Only busy-b's download lives here, and it has not produced a file yet.
+    fs::path busy_repo = hf_root / "models--org--busy";
+    write_file(busy_repo / "snapshots" / "snap" / "other.gguf.partial", "partial");
+
+    // Repos used by the late-arrival cases further down.
+    fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
+    fs::path arrive_repo = hf_root / "models--org--arrive";
+
     json user_models = {
         {"solo-a", json{{"checkpoint", "org/solo:a.gguf"}, {"recipe", "llamacpp"}}},
         {"solo-b", json{{"checkpoint", "org/solo:b.gguf"}, {"recipe", "llamacpp"}}},
@@ -84,6 +109,16 @@ int main() {
                        {"recipe", "llamacpp"}}},
         {"manifest-a", json{{"checkpoint", "org/manifest:a.gguf"}, {"recipe", "llamacpp"}}},
         {"manifest-b", json{{"checkpoint", "org/manifest:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"dir-a", json{{"checkpoint", "org/dir"}, {"recipe", "thinksound"}}},
+        {"rootfb-a", json{{"checkpoint", "org/rootfb"}, {"recipe", "thinksound"}}},
+        {"cancel-a", json{{"checkpoint", "org/cancel:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"cancel-b", json{{"checkpoint", "org/cancel:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"busy-a", json{{"checkpoint", "org/busy:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"busy-b", json{{"checkpoint", "org/busy:other.gguf"}, {"recipe", "llamacpp"}}},
+        {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"arrive-b", json{{"checkpoint", "org/arrive:b.gguf"}, {"recipe", "llamacpp"}}},
     };
     write_file(temp / "user_models.json", user_models.dump(2));
 
@@ -132,6 +167,74 @@ int main() {
               fs::exists(manifest_repo));
         check("download manifest is preserved",
               fs::exists(manifest_repo / "snapshots" / "other" / ".download_manifest.json"));
+
+        // dir-a's "main" is the snapshot folder, not a file in it. Clearing the
+        // folder wholesale would destroy the very partial that sent this delete
+        // down the variant-only path.
+        manager.delete_model("user.dir-a");
+        check("directory checkpoint keeps another checkpoint's partial",
+              fs::exists(dir_repo / "snapshots" / "snap" / "other.bin.partial"));
+        check("directory checkpoint still gives up its own file",
+              !fs::exists(dir_repo / "snapshots" / "snap" / "model.safetensors"));
+
+        // With no refs/main the backend resolves "main" to the repo root, so a
+        // wholesale removal here would take the entire repo.
+        manager.delete_model("user.rootfb-a");
+        check("repo-root fallback does not remove the repo",
+              fs::exists(rootfb_repo));
+        check("repo-root fallback keeps the unfinished download",
+              fs::exists(rootfb_repo / "snapshots" / "snap" / "other.bin.partial"));
+        check("repo-root fallback still gives up its own file",
+              !fs::exists(rootfb_repo / "snapshots" / "snap" / "model.safetensors"));
+
+        // cancel-a has no file at all, so the delete takes the incomplete-cache
+        // path. cancel-b is a catalog sibling with nothing on disk and must not
+        // strand the leftovers of cancel-a's own interrupted download.
+        manager.delete_model("user.cancel-a");
+        check("incomplete-cache path reclaims a repo an empty sibling only lists",
+              !fs::exists(cancel_repo));
+
+        // busy-a also has no file, but the only resume marker here belongs to
+        // busy-b's download.
+        manager.delete_model("user.busy-a");
+        check("incomplete-cache path keeps another model's download",
+              fs::exists(busy_repo / "snapshots" / "snap" / "other.gguf.partial"));
+    }
+
+    // Files that arrive after the model cache was built. The Hugging Face cache
+    // is shared, so another application can fill a repo at any moment and nothing
+    // tells Lemonade it happened. Each case needs its own manager: deleting a user
+    // model invalidates the cache, which would rebuild it and hide the staleness.
+    {
+        ModelManager manager;
+        (void)manager.get_model_info("user.late-a");  // builds the cache
+
+        write_file(late_repo / "snapshots" / "snap" / "b.gguf");
+
+        manager.delete_model("user.late-a");
+        check("sibling downloaded after the cache was built keeps the repo alive",
+              fs::exists(late_repo));
+        check("late sibling's file is preserved",
+              fs::exists(late_repo / "snapshots" / "snap" / "b.gguf"));
+        check("late sibling case still removes the deleted model's file",
+              !fs::exists(late_repo / "snapshots" / "snap" / "a.gguf"));
+    }
+
+    {
+        ModelManager manager;
+        (void)manager.get_model_info("user.arrive-a");  // builds the cache
+
+        // The deleted model's own files arrive late too, so its cached resolved
+        // path is empty and would send the delete down the incomplete-cache path.
+        write_file(arrive_repo / "snapshots" / "snap" / "a.gguf");
+        write_file(arrive_repo / "snapshots" / "snap" / "b.gguf");
+        write_file(arrive_repo / "refs" / "main", "snap");
+
+        manager.delete_model("user.arrive-a");
+        check("model downloaded after the cache was built gives up its own file",
+              !fs::exists(arrive_repo / "snapshots" / "snap" / "a.gguf"));
+        check("late arrival keeps its sibling's file",
+              fs::exists(arrive_repo / "snapshots" / "snap" / "b.gguf"));
     }
 
     std::error_code ec;
