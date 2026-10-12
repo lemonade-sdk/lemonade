@@ -553,10 +553,25 @@ json SDServer::image_edits(const json& request) {
         fields.push_back({"size", size, "", ""});
     }
 
-    if (request.contains("image_data")) {
+    if (request.contains("image_files") && request["image_files"].is_array()
+        && !request["image_files"].empty()) {
+        // A repeated multipart image[] is one reference, in its upload order.
+        for (const auto& image : request["image_files"]) {
+            std::string image_binary = JsonUtils::base64_decode(
+                image.at("data").get<std::string>());
+            std::string filename = image.value("filename", std::string("image.png"));
+            std::string mime = image.value("content_type", std::string("application/octet-stream"));
+            fields.push_back({"image[]", image_binary,
+                              filename.empty() ? "image.png" : filename,
+                              mime.empty() ? "application/octet-stream" : mime});
+        }
+    } else if (request.contains("image_data")) {
+        // Backward compatibility for direct single-image requests.
         std::string image_binary = JsonUtils::base64_decode(
             request["image_data"].get<std::string>());
-        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+        fields.push_back({"image[]", image_binary,
+                          request.value("image_filename", std::string("image.png")),
+                          request.value("image_content_type", std::string("image/png"))});
     }
     if (request.contains("mask_data")) {
         std::string mask_binary = JsonUtils::base64_decode(
