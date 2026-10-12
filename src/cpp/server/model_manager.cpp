@@ -423,6 +423,25 @@ static bool is_repo_occupied(const std::string& repo_id,
                                 resolve_now, /*stop_at_first=*/true).empty();
 }
 
+// Only for attributing an artifact that carries no name of its own, where
+// the catalog is the last signal left. Callers must hold models_cache_mutex_.
+static bool is_repo_claimed(const std::string& repo_id,
+                            const std::string& registry_source,
+                            const std::string& exclude_model,
+                            const std::map<std::string, ModelInfo>& cache) {
+    const std::string normalized_source = remote_registry_source_name(
+        parse_remote_registry_source(registry_source));
+    for (const auto& [name, info] : cache) {
+        if (name == exclude_model || !info.source.empty()) continue;
+        if (effective_registry_source(info) != normalized_source) continue;
+        for (const auto& [type, cp] : info.checkpoints) {
+            (void)type;
+            if (checkpoint_to_repo_id(cp) == repo_id) return true;
+        }
+    }
+    return false;
+}
+
 // Parse image_defaults from a model JSON entry into ModelInfo
 static void parse_image_defaults(ModelInfo& info, const json& model_json) {
     if (model_json.contains("image_defaults") && model_json["image_defaults"].is_object()) {
@@ -842,47 +861,63 @@ static void remove_stale_manifest_for_partial(const fs::path& partial_path,
     }
 }
 
+// A variant claims the whole repo when it names nothing in particular, so no
+// file name can be matched against it.
+static bool variant_claims_whole_repo(const std::string& variant) {
+    return variant.empty() || variant == "*";
+}
+
+// Mirrors resolve_gguf_path()'s matching so attribution agrees with resolution.
+static bool file_matches_variant(const std::string& relative_name,
+                                 const std::string& variant) {
+    if (relative_name.empty() || variant_claims_whole_repo(variant)) return false;
+
+    auto normalize = [](std::string value) {
+        std::replace(value.begin(), value.end(), '\\', '/');
+        std::transform(value.begin(), value.end(), value.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return value;
+    };
+
+    const std::string rel = normalize(relative_name);
+    const std::string want = normalize(variant);
+    const size_t slash = rel.find_last_of('/');
+    const std::string base = slash == std::string::npos ? rel : rel.substr(slash + 1);
+
+    if (rel == want || base == want) return true;
+
+    const std::string quant_suffix = want + ".gguf";
+    if (base.size() >= quant_suffix.size() &&
+        base.compare(base.size() - quant_suffix.size(), quant_suffix.size(),
+                     quant_suffix) == 0) {
+        return true;
+    }
+
+    return rel.find(want + "/") != std::string::npos;
+}
+
 static bool partial_belongs_to_variant(const fs::path& partial_path,
                                        const fs::path& snapshots_dir,
                                        const std::string& variant) {
-    if (variant.empty()) return false;
+    std::string rel = normalized_relative_path(partial_path, snapshots_dir);
 
-    std::string normalized_variant = variant;
-    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
-
-    const std::string rel = normalized_relative_path(partial_path, snapshots_dir);
-    const std::string filename = partial_path.filename().string();
-    return filename == variant + ".partial" ||
-           rel == normalized_variant + ".partial" ||
-           rel.rfind("/" + normalized_variant + ".partial") != std::string::npos;
-}
-
-// A resume marker that this model's own download did not create belongs to
-// another download, which must outlive the delete.
-// Matches a repo-relative file name, the form a download manifest records.
-static bool name_matches_variant(std::string name, const std::string& variant) {
-    if (name.empty() || variant.empty()) return false;
-    std::replace(name.begin(), name.end(), '\\', '/');
-
-    std::string normalized_variant = variant;
-    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
-
-    if (name == normalized_variant) return true;
-    const std::string suffix = "/" + normalized_variant;
-    return name.size() > suffix.size() &&
-           name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+    static const std::string kMarker = ".partial";
+    if (rel.size() > kMarker.size() &&
+        rel.compare(rel.size() - kMarker.size(), kMarker.size(), kMarker) == 0) {
+        rel.resize(rel.size() - kMarker.size());
+    }
+    return file_matches_variant(rel, variant);
 }
 
 static bool manifest_covers_variant(const fs::path& manifest_path,
                                     const std::string& variant) {
-    if (variant.empty()) return false;
     try {
         const json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
         if (!manifest.contains("files") || !manifest["files"].is_array()) return false;
         for (const auto& file_desc : manifest["files"]) {
             if (!file_desc.is_object() || !file_desc.contains("name")) continue;
             if (!file_desc["name"].is_string()) continue;
-            if (name_matches_variant(file_desc["name"].get<std::string>(), variant)) {
+            if (file_matches_variant(file_desc["name"].get<std::string>(), variant)) {
                 return true;
             }
         }
@@ -893,8 +928,10 @@ static bool manifest_covers_variant(const fs::path& manifest_path,
 }
 
 static bool repo_has_foreign_download(const fs::path& repo_dir,
-                                      const std::string& variant) {
-    if (variant.empty()) return false;
+                                      const std::string& variant,
+                                      bool repo_claimed_by_other_model) {
+
+    const bool claims_whole_repo = variant_claims_whole_repo(variant);
 
     const fs::path snapshots_dir = repo_dir / "snapshots";
     std::error_code ec;
@@ -905,9 +942,15 @@ static bool repo_has_foreign_download(const fs::path& repo_dir,
     while (it != end) {
         const fs::path entry = it->path();
         if (entry.extension() == ".partial") {
-            if (!partial_belongs_to_variant(entry, snapshots_dir, variant)) return true;
+            if (claims_whole_repo ? repo_claimed_by_other_model
+                                  : !partial_belongs_to_variant(entry, snapshots_dir, variant)) {
+                return true;
+            }
         } else if (entry.filename() == ".download_manifest.json") {
-            if (!manifest_covers_variant(entry, variant)) return true;
+            if (claims_whole_repo ? repo_claimed_by_other_model
+                                  : !manifest_covers_variant(entry, variant)) {
+                return true;
+            }
         }
         it.increment(ec);
         if (ec) return true;
@@ -916,7 +959,8 @@ static bool repo_has_foreign_download(const fs::path& repo_dir,
 }
 
 static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
-                                              bool repo_occupied) {
+                                              bool repo_occupied,
+                                              bool repo_claimed) {
     const std::string main_checkpoint = info.checkpoint("main");
     const std::string main_repo = checkpoint_to_repo_id(main_checkpoint);
     if (main_repo.empty()) {
@@ -934,7 +978,8 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
     // files, stale manifests, any files that finished before cancellation, refs,
     // and blobs in one atomic intent. A download that is not this model's is the
     // one thing that still holds the repo back.
-    if (!repo_occupied && !repo_has_foreign_download(model_cache_path, variant)) {
+    if (!repo_occupied &&
+        !repo_has_foreign_download(model_cache_path, variant, repo_claimed)) {
         LOG(INFO, "ModelManager") << "Removing incomplete model cache: "
                                   << path_to_utf8(model_cache_path) << std::endl;
         std::error_code ec;
@@ -6535,15 +6580,18 @@ void ModelManager::delete_model(const std::string& model_name) {
     // Clean those artifacts before falling back to registry-only cleanup.
     if (!own_main_on_disk) {
         bool main_repo_occupied;
+        bool main_repo_claimed;
         {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
             main_repo_occupied = is_repo_occupied(main_repo, registry_source,
                                                   canonical_model_name, models_cache_,
                                                   resolve_now);
+            main_repo_claimed = is_repo_claimed(main_repo, registry_source,
+                                                canonical_model_name, models_cache_);
         }
 
-        bool removed_incomplete_cache =
-            cleanup_incomplete_hf_model_cache(info, main_repo_occupied);
+        bool removed_incomplete_cache = cleanup_incomplete_hf_model_cache(
+            info, main_repo_occupied, main_repo_claimed);
 
         if (!removed_incomplete_cache) {
             LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;

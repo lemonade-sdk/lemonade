@@ -105,6 +105,25 @@ int main() {
     // Two catalog entries that name the exact same checkpoint.
     fs::path twin_repo = make_repo(hf_root, "models--org--twin", {"x.gguf"});
 
+    // quant-a's checkpoint names a bare quantization, so the file it downloads
+    // is much longer than the variant. Its own interrupted download must still
+    // be recognized as its own.
+    fs::path quant_repo = hf_root / "models--org--quant";
+    write_file(quant_repo / "snapshots" / "snap" / "gemma-3-4b-it-Q4_K_M.gguf.partial",
+               "partial");
+    write_file(quant_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"files":[{"name":"gemma-3-4b-it-Q4_K_M.gguf"}]})");
+
+    // whole-a has no variant, so it claims every file here and no name can tell
+    // the marker apart. Nothing else in the catalog names this repo.
+    fs::path whole_repo = hf_root / "models--org--whole";
+    write_file(whole_repo / "snapshots" / "snap" / "anything.gguf.partial", "partial");
+
+    // Same, but shared-whole-b also names this repo, so the marker may be its
+    // download and the repo has to survive.
+    fs::path whole_shared_repo = hf_root / "models--org--wholeshared";
+    write_file(whole_shared_repo / "snapshots" / "snap" / "b.gguf.partial", "partial");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -132,6 +151,11 @@ int main() {
         {"stale-b", json{{"checkpoint", "org/stale:b.gguf"}, {"recipe", "llamacpp"}}},
         {"twin-a", json{{"checkpoint", "org/twin:x.gguf"}, {"recipe", "llamacpp"}}},
         {"twin-b", json{{"checkpoint", "org/twin:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"quant-a", json{{"checkpoint", "org/quant:Q4_K_M"}, {"recipe", "llamacpp"}}},
+        {"whole-a", json{{"checkpoint", "org/whole"}, {"recipe", "llamacpp"}}},
+        {"wholeshared-a", json{{"checkpoint", "org/wholeshared"}, {"recipe", "llamacpp"}}},
+        {"wholeshared-b", json{{"checkpoint", "org/wholeshared:b.gguf"},
+                               {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -229,6 +253,25 @@ int main() {
         manager.delete_model("user.twin-a");
         check("a file two models resolve to is not removed with one of them",
               fs::exists(twin_repo / "snapshots" / "snap" / "x.gguf"));
+
+        // A bare quantization is most of the catalog. Matching the variant
+        // against the file name alone would call this download a stranger's and
+        // strand everything it left behind.
+        manager.delete_model("user.quant-a");
+        check("a quantization-only variant still owns its own download",
+              !fs::exists(quant_repo));
+
+        // No variant at all, and nothing else names the repo, so the marker can
+        // only belong to this model.
+        manager.delete_model("user.whole-a");
+        check("a variantless model owns the only download in its repo",
+              !fs::exists(whole_repo));
+
+        // No variant, but wholeshared-b names this repo too, so the marker may
+        // be its download.
+        manager.delete_model("user.wholeshared-a");
+        check("a variantless model does not claim a download another model may own",
+              fs::exists(whole_shared_repo / "snapshots" / "snap" / "b.gguf.partial"));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache
