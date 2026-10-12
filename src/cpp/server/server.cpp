@@ -42,6 +42,7 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <thread>
@@ -89,7 +90,70 @@ namespace lemon {
 
 namespace {
 
+std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
+    auto at = [&bytes](size_t i) -> std::uint8_t {
+        return static_cast<std::uint8_t>(bytes[i]);
+    };
+    if (bytes.size() >= 24 &&
+        bytes.compare(0, 8, "\x89PNG\r\n\x1a\n", 8) == 0 &&
+        bytes.compare(12, 4, "IHDR", 4) == 0) {
+        auto be32 = [&](size_t i) -> std::uint32_t {
+            return (std::uint32_t(at(i)) << 24) | (std::uint32_t(at(i + 1)) << 16) |
+                   (std::uint32_t(at(i + 2)) << 8) | std::uint32_t(at(i + 3));
+        };
+        const auto width = be32(16);
+        const auto height = be32(20);
+        if (width > 0 && height > 0 &&
+            width <= static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
+            height <= static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            return std::pair<int, int>{static_cast<int>(width), static_cast<int>(height)};
+        }
+    }
+    if (bytes.size() >= 4 && at(0) == 0xff && at(1) == 0xd8) {
+        size_t pos = 2;
+        while (pos < bytes.size()) {
+            if (at(pos) != 0xff) break;
+            while (pos < bytes.size() && at(pos) == 0xff) ++pos;
+            if (pos >= bytes.size()) break;
+            const auto marker = at(pos++);
+            if (marker == 0xd9 || marker == 0xda) break;
+            if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+            if (bytes.size() - pos < 2) break;
+            const size_t segment_len = (size_t(at(pos)) << 8) | at(pos + 1);
+            if (segment_len < 2 || segment_len > bytes.size() - pos) break;
+            const bool sof = marker >= 0xc0 && marker <= 0xcf &&
+                             marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
+            if (sof && segment_len >= 7) {
+                const int height = (int(at(pos + 3)) << 8) | at(pos + 4);
+                const int width = (int(at(pos + 5)) << 8) | at(pos + 6);
+                if (width > 0 && height > 0) return std::pair<int, int>{width, height};
+            }
+            pos += segment_len;
+        }
+    }
+    return std::nullopt;
+}
 
+// Default soft cap for inferred image-edit dimensions.
+constexpr std::uint64_t kDefaultMaxEditPixels = 2048ULL * 2048ULL;
+
+std::pair<int, int> cap_image_area(int width, int height, std::uint64_t max_pixels) {
+    const auto pixels = static_cast<std::uint64_t>(width) * height;
+    if (pixels <= max_pixels) return {width, height};
+
+    const double scale = std::sqrt(static_cast<double>(max_pixels) / pixels);
+    int scaled_width = std::max(1, static_cast<int>(width * scale));
+    int scaled_height = std::max(1, static_cast<int>(height * scale));
+    // A dimension rounded up to one pixel must not violate the area cap.
+    if (static_cast<std::uint64_t>(scaled_width) * scaled_height > max_pixels) {
+        if (scaled_width > scaled_height) {
+            scaled_width = static_cast<int>(max_pixels / scaled_height);
+        } else {
+            scaled_height = static_cast<int>(max_pixels / scaled_width);
+        }
+    }
+    return {scaled_width, scaled_height};
+}
 
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
 // Returns true if the model name was modified
@@ -5293,16 +5357,43 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
     return true;
 }
 
-bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out, bool allow_multiple) {
+    // A multipart map groups files by field name, losing mixed upload order.
+    if (allow_multiple && req.form.files.count("image") > 0 &&
+        req.form.files.count("image[]") > 0) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Use either 'image' or 'image[]', not both"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    nlohmann::json images = nlohmann::json::array();
     for (const auto& file_pair : req.form.files) {
         if (file_pair.first == "image" || file_pair.first == "image[]") {
             const auto& file = file_pair.second;
-            out["image_data"] = utils::JsonUtils::base64_encode(file.content);
-            out["image_filename"] = file.filename;
+            const std::string encoded = utils::JsonUtils::base64_encode(file.content);
+            if (!out.contains("image_data")) {
+                // Keep the existing single-image contract for other callers.
+                out["image_data"] = encoded;
+                out["image_filename"] = file.filename;
+                out["image_content_type"] = file.content_type;
+            }
             LOG(INFO, "Server") << "Image file: " << file.filename
                       << " (" << file.content.size() << " bytes)" << std::endl;
-            return true;
+            if (!allow_multiple) return true;
+            // Preserve original upload bytes, MIME and reference order.
+            images.push_back({
+                {"data", encoded},
+                {"filename", file.filename},
+                {"content_type", file.content_type},
+            });
         }
+    }
+    if (!images.empty()) {
+        out["image_files"] = std::move(images);
+        return true;
     }
     res.status = 400;
     nlohmann::json error = {{"error", {
@@ -5427,7 +5518,24 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (!parse_int_field("seed"))      return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
-        if (!extract_image_from_form(req, res, request_json)) return;
+        if (!extract_image_from_form(req, res, request_json, /*allow_multiple=*/true)) return;
+
+        // The first uploaded image sets the output size unless explicitly provided.
+        if (!request_json.contains("size")) {
+            for (const auto& file_pair : req.form.files) {
+                if (file_pair.first != "image" && file_pair.first != "image[]") continue;
+                const auto original = image_dimensions_from_bytes(file_pair.second.content);
+                if (original) {
+                    const auto [width, height] = cap_image_area(
+                        original->first, original->second, kDefaultMaxEditPixels);
+                    request_json["size"] = std::to_string(width) + "x" + std::to_string(height);
+                } else {
+                    LOG(WARNING, "Server") << "Cannot determine source image dimensions; "
+                        "using backend defaults" << std::endl;
+                }
+                break;
+            }
+        }
 
         // Extract optional mask file
         for (const auto& file_pair : req.form.files) {

@@ -13,6 +13,7 @@
 #include "lemon/utils/path_utils.h"
 #include <ctime>
 #include <filesystem>
+#include <utility>
 #include <fstream>
 #include <random>
 #include <set>
@@ -26,6 +27,7 @@ namespace lemon {
 namespace backends {
 
 namespace {
+
 int generate_random_seed() {
     return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
@@ -378,11 +380,22 @@ json TheNoiseServer::image_edits(const json& request) {
         json body = build_request(request);
         body["out"] = "json";
 
-        if (request.contains("image_data") && !request["image_data"].is_null()) {
-            body["image"] = request["image_data"];
-        }
+        // build_request passes unknown fields through; strip internal upload data.
+        body.erase("image_files");
         body.erase("image_data");
         body.erase("image_filename");
+        body.erase("image_content_type");
+        if (request.contains("image_files") && request["image_files"].is_array()
+            && !request["image_files"].empty()) {
+            json references = json::array();
+            for (const auto& image : request["image_files"]) {
+                references.push_back(image.at("data"));
+            }
+            // TheNoise accepts a single base64 string or an array of strings.
+            body["image"] = references.size() == 1 ? references[0] : references;
+        } else if (request.contains("image_data") && !request["image_data"].is_null()) {
+            body["image"] = request["image_data"];
+        }
 
         LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
 
