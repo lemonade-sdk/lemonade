@@ -4394,11 +4394,11 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                aria-label={`${t('Reasoning')}: ${thinkingMode === 'off' ? t('Off') : t('Thinking')}`}
+                aria-label={t('Thinking: {state}', { state: thinkingMode === 'off' ? t('Off') : t('On') })}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? t('Off') : t('Thinking')}</span>
+                <span>{t('Thinking: {state}', { state: thinkingMode === 'off' ? t('Off') : t('On') })}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
               {!thinkingMenuOpen && (

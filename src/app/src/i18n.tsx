@@ -335,6 +335,7 @@ const ZH_CN: Record<string, string> = {
   'Reasoning': '推理',
   'Off': '关闭',
   'Thinking': '思考',
+  'Thinking: {state}': '思考：{state}',
   'Model thinks before answering': '模型会在回答前进行思考',
   'Direct answer': '直接回答',
   'Stop live microphone transcription': '停止实时麦克风转写',
