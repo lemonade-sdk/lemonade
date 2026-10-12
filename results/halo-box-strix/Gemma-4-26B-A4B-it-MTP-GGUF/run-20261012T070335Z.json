@@ -1,0 +1,118 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b10820"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 32.0
+      }
+    ],
+    "lemonade_version": "2026.41.1",
+    "os": "linux",
+    "ram_gb": 30.98
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "draft": "unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
+        "main": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+        "mmproj": "unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 8192,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "chat",
+              "duration_ms": {
+                "max": 463.4421,
+                "mean": 452.76100766666667,
+                "min": 445.491034,
+                "p50": 449.349889,
+                "p95": 462.0328789
+              },
+              "failed_runs": 0,
+              "input_tokens": 30,
+              "memory_peak_gb": 3.7,
+              "name": "chat-short",
+              "output_tokens": 20,
+              "tps": {
+                "max": 73.08310703213348,
+                "mean": 72.62139769156545,
+                "min": 71.82930333136747,
+                "p50": 72.9517827111954,
+                "p95": 73.06997460003969
+              },
+              "ttft_ms": {
+                "max": 195.204,
+                "mean": 187.797,
+                "min": 182.493,
+                "p50": 185.694,
+                "p95": 194.253
+              },
+              "vram_peak_gb": 18.658645629882812,
+              "pp_tps": 164.39
+            },
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2597.251878,
+                "mean": 2457.866632,
+                "min": 2335.34917,
+                "p50": 2440.998848,
+                "p95": 2581.6265750000002
+              },
+              "failed_runs": 0,
+              "input_tokens": 3119,
+              "memory_peak_gb": 4.1,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "tps": {
+                "max": 64.43583039132898,
+                "mean": 60.9594179434856,
+                "min": 55.79177335619816,
+                "p50": 62.65065008292967,
+                "p95": 64.25731236048905
+              },
+              "ttft_ms": {
+                "max": 2289.396,
+                "mean": 2131.749333333333,
+                "min": 1980.675,
+                "p50": 2125.177,
+                "p95": 2272.9741000000004
+              },
+              "vram_peak_gb": 18.690807342529297,
+              "pp_tps": 1574.72
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-12T00:21:13Z"
+    }
+  ],
+  "timestamp": "2026-10-12T00:21:13Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1021",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "38203722587",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/38203722587",
+  "commit": "6505a0c55e6182d4d61ddfc1a36a40e01e48f587",
+  "lemonade_version": "v2026.41.1"
+}
