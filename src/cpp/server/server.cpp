@@ -111,10 +111,6 @@ nlohmann::json gpu_device_details_json(const SystemGpuMetrics& snapshot) {
     return result;
 }
 
-
-
-
-
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
 // Returns true if the model name was modified
 bool normalize_client_model_name(json& request_json) {

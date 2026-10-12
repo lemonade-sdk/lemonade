@@ -195,8 +195,14 @@ private:
 
 #ifdef _WIN32
     static LibraryHandle open_library() {
-        if (HMODULE library = LoadLibraryA("nvml.dll")) {
-            return library;
+        char system_dir[MAX_PATH] = {};
+        const UINT system_dir_length = GetSystemDirectoryA(system_dir, MAX_PATH);
+        if (system_dir_length > 0 && system_dir_length < MAX_PATH) {
+            const std::string path = std::string(system_dir) + "\\nvml.dll";
+            if (HMODULE library = LoadLibraryExA(
+                    path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+                return library;
+            }
         }
 
         for (const char* env_name : {"ProgramW6432", "ProgramFiles"}) {
@@ -209,7 +215,9 @@ private:
 
             const std::string path = std::string(program_files)
                 + "\\NVIDIA Corporation\\NVSMI\\nvml.dll";
-            if (HMODULE library = LoadLibraryA(path.c_str())) {
+            if (HMODULE library = LoadLibraryExA(
+                    path.c_str(), nullptr,
+                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32)) {
                 return library;
             }
         }
