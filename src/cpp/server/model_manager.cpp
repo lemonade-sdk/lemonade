@@ -149,6 +149,8 @@ static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
 static bool are_required_checkpoints_complete(const ModelInfo& info);
+static bool is_checkpoint_path_complete(const std::string& path);
+static bool path_inside(const fs::path& path, const fs::path& root);
 
 // Select the deployment mode from the top-level directory within extra_models_dir.
 static std::string extra_model_deployment_label(
@@ -1262,6 +1264,7 @@ static bool is_draft_gguf_filename(std::string filename) {
     std::transform(filename.begin(), filename.end(), filename.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return filename.rfind("mtp-", 0) == 0 ||
+           filename.find("-mtp-ud-") != std::string::npos ||
            filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
 }
 
@@ -1667,31 +1670,92 @@ static std::string resolve_registered_extra_checkpoint(
     return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
 }
 
+// Resolve the complete family of a registered sharded GGUF. A first shard
+// alone is not a usable model, and its remaining shards must not be discovered
+// as an unrelated extra.* model. Other quantizations remain independent.
+static bool collect_registered_shards(const fs::path& resolved, const fs::path& repo_root,
+                                      std::set<fs::path>& owned_paths) {
+    const fs::path file = resolved.lexically_normal();
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(file.filename().string(), &base, &total)) {
+        owned_paths.insert(file);
+        return true;
+    }
+
+    std::set<int> indices;
+    std::set<fs::path> family;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
+        if (ec) return false;
+        const std::string filename = entry.path().filename().string();
+        if (!same_shard_family(filename, base, total)) continue;
+
+        int index = 0;
+        is_gguf_shard_filename(filename, nullptr, nullptr, &index);
+        const std::string path = path_to_utf8(entry.path());
+        if (!entry.is_regular_file(ec) || ec ||
+            !path_inside(entry.path(), repo_root) ||
+            !is_checkpoint_path_complete(path) ||
+            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
+            return false;
+        }
+        indices.insert(index);
+        family.insert(entry.path().lexically_normal());
+    }
+    if (ec || indices.size() != static_cast<size_t>(total)) return false;
+    owned_paths.insert(family.begin(), family.end());
+    return true;
+}
+
 // Only complete repository caches can reclaim registered model identities;
 // loose GGUFs remain independent extra.* entries.
-static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::string& extra_dir) {
+static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::string& extra_dir,
+                                               std::set<fs::path>* registered_paths = nullptr) {
     if (extra_dir.empty() || !info.source.empty() ||
         info.recipe == "flm" || info.recipe == "cloud" ||
         is_model_collection_recipe(info.recipe)) return false;
 
+    const fs::path root = path_from_utf8(extra_dir);
     const std::string repo = checkpoint_to_repo_id(info.checkpoint("main"));
-    if (repo.empty() || !safe_is_directory(
-            path_from_utf8(extra_dir) /
-            repo_id_to_cache_dir_name(repo, effective_registry_source(info)))) {
+    if (repo.empty()) return false;
+    const fs::path main_repo = root /
+        repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+    if (!safe_is_directory(main_repo) || !path_inside(main_repo, root)) {
         return false;
     }
 
     ModelInfo candidate = info;
+    std::set<fs::path> owned_paths;
     try {
         for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
+            const std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
+            if (checkpoint_repo.empty()) return false;
+            const fs::path expected_repo = root /
+                repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
             candidate.resolved_paths[type] =
                 resolve_registered_extra_checkpoint(info, type, checkpoint, extra_dir);
+            const std::string& resolved = candidate.resolved_paths[type];
+            if (info.recipe == "llamacpp" && type == "main" &&
+                (safe_is_directory(path_from_utf8(resolved)) ||
+                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
+                return false;
+            }
+            // Reject escaped refs/main entries and symlinks, including redirects
+            // into a *different* repository under the same extra models root.
+            if (resolved.empty() || !path_inside(expected_repo, root) ||
+                !path_inside(path_from_utf8(resolved), expected_repo) ||
+                !collect_registered_shards(path_from_utf8(resolved), expected_repo, owned_paths)) {
+                return false;
+            }
         }
         if (!are_required_checkpoints_complete(candidate)) return false;
     } catch (const std::exception&) {
         return false;  // An optional directory must never break catalog discovery.
     }
     info.resolved_paths = std::move(candidate.resolved_paths);
+    if (registered_paths) registered_paths->insert(owned_paths.begin(), owned_paths.end());
     return true;
 }
 
@@ -3365,12 +3429,7 @@ void ModelManager::build_cache() {
     if (!extra_models_dir_.empty()) {
         for (const auto& [name, info] : all_models) {
             ModelInfo candidate = info;
-            if (!try_resolve_registered_extra_cache(candidate, extra_models_dir_)) continue;
-            for (const auto& [type, path] : candidate.resolved_paths) {
-                if (!path.empty()) {
-                    registered_extra_paths.insert(path_from_utf8(path).lexically_normal());
-                }
-            }
+            try_resolve_registered_extra_cache(candidate, extra_models_dir_, &registered_extra_paths);
         }
     }
 
@@ -6221,11 +6280,29 @@ void ModelManager::delete_model(const std::string& model_name) {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
     }
-    if (!extra_models_dir_.empty() &&
-        path_inside(path_from_utf8(info.resolved_path("main")), path_from_utf8(extra_models_dir_)) &&
-        !path_inside(path_from_utf8(info.resolved_path("main")), path_from_utf8(get_hf_cache_dir()))) {
-        throw std::runtime_error("Cannot delete a catalog model stored in --extra-models-dir via API. "
-                                 "Its files are user-managed; remove them manually.");
+    // Never delete an adopted external cache through its registered catalog ID.
+    if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
+        !is_model_collection_recipe(info.recipe)) {
+        const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache" || info.resolved_path(type).empty()) continue;
+            const std::string repo = checkpoint_to_repo_id(checkpoint);
+            if (repo.empty()) {
+                throw std::runtime_error("Cannot delete a registered model with an invalid checkpoint.");
+            }
+            const fs::path managed_repo = managed_root /
+                repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+            if (!path_inside(managed_repo, managed_root) ||
+                !path_inside(path_from_utf8(info.resolved_path(type)), managed_repo)) {
+                if (!is_user_model_name(canonical_model_name)) {
+                    throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
+                                             "External files are user-managed; remove them manually.");
+                }
+                unregister_user_model(canonical_model_name);
+                remove_model_from_cache(canonical_model_name);
+                return;
+            }
+        }
     }
 
     // FLM models have no local HF cache; deletion is the backend's `flm remove`.

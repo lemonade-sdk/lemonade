@@ -7148,6 +7148,7 @@ class EndpointTests(ServerTestBase):
                 f"{snap}/Draft-7B-Q8_0.gguf",
                 f"{snap}/MTP-Draft-7B-Q4_K_M.gguf",
                 f"{snap}/DFlash.gguf",
+                f"{snap}/Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
                 "standalone/MTP-Orphan.gguf",
             ],
             refs={repo: "test-active"},
@@ -7180,6 +7181,130 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(info["recipe"], "thenoise")
             self.assertTrue(info["downloaded"], f"moved Krea files not found: {info}")
             self.assertNotEqual(info.get("source"), "extra_models_dir")
+
+    def test_021ym_registered_shards_and_unrelated_quantization(self):
+        """Every registered shard stays out of extra.*, other variants remain."""
+        name = f"user.Shards-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Shards-GGUF"
+        snap = f"{repo}/snapshots/active"
+        first = "Shards-Q4_K_M-00001-of-00002.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/Shards-GGUF:{first}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/Shards-Q4_K_M-00002-of-00002.gguf",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # The first shard alone must never make the registered model downloaded.
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{first}"], refs={repo: "active"}
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+        finally:
+            # Restore the original extra directory before removing registration.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021yn_external_ref_cannot_escape_its_repository(self):
+        """A refs/main redirect into a sibling cache may not adopt its files."""
+        name = f"user.Ref-Escape-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Ref-Escape-GGUF"
+        sibling = "models--other--Sibling-GGUF"
+        filename = "Ref-Escape-Q4_K_M.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/Ref-Escape-GGUF:{filename}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{sibling}/snapshots/live/{filename}"],
+                refs={repo: f"../../{sibling}/snapshots/live"},
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+            with self._extra_models_dir(
+                ggufs=[f"{sibling}/snapshots/live/{filename}"],
+                other_files=[f"{repo}/snapshots/.keep"],
+                refs={repo: f"../../{sibling}/snapshots/live"},
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+        finally:
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021yo_delete_user_registration_with_external_weights(self):
+        """Deleting a user registration must leave its external GGUF untouched."""
+        name = f"user.External-Only-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--External-Only-GGUF"
+        filename = "External-Only-Q4_K_M.gguf"
+        relative = f"{repo}/snapshots/live/{filename}"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/External-Only-GGUF:{filename}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[relative], refs={repo: "live"}
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                response = requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(
+                    os.path.isfile(os.path.join(extra_dir, *relative.split("/")))
+                )
+                self.assertNotIn(name.removeprefix("user."), self._listed_models())
+        finally:
+            if name.removeprefix("user.") in self._listed_models():
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
 
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
