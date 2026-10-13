@@ -64,6 +64,7 @@ struct RoutePolicy;
 
 namespace models {
 struct FilterReasons;
+struct StoreSnapshot;
 }  // namespace models
 
 // Image generation defaults for SD models
@@ -232,6 +233,8 @@ public:
     // Filter models by available backends. Set track_recipe_availability only on
     // the full-cache build: the single-model temp maps used by incremental
     // updates must not overwrite the whole-registry availability side table.
+    // Callers must hold a StoreWrite: it changes the filter reasons but does not
+    // publish them.
     std::map<std::string, ModelInfo> filter_models_by_backend(
         const std::map<std::string, ModelInfo>& models,
         bool track_recipe_availability = false);
@@ -560,7 +563,8 @@ private:
     // generation lets the consumer keep only the newest.
     std::atomic<uint64_t> notify_generation_{0};
 
-    // Cache of all models with their download status
+    // Serializes writers of the model set. Writers use StoreWrite, which
+    // publishes for them; snapshot readers need no lock.
     mutable std::mutex models_cache_mutex_;
     // Serializes an options write end to end: store mutation plus the matching
     // cache patch. The store orders its own state; this keeps the two in step so
@@ -615,10 +619,33 @@ private:
     // Replaces the two side tables the filter used to keep separately, so a
     // reason can never be read against a different generation of results.
     std::shared_ptr<const models::FilterReasons> hardware_filter_;
-    mutable bool cache_valid_ = false;
 
-    // Must be called with models_cache_mutex_ held.
-    std::set<std::string> recipes_all_models_filtered_locked() const;
+    // Immutable view of the fields above. Written under models_cache_mutex_,
+    // read with atomic load/store rather than under it.
+    std::shared_ptr<const models::StoreSnapshot> store_snapshot_;
+    std::uint64_t store_generation_ = 0;
+
+    // Requires models_cache_mutex_ held; StoreWrite calls it on scope exit.
+    void publish_store_locked();
+
+  public:
+    // Locks the store and publishes on release, so a mutating path cannot forget
+    // to publish and readers never see a half-built set. Use for any scope that
+    // changes the model set, including a lazy invalidation.
+    class StoreWrite {
+      public:
+        explicit StoreWrite(ModelManager& manager);
+        StoreWrite(const StoreWrite&) = delete;
+        StoreWrite& operator=(const StoreWrite&) = delete;
+        ~StoreWrite();
+
+      private:
+        ModelManager& manager_;
+        std::unique_lock<std::mutex> lock_;
+    };
+
+  private:
+    mutable bool cache_valid_ = false;
 
     json get_sync_status_locked() const;
     void rebuild_public_model_aliases_locked();

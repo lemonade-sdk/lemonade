@@ -3050,6 +3050,19 @@ if(BUILD_TESTING AND EXISTS "${_FILTER_HARDWARE_TEST_SRC}")
     add_cpp_ci_test(FilterHardwareTest CI ON COMMAND test_filter_hardware)
 endif()
 
+set(_STORE_PUBLICATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_publication.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_PUBLICATION_TEST_SRC}")
+    add_executable(test_store_publication
+        test/cpp/test_store_publication.cpp
+    )
+    target_link_libraries(test_store_publication PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(StorePublicationTest CI ON COMMAND test_store_publication)
+endif()
+
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_download_state.cpp"
 )

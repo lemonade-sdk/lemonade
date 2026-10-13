@@ -75,6 +75,13 @@ static std::string find_probe_recipe(ModelManager& manager) {
     return "";
 }
 
+// A filter pass updates the writer's filter reasons; production runs it inside
+// a store write, which publishes them when it ends. Take a write here so each
+// pass is observable, including the untracked one that must carry the table over.
+static void publish(ModelManager& manager) {
+    ModelManager::StoreWrite write(manager);
+}
+
 static void test_full_pass_commits_and_recomputes(ModelManager& manager,
                                                   const std::string& recipe) {
     // Every model of `recipe` is unfillable -> the recipe is recorded. This is
@@ -82,6 +89,7 @@ static void test_full_pass_commits_and_recomputes(ModelManager& manager,
     // hold if the full pass had committed nothing at all.
     std::map<std::string, ModelInfo> all_filtered = {{"Huge", model(recipe, HUGE_GB)}};
     manager.filter_models_by_backend(all_filtered, /*track_recipe_availability=*/true);
+    publish(manager);
     check("full pass records a recipe whose every model was size-filtered",
           manager.recipes_all_models_filtered_snapshot().count(recipe) == 1);
 
@@ -92,12 +100,14 @@ static void test_full_pass_commits_and_recomputes(ModelManager& manager,
         {"Tiny", model(recipe, 0.01)},
     };
     manager.filter_models_by_backend(partial, /*track_recipe_availability=*/true);
+    publish(manager);
     check("full pass recomputes: partially-filtered recipe is dropped",
           manager.recipes_all_models_filtered_snapshot().count(recipe) == 0);
 
     // Nothing filtered at all -> still not recorded.
     std::map<std::string, ModelInfo> all_fit = {{"Tiny", model(recipe, 0.01)}};
     manager.filter_models_by_backend(all_fit, /*track_recipe_availability=*/true);
+    publish(manager);
     check("full pass never records a recipe that kept a visible model",
           manager.recipes_all_models_filtered_snapshot().count(recipe) == 0);
 }
@@ -109,6 +119,7 @@ static void test_incremental_pass_does_not_clobber(ModelManager& manager,
     // side table untouched.
     std::map<std::string, ModelInfo> full = {{"Huge", model(recipe, HUGE_GB)}};
     manager.filter_models_by_backend(full, /*track_recipe_availability=*/true);
+    publish(manager);
     std::set<std::string> seeded = manager.recipes_all_models_filtered_snapshot();
 
     check("seeded side table actually holds the all-filtered recipe",
@@ -116,6 +127,7 @@ static void test_incremental_pass_does_not_clobber(ModelManager& manager,
 
     std::map<std::string, ModelInfo> one = {{"Tiny", model(recipe, 0.01)}};
     manager.filter_models_by_backend(one, /*track_recipe_availability=*/false);
+    publish(manager);
     std::set<std::string> after_incremental = manager.recipes_all_models_filtered_snapshot();
 
     check("incremental pass leaves the availability side table unchanged",
