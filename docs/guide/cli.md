@@ -693,7 +693,7 @@ Pi-only options:
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
 - `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
-- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `$LEMONADE_API_KEY`, which launch exports to pi, instead of storing the key.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.
 
 **Examples:**
 

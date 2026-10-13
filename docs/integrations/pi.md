@@ -22,9 +22,12 @@ Use:
 lemonade launch pi [options]
 ```
 
-Lemonade automatically configures Pi to use your local server by writing:
-- `~/.pi/agent/models.json` — Registers the Lemonade provider with your local server's base URL and selected model
-- `~/.pi/agent/settings.json` — Sets the default provider to Lemonade so Pi launches straight into your local model
+Lemonade automatically configures Pi to use your local server by writing these files in `~/.pi/agent/` (or `$PI_CODING_AGENT_DIR`):
+- `models.json` — Registers the Lemonade provider with your local server's base URL, every downloaded chat model, and the launched model
+- `settings.json` — Sets the default provider to Lemonade, if Pi has none yet, so Pi launches straight into your local model
+- `mcp.json` — With `--mcp`, adds Lemonade's MCP server (see [Lemonade tools in Pi](#lemonade-tools-in-pi-mcp))
+
+See [How it works](#how-it-works) for what each file contains.
 
 ## Use Case 1: First-time user (discover + import + launch)
 
@@ -112,7 +115,7 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
 
 `lemonade launch pi` writes these files in Pi's agent directory, `~/.pi/agent/` (or `$PI_CODING_AGENT_DIR`):
 
-**`models.json`** registers the Lemonade provider with every downloaded chat model:
+**`models.json`** registers the Lemonade provider with every downloaded chat model, plus the launched model if it is not downloaded yet:
 
 ```json
 {
@@ -140,7 +143,7 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
 }
 ```
 
-- `contextWindow` and `maxTokens` come from the model's saved `ctx_size`, or 40960 when none is saved. If the model runs with a different context size, save it with `lemonade load <model> --ctx-size N --save-options` so Pi compacts the conversation before it overflows.
+- `contextWindow` and `maxTokens` come from the model's saved `ctx_size`, or 40960 when none is saved or it is set to automatic (`-1`). For the launched model, `--ctx-size` on `lemonade launch` takes precedence. If a model runs with a different context size, save it with `lemonade load <model> --ctx-size N --save-options` so Pi compacts the conversation before it overflows.
 - `apiKey` is the placeholder `lemonade` when Lemonade has no API key. When it has one (`--api-key`, `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY`), the value is `${LEMONADE_API_KEY}`: launch passes the key to Pi in that environment variable, and it is never written to disk. Running `pi` directly then needs `LEMONADE_API_KEY` set.
 
 **`settings.json`** makes Lemonade Pi's default provider, only if Pi has no default yet:
