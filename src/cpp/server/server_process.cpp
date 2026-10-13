@@ -24,6 +24,7 @@ namespace {
 
 constexpr const char* kModelsDir = "/mnt/models";
 constexpr int kAddressTimeoutSeconds = 30;
+constexpr int kClientExitSeconds = 5;
 
 std::string join_command_line(const std::vector<std::string>& argv) {
     std::string out;
@@ -194,8 +195,12 @@ std::string ContainerProcess::start(const ServerCommand& command) {
 
 void ContainerProcess::stop() {
     if (!name_.empty()) {
+        const bool client_running = running();
         ContainerManager::global().stop(name_);
         name_.clear();
+        if (client_running && ProcessManager::wait_for_exit(handle_, kClientExitSeconds) != -1) {
+            handle_ = {nullptr, 0};
+        }
     }
     ServerProcess::stop();
 }

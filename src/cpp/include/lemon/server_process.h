@@ -79,7 +79,9 @@ public:
 
     std::string start(const ServerCommand& command) override;
     // Stops the container by name first: the client forwards SIGTERM into the
-    // container, but SIGKILL would end only the client.
+    // container, but SIGKILL would end only the client. The client then exits
+    // on its own and is reaped quietly; the exit log is for a client that had
+    // already exited before stop().
     void stop() override;
 
 private:
