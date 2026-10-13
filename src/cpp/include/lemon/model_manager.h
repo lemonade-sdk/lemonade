@@ -19,6 +19,7 @@
 #include "gguf_reader.h"
 #include "model_registry.h"
 #include "model_types.h"
+#include "models/recipe_options_store.h"
 #include "recipe_options.h"
 
 namespace lemon {
@@ -480,7 +481,6 @@ private:
 
     json load_server_models();
     json load_architecture_defaults();
-    json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
     // Remove a user model entry from user_models.json (no file deletion).
@@ -564,7 +564,7 @@ private:
 
     json server_models_;
     json user_models_;
-    json recipe_options_;
+    RecipeOptionsStore recipe_options_;
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
@@ -583,8 +583,9 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
-    // Orders recipe_options.json rewrites without holding models_cache_mutex_
-    // (which every request thread contends on) across disk I/O.
+    // Serializes an options write end to end: store mutation plus the matching
+    // cache patch. The store orders its own state; this keeps the two in step so
+    // two concurrent writers cannot leave the cache holding the earlier entry.
     std::mutex recipe_options_write_mutex_;
 
     // Serializes concurrent downloads that write into the same snapshot

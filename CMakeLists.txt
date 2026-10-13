@@ -1036,6 +1036,7 @@ set(SOURCES_CORE
     src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
+    src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/server_process.cpp
@@ -1056,9 +1057,11 @@ set(SOURCES_CORE
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/http_client.cpp
+    src/cpp/server/utils/json_file.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/safe_fs.cpp
     src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
@@ -3110,6 +3113,22 @@ if(BUILD_TESTING AND EXISTS "${_STORE_SNAPSHOT_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(StoreSnapshotTest CI ON COMMAND test_store_snapshot)
+endif()
+
+# recipe_options.json persistence: key migration, replace/merge CRUD and read-back.
+# Written against the pre-extraction ModelManager so step 1 cannot move behaviour.
+set(_RECIPE_OPTIONS_PERSISTENCE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_options_persistence.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RECIPE_OPTIONS_PERSISTENCE_TEST_SRC}")
+    add_executable(test_recipe_options_persistence
+        test/cpp/test_recipe_options_persistence.cpp
+    )
+    target_link_libraries(test_recipe_options_persistence PRIVATE lemonade-server-core)
+    add_dependencies(test_recipe_options_persistence copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RecipeOptionsPersistenceTest CI ON COMMAND test_recipe_options_persistence)
 endif()
 
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
