@@ -95,7 +95,6 @@ module.exports = (env, argv) => {
   const systemPackageAliases = useSystemPackages ? {
     'dompurify$': path.resolve(__dirname, 'system-stubs/dompurify.ts'),
     'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
-    'recharts$': path.resolve(__dirname, 'system-stubs/recharts.tsx'),
     'highlight.js/styles/github-dark.css$': path.resolve(__dirname, 'system-stubs/highlight-github-dark.css'),
   } : {};
 
@@ -266,7 +265,7 @@ module.exports = (env, argv) => {
             enforce: true,
           },
           charts: {
-            test: /[\\/]node_modules[\\/](recharts|victory-vendor|d3|d3-.*)[\\/]/,
+            test: /[\\/]node_modules[\\/](d3|d3-.*)[\\/]/,
             name: 'charts',
             chunks: 'async',
             priority: 55,

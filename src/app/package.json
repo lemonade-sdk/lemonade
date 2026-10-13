@@ -72,8 +72,7 @@
     "markdown-it-texmath": "^1.0.0",
     "mermaid": "^11.15.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "recharts": "^3.8.1"
+    "react-dom": "^19.2.0"
   },
   "overrides": {
     "@tauri-apps/api": "2.10.1"

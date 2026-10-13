@@ -4063,6 +4063,10 @@ optgroup {
   gap: var(--space-5, 24px);
 }
 
+.dash2-scroll:focus-visible {
+  outline-offset: -2px;
+}
+
 /* ── Cards ─────────────────────────────────────────────── */
 
 .dash2-card {
