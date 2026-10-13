@@ -3,10 +3,12 @@
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
 #include <lemon/routing_policy_parser.h>
+#include <lemon/utils/json_file.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/safe_fs.h>
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_registry.h>
@@ -43,73 +45,12 @@
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
+
+// fs::recursive_directory_iterator throws on entries it cannot open; skipping
+// them keeps a cache scan going past one unreadable directory.
 #ifdef _WIN32
-#include <windows.h>
-#include <Shlobj.h>
-// MSVC's std::filesystem refuses to traverse reparse points it considers
-// "untrusted" when the process token lacks symlink privileges (e.g., when
-// launched from an MSI installer custom action). The Win32 API has no such
-// restriction. These helpers replace fs::exists / fs::is_directory for paths
-// that may contain symlinks (HuggingFace cache uses them for deduplication).
-static bool safe_exists(const fs::path& p) {
-    return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES;
-}
-static bool safe_is_directory(const fs::path& p) {
-    DWORD attrs = GetFileAttributesW(p.c_str());
-    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
-}
-// fs::recursive_directory_iterator also throws on these reparse points.
-// skip_permission_denied tells it to skip inaccessible entries instead of throwing.
 static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
-// MSVC's create_directories also fails on symlinks crossing volume boundaries
-// ("untrusted mount point"). SHCreateDirectoryExW does not have this restriction.
-// Throws on failure to preserve the fail-fast semantics of fs::create_directories.
-static void ensure_create_directories(const fs::path& p) {
-    if (p.empty()) return;
-    if (safe_is_directory(p)) return;
-    if (safe_exists(p)) {
-        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
-                                 path_to_utf8(p) + "'");
-    }
-    std::error_code ec;
-    fs::create_directories(p, ec);
-    if (!ec) return;
-    // Fall back to Win32 API which handles cross-volume symlinks gracefully
-    std::wstring wpath = p.wstring();
-    DWORD result = SHCreateDirectoryExW(NULL, wpath.c_str(), NULL);
-    if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
-        char error_msg[256];
-        FormatMessageA(
-            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr,
-            result,
-            0,
-            error_msg,
-            sizeof(error_msg),
-            nullptr
-        );
-        std::string desc = error_msg[0] ? error_msg : "unknown error";
-        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
-                                 "': " + desc);
-    }
-}
 #else
-static bool safe_exists(const fs::path& p) { return fs::exists(p); }
-static bool safe_is_directory(const fs::path& p) { return fs::is_directory(p); }
-static void ensure_create_directories(const fs::path& p) {
-    if (p.empty()) return;
-    if (safe_is_directory(p)) return;
-    if (safe_exists(p)) {
-        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
-                                 path_to_utf8(p) + "'");
-    }
-    std::error_code ec;
-    fs::create_directories(p, ec);
-    if (ec) {
-        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
-                                 "': " + ec.message());
-    }
-}
 static constexpr auto safe_dir_options = fs::directory_options::none;
 #endif
 
@@ -1398,53 +1339,16 @@ static GGUFFiles identify_gguf_models(
 }
 
 ModelManager::ModelManager(const std::string& extra_models_dir)
-    : extra_models_dir_(extra_models_dir) {
+    : extra_models_dir_(extra_models_dir),
+      recipe_options_(get_recipe_options_file()) {
     server_models_ = load_server_models();
     user_models_ = load_optional_json(get_user_models_file());
-    recipe_options_ = load_optional_json(get_recipe_options_file());
     architecture_defaults_ = load_architecture_defaults();
 
-    // One-shot migration of recipe_options.json: older Lemonade keyed built-in
-    // entries by bare name; the current spec requires a canonical "builtin."
-    // prefix so each source is addressable distinctly even on shadowing.
-    //
-    // Normalize to an object before iterating - a corrupted file may parse as
-    // null, array, or scalar, and json::iterator::key() throws on non-objects.
-    if (!recipe_options_.is_object()) {
-        if (!recipe_options_.is_null()) {
-            LOG(WARNING, "ModelManager") << "recipe_options.json is not a JSON object; resetting to empty object" << std::endl;
-        }
-        recipe_options_ = json::object();
-    }
-    {
-        int migrated = 0;
-        json migrated_options = json::object();
-        for (auto it = recipe_options_.begin(); it != recipe_options_.end(); ++it) {
-            const std::string& key = it.key();
-            if (parse_canonical_id(key)) {
-                migrated_options[key] = it.value();
-            } else if (server_models_.contains(key)) {
-                migrated_options[canonical_id(ModelSource::Builtin, key)] = it.value();
-                ++migrated;
-            } else {
-                // Preserve unknown bare keys (likely stale built-ins) - avoids silent data loss.
-                migrated_options[key] = it.value();
-            }
-        }
-        if (migrated > 0) {
-            recipe_options_ = std::move(migrated_options);
-            try {
-                fs::path dir = fs::path(get_recipe_options_file()).parent_path();
-                ensure_create_directories(dir);
-                JsonUtils::save_to_file(recipe_options_, get_recipe_options_file());
-                LOG(INFO, "ModelManager") << "migrated " << migrated
-                          << " legacy recipe_options keys to builtin. prefix" << std::endl;
-            } catch (const std::exception& e) {
-                LOG(WARNING, "ModelManager") << "Could not persist migrated recipe_options.json: "
-                                              << e.what() << std::endl;
-            }
-        }
-    }
+    // Releases before canonical IDs keyed built-in options by bare name; the
+    // builtin. prefix keeps a shadowed built-in addressable.
+    recipe_options_.migrate(
+        [this](const std::string& bare_name) { return server_models_.contains(bare_name); });
 
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
@@ -2187,20 +2091,6 @@ json ModelManager::load_server_models() {
     }
 }
 
-json ModelManager::load_optional_json(const std::string& path) {
-    if (!fs::exists(path)) {
-        return json::object();
-    }
-
-    try {
-        LOG(INFO, "ModelManager") << "Loading " << fs::path(path).filename() << std::endl;
-        return JsonUtils::load_from_file(path);
-    } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
-        return json::object();
-    }
-}
-
 json ModelManager::load_architecture_defaults() {
     try {
         std::string path = get_resource_path("resources/architecture_defaults.json");
@@ -2222,59 +2112,8 @@ json ModelManager::get_architecture_defaults(const std::string& architecture) co
     return json::object();
 }
 
-static void save_user_json(const std::string& save_path, const json& to_save) {
-    // Ensure directory exists
-    fs::path target = path_from_utf8(save_path);
-    fs::path dir = target.parent_path();
-    ensure_create_directories(dir);
-
-    LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
-
-    // Write via a unique sibling temp file and then rename into place. Readers
-    // should never observe a truncated or half-written registry, and concurrent
-    // writers should not collide on the same temporary path.
-    std::ostringstream tmp_suffix;
-    tmp_suffix << ".tmp."
-               << std::this_thread::get_id() << "."
-               << std::chrono::steady_clock::now().time_since_epoch().count() << "."
-               << reinterpret_cast<std::uintptr_t>(&to_save);
-    fs::path tmp = target;
-    tmp += tmp_suffix.str();
-    {
-        std::ofstream file(tmp, std::ios::trunc);
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file for writing: " + path_to_utf8(tmp));
-        }
-        try {
-            file << to_save.dump(2);
-            file.flush();
-        } catch (const json::exception& e) {
-            throw std::runtime_error("Failed to write JSON to file " + path_to_utf8(tmp) + ": " + e.what());
-        }
-        if (!file) {
-            throw std::runtime_error("Failed to flush JSON file: " + path_to_utf8(tmp));
-        }
-    }
-
-    std::error_code ec;
-    fs::rename(tmp, target, ec);
-#ifdef _WIN32
-    if (ec) {
-        ec.clear();
-        fs::remove(target, ec);
-        ec.clear();
-        fs::rename(tmp, target, ec);
-    }
-#endif
-    if (ec) {
-        std::error_code cleanup_ec;
-        fs::remove(tmp, cleanup_ec);
-        throw std::runtime_error("Failed to replace JSON file " + save_path + ": " + ec.message());
-    }
-}
-
 void ModelManager::save_user_models(const json& user_models) {
-    save_user_json(get_user_models_file(), user_models);
+    save_json_atomic(get_user_models_file(), user_models);
 }
 
 void ModelManager::save_model_options(const ModelInfo& info) {
@@ -2284,24 +2123,15 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     const std::string id = cache_key_to_canonical_id(info.model_name);
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
 
-    json snapshot;
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        recipe_options_[id] = info.recipe_options.to_json();
-        snapshot = recipe_options_;
-        update_model_options_in_cache_locked(info);
-    }
-    save_user_json(get_recipe_options_file(), snapshot);
+    recipe_options_.replace(id, info.recipe_options.to_json());
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    update_model_options_in_cache_locked(info);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
     const std::string id = cache_key_to_canonical_id(resolve_model_name(model_name));
-
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    if (recipe_options_.contains(id) && recipe_options_[id].is_object()) {
-        return recipe_options_[id];
-    }
-    return json::object();
+    return recipe_options_.entry(id);
 }
 
 RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
@@ -2383,43 +2213,19 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
 
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
 
-    json saved;
-    json snapshot;
-    {
+    const json saved = merge ? recipe_options_.merge(id, options)
+                             : recipe_options_.replace(id, options);
+
+    if (have_info) {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        saved = merge && recipe_options_.contains(id) && recipe_options_[id].is_object()
-                    ? recipe_options_[id]
-                    : json::object();
-        if (merge) {
-            for (const auto& [key, value] : options.items()) {
-                if (value.is_null()) {
-                    saved.erase(key);
-                } else {
-                    saved[key] = value;
-                }
-            }
-        } else if (options.is_object()) {
-            saved = options;
-        }
-
-        if (saved.empty()) {
-            recipe_options_.erase(id);
-        } else {
-            recipe_options_[id] = saved;
-        }
-        snapshot = recipe_options_;
-
-        if (have_info) {
-            // Same layering as build_cache(), so the two can't drift.
-            info.recipe_options = build_recipe_options(
-                info, registry_recipe_options_locked(cache_key), id, json{{id, saved}});
-            update_model_options_in_cache_locked(info);
-        }
+        // Same layering as build_cache(), so the two can't drift.
+        info.recipe_options = build_recipe_options(
+            info, registry_recipe_options_locked(cache_key), id, json{{id, saved}});
+        update_model_options_in_cache_locked(info);
+    } else {
+        invalidate_models_cache();
     }
 
-    if (!have_info) invalidate_models_cache();
-
-    save_user_json(get_recipe_options_file(), snapshot);
     return saved;
 }
 
@@ -3899,12 +3705,13 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Populate recipe options. recipe_options.json is keyed by canonical ID
-    // (user.*, extra.*, builtin.*) - built-ins are keyed bare in the cache, so
-    // we translate before lookup.
+    // One snapshot of the saved options for the whole pass, so a concurrent
+    // options write cannot split the build across two states.
+    const json saved_options = recipe_options_.all();
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
-        info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
+        info.recipe_options =
+            build_recipe_options(info, jro, cache_key_to_canonical_id(name), saved_options);
         if (info.recipe_options.to_json().contains("auto_update") &&
             info.recipe_options.to_json()["auto_update"].is_boolean()) {
             info.auto_update = info.recipe_options.to_json()["auto_update"].get<bool>();
@@ -4095,7 +3902,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     parse_extras(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
         ? (*model_json)["recipe_options"] : json(nullptr);
-    info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(model_name), recipe_options_);
+    info.recipe_options = build_recipe_options(
+        info, jro, cache_key_to_canonical_id(model_name), recipe_options_.all());
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     parse_model_source_fields(info, *model_json);
