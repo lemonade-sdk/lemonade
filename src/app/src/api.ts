@@ -795,11 +795,13 @@ class LemonadeAPI {
       // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35).
       // Substitute it when the configured host is localhost/127.0.0.1 so that all
       // API calls and WebSocket connections resolve to the serving machine, not the phone.
+      // *.localhost is always loopback; Tauri on Windows serves the UI from tauri.localhost
+      // and intercepts every request to that host, so substituting it would never reach lemond.
       const parsed = new URL(raw);
       const hasBuildTimeOverride = Boolean(process.env.LEMONADE_BASE_URL);
       if (!hasExplicitUrl && !hasBuildTimeOverride && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
         const winHost = window.location.hostname;
-        if (winHost && winHost !== 'localhost' && winHost !== '127.0.0.1' && winHost !== '[::1]' && winHost !== '::1') {
+        if (winHost && winHost !== 'localhost' && !winHost.endsWith('.localhost') && winHost !== '127.0.0.1' && winHost !== '[::1]' && winHost !== '::1') {
           parsed.hostname = winHost;
         }
       }
