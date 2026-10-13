@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Why AnythingLLM is moving from Ollama to Lemonade and llama.cpp",
+        url: "https://anythingllm.com/blog/lemonade-llama-cpp",
+        date: "October 5, 2026",
+        description: "AnythingLLM Desktop is replacing its bundled Ollama engine with llama.cpp managed by Lemonade, citing faster inference, fewer breaking updates, direct Hugging Face downloads, and a much smaller install.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/anythingllm/logo.png",
+        imageStyle: "width: 100%; height: 100%; object-fit: contain; background: #fff; ",
+        type: "blog"
+        },
+    {
         title: "The easiest free local coding setup with Pi and Qwen3.8 27B!",
         url: "https://www.youtube.com/watch?v=AT10gUUgTrE",
         date: "August 19, 2026",
