@@ -1043,6 +1043,7 @@ set(SOURCES_CORE
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/recipe_options_store.cpp
+    src/cpp/server/models/registry_id.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/server_process.cpp
@@ -3076,6 +3077,19 @@ if(BUILD_TESTING AND EXISTS "${_CHANGE_NOTIFIER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ChangeNotifierTest CI ON COMMAND test_change_notifier)
+endif()
+
+set(_REGISTRY_IDENTITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_identity.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_REGISTRY_IDENTITY_TEST_SRC}")
+    add_executable(test_registry_identity
+        test/cpp/test_registry_identity.cpp
+    )
+    target_link_libraries(test_registry_identity PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(RegistryIdentityTest CI ON COMMAND test_registry_identity)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC

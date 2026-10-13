@@ -1,5 +1,7 @@
 #include "lemon/model_registry.h"
 
+#include "lemon/models/registry_id.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -819,12 +821,21 @@ RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
     return merged;
 }
 
+// Until RemoteRegistrySource is gone, this is the only bridge from it to the
+// descriptor table; the enum carries no facts of its own.
+const models::RegistryDescriptor& descriptor_for(RemoteRegistrySource source) {
+    const models::RegistryId& id = source == RemoteRegistrySource::ModelScope
+                                       ? models::modelscope_descriptor().id
+                                       : models::huggingface_descriptor().id;
+    return *models::descriptor_for(id);
+}
+
 RemoteRegistrySource parse_remote_registry_source(const std::string& source) {
-    const std::string normalized = lower_copy(source);
-    if (normalized.empty() || normalized == "huggingface" || normalized == "hf") {
+    const auto id = models::registry_id_from(source);
+    if (id == models::huggingface_descriptor().id) {
         return RemoteRegistrySource::HuggingFace;
     }
-    if (normalized == "modelscope" || normalized == "ms") {
+    if (id == models::modelscope_descriptor().id) {
         return RemoteRegistrySource::ModelScope;
     }
     throw std::invalid_argument("Unsupported model source '" + source +
@@ -832,21 +843,21 @@ RemoteRegistrySource parse_remote_registry_source(const std::string& source) {
 }
 
 std::string remote_registry_source_name(RemoteRegistrySource source) {
-    return source == RemoteRegistrySource::ModelScope ? "modelscope" : "huggingface";
+    return descriptor_for(source).id.str();
 }
 
 std::string remote_registry_display_name(RemoteRegistrySource source) {
-    return source == RemoteRegistrySource::ModelScope ? "ModelScope" : "Hugging Face";
+    return descriptor_for(source).display_name;
 }
 
 std::string remote_registry_scheme_prefix(RemoteRegistrySource source) {
-    return source == RemoteRegistrySource::ModelScope ? "ms" : "hf";
+    return descriptor_for(source).scheme_prefix;
 }
 
 bool is_remote_registry_source(const std::string& source) {
-    const std::string normalized = lower_copy(source);
-    return normalized == "huggingface" || normalized == "hf" ||
-           normalized == "modelscope" || normalized == "ms";
+    // Unlike parse, which reads an absent source as the default host, this asks
+    // whether the caller named one.
+    return !source.empty() && models::registry_id_from(source).has_value();
 }
 
 bool detect_registry_url(const std::string& value,
@@ -1039,9 +1050,7 @@ std::string registry_tree_snapshot_id(RemoteRegistrySource source,
 
 std::string registry_repo_cache_dir_name(const std::string& repo_id,
                                          RemoteRegistrySource source) {
-    std::string cache_dir_name = source == RemoteRegistrySource::ModelScope
-        ? "modelscope--models--"
-        : "models--";
+    std::string cache_dir_name = descriptor_for(source).cache_dir_prefix;
     for (char c : repo_id) {
         cache_dir_name += (c == '/') ? "--" : std::string(1, c);
     }
