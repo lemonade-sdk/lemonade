@@ -88,7 +88,7 @@ nav:
     - Specs:
       - Writing Guide: dev/specs/spec-writing-guide.md
       - Container Backends: dev/specs/container-backends.md
-      - Model Management Spec: dev/specs/model-management.md
+      - Model Management: dev/specs/model-management.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md
