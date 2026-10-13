@@ -1471,9 +1471,9 @@ jobs:
 
   # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
   # runners, which have the memory for DS4 and Halogen models. Each job starts
-  # on a fresh machine, so it installs a container tool when the image lacks
-  # one, and downloads its models into the workspace volume before the tests,
-  # whose per-request timeouts are shorter than a cold download.
+  # on a fresh machine, so it downloads its models into the workspace volume
+  # before the tests, whose per-request timeouts are shorter than a cold
+  # download.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
@@ -1508,14 +1508,8 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
-      - name: Install a container tool
-        run: |
-          set -e
-          if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y podman
-          fi
-          if command -v podman >/dev/null 2>&1; then podman --version; else docker --version; fi
+      - name: Print the Docker version
+        run: docker --version
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
