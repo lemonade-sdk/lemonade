@@ -124,6 +124,22 @@ int main() {
     fs::path whole_shared_repo = hf_root / "models--org--wholeshared";
     write_file(whole_shared_repo / "snapshots" / "snap" / "b.gguf.partial", "partial");
 
+    // Selective cleanup walks every snapshot entry, so it only runs while the
+    // repo is occupied. The sibling file below is what keeps it that way.
+
+    // A path variant, the shape every Anima/Comfy-Org entry uses. The marker
+    // sits under a snapshot revision, so the variant is not the whole path.
+    fs::path path_repo = make_repo(hf_root, "models--org--pathvar", {"sibling.gguf"});
+    write_file(path_repo / "snapshots" / "snap" / "split_files" / "diffusion_models" /
+               "anima-base-v1.0.safetensors.partial", "partial");
+
+    // A quantization-only variant, where a same-named directory is not a marker
+    // and the real file carries the token in a sharded stem.
+    fs::path shard_repo = make_repo(hf_root, "models--org--shard", {"sibling.gguf"});
+    write_file(shard_repo / "snapshots" / "snap" / "Q4_K_M" / "weights.bin", "weights");
+    write_file(shard_repo / "snapshots" / "snap" / "Q4_K_M-00001-of-00002.gguf.partial",
+               "partial");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -156,6 +172,15 @@ int main() {
         {"wholeshared-a", json{{"checkpoint", "org/wholeshared"}, {"recipe", "llamacpp"}}},
         {"wholeshared-b", json{{"checkpoint", "org/wholeshared:b.gguf"},
                                {"recipe", "llamacpp"}}},
+        {"pathvar-a", json{{"checkpoint",
+                            "org/pathvar:split_files/diffusion_models/"
+                            "anima-base-v1.0.safetensors"},
+                           {"recipe", "llamacpp"}}},
+        {"pathvar-b", json{{"checkpoint", "org/pathvar:sibling.gguf"},
+                           {"recipe", "llamacpp"}}},
+        {"shard-a", json{{"checkpoint", "org/shard:Q4_K_M"}, {"recipe", "llamacpp"}}},
+        {"shard-b", json{{"checkpoint", "org/shard:sibling.gguf"},
+                         {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -272,6 +297,26 @@ int main() {
         manager.delete_model("user.wholeshared-a");
         check("a variantless model does not claim a download another model may own",
               fs::exists(whole_shared_repo / "snapshots" / "snap" / "b.gguf.partial"));
+
+        // The variant spells out a repo-relative path, but the marker also
+        // carries the snapshot revision in front of it.
+        manager.delete_model("user.pathvar-a");
+        check("a marker under a snapshot revision matches a path variant",
+              !fs::exists(path_repo / "snapshots" / "snap" / "split_files" /
+                          "diffusion_models" / "anima-base-v1.0.safetensors.partial"));
+        check("the occupying model's file survives a path-variant cleanup",
+              fs::exists(path_repo / "snapshots" / "snap" / "sibling.gguf"));
+
+        // Selective cleanup touches resume markers and nothing else. A folder
+        // named after the variant is not one, and removing it as a file throws.
+        manager.delete_model("user.shard-a");
+        check("a directory named after the variant survives selective cleanup",
+              fs::exists(shard_repo / "snapshots" / "snap" / "Q4_K_M" / "weights.bin"));
+        check("a flat shard marker still matches its quantization variant",
+              !fs::exists(shard_repo / "snapshots" / "snap" /
+                          "Q4_K_M-00001-of-00002.gguf.partial"));
+        check("the occupying model's file survives a shard cleanup",
+              fs::exists(shard_repo / "snapshots" / "snap" / "sibling.gguf"));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache

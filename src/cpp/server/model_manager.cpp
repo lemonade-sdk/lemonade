@@ -867,6 +867,32 @@ static bool variant_claims_whole_repo(const std::string& variant) {
     return variant.empty() || variant == "*";
 }
 
+static std::string strip_shard_suffix(const std::string& filename) {
+    const size_t dot = filename.find_last_of('.');
+    const std::string stem = dot == std::string::npos ? filename : filename.substr(0, dot);
+    const std::string extension = dot == std::string::npos ? "" : filename.substr(dot);
+
+    const size_t of = stem.rfind("-of-");
+    if (of == std::string::npos) return filename;
+
+    auto all_digits = [&stem](size_t from, size_t to) {
+        if (from >= to) return false;
+        for (size_t i = from; i < to; ++i) {
+            if (stem[i] < '0' || stem[i] > '9') return false;
+        }
+        return true;
+    };
+    if (!all_digits(of + 4, stem.size())) return filename;
+
+    size_t index_begin = of;
+    while (index_begin > 0 && stem[index_begin - 1] >= '0' && stem[index_begin - 1] <= '9') {
+        --index_begin;
+    }
+    if (index_begin == of || index_begin == 0 || stem[index_begin - 1] != '-') return filename;
+
+    return stem.substr(0, index_begin - 1) + extension;
+}
+
 // Mirrors resolve_gguf_path()'s matching so attribution agrees with resolution.
 static bool file_matches_variant(const std::string& relative_name,
                                  const std::string& variant) {
@@ -878,34 +904,36 @@ static bool file_matches_variant(const std::string& relative_name,
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return value;
     };
+    auto ends_with = [](const std::string& value, const std::string& tail) {
+        return value.size() >= tail.size() &&
+               value.compare(value.size() - tail.size(), tail.size(), tail) == 0;
+    };
 
     const std::string rel = normalize(relative_name);
     const std::string want = normalize(variant);
+
+    if (rel == want || ends_with(rel, "/" + want)) return true;
+    if (rel.find(want + "/") != std::string::npos) return true;
+
     const size_t slash = rel.find_last_of('/');
     const std::string base = slash == std::string::npos ? rel : rel.substr(slash + 1);
-
-    if (rel == want || base == want) return true;
-
     const std::string quant_suffix = want + ".gguf";
-    if (base.size() >= quant_suffix.size() &&
-        base.compare(base.size() - quant_suffix.size(), quant_suffix.size(),
-                     quant_suffix) == 0) {
-        return true;
+    for (const std::string& candidate : {base, strip_shard_suffix(base)}) {
+        if (candidate == want || ends_with(candidate, quant_suffix)) return true;
     }
-
-    return rel.find(want + "/") != std::string::npos;
+    return false;
 }
 
 static bool partial_belongs_to_variant(const fs::path& partial_path,
                                        const fs::path& snapshots_dir,
                                        const std::string& variant) {
-    std::string rel = normalized_relative_path(partial_path, snapshots_dir);
-
     static const std::string kMarker = ".partial";
-    if (rel.size() > kMarker.size() &&
-        rel.compare(rel.size() - kMarker.size(), kMarker.size(), kMarker) == 0) {
-        rel.resize(rel.size() - kMarker.size());
+    if (partial_path.extension() != kMarker || safe_is_directory(partial_path)) {
+        return false;
     }
+
+    std::string rel = normalized_relative_path(partial_path, snapshots_dir);
+    rel.resize(rel.size() - kMarker.size());
     return file_matches_variant(rel, variant);
 }
 
@@ -1011,7 +1039,8 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         if (ec) break;
 
         const fs::path partial_path = entry.path();
-        if (!partial_belongs_to_variant(partial_path, snapshots_dir, variant)) {
+        if (safe_is_directory(partial_path) ||
+            !partial_belongs_to_variant(partial_path, snapshots_dir, variant)) {
             continue;
         }
 
