@@ -10,6 +10,15 @@ const newsData = [
         type: "blog"
         },
     {
+        title: "Lemonade 11.9 Local AI Server Released With Super Exciting AMD ROCm HRX Backend",
+        url: "https://www.phoronix.com/news/Lemonade-11.9-ROCm-HRX",
+        date: "September 2, 2026",
+        description: "Phoronix covers the Lemonade 11.9 release: an experimental llama.cpp backend built on AMD's new ROCm HRX for Radeon RX 7900 series GPUs and Strix Halo, plus Qwen3-Next support in the pinned llama.cpp.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "The easiest free local coding setup with Pi and Qwen3.8 27B!",
         url: "https://www.youtube.com/watch?v=AT10gUUgTrE",
         date: "August 19, 2026",
