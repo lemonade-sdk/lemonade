@@ -1225,28 +1225,34 @@ void Router::unload_model(const std::string& model_name) {
 void Router::unload_model_canonical(const std::string& canonical_model_name,
                                     const std::string& requested_model_name) {
     std::unique_lock<std::mutex> lock(load_mutex_);
-    bool waited = false;
+    uint64_t waited_for_instance = 0;
     while (true) {
         wait_for_slot_clearance(lock);
         WrappedServer* server = find_server_by_model_name(canonical_model_name);
+        if (waited_for_instance != 0 &&
+            (!server || server->get_instance_id() != waited_for_instance)) {
+            // A model loaded under the same name meanwhile was not part of this request.
+            LOG(INFO, "Router") << "Unload of " << canonical_model_name
+                                << " finished elsewhere: the instance it waited for was removed"
+                                << std::endl;
+            return;
+        }
         if (!server) {
-            if (waited) {
-                return;
-            }
             throw std::runtime_error("Model not loaded: " + requested_model_name);
         }
 
-        // Requests acquire a model only while holding load_mutex_, so a model seen
-        // idle here cannot pick up new work before evict_server() unloads it.
-        if (!server->is_busy() || !server->is_backend_alive()) {
+        // Requests acquire a model only while holding load_mutex_, and
+        // try_evict_if_idle() commits idle -> UNLOADED under the server's own lock.
+        if (!server->is_backend_alive() || server->try_evict_if_idle() ||
+            (server->get_state() == ModelState::UNLOADED && !server->is_busy())) {
             evict_server(server);
             return;
         }
 
-        if (!waited) {
+        if (waited_for_instance == 0) {
             LOG(INFO, "Router") << "Unload of " << canonical_model_name
                                 << " waits for in-flight requests" << std::endl;
-            waited = true;
+            waited_for_instance = server->get_instance_id();
         }
 
         // Waiting with load_mutex_ held would stall every other model and
