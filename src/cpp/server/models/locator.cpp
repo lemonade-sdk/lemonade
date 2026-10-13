@@ -14,7 +14,7 @@ std::string variant_from_checkpoint(const std::string& checkpoint) {
 }
 
 Locator::Locator(LocatorScheme scheme, std::string path, std::string variant,
-                 std::optional<RemoteRegistrySource> registry, std::string revision)
+                 std::optional<RegistryId> registry, std::string revision)
     : scheme(scheme),
       path(std::move(path)),
       variant(std::move(variant)),

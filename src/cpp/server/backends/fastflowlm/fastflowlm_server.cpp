@@ -67,7 +67,7 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
-                                             RemoteRegistrySource source) {
+                                             RegistryId source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -171,9 +171,9 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    RemoteRegistrySource source = model_manager_
+    RegistryId source = model_manager_
         ? model_manager_->download_source_for(model_info)
-        : RemoteRegistrySource::HuggingFace;
+        : models::huggingface_descriptor().id;
 
     download_model(model_info.checkpoint(), do_not_upgrade, source);
 
@@ -430,9 +430,9 @@ public:
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
                         const BackendOpsContext& ctx) const override {
-        RemoteRegistrySource source = ctx.model_manager
+        RegistryId source = ctx.model_manager
             ? ctx.model_manager->download_source_for(info)
-            : RemoteRegistrySource::HuggingFace;
+            : models::huggingface_descriptor().id;
         flm_download(info.checkpoint(), do_not_upgrade, progress, source);
     }
 

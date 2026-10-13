@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-using lemon::RemoteRegistrySource;
+using lemon::RegistryId;
 using lemon::models::Locator;
 using lemon::models::LocatorScheme;
 using lemon::models::ModelIndex;
@@ -56,7 +56,7 @@ static void test_registry_locator() {
     check_eq("repo id", locator.repo_id(), "org/repo");
     check_eq("variant", locator.variant, "weight.gguf");
     check("the registry resolves to the default provider",
-          locator.registry && *locator.registry == RemoteRegistrySource::HuggingFace);
+          locator.registry && *locator.registry == lemon::models::huggingface_descriptor().id);
     check_eq("renders as hf://repo:variant", locator.to_string(), "hf://org/repo:weight.gguf");
 
     const Locator bare = Locator::from_checkpoint("org/repo", "");
@@ -93,7 +93,7 @@ static void test_registry_is_named() {
     const Locator other = Locator::from_checkpoint("org/repo:model.gguf", "modelscope");
     check("a non-default source is still a registry model", other.is_registry());
     check("the registry is remembered", other.registry &&
-          *other.registry == RemoteRegistrySource::ModelScope);
+          *other.registry == lemon::models::modelscope_descriptor().id);
     check_eq("the registry keeps its own prefix", other.to_string(),
              "ms://org/repo:model.gguf");
 
@@ -110,14 +110,14 @@ static void test_source_aliases_are_normalized() {
     for (const char* alias : aliases) {
         const Locator locator = Locator::from_checkpoint("org/repo", alias);
         check(std::string(alias) + " normalizes to the default provider",
-              locator.registry && *locator.registry == RemoteRegistrySource::HuggingFace);
+              locator.registry && *locator.registry == lemon::models::huggingface_descriptor().id);
         check_eq(std::string(alias) + " renders the canonical prefix", locator.to_string(),
                  "hf://org/repo");
     }
 
     const Locator short_other = Locator::from_checkpoint("org/repo", "MS");
     check("the short alias for the other registry normalizes",
-          short_other.registry && *short_other.registry == RemoteRegistrySource::ModelScope);
+          short_other.registry && *short_other.registry == lemon::models::modelscope_descriptor().id);
 }
 
 static void test_unknown_source_is_rejected() {

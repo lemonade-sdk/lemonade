@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-using lemon::RemoteRegistrySource;
+using lemon::RegistryId;
 using lemon::models::descriptor_for;
 using lemon::models::huggingface_descriptor;
 using lemon::models::modelscope_descriptor;
@@ -55,8 +55,8 @@ static void test_an_unknown_host_resolves_to_nothing() {
 
 static void test_hosts_keep_their_own_namespace_on_disk() {
     const std::string repo = "Qwen/Qwen3-0.6B-GGUF";
-    const std::string hf = lemon::registry_repo_cache_dir_name(repo, RemoteRegistrySource::HuggingFace);
-    const std::string ms = lemon::registry_repo_cache_dir_name(repo, RemoteRegistrySource::ModelScope);
+    const std::string hf = lemon::registry_repo_cache_dir_name(repo, lemon::models::huggingface_descriptor().id);
+    const std::string ms = lemon::registry_repo_cache_dir_name(repo, lemon::models::modelscope_descriptor().id);
 
     check("one owner/repo cannot collide across hosts", hf != ms);
     check_eq("hugging face keeps its historical directory", hf, "models--Qwen--Qwen3-0.6B-GGUF");
@@ -76,11 +76,11 @@ static void test_revision_semantics_are_per_host() {
 // The strings the API and user_models.json persist must come from the table, so
 // a host added later needs no change outside it.
 static void test_persisted_names_come_from_the_table() {
-    check_eq("source name", lemon::remote_registry_source_name(RemoteRegistrySource::ModelScope),
+    check_eq("source name", lemon::remote_registry_source_name(lemon::models::modelscope_descriptor().id),
              modelscope_descriptor().id.str());
-    check_eq("display name", lemon::remote_registry_display_name(RemoteRegistrySource::HuggingFace),
+    check_eq("display name", lemon::remote_registry_display_name(lemon::models::huggingface_descriptor().id),
              huggingface_descriptor().display_name);
-    check_eq("scheme prefix", lemon::remote_registry_scheme_prefix(RemoteRegistrySource::ModelScope),
+    check_eq("scheme prefix", lemon::remote_registry_scheme_prefix(lemon::models::modelscope_descriptor().id),
              modelscope_descriptor().scheme_prefix);
 }
 
