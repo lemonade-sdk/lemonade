@@ -36,6 +36,7 @@ set(COMMON_SOURCES
     # Compile the provider implementation into the standalone CLI as well; the
     # CLI does not link lemonade-server-core, where this source is otherwise built.
     ../server/model_registry.cpp
+    ../server/models/registry_id.cpp
     agent_launcher.cpp
     agent_config_file.cpp
     junie_profile.cpp
