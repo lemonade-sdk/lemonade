@@ -331,11 +331,7 @@ def render_models_js(recipes: dict) -> str:
 
 
 def render_config_example(config: dict) -> str:
-    # The canonical config.json, straight from a fresh lemond's /internal/config.
-    # `port` is the only environment-dependent field (it reflects the launch port);
-    # normalize it to the documented default.
-    cfg = dict(config)
-    cfg["port"] = 13305
+    cfg = {key: value for key, value in config.items() if key != "_generated"}
     return "```json\n" + json.dumps(cfg, indent=2) + "\n```"
 
 
@@ -508,13 +504,13 @@ def main() -> int:
     binary = find_lemond(args.lemond)
     with Lemond(binary) as server:
         info = server.system_info()
-        config = server.config()
         defaults_text = server.config_defaults_text()
+    config = json.loads(defaults_text)
     recipes = info.get("recipes", {})
     if not recipes:
         sys.exit("/system-info returned no recipes")
     if not config:
-        sys.exit("/internal/config returned nothing")
+        sys.exit("/internal/config/defaults returned nothing")
 
     # Each target doc maps marker IDs -> generated content. backends-reference.md
     # is created from a template if missing; the others must already contain their

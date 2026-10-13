@@ -6,7 +6,10 @@
 //     availability side table, so incremental single-model updates cannot
 //     clobber it.
 
+#include "lemon/config_file.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
 
 #include <cstdio>
@@ -53,9 +56,30 @@ static void test_pure_set_difference() {
           ModelManager::recipes_missing_all_models({"ds4"}, {"ds4", "llamacpp"}) == S{});
 }
 
-// A size so large no real machine can hold it, so the model is always
-// memory-filtered regardless of where the test runs.
+// Exceed any real machine's memory so filtering checks are independent of host RAM.
 static constexpr double HUGE_GB = 1.0e6;
+
+static void test_extensor_size_filter_bypass(ModelManager& manager) {
+    ModelInfo huge_resident = model("extensor", HUGE_GB);
+    huge_resident.min_resident_gb = HUGE_GB;
+    const std::map<std::string, ModelInfo> models = {
+        {"ExtensorHuge", model("extensor", HUGE_GB)},
+        {"ExtensorHugeResident", huge_resident},
+        {"ExtensorTiny", model("extensor", 0.01)},
+    };
+
+    const bool supported = lemon::SystemInfo::check_recipe_supported("extensor").empty();
+    std::printf("EXTENSOR supported on this host: %s\n", supported ? "yes" : "no");
+    const auto filtered = manager.filter_models_by_backend(models, true);
+    check("EXTENSOR availability follows hardware support regardless of size",
+          filtered.size() == (supported ? models.size() : 0));
+    check("EXTENSOR file size does not cause rejection",
+          (filtered.count("ExtensorHuge") == 1) == supported);
+    check("EXTENSOR resident estimate does not cause rejection",
+          (filtered.count("ExtensorHugeResident") == 1) == supported);
+    check("EXTENSOR is never hidden by model size",
+          manager.recipes_all_models_filtered_snapshot().count("extensor") == 0);
+}
 
 // The memory heuristic only sees models that already cleared the hardware/OS
 // gate (check_recipe_supported) and only runs when system RAM is readable, so
@@ -129,10 +153,15 @@ int main() {
     fs::path temp = fs::temp_directory_path() / "lemonade-recipe-hiding-test";
     fs::create_directories(temp);
     lemon::utils::set_cache_dir(temp.string());
+    lemon::RuntimeConfig config(lemon::ConfigFile::base_defaults());
+    config.set({{"offline", true}, {"no_fetch_executables", false},
+                {"disable_model_filtering", false}});
+    lemon::RuntimeConfig::set_global(&config);
 
     test_pure_set_difference();
 
     ModelManager manager;
+    test_extensor_size_filter_bypass(manager);
     // A vacuous pass is exactly what this test guards against, so a host where
     // no recipe reaches the memory heuristic is reported as a failure rather
     // than skipped silently.
@@ -145,6 +174,7 @@ int main() {
         test_incremental_pass_does_not_clobber(manager, probe);
     }
 
+    lemon::RuntimeConfig::set_global(nullptr);
     fs::remove_all(temp);
 
     if (g_failures == 0) {

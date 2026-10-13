@@ -160,6 +160,23 @@ int main() {
         lemon::RuntimeConfig::set_global(nullptr);
     }
 
+    {
+        const std::string override_path = std::filesystem::current_path().string();
+        const std::string config_path = std::filesystem::temp_directory_path().string();
+        lemon::RuntimeConfig config(lemon::json{{"extensor", {{"rocm_bin", config_path}}}});
+        lemon::RuntimeConfig::set_global(&config);
+        set_env_var("LEMONADE_EXTENSOR_ROCM_BIN", override_path);
+
+        check(BackendUtils::find_external_backend_binary("extensor", "rocm") == override_path,
+              "EXTENSOR uses the standard backend binary environment override");
+        check(BackendUtils::get_bin_config_value("extensor", "rocm") == override_path,
+              "EXTENSOR environment override takes precedence over config");
+        clear_env_var("LEMONADE_EXTENSOR_ROCM_BIN");
+        check(BackendUtils::find_external_backend_binary("extensor", "rocm") == config_path,
+              "EXTENSOR falls back to configured rocm_bin");
+        lemon::RuntimeConfig::set_global(nullptr);
+    }
+
     if (g_failures > 0) {
         std::cerr << "Total failures: " << g_failures << std::endl;
         return 1;

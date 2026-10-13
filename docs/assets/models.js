@@ -6,6 +6,7 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 const RECIPE_PRIORITY = [
   'acestep',
   'ds4',
+  'extensor',
   'flm',
   'llamacpp-hrx',
   'kokoro',
@@ -30,6 +31,7 @@ const RECIPE_DISPLAY_NAMES = {
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
   vllm: 'vLLM ROCm (experimental)',
+  extensor: 'EXTENSOR ROCm',
   thenoise: 'thenoise',
   ds4: 'DwarfStar4 (experimental)',
   thinksound: 'ThinkSound',

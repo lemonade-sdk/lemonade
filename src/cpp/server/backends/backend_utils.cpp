@@ -459,12 +459,13 @@ namespace lemon::backends {
         return version;
     }
 
-    void BackendUtils::install_from_github(const BackendSpec& spec,
+    void BackendUtils::install_from_release(const BackendSpec& spec,
                                            const std::string& expected_version,
                                            const std::string& repo,
                                            const std::string& asset_pattern,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb) {
+                                           DownloadProgressCallback progress_cb,
+                                           const std::string& download_url) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -513,8 +514,9 @@ namespace lemon::backends {
             // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
             // version in sd-cpp's Darwin asset) to the concrete published name
             // before building any download URL. No-op when there is no wildcard.
-            const std::string filename =
-                resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
+            const std::string filename = download_url.empty()
+                ? resolve_asset_wildcard(repo, expected_version, asset_pattern, spec)
+                : asset_pattern;
 
             // Stage the new install in a sibling directory so the currently
             // installed (working) binary is left untouched until the download is
@@ -597,7 +599,7 @@ namespace lemon::backends {
 
             bool is_split = false;
             std::vector<std::string> part_assets;
-            if (spec.supports_split_archive) {
+            if (download_url.empty() && spec.supports_split_archive) {
                 const std::string partcount_url = base_download_url + base + ".partcount";
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
@@ -636,7 +638,7 @@ namespace lemon::backends {
                 // 404 = no manifest = single-file release; fall through.
             }
             if (!is_split) {
-                std::string url = base_download_url + filename;
+                const std::string url = release_asset_url(repo, expected_version, filename, download_url);
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
                 utils::ProgressCallback http_progress_cb;

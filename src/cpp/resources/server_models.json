@@ -64,6 +64,39 @@
         ],
         "size": 6.2
     },
+    "Qwen3.6-35B-A3B-EXTENSOR": {
+        "checkpoint": "amd/Qwen3.6-35B-A3B-EXTENSOR:Qwen3.6-35B-A3B-EXTENSOR-ROCmFP4-v1.extensor.gguf",
+        "recipe": "extensor",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 17.9
+    },
+    "DeepSeek-V4-Flash-EXTENSOR": {
+        "checkpoint": "amd/DeepSeek-V4-Flash-EXTENSOR:DeepSeek-V4-Flash-EXTENSOR-MXFP4-Tile16-v2.extensor.gguf",
+        "recipe": "extensor",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 145.1
+    },
+    "GLM-5.2-EXTENSOR": {
+        "checkpoint": "amd/GLM-5.2-EXTENSOR:GLM-5.2-EXTENSOR-Q2_K-Experts-v1.extensor.gguf",
+        "recipe": "extensor",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 240.8
+    },
     "AMD-OLMo-1B-SFT-DPO-Hybrid": {
         "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
