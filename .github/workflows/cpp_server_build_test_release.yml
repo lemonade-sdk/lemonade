@@ -1100,7 +1100,7 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu vulkan"
+            backends: "cpu rocm vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: thenoise
             script: server_thenoise.py
