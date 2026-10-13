@@ -3083,6 +3083,35 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_ALIAS_TEST_SRC}")
     add_cpp_ci_test(ModelAliasTest CI ON COMMAND test_model_alias)
 endif()
 
+# Deletion semantics per checkpoint source. Runs locally but stays out of CI: the
+# imported-model case asserts the spec'd behaviour (unregister, keep the user's bytes)
+# that delete_model() does not implement yet.
+set(_MODEL_DELETION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_deletion.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_DELETION_TEST_SRC}")
+    add_executable(test_model_deletion test/cpp/test_model_deletion.cpp)
+    target_link_libraries(test_model_deletion PRIVATE lemonade-server-core)
+    add_dependencies(test_model_deletion copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelDeletionTest CI OFF COMMAND test_model_deletion)
+endif()
+
+# Golden of the published model cache plus the file inventory and orphan sweep, the
+# three build_cache() readers that later steps rewrite.
+set(_STORE_SNAPSHOT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_snapshot.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_SNAPSHOT_TEST_SRC}")
+    add_executable(test_store_snapshot test/cpp/test_store_snapshot.cpp)
+    target_link_libraries(test_store_snapshot PRIVATE lemonade-server-core)
+    add_dependencies(test_store_snapshot copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(StoreSnapshotTest CI ON COMMAND test_store_snapshot)
+endif()
+
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
 # embed/run_classifier/chat lambdas to Router-style JSON calls.
 set(_ROUTING_CLASSIFIER_SERVICES_TEST_SRC
