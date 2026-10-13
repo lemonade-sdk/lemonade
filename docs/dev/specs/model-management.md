@@ -133,8 +133,6 @@ flowchart TD
   RES --> LA
 ```
 
-Every arrow points down, and `A → B` means A calls or reads B. Nothing points at `ModelManager` and no component reaches upward, so the graph is a DAG with the facade on top, which is the same invariant the [facade rules](#modelmanager-facade) state in words. A component that would need an upward arrow is a consumer of change, and [Change Notification](#change-notification) is what it reads instead.
-
 `ModelManager` is the composition root: from one `ModelManagerConfig` it builds, in this order, the change notifier, the alias manager, the recipe-options store, the artifact store, the transfer mechanism, the catalog set, the store, the artifact resolver, the ingest use case and the sync service. `Server` fills in the config — cache directory, config directory, extra-models directory, the installed-backend availability probe, the cloud provider registry — constructs the facade once, and hands it to routes, gateways and routing. A test or an embedder builds the same facade over fixture paths and fixture catalogs, which is the one injection point model management offers.
 
 Catalogs and artifact sources stay separate types because a catalog entry pointing at Qwen on Hugging Face resolves to two different objects: the document that names the model, and the repository hosting its bytes. `ArtifactRef` is the join — the value a catalog emits and a source consumes. For an imported directory one class may implement both interfaces; the types stay split because that is the exception.
