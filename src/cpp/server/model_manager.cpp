@@ -3,6 +3,7 @@
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/artifact_transfer.h>
+#include <lemon/models/catalog.h>
 #include <lemon/models/locator.h>
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
@@ -2093,6 +2094,7 @@ RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, c
 // The model's own `recipe_options` block from user_models.json/server_models.json,
 // i.e. the layer between image_defaults and what the user saved.
 json ModelManager::registry_recipe_options(const std::string& cache_key) {
+    // Guards user_models_ / server_models_, which the snapshot does not carry.
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     return registry_recipe_options_locked(cache_key);
 }
@@ -2239,17 +2241,14 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
     build_cache();
 
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
-
-
+        auto snapshot = std::atomic_load(&store_snapshot_);
         std::unordered_set<std::string> target_canonicals;
         for (const auto& t : targets) {
-            auto it = public_model_aliases_.find(t);
-            target_canonicals.insert(it != public_model_aliases_.end() ? it->second : t);
+            std::string canonical_name = snapshot->canonical_for(t);
+            target_canonicals.insert(canonical_name.empty() ? t : canonical_name);
         }
 
-        for (const auto& [name, info] : models_cache_) {
+        for (const auto& [name, info] : snapshot->models) {
             if (!info.downloaded) {
                 continue;
             }
@@ -2508,10 +2507,12 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
         } catch (const RegistryNotFoundError& e) {
             LOG(DEBUG, "ModelManager")
                 << e.what() << ", skipping update check" << std::endl;
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            auto snapshot = std::atomic_load(&store_snapshot_);
             for (const auto& model_name : entry.model_names) {
-                const auto pub_it = canonical_public_names_.find(model_name);
-                std::string pub_name = pub_it != canonical_public_names_.end() ? pub_it->second : model_name;
+                std::string pub_name = snapshot->public_name_for(model_name);
+                if (pub_name.empty()) {
+                    pub_name = model_name;
+                }
                 result.failed_models[pub_name] = e.what();
             }
 
@@ -2521,17 +2522,20 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
                 << entry.repo_id
                 << " on " << entry.registry_source
                 << ": " << e.what() << std::endl;
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            auto snapshot = std::atomic_load(&store_snapshot_);
             for (const auto& model_name : entry.model_names) {
-                const auto pub_it = canonical_public_names_.find(model_name);
-                std::string pub_name = pub_it != canonical_public_names_.end() ? pub_it->second : model_name;
+                std::string pub_name = snapshot->public_name_for(model_name);
+                if (pub_name.empty()) {
+                    pub_name = model_name;
+                }
                 result.failed_models[pub_name] = e.what();
             }
         }
     }
 
+    // Writes update_available into the cached entries, so it publishes on release.
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
 
         for (auto& [name, info] : models_cache_) {
             if (determination_tracker.is_verified(name)) {
@@ -3018,10 +3022,9 @@ json ModelManager::sync_models(const std::vector<std::string>& target_models, bo
                 ModelInfo info;
                 bool found = false;
                 {
-                    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-                    auto it = models_cache_.find(canonical_name);
-                    if (it != models_cache_.end()) {
-                        info = it->second;
+                    auto snapshot = std::atomic_load(&store_snapshot_);
+                    if (const ModelInfo* cached = snapshot->find(canonical_name)) {
+                        info = *cached;
                         found = true;
                     }
                 }
@@ -3566,41 +3569,55 @@ void ModelManager::build_cache() {
         all_models[info.model_name] = info;
     }
 
-    // Step 1.5: Keep registered models attached to their catalog IDs when a
-    // complete HF/ModelScope repository cache also lives in extra_models_dir.
-    // This also suppresses duplicates if both cache roots have the same model;
-    // unrelated GGUFs in extra_models_dir are still discovered normally.
-    std::set<fs::path> registered_extra_paths;
-    if (!extra_models_dir_.empty()) {
-        for (const auto& [name, info] : all_models) {
-            ModelInfo candidate = info;
-            try_resolve_registered_extra_cache(candidate, extra_models_dir_, &registered_extra_paths);
-        }
-    }
+    // Steps 1.5 and 1.6: the sources that scan or list rather than read a JSON
+    // document. Registering them here keeps the set of sources readable in one
+    // place, and a new source is one registration. Everything above already owns
+    // its names, so these catalogs keep an existing entry on conflict.
+    models::CatalogAccumulator accumulated(std::move(all_models));
+    std::vector<std::unique_ptr<models::ModelCatalog>> catalogs;
 
-    std::map<std::string, ModelInfo> discovered_models;
-    try {
-        discovered_models = discover_extra_models(registered_extra_paths);
-    } catch (const std::exception& e) {
-        // External discovery is additive. A filesystem failure in that optional
-        // source must never make built-in or user-registered models disappear.
-        LOG(ERROR, "ModelManager") << "Extra model discovery failed; keeping registered models: "
-                                   << e.what() << std::endl;
-    }
-    for (const auto& [name, info] : discovered_models) {
-        if (all_models.find(name) != all_models.end()) {
+    // An --extra-models-dir scan plus GGUF identification. A registered model
+    // stays attached to its catalog id when a complete repository cache also
+    // lives in the directory, which also suppresses duplicates across cache
+    // roots; unrelated GGUFs are still discovered.
+    catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
+        "extra_models_dir",
+        [this](const models::CatalogAccumulator& claimed) {
+            std::set<fs::path> registered_extra_paths;
+            if (!extra_models_dir_.empty()) {
+                for (const auto& [name, info] : claimed.models()) {
+                    ModelInfo candidate = info;
+                    try_resolve_registered_extra_cache(candidate, extra_models_dir_,
+                                                       &registered_extra_paths);
+                }
+            }
+
+            // External discovery is additive. A filesystem failure in this
+            // optional source must never make built-in or user-registered
+            // models disappear.
+            std::vector<ModelInfo> discovered;
+            try {
+                for (auto& [name, info] : discover_extra_models(registered_extra_paths)) {
+                    discovered.push_back(std::move(info));
+                }
+            } catch (const std::exception& e) {
+                LOG(ERROR, "ModelManager")
+                    << "Extra model discovery failed; keeping registered models: " << e.what()
+                    << std::endl;
+            }
+            return discovered;
+        },
+        [](const std::string& name) {
             LOG(INFO, "ModelManager") << "Warning: Discovered model '" << name
-                      << "' conflicts with another extra.* registration; skipping." << std::endl;
-            continue;
-        }
-        all_models[name] = info;
-    }
+                                      << "' conflicts with another extra.* registration; skipping."
+                                      << std::endl;
+        }));
 
-    // Step 1.6: Dynamic discovery. Backends whose models are supplied at runtime
+    // Dynamic discovery: backends whose models are supplied at runtime
     // (descriptor dynamic_models = true - flm from `flm list`, cloud from each
-    // provider) contribute their models via ops->discover_models(). Each carries
-    // its own downloaded status. Precedence: server/user/extra models win, so we
-    // emplace (don't overwrite). Failures are handled inside each backend's ops.
+    // provider), each model carrying its own downloaded status. The backend is
+    // reached through the catalog's callable, so nothing below this point needs
+    // to know which backend contributed an entry.
     {
         const bool offline = [] {
             auto* cfg = RuntimeConfig::global();
@@ -3623,11 +3640,20 @@ void ModelManager::build_cache() {
                 continue;
             }
 
-            for (auto& m : backends::ops_for(desc->recipe)->discover_models(octx)) {
-                all_models.emplace(m.model_name, std::move(m));
-            }
+            const backends::BackendOps* ops = backends::ops_for(desc->recipe);
+            catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
+                "discovered:" + desc->recipe,
+                [ops, octx](const models::CatalogAccumulator&) {
+                    return ops->discover_models(octx);
+                }));
         }
     }
+
+    for (const auto& catalog : catalogs) {
+        catalog->enumerate(accumulated);
+    }
+
+    all_models = accumulated.take();
 
     // Clients are not guaranteed to handle a model that declares no deployment
     // label. Every ingest path above stamps one; name any model that reached
@@ -4539,20 +4565,26 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Build cache if needed
     build_cache();
     // O(1) lookup - download status is in cache
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto alias_it = public_model_aliases_.find(model_name);
-    const std::string canonical_name = alias_it != public_model_aliases_.end()
-        ? alias_it->second
-        : model_name;
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    std::string canonical_name = snapshot->canonical_for(model_name);
+    if (canonical_name.empty()) {
+        canonical_name = model_name;
+    }
+    const ModelInfo* cached = snapshot->find(canonical_name);
+    if (cached == nullptr) {
+        return false;
+    }
+    if (!cached->downloaded || backend_self_manages_downloads(cached->recipe) ||
+        are_required_checkpoints_complete(*cached)) {
+        return cached->downloaded;
+    }
+
+    // Files went missing since the cache was built. Nothing rebuilds on its own,
+    // so record it through a store write for every other reader.
+    StoreWrite store_write(*this);
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
-        if (it->second.downloaded && !backend_self_manages_downloads(it->second.recipe)) {
-            bool still_complete = are_required_checkpoints_complete(it->second);
-            if (!still_complete) {
-                it->second.downloaded = false;
-            }
-        }
-        return it->second.downloaded;
+        it->second.downloaded = false;
     }
     return false;
 }

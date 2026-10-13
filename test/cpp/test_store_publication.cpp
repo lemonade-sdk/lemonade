@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <set>
 #include <string>
@@ -46,6 +47,25 @@ static bool listing_is_self_consistent(const std::map<std::string, ModelInfo>& m
         }
     }
     return true;
+}
+
+static void write_file(const fs::path& path, const std::string& contents) {
+    fs::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary);
+    out << contents;
+}
+
+// llamacpp checks the GGUF magic before it calls a file downloaded.
+static fs::path make_hf_repo(const fs::path& models_dir, const std::string& repo,
+                             const std::string& snapshot, const std::string& file) {
+    std::string slug;
+    for (char c : repo) {
+        if (c == '/') slug += "--"; else slug += c;
+    }
+    fs::path repo_dir = models_dir / ("models--" + slug);
+    write_file(repo_dir / "refs" / "main", snapshot);
+    write_file(repo_dir / "snapshots" / snapshot / file, "GGUF0123456789");
+    return repo_dir;
 }
 
 static void register_model(ModelManager& manager,
@@ -133,6 +153,22 @@ static void test_in_place_update_publishes(ModelManager& manager) {
           manager.get_model_info("user.Options").recipe_options.get_option(key) == json(4096));
 }
 
+// Deciding a model is no longer complete rewrites the cached entry, and nothing
+// rebuilds on its own, so publication is the only way the repair reaches readers.
+static void test_repair_publishes(ModelManager& manager, const fs::path& models_dir) {
+    const fs::path repo = make_hf_repo(models_dir, "zzorg/zzvanishing", "snap-x", "main.gguf");
+    register_model(manager, "user.Vanishing", "llamacpp", "zzorg/zzvanishing:main.gguf");
+    check("fixture starts out downloaded", manager.is_model_downloaded("user.Vanishing"));
+
+    fs::remove(repo / "snapshots" / "snap-x" / "main.gguf");
+
+    check("the missing file is reported", !manager.is_model_downloaded("user.Vanishing"));
+    check("the repair publishes to readers",
+          !manager.get_model_info("user.Vanishing").downloaded);
+    check("the repaired model leaves the downloaded listing",
+          listing_name_of(manager.get_downloaded_models(), "zzorg/zzvanishing").empty());
+}
+
 // Readers run against the published snapshot while a writer keeps replacing it.
 // Nothing is asserted mid-race: which generation a reader sees is timing.
 static void test_republish_while_reading(ModelManager& manager) {
@@ -184,6 +220,7 @@ int main() {
     test_deletion_publishes(manager);
     test_republish_after_replacement(manager);
     test_in_place_update_publishes(manager);
+    test_repair_publishes(manager, models_dir);
     test_republish_while_reading(manager);
 
     fs::remove_all(temp);

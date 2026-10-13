@@ -1,7 +1,9 @@
+#include "lemon/models/catalog.h"
 #include "lemon/models/locator.h"
 #include "lemon/models/model_index.h"
 
 #include <cstdio>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -219,6 +221,109 @@ static void test_index_is_case_sensitive() {
              matches.empty() ? "" : matches.front(), "Foo");
 }
 
+static lemon::ModelInfo model(const std::string& name, const std::string& recipe) {
+    lemon::ModelInfo info;
+    info.model_name = name;
+    info.recipe = recipe;
+    return info;
+}
+
+using lemon::models::CatalogAccumulator;
+using lemon::models::CatalogEntry;
+using lemon::models::EnumeratedCatalog;
+
+typedef std::vector<lemon::ModelInfo> Models;
+
+static void test_claimed_names_survive_later_catalogs() {
+    CatalogAccumulator acc;
+    acc.add(CatalogEntry{"registry", model("Dup", "llamacpp")});
+    const auto outcome = acc.add(CatalogEntry{"extra_models_dir", model("Dup", "sd-cpp")});
+
+    check("a later catalog cannot take a claimed name",
+          outcome == CatalogAccumulator::Outcome::KeptExisting);
+    check_eq("the first entry survives", acc.models().at("Dup").recipe, "llamacpp");
+}
+
+static void test_overwrite_replaces_in_place() {
+    CatalogAccumulator acc;
+    acc.add(CatalogEntry{"registry", model("Dup", "llamacpp")});
+    acc.add(CatalogEntry{"user_models.json", model("Dup", "sd-cpp")},
+            CatalogAccumulator::Conflict::Overwrite);
+
+    check_eq("overwrite replaces the definition", acc.models().at("Dup").recipe, "sd-cpp");
+    check("overwrite does not add a second entry", acc.size() == 1);
+}
+
+static void test_names_already_claimed_before_enumeration() {
+    std::map<std::string, lemon::ModelInfo> claimed;
+    claimed["Registered"] = model("Registered", "llamacpp");
+    CatalogAccumulator acc(std::move(claimed));
+
+    const auto outcome = acc.add(CatalogEntry{"extra_models_dir", model("Registered", "sd-cpp")});
+    check("a name claimed before enumeration wins",
+          outcome == CatalogAccumulator::Outcome::KeptExisting);
+    check_eq("and its definition stands", acc.models().at("Registered").recipe, "llamacpp");
+}
+
+static void test_catalog_is_told_what_earlier_ones_claimed() {
+    CatalogAccumulator acc;
+    acc.add(CatalogEntry{"registry", model("Taken", "llamacpp")});
+
+    std::vector<std::string> seen;
+    EnumeratedCatalog catalog("extra_models_dir", [&](const CatalogAccumulator& so_far) -> Models {
+        for (const auto& entry : so_far.models()) {
+            seen.push_back(entry.first);
+        }
+        return {model("Fresh", "llamacpp")};
+    });
+    catalog.enumerate(acc);
+
+    check("the callable sees earlier claims", seen.size() == 1 && seen[0] == "Taken");
+    check("and contributes its own", acc.contains("Fresh"));
+}
+
+static void test_catalog_reports_only_the_entries_it_lost() {
+    CatalogAccumulator acc;
+    acc.add(CatalogEntry{"registry", model("Taken", "llamacpp")});
+
+    std::vector<std::string> conflicts;
+    EnumeratedCatalog catalog("extra_models_dir",
+                              [](const CatalogAccumulator&) {
+                                  return Models{model("Taken", "sd-cpp"),
+                                                model("Fresh", "sd-cpp")};
+                              },
+                              [&](const std::string& name) { conflicts.push_back(name); });
+    catalog.enumerate(acc);
+
+    check("the lost entry is reported", conflicts.size() == 1 && conflicts[0] == "Taken");
+    check("the winner is untouched", acc.models().at("Taken").recipe == "llamacpp");
+}
+
+static void test_a_failing_source_does_not_take_the_set_down_with_it() {
+    CatalogAccumulator optional;
+    optional.add(CatalogEntry{"registry", model("Kept", "llamacpp")});
+    EnumeratedCatalog unreadable("extra_models_dir",
+                                 [](const CatalogAccumulator&) -> Models {
+                                     throw std::runtime_error("unreadable directory");
+                                 });
+    unreadable.enumerate(optional);
+    check("an unreadable optional source costs only its own models", optional.size() == 1);
+
+    CatalogAccumulator required;
+    EnumeratedCatalog registry("server_models.json",
+                               [](const CatalogAccumulator&) -> Models {
+                                   throw std::runtime_error("unreadable resource");
+                               },
+                               nullptr, /*required=*/true);
+    bool threw = false;
+    try {
+        registry.enumerate(required);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("a required source still fails the build", threw);
+}
+
 int main() {
     test_checkpoint_grammar();
     test_registry_locator();
@@ -232,6 +337,12 @@ int main() {
     test_reserved_ids_are_prefixed();
     test_model_index_ownership();
     test_index_is_case_sensitive();
+    test_claimed_names_survive_later_catalogs();
+    test_overwrite_replaces_in_place();
+    test_names_already_claimed_before_enumeration();
+    test_catalog_is_told_what_earlier_ones_claimed();
+    test_catalog_reports_only_the_entries_it_lost();
+    test_a_failing_source_does_not_take_the_set_down_with_it();
 
     if (g_failures == 0) {
         std::printf("All model catalog tests passed.\n");
