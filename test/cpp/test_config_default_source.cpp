@@ -11,7 +11,7 @@
 using json = nlohmann::json;
 using lemon::ModelInfo;
 using lemon::ModelManager;
-using lemon::RemoteRegistrySource;
+using lemon::RegistryId;
 using lemon::RuntimeConfig;
 using lemon::apply_default_pull_source;
 
@@ -203,31 +203,31 @@ int main() {
     {
         ModelManager manager;
         ModelInfo info;
-        check(manager.download_source_for(info) == RemoteRegistrySource::HuggingFace,
+        check(manager.download_source_for(info) == lemon::models::huggingface_descriptor().id,
               "unpinned download falls back to huggingface without a provider");
 
         manager.set_default_model_source_provider([]() { return "modelscope"; });
-        check(manager.download_source_for(info) == RemoteRegistrySource::ModelScope,
+        check(manager.download_source_for(info) == lemon::models::modelscope_descriptor().id,
               "unpinned FLM download follows the configured default");
 
         info.registry_source = "huggingface";
-        check(manager.download_source_for(info) == RemoteRegistrySource::HuggingFace,
+        check(manager.download_source_for(info) == lemon::models::huggingface_descriptor().id,
               "explicit huggingface overrides the configured default");
 
         info.registry_source = "modelscope";
-        check(manager.download_source_for(info) == RemoteRegistrySource::ModelScope,
+        check(manager.download_source_for(info) == lemon::models::modelscope_descriptor().id,
               "explicit modelscope overrides the configured default");
     }
 
     {
         const auto modelscope_args = lemon::backends::fastflowlm::flm_pull_arguments(
-            "qwen3:0.6b", false, RemoteRegistrySource::ModelScope);
+            "qwen3:0.6b", false, lemon::models::modelscope_descriptor().id);
         check(modelscope_args == std::vector<std::string>({
                   "pull", "qwen3:0.6b", "--force", "--modelscope", "1"}),
               "FLM ModelScope pull includes the registry flag");
 
         const auto huggingface_args = lemon::backends::fastflowlm::flm_pull_arguments(
-            "qwen3:0.6b", true, RemoteRegistrySource::HuggingFace);
+            "qwen3:0.6b", true, lemon::models::huggingface_descriptor().id);
         check(huggingface_args == std::vector<std::string>({"pull", "qwen3:0.6b"}),
               "FLM Hugging Face pull omits the registry flag");
     }

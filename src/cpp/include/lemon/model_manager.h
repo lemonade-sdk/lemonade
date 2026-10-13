@@ -192,7 +192,7 @@ public:
     // from apply_default_pull_source, so they consult this to honor the default.
     void set_default_model_source_provider(std::function<std::string()> provider);
 
-    RemoteRegistrySource download_source_for(const ModelInfo& info) const;
+    RegistryId download_source_for(const ModelInfo& info) const;
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the

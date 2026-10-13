@@ -6153,7 +6153,7 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         }
         // Detect the URL provider upfront so we can reject mismatches with
         // an explicit `--source` param (just like /pull and the CLI do).
-        lemon::RemoteRegistrySource url_source;
+        lemon::RegistryId url_source;
         std::string url_repo_id;
         bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
 

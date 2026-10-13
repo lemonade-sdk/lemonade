@@ -178,14 +178,14 @@ void ModelManager::set_default_model_source_provider(std::function<std::string()
     default_model_source_provider_ = std::move(provider);
 }
 
-RemoteRegistrySource ModelManager::download_source_for(const ModelInfo& info) const {
+RegistryId ModelManager::download_source_for(const ModelInfo& info) const {
     if (!info.registry_source.empty()) {
         return parse_remote_registry_source(info.registry_source);
     }
     if (default_model_source_provider_) {
         return parse_remote_registry_source(default_model_source_provider_());
     }
-    return RemoteRegistrySource::HuggingFace;
+    return models::huggingface_descriptor().id;
 }
 
 static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
@@ -2333,7 +2333,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
             // commit that touches this model from one that does not. ModelScope
             // snapshots are tree fingerprints with no commit pin, so they keep
             // the snapshot-id comparison.
-            const bool artifact_aware = source == RemoteRegistrySource::HuggingFace;
+            const bool artifact_aware = source == models::huggingface_descriptor().id;
             const fs::path cache_path =
                 path_from_utf8(get_hf_cache_dir()) /
                 repo_id_to_cache_dir_name(entry.repo_id, entry.registry_source);
@@ -5870,7 +5870,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     // ModelScope snapshots are tree fingerprints and currently advance together
     // with the reported tree, because its branch API has no HF-style commit pin.
     std::set<std::string> repos_reusing_previous_snapshot;
-    if (source == RemoteRegistrySource::HuggingFace) {
+    if (source == models::huggingface_descriptor().id) {
         for (const auto& [repo_id, files] : files_to_download) {
             if (files.empty()) continue;
             const std::string current_ref = repo_snapshot_ids.at(repo_id);

@@ -503,7 +503,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
 
     nlohmann::json compatibility_metadata = repository.raw_metadata;
     std::optional<nlohmann::json> expanded_metadata;
-    if (source == RemoteRegistrySource::HuggingFace) {
+    if (source == models::huggingface_descriptor().id) {
         expanded_metadata = fetch_huggingface_compatibility_metadata(
             checkpoint, repository.snapshot_id);
     }

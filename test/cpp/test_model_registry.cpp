@@ -9,7 +9,7 @@
 
 using lemon::ModelManager;
 using lemon::RegistryFile;
-using lemon::RemoteRegistrySource;
+using lemon::RegistryId;
 using lemon::json;
 
 static int g_failures = 0;
@@ -21,16 +21,16 @@ static void check(const char* name, bool ok) {
 
 static void test_source_parsing_and_cache_names() {
     check("empty source preserves Hugging Face default",
-          lemon::parse_remote_registry_source("") == RemoteRegistrySource::HuggingFace);
+          lemon::parse_remote_registry_source("") == lemon::models::huggingface_descriptor().id);
     check("HF alias parses",
-          lemon::parse_remote_registry_source("HF") == RemoteRegistrySource::HuggingFace);
+          lemon::parse_remote_registry_source("HF") == lemon::models::huggingface_descriptor().id);
     check("ModelScope alias parses",
-          lemon::parse_remote_registry_source("ms") == RemoteRegistrySource::ModelScope);
+          lemon::parse_remote_registry_source("ms") == lemon::models::modelscope_descriptor().id);
     check("Hugging Face cache layout stays backward compatible",
-          lemon::registry_repo_cache_dir_name("org/repo", RemoteRegistrySource::HuggingFace) ==
+          lemon::registry_repo_cache_dir_name("org/repo", lemon::models::huggingface_descriptor().id) ==
               "models--org--repo");
     check("ModelScope cache namespace cannot collide with Hugging Face",
-          lemon::registry_repo_cache_dir_name("org/repo", RemoteRegistrySource::ModelScope) ==
+          lemon::registry_repo_cache_dir_name("org/repo", lemon::models::modelscope_descriptor().id) ==
               "modelscope--models--org--repo");
 
     bool rejected = false;
@@ -44,7 +44,7 @@ static void test_source_parsing_and_cache_names() {
 
 static void test_search_result_normalization() {
     const auto hf = lemon::normalize_registry_search_result(
-        RemoteRegistrySource::HuggingFace,
+        lemon::models::huggingface_descriptor().id,
         json{{"id", "org/model-GGUF"},
              {"downloads", 42},
              {"likes", 7},
@@ -55,18 +55,18 @@ static void test_search_result_normalization() {
     check("registry result identifies repository type", hf.repository_type == "model");
 
     const auto ms = lemon::normalize_registry_search_result(
-        RemoteRegistrySource::ModelScope,
+        lemon::models::modelscope_descriptor().id,
         json{{"Id", "Qwen/Qwen-GGUF"},
              {"Description", "ModelScope fixture"},
              {"Downloads", 123},
              {"Tags", "GGUF"}});
     check("ModelScope PascalCase fields normalize", ms.repo_id == "Qwen/Qwen-GGUF" &&
           ms.description == "ModelScope fixture" && ms.downloads == 123);
-    check("ModelScope source remains explicit", ms.source == RemoteRegistrySource::ModelScope);
+    check("ModelScope source remains explicit", ms.source == lemon::models::modelscope_descriptor().id);
     check("single-string ModelScope tags normalize", ms.tags.size() == 1 && ms.tags[0] == "GGUF");
 
     const auto ms_openapi = lemon::normalize_registry_search_result(
-        RemoteRegistrySource::ModelScope,
+        lemon::models::modelscope_descriptor().id,
         json{{"Path", "Qwen/Qwen3.6-27B-GGUF"},
              {"display_name", "Qwen3.6 27B GGUF"},
              {"tasks", json::array({"text-generation", "chat"})}});
@@ -76,7 +76,7 @@ static void test_search_result_normalization() {
           ms_openapi.task == "text-generation");
 
     const auto ms_library = lemon::normalize_registry_search_result(
-        RemoteRegistrySource::ModelScope,
+        lemon::models::modelscope_descriptor().id,
         json{{"id", "community/Qwen-GGUF"},
              {"tags", json::array({"library:gguf", "task:text-generation"})}});
     check("ModelScope library facet identifies GGUF", ms_library.has_gguf);
@@ -91,7 +91,7 @@ static void test_search_response_normalization() {
              {"tags", json::array({"gguf"})}},
     });
     const auto hf = lemon::normalize_registry_search_response(
-        RemoteRegistrySource::HuggingFace, hf_body, 12);
+        lemon::models::huggingface_descriptor().id, hf_body, 12);
     check("HF response filters unsupported media pipelines", hf.results.size() == 1);
     check("HF response preserves GGUF metadata", hf.results[0].has_gguf);
 
@@ -105,11 +105,11 @@ static void test_search_response_normalization() {
         }},
     };
     const auto ms = lemon::normalize_registry_search_response(
-        RemoteRegistrySource::ModelScope, ms_body, 12);
+        lemon::models::modelscope_descriptor().id, ms_body, 12);
     check("ModelScope data.models envelope normalizes", ms.results.size() == 1 &&
           ms.results[0].repo_id == "Qwen/Qwen-GGUF");
     check("ModelScope response preserves provider total", ms.total == 2);
-    check("ModelScope normalized result preserves source", ms.results[0].source == RemoteRegistrySource::ModelScope);
+    check("ModelScope normalized result preserves source", ms.results[0].source == lemon::models::modelscope_descriptor().id);
 
     const json lowercase_ms_body = {
         {"success", true},
@@ -122,7 +122,7 @@ static void test_search_response_normalization() {
         }},
     };
     const auto lowercase_ms = lemon::normalize_registry_search_response(
-        RemoteRegistrySource::ModelScope, lowercase_ms_body, 12);
+        lemon::models::modelscope_descriptor().id, lowercase_ms_body, 12);
     check("lowercase ModelScope success envelope normalizes",
           lowercase_ms.results.size() == 1 &&
           lowercase_ms.results[0].repo_id == "community/Qwen3.6-GGUF");
@@ -134,16 +134,16 @@ static void test_tree_snapshot_fingerprint() {
         {"config.json", 20, "sha256", "def", false},
     };
     const std::string first = lemon::registry_tree_snapshot_id(
-        RemoteRegistrySource::ModelScope, "master", files);
+        lemon::models::modelscope_descriptor().id, "master", files);
 
     std::reverse(files.begin(), files.end());
     const std::string reordered = lemon::registry_tree_snapshot_id(
-        RemoteRegistrySource::ModelScope, "master", files);
+        lemon::models::modelscope_descriptor().id, "master", files);
     check("snapshot fingerprint is independent of API file ordering", first == reordered);
 
     files[0].size += 1;
     const std::string changed = lemon::registry_tree_snapshot_id(
-        RemoteRegistrySource::ModelScope, "master", files);
+        lemon::models::modelscope_descriptor().id, "master", files);
     check("snapshot fingerprint changes when the remote tree changes", first != changed);
     check("snapshot id records provider and revision",
           first.rfind("modelscope-master-", 0) == 0);

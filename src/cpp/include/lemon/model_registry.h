@@ -10,12 +10,13 @@
 
 #include <nlohmann/json.hpp>
 
+#include "models/registry_id.h"
+
 namespace lemon {
 
-enum class RemoteRegistrySource {
-    HuggingFace,
-    ModelScope,
-};
+// A registry is named by string, not by enum: the string is what user_models.json,
+// .lemonade_registry.json, POST /pull and the desktop app already carry.
+using models::RegistryId;
 
 class RegistryNotFoundError : public std::runtime_error {
 public:
@@ -57,7 +58,7 @@ private:
 struct RegistrySearchResult {
     std::string repo_id;
     std::string display_name;
-    RemoteRegistrySource source = RemoteRegistrySource::HuggingFace;
+    RegistryId source = models::huggingface_descriptor().id;
     std::string repository_type = "model";
     std::string description;
     std::vector<std::string> tags;
@@ -90,13 +91,13 @@ struct RegistryRepository {
 
 // Normalized registry names persisted in user_models.json and exposed by APIs.
 // Empty input intentionally maps to Hugging Face for backward compatibility.
-RemoteRegistrySource parse_remote_registry_source(const std::string& source);
-std::string remote_registry_source_name(RemoteRegistrySource source);
-std::string remote_registry_display_name(RemoteRegistrySource source);
+RegistryId parse_remote_registry_source(const std::string& source);
+std::string remote_registry_source_name(RegistryId source);
+std::string remote_registry_display_name(RegistryId source);
 
 // Short form used when a registry is spelled as a URL scheme. The accepted
 // short aliases are the same ones parse_remote_registry_source() recognizes.
-std::string remote_registry_scheme_prefix(RemoteRegistrySource source);
+std::string remote_registry_scheme_prefix(RegistryId source);
 bool is_remote_registry_source(const std::string& source);
 
 // Detects a Hugging Face or ModelScope model URL. On a match returns true, sets
@@ -105,7 +106,7 @@ bool is_remote_registry_source(const std::string& source);
 // inputs return false and leave the outputs untouched. Shared by the CLI and
 // the server so both resolve provider URLs the same way.
 bool detect_registry_url(const std::string& value,
-                         RemoteRegistrySource& out_source,
+                         RegistryId& out_source,
                          std::string& out_repo_id);
 
 // True when a checkpoint is an `owner/repo` registry id (optionally with a
@@ -132,13 +133,13 @@ void apply_default_pull_source(nlohmann::json& request_json,
 // Normalize one provider-specific model-list entry into Lemonade's registry contract.
 // Exposed so fixture tests and future clients share the same field mapping.
 RegistrySearchResult normalize_registry_search_result(
-    RemoteRegistrySource source,
+    RegistryId source,
     const nlohmann::json& metadata);
 
 // Normalize and filter a provider response without performing network I/O.
 // This keeps provider field mapping and filtering deterministic and unit-testable.
 RegistrySearchResponse normalize_registry_search_response(
-    RemoteRegistrySource source,
+    RegistryId source,
     const nlohmann::json& body,
     std::size_t limit = 12);
 
@@ -161,14 +162,14 @@ std::optional<nlohmann::json> fetch_huggingface_compatibility_metadata(
 // hints only; callers must use /pull/variants as the authoritative file-level
 // compatibility check before presenting a downloadable marketplace result.
 RegistrySearchResponse search_registry_models(
-    RemoteRegistrySource source,
+    RegistryId source,
     const std::string& query,
     std::size_t limit = 12,
     bool gguf_only = false);
 
 // Deterministic snapshot id for providers whose download revision may remain
 // mutable. Ordering of files does not affect the result.
-std::string registry_tree_snapshot_id(RemoteRegistrySource source,
+std::string registry_tree_snapshot_id(RegistryId source,
                                       const std::string& revision,
                                       const std::vector<RegistryFile>& files);
 
@@ -176,13 +177,13 @@ std::string registry_tree_snapshot_id(RemoteRegistrySource source,
 // ModelScope receives a distinct namespace so identical owner/repo ids never
 // collide while the snapshot/refs layout below it stays runtime-compatible.
 std::string registry_repo_cache_dir_name(const std::string& repo_id,
-                                         RemoteRegistrySource source);
+                                         RegistryId source);
 
 class ModelRegistry {
 public:
     virtual ~ModelRegistry() = default;
 
-    virtual RemoteRegistrySource source() const = 0;
+    virtual RegistryId source() const = 0;
     virtual std::string default_revision() const = 0;
     virtual std::map<std::string, std::string> auth_headers() const = 0;
 
@@ -198,7 +199,7 @@ public:
                                          const std::string& file_path) const = 0;
 };
 
-const ModelRegistry& model_registry(RemoteRegistrySource source);
+const ModelRegistry& model_registry(RegistryId source);
 const ModelRegistry& model_registry(const std::string& source);
 
 }  // namespace lemon

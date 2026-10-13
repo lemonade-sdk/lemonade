@@ -364,7 +364,7 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
             std::string detected_source;
             checkpoints[type] = lemon_cli::normalize_registry_checkpoint_arg(
                 checkpoint, config.model_source, &detected_source);
-            lemon::RemoteRegistrySource detected;
+            lemon::RegistryId detected;
             std::string repo_id;
             if (lemon::detect_registry_url(checkpoint, detected, repo_id)) {
                 std::string url_source = lemon::remote_registry_source_name(detected);
@@ -441,7 +441,7 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     // Detect the URL source before normalization so we can reject mismatches
     // with --source before normalize_registry_checkpoint_arg silently converts
     // the user's value or lets the URL win.
-    lemon::RemoteRegistrySource detected;
+    lemon::RegistryId detected;
     std::string url_repo_id;
     std::string detected_source;
     if (lemon::detect_registry_url(config.model, detected, url_repo_id)) {

@@ -138,7 +138,7 @@ json VLLMServer::prepare_openai_request(const json& request) {
 // their normalized local snapshot and must never fall back to Hugging Face.
 static std::string detect_quant_method(const std::string& model_id,
                                        const fs::path& local_snapshot,
-                                       RemoteRegistrySource registry_source) {
+                                       RegistryId registry_source) {
     if (!local_snapshot.empty()) {
         fs::path cfg = local_snapshot / "config.json";
         if (fs::exists(cfg)) {
@@ -150,7 +150,7 @@ static std::string detect_quant_method(const std::string& model_id,
         }
     }
 
-    if (registry_source != RemoteRegistrySource::HuggingFace) {
+    if (registry_source != models::huggingface_descriptor().id) {
         return "";
     }
 
@@ -372,7 +372,7 @@ void VLLMServer::load(const std::string& model_name,
         throw std::runtime_error("Model checkpoint (registry ID) not found for: " + model_name);
     }
 
-    const RemoteRegistrySource registry_source =
+    const RegistryId registry_source =
         parse_remote_registry_source(model_info.registry_source);
     std::string model_target = model_id;
     fs::path active_snapshot;
@@ -381,7 +381,7 @@ void VLLMServer::load(const std::string& model_name,
     // of Lemonade's ModelScope cache namespace. Point it at the normalized
     // active snapshot so it stays offline and uses the exact revision Lemonade
     // recorded for update checks.
-    if (registry_source == RemoteRegistrySource::ModelScope) {
+    if (registry_source == models::modelscope_descriptor().id) {
         if (model_manager_ == nullptr) {
             throw std::runtime_error("Model manager is unavailable while resolving ModelScope cache");
         }

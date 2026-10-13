@@ -48,12 +48,12 @@ struct Locator {
 
     // Set exactly when the scheme is Registry, and unset for every other
     // scheme rather than defaulted to whichever provider shipped first.
-    std::optional<RemoteRegistrySource> registry;
+    std::optional<RegistryId> registry;
     std::string revision;
 
   private:
     Locator(LocatorScheme scheme, std::string path, std::string variant,
-            std::optional<RemoteRegistrySource> registry, std::string revision);
+            std::optional<RegistryId> registry, std::string revision);
 };
 
 }  // namespace models

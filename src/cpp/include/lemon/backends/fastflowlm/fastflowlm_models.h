@@ -48,11 +48,11 @@ std::string flm_version();
 
 std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
                                             bool do_not_upgrade,
-                                            RemoteRegistrySource source);
+                                            RegistryId source);
 
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                   DownloadProgressCallback progress_callback,
-                  RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
+                  RegistryId source = models::huggingface_descriptor().id);
 
 // Remove an installed FLM model by checkpoint via `flm remove`; throws on failure.
 void flm_remove(const std::string& checkpoint);

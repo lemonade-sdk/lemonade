@@ -337,12 +337,12 @@ std::vector<ModelInfo> flm_discover_models() {
 
 std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
                                             bool do_not_upgrade,
-                                            RemoteRegistrySource source) {
+                                            RegistryId source) {
     std::vector<std::string> args = {"pull", checkpoint};
     if (!do_not_upgrade) {
         args.push_back("--force");
     }
-    if (source == RemoteRegistrySource::ModelScope) {
+    if (source == models::modelscope_descriptor().id) {
         args.push_back("--modelscope");
         args.push_back("1");
     }
@@ -351,7 +351,7 @@ std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
 
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                   DownloadProgressCallback progress_callback,
-                  RemoteRegistrySource source) {
+                  RegistryId source) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
     auto status = SystemInfoCache::get_flm_status();
