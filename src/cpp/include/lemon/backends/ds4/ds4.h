@@ -38,7 +38,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 // commit and bundles the ROCm runtime alongside it.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "ds4",
-    /*display_name*/    "DwarfStar4 (experimental)",
+    /*display_name*/    "DwarfStar4",
     /*binary*/          "ds4-server",
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
@@ -51,12 +51,11 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to ds4-server", "DS4 Options"},
     },
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
+        {"rocm", BackendTier::Guest, BackendFormat::Native, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
     /*exposes_prometheus_metrics*/ false,
