@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n, type Translate } from '../i18n';
 import { Icon } from './Icon';
 import RouterNodeEditor from './RouterNodeEditor';
 import {
@@ -92,27 +93,27 @@ const GraphGateShape: React.FC<{ operator: RouterGroupOperator; compact?: boolea
   );
 };
 
-function leafSummary(node: RouterLeafNode, classifiers: RouterClassifier[]): string {
+function leafSummary(node: RouterLeafNode, classifiers: RouterClassifier[], t: Translate): string {
   if (node.type === 'keywords_any' || node.type === 'keywords_all') {
-    return String(node.textValue || '').trim() || 'Add keywords';
+    return String(node.textValue || '').trim() || t('Add keywords');
   }
-  if (node.type === 'regex') return exactSummary(node.textValue, 'Add regex');
+  if (node.type === 'regex') return exactSummary(node.textValue, t('Add regex'));
   if (node.type === 'min_chars') return `≥ ${node.numberValue ?? 0}`;
   if (node.type === 'max_chars') return `≤ ${node.numberValue ?? 0}`;
-  if (node.type === 'has_tools') return node.booleanValue === false ? 'is false' : 'is true';
-  if (node.type === 'has_images') return node.booleanValue === false ? 'is false' : 'is true';
+  if (node.type === 'has_tools') return node.booleanValue === false ? t('is false') : t('is true');
+  if (node.type === 'has_images') return node.booleanValue === false ? t('is false') : t('is true');
   if (node.type === 'metadata') {
-    const key = exactSummary(node.metadataKey, 'metadata key');
+    const key = exactSummary(node.metadataKey, t('metadata key'));
     const comparator = node.metadataComparator || 'equals';
-    if (comparator === 'exists') return `${key} ${node.booleanValue === false ? 'missing' : 'present'}`;
-    return `${key} ${comparator === 'any' ? 'contains' : '='} ${exactSummary(node.metadataValues, '…')}`;
+    if (comparator === 'exists') return `${key} ${node.booleanValue === false ? t('missing') : t('present')}`;
+    return `${key} ${comparator === 'any' ? t('contains') : '='} ${exactSummary(node.metadataValues, '…')}`;
   }
   const classifier = classifiers.find(item => item.id === node.classifierId);
   const labels = classifierLabels(classifier);
   const label = node.label
     || classifier?.defaultLabel
-    || (labels.length > 0 ? 'Select label' : 'classifier output');
-  return `${node.classifierId || 'Select classifier'} · ${label}${node.minScore !== undefined ? ` · ≥ ${node.minScore}` : ''}`;
+    || (labels.length > 0 ? t('Select label') : t('classifier output'));
+  return `${node.classifierId || t('Select classifier')} · ${label}${node.minScore !== undefined ? ` · ≥ ${node.minScore}` : ''}`;
 }
 
 function createGraphLeaf(data: Extract<RouterGraphDragData, { kind: 'leaf' }>): RouterLeafNode {
@@ -186,6 +187,7 @@ const GraphNode: React.FC<GraphNodeProps> = ({
   onChangeOperator,
   onDropData,
 }) => {
+  const { t } = useI18n();
   const selected = selectedPath != null
     && path.length === selectedPath.length
     && path.every((part, index) => part === selectedPath[index]);
@@ -197,12 +199,12 @@ const GraphNode: React.FC<GraphNodeProps> = ({
           type="button"
           className={`router-graph__leaf router-graph__leaf--${node.type} ${selected ? 'is-selected' : ''}`}
           onClick={() => onSelect(path)}
-          title="Click to edit this condition"
+          title={t('Click to edit this condition')}
         >
-          <span className="router-graph__leaf-type">{LEAF_LABELS[node.type]}</span>
-          <span className="router-graph__leaf-summary">{leafSummary(node, classifiers)}</span>
+          <span className="router-graph__leaf-type">{t(LEAF_LABELS[node.type])}</span>
+          <span className="router-graph__leaf-summary">{leafSummary(node, classifiers, t)}</span>
         </button>
-        <button type="button" className="router-graph__remove" aria-label="Remove condition" title="Remove condition" onClick={() => onRemove(path)}>
+        <button type="button" className="router-graph__remove" aria-label={t('Remove condition')} title={t('Remove condition')} onClick={() => onRemove(path)}>
           <Icon name="x" size={11} />
         </button>
       </div>
@@ -223,7 +225,7 @@ const GraphNode: React.FC<GraphNodeProps> = ({
           {OPERATOR_LABELS[node.operator]}
         </button>
         <span className="router-graph__group-copy">
-          {node.operator === 'all' ? 'All child conditions must match' : node.operator === 'any' ? 'Any child condition may match' : 'Negate the child condition'}
+          {node.operator === 'all' ? t('All child conditions must match') : node.operator === 'any' ? t('Any child condition may match') : t('Negate the child condition')}
         </span>
         <div className="router-graph__operator-actions" onClick={event => event.stopPropagation()}>
           {node.operator !== 'not' && (
@@ -232,7 +234,7 @@ const GraphNode: React.FC<GraphNodeProps> = ({
               <button type="button" className={node.operator === 'any' ? 'is-active' : ''} onClick={() => onChangeOperator(path, 'any')}>OR</button>
             </>
           )}
-          <button type="button" aria-label="Remove gate" title="Remove gate" onClick={() => onRemove(path)}><Icon name="x" size={11} /></button>
+          <button type="button" aria-label={t('Remove gate')} title={t('Remove gate')} onClick={() => onRemove(path)}><Icon name="x" size={11} /></button>
         </div>
       </div>
       <div className="router-graph__children">
@@ -275,6 +277,7 @@ const INSPECTOR_MIN_WIDTH = 320;
 const WORKSPACE_MIN_WIDTH = 360;
 
 export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange, onExpand, expanded = false, initialCommitted }) => {
+  const { t } = useI18n();
   const [toolboxCollapsed, setToolboxCollapsed] = useState(false);
   const [toolboxSearch, setToolboxSearch] = useState('');
   const [selectedPath, setSelectedPath] = useState<RouterNodePath | null>(null);
@@ -362,7 +365,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
       }
       commit(appendRouterNodeAtPath(node, targetPath, incoming));
     } catch (error) {
-      reject(error instanceof Error ? error.message : 'This item cannot be dropped here.');
+      reject(error instanceof Error ? error.message : t('This item cannot be dropped here.'));
     }
   }, [blank, commit, node, reject]);
 
@@ -414,8 +417,10 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
 
   const normalizedSearch = toolboxSearch.trim().toLowerCase();
   const filteredLeaves = useMemo(() => TOOLBOX_LEAVES.filter(type =>
-    !normalizedSearch || LEAF_LABELS[type].toLowerCase().includes(normalizedSearch)
-  ), [normalizedSearch]);
+    !normalizedSearch
+    || LEAF_LABELS[type].toLowerCase().includes(normalizedSearch)
+    || t(LEAF_LABELS[type]).toLowerCase().includes(normalizedSearch)
+  ), [normalizedSearch, t]);
   const filteredClassifiers = useMemo(() => classifiers.filter(classifier =>
     !normalizedSearch || `${classifier.id} classifier ${classifier.type}`.toLowerCase().includes(normalizedSearch)
   ), [classifiers, normalizedSearch]);
@@ -502,14 +507,14 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   return (
     <div className={`router-graph ${resizing ? 'is-resizing' : ''}`} ref={graphRef}>
       <div className={`router-graph__workspace ${toolboxCollapsed ? 'is-toolbox-collapsed' : ''}`}>
-        <aside className={`router-graph__toolbox ${toolboxCollapsed ? 'is-collapsed' : ''}`} aria-label="Router condition toolbox">
+        <aside className={`router-graph__toolbox ${toolboxCollapsed ? 'is-collapsed' : ''}`} aria-label={t('Router condition toolbox')}>
           <button type="button" className="router-graph__toolbox-toggle" onClick={() => setToolboxCollapsed(current => !current)} aria-expanded={!toolboxCollapsed}>
             <Icon name={toolboxCollapsed ? 'panel-left-open' : 'panel-left-close'} size={14} />
-            {!toolboxCollapsed && <span>Toolbox</span>}
+            {!toolboxCollapsed && <span>{t('Toolbox')}</span>}
           </button>
           {!toolboxCollapsed && (
             <div className="router-graph__toolbox-content">
-              <div className="router-graph__toolbox-title">Logic Gates</div>
+              <div className="router-graph__toolbox-title">{t('Logic Gates')}</div>
               <div className="router-graph__gates">
                 {(['all', 'any', 'not'] as RouterGroupOperator[]).map(operator => {
                   const data: RouterGraphDragData = { kind: 'operator', operator };
@@ -525,16 +530,16 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
                     >
                       <GraphGateShape operator={operator} compact />
                       <strong>{OPERATOR_LABELS[operator]}</strong>
-                      <small>{operator === 'all' ? 'All match' : operator === 'any' ? 'Any match' : 'Negate'}</small>
+                      <small>{operator === 'all' ? t('All match') : operator === 'any' ? t('Any match') : t('Negate')}</small>
                     </button>
                   );
                 })}
               </div>
 
-              <div className="router-graph__toolbox-title">Conditions</div>
+              <div className="router-graph__toolbox-title">{t('Conditions')}</div>
               <div className="router-graph__toolbox-search">
                 <Icon name="search" size={13} />
-                <input value={toolboxSearch} placeholder="Search conditions" onChange={event => setToolboxSearch(event.target.value)} />
+                <input value={toolboxSearch} placeholder={t('Search conditions')} onChange={event => setToolboxSearch(event.target.value)} />
               </div>
               <div className="router-graph__tools">
                 {filteredLeaves.map(type => {
@@ -547,9 +552,9 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
                       className={`router-graph__tool router-graph__tool--condition router-graph__tool--${type}`}
                       onClick={() => addDataAtPath(toolboxTargetPath, data)}
                       onDragStart={event => beginDrag(event, data)}
-                      title={`Drag or click to add ${LEAF_LABELS[type]}`}
+                      title={t('Drag or click to add {label}', { label: t(LEAF_LABELS[type]) })}
                     >
-                      {LEAF_LABELS[type]}
+                      {t(LEAF_LABELS[type])}
                     </button>
                   );
                 })}
@@ -557,7 +562,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
 
               {classifiers.length > 0 && (
                 <>
-                  <div className="router-graph__toolbox-title">Classifiers</div>
+                  <div className="router-graph__toolbox-title">{t('Classifiers')}</div>
                   <div className="router-graph__tools">
                     {filteredClassifiers.map(classifier => {
                       const data: RouterGraphDragData = { kind: 'leaf', leafType: 'classifier', classifierId: classifier.id };
@@ -575,7 +580,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
                         </button>
                       );
                     })}
-                    {filteredClassifiers.length === 0 && normalizedSearch && <div className="router-graph__toolbox-empty">No matching classifiers.</div>}
+                    {filteredClassifiers.length === 0 && normalizedSearch && <div className="router-graph__toolbox-empty">{t('No matching classifiers.')}</div>}
                   </div>
                 </>
               )}
@@ -585,20 +590,20 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
 
         <div className="router-graph__canvas-shell">
           <div className="router-graph__toolbar">
-            <button type="button" disabled={historyRef.current.length === 0} onClick={undo}>Undo</button>
-            <button type="button" disabled={futureRef.current.length === 0} onClick={redo}>Redo</button>
+            <button type="button" disabled={historyRef.current.length === 0} onClick={undo}>{t('Undo')}</button>
+            <button type="button" disabled={futureRef.current.length === 0} onClick={redo}>{t('Redo')}</button>
             {!blank && <button type="button" className="is-danger" onClick={() => {
               historyRef.current = [...historyRef.current.slice(-29), node];
               futureRef.current = [];
               hasCommittedRef.current = false;
               setSelectedPath(null);
               emitChange(createRouterLeaf());
-            }}>Clear</button>}
+            }}>{t('Clear')}</button>}
             {rejection && <span className="router-graph__rejection" role="status"><Icon name="alert" size={12} /> {rejection}</span>}
-            <span className="router-graph__toolbar-hint">Drag items from the toolbox. Select a gate and click a toolbox item to add there. Ctrl/⌘ + wheel zooms.</span>
+            <span className="router-graph__toolbar-hint">{t('Drag items from the toolbox. Select a gate and click a toolbox item to add there. Ctrl/⌘ + wheel zooms.')}</span>
             <span className="router-graph__toolbar-spacer" />
             {onExpand && (
-              <button type="button" className="router-graph__expand" onClick={onExpand} title="Expand graph builder" aria-label="Expand graph builder">
+              <button type="button" className="router-graph__expand" onClick={onExpand} title={t('Expand graph builder')} aria-label={t('Expand graph builder')}>
                 <Icon name="maximize-2" size={12} />
               </button>
             )}
@@ -625,9 +630,9 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
             {blank ? (
               <div className="router-graph__empty">
                 <span className="router-graph__empty-icon"><Icon name="router" size={22} /></span>
-                <strong>Build the first condition</strong>
-                <span>Drag a logic gate or condition here, or click an item in the Toolbox.</span>
-                <GraphDropZone path={[]} label="Drop first node here" onDropData={addDataAtPath} />
+                <strong>{t('Build the first condition')}</strong>
+                <span>{t('Drag a logic gate or condition here, or click an item in the Toolbox.')}</span>
+                <GraphDropZone path={[]} label={t('Drop first node here')} onDropData={addDataAtPath} />
               </div>
             ) : (
               <div className="router-graph__canvas-transform" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
@@ -652,12 +657,12 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
           className="router-graph__resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize node inspector"
+          aria-label={t('Resize node inspector')}
           aria-valuemin={INSPECTOR_MIN_WIDTH}
           aria-valuemax={INSPECTOR_MIN_WIDTH + (graphRef.current ? Math.max(0, graphRef.current.offsetWidth - WORKSPACE_MIN_WIDTH - INSPECTOR_MIN_WIDTH) : 400)}
           aria-valuenow={inspectorWidth ?? INSPECTOR_MIN_WIDTH}
           tabIndex={0}
-          title="Drag to resize · double-click to reset"
+          title={t('Drag to resize · double-click to reset')}
           onPointerDown={startResize}
           onPointerMove={onResizeMove}
           onPointerUp={stopResize}
@@ -696,10 +701,10 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
         >
           <div className="router-graph__inspector-head">
             <div>
-              <strong>Node Inspector</strong>
-              <small>Edit the selected condition or gate without leaving the graph.</small>
+              <strong>{t('Node Inspector')}</strong>
+              <small>{t('Edit the selected condition or gate without leaving the graph.')}</small>
             </div>
-            <button type="button" onClick={() => setSelectedPath(null)} aria-label="Close node inspector"><Icon name="x" size={13} /></button>
+            <button type="button" onClick={() => setSelectedPath(null)} aria-label={t('Close node inspector')}><Icon name="x" size={13} /></button>
           </div>
           <div className="router-graph__inspector-body">
             <RouterNodeEditor

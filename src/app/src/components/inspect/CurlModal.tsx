@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import api from '../../api';
+import { useI18n } from '../../i18n';
 import { type Trace, inspectStore } from '../../inspectStore';
 import { Icon } from '../Icon';
 import Modal from './Modal';
@@ -27,6 +28,7 @@ export default function CurlModal({
   replayMaxTokens,
   handleCopyFull
 }: CurlModalProps) {
+  const { t } = useI18n();
   const [replayProtocol, setReplayProtocol] = useState<'openai' | 'responses' | 'anthropic'>('openai');
 
   const curlCommand = useMemo(() => {
@@ -93,13 +95,13 @@ export default function CurlModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="cURL Request Preview"
+      title={t('cURL Request Preview')}
       ariaLabelledBy="curl-modal-title"
       maxWidth="640px"
     >
       <div className="inspect-modal-body flex-col gap-14">
         <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-          Choose a format and copy the CLI command to execute the same API request against your local server.
+          {t('Choose a format and copy the CLI command to execute the same API request against your local server.')}
         </p>
 
         {/* Protocol selector & Copy */}
@@ -110,21 +112,21 @@ export default function CurlModal({
               className={replayProtocol === 'openai' ? 'active' : ''}
               onClick={() => setReplayProtocol('openai')}
             >
-              Chat Completions
+              {t('Chat Completions')}
             </button>
             <button
               type="button"
               className={replayProtocol === 'responses' ? 'active' : ''}
               onClick={() => setReplayProtocol('responses')}
             >
-              Responses
+              {t('Responses')}
             </button>
             <button
               type="button"
               className={replayProtocol === 'anthropic' ? 'active' : ''}
               onClick={() => setReplayProtocol('anthropic')}
             >
-              Anthropic Messages
+              {t('Anthropic Messages')}
             </button>
           </div>
           <button
@@ -133,7 +135,7 @@ export default function CurlModal({
             onClick={() => handleCopyFull(curlCommand, 'cURL command')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            <Icon name="copy" size={14} /> Copy command
+            <Icon name="copy" size={14} /> {t('Copy command')}
           </button>
         </div>
 

@@ -7,6 +7,7 @@ import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
 import { copyTextToClipboard } from '../clipboard';
+import { useI18n } from '../i18n';
 
 interface MarkdownMessageProps {
   content: string;
@@ -67,6 +68,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
 /* ── Mermaid Block — proper React component with its own SVG state ── */
 
 const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ source, isComplete }) => {
+  const { t } = useI18n();
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [showSource, setShowSource] = useState(false);
@@ -97,8 +99,8 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
 
   return (
     <div className={blockClass}>
-      {!svg && !error && <div className="mermaid-block__loading">Loading diagram…</div>}
-      {error && <div className="mermaid-block__error">Diagram syntax error</div>}
+      {!svg && !error && <div className="mermaid-block__loading">{t('Loading diagram…')}</div>}
+      {error && <div className="mermaid-block__error">{t('Diagram syntax error')}</div>}
       {svg && (
         <div
           className="mermaid-block__diagram"
@@ -111,7 +113,7 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
           className="mermaid-block__toggle"
           onClick={() => setShowSource(s => !s)}
         >
-          {showSource ? 'Show diagram' : 'Show source'}
+          {showSource ? t('Show diagram') : t('Show source')}
         </button>
       </div>
       <pre
@@ -134,6 +136,7 @@ interface Segment {
 const MERMAID_FENCE = /```mermaid\s*\n([\s\S]*?)```/gi;
 
 const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true, onOptionSelect }) => {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
 
   const md = useMemo(() => {
@@ -142,7 +145,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       linkify: true,
       typographer: true,
       breaks: true,
-      highlight(str: string, lang: string) {
+      highlight(str: string, lang: string): string {
         // Options blocks get rendered as interactive buttons
         if (lang === 'options') {
           try {
@@ -157,7 +160,9 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             }
             optHtml += '</div>';
             if (parsed.allowCustom !== false) {
-              optHtml += '<div class="options-block__custom"><input class="options-block__input" placeholder="Or type your own…" /><button class="options-block__submit">Send</button></div>';
+              const customPlaceholder: string = instance.utils.escapeHtml(t('Or type your own…'));
+              const sendLabel: string = instance.utils.escapeHtml(t('Send'));
+              optHtml += `<div class="options-block__custom"><input class="options-block__input" placeholder="${customPlaceholder}" /><button class="options-block__submit">${sendLabel}</button></div>`;
             }
             optHtml += '</div>';
             return optHtml;
@@ -173,7 +178,9 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         } else {
           highlighted = instance.utils.escapeHtml(str);
         }
-        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="Copy" aria-label="Copy code">${COPY_LABEL}</button></div><pre><code>${highlighted}</code></pre></div>`;
+        const copyLabel: string = instance.utils.escapeHtml(t(COPY_LABEL));
+        const copyCodeLabel: string = instance.utils.escapeHtml(t('Copy code'));
+        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="${copyLabel}" aria-label="${copyCodeLabel}">${copyLabel}</button></div><pre><code>${highlighted}</code></pre></div>`;
       },
     });
 
@@ -190,7 +197,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     };
 
     return instance;
-  }, []);
+  }, [t]);
 
   // Split content into text and mermaid segments
   const segments = useMemo((): Segment[] => {
@@ -245,19 +252,19 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
 
         const codeText = code.textContent || '';
         void copyTextToClipboard(codeText).then(() => {
-          copyBtn.textContent = COPIED_LABEL;
-          copyBtn.title = COPIED_LABEL;
+          copyBtn.textContent = t(COPIED_LABEL);
+          copyBtn.title = t(COPIED_LABEL);
           copyBtn.classList.add('copied');
           copyBtn.classList.remove('copy-failed');
         }).catch(() => {
-          copyBtn.textContent = COPY_FAILED_LABEL;
-          copyBtn.title = 'Could not copy code to the clipboard';
+          copyBtn.textContent = t(COPY_FAILED_LABEL);
+          copyBtn.title = t('Could not copy code to the clipboard');
           copyBtn.classList.add('copy-failed');
           copyBtn.classList.remove('copied');
         }).finally(() => {
           window.setTimeout(() => {
-            copyBtn.textContent = COPY_LABEL;
-            copyBtn.title = COPY_LABEL;
+            copyBtn.textContent = t(COPY_LABEL);
+            copyBtn.title = t(COPY_LABEL);
             copyBtn.classList.remove('copied', 'copy-failed');
           }, 2000);
         });
@@ -301,7 +308,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onOptionSelect]);
+  }, [onOptionSelect, t]);
 
   return (
     <div ref={containerRef} className="message__content">
