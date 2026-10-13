@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -56,6 +57,17 @@ struct UnloadBusyModelTestHook {
             }
         }
         return false;
+    }
+
+    // Stands in for another path (unload-all, LRU eviction) dropping the model.
+    static void remove_server(Router& r, const std::string& name) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        r.loaded_servers_.erase(
+            std::remove_if(r.loaded_servers_.begin(), r.loaded_servers_.end(),
+                           [&](const std::unique_ptr<WrappedServer>& s) {
+                               return s->get_model_name() == name;
+                           }),
+            r.loaded_servers_.end());
     }
 
     // Names are already canonical; the test Router has no ModelManager.
@@ -137,6 +149,51 @@ static void test_busy_unload_keeps_router_responsive(Router& router) {
     }
 }
 
+static void test_model_removed_while_waiting(Router& router) {
+    UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "vanishing-model");
+    busy->acquire_for_inference();
+
+    auto unload_done = std::async(std::launch::async, [&] {
+        UnloadBusyModelTestHook::unload(router, "vanishing-model");
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    UnloadBusyModelTestHook::remove_server(router, "vanishing-model");
+
+    const bool finished =
+        unload_done.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    check("unload returns when the model disappears while it waits", finished);
+    bool threw = false;
+    if (finished) {
+        try {
+            unload_done.get();
+        } catch (...) {
+            threw = true;
+        }
+    }
+    check("a model removed by another path is not reported as an error", finished && !threw);
+}
+
+static void test_model_replaced_while_waiting(Router& router) {
+    UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "reloaded-model");
+    busy->acquire_for_inference();
+
+    auto unload_done = std::async(std::launch::async, [&] {
+        UnloadBusyModelTestHook::unload(router, "reloaded-model");
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    UnloadBusyModelTestHook::remove_server(router, "reloaded-model");
+    UnloadBusyModelTestHook::add_server(router, "reloaded-model");
+
+    const bool finished =
+        unload_done.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    check("unload of a reloaded model unloads the new idle instance", finished);
+    if (finished) {
+        unload_done.get();
+    }
+    check("reloaded model is gone afterwards",
+          !UnloadBusyModelTestHook::has_model(router, "reloaded-model"));
+}
+
 int main() {
     json cfg = json::object();
     cfg["max_loaded_models"] = 4;
@@ -150,6 +207,8 @@ int main() {
         test_idle_unload_is_immediate(router);
         test_unknown_model_throws(router);
         test_busy_unload_keeps_router_responsive(router);
+        test_model_removed_while_waiting(router);
+        test_model_replaced_while_waiting(router);
     }
 
     RuntimeConfig::set_global(nullptr);
