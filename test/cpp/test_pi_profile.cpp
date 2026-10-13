@@ -71,13 +71,24 @@ void test_provider_block() {
     });
 }
 
+void test_api_key() {
+    const auto api_key_for = [](const std::string& key) {
+        return lemon_cli::pi_profile().build_provider_block(
+            "http://localhost:13305/v1", key, {{"Plain", "", 32768, {"chat"}}})["apiKey"];
+    };
+    check("no key writes the placeholder", api_key_for("") == "lemonade");
+    check("a key is referenced from the environment, never written",
+          api_key_for("real-secret-key") == "${LEMONADE_API_KEY}");
+}
+
 void test_mcp_server(const fs::path& mcp_path) {
     std::string error;
     write_file(mcp_path, R"({
         "autoEnableCodemode": false,
         "mcpServers": {
             "other": {"url": "http://other/mcp"},
-            "lemonade": {"url": "http://old:1/mcp", "enabled": false}
+            "lemonade": {"url": "http://old:1/mcp", "enabled": false,
+                         "headers": {"X-Trace": "1"}}
         }
     })");
 
@@ -90,7 +101,7 @@ void test_mcp_server(const fs::path& mcp_path) {
             "lemonade": {
                 "url": "http://localhost:13305/mcp",
                 "enabled": false,
-                "headers": {"Authorization": "Bearer ${LEMONADE_API_KEY}"},
+                "headers": {"X-Trace": "1", "Authorization": "Bearer ${LEMONADE_API_KEY}"},
                 "exposure": "direct"
             }
         }
@@ -100,9 +111,9 @@ void test_mcp_server(const fs::path& mcp_path) {
 
     lemon_cli::sync_pi_mcp_server("http://127.0.0.1:9000", false, error);
     mcp = json::parse(read_file(mcp_path));
-    check("refresh follows the origin and drops the header without a key",
+    check("refresh follows the origin and drops only the key header without a key",
           mcp["mcpServers"]["lemonade"]["url"] == "http://127.0.0.1:9000/mcp" &&
-              !mcp["mcpServers"]["lemonade"].contains("headers"));
+              mcp["mcpServers"]["lemonade"]["headers"] == json{{"X-Trace", "1"}});
 
     lemon_cli::remove_pi_mcp_server(error);
     mcp = json::parse(read_file(mcp_path));
@@ -130,6 +141,7 @@ int main() {
 #endif
 
     test_provider_block();
+    test_api_key();
     test_mcp_server(agent_dir / "mcp.json");
 
     std::error_code ec;
