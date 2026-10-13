@@ -1038,6 +1038,7 @@ set(SOURCES_CORE
     src/cpp/server/model_registry.cpp
     src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/catalog.cpp
+    src/cpp/server/models/change_notifier.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
@@ -3062,6 +3063,19 @@ if(BUILD_TESTING AND EXISTS "${_STORE_PUBLICATION_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(StorePublicationTest CI ON COMMAND test_store_publication)
+endif()
+
+set(_CHANGE_NOTIFIER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_change_notifier.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CHANGE_NOTIFIER_TEST_SRC}")
+    add_executable(test_change_notifier
+        test/cpp/test_change_notifier.cpp
+    )
+    target_link_libraries(test_change_notifier PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ChangeNotifierTest CI ON COMMAND test_change_notifier)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC

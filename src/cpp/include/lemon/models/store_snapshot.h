@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,8 @@ struct StoreSnapshot {
     // Canonical id -> the name it is listed under.
     std::map<std::string, std::string> canonical_public_names;
     std::shared_ptr<const FilterReasons> reasons;
+    // What the policies in `models` need; see collect_helper_models().
+    std::set<std::string> helper_models;
     // False until the first build; readers rebuild when they see it.
     bool valid = false;
     std::uint64_t generation = 0;
@@ -61,6 +64,11 @@ struct StoreSnapshot {
         return reasons->empty_recipes;
     }
 };
+
+// Union of the helpers every policy in `models` needs. A model with no policy
+// contributes none, and a helper named by several policies is named once.
+std::set<std::string> collect_helper_models(
+    const std::map<std::string, ModelInfo>& models);
 
 }  // namespace models
 }  // namespace lemon
