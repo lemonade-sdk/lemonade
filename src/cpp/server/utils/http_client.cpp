@@ -1148,6 +1148,31 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     return result;
 }
 
+bool HttpClient::verify_file_digest(const std::string& path,
+                                    const std::string& algorithm,
+                                    const std::string& value,
+                                    std::string& error) {
+    DownloadOptions options;
+    options.expected_hash_algorithm = algorithm;
+    options.expected_hash = value;
+
+    const ExpectedHash expected = parse_expected_hash(options);
+    if (!expected.present()) {
+        if (options.expected_hash.empty()) {
+            return true;
+        }
+        error = "Invalid or unsupported expected hash: " + options.expected_hash;
+        return false;
+    }
+
+    const HashCheckResult result = verify_file_hash(path_from_utf8(path), expected);
+    if (!result.ok) {
+        error = result.error.empty() ? "content does not match the expected hash" : result.error;
+        return false;
+    }
+    return true;
+}
+
 DownloadResult HttpClient::download_file(const std::string& url,
                                          const std::string& output_path,
                                          ProgressCallback callback,
