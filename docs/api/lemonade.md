@@ -282,6 +282,10 @@ Also served at `/api/v0/models/register`, `/api/v1/models/register` and `/v0/mod
                 "flow_shift": {"type": "number"},
                 "height": {"description": "Default image height in pixels.", "type": "integer"},
                 "sampling_method": {"type": "string"},
+                "soft_pixel_cap": {
+                  "description": "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.",
+                  "type": "integer"
+                },
                 "steps": {
                   "description": "Inference steps, e.g. 4 for turbo models and 20 for standard models.",
                   "type": "integer"
@@ -3307,6 +3311,8 @@ Reports hardware details, detected devices, each recipe's backend support on thi
 
 `HEAD` returns `200 OK` with an empty body.
 
+Each backend's `tier` and `format` are defined in [Backend Tiers and Formats](#backend-tiers-and-formats).
+
 Also served at `/api/v0/system-info`, `/api/v1/system-info` and `/v0/system-info`. Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
@@ -3366,10 +3372,10 @@ This endpoint takes no parameters.
         "nvidia_gpu": [{"available": false, "error": "No NVIDIA discrete GPU found", "name": ""}]
       },
       "model_storage": {
-        "free_bytes": 623403810816,
+        "free_bytes": 614608285696,
         "path": "~/.cache/huggingface/hub",
         "total_bytes": 2013755310080,
-        "used_bytes": 1390351499264
+        "used_bytes": 1399147024384
       },
       "no_fetch_executables": false,
       "recipes": {
@@ -3379,27 +3385,33 @@ This endpoint takes no parameters.
               "action": "",
               "devices": [],
               "download_filename": "acestep-cuda-linux-x64.tar.gz",
+              "format": "native",
               "message": "Unsupported GPU",
               "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
               "state": "unsupported",
+              "tier": "experimental",
               "version": "v0.1.1"
             },
             "rocm": {
               "action": "lemonade backends install acestep:rocm",
               "devices": ["amd_gpu"],
               "download_filename": "acestep-rocm-linux-x64.tar.gz",
+              "format": "native",
               "message": "Backend is supported but not installed.",
               "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
               "state": "installable",
+              "tier": "experimental",
               "version": "v0.1.1"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "acestep-vulkan-linux-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
               "state": "installed",
+              "tier": "experimental",
               "version": "v0.1.1"
             }
           },
@@ -3425,7 +3437,9 @@ This endpoint takes no parameters.
               "backend": "cuda",
               "device_summary": "NVIDIA GPUs",
               "devices": [{"device": "nvidia_gpu", "families": []}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "vulkan",
@@ -3435,7 +3449,9 @@ This endpoint takes no parameters.
                 {"device": "cpu", "families": ["x86_64"]},
                 {"device": "nvidia_gpu", "families": []}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "rocm",
@@ -3446,7 +3462,9 @@ This endpoint takes no parameters.
                   "families": ["gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X"]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": false,
@@ -3458,14 +3476,16 @@ This endpoint takes no parameters.
               "action": "lemonade backends install ds4:rocm",
               "devices": ["amd_gpu"],
               "download_filename": "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz",
+              "format": "native",
               "message": "Backend is supported but not installed.",
               "release_url": "https://github.com/lemonade-sdk/ds4-rocm/releases/tag/b0001",
               "state": "installable",
+              "tier": "guest",
               "version": "b0001"
             }
           },
           "default_backend": "rocm",
-          "display_name": "DwarfStar4 (experimental)",
+          "display_name": "DwarfStar4",
           "experimental": true,
           "modality": "Text generation",
           "options": [
@@ -3486,11 +3506,13 @@ This endpoint takes no parameters.
               "backend": "rocm",
               "device_summary": "Prebuilt ds4 for AMD Strix Halo",
               "devices": [{"device": "amd_gpu", "families": ["gfx1151"]}],
-              "os": ["linux"]
+              "format": "native",
+              "os": ["linux"],
+              "tier": "guest"
             }
           ],
           "uses_ctx_size": true,
-          "web_display_name": "DwarfStar4 (experimental)"
+          "web_display_name": "DwarfStar4"
         },
         "flm": {
           "backends": {
@@ -3498,9 +3520,11 @@ This endpoint takes no parameters.
               "action": "lemonade backends install flm:npu",
               "devices": ["amd_npu"],
               "download_filename": "fastflowlm_1.0.7_linux.tar.gz",
+              "format": "native",
               "message": "Backend update is required before use.",
               "release_url": "https://github.com/ROCm/FastFlowLM/releases/tag/v1.0.7",
               "state": "update_required",
+              "tier": "core",
               "version": "v1.0.5"
             }
           },
@@ -3526,7 +3550,9 @@ This endpoint takes no parameters.
               "backend": "npu",
               "device_summary": "XDNA2 NPU",
               "devices": [{"device": "amd_npu", "families": ["XDNA2"]}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": true,
@@ -3538,18 +3564,22 @@ This endpoint takes no parameters.
               "action": "",
               "devices": ["cpu"],
               "download_filename": "kokoros-linux-x86_64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/Kokoros/releases/tag/b21",
               "state": "installed",
+              "tier": "core",
               "version": "b21"
             },
             "metal": {
               "action": "",
               "can_uninstall": true,
               "devices": [],
+              "format": "native",
               "message": "Requires macOS",
               "release_url": "https://github.com/lemonade-sdk/Kokoros/releases/tag/b21",
               "state": "unsupported",
+              "tier": "core",
               "version": "b21"
             }
           },
@@ -3566,13 +3596,17 @@ This endpoint takes no parameters.
               "backend": "metal",
               "device_summary": "Apple Silicon GPU",
               "devices": [{"device": "metal", "families": []}],
-              "os": ["macos"]
+              "format": "native",
+              "os": ["macos"],
+              "tier": "core"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64 CPU",
               "devices": [{"device": "cpu", "families": ["x86_64"]}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": false,
@@ -3584,47 +3618,59 @@ This endpoint takes no parameters.
               "action": "lemonade backends install llamacpp:cpu",
               "devices": ["cpu"],
               "download_filename": "llama-b11393-bin-ubuntu-x64.tar.gz",
+              "format": "native",
               "message": "Backend is supported but not installed.",
               "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11393",
               "state": "installable",
+              "tier": "core",
               "version": "b11393"
             },
             "cuda": {
               "action": "",
               "devices": [],
+              "format": "native",
               "message": "Unsupported GPU",
-              "state": "unsupported"
+              "state": "unsupported",
+              "tier": "core"
             },
             "metal": {
               "action": "",
               "can_uninstall": true,
               "devices": [],
+              "format": "native",
               "message": "Requires macOS",
-              "state": "unsupported"
+              "state": "unsupported",
+              "tier": "core"
             },
             "rocm": {
-              "action": "",
+              "action": "lemonade backends install llamacpp:rocm",
               "devices": ["amd_gpu"],
               "download_filename": "llama-b11395-bin-ubuntu-rocm-10.0-x64.tar.gz",
-              "message": "",
+              "format": "native",
+              "message": "Backend update is required before use.",
               "release_url": "https://github.com/lemonade-sdk/llama.cpp/releases/tag/b11395",
-              "state": "installed",
-              "version": "b11395"
+              "state": "update_required",
+              "tier": "core",
+              "version": "b10820"
             },
             "system": {
               "action": "",
               "devices": ["cpu"],
+              "format": "native",
               "message": "llama-server not found in PATH",
               "release_url": "https://github.com//releases/tag/",
-              "state": "unsupported"
+              "state": "unsupported",
+              "tier": "core"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11393",
               "state": "installed",
+              "tier": "core",
               "version": "b11393"
             }
           },
@@ -3666,13 +3712,17 @@ This endpoint takes no parameters.
               "backend": "system",
               "device_summary": "x86_64/ARM64 CPU, GPU",
               "devices": [{"device": "cpu", "families": ["arm64", "x86_64"]}],
-              "os": ["linux"]
+              "format": "native",
+              "os": ["linux"],
+              "tier": "core"
             },
             {
               "backend": "metal",
               "device_summary": "Apple Silicon GPU",
               "devices": [{"device": "metal", "families": []}],
-              "os": ["macos"]
+              "format": "native",
+              "os": ["macos"],
+              "tier": "core"
             },
             {
               "backend": "cuda",
@@ -3692,7 +3742,9 @@ This endpoint takes no parameters.
                   ]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "vulkan",
@@ -3701,7 +3753,9 @@ This endpoint takes no parameters.
                 {"device": "amd_gpu", "families": []},
                 {"device": "cpu", "families": ["arm64", "x86_64"]}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "rocm",
@@ -3723,13 +3777,17 @@ This endpoint takes no parameters.
                   ]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64 CPU; ARM64 CPU (Linux)",
               "devices": [{"device": "cpu", "families": ["arm64", "x86_64"]}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": true,
@@ -3741,14 +3799,16 @@ This endpoint takes no parameters.
               "action": "lemonade backends install llamacpp-hrx:hrx",
               "devices": ["amd_gpu"],
               "download_filename": "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz",
+              "format": "native",
               "message": "Backend update is required before use.",
               "release_url": "https://github.com/ROCm/ggml-staging-automation/releases/tag/hrx-b99",
               "state": "update_required",
+              "tier": "experimental",
               "version": "hrx-b59"
             }
           },
           "default_backend": "hrx",
-          "display_name": "HRX GPU (experimental)",
+          "display_name": "HRX GPU",
           "experimental": true,
           "modality": "Text generation",
           "options": [
@@ -3769,11 +3829,13 @@ This endpoint takes no parameters.
               "backend": "hrx",
               "device_summary": "AMD GPUs (gfx1100, gfx1151)",
               "devices": [{"device": "amd_gpu", "families": ["gfx1100", "gfx1151"]}],
-              "os": ["linux"]
+              "format": "native",
+              "os": ["linux"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": true,
-          "web_display_name": "HRX GPU (experimental)"
+          "web_display_name": "HRX GPU"
         },
         "moonshine": {
           "backends": {
@@ -3781,9 +3843,11 @@ This endpoint takes no parameters.
               "action": "",
               "devices": ["cpu"],
               "download_filename": "moonshine-server-moonshine0.0.62-linux-x64.tar.gz",
+              "format": "python",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/moonshine-server-rocm/releases/tag/moonshine0.0.62",
               "state": "installed",
+              "tier": "core",
               "version": "moonshine0.0.62"
             }
           },
@@ -3809,19 +3873,25 @@ This endpoint takes no parameters.
               "backend": "cpu",
               "device_summary": "x86_64/arm64 CPU",
               "devices": [{"device": "cpu", "families": ["x86_64"]}],
-              "os": ["windows"]
+              "format": "python",
+              "os": ["windows"],
+              "tier": "core"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64/arm64 CPU",
               "devices": [{"device": "cpu", "families": ["arm64", "x86_64"]}],
-              "os": ["linux"]
+              "format": "python",
+              "os": ["linux"],
+              "tier": "core"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64/arm64 CPU",
               "devices": [{"device": "cpu", "families": ["arm64"]}],
-              "os": ["macos"]
+              "format": "python",
+              "os": ["macos"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": false,
@@ -3833,9 +3903,11 @@ This endpoint takes no parameters.
               "action": "",
               "devices": ["cpu"],
               "download_filename": "ort-server-0.3.7-linux-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/ort-server/releases/tag/0.3.7",
               "state": "installed",
+              "tier": "experimental",
               "version": "0.3.7"
             }
           },
@@ -3861,19 +3933,25 @@ This endpoint takes no parameters.
               "backend": "cpu",
               "device_summary": "x86_64 CPU",
               "devices": [{"device": "cpu", "families": ["x86_64"]}],
-              "os": ["windows"]
+              "format": "native",
+              "os": ["windows"],
+              "tier": "experimental"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64/arm64 CPU",
               "devices": [{"device": "cpu", "families": ["arm64", "x86_64"]}],
-              "os": ["linux"]
+              "format": "native",
+              "os": ["linux"],
+              "tier": "experimental"
             },
             {
               "backend": "cpu",
               "device_summary": "arm64 CPU",
               "devices": [{"device": "cpu", "families": ["arm64"]}],
-              "os": ["macos"]
+              "format": "native",
+              "os": ["macos"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": false,
@@ -3885,18 +3963,22 @@ This endpoint takes no parameters.
               "action": "",
               "devices": [],
               "download_filename": "moss-tts-cuda-linux-x64.tar.gz",
+              "format": "native",
               "message": "Unsupported GPU",
               "release_url": "https://github.com/pwilkin/openmoss/releases/tag/v0.3.0",
               "state": "unsupported",
+              "tier": "experimental",
               "version": "v0.3.0"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "moss-tts-vulkan-linux-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/pwilkin/openmoss/releases/tag/v0.3.0",
               "state": "installed",
+              "tier": "experimental",
               "version": "v0.3.0"
             }
           },
@@ -3922,7 +4004,9 @@ This endpoint takes no parameters.
               "backend": "cuda",
               "device_summary": "NVIDIA GPUs",
               "devices": [{"device": "nvidia_gpu", "families": []}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "vulkan",
@@ -3932,7 +4016,9 @@ This endpoint takes no parameters.
                 {"device": "cpu", "families": ["x86_64"]},
                 {"device": "nvidia_gpu", "families": []}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": false,
@@ -3945,9 +4031,11 @@ This endpoint takes no parameters.
               "can_uninstall": true,
               "devices": [],
               "download_filename": "ryzenai-server.zip",
+              "format": "native",
               "message": "Requires Windows",
               "release_url": "https://github.com/lemonade-sdk/ryzenai-server/releases/tag/v1.7.0",
               "state": "unsupported",
+              "tier": "core",
               "version": "v1.7.0"
             }
           },
@@ -3963,7 +4051,9 @@ This endpoint takes no parameters.
               "backend": "npu",
               "device_summary": "XDNA2 NPU",
               "devices": [{"device": "amd_npu", "families": ["XDNA2"]}],
-              "os": ["windows"]
+              "format": "native",
+              "os": ["windows"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": true,
@@ -3972,45 +4062,55 @@ This endpoint takes no parameters.
         "sd-cpp": {
           "backends": {
             "cpu": {
-              "action": "",
+              "action": "lemonade backends install sd-cpp:cpu",
               "devices": ["cpu"],
               "download_filename": "sd-master-017cc8e-bin-Linux-Ubuntu-24.04-x86_64.zip",
-              "message": "",
+              "format": "native",
+              "message": "Backend update is required before use.",
               "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
-              "state": "installed",
-              "version": "master-894-017cc8e"
+              "state": "update_required",
+              "tier": "core",
+              "version": "master-721-8caa3f9"
             },
             "cuda": {
               "action": "",
               "devices": [],
+              "format": "native",
               "message": "Unsupported GPU",
-              "state": "unsupported"
+              "state": "unsupported",
+              "tier": "core"
             },
             "metal": {
               "action": "",
               "can_uninstall": true,
               "devices": [],
+              "format": "native",
               "message": "Requires macOS",
               "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
               "state": "unsupported",
+              "tier": "core",
               "version": "master-894-017cc8e"
             },
             "rocm": {
               "action": "lemonade backends install sd-cpp:rocm",
               "devices": ["amd_gpu"],
               "download_filename": "sd-master-017cc8e-bin-Linux-Ubuntu-24.04-x86_64-rocm-10.0.0.zip",
+              "format": "native",
               "message": "Backend update is required before use.",
               "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
               "state": "update_required",
+              "tier": "core",
               "version": "master-843-462d675"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "sd-master-017cc8e-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
               "state": "installed",
+              "tier": "core",
               "version": "master-894-017cc8e"
             }
           },
@@ -4092,7 +4192,9 @@ This endpoint takes no parameters.
               "backend": "metal",
               "device_summary": "Apple Silicon GPU",
               "devices": [{"device": "metal", "families": []}],
-              "os": ["macos"]
+              "format": "native",
+              "os": ["macos"],
+              "tier": "core"
             },
             {
               "backend": "cuda",
@@ -4112,7 +4214,9 @@ This endpoint takes no parameters.
                   ]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "vulkan",
@@ -4122,7 +4226,9 @@ This endpoint takes no parameters.
                 {"device": "cpu", "families": ["x86_64"]},
                 {"device": "nvidia_gpu", "families": []}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "rocm",
@@ -4133,13 +4239,17 @@ This endpoint takes no parameters.
                   "families": ["gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X"]
                 }
               ],
-              "os": ["linux"]
+              "format": "native",
+              "os": ["linux"],
+              "tier": "core"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64 CPU",
               "devices": [{"device": "cpu", "families": ["x86_64"]}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": false,
@@ -4150,11 +4260,13 @@ This endpoint takes no parameters.
             "rocm": {
               "action": "lemonade backends install thenoise:rocm",
               "devices": ["amd_gpu"],
-              "download_filename": "thenoise-0.10.0-rocm10.1.0-gfx1151-x64.tar.gz",
+              "download_filename": "thenoise-0.10.1-rocm10.1.0-gfx1151-x64.tar.gz",
+              "format": "python",
               "message": "Backend update is required before use.",
-              "release_url": "https://github.com/lemonade-sdk/thenoise/releases/tag/thenoise-0.10.0-rocm10.1.0",
+              "release_url": "https://github.com/lemonade-sdk/thenoise/releases/tag/thenoise-0.10.1-rocm10.1.0",
               "state": "update_required",
-              "version": "thenoise-0.4.1-rocm7.14.0"
+              "tier": "experimental",
+              "version": "thenoise-0.9.1-rocm10.1.0"
             }
           },
           "default_backend": "rocm",
@@ -4264,7 +4376,9 @@ This endpoint takes no parameters.
                   "families": ["gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X"]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "python",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": false,
@@ -4276,27 +4390,33 @@ This endpoint takes no parameters.
               "action": "",
               "devices": [],
               "download_filename": "thinksound-cuda-linux-x64.tar.gz",
+              "format": "native",
               "message": "Unsupported GPU",
               "release_url": "https://github.com/pwilkin/thinksound.cpp/releases/tag/v0.1.2",
               "state": "unsupported",
+              "tier": "experimental",
               "version": "v0.1.2"
             },
             "rocm": {
               "action": "lemonade backends install thinksound:rocm",
               "devices": ["amd_gpu"],
               "download_filename": "thinksound-rocm-linux-x64.tar.gz",
+              "format": "native",
               "message": "Backend is supported but not installed.",
               "release_url": "https://github.com/pwilkin/thinksound.cpp/releases/tag/v0.1.2",
               "state": "installable",
+              "tier": "experimental",
               "version": "v0.1.2"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "thinksound-vulkan-linux-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/pwilkin/thinksound.cpp/releases/tag/v0.1.2",
               "state": "installed",
+              "tier": "experimental",
               "version": "v0.1.2"
             }
           },
@@ -4322,7 +4442,9 @@ This endpoint takes no parameters.
               "backend": "cuda",
               "device_summary": "NVIDIA GPUs",
               "devices": [{"device": "nvidia_gpu", "families": []}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "vulkan",
@@ -4332,7 +4454,9 @@ This endpoint takes no parameters.
                 {"device": "cpu", "families": ["x86_64"]},
                 {"device": "nvidia_gpu", "families": []}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "rocm",
@@ -4343,7 +4467,9 @@ This endpoint takes no parameters.
                   "families": ["gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X"]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": false,
@@ -4355,27 +4481,33 @@ This endpoint takes no parameters.
               "action": "",
               "devices": [],
               "download_filename": "trellis-cuda-linux-x64.tar.gz",
+              "format": "native",
               "message": "Unsupported GPU",
               "release_url": "https://github.com/pwilkin/trellis.cpp/releases/tag/v0.4.3",
               "state": "unsupported",
+              "tier": "experimental",
               "version": "v0.4.3"
             },
             "rocm": {
               "action": "",
               "devices": ["amd_gpu"],
               "download_filename": "trellis-rocm-linux-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/pwilkin/trellis.cpp/releases/tag/v0.4.3",
               "state": "installed",
+              "tier": "experimental",
               "version": "v0.4.3"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "trellis-vulkan-linux-x64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/pwilkin/trellis.cpp/releases/tag/v0.4.3",
               "state": "installed",
+              "tier": "experimental",
               "version": "v0.4.3"
             }
           },
@@ -4409,7 +4541,9 @@ This endpoint takes no parameters.
               "backend": "cuda",
               "device_summary": "NVIDIA GPUs",
               "devices": [{"device": "nvidia_gpu", "families": []}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "vulkan",
@@ -4419,7 +4553,9 @@ This endpoint takes no parameters.
                 {"device": "cpu", "families": ["x86_64"]},
                 {"device": "nvidia_gpu", "families": []}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             },
             {
               "backend": "rocm",
@@ -4430,7 +4566,9 @@ This endpoint takes no parameters.
                   "families": ["gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X"]
                 }
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": false,
@@ -4442,14 +4580,16 @@ This endpoint takes no parameters.
               "action": "",
               "devices": ["amd_gpu"],
               "download_filename": "vllm0.20.1-rocm7.12.0-gfx1151-x64.tar.gz",
+              "format": "python",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/vllm-rocm/releases/tag/vllm0.20.1-rocm7.12.0-gfx1151",
               "state": "installed",
+              "tier": "experimental",
               "version": "vllm0.20.1-rocm7.12.0-gfx1151"
             }
           },
           "default_backend": "rocm",
-          "display_name": "vLLM ROCm (experimental)",
+          "display_name": "vLLM ROCm",
           "experimental": true,
           "modality": "Text generation",
           "options": [
@@ -4480,11 +4620,13 @@ This endpoint takes no parameters.
               "devices": [
                 {"device": "amd_gpu", "families": ["gfx110X", "gfx1150", "gfx1151", "gfx120X"]}
               ],
-              "os": ["linux"]
+              "format": "python",
+              "os": ["linux"],
+              "tier": "experimental"
             }
           ],
           "uses_ctx_size": true,
-          "web_display_name": "vLLM ROCm (experimental)"
+          "web_display_name": "vLLM ROCm"
         },
         "whispercpp": {
           "backends": {
@@ -4492,9 +4634,11 @@ This endpoint takes no parameters.
               "action": "lemonade backends install whispercpp:cpu",
               "devices": ["cpu"],
               "download_filename": "whisper-v1.8.4-linux-cpu-x86_64.tar.gz",
+              "format": "native",
               "message": "Backend is supported but not installed.",
               "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
               "state": "installable",
+              "tier": "core",
               "version": "v1.8.4"
             },
             "metal": {
@@ -4502,34 +4646,42 @@ This endpoint takes no parameters.
               "can_uninstall": true,
               "devices": [],
               "download_filename": "whisper-v1.8.4-darwin-metal-arm64.tar.gz",
+              "format": "native",
               "message": "Requires macOS",
               "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
               "state": "unsupported",
+              "tier": "core",
               "version": "v1.8.4"
             },
             "npu": {
               "action": "",
               "can_uninstall": true,
               "devices": [],
+              "format": "native",
               "message": "Requires Windows",
-              "state": "unsupported"
+              "state": "unsupported",
+              "tier": "core"
             },
             "rocm": {
               "action": "",
               "devices": ["amd_gpu"],
               "download_filename": "whisper-v1.8.4-linux-rocm-gfx1151.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
               "state": "installed",
+              "tier": "core",
               "version": "v1.8.4"
             },
             "vulkan": {
               "action": "",
               "devices": ["amd_gpu", "cpu"],
               "download_filename": "whisper-v1.8.4-linux-vulkan-x86_64.tar.gz",
+              "format": "native",
               "message": "",
               "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
               "state": "installed",
+              "tier": "core",
               "version": "v1.8.4"
             }
           },
@@ -4563,13 +4715,17 @@ This endpoint takes no parameters.
               "backend": "npu",
               "device_summary": "XDNA2 NPU",
               "devices": [{"device": "amd_npu", "families": ["XDNA2"]}],
-              "os": ["windows"]
+              "format": "native",
+              "os": ["windows"],
+              "tier": "core"
             },
             {
               "backend": "metal",
               "device_summary": "Apple Silicon GPU",
               "devices": [{"device": "metal", "families": []}],
-              "os": ["macos"]
+              "format": "native",
+              "os": ["macos"],
+              "tier": "core"
             },
             {
               "backend": "vulkan",
@@ -4578,7 +4734,9 @@ This endpoint takes no parameters.
                 {"device": "amd_gpu", "families": []},
                 {"device": "cpu", "families": ["x86_64"]}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "rocm",
@@ -4586,13 +4744,17 @@ This endpoint takes no parameters.
               "devices": [
                 {"device": "amd_gpu", "families": ["gfx110X", "gfx1150", "gfx1151", "gfx120X"]}
               ],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             },
             {
               "backend": "cpu",
               "device_summary": "x86_64 CPU",
               "devices": [{"device": "cpu", "families": ["x86_64"]}],
-              "os": ["linux", "windows"]
+              "format": "native",
+              "os": ["linux", "windows"],
+              "tier": "core"
             }
           ],
           "uses_ctx_size": false,
@@ -4705,13 +4867,13 @@ This endpoint takes no parameters.
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": ["backends"],
+            "required": ["experimental", "backends"],
             "properties": {
               "backends": {
                 "type": "object",
                 "additionalProperties": {
                   "type": "object",
-                  "required": ["devices", "state"],
+                  "required": ["devices", "state", "tier", "format"],
                   "properties": {
                     "action": {
                       "description": "What the user should do, typically an exact CLI command for install and update, or a URL; may be empty.",
@@ -4723,6 +4885,10 @@ This endpoint takes no parameters.
                       "items": {"type": "string"}
                     },
                     "download_filename": {"type": "string"},
+                    "format": {
+                      "description": "How the backend is packaged on this operating system.",
+                      "enum": ["native", "python", "container"]
+                    },
                     "message": {
                       "description": "Status text for GUI and CLI users: required for unsupported, installable and update_required; empty for installed.",
                       "type": "string"
@@ -4730,6 +4896,10 @@ This endpoint takes no parameters.
                     "release_url": {"type": "string"},
                     "state": {
                       "enum": ["unsupported", "installable", "update_required", "installed"]
+                    },
+                    "tier": {
+                      "description": "Who supports the backend on this operating system.",
+                      "enum": ["core", "experimental", "guest"]
                     },
                     "version": {
                       "description": "Installed or configured backend version, when available.",
@@ -4741,6 +4911,10 @@ This endpoint takes no parameters.
               "default_backend": {
                 "description": "Backend the server prefers on this system; present when at least one backend is not unsupported.",
                 "type": "string"
+              },
+              "experimental": {
+                "description": "Whether the default_backend's tier is experimental or guest.",
+                "type": "boolean"
               }
             }
           }
@@ -4754,6 +4928,22 @@ This endpoint takes no parameters.
     }
     ```
 <!-- END GENERATED: lemonade.system_info -->
+
+### Backend Tiers and Formats
+
+| Tier | Meaning |
+|------|---------|
+| `core` | Supported by Lemonade's maintainers for production use. |
+| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
+| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from `GET /v1/models?show_all=true` until one of those backends is installed. |
+
+| Format | Meaning |
+|--------|---------|
+| `native` | A compiled executable. |
+| `python` | Python, packaged with its own interpreter. |
+| `container` | An OCI image, run by a pre-installed Podman or Docker. |
+
+The same backend can carry different labels on different operating systems. Each entry in a recipe's `backends` object reports the labels for this system's operating system.
 
 ## Log Streaming API (WebSocket)
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

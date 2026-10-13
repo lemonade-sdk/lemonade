@@ -36,7 +36,7 @@ void write_image_route_exception(const std::exception& error, httplib::Response&
     write_openai_error(res, 500, error.what(), fallback_type);
 }
 
-bool attach_form_image(RouteRequest& req, httplib::Response& res) {
+bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_multiple) {
     if (req.body.contains("n")) {
         const int n = req.body["n"].get<int>();
         if (n < 1 || n > 10) {
@@ -45,15 +45,40 @@ bool attach_form_image(RouteRequest& req, httplib::Response& res) {
         }
     }
 
-    const httplib::FormData* file = find_form_file(req.http, {"image", "image[]"});
-    if (!file) {
+    const auto& files = req.http.form.files;
+    // A multipart map groups files by field name, losing mixed upload order.
+    if (allow_multiple && files.count("image") > 0 && files.count("image[]") > 0) {
+        write_openai_error(res, 400, "Use either 'image' or 'image[]', not both");
+        return false;
+    }
+
+    json images = json::array();
+    for (const auto& [field, file] : files) {
+        if (field != "image" && field != "image[]") {
+            continue;
+        }
+        const std::string encoded = utils::JsonUtils::base64_encode(file.content);
+        if (images.empty()) {
+            req.body["image_data"] = encoded;
+            req.body["image_filename"] = file.filename;
+            req.body["image_content_type"] = file.content_type;
+        }
+        LOG(INFO, "Server") << "Image file: " << file.filename
+                            << " (" << file.content.size() << " bytes)" << std::endl;
+        if (!allow_multiple) {
+            return true;
+        }
+        images.push_back({
+            {"data", encoded},
+            {"filename", file.filename},
+            {"content_type", file.content_type},
+        });
+    }
+    if (images.empty()) {
         write_openai_error(res, 400, "Missing 'image' field in request");
         return false;
     }
-    req.body["image_data"] = utils::JsonUtils::base64_encode(file->content);
-    req.body["image_filename"] = file->filename;
-    LOG(INFO, "Server") << "Image file: " << file->filename
-                        << " (" << file->content.size() << " bytes)" << std::endl;
+    req.body["image_files"] = std::move(images);
     return true;
 }
 

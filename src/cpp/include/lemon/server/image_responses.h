@@ -18,7 +18,8 @@ void write_image_route_exception(const std::exception& error, httplib::Response&
                                  const char* fallback_type);
 
 // images/edits and images/variations accept the same n and source image fields; the
-// backend expects the image base64-encoded in the request body.
-bool attach_form_image(RouteRequest& req, httplib::Response& res);
+// backend expects each image base64-encoded in the request body. images/edits takes several
+// reference images, which allow_multiple also forwards in upload order as image_files.
+bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_multiple = false);
 
 } // namespace lemon

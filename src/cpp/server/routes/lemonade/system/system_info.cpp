@@ -165,20 +165,23 @@ json system_info_schema() {
                 "description": "Each recipe's backends and their support on this system.",
                 "additionalProperties": {
                     "type": "object",
-                    "required": ["backends"],
+                    "required": ["experimental", "backends"],
                     "properties": {
                         "default_backend": {"type": "string", "description": "Backend the server prefers on this system; present when at least one backend is not unsupported."},
+                        "experimental": {"type": "boolean", "description": "Whether the default_backend's tier is experimental or guest."},
                         "backends": {
                             "type": "object",
                             "additionalProperties": {
                                 "type": "object",
-                                "required": ["devices", "state"],
+                                "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices on this system that support the backend; empty when unsupported."},
                                     "state": {"enum": ["unsupported", "installable", "update_required", "installed"]},
                                     "message": {"type": "string", "description": "Status text for GUI and CLI users: required for unsupported, installable and update_required; empty for installed."},
                                     "action": {"type": "string", "description": "What the user should do, typically an exact CLI command for install and update, or a URL; may be empty."},
                                     "version": {"type": "string", "description": "Installed or configured backend version, when available."},
+                                    "tier": {"enum": ["core", "experimental", "guest"], "description": "Who supports the backend on this operating system."},
+                                    "format": {"enum": ["native", "python", "container"], "description": "How the backend is packaged on this operating system."},
                                     "release_url": {"type": "string"},
                                     "download_filename": {"type": "string"}
                                 }
@@ -244,6 +247,8 @@ public:
             "system, model storage, and installed cloud providers.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
+            "Each backend's `tier` and `format` are defined in "
+            "[Backend Tiers and Formats](#backend-tiers-and-formats).",
         };
 
         RouteResponse response;

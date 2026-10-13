@@ -2098,10 +2098,10 @@
           ]
         },
         "model_storage": {
-          "free_bytes": 623403810816,
+          "free_bytes": 614608285696,
           "path": "~/.cache/huggingface/hub",
           "total_bytes": 2013755310080,
-          "used_bytes": 1390351499264
+          "used_bytes": 1399147024384
         },
         "no_fetch_executables": false,
         "recipes": {
@@ -2111,9 +2111,11 @@
                 "action": "",
                 "devices": [],
                 "download_filename": "acestep-cuda-linux-x64.tar.gz",
+                "format": "native",
                 "message": "Unsupported GPU",
                 "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
                 "state": "unsupported",
+                "tier": "experimental",
                 "version": "v0.1.1"
               },
               "rocm": {
@@ -2122,9 +2124,11 @@
                   "amd_gpu"
                 ],
                 "download_filename": "acestep-rocm-linux-x64.tar.gz",
+                "format": "native",
                 "message": "Backend is supported but not installed.",
                 "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
                 "state": "installable",
+                "tier": "experimental",
                 "version": "v0.1.1"
               },
               "vulkan": {
@@ -2134,9 +2138,11 @@
                   "cpu"
                 ],
                 "download_filename": "acestep-vulkan-linux-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "v0.1.1"
               }
             },
@@ -2167,10 +2173,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "vulkan",
@@ -2191,10 +2199,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "rocm",
@@ -2212,10 +2222,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": false,
@@ -2229,14 +2241,16 @@
                   "amd_gpu"
                 ],
                 "download_filename": "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz",
+                "format": "native",
                 "message": "Backend is supported but not installed.",
                 "release_url": "https://github.com/lemonade-sdk/ds4-rocm/releases/tag/b0001",
                 "state": "installable",
+                "tier": "guest",
                 "version": "b0001"
               }
             },
             "default_backend": "rocm",
-            "display_name": "DwarfStar4 (experimental)",
+            "display_name": "DwarfStar4",
             "experimental": true,
             "modality": "Text generation",
             "options": [
@@ -2264,13 +2278,15 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "guest"
               }
             ],
             "uses_ctx_size": true,
-            "web_display_name": "DwarfStar4 (experimental)"
+            "web_display_name": "DwarfStar4"
           },
           "flm": {
             "backends": {
@@ -2280,9 +2296,11 @@
                   "amd_npu"
                 ],
                 "download_filename": "fastflowlm_1.0.7_linux.tar.gz",
+                "format": "native",
                 "message": "Backend update is required before use.",
                 "release_url": "https://github.com/ROCm/FastFlowLM/releases/tag/v1.0.7",
                 "state": "update_required",
+                "tier": "core",
                 "version": "v1.0.5"
               }
             },
@@ -2315,10 +2333,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": true,
@@ -2332,18 +2352,22 @@
                   "cpu"
                 ],
                 "download_filename": "kokoros-linux-x86_64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/Kokoros/releases/tag/b21",
                 "state": "installed",
+                "tier": "core",
                 "version": "b21"
               },
               "metal": {
                 "action": "",
                 "can_uninstall": true,
                 "devices": [],
+                "format": "native",
                 "message": "Requires macOS",
                 "release_url": "https://github.com/lemonade-sdk/Kokoros/releases/tag/b21",
                 "state": "unsupported",
+                "tier": "core",
                 "version": "b21"
               }
             },
@@ -2365,9 +2389,11 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "macos"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cpu",
@@ -2380,10 +2406,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": false,
@@ -2397,43 +2425,53 @@
                   "cpu"
                 ],
                 "download_filename": "llama-b11393-bin-ubuntu-x64.tar.gz",
+                "format": "native",
                 "message": "Backend is supported but not installed.",
                 "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11393",
                 "state": "installable",
+                "tier": "core",
                 "version": "b11393"
               },
               "cuda": {
                 "action": "",
                 "devices": [],
+                "format": "native",
                 "message": "Unsupported GPU",
-                "state": "unsupported"
+                "state": "unsupported",
+                "tier": "core"
               },
               "metal": {
                 "action": "",
                 "can_uninstall": true,
                 "devices": [],
+                "format": "native",
                 "message": "Requires macOS",
-                "state": "unsupported"
+                "state": "unsupported",
+                "tier": "core"
               },
               "rocm": {
-                "action": "",
+                "action": "lemonade backends install llamacpp:rocm",
                 "devices": [
                   "amd_gpu"
                 ],
                 "download_filename": "llama-b11395-bin-ubuntu-rocm-10.0-x64.tar.gz",
-                "message": "",
+                "format": "native",
+                "message": "Backend update is required before use.",
                 "release_url": "https://github.com/lemonade-sdk/llama.cpp/releases/tag/b11395",
-                "state": "installed",
-                "version": "b11395"
+                "state": "update_required",
+                "tier": "core",
+                "version": "b10820"
               },
               "system": {
                 "action": "",
                 "devices": [
                   "cpu"
                 ],
+                "format": "native",
                 "message": "llama-server not found in PATH",
                 "release_url": "https://github.com//releases/tag/",
-                "state": "unsupported"
+                "state": "unsupported",
+                "tier": "core"
               },
               "vulkan": {
                 "action": "",
@@ -2442,9 +2480,11 @@
                   "cpu"
                 ],
                 "download_filename": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11393",
                 "state": "installed",
+                "tier": "core",
                 "version": "b11393"
               }
             },
@@ -2494,9 +2534,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "metal",
@@ -2507,9 +2549,11 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "macos"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cuda",
@@ -2529,10 +2573,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "vulkan",
@@ -2550,10 +2596,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "rocm",
@@ -2575,10 +2623,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cpu",
@@ -2592,10 +2642,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": true,
@@ -2609,14 +2661,16 @@
                   "amd_gpu"
                 ],
                 "download_filename": "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz",
+                "format": "native",
                 "message": "Backend update is required before use.",
                 "release_url": "https://github.com/ROCm/ggml-staging-automation/releases/tag/hrx-b99",
                 "state": "update_required",
+                "tier": "experimental",
                 "version": "hrx-b59"
               }
             },
             "default_backend": "hrx",
-            "display_name": "HRX GPU (experimental)",
+            "display_name": "HRX GPU",
             "experimental": true,
             "modality": "Text generation",
             "options": [
@@ -2645,13 +2699,15 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": true,
-            "web_display_name": "HRX GPU (experimental)"
+            "web_display_name": "HRX GPU"
           },
           "moonshine": {
             "backends": {
@@ -2661,9 +2717,11 @@
                   "cpu"
                 ],
                 "download_filename": "moonshine-server-moonshine0.0.62-linux-x64.tar.gz",
+                "format": "python",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/moonshine-server-rocm/releases/tag/moonshine0.0.62",
                 "state": "installed",
+                "tier": "core",
                 "version": "moonshine0.0.62"
               }
             },
@@ -2696,9 +2754,11 @@
                     ]
                   }
                 ],
+                "format": "python",
                 "os": [
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cpu",
@@ -2712,9 +2772,11 @@
                     ]
                   }
                 ],
+                "format": "python",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cpu",
@@ -2727,9 +2789,11 @@
                     ]
                   }
                 ],
+                "format": "python",
                 "os": [
                   "macos"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": false,
@@ -2743,9 +2807,11 @@
                   "cpu"
                 ],
                 "download_filename": "ort-server-0.3.7-linux-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/ort-server/releases/tag/0.3.7",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "0.3.7"
               }
             },
@@ -2778,9 +2844,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "cpu",
@@ -2794,9 +2862,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "cpu",
@@ -2809,9 +2879,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "macos"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": false,
@@ -2823,9 +2895,11 @@
                 "action": "",
                 "devices": [],
                 "download_filename": "moss-tts-cuda-linux-x64.tar.gz",
+                "format": "native",
                 "message": "Unsupported GPU",
                 "release_url": "https://github.com/pwilkin/openmoss/releases/tag/v0.3.0",
                 "state": "unsupported",
+                "tier": "experimental",
                 "version": "v0.3.0"
               },
               "vulkan": {
@@ -2835,9 +2909,11 @@
                   "cpu"
                 ],
                 "download_filename": "moss-tts-vulkan-linux-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/pwilkin/openmoss/releases/tag/v0.3.0",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "v0.3.0"
               }
             },
@@ -2868,10 +2944,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "vulkan",
@@ -2892,10 +2970,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": false,
@@ -2908,9 +2988,11 @@
                 "can_uninstall": true,
                 "devices": [],
                 "download_filename": "ryzenai-server.zip",
+                "format": "native",
                 "message": "Requires Windows",
                 "release_url": "https://github.com/lemonade-sdk/ryzenai-server/releases/tag/v1.7.0",
                 "state": "unsupported",
+                "tier": "core",
                 "version": "v1.7.0"
               }
             },
@@ -2933,9 +3015,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "windows"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": true,
@@ -2944,29 +3028,35 @@
           "sd-cpp": {
             "backends": {
               "cpu": {
-                "action": "",
+                "action": "lemonade backends install sd-cpp:cpu",
                 "devices": [
                   "cpu"
                 ],
                 "download_filename": "sd-master-017cc8e-bin-Linux-Ubuntu-24.04-x86_64.zip",
-                "message": "",
+                "format": "native",
+                "message": "Backend update is required before use.",
                 "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
-                "state": "installed",
-                "version": "master-894-017cc8e"
+                "state": "update_required",
+                "tier": "core",
+                "version": "master-721-8caa3f9"
               },
               "cuda": {
                 "action": "",
                 "devices": [],
+                "format": "native",
                 "message": "Unsupported GPU",
-                "state": "unsupported"
+                "state": "unsupported",
+                "tier": "core"
               },
               "metal": {
                 "action": "",
                 "can_uninstall": true,
                 "devices": [],
+                "format": "native",
                 "message": "Requires macOS",
                 "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
                 "state": "unsupported",
+                "tier": "core",
                 "version": "master-894-017cc8e"
               },
               "rocm": {
@@ -2975,9 +3065,11 @@
                   "amd_gpu"
                 ],
                 "download_filename": "sd-master-017cc8e-bin-Linux-Ubuntu-24.04-x86_64-rocm-10.0.0.zip",
+                "format": "native",
                 "message": "Backend update is required before use.",
                 "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
                 "state": "update_required",
+                "tier": "core",
                 "version": "master-843-462d675"
               },
               "vulkan": {
@@ -2987,9 +3079,11 @@
                   "cpu"
                 ],
                 "download_filename": "sd-master-017cc8e-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-894-017cc8e",
                 "state": "installed",
+                "tier": "core",
                 "version": "master-894-017cc8e"
               }
             },
@@ -3076,9 +3170,11 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "macos"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cuda",
@@ -3098,10 +3194,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "vulkan",
@@ -3122,10 +3220,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "rocm",
@@ -3143,9 +3243,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cpu",
@@ -3158,10 +3260,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": false,
@@ -3174,11 +3278,13 @@
                 "devices": [
                   "amd_gpu"
                 ],
-                "download_filename": "thenoise-0.10.0-rocm10.1.0-gfx1151-x64.tar.gz",
+                "download_filename": "thenoise-0.10.1-rocm10.1.0-gfx1151-x64.tar.gz",
+                "format": "python",
                 "message": "Backend update is required before use.",
-                "release_url": "https://github.com/lemonade-sdk/thenoise/releases/tag/thenoise-0.10.0-rocm10.1.0",
+                "release_url": "https://github.com/lemonade-sdk/thenoise/releases/tag/thenoise-0.10.1-rocm10.1.0",
                 "state": "update_required",
-                "version": "thenoise-0.4.1-rocm7.14.0"
+                "tier": "experimental",
+                "version": "thenoise-0.9.1-rocm10.1.0"
               }
             },
             "default_backend": "rocm",
@@ -3295,10 +3401,12 @@
                     ]
                   }
                 ],
+                "format": "python",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": false,
@@ -3310,9 +3418,11 @@
                 "action": "",
                 "devices": [],
                 "download_filename": "thinksound-cuda-linux-x64.tar.gz",
+                "format": "native",
                 "message": "Unsupported GPU",
                 "release_url": "https://github.com/pwilkin/thinksound.cpp/releases/tag/v0.1.2",
                 "state": "unsupported",
+                "tier": "experimental",
                 "version": "v0.1.2"
               },
               "rocm": {
@@ -3321,9 +3431,11 @@
                   "amd_gpu"
                 ],
                 "download_filename": "thinksound-rocm-linux-x64.tar.gz",
+                "format": "native",
                 "message": "Backend is supported but not installed.",
                 "release_url": "https://github.com/pwilkin/thinksound.cpp/releases/tag/v0.1.2",
                 "state": "installable",
+                "tier": "experimental",
                 "version": "v0.1.2"
               },
               "vulkan": {
@@ -3333,9 +3445,11 @@
                   "cpu"
                 ],
                 "download_filename": "thinksound-vulkan-linux-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/pwilkin/thinksound.cpp/releases/tag/v0.1.2",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "v0.1.2"
               }
             },
@@ -3366,10 +3480,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "vulkan",
@@ -3390,10 +3506,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "rocm",
@@ -3411,10 +3529,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": false,
@@ -3426,9 +3546,11 @@
                 "action": "",
                 "devices": [],
                 "download_filename": "trellis-cuda-linux-x64.tar.gz",
+                "format": "native",
                 "message": "Unsupported GPU",
                 "release_url": "https://github.com/pwilkin/trellis.cpp/releases/tag/v0.4.3",
                 "state": "unsupported",
+                "tier": "experimental",
                 "version": "v0.4.3"
               },
               "rocm": {
@@ -3437,9 +3559,11 @@
                   "amd_gpu"
                 ],
                 "download_filename": "trellis-rocm-linux-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/pwilkin/trellis.cpp/releases/tag/v0.4.3",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "v0.4.3"
               },
               "vulkan": {
@@ -3449,9 +3573,11 @@
                   "cpu"
                 ],
                 "download_filename": "trellis-vulkan-linux-x64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/pwilkin/trellis.cpp/releases/tag/v0.4.3",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "v0.4.3"
               }
             },
@@ -3490,10 +3616,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "vulkan",
@@ -3514,10 +3642,12 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               },
               {
                 "backend": "rocm",
@@ -3535,10 +3665,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": false,
@@ -3552,14 +3684,16 @@
                   "amd_gpu"
                 ],
                 "download_filename": "vllm0.20.1-rocm7.12.0-gfx1151-x64.tar.gz",
+                "format": "python",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/vllm-rocm/releases/tag/vllm0.20.1-rocm7.12.0-gfx1151",
                 "state": "installed",
+                "tier": "experimental",
                 "version": "vllm0.20.1-rocm7.12.0-gfx1151"
               }
             },
             "default_backend": "rocm",
-            "display_name": "vLLM ROCm (experimental)",
+            "display_name": "vLLM ROCm",
             "experimental": true,
             "modality": "Text generation",
             "options": [
@@ -3598,13 +3732,15 @@
                     ]
                   }
                 ],
+                "format": "python",
                 "os": [
                   "linux"
-                ]
+                ],
+                "tier": "experimental"
               }
             ],
             "uses_ctx_size": true,
-            "web_display_name": "vLLM ROCm (experimental)"
+            "web_display_name": "vLLM ROCm"
           },
           "whispercpp": {
             "backends": {
@@ -3614,9 +3750,11 @@
                   "cpu"
                 ],
                 "download_filename": "whisper-v1.8.4-linux-cpu-x86_64.tar.gz",
+                "format": "native",
                 "message": "Backend is supported but not installed.",
                 "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
                 "state": "installable",
+                "tier": "core",
                 "version": "v1.8.4"
               },
               "metal": {
@@ -3624,17 +3762,21 @@
                 "can_uninstall": true,
                 "devices": [],
                 "download_filename": "whisper-v1.8.4-darwin-metal-arm64.tar.gz",
+                "format": "native",
                 "message": "Requires macOS",
                 "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
                 "state": "unsupported",
+                "tier": "core",
                 "version": "v1.8.4"
               },
               "npu": {
                 "action": "",
                 "can_uninstall": true,
                 "devices": [],
+                "format": "native",
                 "message": "Requires Windows",
-                "state": "unsupported"
+                "state": "unsupported",
+                "tier": "core"
               },
               "rocm": {
                 "action": "",
@@ -3642,9 +3784,11 @@
                   "amd_gpu"
                 ],
                 "download_filename": "whisper-v1.8.4-linux-rocm-gfx1151.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
                 "state": "installed",
+                "tier": "core",
                 "version": "v1.8.4"
               },
               "vulkan": {
@@ -3654,9 +3798,11 @@
                   "cpu"
                 ],
                 "download_filename": "whisper-v1.8.4-linux-vulkan-x86_64.tar.gz",
+                "format": "native",
                 "message": "",
                 "release_url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/tag/v1.8.4",
                 "state": "installed",
+                "tier": "core",
                 "version": "v1.8.4"
               }
             },
@@ -3697,9 +3843,11 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "metal",
@@ -3710,9 +3858,11 @@
                     "families": []
                   }
                 ],
+                "format": "native",
                 "os": [
                   "macos"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "vulkan",
@@ -3729,10 +3879,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "rocm",
@@ -3748,10 +3900,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               },
               {
                 "backend": "cpu",
@@ -3764,10 +3918,12 @@
                     ]
                   }
                 ],
+                "format": "native",
                 "os": [
                   "linux",
                   "windows"
-                ]
+                ],
+                "tier": "core"
               }
             ],
             "uses_ctx_size": false,

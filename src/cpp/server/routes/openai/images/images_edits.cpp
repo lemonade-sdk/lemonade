@@ -1,3 +1,11 @@
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/router.h"
@@ -11,6 +19,71 @@ namespace {
 
 using json = nlohmann::json;
 
+std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
+    auto at = [&bytes](size_t i) -> std::uint8_t {
+        return static_cast<std::uint8_t>(bytes[i]);
+    };
+    if (bytes.size() >= 24 &&
+        bytes.compare(0, 8, "\x89PNG\r\n\x1a\n", 8) == 0 &&
+        bytes.compare(12, 4, "IHDR", 4) == 0) {
+        auto be32 = [&](size_t i) -> std::uint32_t {
+            return (std::uint32_t(at(i)) << 24) | (std::uint32_t(at(i + 1)) << 16) |
+                   (std::uint32_t(at(i + 2)) << 8) | std::uint32_t(at(i + 3));
+        };
+        const auto width = be32(16);
+        const auto height = be32(20);
+        if (width > 0 && height > 0 &&
+            width <= static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
+            height <= static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            return std::pair<int, int>{static_cast<int>(width), static_cast<int>(height)};
+        }
+    }
+    if (bytes.size() >= 4 && at(0) == 0xff && at(1) == 0xd8) {
+        size_t pos = 2;
+        while (pos < bytes.size()) {
+            if (at(pos) != 0xff) break;
+            while (pos < bytes.size() && at(pos) == 0xff) ++pos;
+            if (pos >= bytes.size()) break;
+            const auto marker = at(pos++);
+            if (marker == 0xd9 || marker == 0xda) break;
+            if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+            if (bytes.size() - pos < 2) break;
+            const size_t segment_len = (size_t(at(pos)) << 8) | at(pos + 1);
+            if (segment_len < 2 || segment_len > bytes.size() - pos) break;
+            const bool sof = marker >= 0xc0 && marker <= 0xcf &&
+                             marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
+            if (sof && segment_len >= 7) {
+                const int height = (int(at(pos + 3)) << 8) | at(pos + 4);
+                const int width = (int(at(pos + 5)) << 8) | at(pos + 6);
+                if (width > 0 && height > 0) return std::pair<int, int>{width, height};
+            }
+            pos += segment_len;
+        }
+    }
+    return std::nullopt;
+}
+
+// Default soft cap for inferred image-edit dimensions.
+constexpr std::uint64_t kDefaultMaxEditPixels = 2048ULL * 2048ULL;
+
+std::pair<int, int> cap_image_area(int width, int height, std::uint64_t max_pixels) {
+    const auto pixels = static_cast<std::uint64_t>(width) * height;
+    if (pixels <= max_pixels) return {width, height};
+
+    const double scale = std::sqrt(static_cast<double>(max_pixels) / pixels);
+    int scaled_width = std::max(1, static_cast<int>(width * scale));
+    int scaled_height = std::max(1, static_cast<int>(height * scale));
+    // A dimension rounded up to one pixel must not violate the area cap.
+    if (static_cast<std::uint64_t>(scaled_width) * scaled_height > max_pixels) {
+        if (scaled_width > scaled_height) {
+            scaled_width = static_cast<int>(max_pixels / scaled_height);
+        } else {
+            scaled_height = static_cast<int>(max_pixels / scaled_width);
+        }
+    }
+    return {scaled_width, scaled_height};
+}
+
 class ImagesEditsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -22,8 +95,8 @@ public:
         s.paths = {"images/edits"};
         s.summary = "Image Editing";
         s.description =
-            "Edits a source image as a text prompt describes, loading the model on first use. The "
-            "request is `multipart/form-data`.";
+            "Edits one or more reference images as a text prompt describes, loading the model on "
+            "first use. The request is `multipart/form-data`.";
         s.notes = {
             "Use an editing-capable model such as `Flux-2-Klein-4B` or `SD-Turbo`.",
             "**Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
@@ -36,12 +109,16 @@ public:
             {"model", ArgIn::Form, text, true, Support::Available,
              "Diffusion model, e.g. `Flux-2-Klein-4B` or `SD-Turbo`."},
             {"image", ArgIn::Form, file, true, Support::Available,
-             "Source image to edit (PNG). The field may also be named `image[]`."},
+             "PNG or JPEG reference image, forwarded without re-encoding. For several references, "
+             "repeat `image[]` in order; a request uses `image` or `image[]`, not both."},
             {"prompt", ArgIn::Form, text, true, Support::Available, "Text description of the desired edit."},
             {"mask", ArgIn::Form, file, false, Support::Available,
              "Mask image (PNG). White areas are edited; black areas are preserved."},
             {"size", ArgIn::Form, text, false, Support::Available,
-             "Output size as `WIDTHxHEIGHT`, e.g. `512x512`. Defaults to `512x512`."},
+             "Output size as `WIDTHxHEIGHT`, e.g. `512x512`. Defaults to the first reference "
+             "image's size, scaled down proportionally to the model's `image_defaults.soft_pixel_cap` "
+             "(default 2048x2048 pixels, about 4 MP). An explicit size skips this cap; backend "
+             "limits still apply."},
             {"n", ArgIn::Form, integer, false, Support::Partial,
              "Number of images to generate, from `1` to `10`. Defaults to `1`; values outside "
              "the range answer `400`."},
@@ -82,8 +159,27 @@ public:
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
-        if (!attach_form_image(req, res)) {
+        if (!attach_form_image(req, res, /*allow_multiple=*/true)) {
             return false;
+        }
+
+        // The first uploaded image sets the output size unless explicitly provided.
+        if (!req.body.contains("size")) {
+            std::uint64_t soft_pixel_cap = kDefaultMaxEditPixels;
+            const auto model = ctx_.router->try_get_model_info(req.model);
+            if (model && model->image_defaults.soft_pixel_cap > 0) {
+                soft_pixel_cap = model->image_defaults.soft_pixel_cap;
+            }
+            const httplib::FormData* first = find_form_file(req.http, {"image", "image[]"});
+            const auto original = image_dimensions_from_bytes(first->content);
+            if (original) {
+                const auto [width, height] =
+                    cap_image_area(original->first, original->second, soft_pixel_cap);
+                req.body["size"] = std::to_string(width) + "x" + std::to_string(height);
+            } else {
+                LOG(WARNING, "Server") << "Cannot determine source image dimensions; "
+                    "using backend defaults" << std::endl;
+            }
         }
 
         if (const httplib::FormData* mask = find_form_file(req.http, {"mask"})) {

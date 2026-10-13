@@ -1533,7 +1533,7 @@ Also served at `/api/v0/images/generations`, `/api/v1/images/generations` and `/
 ## `POST /v1/images/edits`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Edits a source image as a text prompt describes, loading the model on first use. The request is `multipart/form-data`.
+Edits one or more reference images as a text prompt describes, loading the model on first use. The request is `multipart/form-data`.
 
 Use an editing-capable model such as `Flux-2-Klein-4B` or `SD-Turbo`.
 
@@ -1546,10 +1546,10 @@ Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/ed
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Diffusion model, e.g. `Flux-2-Klein-4B` or `SD-Turbo`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` | Yes | Source image to edit (PNG). The field may also be named `image[]`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | PNG or JPEG reference image, forwarded without re-encoding. For several references, repeat `image[]` in order; a request uses `image` or `image[]`, not both. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | Text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | Mask image (PNG). White areas are edited; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | Output size as `WIDTHxHEIGHT`, e.g. `512x512`. Defaults to `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | Output size as `WIDTHxHEIGHT`, e.g. `512x512`. Defaults to the first reference image's size, scaled down proportionally to the model's `image_defaults.soft_pixel_cap` (default 2048x2048 pixels, about 4 MP). An explicit size skips this cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate, from `1` to `10`. Defaults to `1`; values outside the range answer `400`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Only `b64_json` (a base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. The default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2255,6 +2255,10 @@ Also served at `/api/v0/models`, `/api/v1/models` and `/v0/models`. Requires `LE
                   "flow_shift": {"type": "number"},
                   "height": {"description": "Default image height in pixels.", "type": "integer"},
                   "sampling_method": {"type": "string"},
+                  "soft_pixel_cap": {
+                    "description": "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.",
+                    "type": "integer"
+                  },
                   "steps": {
                     "description": "Inference steps, e.g. 4 for turbo models and 20 for standard models.",
                     "type": "integer"
@@ -2405,7 +2409,6 @@ can be corrected by hand.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `experimental` | Not yet validated for production use. |
 
 <!-- BEGIN GENERATED: openai.models_id_files -->
 ## `GET /v1/models/{id}/files`
@@ -2962,6 +2965,10 @@ Also served at `/api/v0/models/{id}`, `/api/v1/models/{id}` and `/v0/models/{id}
             "flow_shift": {"type": "number"},
             "height": {"description": "Default image height in pixels.", "type": "integer"},
             "sampling_method": {"type": "string"},
+            "soft_pixel_cap": {
+              "description": "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.",
+              "type": "integer"
+            },
             "steps": {
               "description": "Inference steps, e.g. 4 for turbo models and 20 for standard models.",
               "type": "integer"

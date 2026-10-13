@@ -138,6 +138,8 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
             img_def["sampling_method"] = info.image_defaults.sampling_method;
         if (info.image_defaults.flow_shift > 0.0f)
             img_def["flow_shift"] = info.image_defaults.flow_shift;
+        if (info.image_defaults.soft_pixel_cap > 0)
+            img_def["soft_pixel_cap"] = info.image_defaults.soft_pixel_cap;
         model_json["image_defaults"] = img_def;
     }
 
@@ -238,7 +240,8 @@ json ModelJson::schema() {
                     "width": {"type": "integer", "description": "Default image width in pixels."},
                     "height": {"type": "integer", "description": "Default image height in pixels."},
                     "sampling_method": {"type": "string"},
-                    "flow_shift": {"type": "number"}
+                    "flow_shift": {"type": "number"},
+                    "soft_pixel_cap": {"type": "integer", "description": "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted."}
                 }
             },
             "version": {"description": "Router collections only: the policy document's version."},
