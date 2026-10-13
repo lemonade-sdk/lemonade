@@ -203,6 +203,16 @@
           "type": "integer",
           "minimum": 0
         },
+        "min_turns": {
+          "description": "Inclusive lower bound on conversation depth: the count of role:\"user\" turns in the request's messages/input array (at least 1 for any request that reaches the engine). Harness-agnostic — pure message count, no tool-call or error semantics.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_turns": {
+          "description": "Inclusive upper bound on conversation depth, same unit as min_turns.",
+          "type": "integer",
+          "minimum": 0
+        },
         "has_tools": { "type": "boolean" },
         "has_images": { "type": "boolean" },
         "metadata": { "$ref": "#/$defs/metadata_match" }
@@ -210,7 +220,7 @@
       "additionalProperties": false
     },
     "metadata_match": {
-      "description": "Deterministic leaf matching a caller-supplied OpenAI `metadata` key (e.g. task_class, consent), read verbatim from the request metadata map. Frozen v1 semantics: values are compared case-sensitively; a value is decoded into a token set by splitting on comma and trimming, so scalar and list-valued metadata match uniformly. A missing, empty, or whitespace-only value counts as absent (matches only `exists: false`). Exactly one comparator (equals / any / exists) must be present. A future comparator (regex, all, ...) ships as a new key, never a redefinition of these.",
+      "description": "Deterministic leaf matching a caller-supplied OpenAI `metadata` key (e.g. task_class, consent, or a harness-precomputed signal like tool_error_streak), read verbatim from the request metadata map. Frozen v1 semantics: string comparators (equals/any) are case-sensitive; a value is decoded into a token set by splitting on comma and trimming, so scalar and list-valued metadata match uniformly. A missing, empty, or whitespace-only value counts as absent (matches only `exists: false`, and never satisfies gte/lte). gte/lte parse the value as a number (leading/trailing ASCII whitespace tolerated, otherwise the entire value must be numeric); a non-numeric value never matches. Exactly one comparator (equals / any / exists / gte / lte) must be present. A future comparator ships as a new key, never a redefinition of these.",
       "type": "object",
       "required": ["key"],
       "properties": {
@@ -232,12 +242,22 @@
         "exists": {
           "description": "exists:true matches when the key is present and non-empty; exists:false matches when it is absent or empty.",
           "type": "boolean"
+        },
+        "gte": {
+          "description": "True if the metadata value parses as a number >= this threshold. A missing or non-numeric value never matches.",
+          "type": "number"
+        },
+        "lte": {
+          "description": "True if the metadata value parses as a number <= this threshold. A missing or non-numeric value never matches.",
+          "type": "number"
         }
       },
       "oneOf": [
         { "required": ["equals"] },
         { "required": ["any"] },
-        { "required": ["exists"] }
+        { "required": ["exists"] },
+        { "required": ["gte"] },
+        { "required": ["lte"] }
       ],
       "additionalProperties": false
     }
