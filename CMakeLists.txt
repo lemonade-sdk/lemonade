@@ -1036,6 +1036,7 @@ set(SOURCES_CORE
     src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
+    src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/recipe_options_store.cpp
@@ -3020,6 +3021,19 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_CATALOG_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelCatalogTest CI ON COMMAND test_model_catalog)
+endif()
+
+set(_DOWNLOAD_PLAN_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_plan.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_PLAN_TEST_SRC}")
+    add_executable(test_download_plan
+        test/cpp/test_download_plan.cpp
+    )
+    target_link_libraries(test_download_plan PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(DownloadPlanTest CI ON COMMAND test_download_plan)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC

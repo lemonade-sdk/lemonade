@@ -199,6 +199,16 @@ public:
         std::map<std::string, std::string>* out_response_headers = nullptr);
 
     // Download file to disk with automatic retry and resume support
+    // Verifies a file against an expected digest using the same algorithm
+    // parsing and digests as download_file, so a transfer that does not go over
+    // HTTP can still honour a manifest hash. Returns true when the file matches
+    // or nothing was expected; `error` describes a mismatch or a malformed
+    // expectation.
+    static bool verify_file_digest(const std::string& path,
+                                   const std::string& algorithm,
+                                   const std::string& value,
+                                   std::string& error);
+
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,
