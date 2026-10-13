@@ -2160,18 +2160,20 @@ sys.exit(0)
                 "junie.bat was not executed",
             )
 
-    def _launch_pi(self, temp_dir, extra_args=None):
-        """Launch a fake pi from temp_dir and return its captured argv/env payload."""
+    def _launch_pi(self, temp_dir, extra_args=None, model=ENDPOINT_TEST_MODEL):
+        """Launch a fake pi from temp_dir and return its captured argv/env payload and stderr."""
         capture_path = os.path.join(temp_dir, "pi_capture.json")
         self._write_fake_agent(temp_dir, "pi", capture_path)
         result = run_cli_command(
-            ["launch", "pi", "--model", ENDPOINT_TEST_MODEL] + (extra_args or []),
+            ["launch", "pi", "--model", model] + (extra_args or []),
             timeout=TIMEOUT_DEFAULT,
             env=self._build_stubbed_agent_env(temp_dir),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         with open(capture_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            payload = json.load(f)
+        payload["stderr"] = result.stderr
+        return payload
 
     def _pi_model_entry(self, temp_dir, model):
         provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
@@ -2290,6 +2292,52 @@ sys.exit(0)
                 self.assertEqual(model.get("maxTokens"), 40960)
         finally:
             save_ctx_size(saved.get("ctx_size"))
+
+    def test_133_launch_pi_not_downloaded_model_keeps_labels(self):
+        """A model that is not downloaded yet still gets its labels' image, thinking and tool settings."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        # Registration is persisted before the download, so a checkpoint that
+        # does not exist leaves a registered, labeled model that never
+        # downloads, including from launch's background load.
+        model_name = "PiLaunchLabelProbe-GGUF"
+        try:
+            requests.post(
+                f"http://localhost:{PORT}/api/v1/pull",
+                json={
+                    "model_name": f"user.{model_name}",
+                    "checkpoint": "lemonade-sdk/pi-launch-label-probe-missing-GGUF:probe.gguf",
+                    "recipe": "llamacpp",
+                    "reasoning": True,
+                    "vision": True,
+                    "stream": False,
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            info = requests.get(
+                f"http://localhost:{PORT}/api/v1/models/{model_name}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            self.assertFalse(info["downloaded"])
+            self.assertIn("vision", info["labels"])
+            self.assertIn("reasoning", info["labels"])
+            self.assertNotIn("tool-calling", info["labels"])
+
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                payload = self._launch_pi(temp_dir, model=model_name)
+                model = self._pi_model_entry(temp_dir, model_name)
+                self.assertEqual(model["input"], ["text", "image"])
+                self.assertTrue(model.get("reasoning"))
+                self.assertIn(
+                    f"{model_name} is not labeled tool-calling", payload["stderr"]
+                )
+        finally:
+            run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
 
     # =============================================================================
     # Unload Tests

@@ -618,6 +618,33 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
     return client.list_recipes(config.backends_showall);
 }
 
+static lemon_cli::AgentModelEntry agent_model_entry_from_json(const std::string& id,
+                                                              const nlohmann::json& model,
+                                                              int default_context_window) {
+    std::vector<std::string> labels;
+    const auto model_labels = model.find("labels");
+    if (model_labels != model.end() && model_labels->is_array()) {
+        for (const auto& label : *model_labels) {
+            if (label.is_string()) {
+                labels.push_back(label.get<std::string>());
+            }
+        }
+    }
+
+    int context_window = default_context_window;
+    const auto options = model.find("recipe_options");
+    if (options != model.end() && options->is_object()) {
+        // A saved ctx_size of -1 means auto, which the CLI cannot resolve.
+        const auto ctx_size = options->find("ctx_size");
+        if (ctx_size != options->end() && ctx_size->is_number_integer() &&
+            ctx_size->get<int>() > 0) {
+            context_window = ctx_size->get<int>();
+        }
+    }
+
+    return {id, id + " (local)", context_window, std::move(labels)};
+}
+
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
@@ -637,30 +664,12 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            std::vector<std::string> model_labels;
-            const auto labels = model.find("labels");
-            if (labels != model.end() && labels->is_array()) {
-                for (const auto& label : *labels) {
-                    if (label.is_string()) {
-                        model_labels.push_back(label.get<std::string>());
-                    }
-                }
-            }
-            if (std::find(model_labels.begin(), model_labels.end(), "chat") == model_labels.end()) {
+            lemon_cli::AgentModelEntry entry =
+                agent_model_entry_from_json(model["id"].get<std::string>(), model, context_window);
+            if (std::find(entry.labels.begin(), entry.labels.end(), "chat") == entry.labels.end()) {
                 continue;
             }
-
-            const std::string model_id = model["id"].get<std::string>();
-            int model_context_window = context_window;
-            if (model.contains("recipe_options") && model["recipe_options"].is_object()) {
-                // A saved ctx_size of -1 means auto, which the CLI cannot resolve.
-                const int saved_ctx_size = model["recipe_options"].value("ctx_size", 0);
-                if (saved_ctx_size > 0) {
-                    model_context_window = saved_ctx_size;
-                }
-            }
-            models.push_back({model_id, model_id + " (local)", model_context_window,
-                              std::move(model_labels)});
+            models.push_back(std::move(entry));
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -683,8 +692,21 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         }
     }
 
+    // The list holds only downloaded models; a selected model that is not
+    // downloaded yet still needs its labels and saved window.
     if (!selected_present) {
-        models.push_back({config.model, config.model + " (local)", default_context_window});
+        nlohmann::json selected = nlohmann::json::object();
+        try {
+            selected = nlohmann::json::parse(client.make_request(
+                "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+        } catch (const std::exception&) {
+            // Unknown to the server: the model goes in without labels.
+        }
+        if (!selected.is_object()) {
+            selected = nlohmann::json::object();
+        }
+        models.push_back(
+            agent_model_entry_from_json(config.model, selected, default_context_window));
     }
 
     // Launch loads the selected model with its own ctx_size, which outranks the saved one.
