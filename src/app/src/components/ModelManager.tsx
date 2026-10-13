@@ -27,6 +27,7 @@ import Modal from './inspect/Modal';
 import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';import { backendLabel } from '../modelPresentation';
 import { useServerModelState } from '../features/models/modelState';
+import { findRegisteredRemoteModel } from '../features/models/registeredRemoteModel';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
   RouterEditorPanelPreloaded as RouterEditorPanel,
@@ -1838,6 +1839,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const key = providerKey(provider, modelId);
     const vdata = remoteVariants[key];
     if (activeRemotePull(provider, modelId, vdata)) return;
+    // Models already known to lemond are downloaded by their server-owned ID.
+    const registeredModel = findRegisteredRemoteModel(allModels, provider, modelId, variantName, recipe, vdata);
+    if (registeredModel) {
+      await handlePull(registeredModel);
+      return;
+    }
     const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe);
     const targetModelName = resolveRemoteModelName(provider, modelId, variantName, recipe, vdata);
     const ac = new AbortController();
