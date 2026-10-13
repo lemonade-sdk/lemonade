@@ -163,10 +163,6 @@ private:
     // No-op otherwise.
     std::optional<RouterDispatchResult> apply_router_collection_dispatch(
         nlohmann::json& request_json);
-    // Union of routing-helper models across every active router collection's
-    // policy. Passed to Router::reconcile_routing_helpers after a policy is
-    // removed so helpers no remaining policy needs are reclaimed.
-    std::set<std::string> active_policy_helper_models();
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);

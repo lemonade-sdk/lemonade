@@ -19,6 +19,7 @@
 #include "gguf_reader.h"
 #include "model_registry.h"
 #include "model_types.h"
+#include "models/change_notifier.h"
 #include "models/download_progress.h"
 #include "models/recipe_options_store.h"
 #include "recipe_options.h"
@@ -210,19 +211,21 @@ public:
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
 
-    // Register a callback fired after a router collection's policy changes (it
-    // is added, edited, or removed — via the API or an on-disk edit picked up by
-    // the directory watcher). Used to reconcile router-collection policy state,
-    // e.g. evicting routing helpers no active policy still references. Invoked
-    // outside all ModelManager locks. Set once during startup. The callback
-    // receives a monotonic generation number identifying this change; consumers
-    // use it to discard notifications that arrive out of order.
-    void set_models_changed_callback(std::function<void(uint64_t)> cb);
+    // The two change signals; see models/change_notifier.h for the contract.
+    // Fires only when a routing policy could have changed, not on every model
+    // registration: registering a collection's helper components must not
+    // trigger a reconcile.
+    void on_models_changed(std::function<void(std::uint64_t)> subscriber);
+    void on_model_updated(std::function<void(const std::string&)> subscriber);
 
-    // Reserve the next monotonic registry-change generation. Callers that
-    // reconcile registry state outside notify_models_changed() (e.g. the startup
-    // seed) use this so their publication participates in the same ordering.
-    uint64_t next_notify_generation();
+    // Server also calls this once at startup, so a subscriber starts from an
+    // authoritative set instead of waiting for the first change.
+    void notify_models_changed();
+
+    // Snapshot generation, for consumers that need currency not a callback.
+    std::uint64_t generation();
+
+    std::set<std::string> active_helper_models();
 
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
@@ -338,11 +341,6 @@ struct UpdateCheckResult {
     // Check if model should be automatically updated when updates are detected
     bool should_auto_update(const ModelInfo& info) const;
 
-    // Register a callback triggered when a model's files are updated on disk (e.g. to evict loaded router backends).
-    void set_model_updated_callback(std::function<void(const std::string&)> cb) {
-        on_model_updated_cb_ = std::move(cb);
-    }
-
     // Register a callback triggered during synchronization phases (e.g. for deterministic unit testing).
     void set_sync_phase_callback(std::function<void(const std::string&)> cb) {
         sync_phase_callback_ = std::move(cb);
@@ -351,7 +349,7 @@ struct UpdateCheckResult {
     // Set update_available in cache for deterministic unit testing.
     void set_model_update_available_for_test(const std::string& model_name, bool available) {
         std::string canonical = resolve_model_name(model_name);
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         auto it = models_cache_.find(canonical);
         if (it != models_cache_.end()) {
             it->second.update_available = available;
@@ -501,11 +499,6 @@ private:
     // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
     void populate_collection_components_from_cache_locked(ModelInfo& info);
 
-    // Fire the models-changed callback (if set) outside all locks. Guarded
-    // against same-thread reentrancy so a callback that reads the registry
-    // cannot recursively re-fire.
-    void notify_models_changed();
-
     json registry_recipe_options(const std::string& cache_key);
     // Caller must hold models_cache_mutex_.
     json registry_recipe_options_locked(const std::string& cache_key);
@@ -553,15 +546,7 @@ private:
     std::function<std::string()> default_model_source_provider_;
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
-    // Fired after the model registry changes (add/edit/remove). Guarded by its
-    // own mutex; invoked outside all other ModelManager locks.
-    std::mutex models_changed_callback_mutex_;
-    std::function<void(uint64_t)> models_changed_callback_;
-    // Monotonic counter identifying each registry change. The callback may read
-    // the live registry to compute a snapshot and publish it downstream;
-    // concurrent runs can publish an older snapshot after a newer one, so the
-    // generation lets the consumer keep only the newest.
-    std::atomic<uint64_t> notify_generation_{0};
+    models::ModelChangeNotifier change_notifier_;
 
     // Serializes writers of the model set. Writers use StoreWrite, which
     // publishes for them; snapshot readers need no lock.
@@ -607,7 +592,7 @@ private:
         int percent = 0;
     };
     mutable ModelSyncState sync_state_;
-    std::function<void(const std::string&)> on_model_updated_cb_;
+
     std::function<void(const std::string&)> sync_phase_callback_;
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;

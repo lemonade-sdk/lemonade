@@ -1,10 +1,25 @@
 #include <lemon/canonical_id.h>
 #include <lemon/models/store_builder.h>
+#include <lemon/models/store_snapshot.h>
+#include <lemon/routing_policy.h>
 
 #include <sstream>
 
 namespace lemon {
 namespace models {
+
+std::set<std::string> collect_helper_models(
+    const std::map<std::string, ModelInfo>& models) {
+    std::set<std::string> needed;
+    for (const auto& [name, info] : models) {
+        if (!info.route_policy) {
+            continue;
+        }
+        needed.insert(info.route_policy->helper_models.begin(),
+                      info.route_policy->helper_models.end());
+    }
+    return needed;
+}
 
 namespace {
 

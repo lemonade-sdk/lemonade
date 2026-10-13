@@ -1259,6 +1259,7 @@ void ModelManager::publish_store_locked() {
     next->public_model_aliases = public_model_aliases_;
     next->canonical_public_names = canonical_public_names_;
     next->reasons = hardware_filter_;
+    next->helper_models = collect_helper_models(models_cache_);
     next->valid = cache_valid_;
     next->generation = ++store_generation_;
     std::atomic_store(&store_snapshot_,
@@ -1317,50 +1318,28 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
-void ModelManager::set_models_changed_callback(std::function<void(uint64_t)> cb) {
-    std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
-    models_changed_callback_ = std::move(cb);
+void ModelManager::on_models_changed(std::function<void(std::uint64_t)> subscriber) {
+    change_notifier_.on_models_changed(std::move(subscriber));
 }
 
-uint64_t ModelManager::next_notify_generation() {
-    return ++notify_generation_;
+void ModelManager::on_model_updated(std::function<void(const std::string&)> subscriber) {
+    change_notifier_.on_model_updated(std::move(subscriber));
+}
+
+std::uint64_t ModelManager::generation() {
+    return std::atomic_load(&store_snapshot_)->generation;
+}
+
+std::set<std::string> ModelManager::active_helper_models() {
+    build_cache();
+    return std::atomic_load(&store_snapshot_)->helper_models;
 }
 
 void ModelManager::notify_models_changed() {
-    // A callback that reads the registry can trigger a cache rebuild; block any
-    // same-thread re-entry so that can never recursively re-fire this.
-    static thread_local bool in_notify = false;
-    if (in_notify) {
-        return;
-    }
-    std::function<void(uint64_t)> cb;
-    {
-        std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
-        cb = models_changed_callback_;
-    }
-    if (!cb) {
-        return;
-    }
-    in_notify = true;
-    struct ResetGuard {
-        ~ResetGuard() { in_notify = false; }
-    } reset_guard;
-    // Tag this notification with a monotonic generation. Two concurrent registry
-    // updates may run their callbacks in parallel and publish out of order; the
-    // consumer keeps only the highest generation instead of us serializing the
-    // whole (potentially blocking) callback here, which would stall a newer
-    // update behind an older one.
-    const uint64_t generation = ++notify_generation_;
-    // Best-effort: a notification must never abort the registry mutation that
-    // triggered it. delete_model fires this from a scope-guard destructor, where
-    // a propagating exception would call std::terminate.
-    try {
-        cb(generation);
-    } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "models-changed callback threw: " << e.what() << std::endl;
-    } catch (...) {
-        LOG(WARNING, "ModelManager") << "models-changed callback threw a non-standard exception" << std::endl;
-    }
+    // The snapshot a subscriber must read has to exist first. See
+    // models/change_notifier.h for what the generation means to it.
+    build_cache();
+    change_notifier_.models_changed(std::atomic_load(&store_snapshot_)->generation);
 }
 
 void ModelManager::set_extra_models_dir(const std::string& dir) {
@@ -3401,6 +3380,15 @@ static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTie
 }
 
 void ModelManager::build_cache() {
+    // Probed before taking the writer: publishing on a read that changes nothing
+    // would leave the generation useless as a change signal.
+    {
+        std::lock_guard<std::mutex> probe(models_cache_mutex_);
+        if (cache_valid_) {
+            return;
+        }
+    }
+
     StoreWrite store_write(*this);
 
     if (cache_valid_) {
@@ -5388,8 +5376,8 @@ void ModelManager::download_model(const std::string& model_name,
         }
     }
 
-    if (on_model_updated_cb_ && resolved_paths_before != resolved_paths_after) {
-        on_model_updated_cb_(model_name);
+    if (resolved_paths_before != resolved_paths_after) {
+        change_notifier_.model_updated(model_name);
     }
 
 
