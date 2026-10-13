@@ -839,6 +839,10 @@ std::string remote_registry_display_name(RemoteRegistrySource source) {
     return source == RemoteRegistrySource::ModelScope ? "ModelScope" : "Hugging Face";
 }
 
+std::string remote_registry_scheme_prefix(RemoteRegistrySource source) {
+    return source == RemoteRegistrySource::ModelScope ? "ms" : "hf";
+}
+
 bool is_remote_registry_source(const std::string& source) {
     const std::string normalized = lower_copy(source);
     return normalized == "huggingface" || normalized == "hf" ||

@@ -2,14 +2,17 @@
 #include <lemon/utils/path_utils.h>
 
 #include <stdexcept>
+#include <string>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <Shlobj.h>
+#endif
 
 namespace lemon {
 namespace utils {
 
 #ifdef _WIN32
-#include <windows.h>
-#include <Shlobj.h>
-
 bool safe_exists(const std::filesystem::path& path) {
     return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
 }

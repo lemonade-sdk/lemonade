@@ -2,6 +2,8 @@
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
+#include <lemon/models/locator.h>
+#include <lemon/models/model_index.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/utils/json_file.h>
 #include <lemon/utils/json_utils.h>
@@ -44,6 +46,7 @@
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
+using namespace lemon::models;
 
 
 // fs::recursive_directory_iterator throws on entries it cannot open; skipping
@@ -293,102 +296,11 @@ static void write_hf_ref_main(const fs::path& model_cache_path, const std::strin
     }
 }
 
-static std::string checkpoint_to_repo_id(std::string checkpoint) {
-    std::string repo_id = checkpoint;
-
-    size_t colon_pos = checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        repo_id = repo_id.substr(0, colon_pos);
-    }
-
-    return repo_id;
-}
-
-static std::string checkpoint_to_variant(std::string checkpoint) {
-    std::string variant = "";
-
-    size_t colon_pos = checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        variant = checkpoint.substr(colon_pos + 1);
-    }
-
-    return variant;
-}
-
-// Re-resolves every checkpoint of a model against disk.
-using ModelResolver = std::function<ModelInfo(const ModelInfo& info)>;
-
-static void insert_shard_family(const fs::path& shard, std::set<fs::path>& out) {
-    std::string base;
-    int total = 0;
-    if (!is_gguf_shard_filename(shard.filename().string(), &base, &total)) return;
-
-    std::error_code ec;
-    for (const auto& entry :
-         fs::directory_iterator(shard.parent_path(), safe_dir_options, ec)) {
-        if (ec) break;
-        if (same_shard_family(entry.path().filename().string(), base, total)) {
-            out.insert(entry.path());
-        }
-    }
-}
-
-static std::set<fs::path> repo_occupant_paths(const std::string& repo_id,
-                                              const std::string& registry_source,
-                                              const std::string& exclude_model,
-                                              const std::map<std::string, ModelInfo>& cache,
-                                              const ModelResolver& resolve_managed,
-                                              bool stop_at_first) {
-    std::set<fs::path> occupied;
-    const std::string normalized_source = remote_registry_source_name(
-        parse_remote_registry_source(registry_source));
-    for (const auto& [name, info] : cache) {
-        if (name == exclude_model || !info.source.empty()) continue;
-        if (effective_registry_source(info) != normalized_source) continue;
-
-        // Resolving walks the disk, so skip the models that cannot match anyway.
-        const bool names_repo = std::any_of(
-            info.checkpoints.begin(), info.checkpoints.end(),
-            [&repo_id](const auto& entry) {
-                return checkpoint_to_repo_id(entry.second) == repo_id;
-            });
-        if (!names_repo) continue;
-
-        const ModelInfo resolved = resolve_managed(info);
-        for (const auto& [type, cp] : info.checkpoints) {
-            if (checkpoint_to_repo_id(cp) != repo_id) continue;
-            const std::string rpath = resolved.resolved_path(type);
-            if (rpath.empty()) continue;
-            fs::path path = path_from_utf8(rpath);
-            if (!safe_exists(path)) continue;
-            occupied.insert(path);
-            if (stop_at_first) return occupied;
-            insert_shard_family(path, occupied);
-        }
-    }
-    return occupied;
-}
-
-// Check if any model other than exclude_model still occupies the given repo_id.
-// Callers must hold models_cache_mutex_.
-static bool is_repo_occupied(const std::string& repo_id,
-                             const std::string& registry_source,
-                             const std::string& exclude_model,
-                             const std::map<std::string, ModelInfo>& cache,
-                             const ModelResolver& resolve_managed) {
-    return !repo_occupant_paths(repo_id, registry_source, exclude_model, cache,
-                                resolve_managed, /*stop_at_first=*/true).empty();
-}
-
-// Every variant another model would pull from this repo. An unfinished
-// download carries no name of its own, so the catalog is the only signal left
-// for who is waiting on it. Callers must hold models_cache_mutex_.
-static std::vector<std::string> repo_claimant_variants(
-        const std::string& repo_id,
-        const std::string& registry_source,
-        const std::string& exclude_model,
-        const std::map<std::string, ModelInfo>& cache) {
-    std::vector<std::string> variants;
+// Check if any model other than exclude_model references the given repo_id
+static bool is_repo_shared(const std::string& repo_id,
+                           const std::string& registry_source,
+                           const std::string& exclude_model,
+                           const std::map<std::string, ModelInfo>& cache) {
     const std::string normalized_source = remote_registry_source_name(
         parse_remote_registry_source(registry_source));
     for (const auto& [name, info] : cache) {
@@ -396,12 +308,10 @@ static std::vector<std::string> repo_claimant_variants(
         if (effective_registry_source(info) != normalized_source) continue;
         for (const auto& [type, cp] : info.checkpoints) {
             (void)type;
-            if (checkpoint_to_repo_id(cp) == repo_id) {
-                variants.push_back(checkpoint_to_variant(cp));
-            }
+            if (repo_id_from_checkpoint(cp) == repo_id) return true;
         }
     }
-    return variants;
+    return false;
 }
 
 // Parse image_defaults from a model JSON entry into ModelInfo
@@ -1056,7 +966,7 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
                                               bool repo_occupied,
                                               const std::vector<std::string>& other_variants) {
     const std::string main_checkpoint = info.checkpoint("main");
-    const std::string main_repo = checkpoint_to_repo_id(main_checkpoint);
+    const std::string main_repo = repo_id_from_checkpoint(main_checkpoint);
     if (main_repo.empty()) {
         return false;
     }
@@ -1107,6 +1017,7 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
     // An occupied repo must not be removed wholesale. Remove only the resumable
     // partial for this model's requested variant, plus the manifest that made
     // that partial visible as an incomplete download.
+    const std::string variant = variant_from_checkpoint(main_checkpoint);
     if (variant.empty()) {
         LOG(INFO, "ModelManager") << "Keeping occupied incomplete cache for " << main_repo
                                   << " because the model has no exact variant" << std::endl;
@@ -1532,20 +1443,11 @@ static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
                             const std::string& qualifier,
                             ModelInfo info,
                             const std::set<std::string>* reserved_ids = nullptr) {
+    static const std::set<std::string> no_reserved;
     const std::string prefix(EXTRA_MODEL_PREFIX);
-    auto taken = [&](const std::string& name) {
-        return claimed_names.count(name) ||
-               (reserved_ids && reserved_ids->count(prefix + name));
-    };
-    std::string name = base_name;
-    if (taken(name)) {
-        const std::string qualified = qualifier + "-" + base_name;
-        name = qualified;
-        for (int n = 2; taken(name); ++n) {
-            name = qualified + "-" + std::to_string(n);
-        }
-    }
-    claimed_names.insert(name);
+    const std::string name = reserve_unique_name(claimed_names,
+                                                 reserved_ids ? *reserved_ids : no_reserved,
+                                                 prefix, base_name, qualifier);
     info.model_name = prefix + name;
     discovered.emplace(info.model_name, std::move(info));
 }
@@ -1940,9 +1842,9 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // directory, a .bin, …).
     backends::CheckpointResolveContext ctx;
     ctx.hf_cache = hf_cache;
-    ctx.repo_id = checkpoint_to_repo_id(checkpoint);
-    ctx.main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
-    ctx.variant = checkpoint_to_variant(checkpoint);
+    ctx.repo_id = repo_id_from_checkpoint(checkpoint);
+    ctx.main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
+    ctx.variant = variant_from_checkpoint(checkpoint);
     ctx.registry_source = effective_registry_source(info);
     ctx.model_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(ctx.repo_id, ctx.registry_source);
     ctx.type = type;
@@ -1958,9 +1860,9 @@ static std::string resolve_registered_extra_checkpoint(
     const std::string& checkpoint, const std::string& extra_dir) {
     backends::CheckpointResolveContext ctx;
     ctx.hf_cache = extra_dir;
-    ctx.repo_id = checkpoint_to_repo_id(checkpoint);
-    ctx.main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
-    ctx.variant = checkpoint_to_variant(checkpoint);
+    ctx.repo_id = repo_id_from_checkpoint(checkpoint);
+    ctx.main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
+    ctx.variant = variant_from_checkpoint(checkpoint);
     ctx.registry_source = effective_registry_source(info);
     ctx.model_cache_path = extra_dir + "/" +
         repo_id_to_cache_dir_name(ctx.repo_id, ctx.registry_source);
@@ -2016,7 +1918,7 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
         is_model_collection_recipe(info.recipe)) return false;
 
     const fs::path root = path_from_utf8(extra_dir);
-    const std::string repo = checkpoint_to_repo_id(info.checkpoint("main"));
+    const std::string repo = repo_id_from_checkpoint(info.checkpoint("main"));
     if (repo.empty()) return false;
     const fs::path main_repo = root /
         repo_id_to_cache_dir_name(repo, effective_registry_source(info));
@@ -2032,7 +1934,7 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
     try {
         for (const auto& [type, checkpoint] : info.checkpoints) {
             if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
-            const std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
+            const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
             if (checkpoint_repo.empty()) return false;
             const fs::path expected_repo = root /
                 repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
@@ -2337,7 +2239,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
                 continue;
             }
 
-            const std::string main_repo_id = checkpoint_to_repo_id(main_cp);
+            const std::string main_repo_id = repo_id_from_checkpoint(main_cp);
             if (main_repo_id.empty()) {
                 continue;
             }
@@ -2443,7 +2345,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
             for (const auto& model_name : entry.model_names) {
                 const ModelInfo& info = candidate_models.at(model_name);
                 const bool is_main_repo =
-                    entry.repo_id == checkpoint_to_repo_id(info.checkpoint("main"));
+                    entry.repo_id == repo_id_from_checkpoint(info.checkpoint("main"));
 
                 // Fast path: pull already processed this exact remote state.
                 if (is_main_repo) {
@@ -2466,7 +2368,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
                         if (role == "main" || role == "npu_cache") {
                             continue;
                         }
-                        if (checkpoint_to_repo_id(checkpoint) == entry.repo_id) {
+                        if (repo_id_from_checkpoint(checkpoint) == entry.repo_id) {
                             resolved = info.resolved_path(role);
                             break;
                         }
@@ -2513,7 +2415,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
                             }
                             selected = registry_files::select_main_repo_files_union(
                                 entry.repo_id, info.recipe,
-                                checkpoint_to_variant(info.checkpoint("main")),
+                                variant_from_checkpoint(info.checkpoint("main")),
                                 previous_it->second, latest_files);
                         }
                         const auto aux_variants =
@@ -3144,7 +3046,7 @@ static void load_checkpoints(ModelInfo& info, json& model_json) {
 }
 
 static std::string legacy_mmproj_to_checkpoint(std::string main, std::string mmproj) {
-    return checkpoint_to_repo_id(main) + ":" + mmproj;
+    return repo_id_from_checkpoint(main) + ":" + mmproj;
 }
 
 static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
@@ -4723,7 +4625,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
         std::lock_guard<std::mutex> guard(download_locks_mutex_);
         auto& slot = download_locks_[
             effective_registry_source(info) + ":" +
-            checkpoint_to_repo_id(info.checkpoint("main"))];
+            repo_id_from_checkpoint(info.checkpoint("main"))];
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;
     }
@@ -5551,8 +5453,8 @@ std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
     std::map<std::string, std::vector<std::string>> grouped;
     for (const auto& [type, checkpoint] : checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
-        const std::string repo_id = checkpoint_to_repo_id(checkpoint);
-        const std::string variant = checkpoint_to_variant(checkpoint);
+        const std::string repo_id = repo_id_from_checkpoint(checkpoint);
+        const std::string variant = variant_from_checkpoint(checkpoint);
         if (repo_id.empty() || variant.empty()) {
             continue;
         }
@@ -6183,8 +6085,8 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 //   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
 void ModelManager::download_from_registry(const ModelInfo& info,
                                           DownloadProgressCallback progress_callback) {
-    const std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
-    const std::string main_variant = checkpoint_to_variant(info.checkpoint("main"));
+    const std::string main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
+    const std::string main_variant = variant_from_checkpoint(info.checkpoint("main"));
     if (main_repo_id.empty()) {
         throw std::runtime_error("Model checkpoint does not contain a repository id");
     }
@@ -6223,8 +6125,8 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     // update check (group_aux_checkpoint_variants) silently skips it.
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
-        if (checkpoint_to_repo_id(checkpoint).empty() ||
-            checkpoint_to_variant(checkpoint).empty()) {
+        if (repo_id_from_checkpoint(checkpoint).empty() ||
+            variant_from_checkpoint(checkpoint).empty()) {
             throw std::runtime_error("Additional checkpoints must contain an exact repository variant");
         }
     }
@@ -6520,12 +6422,12 @@ void ModelManager::delete_model(const std::string& model_name) {
     if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
         !is_model_collection_recipe(info.recipe)) {
         const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
-        const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+        const std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
         const fs::path managed_main_repo = main_repo.empty() ? fs::path() :
             managed_root / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
         for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "npu_cache" || resolved_self.resolved_path(type).empty()) continue;
-            const std::string repo = checkpoint_to_repo_id(checkpoint);
+            if (type == "npu_cache" || info.resolved_path(type).empty()) continue;
+            const std::string repo = repo_id_from_checkpoint(checkpoint);
             if (repo.empty()) {
                 throw std::runtime_error("Cannot delete a registered model with an invalid checkpoint.");
             }
@@ -6650,16 +6552,10 @@ void ModelManager::delete_model(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Cache path: " << model_cache_path << std::endl;
 
     fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
+    std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
 
-    // What else still occupies this repo on disk. Collected under the lock; the
-    // removals below run outside it so a slow delete cannot stall model listing.
-    std::set<fs::path> main_repo_occupants;
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        main_repo_occupants = repo_occupant_paths(main_repo, registry_source,
-                                                  canonical_model_name, models_cache_,
-                                                  resolve_managed, /*stop_at_first=*/false);
-    }
+    // Check if the main repo is shared with another model
+    bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_);
 
     const bool main_occupied = !main_repo_occupants.empty();
     const bool main_busy = !main_occupied && repo_has_unfinished_download(model_cache_path_fs);
@@ -6721,7 +6617,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
 
-        std::string cp_repo = checkpoint_to_repo_id(checkpoint);
+        std::string cp_repo = repo_id_from_checkpoint(checkpoint);
         if (cp_repo.empty() || cp_repo == main_repo) continue;
 
         bool cp_repo_occupied;
@@ -6784,16 +6680,16 @@ json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     for (const auto& [name, info] : models_cache_) {
         if (info.checkpoints.size() <= 1) continue;
 
-        std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+        std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
         std::string main_cache = hf_cache + "/" + repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
 
         for (const auto& [type, checkpoint] : info.checkpoints) {
             if (type == "main" || type == "npu_cache") continue;
 
-            std::string cp_repo = checkpoint_to_repo_id(checkpoint);
+            std::string cp_repo = repo_id_from_checkpoint(checkpoint);
             if (cp_repo == main_repo) continue;  // Same repo, no orphan possible
 
-            std::string variant = checkpoint_to_variant(checkpoint);
+            std::string variant = variant_from_checkpoint(checkpoint);
             if (variant.empty()) continue;
 
             // Check if file exists in main repo dir (orphaned location)

@@ -1036,6 +1036,8 @@ set(SOURCES_CORE
     src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
+    src/cpp/server/models/locator.cpp
+    src/cpp/server/models/model_index.cpp
     src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
@@ -3005,6 +3007,19 @@ if(BUILD_TESTING AND EXISTS "${_EXTRA_MODEL_DISCOVERY_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ExtraModelDiscoveryTest CI ON COMMAND test_extra_model_discovery)
+endif()
+
+set(_MODEL_CATALOG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_catalog.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_CATALOG_TEST_SRC}")
+    add_executable(test_model_catalog
+        test/cpp/test_model_catalog.cpp
+    )
+    target_link_libraries(test_model_catalog PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ModelCatalogTest CI ON COMMAND test_model_catalog)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC

@@ -93,6 +93,10 @@ struct RegistryRepository {
 RemoteRegistrySource parse_remote_registry_source(const std::string& source);
 std::string remote_registry_source_name(RemoteRegistrySource source);
 std::string remote_registry_display_name(RemoteRegistrySource source);
+
+// Short form used when a registry is spelled as a URL scheme. The accepted
+// short aliases are the same ones parse_remote_registry_source() recognizes.
+std::string remote_registry_scheme_prefix(RemoteRegistrySource source);
 bool is_remote_registry_source(const std::string& source);
 
 // Detects a Hugging Face or ModelScope model URL. On a match returns true, sets
