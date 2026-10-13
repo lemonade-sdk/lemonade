@@ -2,6 +2,7 @@
 
 - [Summary](#summary)
 - [Scope](#scope)
+- [Routing Boundary](#routing-boundary)
 - [Architecture](#architecture)
 - [ModelManager Facade](#modelmanager-facade)
 - [Model Catalogs](#model-catalogs)
@@ -24,8 +25,6 @@
 - [Contracts](#contracts)
 - [Generated Docs](#generated-docs)
 - [Tests](#tests)
-- [Appendix A: Implementation Sequence](#appendix-a-implementation-sequence)
-- [Appendix B: Current-State Evidence](#appendix-b-current-state-evidence)
 
 ## Summary
 
@@ -35,7 +34,7 @@ The three goals that decide every design choice here:
 
 - **Two axes.** *Which models exist* and *where the bytes come from* are separate questions with separate interfaces, joined by one value, the `ArtifactRef`. Every component sits on one axis or the other.
 - **Extension is local.** A new catalog, artifact repository, or download source is one `.cpp` file, one registration line, and one descriptor. It documents itself: [Generated Docs](#generated-docs) fails CI when a registered source has no docs.
-- **Clear separation of concerns.** One function resolves a name, one site binds a checkpoint to a source, one component publishes the model set, one bus announces change. A caller never re-derives an answer, and no component branches on another's identity to get one.
+- **Clear separation of concerns.** One function resolves a name, one site binds a checkpoint to a source, one component publishes the model set, one counter announces a new set. A caller never re-derives an answer, and no component branches on another's identity to get one.
 
 ## Scope
 
@@ -43,50 +42,100 @@ This section lists what the design covers.
 
 - **Components covered.** Catalogs and their locators, the model store and its published snapshot, name resolution and aliases, artifact sources and fetchable repositories, transfer and layout, the local artifact store, ingest, sync, change notification, recipe options persistence, and the `ModelManager` composition root and facade.
 - **Documentation.** A catalog or repository documents itself through a descriptor, and CI fails when one is missing; see [Generated Docs](#generated-docs).
-- **Contracts held.** The on-disk files, the API fields clients read, and the cache layout keep the meanings stated in [Contracts](#contracts). [Appendix A](#appendix-a-implementation-sequence) holds the migration steps that get there.
-- **Not covered: routing.** Policy parsing, the decision engine, helper-model residency, session affinity and the `Router` rename belong to a sibling Routing spec. This spec supplies its inputs: `StoreSnapshot::helper_models` and the events in [Change Notification](#change-notification).
+- **Contracts held.** The on-disk files, the API fields clients read, and the cache layout keep the meanings stated in [Contracts](#contracts).
+- **Not covered: routing.** See [Routing Boundary](#routing-boundary).
 - **Tests.** See [Tests](#tests).
+
+## Routing Boundary
+
+This section states which questions model management answers and which belong to routing.
+
+Model management answers what *can* run: the set of models, why one cannot run now, and the helper models the policies in force require. Routing answers what *does* run: policy parsing and evaluation, candidate scoring, load and unload decisions, residency, session affinity, and the runtime that holds loaded models.
+
+| Question | Answered by | Where the answer lives |
+| --- | --- | --- |
+| Which models exist, and which of them can this machine run now | model management | [`ModelStore`](#model-store), [`filter_hardware()`](#hardware-filtering) |
+| Why a model cannot run now | model management | `StoreSnapshot::rejected` |
+| Which helper models the policies in force require | model management | `StoreSnapshot::helper_models`, projected during a store build |
+| That a resident helper set needs reconciling | model management | [Change Notification](#change-notification) |
+| The policy a model declares | routing, parsed from the recipe document | `ModelInfo::route_policy`, carried |
+| Whether a policy accepts a request, and what to load for it | routing | the policy engine |
+
+1. Routing reads model management through `resolve()`, `exists()`, `public_name()`, `view()` and `options()`. `options()` carries the architecture-defaults overlay, so routing reads no options file.
+2. `ModelStore` carries `ModelInfo::route_policy` without interpreting it. The only part it reads is the helper-name list it projects into the snapshot.
+3. No component in this spec evaluates a policy expression or decides which model to load.
 
 ## Architecture
 
-This section shows the two axes and the components that sit on each.
+This section shows the two axes, the components that sit on each, and the one direction every call goes.
 
 ```mermaid
 %%{init: {"flowchart": {"curve": "linear"}}}%%
 flowchart TD
+  CONS["Consumers<br/>server.cpp · ollama_api<br/>anthropic_api · mcp_server · routing"]
+
+  subgraph L1["Composition root and facade"]
+    FAC["ModelManager"]
+  end
+
+  subgraph L2["Use cases"]
+    ING["ModelIngest<br/>pull · register · import · remove"]
+    SYNC["ModelSyncService<br/>scan · sync · cancel"]
+  end
+
+  subgraph L3["Domain services"]
+    ST["ModelStore<br/>StoreSnapshot<br/>immutable, atomic swap"]
+    RES["ArtifactSourceResolver<br/>the only site that picks a source"]
+    RO["RecipeOptionsStore"]
+  end
+
+  subgraph L4["Shared plumbing"]
+    ALI["AliasManager"]
+    NOT["ModelChangeNotifier<br/>models changed · model updated"]
+  end
+
   subgraph A1["Axis 1: which models exist?"]
     CAT["ModelCatalog<br/>JsonCatalog · ScanCatalog<br/>ListedCatalog · DiscoveredCatalog"]
     LOC["Locator<br/>File · Resource · Http"]
     CAT --> LOC
   end
+
   subgraph A2["Axis 2: where are the bytes?"]
     AS["ArtifactSource, one per checkpoint<br/>resolve · present · acquisition<br/>deletion · ref"]
-    FR["FetchableRepository : ArtifactSource<br/>list · file_url · compare<br/>commit · can_go_stale"]
-    AS --> FR
-    TE["ArtifactTransfer"]
+    FR["FetchableRepository — an ArtifactSource<br/>list · file_url · compare<br/>commit · can_go_stale"]
+    TE["ArtifactTransfer<br/>HttpFileTransfer · LocalCopyFileTransfer"]
     LA["ArtifactLayout"]
-    FR --> TE
-    FR --> LA
+    ART["ModelArtifactStore"]
+    TE --> LA
+    TE --> ART
   end
-  CAT -->|"CatalogEntry + ArtifactRef"| RES["ArtifactSourceResolver<br/>the only site that picks a source"]
-  RES --> AS
-  CAT --> ST["ModelStore"]
-  ST --> SNAP["StoreSnapshot<br/>immutable, atomic swap"]
-  ST --> BUS["ModelChangeBus<br/>{source_id, generation}"]
-  BUS --> SYNC["ModelSyncService"]
-  FR --> SYNC
-  ING["ModelIngest"] --> RES
-  ING --> TE
-  FAC["ModelManager facade"] --> ST
+
+  CONS --> FAC
   FAC --> ING
-  FAC --> BUS
-  ST --> FAC
-  ING --> FAC
-  RO["RecipeOptionsStore"] --> FAC
-  FAC --> CONS["Consumers<br/>server.cpp · ollama_api<br/>anthropic_api · mcp_server"]
+  FAC --> SYNC
+  FAC --> ST
+  FAC --> RES
+  FAC --> RO
+  FAC --> ALI
+  FAC --> NOT
+  ING --> ST
+  ING --> RES
+  ING --> TE
+  ING --> ART
+  ING --> NOT
+  SYNC --> ST
+  SYNC --> FR
+  SYNC --> NOT
+  ST -->|"enumerate() →<br/>CatalogEntry + ArtifactRef"| CAT
+  ST --> ALI
+  ST --> NOT
+  RES --> AS
+  RES --> LA
 ```
 
-`ModelManager` is the composition root: from one `ModelManagerConfig` it builds, in this order, the change bus, the alias manager, the recipe-options store, the artifact store, the transfer mechanism, the catalog set, the store, the artifact resolver, the ingest use case and the sync service. `Server` fills in the config — cache directory, config directory, extra-models directory, the installed-backend availability probe, the cloud provider registry — constructs the facade once, and hands it to routes, gateways and routing. A test or an embedder builds the same facade over fixture paths and fixture catalogs, which is the one injection point model management offers.
+Every arrow points down, and `A → B` means A calls or reads B. Nothing points at `ModelManager` and no component reaches upward, so the graph is a DAG with the facade on top, which is the same invariant the [facade rules](#modelmanager-facade) state in words. A component that would need an upward arrow is a consumer of change, and [Change Notification](#change-notification) is what it reads instead.
+
+`ModelManager` is the composition root: from one `ModelManagerConfig` it builds, in this order, the change notifier, the alias manager, the recipe-options store, the artifact store, the transfer mechanism, the catalog set, the store, the artifact resolver, the ingest use case and the sync service. `Server` fills in the config — cache directory, config directory, extra-models directory, the installed-backend availability probe, the cloud provider registry — constructs the facade once, and hands it to routes, gateways and routing. A test or an embedder builds the same facade over fixture paths and fixture catalogs, which is the one injection point model management offers.
 
 Catalogs and artifact sources stay separate types because a catalog entry pointing at Qwen on Hugging Face resolves to two different objects: the document that names the model, and the repository hosting its bytes. `ArtifactRef` is the join — the value a catalog emits and a source consumes. For an imported directory one class may implement both interfaces; the types stay split because that is the exception.
 
@@ -154,12 +203,13 @@ public:
     bool remove_alias(const std::string& alias);
 
     // Change plumbing for other components
-    void subscribe(std::string_view name,
-                   std::function<void(const ModelChangeEvent&)>);
+    std::uint64_t generation() const;                              // the published snapshot's
+    void on_models_changed(std::function<void(std::uint64_t)>);     // one subscriber
+    void on_model_updated(std::function<void(const std::string&)>); // one subscriber
 
 private:
     ModelManagerConfig cfg_;
-    ModelChangeBus changes_;
+    ModelChangeNotifier changes_;
     AliasManager aliases_;
     RecipeOptionsStore options_;
     ModelArtifactStore artifacts_;
@@ -204,7 +254,7 @@ This section defines the interface every source of model entries implements.
 A catalog enumerates model entries and reports when its enumeration changed. The second half is what makes change notification and auto-update source-independent.
 
 ```cpp
-using CatalogId = std::string;   // stable across restarts; keys ModelChangeBus
+using CatalogId = std::string;   // stable across restarts; keys CatalogState and the docs
 
 class ModelCatalog {
 public:
@@ -304,7 +354,7 @@ struct StoreSnapshot {
     std::vector<RejectedModel> rejected;                  // filter rejections
     std::vector<std::string> empty_recipes;               // recipes with no visible model
     std::set<std::string> helper_models;                  // projection of route_policy->helper_models
-    std::uint64_t generation;                             // ModelChangeBus generation
+    std::uint64_t generation;                             // the change signal, bumped on swap
 };
 
 class ModelStore {
@@ -334,7 +384,7 @@ Rules:
 1. The snapshot is write-once: no mutators, built off-thread, published with `std::atomic_store`. A reader sees the old valid set or the new valid set, never a partial one.
 2. `public_aliases` and `public_names` are computed from the **pre-filter** model set, so a component's alias resolves the same way whether or not its model currently survives the filter. `helper_models` is projected from the policies of visible models.
 3. Download status comes from artifact sources, never from a comparison on `ModelInfo::source`.
-4. The store runs no thread. A rebuild is requested through `ModelChangeBus` and runs on the executor the change bus designates.
+4. The store runs no thread. A rebuild runs on the executor of whoever requested it — the sync service's worker, the directory watcher, or the call that changed the model set — and publishes with `std::atomic_store` and one notification.
 5. The five steps are private methods of `StoreBuilder`. The pipeline is fixed, not a pluggable stage list: a new stage is an edit to `StoreBuilder`, which is exactly the friction wanted here.
 
 ## Hardware Filtering
@@ -400,7 +450,7 @@ struct ResolvedModel {
 
 1. Normalize with `utils::normalize_model_name()` and strip a trailing `:latest`.
 2. Look the name up in `StoreSnapshot::public_aliases`. A hit wins: exact canonical ID, then the bare-name precedence winner, then a model's `input_aliases`.
-3. With no snapshot hit, call `AliasManager::resolve_alias()` — up to `AliasManager::MAX_ALIAS_CHAIN_DEPTH` hops, and a cycle yields no target.
+3. With no snapshot hit, call `AliasManager::resolve_alias()` — at most `AliasManager::MAX_ALIAS_CHAIN_DEPTH` hops. A cycle yields no target, and so does a chain that still names an alias when the limit is reached: an over-long chain resolves to nothing rather than to a target it never proved.
 4. Resolve the alias target against the snapshot, falling back to the one-hop target when the chained target is absent.
 5. On a hit set `canonical_id` to the snapshot key, `via_alias` to whether step 3 was used, and `wire_id` to `StoreSnapshot::public_names[canonical_id]`, or to the requested name when `via_alias` is true so a client that asked by alias is answered under that alias.
 6. On a miss return `std::nullopt`, and let the caller produce its own 404 shape.
@@ -409,7 +459,7 @@ Rules:
 
 1. The snapshot wins over an alias, and `POST /internal/aliases` rejects an alias that collides with a canonical model name with 409, so a colliding pair cannot be created.
 2. `AliasManager` lives at `src/cpp/include/lemon/models/alias_manager.h` with its implementation in `src/cpp/server/models/alias_manager.cpp`. It owns `<cache_dir>/aliases.json` in mode `0600`, writes it on every mutation, prunes cyclic chains at load, and guards its map with one `std::shared_mutex`. `ModelManager` constructs the one instance from `ModelManagerConfig.cache_dir`; the alias routes and `lemonade alias` reach it through `ModelManager::set_alias()` and `ModelManager::remove_alias()`, which delegate to that instance.
-3. Aliases are consulted at resolution time, never folded into the snapshot. An alias mutation takes effect on the next request with no store rebuild and no change event.
+3. Aliases are consulted at resolution time, never folded into the snapshot. An alias mutation takes effect on the next request with no store rebuild and no generation bump.
 4. `ModelStore` holds a `const AliasManager&`, with no interface between them: `AliasManager("")` has no cache directory, so `load()` and `save()` do nothing and the object is an in-memory map a store test populates with `set_alias()`. The reference is never null, so alias lookup needs no guard and `POST /internal/aliases` has no "manager uninitialized" path.
 5. `get_all_aliases()` returns a `std::map`, so `/internal/aliases` and the alias rows of `/v1/models` come out in a stable order and a golden test is reproducible.
 6. `ModelManager::list()` appends one row per alias that resolves to a listed model, with `id` set to the alias. The route serializes and does nothing else.
@@ -447,13 +497,15 @@ bare   ::= [ <locality> '.' ] <name>     // locality only when the ID is machine
 
 Each source mints handles under these rules:
 
-| Source | Authored by | Locality | Notes |
-| --- | --- | --- | --- |
-| `builtin.` | `server_models.json` | none | the registry is an attribute of the entry |
-| `user.` | a human | never | the registry stays in `registry_source` |
-| `extra.` | `ScanCatalog` | registry of origin when inferable | none |
-| `ListedCatalog` | the provider listing | the provider id | `fireworks.deepseek-ai/deepseek-v3` |
-| `DiscoveredCatalog` | the backend | the recipe id | scoped to what the backend owns |
+| Catalog | Source token | Authored by | Locality | Handle minted |
+| --- | --- | --- | --- | --- |
+| `JsonCatalog` over `server_models.json` | `builtin.` | the registry shipped with lemond | none | `builtin.Qwen3-0.6B-GGUF` |
+| `JsonCatalog` over `user_models.json` | `user.` | a human at `lemonade pull` | never | `user.MyQwen` |
+| `ScanCatalog` | `extra.` | the extra-directory scan | registry of origin, when inferable | `extra.Qwen3-0.6B-GGUF` |
+| `ListedCatalog` | `extra.` | a cloud provider listing | the provider id | `extra.fireworks.deepseek-v3` |
+| `DiscoveredCatalog` | `extra.` | a backend's `discover_models()` | the recipe id | `extra.flm.deepseek-r1` |
+
+The source token is part of every handle, including a catalog's, and `builtin.` `user.` and `extra.` are the only three. A listing emits the bare name for a precedence winner, so `extra.fireworks.deepseek-v3` is listed as `fireworks.deepseek-v3` — the locality carries the minter, and the source token carries the precedence class.
 
 A locality token set is open, `ModelSource` stays closed, and both are known at compile time. `is_reserved_registration_name()` rejects `user.<known-locality>.…`, which closes the case where a user registers `user.fireworks.foo` and shadows a cloud entry's public name through precedence.
 
@@ -462,6 +514,8 @@ Rules:
 1. The rejection applies at registration: `ModelManager::validate()`, `ModelIngest`, and `lemonade recipe-import`. An entry already on disk under a name the rule would reject keeps loading and resolving, so an upgrade never hides a user's model.
 2. `user.` holds one repository per bare name. Repointing a `user.` model at a different registry is a provenance change: an explicit replace that errors on conflict, never two coexisting IDs a user disambiguates.
 3. Every registered catalog's minted IDs round-trip through `parse_canonical_id()` and pass `is_reserved_registration_name()`, asserted in a unit test that enumerates the catalogs. The grammar is a checked contract, and its [generated table](#descriptors) is the same list.
+4. `extra.` is the token a machine mints under, because no human authors it, and the locality names which machine: a scan with no inferable origin mints none, a listing mints its provider id, a backend mints its recipe id. `builtin.` and `user.` are never machine-minted.
+5. Two registered catalogs never claim the same locality under one source token. The `(source token, locality)` pairs come from the descriptors, startup checks them for duplicates, and the [drift check](#drift-check) holds the docs to the same set.
 
 ### Registry Identity
 
@@ -481,10 +535,10 @@ This section separates the two change questions a client can ask.
 | Signals | file mtime, contents digest, HTTP ETag / Last-Modified, listing digest | commit SHA, LFS content id, tree fingerprint |
 | Cost | one stat call or one metadata request | one or more network round trips per repository |
 | Detector | `ModelCatalog::enumeration_changed()` | `FetchableRepository::compare()` |
-| Result | `{source_id, generation}` on `ModelChangeBus`, then a rebuild | `update_available` in the snapshot |
+| Result | a rebuild, then one `models changed` notification carrying the new generation | `update_available` in the snapshot |
 | Client surface | none; an event inside lemond | `/v1/models`, `POST /models/check-updates`, `POST /internal/models/sync` |
 
-`update_available` means a repository's commit advanced. A catalog gaining an entry sets no `update_available` and adds no field to a response; it raises a change event that rebuilds the store. A "new models available" surface is a later RFC.
+`update_available` means a repository's commit advanced. A catalog gaining an entry sets no `update_available` and adds no field to a response; it rebuilds the store and bumps the generation. A "new models available" surface is a later RFC.
 
 ## Artifact Sources
 
@@ -635,14 +689,14 @@ These value types carry data across the ports:
 | `list()`, `file_url()` | snapshot and blob layout with journaling — [`ArtifactLayout`](#transfer-and-layout) |
 | Revision semantics: `refs/main` read, write and resolution, which Hugging Face needs and ModelScope's branch API does not | the sync queue, cancellation, progress reporting |
 | Staleness basis: Hugging Face compares LFS content ids across commits, ModelScope compares tree fingerprints | catalog merge, precedence, public aliasing |
-| `cache_dir_name()`, including the `models--` and `modelscope--` prefixes | `ModelChangeBus` |
+| `cache_dir_name()`, including the `models--` and `modelscope--` prefixes | change notification and the generation counter, per [Change Notification](#change-notification) |
 | Artifact selection: `select_main_repo_files()`, `group_aux_checkpoint_variants()` | `ModelView` assembly |
 | `search()` behind `supports_search()`, backing `/registry/search` | |
 
 Rules:
 
 1. There is no `Repo::download()`. The orchestrator is `list` → select files → build `DownloadPlan` → `ArtifactTransfer::execute(plan)` → `repo.commit()`. Transfer is mechanism; a repository that owns a copy of it has duplicated a protocol-independent loop.
-2. A transfer protocol that HTTP cannot serve — git-LFS batch, S3 signed multipart — is a second `ArtifactTransfer` implementation chosen at the one place plans are executed. Until one exists, `ArtifactTransfer` is a concrete class with no virtual: a seam nobody uses is not a seam.
+2. A transfer protocol that HTTP cannot serve is a second [`FileTransfer`](#transfer-and-layout) implementation registered beside the repositories, never a second copy of the loop. `file://` needs one from the start, because [Selection](#selection) already accepts that scheme: `LocalCopyFileTransfer` stages through the same `.partial` file under the same disk-space check and hash verification, with no socket and no retry policy.
 3. `compare()` is the only place file metadata is read from a provider, through `list()`. No caller assembles a provider URL or parses a provider's tree response.
 4. Cache layout per registry follows `docs/dev/model-registries.md`: `refs/main`, `snapshots/<snapshot-id>/` and `.lemonade_registry.json` under a provider-qualified repository directory.
 
@@ -665,6 +719,23 @@ struct DownloadPlan {
     std::vector<DownloadFile> files;       // files_count is files.size()
 };
 
+// One scheme, one implementation. Disk-space accounting, the progress total and
+// cancellation belong to the caller, so every scheme inherits them.
+class FileTransfer {
+public:
+    virtual ~FileTransfer() = default;
+    virtual bool handles(const std::string& url) const = 0;
+    virtual void transfer(const DownloadFile&,
+                          const std::string& target_dir,
+                          DownloadProgressCallback,
+                          CancelToken&) const = 0;
+};
+
+LEMONADE_REGISTER_FILE_TRANSFER(HttpFileTransfer)
+LEMONADE_REGISTER_FILE_TRANSFER(LocalCopyFileTransfer)
+
+// The shared loop over a plan: space, dispatch, verify, progress, cancel. This
+// is the one place a plan is executed, and it is concrete.
 class ArtifactTransfer {
 public:
     void execute(const DownloadPlan&,
@@ -678,8 +749,21 @@ public:
 1. Check free disk space across the whole plan before transferring anything, crediting bytes already on disk including `.partial` files, and folding target directories that share a filesystem into one check.
 2. Report progress in bytes with the total across all files, and check the cancel token before each file. A cancellation throws.
 3. Reject a cached `.gguf` file that lacks the GGUF magic bytes before treating it as complete, so a saved HTML error page never reaches a backend that would fail on it later.
-4. Transfer each file with `max_retries = 10`, `initial_retry_delay_ms = 2000`, `max_retry_delay_ms = 120000`, `resume_partial = true`, `low_speed_limit = 1000` bytes per second, `low_speed_time` from `utils::HttpClient::get_default_timeout()`, and `connect_timeout = 60`.
+4. Dispatch each file to the one registered `FileTransfer` whose `handles()` accepts its URL. A file no implementation handles is a plan error naming the scheme, raised before any byte moves.
 5. Verify `expected_hash` per file. A mismatch is a failure, not a retry.
+
+The two shipped implementations, and what each owns:
+
+| Implementation | Schemes | Mechanics |
+| --- | --- | --- |
+| `HttpFileTransfer` | `http`, `https` | `max_retries = 10`, `initial_retry_delay_ms = 2000`, `max_retry_delay_ms = 120000`, `resume_partial = true`, `low_speed_limit = 1000` bytes per second, `low_speed_time` from `utils::HttpClient::get_default_timeout()`, `connect_timeout = 60` |
+| `LocalCopyFileTransfer` | `file` | a staged copy into `.partial` then a rename; the source is opened read-only and never moved, truncated or deleted; no retries, because a short read is a disk error and a retry would hide it |
+
+Rules:
+
+1. One plan may mix schemes — a registry checkpoint beside a `file://` side checkpoint — and the space check, the progress total and the cancel token cover the plan rather than the scheme.
+2. A repository's `auth_headers()` are sent only while the origin still matches the origin that produced them. `HttpFileTransfer` strips them before following a redirect to a different scheme, host or port, at every hop, and never adds a credential a repository did not supply.
+3. A plan whose files all resolve to `file://` moves no byte over a network, so it succeeds when `offline=true`.
 
 `ArtifactLayout` names the on-disk shape of a repository's cache: snapshot directory, `refs/main`, blob directory, `.partial` and `.download_manifest.json` locations, and the call that makes a staged snapshot current. Two layouts ship:
 
@@ -832,9 +916,14 @@ public:
 
 This section defines update scanning and the queue that applies updates.
 
+Scanning is the only model-management work that starts on one request, runs for minutes, reports progress, and can be cancelled. That combination needs a queue, a worker and a progress state machine, and no other component here has a reason to hold them, so they live together behind this interface.
+
 ```cpp
 class ModelSyncService {
 public:
+    explicit ModelSyncService(SyncDeps);   // starts the one worker, which then waits
+    ~ModelSyncService();                   // cancels and joins
+
     ScanResult scan_for_updates(const std::vector<std::string>& targets = {});
     SyncHandle sync(const std::vector<std::string>& models, SyncMode);
     std::string enqueue_sync(const std::vector<std::string>& models);
@@ -850,39 +939,48 @@ public:
 2. Drop every checkpoint whose source answers `can_go_stale()` with false. Cloud, local and imported models drop out on their own capability, not on a caller's list.
 3. Group the survivors by `(registry, repo_id, revision)`, so one round trip answers for every model sharing a repository.
 4. Call `list()` once per group, then `compare()` per checkpoint, reusing the previous snapshot where a repository's `compare()` says the selected artifacts are unchanged.
-5. Publish one rebuilt snapshot carrying the new `update_available` flags, and one change event.
+5. Publish one rebuilt snapshot carrying the new `update_available` flags, then one `models changed` notification.
 
 Rules:
 
-1. This service owns the only threads in model management: a serial queue, cancellation, `ModelSyncState`, and the SSE-visible phase machine.
-2. Auto-update after startup runs as a queued sync. `should_auto_update()` and `ModelInfo::auto_update` are the per-model override.
-3. Its mutex and condition variable are disjoint from store state, and it publishes only by requesting a rebuild.
-4. `POST /models/check-updates` rejects with 409 when `offline=true`, and neither scanning nor syncing touches the network when offline.
+1. The service owns the one worker thread in model management, together with the serial queue, cancellation, `ModelSyncState` and the SSE-visible phase machine. No other component creates a thread, and no caller of this service spawns work of its own.
+2. The worker runs only when work is queued: it drains the queue and waits on its condition variable. There is no timer, no polling interval, and no request that happens because time passed.
+3. Startup contributes at most one scan, gated by `auto_check_model_updates()`, and that scan is an ordinary queued sync. `should_auto_update()` and `ModelInfo::auto_update` are the per-model override.
+4. Every other scan starts with an explicit request: `POST /models/check-updates` scans without downloading, `POST /internal/models/sync` scans and applies.
+5. A caller of `enqueue_sync()` while a sync runs attaches to it and receives that sync's id, so two clients of one lemond never start two passes over the same repositories.
+6. Its mutex and condition variable are disjoint from store state, and it publishes only by requesting a rebuild.
+7. `POST /models/check-updates` rejects with 409 when `offline=true`, and neither scanning nor syncing touches the network when offline.
 
 ## Change Notification
 
-This section defines how a catalog or repository change reaches interested components.
+This section defines how a new model set reaches the components that must react to it.
 
 ```cpp
-struct ModelChangeEvent {
-    std::string source_id;   // CatalogId or RegistryId
-    ChangeSubject subject;   // Catalog | Repository
-    std::uint64_t generation;
-};
-
-class ModelChangeBus {
+class ModelChangeNotifier {
 public:
-    void subscribe(std::string_view name,
-                   std::function<void(const ModelChangeEvent&)>);
-    void publish(ModelChangeEvent event);   // returns after queueing
+    void on_models_changed(std::function<void(std::uint64_t)>);      // one subscriber
+    void on_model_updated(std::function<void(const std::string&)>);  // one subscriber
+
+    void models_changed(std::uint64_t generation);
+    void model_updated(const std::string& canonical_id);
 };
 ```
 
-1. An event names the subject that changed, so a subscriber recomputes only for a source it cares about. The helper-model projection and any routing rebuild subscribe by `CatalogId` and ignore the rest.
-2. Subscribers register while `ModelManager` is being constructed and live as long as lemond, so `subscribe()` returns nothing and there is no unsubscribe handle.
-3. Callbacks run outside every lock. A callback that needs model data requests a rebuild rather than reading a partially built draft.
-4. `StoreSnapshot::generation` is the one generation counter: a subscriber coalesces on it, and a reader can tell which snapshot a change produced.
-5. Producers are: a catalog whose `enumeration_changed()` returned true, a completed ingest or deletion, a completed `ModelSyncService` scan, and a config change that alters the catalog set. An alias mutation produces none.
+Both consumers are routing, and each signal has exactly one:
+
+| Signal | Recomputes |
+| --- | --- |
+| `models_changed(generation)` | which helper models the policies in force still need, from `StoreSnapshot::helper_models` |
+| `model_updated(canonical_id)` | unloads that model when it is loaded, so the next request opens the new bytes |
+
+Rules:
+
+1. Two signals and one subscriber each, registered while `ModelManager` is constructed and living as long as lemond. There is no unsubscribe handle, no topic registry, and no event a subscriber must filter, because nothing here has a varying set of listeners.
+2. `StoreSnapshot::generation` is the change signal for everything else. A reader compares generations to decide whether to re-read, a rebuild coalesces on it, and `ModelManager::generation()` exposes it without a callback.
+3. Callbacks run outside every lock. A subscriber reads the snapshot published at the generation it was handed, never a draft: the notification follows the atomic swap.
+4. Producers of `models_changed`: a catalog whose `enumeration_changed()` returned true, a completed ingest, deletion or sync scan, and a config change that alters the catalog set. Producers of `model_updated`: a completed re-download whose resolved checkpoint paths differ from the paths in the published snapshot. An alias mutation produces neither.
+5. Catalog change detection is polled, not pushed. A rebuild asks each catalog `enumeration_changed()`, and a `DirectoryWatcher` callback only requests a rebuild — the watcher publishes nothing and holds no subscriber list.
+6. A subscriber is added only where the snapshot cannot carry the answer. A consumer that needs currency rather than a signal compares `generation()`.
 
 ## Recipe Options
 
@@ -918,16 +1016,16 @@ This section assigns each piece of state to one owner and one synchronization st
 | `StoreDraft` during a build | `StoreBuilder` | confined to the build; never visible to a reader |
 | Catalog state: mtime, ETag, listing digest, watcher flag | each catalog | the catalog's own mutex |
 | Recipe options map | `RecipeOptionsStore` | one mutex for reads, one for rewrites |
-| Sync queue and `ModelSyncState` | `ModelSyncService` | own mutex and condition variable |
+| Sync queue, worker and `ModelSyncState` | `ModelSyncService` | one worker thread, its own mutex and condition variable |
 | Per-model pull locks, update-check state | `ModelIngest` | one map of mutexes behind one guard |
 | Alias map | `AliasManager` | one `std::shared_mutex` |
-| Change bus subscribers and generation | `ModelChangeBus` | one mutex held only to copy the subscriber list; callbacks run unlocked |
+| Notifier callbacks | `ModelChangeNotifier` | one mutex held only to read the stored callback; the callback runs unlocked, after the swap |
 
 Rules:
 
 1. No read path takes a lock. A caller reads a snapshot, an immutable `ModelInfo` inside it, or a value the snapshot already holds — including a rejection reason.
 2. A build never mutates the published snapshot. Stages write to the draft, and the swap publishes a complete object.
-3. No component calls into another component's mutex: interactions are a value in, a value out, or an event on the bus.
+3. No component calls into another component's mutex: interactions are a value in, a value out, or one call on the change notifier.
 4. The facade's members are constructed once and never reassigned, so it needs no synchronization of its own.
 
 ## Source Layout
@@ -950,12 +1048,12 @@ src/cpp/include/lemon/models/
   artifact_source.h      ArtifactSource, Presence, Acquisition, Deletion, ArtifactKind
   artifact_resolver.h    ArtifactSourceResolver
   fetchable_repository.h FetchableRepository, RegistryId, registry
-  artifact_transfer.h    ArtifactTransfer, DownloadPlan, DownloadFile
+  artifact_transfer.h    ArtifactTransfer, FileTransfer, DownloadPlan, DownloadFile
   artifact_layout.h      ArtifactLayout, HfHubLayout, SiblingLayout
   model_artifact_store.h ModelArtifactStore, ProvenanceRecord, DeleteResult, CleanupReport
   model_ingest.h         ModelIngest, PullResult
   model_sync_service.h   ModelSyncService, ScanResult, SyncStatus, SyncHandle
-  model_change_bus.h     ModelChangeBus, ModelChangeEvent
+  model_change_notifier.h ModelChangeNotifier
   recipe_options_store.h RecipeOptionsStore
 src/cpp/server/models/
   model_manager.cpp
@@ -963,9 +1061,9 @@ src/cpp/server/models/
   catalog_locator.cpp
   model_store.cpp store_builder.cpp
   artifact_resolver.cpp huggingface_repository.cpp modelscope_repository.cpp
-  artifact_transfer.cpp artifact_layout.cpp model_artifact_store.cpp
+  artifact_transfer.cpp file_transfer.cpp artifact_layout.cpp model_artifact_store.cpp
   model_ingest.cpp model_sync_service.cpp
-  model_change_bus.cpp recipe_options_store.cpp alias_manager.cpp
+  model_change_notifier.cpp recipe_options_store.cpp alias_manager.cpp
 ```
 
 1. `src/cpp/server/models/*.cpp` is collected by `file(GLOB ... CONFIGURE_DEPENDS)` in the `lemonade-server-core` target, as `docs/api` is, so a new catalog or repository edits no CMake file.
@@ -1056,6 +1154,87 @@ Registration carries the descriptor, and a catalog receives one in its construct
 
 Page intros and prose that is not a table stay hand-written between the regions.
 
+### Example
+
+This is the contract the generator implements: one descriptor in, one table row out, with no fact in the docs that the descriptor does not carry.
+
+`ScanCatalog` declares:
+
+```cpp
+CatalogDescriptor scan_catalog_descriptor() {
+    return CatalogDescriptor{
+        DocEntry{"extra-models",
+                 "Extra models directory",
+                 "Models discovered by scanning the extra models directory.",
+                 {"A GGUF file is identified by its header, not its name.",
+                  "A directory watcher requests one rebuild when the tree changes."},
+                 ""},
+        LocatorKind::Directory,
+        false,                  // required
+        "",                     // locality: minted IDs carry none
+        "extra_models_dir",     // config_key
+        MintedBy::Machine,
+    };
+}
+```
+
+The generator writes those fields into `docs/guide/configuration/custom-models.md`:
+
+```markdown
+<!-- BEGIN GENERATED model-catalogs -->
+| Catalog | Entries come from | Required | Locality | Config key | Handle minted |
+| --- | --- | --- | --- | --- | --- |
+| Extra models directory | a scan of the extra models directory; GGUF by header | no | none | `extra_models_dir` | `extra.NAME` |
+| Cloud: Fireworks | a provider's model listing | no | `fireworks` | `cloud_providers` | `extra.fireworks.NAME` |
+<!-- END GENERATED model-catalogs -->
+```
+
+and one notes region per catalog:
+
+```markdown
+<!-- BEGIN GENERATED model-catalog-notes-extra-models -->
+**Extra models directory**
+
+- A GGUF file is identified by its header, not its name.
+- A directory watcher requests one rebuild when the tree changes.
+<!-- END GENERATED model-catalog-notes-extra-models -->
+```
+
+A repository descriptor renders the same way. `HuggingFaceRepository` declares:
+
+```cpp
+RepositoryDescriptor huggingface_descriptor() {
+    return RepositoryDescriptor{
+        DocEntry{"huggingface",
+                 "Hugging Face",
+                 "The default remote registry: GGUF repositories over HTTPS.",
+                 {"Token-gated repositories need `HF_TOKEN`."},
+                 "https://huggingface.co/{repo}"},
+        {{"HF_TOKEN", "read access to gated repositories", false},
+         {"HF_ENDPOINT", "a mirror or gateway", false}},
+        "https://huggingface.co",   // endpoint_default
+        {"hf://"},                  // schemes
+        "models--",                 // cache_dir_prefix
+        "immutable commit SHA",     // revision_semantics
+        "LFS content id across commits",   // staleness_basis
+        true,                       // supports_search
+    };
+}
+```
+
+which becomes one row of `docs/dev/model-registries.md`:
+
+```markdown
+<!-- BEGIN GENERATED model-registries -->
+| Registry | Endpoint | Schemes | Environment | Cache prefix | Revision semantics | Staleness basis | Search |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `huggingface` | `https://huggingface.co` | `hf://` | `HF_TOKEN`, `HF_ENDPOINT` | `models--` | immutable commit SHA | LFS content id across commits | yes |
+<!-- END GENERATED model-registries -->
+```
+
+1. Every column is a descriptor field, and every descriptor field feeds a column. A fact with no field behind it does not belong in the page.
+2. The generator rewrites the regions byte for byte from the live `/internal/model-sources` payload, which is what makes the [drift check](#drift-check) a diff rather than a judgment.
+
 ### Model Object Fields
 
 `ModelView` is the model object's field table, and one generator pass emits both the JSON serialization and the `docs/api` description of a model object from it, so the response and its documentation cannot drift. Each field carries its type, its availability — always, or only for a cloud or registered model — and one sentence of description. `checkpoint_status` documents one entry per checkpoint: `type`, `present`, `required`, `registry`, `path`.
@@ -1080,14 +1259,15 @@ This section states the coverage that protects the design and the tests that pro
 | `test_store_snapshot` | build publishes atomically; a reader sees either generation in full; `rejected`, `empty_recipes` and rejection reasons present on every build |
 | `test_store_builder` | golden `StoreSnapshot` for a fixture catalog set: merge, precedence, alias maps, projection; `filter_hardware()` over the whole set and over one entry, with rejection reasons |
 | `test_model_catalog` | each `Locator` read policy, `required()` throw versus contribute-nothing, `enumeration_changed()` per signal |
-| `test_name_resolution` | snapshot beats alias, chains to `MAX_ALIAS_CHAIN_DEPTH`, a cycle yields no target, `:latest`, `input_aliases`, `wire_id` under an alias |
+| `test_name_resolution` | snapshot beats alias, chains to `MAX_ALIAS_CHAIN_DEPTH`, a cycle yields no target, a chain still naming an alias at the limit yields no target, `:latest`, `input_aliases`, `wire_id` under an alias |
 | `test_model_manager_facade` | the facade constructed over a fixture `ModelManagerConfig` with temp paths; a static check that no consumer includes a `lemon/models/` header other than `model_manager.h` and `model_info.h` |
 | `test_artifact_resolver` | the seven selection rules, per-checkpoint independence, a model with two sources |
 | `test_download_plan` | manifest JSON to `DownloadPlan`, disk-space accounting, GGUF magic rejection, hash mismatch fails without retry, cancellation throws |
+| `test_file_transfer` | scheme dispatch across `http` and `file`, one mixed-scheme plan reporting one progress total, a `file://` plan that completes with `offline=true`, `auth_headers()` stripped on a cross-origin redirect and still sent on a same-origin one |
 | `test_model_deletion` | every `Deletion` row, the containment check, shared-repo variant delete, blob GC only for unreferenced blobs |
 | `test_registry_provenance` | v1 read, v2 write, per-checkpoint snapshot keys, `selection` mismatch triggering a fetch |
 | `test_identity_round_trip` | every registered catalog's minted IDs survive `parse_canonical_id()` and `is_reserved_registration_name()` |
-| `test_model_change_bus` | `{source_id, generation}`, coalescing, callbacks run unlocked |
+| `test_model_change_notifier` | one subscriber per signal, callbacks run unlocked and after the swap, a reader at generation N never sees generation N+1 |
 | `test_model_sync_service` | target selection, `can_go_stale()` filtering, per-group listing, auto-update override, cancellation |
 | `test_model_source_descriptors` | every registered source has a descriptor with a non-empty `summary`, and the `/internal/model-sources` payload matches the compiled sets |
 
@@ -1097,62 +1277,10 @@ Acceptance criteria. These prove the axis split is real rather than cosmetic:
 
 1. A third `FetchableRepository` against a local HTTP fixture, added with its own `.cpp`, one `LEMONADE_REGISTER_ARTIFACT_REPOSITORY` line and one descriptor, with no edit to `ModelStore`, `ModelSyncService`, `ModelIngest`, `ModelManager` or `ModelInfo`. Its docs region appears with no hand-written prose. Any such edit means the cut is wrong.
 2. A second `JsonCatalog` from a fixture path appearing in the merged view with correct precedence against a built-in of the same bare name.
-3. A catalog-staleness test that adds an entry to a JSON file and observes one `{source_id, generation}` event with no repository network call and no change to `update_available`.
-4. A `FilesystemRepository` fixture serving a directory and pulling a model with no HTTP at all and no edit outside its own file. It expresses the copy as a `file://` plan that `ArtifactTransfer` executes; if that cannot be done, [Transfer And Layout](#transfer-and-layout) is wrong.
+3. A catalog-staleness test that adds an entry to a JSON file and observes one `models_changed` notification carrying a new generation, with no repository network call and no change to `update_available`.
+4. A `FilesystemRepository` fixture serving a directory and pulling a model with no HTTP at all and no edit outside its own file. It expresses the copy as a `file://` plan that `ArtifactTransfer` dispatches to a `FileTransfer`; if that cannot be done, [Transfer And Layout](#transfer-and-layout) is wrong.
 5. A model with two checkpoints from different sources — `main` from a fixture repository and a `required = false` side cache from a local path — resolving, reporting presence, fetching and deleting independently.
 6. Every seam a test needs is a fixture: a temp cache directory, a fixture catalog in `ModelManagerConfig.extra_catalogs`, or a local HTTP fixture. No component exposes a `*_for_test` setter or an override hook on its public interface.
 
-All new tests register through `add_cpp_ci_test(<Name> CI ON ...)` and become dependencies of `cpp-ci-tests`, so they run under `ctest -L cpp-ci`. The integration suites `test/server_cli2.py`, `test/server_endpoints.py` and `test/server_llm.py` run unchanged against every step in [Appendix A](#appendix-a-implementation-sequence).
+All new tests register through `add_cpp_ci_test(<Name> CI ON ...)` and become dependencies of `cpp-ci-tests`, so they run under `ctest -L cpp-ci`.
 
-## Appendix A: Implementation Sequence
-
-This appendix orders the migration; each step ships alone and keeps the tree green. Section references are the target design; this appendix is the only place that describes the current code.
-
-`ModelManager` today is one class of 6,731 lines in `src/cpp/server/model_manager.cpp` with a 642-line header; see [Appendix B](#appendix-b-current-state-evidence). The steps keep it compiling and its behavior fixed until step 11 reshapes it into the facade.
-
-| # | Step | Risk | Depends on |
-| --- | --- | --- | --- |
-| 0 | Characterization tests: a golden snapshot of `ModelManager::build_cache()` for a fixture registry, plus direct coverage of `delete_model()`, `list_model_files()` and `cleanup_orphaned_cache()` | none | — |
-| 1 | Extract `RecipeOptionsStore` from the options CRUD at `model_manager.cpp:1735-1881`, including the `builtin.` prefix migration at `:1006-1050` | low | — |
-| 2 | Add `ModelCatalog`, `Locator` and descriptors; instantiate `JsonCatalog` over `server_models.json`, `user_models.json` and `architecture_defaults.json`-adjacent loaders with their `required()` policies | low | — |
-| 3 | Extract `ArtifactTransfer` and typed `DownloadPlan` from `download_from_manifest()` (`model_manager.cpp:5500-5804`) and the manifest JSON built in `download_from_registry()` | low | — |
-| 4 | Add `ModelStore`, `StoreSnapshot`, `StoreBuilder` and `filter_hardware()`; wrap the extra-dir scan (`discover_extra_models`, `:1258`), the cloud listing (`refresh_cloud_models`, `:4048`) and backend discovery (`:3304`) as catalogs; delete the `mutable` filter side tables and the read-path `models_cache_mutex_` | medium | 1, 2 |
-| 5 | Add `ModelChangeBus` keyed by `CatalogId` and `RegistryId`; move the helper-model projection onto it, deleting `Server::active_policy_helper_models()` (`server.cpp:3857`) | medium | 4 |
-| 6 | Add `RegistryId` and the repository registry with descriptors; move listing, metadata, revision, staleness and cache-dir naming per repository; delete `fetch_hf_file_metadata_for_ref()` (`:5376`) and `hf_file_metadata_from_tree_file()` (`:5348`); add `ArtifactRef`, the locality-token minting rule and the reserved-name extension; split catalog from artifact staleness | medium-high | 4, 5 |
-| 7 | Add `ArtifactSource`, `ArtifactSourceResolver` and `ModelArtifactStore`; delete the `ModelInfo::source` switch in `resolve_model_path()` (`:1590-1624`) and the five `npu_cache` skip sites (`:2951`, `:5188`, `:5860`, `:6237`, `:6292`); write `.lemonade_registry.json` v2 and read v1 | medium-high | 6 |
-| 8 | Add `ModelSyncService`, absorbing `check_for_model_updates()` (`:1912`) as `scan_for_updates()` | medium | 6, 7 |
-| 9 | Add `ModelIngest`, collection manifests included as private steps; `plan_download()` and `BackendOpsContext` invert `BackendOps::download_model()` and `is_downloaded()` (`backends/backend_ops.cpp:114-126`); move `WhisperServer::download_npu_compiled_cache()` (`whispercpp_server.cpp:155`) onto a `required = false` checkpoint with `SiblingLayout`; give every source a `Deletion` | high | 3, 7 |
-| 10 | Add `ModelStore::resolve()`, give `ModelManager` the single `AliasManager` it owns, move `alias_manager.{h,cpp}` under `lemon/models/`, delete the four alias blocks in `server.cpp` (`handle_models`, `handle_model_by_id`, `respond_with_model_options`, `resolve_alias_target`) with their six `if (alias_manager_)` guards, and route the gateways through resolution | medium | 4 |
-| 11 | Reshape `ModelManager` into the composition root and facade: it builds every component from a `ModelManagerConfig`, and `Server` stops constructing them and passes the facade to routes, gateways and routing | medium | 4-10 |
-| 12 | Add `GET /internal/model-sources` and `gen_model_source_boilerplate.py`; wire `--check` into the docs CI job; regenerate `docs/dev/model-registries.md` and the naming and source tables in `docs/guide/configuration/custom-models.md` and `docs/guide/cli.md` | low | 6 |
-
-Ordering notes:
-
-1. Steps 1, 2, 3 and 4 interleave safely with feature work.
-2. Step 6 precedes 7 because a source cannot be resolved before the registry naming it exists. Both touch `server.cpp`, the busiest file in the repository: short-lived branches and prompt rebases matter more here than the design does.
-3. Step 9 edits the 416-line `download_model()` (`model_manager.cpp:4734-5149`) rather than lifting it, because separating catalog selection from repository protocol from transfer is the point of the axis split. It lands alone.
-4. The facade reshape is last and mechanical once the components exist. If it starts growing logic, a component is missing a use case, and that belongs in the component.
-5. Routing work follows step 5 and is specified separately: policy population, helper projection and candidate eligibility all read the store.
-
-Behavior changes land in the step that causes them and are called out in the PR: alias resolution in the Ollama, Anthropic and MCP gateways (step 10); delete completing for local and imported models (step 9); an unknown registry id degrading to a skip (step 6); `user.<known-locality>.…` rejected at registration (step 6).
-
-## Appendix B: Current-State Evidence
-
-This appendix records the state this design replaces, verified at the revision it was written against.
-
-`ModelManager` is 6,731 lines with a 642-line header; `server.cpp` is 8,302 lines and `router.cpp` 2,966. 39 translation units include `lemon/model_manager.h`, and `server.cpp` calls 41 distinct methods through `model_manager_->`. `model_manager.cpp` takes 65 locks across six mutexes, calls `build_cache()` from 18 of its own accessors, and exposes six test-only seams on its public interface: `discover_extra_models_for_test`, `set_model_update_available_for_test`, `set_update_check_override_for_test`, `set_download_model_override_for_test`, `set_sync_phase_callback`, `recipes_all_models_filtered_snapshot`.
-
-| Defect | Evidence | Replaced by |
-| --- | --- | --- |
-| A provider abstraction is bypassed | `ModelRegistry` (`model_registry.h:156`) is a clean provider interface, and `fetch_hf_file_metadata_for_ref()` (`model_manager.cpp:5376`) re-implements provider access against `$HF_ENDPOINT/api/models/<repo>/tree/<ref>`, re-parsing `lfs.oid` / `oid` that `model_registry.cpp:359` already normalizes; `hf_file_metadata_from_tree_file()` (`:5348`) is a second copy of the same mapping | [Fetchable Repositories](#fetchable-repositories) rule 3 |
-| A closed enum blocks extension | `RemoteRegistrySource` (`model_registry.h:15`) has two values; adding a third edits the enum, the factory `model_registry()` (`model_registry.cpp:1039`), `parse_remote_registry_source()` (`model_registry.h:72`), `remote_registry_display_name()` (`model_registry.h:74`), and `registry_repo_cache_dir_name()` (`model_registry.cpp:1028`) | [Registry Identity](#registry-identity) |
-| Capability checks are type identity | `source == RemoteRegistrySource::HuggingFace` at `model_manager.cpp:2070` and `:5936` stands in for "content ids survive revisions"; ModelScope's fingerprint path is `model_registry.cpp:516` and `can_reuse_previous_hf_snapshot()` (`model_manager.cpp:5308`) | `can_go_stale()`, `compare()` in [Fetchable Repositories](#fetchable-repositories) |
-| Backend policy depends upward on the god class | `BackendOps::is_downloaded()` and `BackendOps::download_model()` (`backends/backend_ops.cpp:114-126`) call `ModelManager::checkpoints_complete()` and `download_from_registry_engine()`; `BackendOpsContext` holds a `ModelManager*` | [Backend Directives](#backend-directives) |
-| No artifact-source abstraction | `ModelInfo::source` carries catalog origin and byte source in one string; `resolve_model_path()` (`model_manager.cpp:1590-1624`) is a three-way switch on it; `server.cpp:2954-2959` validates it against a mixed list; `type == "npu_cache"` is skipped at `model_manager.cpp:2951`, `:5188`, `:5860`, `:6237`, `:6292` and early-returned in `BackendOps::resolve_checkpoint_path()` (`backends/backend_ops.cpp:25`); `WhisperServer::download_npu_compiled_cache()` (`whispercpp_server.cpp:155`) is a second artifact pipeline inside a backend, a single-shot `HttpClient::download_file()` with no retry, resume or hash check; a cloud model reports `downloaded = true`, `size = 0` (`cloud_server.cpp:1082-1083`) | [Artifact Sources](#artifact-sources), [Deletion](#deletion) |
-| One hot lock on the read path, side tables mutated by a `const` method | `models_cache_mutex_` guards every read; `filter_models_by_backend()` mutates `mutable` tables, and its `track_recipe_availability` parameter is legal only on a full-store build per its own header comment | [Concurrency](#concurrency), [Hardware Filtering](#hardware-filtering) |
-| Deletion of a local model cannot complete | `delete_model()` walks up for a `models--` ancestor and throws at `model_manager.cpp:6196` when a `local_path` model has none, leaving the registry entry in place | [Deletion](#deletion) |
-| Aliases are re-implemented per surface | alias logic is hand-written in `handle_models`, `handle_model_by_id`, `respond_with_model_options` and `resolve_alias_target`, applied by 10 `normalize_and_resolve_request_model()` calls behind six `if (alias_manager_)` guards (`server.cpp:2886`, `:3307`, `:3311`, `:3440`, `:6472`, `:6577`), with a 500 path when the manager is absent (`:6532`); `get_all_aliases()` returns an `std::unordered_map`, so `/internal/aliases` has no stable order; `ollama_api.cpp`, `anthropic_api.cpp` and `mcp_server.cpp` contain no alias reference at all | [Name Resolution](#name-resolution) |
-| Registration names can shadow a machine-minted locality | `is_reserved_registration_name()` (`canonical_id.h:97`) knows only `builtin.` and `extra.`, and cloud entries carry a provider prefix with no source token, so `user.fireworks.foo` shadows a cloud public name. Callers: `server.cpp:2910`, `recipe_import.cpp:265` | [Handle Grammar](#handle-grammar) |
-| Orchestration lives in the HTTP layer | `server.cpp` holds alias blocks, the helper-model projection at `:3857` which deep-copies every `ModelInfo` on each change, and per-handler model-name normalization on 10 routes | [ModelManager Facade](#modelmanager-facade) |
-| Two unrelated things are named "router" | `lemon::Router` is a model-instance runtime with no policy; the policy engine is `routing_policy.{h,cpp}` plus parser, store and classifier services | the sibling Routing spec |
-| Sources are documented by hand | `docs/dev/model-registries.md` and the naming tables in `docs/guide/configuration/custom-models.md` are prose and tables maintained by hand, with no generator and no drift check | [Generated Docs](#generated-docs) |
