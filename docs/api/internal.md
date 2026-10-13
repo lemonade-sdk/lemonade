@@ -1210,7 +1210,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
         "experimental": false,
         "id": "internal.telemetry_flush",
         "methods": ["POST"],
-        "model_defaults_to_loaded": false,
         "notes": [],
         "paths": ["telemetry/flush"],
         "prefixes": "Internal",
@@ -1253,7 +1252,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
           "args",
           "responses",
           "request_format",
-          "model_defaults_to_loaded",
           "validate_args",
           "quiet_log"
         ],
@@ -1280,7 +1278,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
           "experimental": {"description": "The route may still change.", "type": "boolean"},
           "id": {"description": "<page>.<name>; also the docs anchor.", "type": "string"},
           "methods": {"type": "array", "items": {"type": "string"}},
-          "model_defaults_to_loaded": {"type": "boolean"},
           "notes": {"type": "array", "items": {"type": "string"}},
           "paths": {
             "description": "Paths without their prefix; entries after the first are aliases.",

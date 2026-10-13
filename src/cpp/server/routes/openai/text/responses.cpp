@@ -110,7 +110,6 @@ public:
 
         s.responses = {response, stream};
         s.request_format = RequestFormat::Json;
-        s.model_defaults_to_loaded = true;
         return s;
     }
 

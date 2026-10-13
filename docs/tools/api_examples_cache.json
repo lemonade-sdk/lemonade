@@ -634,7 +634,6 @@
           "methods": [
             "POST"
           ],
-          "model_defaults_to_loaded": false,
           "notes": [],
           "paths": [
             "telemetry/flush"

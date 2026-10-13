@@ -194,7 +194,6 @@ json route_spec_to_json(const RouteSpec& spec) {
         {"args", args},
         {"responses", responses},
         {"request_format", to_string(spec.request_format)},
-        {"model_defaults_to_loaded", spec.model_defaults_to_loaded},
         {"validate_args", spec.validate_args},
         {"quiet_log", spec.quiet_log},
     };
@@ -300,32 +299,24 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
         }
 
         if (!req.body.contains("model")) {
-            if (!req.spec.model_defaults_to_loaded) {
-                write_openai_error(res, 400, "Missing 'model' field in request");
-                return;
-            }
-            if (!ctx_.router->is_model_loaded()) {
-                LOG(ERROR, "Server") << "No model loaded and no model specified in request"
-                                     << std::endl;
-                write_plain_error(res, 400, "No model loaded and no model specified in request");
-                return;
-            }
-        } else {
-            const LoadSpan load_span_name = load_span();
-            auto span = load_span_name.kind.empty()
-                ? nullptr
-                : telemetry::TelemetryTracker::start_span(load_span_name.kind, load_span_name.name,
-                                                          req.model, req.body);
-            try {
-                ctx_.model_loader->ensure_loaded(req.model, ModelLoader::load_options(req.body));
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
-                ctx_.model_loader->write_load_error(res, req.model, e.what());
-                if (span) span->end_with_error(e.what());
-                return;
-            }
-            if (span) span->cancel();
+            write_openai_error(res, 400, "Missing 'model' field in request");
+            return;
         }
+
+        const LoadSpan load_span_name = load_span();
+        auto span = load_span_name.kind.empty()
+            ? nullptr
+            : telemetry::TelemetryTracker::start_span(load_span_name.kind, load_span_name.name,
+                                                      req.model, req.body);
+        try {
+            ctx_.model_loader->ensure_loaded(req.model, ModelLoader::load_options(req.body));
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
+            ctx_.model_loader->write_load_error(res, req.model, e.what());
+            if (span) span->end_with_error(e.what());
+            return;
+        }
+        if (span) span->cancel();
 
         run(req, res);
     } catch (const std::exception& e) {

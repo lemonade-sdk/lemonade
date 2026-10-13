@@ -78,7 +78,6 @@ struct RouteSpec {
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
-    bool model_defaults_to_loaded = false;  // ModelRoute only; see ModelRoute below
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
 };

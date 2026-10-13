@@ -38,7 +38,7 @@ public:
             "items": {
                 "type": "object",
                 "required": ["id", "methods", "paths", "prefixes", "summary", "description", "notes",
-                             "experimental", "args", "responses", "request_format", "model_defaults_to_loaded",
+                             "experimental", "args", "responses", "request_format",
                              "validate_args", "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "<page>.<name>; also the docs anchor."},
@@ -79,7 +79,6 @@ public:
                         }
                     }},
                     "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"]},
-                    "model_defaults_to_loaded": {"type": "boolean"},
                     "validate_args": {"type": "boolean"},
                     "quiet_log": {"type": "boolean"}
                 }

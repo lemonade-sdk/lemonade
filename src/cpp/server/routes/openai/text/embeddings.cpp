@@ -68,7 +68,6 @@ public:
         })");
         s.responses = {response};
         s.request_format = RequestFormat::Json;
-        s.model_defaults_to_loaded = true;
         return s;
     }
 
