@@ -74,12 +74,16 @@ enum class ResponseFormat {
     Empty,         // e.g. the 202 answering an MCP notification
 };
 
+// Lemonade honors some arguments only in part, such as images/generations' n, which accepts only 1.
+// The docs badge each argument with its level.
+enum class Support { Available, Partial, NotAvailable };
+
 struct RouteArg {
     std::string name;
     ArgIn in;
     nlohmann::json schema;            // JSON-schema subset
     bool required = false;
-    bool supported = true;            // false documents it as not available
+    Support supported = Support::Available;  // Partial: the description states the limit
     std::string description;
 };
 
@@ -115,10 +119,10 @@ struct RouteSpec {
     std::string summary;              // one line in the page's summary table
     std::string description;          // reference text for the route's docs section
     std::vector<std::string> notes;
+    bool experimental = false;        // its contract may still change, so the docs badge it experimental
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
-    bool model_defaults_to_loaded = false;  // ModelRoute only; see ModelRoute below
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
 };
@@ -155,20 +159,18 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 
 ### `ModelRoute`
 
-`ModelRoute` is the base for routes that run a model: chat, completions, responses, embeddings, rerank, classify, images, transcription, speech, audio generation and 3D generation. Its `handle()` is final and runs these steps:
+`ModelRoute` is the base for routes that run a loaded model: chat/completions, images/generations, etc. Its `handle()` is final and runs these steps:
 
 1. Builds `req.body`. For a `RequestFormat::Form` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, and answers 400 when a value does not convert. File parts stay on the httplib request. Registration rejects a `ModelRoute` whose `request_format` is `Raw`, since step 2 reads the model from `req.body`.
 2. Resolves the model name.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
-4. Requires a model. With no `model` in the request, it answers 400, unless the route sets `model_defaults_to_loaded` and a model is loaded, in which case that model serves the request.
+4. Requires a model. With no `model` in the request, it answers 400.
 5. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
 6. Calls `run()`.
 
-OpenAI requires `model` on every route `ModelRoute` serves. `model_defaults_to_loaded` is a Lemonade extension, set only on chat/completions, completions, embeddings and responses, and those routes document `model` as optional.
-
 `validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), attach uploaded files in the shape its backend expects (transcription's raw `file`, images/edits' base64 `image` and `mask`), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
 
-Every other route extends `ApiRoute` directly.
+Every other route extends `ApiRoute` directly, including `images/upscale`, which runs its upscaler as a one-shot CLI through `IUpscaleServer::upscale_via_cli()` and never loads it.
 
 ### Request and Context
 
@@ -295,10 +297,10 @@ public:
         s.summary = "Chat Completions";
         s.description = "Generates the next assistant message for a conversation.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, true, "Model to run; loaded on first use. Defaults to the loaded model."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, true, "Conversation in OpenAI format."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, true, "Stream tokens as server-sent events."},
-            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, false, "Return the log probability of each output token."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available, "Model to run; loaded on first use."},
+            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available, "Conversation in OpenAI format."},
+            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available, "Stream tokens as server-sent events."},
+            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable, "Return the log probability of each output token."},
         };
 
         RouteResponse completion;
@@ -320,7 +322,6 @@ public:
 
         s.responses = {completion, stream};
         s.request_format = RequestFormat::Json;
-        s.model_defaults_to_loaded = true;
         return s;
     }
 
@@ -438,7 +439,7 @@ This section specifies how `docs/api` is generated from the routes, including re
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page.
-3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, notes, every prefixed path and its auth, a Parameters table with a status per argument, and one Response subsection per entry in `responses`. The badge is `fully_available` when every argument is supported, `partially_available` when some are not, and `not_available` when `responses` is empty.
+3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, notes, every prefixed path and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), and one Response subsection per entry in `responses`. The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
 4. Fills each Response subsection from the response cache, running its setup and example against lemond only when its cache entry is invalid.
 
 Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
@@ -451,7 +452,9 @@ Each Response subsection has PowerShell and Bash tabs with the example request, 
 - **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
 - **Setup.** The examples in `setup` run first, in order, each after its own setup. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
 - **One lemond.** Every example runs against one lemond started by the `Lemond` harness, which starts it again after an example stops it, as `/internal/shutdown` does. An example that deletes or uninstalls something removes what its own setup added.
-- **Recorded output.** Every response shows its status, plus a JSON body in full, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
+- **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
+- **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are.
+- **Paths.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, and the recording machine's home directory as `~`.
 
 ### Response Cache
 
@@ -493,7 +496,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to run; loaded on first use. Defaults to the loaded model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | Yes | Conversation in OpenAI format. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream tokens as server-sent events. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Return the log probability of each output token. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
