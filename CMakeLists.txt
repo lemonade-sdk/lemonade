@@ -1037,6 +1037,7 @@ set(SOURCES_CORE
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
     src/cpp/server/models/artifact_transfer.cpp
+    src/cpp/server/models/catalog.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
