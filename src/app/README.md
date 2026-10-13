@@ -1,201 +1,135 @@
-# Lemonade UI Redesign Prototype
+# Lemonade App (GUI3)
 
-GUI3 is the **React 19 + TypeScript + webpack** frontend integrated under `src/app/`. It runs **real-server-first** against `lemond` at `http://localhost:13305` by default and powers both the browser-delivered web app and the Tauri desktop application from one React codebase.
+GUI3 is Lemonade's shared **React 19 + TypeScript + webpack** frontend. The same
+UI runs in the **Tauri desktop app** and in the **browser app** served by
+`lemond`. The server owns models, backends, and persistent model configuration;
+the GUI owns its connection, presentation, and optional local chat history.
 
-**Beta status:** GUI3 is frozen for beta stabilization on `GUI3_merging`. New work should be limited to release-blocking fixes and integration updates.
+For user-facing instructions, see the [GUI3 guide](../../docs/guide/gui3.md).
+For Tauri and platform build details, see the
+[desktop app developer guide](../../docs/dev/app.md).
 
 ## Prerequisites
 
-- **Node.js 20+** (check `package.json` `engines` field for exact requirement)
-- **npm 10+**
-- Optional for UI-only review, recommended for functional testing: a running `lemond` instance at `http://localhost:13305` or a custom URL entered in Connect
+- Node.js 20+ and npm (install dependencies with `npm ci`).
+- A running Lemonade Server (`lemond`) for end-to-end testing. The default
+  endpoint is `http://localhost:13305`; it can be changed under
+  **Settings > Server**.
+- Rust/Cargo and platform-specific dependencies only for Tauri desktop builds;
+  see the [desktop app developer guide](../../docs/dev/app.md#prerequisites).
 
-## Quick Start
+Run the following commands from `src/app/`.
 
-### Install dependencies
-
-```bash
-npm install
-```
-
-### Run the dev server
+## Development
 
 ```bash
-npm run dev
+npm ci
+npm run dev:renderer
 ```
 
-Opens at **http://localhost:8080** with hot-module reloading via webpack-dev-server.
+This starts the webpack development server at **http://localhost:9123** with
+hot reloading. It does not launch the desktop app. To develop the desktop app
+and its renderer together, use `npm run dev` (Tauri).
 
-## Build & Distribution
+The GUI calls the real server's `/api/v1/...` endpoints. A renderer running on
+port 9123 is not itself `lemond`; check **Settings > Server** if it connects to
+the wrong instance. Browser builds served by `lemond` use the server origin
+when no saved endpoint overrides it.
 
-### Production build
+## Building
 
-```bash
-npm run build
-```
+| Command | Result |
+| --- | --- |
+| `npm run build` | Production renderer build (alias for `build:renderer:prod`) in `dist/renderer/`. |
+| `npm run build:tauri` | Tauri desktop bundles (requires Rust and platform dependencies). |
+| `npm run build:nobundle` | Tauri executable without an installer bundle. |
+| `npm run watch:renderer` | Rebuild the renderer when sources change. |
 
-Outputs optimized bundles to `dist/`.
+The CMake integration also provides a `tauri-app` target, for example
+`cmake --build --preset windows --target tauri-app` after configuring the
+repository. On Windows, this stages `lemonade-app.exe` under `build/app/`.
 
-### Watch mode (for development)
-
-```bash
-npm run watch
-```
-
-Incrementally rebuilds on file changes.
+**Browser distribution is built separately** under `src/web-app/`, reusing
+`src/app/src/`. Its dependency manifest and build configuration must remain
+separate for Debian's system-module packaging. See the
+[web UI developer guide](../../docs/dev/web-ui.md).
 
 ## Testing
 
-### Headless tests (CI mode)
-
 ```bash
-npm test
+npx playwright install chromium  # first run only
+npm test                        # a11y, then functional Playwright tests
+npm run test:headed
+npm run typecheck
+npm run test:ui-regressions
 ```
 
-Playwright starts an isolated, non-HMR test server on **127.0.0.1:4173** by default. This intentionally avoids reusing a manual development server on port 8080. Set `PLAYWRIGHT_BASE_URL` only when you explicitly want to test an already running server.
+`npm test` uses an isolated, non-HMR renderer at `127.0.0.1:4173` by default.
+The test runner executes the accessibility and functional suites sequentially
+to avoid shared-browser-state collisions. `PLAYWRIGHT_BASE_URL` can target
+another test URL; a loopback URL still starts the managed test server.
 
-> [!NOTE]
-> Direct execution via `npx playwright test` runs the accessibility (`a11y`) and `functional` test suites concurrently, which can cause state collisions in local storage/server state. For isolated, sequential execution of the suites, always use `npm test` or `npm run test:headed`.
-
-Runs all UI-safe Playwright tests headless via Chromium. Real-server smoke tests are opt-in so they fail fast instead of silently passing without a running server or loaded model:
+Real-server smoke tests are opt-in and require a reachable `lemond` (and any
+models required by those tests):
 
 ```bash
 LEMONADE_REAL_SERVER=1 npm test
 ```
 
-Artifacts are saved under distinct output folders per project (`test-results/a11y` and `test-results/functional`), preventing results from being overwritten when running the sequential test suites.
+Additional focused runtime tests are listed in `package.json`, including
+`test:mcp-runtime`, `test:effective-settings`, and `test:storage`.
 
-### Headed tests (visible browser)
+## Features and ownership
 
-```bash
-npm run test:headed
-```
+The UI provides Chat (including supported multimodal modes), model discovery
+and server-side registration, model loading and configuration, backend
+management, the Apps marketplace, Monitor, and Settings. Model settings are
+sent to the server; client-local Favorites and request-time Chat settings are
+not server-wide configuration.
 
-Opens the browser so you can watch the tests run step-by-step.
+- **Server-owned:** downloaded and loaded models, custom model definitions,
+  backend installations, persistent load settings, and server configuration.
+- **Client-owned:** server endpoint, theme and layout, Favorites, request-time
+  Chat preferences, and optional chat history. Chat history is stored locally
+  only when enabled in **Settings > Chat**; attachments and generated media are
+  not saved as part of the persistent history.
+- **Authentication:** an optional API key controls access to the configured
+  server.
 
-### First run setup
+Multiple GUI clients may connect to the same server. Server-side changes can
+be visible to all of them, while each client's local preferences remain
+independent.
 
-On first run, Playwright may ask to install browser binaries:
+## Source layout
 
-```bash
-npx playwright install
-```
-
-## What's Implemented
-
-This prototype showcases the **redesigned UI** with the current model and chat configuration flows:
-
-### UI Panels
-- **Chat** — multi-turn conversation with streaming support, scoped user/guest history, omni-capable composer routing, sampling controls
-- **Models** — model registry with load/unload, custom model/custom omni registration, categorized view (Loaded / Downloaded / Registry / HuggingFace)
-- **Backends** — device-first capability matrix, backend versions and status
-- **Connect / Discover** — integration showcase and curated model feed
-
-### Multimodal / Omni Mode
-- **Omni capability detection** recognizes loaded models marked as `omni`, `multimodal`, `vision`, VLM, LLaVA, Pixtral, Qwen-VL, MiniCPM-V, Mllama, GPT-4o-style, and similar names or labels.
-- **Omni composer mode** keeps those models in chat instead of misrouting them as plain LLMs or image/audio utility models. Text, image attachments, and one audio attachment are sent through `/api/v1/chat/completions` using OpenAI-style multimodal content parts.
-- **Specialized modes remain explicit:** image models route to `/api/v1/images/generations`, Whisper/Moonshine transcription models to `/api/v1/audio/transcriptions`, and TTS models to `/api/v1/audio/speech`.
-
-### Custom Models
-- **Custom model form** on the Models page lets a user register a local/HuggingFace checkpoint or path, recipe/backend, labels, and capability.
-- **Custom Omni models** are first-class: choose `Omni` in the capability dropdown and the composer treats the model as multimodal chat even if the server health response later lacks perfect capability metadata.
-- **Scoped per user:** custom definitions are saved under the active guest/user storage scope. Guest custom models are shared on the browser; signed-in users get private custom definitions.
-- **Load path:** custom models register/pull with the current Lemonade payload (`model_name`, `checkpoint`, `recipe`, capability booleans, optional `mmproj`). Custom Omni collections register as `recipe: "collection.omni"` with a `components` array, then load by `model_name`.
-
-### Local Users / Privacy Prototype
-- **Guest mode is shared:** users can chat without signing in. If guest history is enabled, it is visible to anyone using the same browser profile.
-- **Named local users:** users can create an account with name + password. Passwords are salted and hashed with PBKDF2 in browser storage; raw passwords are never stored.
-- **Scoped data:** conversations, active chat, tools setting, and custom model definitions are namespaced under `lemonade:<storageScope>:...`. Signed-in users see only their own local profile data.
-- **Deletion rules:** guests can delete shared guest data, signed-in users can delete their own scoped data/account, and the first local account is admin with an all-local-user-data reset. The account UI lives in `src/features/accounts/` so it can be extracted/replaced by server-backed auth for production.
-
-## Project Structure
-
-```
+```text
 src/
-  index.tsx              # React entry point
-  index.html            # HTML shell
-  App.tsx               # Root component
-  api.ts                # API client (health, models, chat/completions, etc.)
-  components/           # React components (Chat, Models, Backends, etc.)
-  features/accounts/    # Extractable local user/session prototype
-  features/customModels/# Extractable custom model + custom omni prototype
-  hooks/                # Custom React hooks
-  styles/               # CSS modules and global styles
-  tools/                # Utility functions
-
-tests/
-  features.spec.ts      # Playwright test suite
-
-webpack.config.js       # Webpack configuration (dev server, loaders, bundles)
-playwright.config.ts    # Playwright configuration (baseURL, browsers, output dirs)
-tsconfig.json           # TypeScript configuration
+  index.tsx          React entry point
+  App.tsx            Workspaces, routing and application shell
+  api.ts             Lemonade Server API client
+  components/        Chat, Models, Backends, Monitor and Settings UI
+  features/          Chat history, models, custom models, downloads, etc.
+  hooks/             React hooks
+  storage.ts         Local storage and legacy data migration
+  tauriShim.ts       Desktop host integration
+src-tauri/           Native Tauri host
+scripts/             Test runner and supporting utilities
+tests/               Playwright and focused runtime tests
+webpack.config.js    Renderer bundler and dev-server configuration
+playwright.config.ts Playwright projects and isolated test server
 ```
-
-## Connecting to a Server
-
-The prototype stores an explicitly chosen Lemonade server URL in local browser state. For the packaged Lemonade web app, if that state is missing or has been cleared, the API client also tries the current browser origin, so a custom Lemonade host/port is recovered when the UI itself is served by `lemond`. During local webpack development it still prefers the usual `http://localhost:13305` server and retries the current origin if needed. Use the Connect screen to change the URL; the field validates `http://` / `https://` URLs before attempting a request and shows the exact endpoint plus HTTP/network error on failure. API keys can be kept session-only or explicitly persisted.
-
-Core API paths are normalized to `/api/v1/...` in `src/api.ts`. Mocked responses are no longer the default runtime path; use Playwright route mocks in tests when a deterministic mocked scenario is needed.
 
 ## Troubleshooting
 
-### Port 8080 is already in use
-
-```bash
-npm run dev -- --port 9000
-```
-
-Webpack dev server will bind to the next available port, or specify one explicitly with `--port`.
-
-### Playwright browser not found
-
-```bash
-npx playwright install chromium
-```
-
-This downloads the Chromium binary used by Playwright tests.
-
-### Hot reload isn't working
-
-Check that webpack-dev-server is running (it should print the URL). If you edited a file and the page didn't update, try:
-- Hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
-- Restart `npm run dev`
-
-### "Connection refused" when pointing at a real lemond
-
-Verify the server is running (`lemond` or `lemonade launch`), check the URL in the Connect screen, and ensure no firewall is blocking the port. Try `curl http://localhost:13305/api/v1/health` from the terminal, or replace the port with your configured server URL.
-
-### Test timeouts or failures
-
-Playwright waits up to 60 seconds by default (see `playwright.config.ts`). `npm test` starts its own non-HMR server on `127.0.0.1:4173`; do not start the normal port-8080 dev server for the test run. If tests time out:
-- Check that port 4173 is free (`lsof -i :4173`) and terminate a stale test server if necessary
-- Unset an accidental `PLAYWRIGHT_BASE_URL` override unless you intentionally test an external server
-- Verify network connectivity only for opt-in real-server tests
-- Run `npm run test:headed` or `DEBUG=pw:webserver npm test` to see the browser and web-server startup diagnostics
-
-## Design & Architecture Notes
-
-- **Single codebase, dual delivery:** The same React source powers both web-served and desktop (Tauri) builds. Platform-specific code uses feature detection, not separate branches.
-- **Real-server-first development:** Runtime calls go to Lemonade-compatible `/api/v1/...` endpoints. Tests that need deterministic data should mock those network routes explicitly.
-- **Local client state:** Conversation history is opt-in and now scoped to either the shared guest space or a signed-in local user. The account menu controls profile deletion; admin can clear every local profile.
-- **Client-only auth caveat:** The account prototype protects data by browser-storage namespace and password-hash login, but production must enforce users, sessions, and authorization on the backend.
-- **Custom model caveat:** Custom model records are prototype metadata; production should validate checkpoint paths, allowed recipes, and permissions server-side before loading.
-
-## Next Steps
-
-For beta stabilization and final integration:
-
-1. Keep changes scoped to release-blocking fixes.
-2. Merge current `main` into `GUI3_merging` when synchronization is required.
-3. Keep API calls aligned with the finalized `/api/v1/...` server contract.
-4. Validate both npm-based desktop builds and distro system-module web builds.
-
-
-### Follow-up fixes in this prototype package
-
-- Omni registry/custom collection models stay selectable as the Omni wrapper even when lemond reports the loaded runtime as individual vLLM/llama/vision/audio components.
-- Model typing is deliberately conservative: vLLM and plain LLM recipes stay in LLM mode; only explicit Omni/multimodal/VL metadata or collection recipes become Omni.
-- Model downloads are started with server-owned persistence (`subscribe: false`) and the Models page polls `/api/v1/downloads`, so active downloads reappear after refresh/new tab on servers that expose the downloads API.
-- Custom Omni collections can be created from named text, vision, image, transcription, and speech components and are sent to Lemonade as `collection.omni` plus `components`, not as pseudo-checkpoint registrations.
-- Account popovers use an opaque raised surface so labels remain readable over the model grid.
-- Backend summary now falls back from `/system-info` `lemonade_version` to `/health` `version`, so Linux builds no longer show `Lemonade unknown ...` when system-info omits the version.
+- **Connection fails:** check `lemond` and its URL/API key in
+  **Settings > Server**. For a local instance, try
+  `curl http://localhost:13305/api/v1/health`.
+- **Port 9123 is busy:** stop the other renderer instance or run
+  `npm run dev:renderer -- --port 9000`. Tauri's configured development URL
+  remains port 9123, so update that configuration if you change ports while
+  developing the desktop app.
+- **Playwright cannot start:** run `npx playwright install chromium`, check
+  whether port 4173 is occupied, and clear an unintended
+  `PLAYWRIGHT_BASE_URL` override.
+- **Changes are not visible:** hard-refresh the renderer or restart
+  `npm run dev:renderer`.
