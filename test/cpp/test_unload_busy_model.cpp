@@ -13,6 +13,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <exception>
+#include <functional>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -84,31 +87,61 @@ using lemon::UnloadBusyModelTestHook;
 using lemon::UnloadStubServer;
 
 static int failures = 0;
+static bool hung = false;
 
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++failures;
 }
 
+// Detached instead of std::async: a std::future from std::async joins in its
+// destructor, so an unload that never returns would hang the test instead of
+// failing it.
+static std::shared_future<void> run_detached(std::function<void()> fn) {
+    auto done = std::make_shared<std::promise<void>>();
+    std::shared_future<void> result = done->get_future().share();
+    std::thread([done, fn = std::move(fn)] {
+        try {
+            fn();
+            done->set_value();
+        } catch (...) {
+            done->set_exception(std::current_exception());
+        }
+    }).detach();
+    return result;
+}
+
+static bool finishes(const std::shared_future<void>& f, std::chrono::milliseconds timeout) {
+    const bool ready = f.wait_for(timeout) == std::future_status::ready;
+    if (!ready) hung = true;
+    return ready;
+}
+
+static bool threw(const std::shared_future<void>& f) {
+    try {
+        f.get();
+    } catch (...) {
+        return true;
+    }
+    return false;
+}
+
 static void test_idle_unload_is_immediate(Router& router) {
     UnloadBusyModelTestHook::add_server(router, "idle-model");
-    auto unload_done = std::async(std::launch::async, [&] {
-        UnloadBusyModelTestHook::unload(router, "idle-model");
-    });
-    check("idle model unloads without waiting",
-          unload_done.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
-    unload_done.get();
+    auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "idle-model"); });
+    const bool finished = finishes(unload_done, std::chrono::seconds(2));
+    check("idle model unloads without waiting", finished && !threw(unload_done));
     check("idle model is removed", !UnloadBusyModelTestHook::has_model(router, "idle-model"));
 }
 
 static void test_unknown_model_throws(Router& router) {
-    bool threw = false;
+    bool not_loaded = false;
     try {
         UnloadBusyModelTestHook::unload(router, "never-loaded");
     } catch (const std::runtime_error& e) {
-        threw = std::string(e.what()).find("not loaded") != std::string::npos;
+        not_loaded = std::string(e.what()).find("not loaded") != std::string::npos;
     }
-    check("unknown model reports 'not loaded'", threw);
+    check("unknown model reports 'not loaded'", not_loaded);
 }
 
 static void test_busy_unload_keeps_router_responsive(Router& router) {
@@ -116,85 +149,78 @@ static void test_busy_unload_keeps_router_responsive(Router& router) {
     UnloadBusyModelTestHook::add_server(router, "other-model");
     busy->acquire_for_inference();
 
-    auto unload_done = std::async(std::launch::async, [&] {
-        UnloadBusyModelTestHook::unload(router, "busy-model");
-    });
+    auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "busy-model"); });
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
     check("unload waits while the request is in flight",
           unload_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
 
-    auto other_lookup = std::async(std::launch::async, [&] {
-        return UnloadBusyModelTestHook::has_model(router, "other-model");
-    });
-    const bool responsive =
-        other_lookup.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
-    check("router lock is free while unload waits", responsive);
-
+    auto other_lookup = run_detached([&] { UnloadBusyModelTestHook::has_model(router, "other-model"); });
+    check("router lock is free while unload waits", finishes(other_lookup, std::chrono::seconds(2)));
     check("busy model is not unloaded mid-request", !busy->was_unloaded());
 
     busy->release_inference();
-    const bool finished =
-        unload_done.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    check("unload completes once the request is released", finished);
+    const bool finished = finishes(unload_done, std::chrono::seconds(5));
+    check("unload completes once the request is released", finished && !threw(unload_done));
     check("busy model is removed after release",
           !UnloadBusyModelTestHook::has_model(router, "busy-model"));
     check("other model stays loaded", UnloadBusyModelTestHook::has_model(router, "other-model"));
-
-    if (responsive) {
-        other_lookup.get();
-    }
-    if (finished) {
-        unload_done.get();
-    }
 }
 
 static void test_model_removed_while_waiting(Router& router) {
     UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "vanishing-model");
     busy->acquire_for_inference();
 
-    auto unload_done = std::async(std::launch::async, [&] {
-        UnloadBusyModelTestHook::unload(router, "vanishing-model");
-    });
+    auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "vanishing-model"); });
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    UnloadBusyModelTestHook::remove_server(router, "vanishing-model");
-
-    const bool finished =
-        unload_done.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    check("unload returns when the model disappears while it waits", finished);
-    bool threw = false;
-    if (finished) {
-        try {
-            unload_done.get();
-        } catch (...) {
-            threw = true;
-        }
+    auto removed = run_detached([&] { UnloadBusyModelTestHook::remove_server(router, "vanishing-model"); });
+    if (!finishes(removed, std::chrono::seconds(2))) {
+        check("router lock is free while unload waits (vanishing model)", false);
+        return;
     }
-    check("a model removed by another path is not reported as an error", finished && !threw);
+
+    const bool finished = finishes(unload_done, std::chrono::seconds(5));
+    check("unload returns when the model disappears while it waits", finished);
+    check("a model removed by another path is not reported as an error",
+          finished && !threw(unload_done));
 }
 
-static void test_model_replaced_while_waiting(Router& router) {
+static void test_reloaded_model_is_left_alone(Router& router) {
     UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "reloaded-model");
     busy->acquire_for_inference();
 
-    auto unload_done = std::async(std::launch::async, [&] {
-        UnloadBusyModelTestHook::unload(router, "reloaded-model");
-    });
+    auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "reloaded-model"); });
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    UnloadBusyModelTestHook::remove_server(router, "reloaded-model");
-    UnloadBusyModelTestHook::add_server(router, "reloaded-model");
-
-    const bool finished =
-        unload_done.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    check("unload of a reloaded model unloads the new idle instance", finished);
-    if (finished) {
-        unload_done.get();
+    UnloadStubServer* fresh = nullptr;
+    auto replaced = run_detached([&] {
+        UnloadBusyModelTestHook::remove_server(router, "reloaded-model");
+        fresh = UnloadBusyModelTestHook::add_server(router, "reloaded-model");
+    });
+    if (!finishes(replaced, std::chrono::seconds(2))) {
+        check("router lock is free while unload waits (reloaded model)", false);
+        return;
     }
-    check("reloaded model is gone afterwards",
-          !UnloadBusyModelTestHook::has_model(router, "reloaded-model"));
+
+    const bool finished = finishes(unload_done, std::chrono::seconds(5));
+    check("unload returns when the waited-for instance was replaced",
+          finished && !threw(unload_done));
+    check("a newer instance under the same name stays loaded",
+          UnloadBusyModelTestHook::has_model(router, "reloaded-model") && !fresh->was_unloaded());
+}
+
+static void test_unload_all_via_public_entry(Router& router) {
+    UnloadBusyModelTestHook::add_server(router, "all-a");
+    UnloadBusyModelTestHook::add_server(router, "all-b");
+    auto unload_done = run_detached([&] { router.unload_model(""); });
+    const bool finished = finishes(unload_done, std::chrono::seconds(5));
+    check("unload_model(\"\") returns for idle models", finished && !threw(unload_done));
+    check("unload_model(\"\") removes every model",
+          !UnloadBusyModelTestHook::has_model(router, "all-a") &&
+              !UnloadBusyModelTestHook::has_model(router, "all-b") &&
+              !UnloadBusyModelTestHook::has_model(router, "other-model"));
 }
 
 int main() {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     json cfg = json::object();
     cfg["max_loaded_models"] = 4;
     cfg["log_level"] = "error";
@@ -204,11 +230,25 @@ int main() {
 
     {
         Router router(&config, nullptr, nullptr);
-        test_idle_unload_is_immediate(router);
-        test_unknown_model_throws(router);
-        test_busy_unload_keeps_router_responsive(router);
-        test_model_removed_while_waiting(router);
-        test_model_replaced_while_waiting(router);
+        // After a hang the router lock may stay held, so later cases would block
+        // in their own setup; stop there and report.
+        void (*cases[])(Router&) = {
+            test_idle_unload_is_immediate,    test_unknown_model_throws,
+            test_busy_unload_keeps_router_responsive, test_model_removed_while_waiting,
+            test_reloaded_model_is_left_alone, test_unload_all_via_public_entry,
+        };
+        for (auto* run_case : cases) {
+            if (hung) break;
+            run_case(router);
+        }
+
+        if (hung) {
+            // A detached thread still references the router; destroying it would race.
+            std::printf("\n%d unload-busy-model test(s) failed (an unload never returned).\n",
+                        failures);
+            std::fflush(stdout);
+            std::_Exit(1);
+        }
     }
 
     RuntimeConfig::set_global(nullptr);
