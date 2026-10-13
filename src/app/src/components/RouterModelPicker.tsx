@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type ModelInfo } from '../api';
+import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 
 function pickerModelName(model: ModelInfo): string {
@@ -25,11 +26,16 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
   models,
   value,
   onChange,
-  placeholder = 'Select model',
-  searchPlaceholder = 'Search models',
-  emptyMessage = 'No compatible models match this search.',
-  ariaLabel = 'Select model',
+  placeholder: placeholderProp,
+  searchPlaceholder: searchPlaceholderProp,
+  emptyMessage: emptyMessageProp,
+  ariaLabel: ariaLabelProp,
 }) => {
+  const { t } = useI18n();
+  const placeholder = placeholderProp ?? t('Select model');
+  const searchPlaceholder = searchPlaceholderProp ?? t('Search models');
+  const emptyMessage = emptyMessageProp ?? t('No compatible models match this search.');
+  const ariaLabel = ariaLabelProp ?? t('Select model');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);

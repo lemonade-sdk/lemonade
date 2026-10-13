@@ -16,6 +16,7 @@ import {
   saveModelTuning,
   setSessionArgsOverride,
 } from '../modelConfiguration';
+import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -119,6 +120,7 @@ interface EffectiveSettingsModalProps {
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, onReload, onLoad,
 }) => {
+  const { t } = useI18n();
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [serverModelOptions, setServerModelOptions] = useState<ModelOptions | null>(null);
   const [runtimeModel, setRuntimeModel] = useState<LoadedModel | null>(loadedModel || null);
@@ -231,9 +233,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       setRuntimeModel(running);
       setLaunchCommand(running?.launch_command || null);
       if (!running) {
-        setError('Launch command unavailable because this model is not currently loaded.');
+        setError(t('Launch command unavailable because this model is not currently loaded.'));
       } else if (!running.launch_command?.length) {
-        setError('The server did not report a launch command for this loaded model.');
+        setError(t('The server did not report a launch command for this loaded model.'));
       }
     } catch (healthError) {
       if (request !== runtimeRequestRef.current) return;
@@ -334,9 +336,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
           try { await onLoad(); } catch { /* keep the original failure */ }
           throw reloadErr;
         }
-        setNotice('Applied and reloaded with the new arguments.');
+        setNotice(t('Applied and reloaded with the new arguments.'));
       } else {
-        setNotice('Saved for this session. It will take effect the next time this model loads.');
+        setNotice(t('Saved for this session. It will take effect the next time this model loads.'));
       }
       setUnlocked(false);
     } catch (err) {
@@ -357,9 +359,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       clearSessionArgsOverride(modelName);
       if (isRuntimeModelLoaded) {
         await onReload();
-        setNotice('Cleared the session override and reloaded with resolved settings.');
+        setNotice(t('Cleared the session override and reloaded with resolved settings.'));
       } else {
-        setNotice('Cleared the session override.');
+        setNotice(t('Cleared the session override.'));
       }
       await Promise.all([
         loadConfiguration(true),
@@ -381,32 +383,32 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     const runtimeContext = positiveContextSize(loadedContextSize);
     if (autoContextSizeEnabled) {
       if (runtimeContext !== null) {
-        return { value: `${runtimeContext.toLocaleString()} (auto)`, source: 'Runtime' };
+        return { value: `${runtimeContext.toLocaleString()} (auto)`, source: t('Runtime') };
       }
-      if (runtimeModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
-      return { value: 'Auto', source: 'Configuration' };
+      if (runtimeModel && resolvingContextSize) return { value: t('Resolving…'), source: t('Runtime') };
+      return { value: t('Auto'), source: t('Configuration') };
     }
 
     if (runtimeContext !== null) {
-      return { value: runtimeContext.toLocaleString(), source: 'Runtime' };
+      return { value: runtimeContext.toLocaleString(), source: t('Runtime') };
     }
 
     const effectiveContext = positiveContextSize(serverModelOptions?.resolved_ctx_size);
     if (effectiveContext !== null) {
-      return { value: effectiveContext.toLocaleString(), source: 'Effective load' };
+      return { value: effectiveContext.toLocaleString(), source: t('Effective load') };
     }
 
     const resolvedContext = positiveContextSize(resolvedContextRaw);
     if (resolvedContext !== null) {
       return {
         value: resolvedContext.toLocaleString(),
-        source: sourceLabel(resolved?.sources.recipe_options.ctx_size),
+        source: t(sourceLabel(resolved?.sources.recipe_options.ctx_size)),
       };
     }
 
-    if (runtimeModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
-    return { value: 'Unavailable', source: 'Configuration' };
-  }, [autoContextSizeEnabled, loadedContextSize, runtimeModel, resolved, resolvedContextRaw, resolvingContextSize, serverModelOptions]);
+    if (runtimeModel && resolvingContextSize) return { value: t('Resolving…'), source: t('Runtime') };
+    return { value: t('Unavailable'), source: t('Configuration') };
+  }, [autoContextSizeEnabled, loadedContextSize, runtimeModel, resolved, resolvedContextRaw, resolvingContextSize, serverModelOptions, t]);
 
   const sourceRows = useMemo<SourceRow[]>(() => {
     if (!resolved && !serverModelOptions) return [];
@@ -423,15 +425,15 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       if (!knownRecipeKey) continue;
       rows.push({
         key: `ro-${key}`,
-        label: RECIPE_OPTION_LABELS[typedKey] || key,
-        value: displayValue(value),
+        label: t(RECIPE_OPTION_LABELS[typedKey] || key),
+        value: t(displayValue(value)),
         source: Object.prototype.hasOwnProperty.call(savedRecipe, key)
           ? 'custom'
           : resolved?.sources.recipe_options[typedKey] || 'built_in',
       });
     }
     return rows;
-  }, [resolved, serverModelOptions]);
+  }, [resolved, serverModelOptions, t]);
 
 
   const samplingInputId = (key: keyof SamplingParams) => `effective-sampling-${key}`;
@@ -456,8 +458,8 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       sampling,
     });
     setNotice(Object.keys(sampling).length > 0
-      ? 'Sampling overrides will be sent with future chat requests.'
-      : 'Chat requests will use the backend sampling defaults.');
+      ? t('Sampling overrides will be sent with future chat requests.')
+      : t('Chat requests will use the backend sampling defaults.'));
   };
 
   if (!open) return null;
@@ -474,11 +476,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
         className="inspect-modal-content effective-settings"
         role="dialog"
         aria-modal="true"
-        aria-label="Effective settings"
+        aria-label={t('Effective settings')}
         onClick={e => e.stopPropagation()}
       >
         <div className="inspect-modal-header">
-          <h4>Effective settings</h4>
+          <h4>{t('Effective settings')}</h4>
           <WorkspaceActionButton
             ref={closeRef}
             appearance="quiet"
@@ -487,8 +489,8 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             iconOnly
             className="close-modal-btn"
             onClick={onClose}
-            aria-label="Cancel"
-            title="Cancel"
+            aria-label={t('Cancel')}
+            title={t('Cancel')}
           />
         </div>
 
@@ -499,60 +501,60 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
           </p>
 
           <section className="effective-settings__section">
-            <h5 className="effective-settings__section-title">Settings by source</h5>
+            <h5 className="effective-settings__section-title">{t('Settings by source')}</h5>
             <p className="effective-settings__note">
               <Icon name="info" size={12} />
-              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Backend launch command</strong> below is the authoritative command reported by the running server.</span>
+              <span className="effective-settings__note-copy">{t('These rows show known sources for individual settings. The')} <strong>{t('Backend launch command')}</strong> {t('below is the authoritative command reported by the running server.')}</span>
             </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
-                <span className="effective-settings__row-label">Context size</span>
+                <span className="effective-settings__row-label">{t('Context size')}</span>
                 <span className="effective-settings__row-value">{contextSetting.value}</span>
                 <span className="effective-settings__source effective-settings__source--generic">{contextSetting.source}</span>
               </div>
               <div className="effective-settings__row">
-                <span className="effective-settings__row-label">MCP servers</span>
-                <span className="effective-settings__row-value">{!mcpEnabled ? 'Off' : (mcpServerIds.length > 0 ? mcpServerIds.join(', ') : 'Built-in Lemonade')}</span>
+                <span className="effective-settings__row-label">{t('MCP servers')}</span>
+                <span className="effective-settings__row-value">{!mcpEnabled ? t('Off') : (mcpServerIds.length > 0 ? mcpServerIds.join(', ') : t('Built-in Lemonade'))}</span>
                 <span
                   className="effective-settings__source effective-settings__source--generic effective-settings__source--chat-add"
-                  title="Configured from the chat + menu"
+                  title={t('Configured from the chat + menu')}
                 >
                   <Icon name="plus" size={11} />
-                  <span>Menu</span>
+                  <span>{t('Menu')}</span>
                 </span>
               </div>
               {resolved && (
                 <div className="effective-settings__row">
-                  <span className="effective-settings__row-label">Thinking</span>
-                  <span className="effective-settings__row-value">{THINKING_MODE_LABELS[resolved.thinking_mode] || resolved.thinking_mode}</span>
-                  <span className={`effective-settings__source ${sourceClass(resolved.sources.thinking_mode)}`}>{sourceLabel(resolved.sources.thinking_mode)}</span>
+                  <span className="effective-settings__row-label">{t('Thinking')}</span>
+                  <span className="effective-settings__row-value">{t(THINKING_MODE_LABELS[resolved.thinking_mode] || resolved.thinking_mode)}</span>
+                  <span className={`effective-settings__source ${sourceClass(resolved.sources.thinking_mode)}`}>{t(sourceLabel(resolved.sources.thinking_mode))}</span>
                 </div>
               )}
               {sourceRows.map(row => (
                 <div className="effective-settings__row" key={row.key}>
                   <span className="effective-settings__row-label">{row.label}</span>
                   <span className="effective-settings__row-value">{row.value}</span>
-                  <span className={`effective-settings__source ${sourceClass(row.source)}`}>{sourceLabel(row.source)}</span>
+                  <span className={`effective-settings__source ${sourceClass(row.source)}`}>{t(sourceLabel(row.source))}</span>
                 </div>
               ))}
               {sourceRows.length === 0 && !resolved && (
-                <p className="effective-settings__empty">Model tuning details are unavailable for this model.</p>
+                <p className="effective-settings__empty">{t('Model tuning details are unavailable for this model.')}</p>
               )}
             </div>
             {autoContextSizeEnabled && (
               <p className="effective-settings__note">
-                <Icon name="info" size={12} /> Context size is auto-resolved from available memory. This is an estimate - the final value is computed at load time after any model eviction.
+                <Icon name="info" size={12} /> {t('Context size is auto-resolved from available memory. This is an estimate - the final value is computed at load time after any model eviction.')}
               </p>
             )}
           </section>
 
           <section className="effective-settings__section">
-            <h5 className="effective-settings__section-title">Chat sampling</h5>
-            <p className="effective-settings__note"><Icon name="info" size={12} /> Leave fields empty to use the backend defaults. Saved values are sent with future chat requests for this model.</p>
+            <h5 className="effective-settings__section-title">{t('Chat sampling')}</h5>
+            <p className="effective-settings__note"><Icon name="info" size={12} /> {t('Leave fields empty to use the backend defaults. Saved values are sent with future chat requests for this model.')}</p>
             <div className="effective-settings__sampling">
               {(Object.keys(SAMPLING_LABELS) as Array<keyof SamplingParams>).map(key => {
                 const inputId = samplingInputId(key);
-                const label = SAMPLING_LABELS[key] || key;
+                const label = t(SAMPLING_LABELS[key] || key);
                 return (
                   <div key={key} className="effective-settings__sampling-field">
                     <label htmlFor={inputId}>{label}</label>
@@ -564,7 +566,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                         step={key === 'top_k' ? 1 : 0.01}
                         min={0}
                         value={samplingDraft[key]}
-                        placeholder="Backend default"
+                        placeholder={t('Backend default')}
                         onChange={event => setSamplingDraft(current => ({ ...current, [key]: event.target.value }))}
                       />
                       <span className="detail-configuration__context-stepper">
@@ -582,20 +584,20 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             </div>
             <div className="effective-settings__actions">
               <WorkspaceActionButton appearance="secondary" size="small" onClick={saveSampling}>
-                Save sampling
+                {t('Save sampling')}
               </WorkspaceActionButton>
             </div>
           </section>
 
           <section className="effective-settings__section">
-            <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Backend launch command</h5>
-            {loading && <p className="effective-settings__empty">Resolving…</p>}
+            <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> {t('Backend launch command')}</h5>
+            {loading && <p className="effective-settings__empty">{t('Resolving…')}</p>}
             {error && <p className="effective-settings__error">{error}</p>}
             {!loading && !error && launchCommand && (
               <>
                 <pre className="effective-settings__command"><code>{formatCommand(launchCommand)}</code></pre>
                 <p className="effective-settings__note">
-                  <Icon name="info" size={12} /> This is the exact command used to start the current backend process. Argument changes appear here after the model reloads.
+                  <Icon name="info" size={12} /> {t('This is the exact command used to start the current backend process. Argument changes appear here after the model reloads.')}
                 </p>
               </>
             )}
@@ -605,7 +607,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <section className="effective-settings__section effective-settings__danger">
               <label className="effective-settings__ack">
                 <input type="checkbox" checked={unlocked} onChange={e => setUnlocked(e.target.checked)} />
-                <span><Icon name="alert" size={13} /> I know what I am doing. Let me edit the final loading arguments</span>
+                <span><Icon name="alert" size={13} /> {t('I know what I am doing. Let me edit the final loading arguments')}</span>
               </label>
               {unlocked && (
                 <div className="effective-settings__editor">
@@ -622,15 +624,15 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                     rows={3}
                   />
                   <p className="effective-settings__hint">
-                    These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.
+                    {t('These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.')}
                   </p>
                   <div className="effective-settings__actions">
                     <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy || runtimeStatePending}>
-                      {busy ? 'Applying…' : (runtimeStatePending ? 'Resolving…' : (isRuntimeModelLoaded ? 'Apply & reload' : 'Apply for next load'))}
+                      {busy ? t('Applying…') : (runtimeStatePending ? t('Resolving…') : (isRuntimeModelLoaded ? t('Apply & reload') : t('Apply for next load')))}
                     </WorkspaceActionButton>
                     {hasOverride && (
                       <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy || runtimeStatePending}>
-                        Reset override
+                        {t('Reset override')}
                       </WorkspaceActionButton>
                     )}
                   </div>
@@ -638,9 +640,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               )}
               {!unlocked && hasOverride && (
                 <div className="effective-settings__actions">
-                  <span className="effective-settings__override-flag"><Icon name="alert" size={12} /> A session override is active.</span>
+                  <span className="effective-settings__override-flag"><Icon name="alert" size={12} /> {t('A session override is active.')}</span>
                   <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy || runtimeStatePending}>
-                    Reset override
+                    {t('Reset override')}
                   </WorkspaceActionButton>
                 </div>
               )}

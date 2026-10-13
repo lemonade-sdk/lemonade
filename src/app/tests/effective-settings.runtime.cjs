@@ -12,7 +12,7 @@ assert.match(apiSource, /launch_command: launchCommand\.length > 0 \? launchComm
 assert.doesNotMatch(apiSource, /effectiveLoadCommand/,
   'the retired command-preview API must not be restored');
 
-assert.match(chatSource, /aria-label="Effective settings"/,
+assert.match(chatSource, /aria-label=(?:"Effective settings"|\{t\('Effective settings'\)\})/,
   'the chat toolbar must expose Effective Settings');
 assert.match(chatSource, /<EffectiveSettingsModal/,
   'the chat view must render the Effective Settings modal');

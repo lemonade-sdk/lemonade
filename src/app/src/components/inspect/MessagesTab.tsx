@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useI18n } from '../../i18n';
 import { type Trace } from '../../inspectStore';
 import MarkdownMessage from '../MarkdownMessage';
 import { Icon } from '../Icon';
@@ -22,6 +23,7 @@ function stripLeadingThinking(content: string): string {
 }
 
 function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps) {
+  const { t } = useI18n();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [cardRenderMode, setCardRenderMode] = useState<'rendered' | 'raw'>('raw');
   const [thinkingCollapsed, setThinkingCollapsed] = useState(true);
@@ -52,14 +54,14 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
               className={cardRenderMode === 'rendered' ? 'active' : ''}
               onClick={() => setCardRenderMode('rendered')}
             >
-              Rendered
+              {t('Rendered')}
             </button>
             <button
               type="button"
               className={cardRenderMode === 'raw' ? 'active' : ''}
               onClick={() => setCardRenderMode('raw')}
             >
-              Raw
+              {t('Raw')}
             </button>
           </div>
         )}
@@ -70,7 +72,7 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
           onClick={() => {
             handleCopyFull(m.content, 'Message text');
           }}
-          title="Copy message text"
+          title={t('Copy message text')}
           aria-label={`Copy message ${idx + 1} (${m.role}) content`}
         >
           <Icon name="copy" size={13} />
@@ -98,7 +100,7 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
                 <span className={`reasoning-block__chevron${thinkingCollapsed ? ' is-collapsed' : ''}`}>
                   <Icon name="chevron-down" size={10} />
                 </span>
-                <span>Reasoning Output</span>
+                <span>{t('Reasoning Output')}</span>
               </button>
               {!thinkingCollapsed && (
                 <div className="reasoning-block__body fade-in">
@@ -118,6 +120,7 @@ export default function MessagesTab({
   formatTokens,
   handleCopyFull
 }: MessagesTabProps) {
+  const { t } = useI18n();
   const [viewMode, setViewMode] = useState<'rendered' | 'raw'>('rendered');
   const [copyDropdownOpen, setCopyDropdownOpen] = useState(false);
   const [copyFormat, setCopyFormat] = useState<'messages' | 'openinference'>('messages');
@@ -168,7 +171,7 @@ export default function MessagesTab({
               className={viewMode === 'rendered' ? 'active' : ''}
               onClick={() => setViewMode('rendered')}
             >
-              Rendered
+              {t('Rendered')}
             </button>
             <button
               type="button"
@@ -176,7 +179,7 @@ export default function MessagesTab({
               className={viewMode === 'raw' ? 'active' : ''}
               onClick={() => setViewMode('raw')}
             >
-              Raw
+              {t('Raw')}
             </button>
           </div>
         </div>
@@ -187,13 +190,13 @@ export default function MessagesTab({
             className="split-button__action"
             onClick={() => copyFormattedPayload(copyFormat)}
           >
-            {copyFormat === 'messages' ? 'Copy - messages[]' : 'Copy - OpenInference'}
+            {copyFormat === 'messages' ? t('Copy - messages[]') : t('Copy - OpenInference')}
           </button>
           <button
             type="button"
             className="split-button__caret"
             onClick={() => setCopyDropdownOpen(!copyDropdownOpen)}
-            aria-label="Select copy format"
+            aria-label={t('Select copy format')}
             aria-haspopup="menu"
             aria-expanded={copyDropdownOpen}
           >
@@ -206,14 +209,14 @@ export default function MessagesTab({
                 className={`dropdown-item ${copyFormat === 'messages' ? 'selected' : ''}`}
                 onClick={() => copyFormattedPayload('messages')}
               >
-                Copy Messages JSON
+                {t('Copy Messages JSON')}
               </button>
               <button
                 type="button"
                 className={`dropdown-item ${copyFormat === 'openinference' ? 'selected' : ''}`}
                 onClick={() => copyFormattedPayload('openinference')}
               >
-                Copy OpenInference JSON
+                {t('Copy OpenInference JSON')}
               </button>
             </div>
           )}

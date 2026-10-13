@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api, { type ChatMessage } from '../../api';
+import { useI18n } from '../../i18n';
 import { type Trace } from '../../inspectStore';
 import { Icon } from '../Icon';
 
@@ -33,6 +34,7 @@ export default function ReplayTab({
   replayMaxTokens,
   setReplayMaxTokens
 }: ReplayTabProps) {
+  const { t } = useI18n();
   const [replayOutput, setReplayOutput] = useState('');
   const [replayStats, setReplayStats] = useState<{ ttft: number | null; tps: number | null } | null>(null);
   const [replayRunning, setReplayRunning] = useState(false);
@@ -95,12 +97,12 @@ export default function ReplayTab({
       <div className="replay-header-params">
         {/* System prompt box */}
         <div className="replay-prompt-box flex-col gap-4">
-          <label className="input-label" htmlFor="replay-system-prompt">System prompt</label>
+          <label className="input-label" htmlFor="replay-system-prompt">{t('System prompt')}</label>
           <textarea
             id="replay-system-prompt"
             value={replaySystemPrompt}
             onChange={(e) => setReplaySystemPrompt(e.target.value)}
-            placeholder="Define system prompt..."
+            placeholder={t('Define system prompt...')}
             rows={5}
             className="system-prompt-textarea"
           />
@@ -110,7 +112,7 @@ export default function ReplayTab({
         <div className="replay-sliders-grid">
           <div className="slider-row-compact">
             <div className="slider-label-row">
-              <label htmlFor="replay-temp">Temperature</label>
+              <label htmlFor="replay-temp">{t('Temperature')}</label>
               <span className="val-display">{replayTemp.toFixed(2)}</span>
             </div>
             <input
@@ -126,7 +128,7 @@ export default function ReplayTab({
 
           <div className="slider-row-compact">
             <div className="slider-label-row">
-              <label htmlFor="replay-topp">Top-P</label>
+              <label htmlFor="replay-topp">{t('Top-P')}</label>
               <span className="val-display">{replayTopP.toFixed(2)}</span>
             </div>
             <input
@@ -142,7 +144,7 @@ export default function ReplayTab({
 
           <div className="slider-row-compact">
             <div className="slider-label-row">
-              <label htmlFor="replay-topk">Top-K</label>
+              <label htmlFor="replay-topk">{t('Top-K')}</label>
               <span className="val-display">{replayTopK}</span>
             </div>
             <input
@@ -158,7 +160,7 @@ export default function ReplayTab({
 
           <div className="slider-row-compact">
             <div className="slider-label-row">
-              <label htmlFor="replay-max-tokens">Max tokens</label>
+              <label htmlFor="replay-max-tokens">{t('Max tokens')}</label>
               <span className="val-display">{replayMaxTokens}</span>
             </div>
             <input
@@ -200,13 +202,13 @@ export default function ReplayTab({
                 setReplayStats(null);
               }}
             >
-              Reset
+              {t('Reset')}
             </button>
             <button
               type="button"
               className="replay-btn outline"
               onClick={() => setCurlModalOpen(true)}
-              title="View local cURL request command"
+              title={t('View local cURL request command')}
             >
               cURL
             </button>
@@ -304,16 +306,16 @@ export default function ReplayTab({
               ) : replayRunning ? (
                 <div className="replay-loading">
                   <span className="spinner"></span>
-                  Generating output...
+                  {t('Generating output...')}
                 </div>
               ) : (
                 <div className="replay-empty-state">
                   <span className="replay-empty-state__icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name="rotate-ccw" size={24} />
                   </span>
-                  <strong className="replay-empty-state__title">Adjust parameters and run</strong>
+                  <strong className="replay-empty-state__title">{t('Adjust parameters and run')}</strong>
                   <p className="replay-empty-state__desc">
-                    The replay re-runs this exact prompt locally and diffs the metrics against the original.
+                    {t('The replay re-runs this exact prompt locally and diffs the metrics against the original.')}
                   </p>
                 </div>
               )}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { type Trace } from '../../inspectStore';
 import { Icon } from '../Icon';
 
@@ -8,6 +9,7 @@ interface OverviewTabProps {
 }
 
 export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTabProps) {
+  const { t } = useI18n();
   // Guard duration to avoid NaN% or Infinity% on sub-ms or zero-duration spans
   const safeDur = selectedTrace.dur > 0 ? selectedTrace.dur : 1;
   const queueVal = selectedTrace.queue || 0;
@@ -43,8 +45,8 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
             <Icon name="check" size={16} />
           </span>
           <div className="health-banner__text">
-            <strong>No issues detected</strong>
-            <p>TTFT, throughput and context size are within the normal range for this session.</p>
+            <strong>{t('No issues detected')}</strong>
+            <p>{t('TTFT, throughput and context size are within the normal range for this session.')}</p>
           </div>
           <button className="health-banner__cta" onClick={() => setActiveTab('improve')}>
             Improve <Icon name="chevron-right" size={12} />
@@ -54,11 +56,11 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
       {/* Latency Waterfall */}
       <div className="overview-section">
-        <h4>SPAN TIMELINE</h4>
+        <h4>{t('SPAN TIMELINE')}</h4>
         <div className="waterfall-container">
           {/* Queue Segment */}
           <div className="waterfall-row">
-            <span className="waterfall-row__label">Queue</span>
+            <span className="waterfall-row__label">{t('Queue')}</span>
             <div className="waterfall-bar-track">
               <div
                 className="waterfall-bar queue"
@@ -73,7 +75,7 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
           {/* Prefill/TTFT Segment */}
           <div className="waterfall-row">
-            <span className="waterfall-row__label">Prefill (TTFT)</span>
+            <span className="waterfall-row__label">{t('Prefill (TTFT)')}</span>
             <div className="waterfall-bar-track">
               <div
                 className="waterfall-bar prefill"
@@ -92,7 +94,7 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
           {/* Decode Segment */}
           <div className="waterfall-row">
-            <span className="waterfall-row__label">Decode</span>
+            <span className="waterfall-row__label">{t('Decode')}</span>
             <div className="waterfall-bar-track">
               <div
                 className="waterfall-bar decode"
@@ -113,7 +115,7 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
       {/* Span Attributes Cards Grid */}
       <div className="overview-section">
-        <h4>SPAN ATTRIBUTES</h4>
+        <h4>{t('SPAN ATTRIBUTES')}</h4>
         <div className="attributes-grid">
           <div className="attribute-card">
             <span className="attribute-card__key">llm.model_name</span>
