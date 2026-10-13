@@ -7,6 +7,8 @@
 //     clobber it.
 
 #include "lemon/model_manager.h"
+#include "lemon/models/store_builder.h"
+#include "lemon/utils/path_utils.h"
 
 #include <cstdio>
 #include <map>
@@ -34,20 +36,20 @@ static void test_pure_set_difference() {
     using S = std::set<std::string>;
 
     check("all built-ins filtered -> recipe reported",
-          ModelManager::recipes_missing_all_models({"ds4"}, {}) == S{"ds4"});
+          lemon::models::recipes_missing_all_models({"ds4"}, {}) == S{"ds4"});
 
     check("partial filtering -> recipe kept",
-          ModelManager::recipes_missing_all_models({"llamacpp"}, {"llamacpp"}) == S{});
+          lemon::models::recipes_missing_all_models({"llamacpp"}, {"llamacpp"}) == S{});
 
     check("no filtered models -> nothing reported",
-          ModelManager::recipes_missing_all_models({}, {"llamacpp", "kokoro"}) == S{});
+          lemon::models::recipes_missing_all_models({}, {"llamacpp", "kokoro"}) == S{});
 
     check("mixed recipes resolve independently",
-          ModelManager::recipes_missing_all_models({"ds4", "vllm"}, {"vllm", "llamacpp"})
+          lemon::models::recipes_missing_all_models({"ds4", "vllm"}, {"vllm", "llamacpp"})
               == S{"ds4"});
 
     check("recipe not size-filtered is never reported",
-          ModelManager::recipes_missing_all_models({"ds4"}, {"ds4", "llamacpp"}) == S{});
+          lemon::models::recipes_missing_all_models({"ds4"}, {"ds4", "llamacpp"}) == S{});
 }
 
 // A size so large no real machine can hold it, so the model is always
