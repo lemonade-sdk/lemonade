@@ -4,6 +4,7 @@
 #include <lemon/model_registry.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/locator.h>
+#include <lemon/models/store_builder.h>
 #include <lemon/models/model_index.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/utils/json_file.h>
@@ -4047,46 +4048,36 @@ bool parse_TF_env_var(const char* env_var_name) {
                    std::string(env) == "yes");
 }
 
-std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
-    const std::map<std::string, ModelInfo>& models,
-    bool track_recipe_availability) {
+// Resolves everything the hardware filter needs from configuration and system
+// info. Keeping the reads here is what lets filter_hardware() stay a pure
+// function of its inputs instead of reaching into backend and system headers.
+static models::BackendAvailability probe_backend_availability(
+    const std::map<std::string, ModelInfo>& models) {
+    using namespace models;
+    BackendAvailability availability;
 
-    // Check if model filtering is disabled via config.json
-    bool disable_filtering = false;
-    bool enable_dgpu_gtt = false;
-    auto* cfg = lemon::RuntimeConfig::global();
-    if (cfg) {
-        disable_filtering = cfg->disable_model_filtering();
-        enable_dgpu_gtt = cfg->enable_dgpu_gtt();
+    if (auto* cfg = lemon::RuntimeConfig::global()) {
+        availability.filtering_disabled = cfg->disable_model_filtering();
+        availability.assume_dgpu_gtt = cfg->enable_dgpu_gtt();
     }
 
-    if (disable_filtering) {
-        filtered_out_models_.clear();
-        if (track_recipe_availability) {
-            recipes_all_models_filtered_.clear();
-        }
-        return models;
+    if (availability.filtering_disabled) {
+        return availability;
     }
 
-    if (enable_dgpu_gtt)
-    {
-      LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
-                << "     Models are being filtered assuming GTT memory." << std::endl
-                << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
+    if (availability.assume_dgpu_gtt) {
+        LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
+                                  << "     Models are being filtered assuming GTT memory."
+                                  << std::endl
+                                  << "     Using GTT on a dGPU will have a significant "
+                                     "performance impact."
+                                  << std::endl;
     }
-
-    std::map<std::string, ModelInfo> filtered;
-
-    filtered_out_models_.clear();
-
-    std::set<std::string> size_filtered_recipes;
-    std::set<std::string> visible_recipes;
 
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
-    bool npu_available = hardware.contains("amd_npu") &&
-                         hardware["amd_npu"].is_object() &&
+    bool npu_available = hardware.contains("amd_npu") && hardware["amd_npu"].is_object() &&
                          hardware["amd_npu"].value("available", false);
 
     double largest_mem_pool_gb = 0.0;
@@ -4107,60 +4098,74 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
             if (dev_type == "amd_gpu" && dev.value("integrated", true))
                 dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
-            if (enable_dgpu_gtt)
+            if (availability.assume_dgpu_gtt)
                 dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
             curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
-            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
+            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb
+                                                                         : largest_mem_pool_gb;
         }
     }
+    availability.largest_mem_pool_gb = largest_mem_pool_gb;
 
     double system_ram_gb = 0.0;
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
+    availability.system_ram_gb = system_ram_gb;
 
-    double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
-
-    std::string processor = "Unknown";
-    std::string os_version = "Unknown";
     if (system_info.contains("Processor") && system_info["Processor"].is_string()) {
-        processor = system_info["Processor"].get<std::string>();
+        availability.processor = system_info["Processor"].get<std::string>();
     }
     if (system_info.contains("OS Version") && system_info["OS Version"].is_string()) {
-        os_version = system_info["OS Version"].get<std::string>();
+        availability.os_version = system_info["OS Version"].get<std::string>();
     }
 
     static bool debug_printed = false;
     if (!debug_printed) {
+        double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8)
+                                       ? largest_mem_pool_gb
+                                       : (system_ram_gb * 0.8);
         LOG(INFO, "ModelManager") << "Backend availability:" << std::endl;
-        LOG(INFO, "ModelManager") << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
+        LOG(INFO, "ModelManager") << "  - NPU hardware: " << (npu_available ? "Yes" : "No")
+                                  << std::endl;
         if (system_ram_gb > 0.0) {
-            LOG(INFO, "ModelManager") << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb
-                      << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
+            LOG(INFO, "ModelManager") << "  - System RAM: " << std::fixed << std::setprecision(1)
+                                      << system_ram_gb << " GB (max model size: "
+                                      << max_model_size_gb << " GB)" << std::endl;
         }
         if (largest_mem_pool_gb > 0.0) {
-            LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
+            LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed
+                                      << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
         if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu")) {
             const auto& nvidia_gpus = system_info["devices"]["nvidia_gpu"];
             if (nvidia_gpus.is_array()) {
                 for (const auto& gpu : nvidia_gpus) {
                     if (gpu.value("available", false)) {
-                        std::string name = gpu.value("name", "unknown");
+                        std::string gpu_name = gpu.value("name", "unknown");
                         std::string family = gpu.value("family", "");
                         std::string cc = gpu.value("compute_capability", "");
                         std::string suffix;
-                        if (!cc.empty()) suffix = " (compute " + cc + ", " + (family.empty() ? "unsupported arch" : family) + ")";
-                        else if (!family.empty()) suffix = " (" + family + ")";
-                        else suffix = " (arch unknown -- nvidia-smi may have failed)";
-                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: " << name << suffix << std::endl;
+                        if (!cc.empty())
+                            suffix = " (compute " + cc + ", " +
+                                     (family.empty() ? "unsupported arch" : family) + ")";
+                        else if (!family.empty())
+                            suffix = " (" + family + ")";
+                        else
+                            suffix = " (arch unknown -- nvidia-smi may have failed)";
+                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: " << gpu_name << suffix
+                                                  << std::endl;
                     } else if (gpu.contains("error")) {
-                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: " << gpu["error"].get<std::string>() << std::endl;
+                        LOG(INFO, "ModelManager")
+                            << "  - NVIDIA GPU: detection error: "
+                            << gpu["error"].get<std::string>() << std::endl;
                     }
                 }
                 if (system_info["devices"].contains("nvidia_gpu_error")) {
-                    LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: "
-                        << system_info["devices"]["nvidia_gpu_error"].get<std::string>() << std::endl;
+                    LOG(INFO, "ModelManager")
+                        << "  - NVIDIA GPU: detection error: "
+                        << system_info["devices"]["nvidia_gpu_error"].get<std::string>()
+                        << std::endl;
                 }
             }
         }
@@ -4169,144 +4174,60 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
-        bool filter_out = false;
-        std::string filter_reason;
-
-        // Collections are UI-level entries that orchestrate components.
-        // They should always be visible if present in the registry.
-        if (is_model_collection_recipe(recipe)) {
-            filtered[name] = info;
+        if (availability.recipes.count(recipe)) {
             continue;
         }
 
-        // Cloud-offloaded models bypass local backend/RAM checks (the model
-        // executes on a remote provider). Discovery is server-side and runs
-        // at every cache build, so this branch normally sees the full set
-        // of discovered cloud entries plus anything a user pinned into
-        // user_models.json.
-        if (recipe == "cloud") {
-            filtered[name] = info;
-            continue;
+        RecipeAvailability recipe_availability;
+        recipe_availability.unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        if (recipe_availability.unsupported_reason.empty()) {
+            recipe_availability.guest_backend_missing_reason =
+                SystemInfo::check_guest_backend_installed(recipe, system_info);
         }
-
-        const bool user_controlled_model = is_user_model_name(name) ||
-                                           is_extra_model_name(name) ||
-                                           info.source == "local_upload";
-
-        // Check recipe support using the centralized system_info recipes structure
-        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
-        if (!unsupported_reason.empty()) {
-            filter_out = true;
-            filter_reason = unsupported_reason + " "
-                           "Detected processor: " + processor + ". "
-                           "Detected operating system: " + os_version + ".";
+        if (const auto* desc = backends::descriptor_for(recipe)) {
+            recipe_availability.streams_model_from_storage = desc->streams_model_from_storage;
         }
-
-        if (!filter_out) {
-            filter_reason = SystemInfo::check_guest_backend_installed(recipe, system_info);
-            filter_out = !filter_reason.empty();
-        }
-
-        // Filter out models too large to run on this machine.
-        if (!filter_out && !user_controlled_model && info.size > 0.0) {
-            const auto* desc = backends::descriptor_for(recipe);
-            if (desc && desc->streams_model_from_storage) {
-                // A streaming backend reads the model from disk on demand, so the
-                // full model need not fit in memory — only its resident working
-                // set, and only in the device's own pool. ROCm cannot address
-                // system RAM plus the iGPU carveout as one pool; it gets the
-                // larger of the pools (largest_mem_pool_gb), so that is the ceiling.
-                const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
-                if (streaming_model_exceeds_pool(working_set, largest_mem_pool_gb)) {
-                    filter_out = true;
-                    size_filtered_recipes.insert(recipe);
-                    std::ostringstream oss;
-                    oss << std::fixed << std::setprecision(1);
-                    oss << "This model streams from disk but needs about " << working_set
-                        << " GB resident in GPU memory, and this device's largest memory "
-                        << "pool is only " << largest_mem_pool_gb << " GB.";
-                    filter_reason = oss.str();
-                }
-            } else if (system_ram_gb > 0.0 && info.size > max_model_size_gb) {
-                // Non-streaming: the whole model must fit (80% of system RAM).
-                filter_out = true;
-                size_filtered_recipes.insert(recipe);
-                std::ostringstream oss;
-                oss << std::fixed << std::setprecision(1);
-                oss << "This model requires approximately " << info.size << " GB of memory, "
-                    << "but your system only has " << system_ram_gb << " GB of RAM. "
-                    << "Models larger than " << max_model_size_gb << " GB (80% of system RAM) are filtered out.";
-                filter_reason = oss.str();
-            }
-        }
-
-        // Special rule: filter out gpt-oss-20b-FLM on Windows systems with less than 48 GB RAM
-#ifdef _WIN32
-        if (!filter_out && name == "gpt-oss-20b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 48.0) {
-            filter_out = true;
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(1);
-            oss << "The gpt-oss-20b-FLM model requires at least 48 GB of RAM. "
-                << "Your system has " << system_ram_gb << " GB.";
-            filter_reason = oss.str();
-        }
-
-        // Special rule: filter out qwen3.6-moe-35b-a3b-FLM on Windows systems with less than 64 GB RAM
-        if (!filter_out && name == "qwen3.6-moe-35b-a3b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
-            filter_out = true;
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(1);
-            oss << "The qwen3.6-moe-35b-a3b-FLM model requires at least 64 GB of RAM. "
-                << "Your system has " << system_ram_gb << " GB.";
-            filter_reason = oss.str();
-        }
-#endif
-
-        if (filter_out) {
-            // Store the filter reason for later lookup
-            filtered_out_models_[name] = filter_reason;
-            continue;
-        }
-
-        // Model passes all filters
-        visible_recipes.insert(info.recipe);
-        filtered[name] = info;
+        availability.recipes.emplace(recipe, std::move(recipe_availability));
     }
 
-    // Only the full-registry pass may commit the availability side table;
+    return availability;
+}
+
+std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
+    const std::map<std::string, ModelInfo>& models,
+    bool track_recipe_availability) {
+    FilterResult result = models::filter_hardware(models, probe_backend_availability(models));
+
+    std::map<std::string, ModelInfo> visible;
+    visible.swap(result.visible);
+
+    auto reasons = std::make_shared<FilterReasons>();
+    reasons->rejected = std::move(result.rejected);
+    reasons->empty_recipes = std::move(result.empty_recipes);
+
+    // Only the full-registry pass may commit the recipe availability table;
     // incremental single-model passes would otherwise reduce it to one model.
-    if (track_recipe_availability) {
-        recipes_all_models_filtered_ =
-            recipes_missing_all_models(size_filtered_recipes, visible_recipes);
+    if (!track_recipe_availability && hardware_filter_) {
+        reasons->empty_recipes = hardware_filter_->empty_recipes;
     }
+    hardware_filter_ = std::const_pointer_cast<const FilterReasons>(reasons);
 
-    return filtered;
+    return visible;
 }
 
 std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return recipes_all_models_filtered_;
+    return recipes_all_models_filtered_locked();
 }
 
-std::set<std::string> ModelManager::recipes_missing_all_models(
-    const std::set<std::string>& size_filtered_recipes,
-    const std::set<std::string>& visible_recipes) {
+// Must be called with models_cache_mutex_ held.
+std::set<std::string> ModelManager::recipes_all_models_filtered_locked() const {
     std::set<std::string> hidden;
-    for (const auto& recipe : size_filtered_recipes) {
-        if (visible_recipes.find(recipe) == visible_recipes.end()) {
-            hidden.insert(recipe);
-        }
+    if (hardware_filter_) {
+        hidden.insert(hardware_filter_->empty_recipes.begin(),
+                      hardware_filter_->empty_recipes.end());
     }
     return hidden;
-}
-
-double ModelManager::streaming_working_set_gb(double min_resident_gb, double size_gb) {
-    return min_resident_gb > 0.0 ? min_resident_gb : size_gb;
-}
-
-bool ModelManager::streaming_model_exceeds_pool(double working_set_gb, double pool_gb) {
-    // pool <= 0 means the device pool is unknown: don't hide on missing data.
-    return pool_gb > 0.0 && working_set_gb > pool_gb;
 }
 
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
@@ -6774,18 +6695,20 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
 }
 
 std::string ModelManager::get_model_filter_reason(const std::string& model_name) {
-    // Ensure cache is built (this populates filtered_out_models_)
+    // Ensure cache is built (this populates the filter reasons)
     build_cache();
 
-    // Look up in the filtered-out models cache
-    // This is populated by filter_models_by_backend() during cache building
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
     auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-    auto it = filtered_out_models_.find(canonical_name);
-    if (it != filtered_out_models_.end()) {
-        return it->second;
+    std::string canonical_name =
+        alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    if (hardware_filter_) {
+        for (const auto& rejected : hardware_filter_->rejected) {
+            if (rejected.canonical_id == canonical_name) {
+                return rejected.reason;
+            }
+        }
     }
 
     // Model wasn't filtered out (either it's available or doesn't exist)
@@ -6795,7 +6718,7 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
     build_cache();
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return recipes_all_models_filtered_;
+    return recipes_all_models_filtered_locked();
 }
 
 // Must be called with models_cache_mutex_ held.

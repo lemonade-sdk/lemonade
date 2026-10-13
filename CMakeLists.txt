@@ -1039,6 +1039,7 @@ set(SOURCES_CORE
     src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
+    src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
@@ -3034,6 +3035,19 @@ if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_PLAN_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(DownloadPlanTest CI ON COMMAND test_download_plan)
+endif()
+
+set(_FILTER_HARDWARE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_filter_hardware.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_FILTER_HARDWARE_TEST_SRC}")
+    add_executable(test_filter_hardware
+        test/cpp/test_filter_hardware.cpp
+    )
+    target_link_libraries(test_filter_hardware PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(FilterHardwareTest CI ON COMMAND test_filter_hardware)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC

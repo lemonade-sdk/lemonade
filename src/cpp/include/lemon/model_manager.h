@@ -62,6 +62,10 @@ public:
 // holds it behind a shared_ptr, which supports incomplete types.
 struct RoutePolicy;
 
+namespace models {
+struct FilterReasons;
+}  // namespace models
+
 // Image generation defaults for SD models
 struct ImageDefaults {
     int steps = 20;
@@ -305,14 +309,6 @@ public:
     // The set difference behind the above: recipes that had a model dropped by
     // the memory heuristic and kept none visible. Pure and hardware-independent
     // so it can be unit-tested directly.
-    static std::set<std::string> recipes_missing_all_models(
-        const std::set<std::string>& size_filtered_recipes,
-        const std::set<std::string>& visible_recipes);
-
-    // Memory-fit helpers for streaming backends (see filter_models_by_backend
-    // for the rationale). Pure and hardware-independent, so unit-tested directly.
-    static double streaming_working_set_gb(double min_resident_gb, double size_gb);
-    static bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
 
     // Test-only raw view of the side table without a cache rebuild; prefer
     // recipes_with_all_models_filtered() everywhere else.
@@ -615,11 +611,14 @@ private:
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
-    mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
-    // Real-backend recipes whose entire built-in model set was size-filtered
-    // with no model left visible. Populated alongside filtered_out_models_.
-    mutable std::set<std::string> recipes_all_models_filtered_;
+    // Why each model was hidden, and which recipes lost their whole set.
+    // Replaces the two side tables the filter used to keep separately, so a
+    // reason can never be read against a different generation of results.
+    std::shared_ptr<const models::FilterReasons> hardware_filter_;
     mutable bool cache_valid_ = false;
+
+    // Must be called with models_cache_mutex_ held.
+    std::set<std::string> recipes_all_models_filtered_locked() const;
 
     json get_sync_status_locked() const;
     void rebuild_public_model_aliases_locked();
