@@ -26,6 +26,10 @@ public:
         int cache_tokens = -1;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
+        bool tokens_reported = false;
+        // Content-bearing chunks relayed; the output estimate when a client disconnects mid-stream.
+        int output_chunks = 0;
+        bool client_disconnected = false;
         std::string error_message = "";
         std::string model_name = "";
 
@@ -78,6 +82,9 @@ public:
     // single SSE chunk payload: OpenAI usage (chat and Responses field names,
     // cached-token details) and llama.cpp timings.
     static TelemetryData extract_telemetry(const nlohmann::json& payload);
+
+    // Fold one SSE chunk into a running stream's telemetry (usage, timings, output chunk count).
+    static void accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry);
 
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
 

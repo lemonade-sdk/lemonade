@@ -251,6 +251,42 @@ static bool is_unmetered_recipe(const std::string& recipe) {
     return slot_policy_for_recipe(recipe) == SlotPolicy::Unmetered;
 }
 
+// Non-streaming responses report counts and speed in backend-specific places: llama.cpp in a
+// "timings" block, FLM inside "usage". Token counts here only need the llama.cpp case.
+static void apply_timings(const json& response, nlohmann::json& usage_payload, telemetry::InferenceSpan& span) {
+    if (response.contains("timings")) {
+        const auto& timings = response["timings"];
+        if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
+        if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
+        if (timings.contains("cache_n")) usage_payload["cached_tokens"] = timings["cache_n"].get<int>();
+        if (!usage_payload.contains("prompt_tokens_total") && timings.contains("prompt_n")) {
+            usage_payload["prompt_tokens_total"] = timings["prompt_n"].get<int>() + timings.value("cache_n", 0);
+        }
+    }
+
+    auto perf = StreamingProxy::extract_telemetry(response);
+    if (perf.time_to_first_token > 0) {
+        span.set_attribute("llm.performance.time_to_first_token", perf.time_to_first_token);
+    }
+    if (perf.tokens_per_second > 0) {
+        span.set_attribute("llm.performance.tokens_per_second", perf.tokens_per_second);
+    }
+}
+
+static nlohmann::json stream_usage_payload(const StreamingProxy::TelemetryData& telemetry) {
+    if (!telemetry.tokens_reported) return nlohmann::json::object();
+    nlohmann::json usage = {
+        {"prompt_tokens", telemetry.input_tokens},
+        {"completion_tokens", telemetry.output_tokens}
+    };
+    if (telemetry.cache_tokens >= 0) usage["cached_tokens"] = telemetry.cache_tokens;
+    // llama.cpp timings count only newly processed prompt tokens; usage.prompt_tokens includes the cache.
+    usage["prompt_tokens_total"] = telemetry.prompt_tokens >= 0
+        ? telemetry.prompt_tokens
+        : telemetry.input_tokens + std::max(telemetry.cache_tokens, 0);
+    return usage;
+}
+
 int Router::count_servers_in_pool(ModelType type,
                                   ResidencyClass residency_class,
                                   const std::string& model_name) const {
@@ -1785,7 +1821,11 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                 if (response["error"].contains("message") && response["error"]["message"].is_string()) {
                     error_msg = response["error"]["message"].get<std::string>();
                 }
-                span->end_with_error(error_msg);
+                if (WrappedServer::current_request_cancel_context().cancelled()) {
+                    span->end_aborted();
+                } else {
+                    span->end_with_error(error_msg);
+                }
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
                 std::string text_output = "";
@@ -1796,31 +1836,20 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     } else if (usage.contains("input_tokens")) {
                         usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
                     }
+                    if (usage_payload.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens_total"] = usage_payload["prompt_tokens"];
+                    }
                     if (usage.contains("completion_tokens")) {
                         usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
                     } else if (usage.contains("output_tokens")) {
                         usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
                     }
-                }
-                if (response.contains("timings")) {
-                    auto timings = response["timings"];
-                    if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
-                    if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
-
-                    if (timings.contains("prompt_ms") && timings.contains("prompt_n")) {
-                        double prompt_ms = timings["prompt_ms"].get<double>();
-                        if (prompt_ms > 0) {
-                            span->set_attribute("llm.performance.time_to_first_token", prompt_ms / 1000.0);
-                        }
-                    }
-                    if (timings.contains("predicted_ms") && timings.contains("predicted_n")) {
-                        double predicted_ms = timings["predicted_ms"].get<double>();
-                        int predicted_n = timings["predicted_n"].get<int>();
-                        if (predicted_ms > 0 && predicted_n > 0) {
-                            span->set_attribute("llm.performance.tokens_per_second", (predicted_n / (predicted_ms / 1000.0)));
-                        }
+                    auto details = usage.value("prompt_tokens_details", json::object());
+                    if (details.is_object() && details.contains("cached_tokens") && details["cached_tokens"].is_number()) {
+                        usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
                     }
                 }
+                apply_timings(response, usage_payload, *span);
 
                 std::vector<telemetry::ToolCall> tool_calls;
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
@@ -1903,7 +1932,11 @@ json Router::completion(const json& request) {
                 if (response["error"].contains("message") && response["error"]["message"].is_string()) {
                     error_msg = response["error"]["message"].get<std::string>();
                 }
-                span->end_with_error(error_msg);
+                if (WrappedServer::current_request_cancel_context().cancelled()) {
+                    span->end_aborted();
+                } else {
+                    span->end_with_error(error_msg);
+                }
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
                 std::string text_output = "";
@@ -1914,12 +1947,20 @@ json Router::completion(const json& request) {
                     } else if (usage.contains("input_tokens")) {
                         usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
                     }
+                    if (usage_payload.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens_total"] = usage_payload["prompt_tokens"];
+                    }
                     if (usage.contains("completion_tokens")) {
                         usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
                     } else if (usage.contains("output_tokens")) {
                         usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
                     }
+                    auto details = usage.value("prompt_tokens_details", json::object());
+                    if (details.is_object() && details.contains("cached_tokens") && details["cached_tokens"].is_number()) {
+                        usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
+                    }
                 }
+                apply_timings(response, usage_payload, *span);
 
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                     auto choice = response["choices"][0];
@@ -2641,7 +2682,9 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                 [this, identity, span, accumulated_text, accumulated_reasoning, accumulated_tool_calls, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
-                        if (span) {
+                        if (span && telemetry.client_disconnected) {
+                            span->end_aborted(telemetry.output_chunks);
+                        } else if (span) {
                             span->end_with_error(telemetry.error_message);
                         }
                         return;
@@ -2649,10 +2692,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                     record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
-                        nlohmann::json usage_payload = {
-                            {"prompt_tokens", telemetry.input_tokens},
-                            {"completion_tokens", telemetry.output_tokens}
-                        };
+                        nlohmann::json usage_payload = stream_usage_payload(telemetry);
                         span->set_attribute("llm.performance.time_to_first_token", telemetry.time_to_first_token);
                         span->set_attribute("llm.performance.tokens_per_second", telemetry.tokens_per_second);
                         std::string final_output = *accumulated_text;
@@ -2765,7 +2805,9 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                 [this, identity, span, accumulated_text, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
-                        if (span) {
+                        if (span && telemetry.client_disconnected) {
+                            span->end_aborted(telemetry.output_chunks);
+                        } else if (span) {
                             span->end_with_error(telemetry.error_message);
                         }
                         return;
@@ -2773,10 +2815,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                     record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
-                        nlohmann::json usage_payload = {
-                            {"prompt_tokens", telemetry.input_tokens},
-                            {"completion_tokens", telemetry.output_tokens}
-                        };
+                        nlohmann::json usage_payload = stream_usage_payload(telemetry);
                         span->set_attribute("llm.performance.time_to_first_token", telemetry.time_to_first_token);
                         span->set_attribute("llm.performance.tokens_per_second", telemetry.tokens_per_second);
 
@@ -2875,7 +2914,9 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                 [this, identity, span, accumulated_text, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
-                        if (span) {
+                        if (span && telemetry.client_disconnected) {
+                            span->end_aborted(telemetry.output_chunks);
+                        } else if (span) {
                             span->end_with_error(telemetry.error_message);
                         }
                         return;
@@ -2883,10 +2924,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                     record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
-                        nlohmann::json usage_payload = {
-                            {"prompt_tokens", telemetry.input_tokens},
-                            {"completion_tokens", telemetry.output_tokens}
-                        };
+                        nlohmann::json usage_payload = stream_usage_payload(telemetry);
                         span->set_attribute("llm.performance.time_to_first_token", telemetry.time_to_first_token);
                         span->set_attribute("llm.performance.tokens_per_second", telemetry.tokens_per_second);
 
