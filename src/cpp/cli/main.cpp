@@ -652,9 +652,12 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
 
             const std::string model_id = model["id"].get<std::string>();
             int model_context_window = context_window;
-            if (model.contains("recipe_options") && model["recipe_options"].is_object()
-			    && model["recipe_options"].contains("ctx_size")) {
-                model_context_window = model["recipe_options"]["ctx_size"].get<int>();
+            if (model.contains("recipe_options") && model["recipe_options"].is_object()) {
+                // A saved ctx_size of -1 means auto, which the CLI cannot resolve.
+                const int saved_ctx_size = model["recipe_options"].value("ctx_size", 0);
+                if (saved_ctx_size > 0) {
+                    model_context_window = saved_ctx_size;
+                }
             }
             models.push_back({model_id, model_id + " (local)", model_context_window,
                               std::move(model_labels)});

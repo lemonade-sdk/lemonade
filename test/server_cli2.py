@@ -2173,6 +2173,12 @@ sys.exit(0)
         with open(capture_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    def _pi_model_entry(self, temp_dir, model):
+        provider = self._read_pi_agent_json(temp_dir, "models.json")["providers"][
+            "Lemonade"
+        ]
+        return next(m for m in provider["models"] if m["id"] == model)
+
     @staticmethod
     def _read_pi_agent_json(temp_dir, name, default=None):
         path = os.path.join(temp_dir, ".pi", "agent", name)
@@ -2240,6 +2246,39 @@ sys.exit(0)
             self.assertIn("lemonade", mcp_servers(temp_dir))
             self._launch_pi(temp_dir, ["--no-mcp"])
             self.assertNotIn("lemonade", mcp_servers(temp_dir))
+
+    def test_132_launch_pi_auto_ctx_size_uses_fallback(self):
+        """A saved auto ctx_size (-1) gets the fallback window, not pi's own defaults."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        options_url = (
+            f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options"
+        )
+
+        def save_ctx_size(ctx_size):
+            response = requests.post(
+                options_url,
+                json={"ctx_size": ctx_size},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+        saved = requests.get(
+            options_url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+        ).json()["saved"]
+        save_ctx_size(-1)
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                self._launch_pi(temp_dir)
+                model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
+                self.assertEqual(model.get("contextWindow"), 40960)
+                self.assertEqual(model.get("maxTokens"), 40960)
+        finally:
+            save_ctx_size(saved.get("ctx_size"))
 
     # =============================================================================
     # Unload Tests
