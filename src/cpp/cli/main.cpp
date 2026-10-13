@@ -687,6 +687,17 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         models.push_back({config.model, config.model + " (local)", default_context_window});
     }
 
+    // Launch loads the selected model with its own ctx_size, which outranks the saved one.
+    if (config.recipe_options.is_object() && config.recipe_options.contains("ctx_size")) {
+        const int launch_ctx_size = config.recipe_options["ctx_size"].get<int>();
+        for (auto& model : models) {
+            if (model.id == config.model) {
+                model.context_window =
+                    launch_ctx_size > 0 ? launch_ctx_size : default_context_window;
+            }
+        }
+    }
+
     if (config.agent == "junie") {
         int context_window = default_context_window;
         for (const auto& model : models) {

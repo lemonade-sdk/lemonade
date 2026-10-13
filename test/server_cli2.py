@@ -2247,6 +2247,17 @@ sys.exit(0)
             self._launch_pi(temp_dir, ["--no-mcp"])
             self.assertNotIn("lemonade", mcp_servers(temp_dir))
 
+    def test_131_launch_pi_uses_launch_ctx_size(self):
+        """--ctx-size on launch is the window the model runs with, so pi gets it too."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            self._launch_pi(temp_dir, ["--ctx-size", "4096"])
+            model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
+            self.assertEqual(model["contextWindow"], 4096)
+            self.assertEqual(model["maxTokens"], 4096)
+
     def test_132_launch_pi_auto_ctx_size_uses_fallback(self):
         """A saved auto ctx_size (-1) gets the fallback window, not pi's own defaults."""
         if IS_WINDOWS:
