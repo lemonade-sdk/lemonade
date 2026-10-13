@@ -1,8 +1,14 @@
+#include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
 #include "lemon/models/registry_id.h"
+#include "lemon/utils/path_utils.h"
 
 #include <cctype>
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -98,6 +104,51 @@ static void test_lookup_by_id() {
     check("an unknown id has none", descriptor_for(RegistryId("gitlfs")) == nullptr);
 }
 
+// A build that no longer knows a registry an entry names must cost that one
+// model, not the catalog: the entry contributes nothing and the rest loads.
+static void test_a_persisted_entry_naming_an_unknown_host_is_skipped() {
+    namespace fs = std::filesystem;
+    fs::path temp = fs::temp_directory_path();
+    temp /= "registry_identity_" +
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    fs::create_directories(temp);
+    lemon::utils::set_cache_dir(lemon::utils::path_to_utf8(temp));
+    lemon::utils::set_config_dir(lemon::utils::path_to_utf8(temp));
+
+    lemon::json models = {
+        {"zz-broken",
+         {{"checkpoint", "someone/somewhere:main.gguf"},
+          {"recipe", "llamacpp"},
+          {"registry_source", "gitlfs"}}},
+        {"zz-loadable",
+         {{"checkpoint", "zzorg/zzloadable:main.gguf"}, {"recipe", "llamacpp"}}},
+    };
+    fs::path registry_file = temp / "user_models.json";
+    std::ofstream out(registry_file);
+    out << models.dump(2);
+    out.close();
+
+    bool survived = true;
+    std::map<std::string, lemon::ModelInfo> listed;
+    try {
+        lemon::ModelManager manager;
+        listed = manager.get_supported_models();
+    } catch (const std::exception&) {
+        survived = false;
+    }
+
+    check("an unknown host in an entry does not stop startup", survived);
+    // A precedence winner is listed under its bare name, so accept either form.
+    const bool broken_listed =
+        listed.count("zz-broken") + listed.count("user.zz-broken") > 0;
+    const bool loadable_listed =
+        listed.count("zz-loadable") + listed.count("user.zz-loadable") > 0;
+    check("the entry naming it contributes nothing", !broken_listed);
+    check("the rest of the file still loads", loadable_listed);
+
+    fs::remove_all(temp);
+}
+
 int main() {
     test_every_spelling_resolves_to_its_own_host();
     test_an_unknown_host_resolves_to_nothing();
@@ -106,6 +157,7 @@ int main() {
     test_persisted_names_come_from_the_table();
     test_default_spelling_is_the_default_host();
     test_lookup_by_id();
+    test_a_persisted_entry_naming_an_unknown_host_is_skipped();
 
     if (g_failures == 0) {
         std::printf("All registry identity tests passed.\n");
