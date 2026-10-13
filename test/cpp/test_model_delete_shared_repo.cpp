@@ -140,6 +140,26 @@ int main() {
     write_file(shard_repo / "snapshots" / "snap" / "Q4_K_M-00001-of-00002.gguf.partial",
                "partial");
 
+    // A sharded checkpoint resolves to its first shard, so that is the only
+    // path the occupant scan can report. shardsib-b's other shard is just as
+    // much in use, and a lone first shard is not a model anyone can load.
+    fs::path shardsib_repo = make_repo(hf_root, "models--org--shardsib",
+        {"model.safetensors", "sib-00001-of-00002.gguf", "sib-00002-of-00002.gguf"});
+
+    // The same blind spot from the other side: selfshard-a is the model being
+    // deleted, and removing only the path resolution names strands the rest.
+    fs::path selfshard_repo = make_repo(hf_root, "models--org--selfshard",
+        {"a-00001-of-00002.gguf", "a-00002-of-00002.gguf", "other.gguf"});
+
+    // Some repos carry the quant token in the middle of the file name, which is
+    // the shape resolve_gguf_path()'s quant-token fallback exists for. Matching
+    // on a suffix alone calls this model's own download a stranger's.
+    fs::path midquant_repo = hf_root / "models--org--midquant";
+    write_file(midquant_repo / "snapshots" / "snap" / "Model-IQ4_XS-Q8nextn.gguf.partial",
+               "partial");
+    write_file(midquant_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"files":[{"name":"Model-IQ4_XS-Q8nextn.gguf"}]})");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -181,6 +201,20 @@ int main() {
         {"shard-a", json{{"checkpoint", "org/shard:Q4_K_M"}, {"recipe", "llamacpp"}}},
         {"shard-b", json{{"checkpoint", "org/shard:sibling.gguf"},
                          {"recipe", "llamacpp"}}},
+        {"adopted-a", json{{"checkpoint", "org/adopted:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"shardsib-a", json{{"checkpoint", "org/shardsib"}, {"recipe", "thinksound"}}},
+        {"shardsib-b", json{{"checkpoint", "org/shardsib:sib-00001-of-00002.gguf"},
+                            {"recipe", "llamacpp"}}},
+        {"selfshard-a", json{{"checkpoint", "org/selfshard:a-00001-of-00002.gguf"},
+                             {"recipe", "llamacpp"}}},
+        {"selfshard-b", json{{"checkpoint", "org/selfshard:other.gguf"},
+                             {"recipe", "llamacpp"}}},
+        {"midquant-a", json{{"checkpoint", "org/midquant:IQ4_XS"}, {"recipe", "llamacpp"}}},
+        {"adoptleft-a", json{{"checkpoint", "org/adoptleft:Q4_K_M"}, {"recipe", "llamacpp"}}},
+        {"adopt2-a", json{{"checkpoint", "org/adopt2"}, {"recipe", "thinksound"}}},
+        {"adopt2-b", json{{"checkpoints", json{{"main", "org/adopt2:b.gguf"},
+                                               {"vae", "org/adopt2:vae.bin"}}},
+                          {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -317,6 +351,31 @@ int main() {
                           "Q4_K_M-00001-of-00002.gguf.partial"));
         check("the occupying model's file survives a shard cleanup",
               fs::exists(shard_repo / "snapshots" / "snap" / "sibling.gguf"));
+
+        // shardsib-a's "main" is the snapshot folder. Clearing it must respect
+        // the whole of shardsib-b's shard family, not just the one shard that
+        // resolution happens to name.
+        manager.delete_model("user.shardsib-a");
+        check("an occupying sibling keeps the shard resolution names",
+              fs::exists(shardsib_repo / "snapshots" / "snap" / "sib-00001-of-00002.gguf"));
+        check("an occupying sibling keeps the rest of its shard family",
+              fs::exists(shardsib_repo / "snapshots" / "snap" / "sib-00002-of-00002.gguf"));
+
+        // selfshard-b occupies the repo, so this delete takes the variant-only
+        // road. Every shard of selfshard-a still has to go.
+        manager.delete_model("user.selfshard-a");
+        check("a sharded model gives up the shard resolution names",
+              !fs::exists(selfshard_repo / "snapshots" / "snap" / "a-00001-of-00002.gguf"));
+        check("a sharded model gives up the rest of its own family",
+              !fs::exists(selfshard_repo / "snapshots" / "snap" / "a-00002-of-00002.gguf"));
+        check("the occupying model's file survives a sharded delete",
+              fs::exists(selfshard_repo / "snapshots" / "snap" / "other.gguf"));
+
+        // Nothing else names this repo, so the interrupted download can only be
+        // this model's own, however the quant token sits in the file name.
+        manager.delete_model("user.midquant-a");
+        check("a quant token inside the file name still marks the model's own download",
+              !fs::exists(midquant_repo));
     }
 
     // Files that arrive after the model cache was built. The Hugging Face cache
@@ -353,6 +412,73 @@ int main() {
               !fs::exists(arrive_repo / "snapshots" / "snap" / "a.gguf"));
         check("late arrival keeps its sibling's file",
               fs::exists(arrive_repo / "snapshots" / "snap" / "b.gguf"));
+    }
+
+    // An --extra-models-dir cache that a catalog model adopts only after the
+    // model cache was built. Resolution then moves the model outside the managed
+    // cache, so an ownership check reading the older answer would wave the
+    // delete through and the removal would land on user-managed files.
+    {
+        fs::path extra_root = temp / "extra";
+        fs::create_directories(extra_root);
+
+        // The constructor sets the directory without starting a watcher, so
+        // nothing invalidates the cache when the files below appear.
+        ModelManager manager(path_to_utf8(extra_root));
+        (void)manager.get_model_info("user.adopted-a");  // nothing on disk yet
+
+        fs::path adopted_repo = extra_root / "models--org--adopted";
+        write_file(adopted_repo / "snapshots" / "snap" / "a.gguf");
+        write_file(adopted_repo / "refs" / "main", "snap");
+
+        manager.delete_model("user.adopted-a");
+        check("an adopted external file is not deleted through its catalog id",
+              fs::exists(adopted_repo / "snapshots" / "snap" / "a.gguf"));
+    }
+
+    // The same adoption, but this model's own cancelled download also left
+    // artifacts in the managed cache. Refusing to follow resolution out of that
+    // cache must not become a refusal to clean the cache the model does own.
+    {
+        fs::path extra_root = temp / "extra_e";
+        fs::path managed = hf_root / "models--org--adoptleft";
+        write_file(managed / "snapshots" / "snap" / "Model-Q4_K_M.gguf.partial", "partial");
+        write_file(managed / "snapshots" / "snap" / ".download_manifest.json",
+                   R"({"files":[{"name":"Model-Q4_K_M.gguf"}]})");
+        fs::path ext = extra_root / "models--org--adoptleft";
+        write_file(ext / "snapshots" / "snap" / "Model-Q4_K_M.gguf");
+        write_file(ext / "refs" / "main", "snap");
+
+        ModelManager manager(path_to_utf8(extra_root));
+        try {
+            manager.delete_model("user.adoptleft-a");
+        } catch (const std::exception& e) {
+            std::printf("    [delete threw] %s\n", e.what());
+        }
+        check("an adopted external copy survives a delete that has work to do",
+              fs::exists(ext / "snapshots" / "snap" / "Model-Q4_K_M.gguf"));
+        check("the managed leftovers of an adopted model are still reclaimed",
+              !fs::exists(managed / "snapshots" / "snap" / "Model-Q4_K_M.gguf.partial"));
+    }
+
+    // adopt2-b is served from the external cache, because its vae never landed
+    // in the managed one. Where a model is served from says nothing about which
+    // files it still holds here, and b.gguf in the managed cache is one of them.
+    {
+        fs::path extra_root = temp / "extra_b";
+        fs::path managed = hf_root / "models--org--adopt2";
+        write_file(managed / "snapshots" / "snap" / "model.safetensors");
+        write_file(managed / "snapshots" / "snap" / "b.gguf");
+        write_file(managed / "refs" / "main", "snap");
+        fs::path ext = extra_root / "models--org--adopt2";
+        write_file(ext / "snapshots" / "snap" / "b.gguf");
+        write_file(ext / "snapshots" / "snap" / "vae.bin", "VAE");
+        write_file(ext / "refs" / "main", "snap");
+
+        ModelManager manager(path_to_utf8(extra_root));
+        manager.delete_model("user.adopt2-a");
+        check("a sibling served from extra_models_dir keeps its managed file",
+              fs::exists(managed / "snapshots" / "snap" / "b.gguf"));
     }
 
     std::error_code ec;

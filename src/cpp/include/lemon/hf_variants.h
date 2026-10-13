@@ -33,6 +33,8 @@ struct GgufVariantSet {
     std::vector<std::string> draft_files;   // Bare filenames of recognized draft GGUF companions.
 };
 
+std::string gguf_quant_token(const std::string& name);
+
 // Enumerate GGUF variants from a normalized repository file list.
 //
 // `repo_files` is the normalized path list returned by the selected registry. `file_sizes` is an optional map (rfilename -> size in bytes) used to

@@ -377,11 +377,26 @@ static std::string checkpoint_to_variant(std::string checkpoint) {
 // Re-resolves every checkpoint of a model against disk.
 using ModelResolver = std::function<ModelInfo(const ModelInfo& info)>;
 
+static void insert_shard_family(const fs::path& shard, std::set<fs::path>& out) {
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(shard.filename().string(), &base, &total)) return;
+
+    std::error_code ec;
+    for (const auto& entry :
+         fs::directory_iterator(shard.parent_path(), safe_dir_options, ec)) {
+        if (ec) break;
+        if (same_shard_family(entry.path().filename().string(), base, total)) {
+            out.insert(entry.path());
+        }
+    }
+}
+
 static std::set<fs::path> repo_occupant_paths(const std::string& repo_id,
                                               const std::string& registry_source,
                                               const std::string& exclude_model,
                                               const std::map<std::string, ModelInfo>& cache,
-                                              const ModelResolver& resolve_now,
+                                              const ModelResolver& resolve_managed,
                                               bool stop_at_first) {
     std::set<fs::path> occupied;
     const std::string normalized_source = remote_registry_source_name(
@@ -398,15 +413,16 @@ static std::set<fs::path> repo_occupant_paths(const std::string& repo_id,
             });
         if (!names_repo) continue;
 
-        const ModelInfo resolved = resolve_now(info);
+        const ModelInfo resolved = resolve_managed(info);
         for (const auto& [type, cp] : info.checkpoints) {
             if (checkpoint_to_repo_id(cp) != repo_id) continue;
             const std::string rpath = resolved.resolved_path(type);
             if (rpath.empty()) continue;
             fs::path path = path_from_utf8(rpath);
             if (!safe_exists(path)) continue;
-            occupied.insert(std::move(path));
+            occupied.insert(path);
             if (stop_at_first) return occupied;
+            insert_shard_family(path, occupied);
         }
     }
     return occupied;
@@ -418,9 +434,9 @@ static bool is_repo_occupied(const std::string& repo_id,
                              const std::string& registry_source,
                              const std::string& exclude_model,
                              const std::map<std::string, ModelInfo>& cache,
-                             const ModelResolver& resolve_now) {
+                             const ModelResolver& resolve_managed) {
     return !repo_occupant_paths(repo_id, registry_source, exclude_model, cache,
-                                resolve_now, /*stop_at_first=*/true).empty();
+                                resolve_managed, /*stop_at_first=*/true).empty();
 }
 
 // Only for attributing an artifact that carries no name of its own, where
@@ -920,6 +936,17 @@ static bool file_matches_variant(const std::string& relative_name,
     const std::string quant_suffix = want + ".gguf";
     for (const std::string& candidate : {base, strip_shard_suffix(base)}) {
         if (candidate == want || ends_with(candidate, quant_suffix)) return true;
+    }
+
+    // resolve_gguf_path()'s quant-token fallback: some repos put the token in
+    // the middle of the name (Model-IQ4_XS-Q8nextn.gguf for variant IQ4_XS)
+    const std::string want_quant = gguf_quant_token(variant);
+    std::string upper_variant = variant;
+    std::transform(upper_variant.begin(), upper_variant.end(), upper_variant.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    if (!want_quant.empty() && want_quant == upper_variant &&
+        gguf_quant_token(base) == want_quant) {
+        return true;
     }
     return false;
 }
@@ -6532,7 +6559,27 @@ void ModelManager::delete_model(const std::string& model_name) {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
     }
-    // Never delete an adopted external cache through its registered catalog ID.
+
+    const ModelResolver resolve_now = [this](const ModelInfo& candidate) {
+        ModelInfo fresh = candidate;
+        fresh.resolved_paths.clear();
+        resolve_all_model_paths(fresh);
+        return fresh;
+    };
+    const ModelInfo resolved_self = resolve_now(info);
+
+    const ModelResolver resolve_managed = [this](const ModelInfo& candidate) {
+        ModelInfo fresh = candidate;
+        fresh.resolved_paths.clear();
+        for (const auto& [type, checkpoint] : fresh.checkpoints) {
+            fresh.resolved_paths[type] = resolve_model_path(fresh, type, checkpoint);
+        }
+        return fresh;
+    };
+
+    // An adopted external cache is never deleted through its registered catalog
+    // ID.
+    bool resolved_outside_managed_cache = false;
     if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
         !is_model_collection_recipe(info.recipe)) {
         const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
@@ -6540,14 +6587,14 @@ void ModelManager::delete_model(const std::string& model_name) {
         const fs::path managed_main_repo = main_repo.empty() ? fs::path() :
             managed_root / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
         for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "npu_cache" || info.resolved_path(type).empty()) continue;
+            if (type == "npu_cache" || resolved_self.resolved_path(type).empty()) continue;
             const std::string repo = checkpoint_to_repo_id(checkpoint);
             if (repo.empty()) {
                 throw std::runtime_error("Cannot delete a registered model with an invalid checkpoint.");
             }
             const fs::path managed_repo = managed_root /
                 repo_id_to_cache_dir_name(repo, effective_registry_source(info));
-            const fs::path resolved_path = path_from_utf8(info.resolved_path(type));
+            const fs::path resolved_path = path_from_utf8(resolved_self.resolved_path(type));
             const bool own_repo = path_inside(managed_repo, managed_root) &&
                 path_inside(resolved_path, managed_repo);
             // Legacy downloads placed auxiliary files in the main repo cache.
@@ -6556,13 +6603,12 @@ void ModelManager::delete_model(const std::string& model_name) {
                 path_inside(managed_main_repo, managed_root) &&
                 path_inside(resolved_path, managed_main_repo);
             if (!own_repo && !legacy_main_repo) {
-                if (!is_user_model_name(canonical_model_name)) {
-                    throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
-                                             "External files are user-managed; remove them manually.");
-                }
-                unregister_user_model(canonical_model_name);
-                remove_model_from_cache(canonical_model_name);
-                return;
+                LOG(INFO, "ModelManager") << "Model resolves outside the managed cache ("
+                            << resolved_self.resolved_path(type)
+                            << "); leaving those files to the user and cleaning the "
+                               "managed cache only" << std::endl;
+                resolved_outside_managed_cache = true;
+                break;
             }
         }
     }
@@ -6591,18 +6637,11 @@ void ModelManager::delete_model(const std::string& model_name) {
         return;
     }
 
-    // Use resolved_path to find the model directory to delete.
-    const ModelResolver resolve_now = [this](const ModelInfo& candidate) {
-        ModelInfo fresh = candidate;
-        fresh.resolved_paths.clear();
-        resolve_all_model_paths(fresh);
-        return fresh;
-    };
-
     const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
     const std::string registry_source = effective_registry_source(info);
 
-    const std::string own_main_path = resolve_now(info).resolved_path("main");
+    const std::string own_main_path =
+        resolved_outside_managed_cache ? std::string() : resolved_self.resolved_path("main");
     const bool own_main_on_disk =
         !own_main_path.empty() && safe_exists(path_from_utf8(own_main_path));
 
@@ -6616,7 +6655,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
             main_repo_occupied = is_repo_occupied(main_repo, registry_source,
                                                   canonical_model_name, models_cache_,
-                                                  resolve_now);
+                                                  resolve_managed);
             main_repo_claimed = is_repo_claimed(main_repo, registry_source,
                                                 canonical_model_name, models_cache_);
         }
@@ -6677,7 +6716,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
         main_repo_occupants = repo_occupant_paths(main_repo, registry_source,
                                                   canonical_model_name, models_cache_,
-                                                  resolve_now, /*stop_at_first=*/false);
+                                                  resolve_managed, /*stop_at_first=*/false);
     }
 
     const bool main_occupied = !main_repo_occupants.empty();
@@ -6706,21 +6745,30 @@ void ModelManager::delete_model(const std::string& model_name) {
             remove_shared_checkpoint_dir(variant_path, model_cache_path_fs,
                                          main_repo_occupants);
         } else if (safe_exists(variant_path)) {
-            // Two catalog entries can name the exact same checkpoint, so the file
-            // under this model's name is not always this model's alone.
-            const bool owned_by_sibling = std::any_of(
-                main_repo_occupants.begin(), main_repo_occupants.end(),
-                [&variant_path](const fs::path& owned) {
-                    return path_is_within(variant_path, owned);
-                });
-            if (owned_by_sibling) {
-                LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(variant_path)
-                            << " (another model resolves to the same file)" << std::endl;
-            } else {
+            // Resolution names one file, but a sharded checkpoint reaches every
+            // sibling shard. Leaving those behind is the disk leak this delete
+            // exists to close.
+            std::set<fs::path> own_files{variant_path};
+            insert_shard_family(variant_path, own_files);
+
+            for (const fs::path& own_file : own_files) {
+                if (!safe_exists(own_file)) continue;
+                // Two catalog entries can name the exact same checkpoint, so the
+                // file under this model's name is not always this model's alone.
+                const bool owned_by_sibling = std::any_of(
+                    main_repo_occupants.begin(), main_repo_occupants.end(),
+                    [&own_file](const fs::path& owned) {
+                        return path_is_within(own_file, owned);
+                    });
+                if (owned_by_sibling) {
+                    LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(own_file)
+                                << " (another model resolves to the same file)" << std::endl;
+                    continue;
+                }
                 // Clean any HF symlink blobs before removing the snapshot entries.
-                cleanup_orphaned_blobs_under(variant_path, model_cache_path_fs);
-                remove_resolved_path_or_throw(variant_path, "variant path");
-                cleanup_empty_parents(variant_path, model_cache_path_fs);
+                cleanup_orphaned_blobs_under(own_file, model_cache_path_fs);
+                remove_resolved_path_or_throw(own_file, "variant path");
+                cleanup_empty_parents(own_file, model_cache_path_fs);
             }
         }
         LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
@@ -6739,7 +6787,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
             cp_repo_occupied = is_repo_occupied(cp_repo, registry_source,
                                                 canonical_model_name, models_cache_,
-                                                resolve_now);
+                                                resolve_managed);
         }
         if (cp_repo_occupied) {
             LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
