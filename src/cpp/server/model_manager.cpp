@@ -5,6 +5,7 @@
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/locator.h>
 #include <lemon/models/store_builder.h>
+#include <lemon/models/store_snapshot.h>
 #include <lemon/models/model_index.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/utils/json_file.h>
@@ -1251,9 +1252,38 @@ static GGUFFiles identify_gguf_models(
     return result;
 }
 
+void ModelManager::publish_store_locked() {
+    auto next = std::make_shared<models::StoreSnapshot>();
+    next->models = models_cache_;
+    next->public_model_aliases = public_model_aliases_;
+    next->canonical_public_names = canonical_public_names_;
+    next->reasons = hardware_filter_;
+    next->valid = cache_valid_;
+    next->generation = ++store_generation_;
+    std::atomic_store(&store_snapshot_,
+                      std::const_pointer_cast<const models::StoreSnapshot>(next));
+}
+
+ModelManager::StoreWrite::StoreWrite(ModelManager& manager)
+    : manager_(manager), lock_(manager.models_cache_mutex_) {}
+
+ModelManager::StoreWrite::~StoreWrite() {
+    // Copying the model set can fail; readers keep the previous snapshot rather
+    // than unwinding an exception out of a destructor.
+    try {
+        manager_.publish_store_locked();
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "Could not publish model store: " << e.what() << std::endl;
+    }
+    lock_.unlock();
+}
+
 ModelManager::ModelManager(const std::string& extra_models_dir)
     : extra_models_dir_(extra_models_dir),
       recipe_options_(get_recipe_options_file()) {
+    // Readers must always have a snapshot; an invalid one tells them to build.
+    std::atomic_store(&store_snapshot_, std::shared_ptr<const models::StoreSnapshot>(
+                                            std::make_shared<models::StoreSnapshot>()));
     server_models_ = load_server_models();
     user_models_ = load_optional_json(get_user_models_file());
     architecture_defaults_ = load_architecture_defaults();
@@ -1282,7 +1312,7 @@ std::string ModelManager::get_hf_cache_dir() const {
 }
 
 void ModelManager::invalidate_models_cache() {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
     cache_valid_ = false;
 }
 
@@ -1343,7 +1373,7 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
     }
 
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         cache_valid_ = false;
     }
 
@@ -1359,7 +1389,7 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_->set_callback([this]() {
         LOG(DEBUG, "ModelManager") << "Extra models directory changed, invalidating cache" << std::endl;
         {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            StoreWrite store_write(*this);
             cache_valid_ = false;
         }
         notify_models_changed();
@@ -2029,7 +2059,7 @@ void ModelManager::save_model_options(const ModelInfo& info) {
 
     recipe_options_.replace(id, info.recipe_options.to_json());
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
     update_model_options_in_cache_locked(info);
 }
 
@@ -2104,9 +2134,10 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
     const std::string id = cache_key_to_canonical_id(cache_key);
     LOG(INFO, "ModelManager") << "Updating saved options for model: " << model_name << std::endl;
 
-    // get_model_info takes models_cache_mutex_ itself, so read it before
-    // locking. The registry layer is re-read under the lock instead, since the
-    // rebuild below has to reflect the registry as it stands at that moment.
+    // get_model_info can take the store writer lock itself, since it rebuilds on
+    // demand, so read it before locking. The registry layer is re-read under the
+    // lock instead, since the rebuild below has to reflect the registry as it
+    // stands at that moment.
     ModelInfo info;
     bool have_info = true;
     try {
@@ -2121,7 +2152,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
                              : recipe_options_.replace(id, options);
 
     if (have_info) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         // Same layering as build_cache(), so the two can't drift.
         info.recipe_options = build_recipe_options(
             info, registry_recipe_options_locked(cache_key), id, json{{id, saved}});
@@ -2138,11 +2169,13 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     build_cache();
 
     // Return copy of cache (all models, including their download status)
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto snapshot = std::atomic_load(&store_snapshot_);
     std::map<std::string, ModelInfo> public_models;
-    for (const auto& [name, info] : models_cache_) {
-        auto it = canonical_public_names_.find(name);
-        const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
+    for (const auto& [name, info] : snapshot->models) {
+        std::string public_name = snapshot->public_name_for(name);
+        if (public_name.empty()) {
+            public_name = name;
+        }
         ModelInfo public_info = info;
         public_info.model_name = public_name;
         public_models[public_name] = std::move(public_info);
@@ -3365,7 +3398,7 @@ static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTie
 }
 
 void ModelManager::build_cache() {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
 
     if (cache_valid_) {
         return;
@@ -3766,7 +3799,7 @@ void ModelManager::build_cache() {
 }
 
 void ModelManager::add_model_to_cache(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
 
     if (!cache_valid_) {
         return; // Will initialize on next access
@@ -3872,7 +3905,7 @@ void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
 }
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
 
     if (!cache_valid_) {
         return; // Will rebuild on next access
@@ -3930,7 +3963,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
 }
 
 void ModelManager::remove_model_from_cache(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
 
     if (!cache_valid_) {
         return;
@@ -3964,12 +3997,14 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // for them (see CollectionOrchestrator), so they are genuine OpenAI-compatible
     // chat models and should appear in /v1/models and Ollama /api/tags. A collection's
     // `downloaded` flag already reflects component status (see build_cache).
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto snapshot = std::atomic_load(&store_snapshot_);
     std::map<std::string, ModelInfo> downloaded;
-    for (const auto& [name, info] : models_cache_) {
+    for (const auto& [name, info] : snapshot->models) {
         if (info.downloaded) {
-            auto it = canonical_public_names_.find(name);
-            const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
+            std::string public_name = snapshot->public_name_for(name);
+            if (public_name.empty()) {
+                public_name = name;
+            }
             ModelInfo public_info = info;
             public_info.model_name = public_name;
             downloaded[public_name] = std::move(public_info);
@@ -4216,18 +4251,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 }
 
 std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return recipes_all_models_filtered_locked();
-}
-
-// Must be called with models_cache_mutex_ held.
-std::set<std::string> ModelManager::recipes_all_models_filtered_locked() const {
-    std::set<std::string> hidden;
-    if (hardware_filter_) {
-        hidden.insert(hardware_filter_->empty_recipes.begin(),
-                      hardware_filter_->empty_recipes.end());
-    }
-    return hidden;
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    const std::vector<std::string> hidden = snapshot->empty_recipes();
+    return std::set<std::string>(hidden.begin(), hidden.end());
 }
 
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
@@ -4281,7 +4307,7 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         return 0;
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
 
     // Reseed: drop this provider's previously-registered entries before
     // inserting the fresh list, so a model the provider stopped exposing
@@ -4329,7 +4355,7 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
 
 size_t ModelManager::evict_cloud_models(const std::string& provider) {
     if (provider.empty()) return 0;
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
     size_t removed = 0;
     for (auto it = models_cache_.begin(); it != models_cache_.end();) {
         if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
@@ -4349,8 +4375,8 @@ size_t ModelManager::evict_cloud_models(const std::string& provider) {
 }
 
 size_t ModelManager::count_cloud_models(const std::string& provider) const {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return std::count_if(models_cache_.begin(), models_cache_.end(),
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    return std::count_if(snapshot->models.begin(), snapshot->models.end(),
                          [&](const auto& kv) {
                              return kv.second.recipe == "cloud" &&
                                     kv.second.cloud_provider == provider;
@@ -4456,7 +4482,7 @@ void ModelManager::register_user_model(const std::string& model_name,
     // stale in-memory state cannot overwrite another registration.
     bool overwrote_router_collection = false;
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         json updated_user_models = load_optional_json(get_user_models_file());
         if (!updated_user_models.is_object()) {
             updated_user_models = json::object();
@@ -4488,7 +4514,7 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
 
     bool was_router_collection = false;
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         json updated_user_models = load_optional_json(get_user_models_file());
         if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
             return;
@@ -4565,7 +4591,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     std::string canonical_model_name = resolve_model_name(info.model_name);
     if (is_user_model_name(canonical_model_name))
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         auto it = models_cache_.find(canonical_model_name);
         if (it != models_cache_.end())
         {
@@ -5215,7 +5241,7 @@ void ModelManager::download_model(const std::string& model_name,
         // its components and recomputing its downloaded status - instead of leaving
         // the stale empty-components/not-downloaded state until a restart.
         if (!repo_id.empty()) {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            StoreWrite store_write(*this);
             cache_valid_ = false;
         }
 
@@ -5308,7 +5334,7 @@ void ModelManager::download_model(const std::string& model_name,
 
     std::map<std::string, std::filesystem::path> resolved_paths_before;
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         auto it = models_cache_.find(model_info.model_name);
         if (it != models_cache_.end()) {
             for (const auto& [k, v] : it->second.resolved_paths) {
@@ -5321,7 +5347,7 @@ void ModelManager::download_model(const std::string& model_name,
 
     std::map<std::string, std::filesystem::path> resolved_paths_after;
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         auto it = models_cache_.find(model_info.model_name);
         if (it != models_cache_.end()) {
             for (const auto& [k, v] : it->second.resolved_paths) {
@@ -6087,7 +6113,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            StoreWrite store_write(*this);
             json updated_user_models = load_optional_json(get_user_models_file());
             if (!updated_user_models.is_object()) {
                 updated_user_models = json::object();
@@ -6136,7 +6162,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
 
         if (is_user_model_name(canonical_model_name)) {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            StoreWrite store_write(*this);
             json updated_user_models = load_optional_json(get_user_models_file());
             if (!updated_user_models.is_object()) {
                 updated_user_models = json::object();
@@ -6275,7 +6301,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Remove from user models if it's a user model
     if (is_user_model_name(canonical_model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        StoreWrite store_write(*this);
         json updated_user_models = load_optional_json(get_user_models_file());
         if (!updated_user_models.is_object()) {
             updated_user_models = json::object();
@@ -6298,7 +6324,7 @@ json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     json orphaned_files = json::array();
     size_t total_bytes = 0;
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    StoreWrite store_write(*this);
 
     // Find multi-repo models where non-main checkpoints reference different repos
     for (const auto& [name, info] : models_cache_) {
@@ -6369,15 +6395,14 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     // Build cache if needed
     build_cache();
 
-    // O(1) lookup in cache
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        auto it = models_cache_.find(canonical_name);
-        if (it != models_cache_.end()) {
-            return it->second;
-        }
+    // O(1) lookup in the published snapshot
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    std::string canonical_name = snapshot->canonical_for(model_name);
+    if (canonical_name.empty()) {
+        canonical_name = model_name;
+    }
+    if (const ModelInfo* found = snapshot->find(canonical_name)) {
+        return *found;
     }
 
     throw std::runtime_error("Model not found: " + model_name);
@@ -6386,29 +6411,31 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
 std::string ModelManager::resolve_model_name(const std::string& model_name) {
     build_cache();
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = public_model_aliases_.find(model_name);
-    return it != public_model_aliases_.end() ? it->second : model_name;
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    std::string canonical_name = snapshot->canonical_for(model_name);
+    return canonical_name.empty() ? model_name : canonical_name;
 }
 
 std::string ModelManager::get_public_model_name(const std::string& model_name) {
     build_cache();
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = canonical_public_names_.find(model_name);
-    return it != canonical_public_names_.end() ? it->second : model_name;
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    std::string public_name = snapshot->public_name_for(model_name);
+    return public_name.empty() ? model_name : public_name;
 }
 
 bool ModelManager::model_exists(const std::string& model_name) {
     // Build cache if needed
     build_cache();
 
-    // O(1) lookup in cache
+    // O(1) lookup in the published snapshot
     {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        if (models_cache_.find(canonical_name) != models_cache_.end()) {
+        auto snapshot = std::atomic_load(&store_snapshot_);
+        std::string canonical_name = snapshot->canonical_for(model_name);
+        if (canonical_name.empty()) {
+            canonical_name = model_name;
+        }
+        if (snapshot->find(canonical_name) != nullptr) {
             return true;
         }
     }
@@ -6698,27 +6725,21 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
     // Ensure cache is built (this populates the filter reasons)
     build_cache();
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
-    auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name =
-        alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-    if (hardware_filter_) {
-        for (const auto& rejected : hardware_filter_->rejected) {
-            if (rejected.canonical_id == canonical_name) {
-                return rejected.reason;
-            }
-        }
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    std::string canonical_name = snapshot->canonical_for(model_name);
+    if (canonical_name.empty()) {
+        canonical_name = model_name;
     }
 
     // Model wasn't filtered out (either it's available or doesn't exist)
-    return "";
+    return snapshot->rejection_reason(canonical_name);
 }
 
 std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
     build_cache();
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return recipes_all_models_filtered_locked();
+    auto snapshot = std::atomic_load(&store_snapshot_);
+    const std::vector<std::string> hidden = snapshot->empty_recipes();
+    return std::set<std::string>(hidden.begin(), hidden.end());
 }
 
 // Must be called with models_cache_mutex_ held.
