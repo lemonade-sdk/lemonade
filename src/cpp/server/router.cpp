@@ -1210,22 +1210,51 @@ void Router::load_model(const std::string& model_name,
 }
 
 void Router::unload_model(const std::string& model_name) {
-    std::unique_lock<std::mutex> lock(load_mutex_);
-    wait_for_slot_clearance(lock);
-
     if (model_name.empty()) {
-        // Unload all models
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         LOG(INFO, "Router") << "Unload all models called" << std::endl;
         evict_all_servers();
-    } else {
-        // Unload specific model
-        LOG(INFO, "Router") << "Unload model called: " << model_name << std::endl;
-        std::string canonical_model_name = resolve_model_name(model_name);
+        return;
+    }
+
+    LOG(INFO, "Router") << "Unload model called: " << model_name << std::endl;
+    unload_model_canonical(resolve_model_name(model_name), model_name);
+}
+
+void Router::unload_model_canonical(const std::string& canonical_model_name,
+                                    const std::string& requested_model_name) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    bool waited = false;
+    while (true) {
+        wait_for_slot_clearance(lock);
         WrappedServer* server = find_server_by_model_name(canonical_model_name);
         if (!server) {
-            throw std::runtime_error("Model not loaded: " + model_name);
+            if (waited) {
+                return;
+            }
+            throw std::runtime_error("Model not loaded: " + requested_model_name);
         }
-        evict_server(server);
+
+        // Requests acquire a model only while holding load_mutex_, so a model seen
+        // idle here cannot pick up new work before evict_server() unloads it.
+        if (!server->is_busy() || !server->is_backend_alive()) {
+            evict_server(server);
+            return;
+        }
+
+        if (!waited) {
+            LOG(INFO, "Router") << "Unload of " << canonical_model_name
+                                << " waits for in-flight requests" << std::endl;
+            waited = true;
+        }
+
+        // Waiting with load_mutex_ held would stall every other model and
+        // /health until this model's in-flight requests finish. The server
+        // pointer is not used across the unlock; it is looked up again.
+        lock.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        lock.lock();
     }
 }
 
