@@ -469,12 +469,17 @@ if(APPLE)
 endif()
 
 # === httplib ===
+# Defined before httplib is added so its compiled library uses the same value as our code.
+add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
         GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
         GIT_SHALLOW TRUE
     )
+    # Header-only mode compiles httplib's whole server, client and TLS code into
+    # every file that includes httplib.h. Compiled mode builds it once.
+    set(HTTPLIB_COMPILE ON CACHE INTERNAL "")
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
     set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
     set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")
@@ -482,8 +487,12 @@ if(NOT USE_SYSTEM_HTTPLIB)
     set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")
     set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")
     FetchContent_MakeAvailable(httplib)
+    if(MSVC)
+        # httplib parses network input, so it keeps the Control Flow Guard our code is built with.
+        target_compile_options(httplib PRIVATE /guard:cf)
+    endif()
     if(NOT USE_SYSTEM_ZSTD)
-        target_include_directories(httplib INTERFACE
+        target_include_directories(httplib PUBLIC
             ${zstd_SOURCE_DIR}/lib
             ${zstd_SOURCE_DIR}/lib/common
         )
@@ -567,13 +576,15 @@ endif()
 add_library(lemonade-httplib INTERFACE)
 
 if(NOT USE_SYSTEM_HTTPLIB)
-    # Bundled cpp-httplib path: wraps httplib::httplib and attaches MbedTLS support
-    target_link_libraries(lemonade-httplib INTERFACE httplib::httplib lemonade-digest-crypto)
-    target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+    # Bundled cpp-httplib path: MbedTLS support goes on the compiled httplib library,
+    # which passes it on to every target that includes httplib.h
+    target_compile_definitions(httplib PUBLIC CPPHTTPLIB_MBEDTLS_SUPPORT)
+    target_link_libraries(httplib PUBLIC lemonade-digest-crypto)
     if(APPLE)
         find_library(SECURITY_FRAMEWORK Security REQUIRED)
-        target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+        target_link_libraries(httplib PUBLIC ${SECURITY_FRAMEWORK})
     endif()
+    target_link_libraries(lemonade-httplib INTERFACE httplib::httplib)
 else()
     # System cpp-httplib path
     if(HTTPLIB_INCLUDE_DIRS)
@@ -757,10 +768,6 @@ set(EXECUTABLE_NAME "lemond")
 # ============================================================
 # Compilation configurations
 # ============================================================
-
-# Common compiler definitions
-# Enable httplib thread pool with 8 threads
-add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Platform-specific compiler definitions
 if(WIN32)
