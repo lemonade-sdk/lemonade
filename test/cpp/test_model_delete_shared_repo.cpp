@@ -3,7 +3,9 @@
 // disk, not what the catalog lists: several entries routinely map to one repo,
 // so counting catalog siblings strands the repo forever.
 
+#include "lemon/config_file.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
 #include <chrono>
@@ -58,6 +60,15 @@ int main() {
     lemon::utils::set_cache_dir(path_to_utf8(temp));
     lemon::utils::set_config_dir(path_to_utf8(temp));
     lemon::utils::set_models_dir(path_to_utf8(hf_root));
+
+    // Backend filtering drops a model whose recipe the host cannot run, and the
+    // fixtures below reach for recipes that resolve a checkpoint to a directory
+    // — none of which macOS supports. Which files a delete may remove does not
+    // depend on what this machine can load.
+    json config_json = lemon::ConfigFile::base_defaults();
+    config_json["disable_model_filtering"] = true;
+    lemon::RuntimeConfig config(config_json);
+    lemon::RuntimeConfig::set_global(&config);
 
     // Three repos, each referenced by two user models, so every case below goes
     // down the "catalog sibling exists" road that used to strand the repo.
