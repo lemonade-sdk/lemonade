@@ -5,7 +5,7 @@ Lemonade serves the Anthropic Messages API for applications that call Claude-sty
 <!-- BEGIN GENERATED: anthropic.summary -->
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | [`/v1/messages`](#post-v1messages) | Generate the next assistant message, streaming or not |
+| `POST` | [`/v1/messages`](#post-v1messages) | Generate the next assistant message |
 <!-- END GENERATED: anthropic.summary -->
 
 <!-- BEGIN GENERATED: anthropic.messages -->
@@ -124,8 +124,8 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
     **Field Descriptions:**
 
     - `content`
-      - `type` - text or tool_use. A relayed provider can add its own block types, such as thinking.
-    - `stop_reason` - end_turn, max_tokens or tool_use.
+      - `type` - `text` or `tool_use`. A relayed provider can add its own block types, such as `thinking`.
+    - `stop_reason` - `end_turn`, `max_tokens` or `tool_use`.
     - `warnings` - Fields Lemonade ignored while converting.
 
 === "Streaming responses"
@@ -148,5 +148,5 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
     **Field Descriptions:**
 
-    - `type` - Matches the event's name: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, or error. A relayed provider can also send ping.
+    - `type` - Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`.
 <!-- END GENERATED: anthropic.messages -->

@@ -4,7 +4,7 @@ Internal endpoints control and configure `lemond`. The clients bundled with the 
 
 Apps that talk to a system-wide Lemonade Server install must not use these endpoints: that server belongs to its bundled clients, and these endpoints may change without notice. An app that embeds its own `lemond` owns that instance and should use them to manage it; see [Embeddable Lemonade: Runtime](../embeddable/runtime.md).
 
-> **Warning:** When `lemond` is bound to a non-loopback host such as `0.0.0.0`, these endpoints, including shutdown and config, are reachable from the network. `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without `LEMONADE_API_KEY`.
+> **Warning:** When `lemond` is bound to a non-loopback host such as `0.0.0.0`, these endpoints, including shutdown and config, are reachable from the network. `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints under `/v1/` open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without `LEMONADE_API_KEY`.
 
 <!-- BEGIN GENERATED: internal.summary -->
 | Method | Endpoint | Description |
@@ -249,7 +249,7 @@ Settings with a runtime effect apply immediately: a `port` or `host` change rebi
 **Field Descriptions:**
 
 - `updated` - The keys the request set, with their new values.
-- `message` - Present when a legacy key was translated to its current form.
+- `message` - Present when a deprecated value was replaced, such as `rocm_channel=preview`.
 <!-- END GENERATED: internal.set -->
 
 <!-- BEGIN GENERATED: internal.config -->
@@ -560,7 +560,7 @@ The per-backend sections come from the backend descriptors, so this is the autho
 ## `POST /internal/cleanup-cache`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Finds model files that a multi-repository model left in another repository's Hugging Face cache folder, and removes them when `dry_run` is `false`.
+Finds model files that a multi-repository model left in another repository's Hugging Face cache folder, and removes them.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -606,7 +606,7 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
   - `path` - Absolute path of the file.
   - `size` - Size in bytes.
   - `model` - Model whose checkpoint the file is.
-  - `type` - Checkpoint role, such as mmproj.
+  - `type` - Checkpoint role, such as `mmproj`.
   - `belongs_to` - Repository the file belongs to.
 - `total_bytes` - Combined size of the orphaned files.
 - `dry_run` - Whether the files were left in place.
@@ -616,7 +616,7 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 ## `POST /internal/simulate-vram-pressure`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Hands the eviction engine a simulated global VRAM usage of `pct`, so tests can exercise pressure eviction without filling a GPU.
+Hands the eviction engine a simulated global VRAM usage, so tests can exercise pressure eviction without filling a GPU.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -624,7 +624,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `pct` | No | Simulated fraction of VRAM in use, e.g. `0.95`. Defaults to `0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pct` | No | Simulated fraction of VRAM in use, such as `0.95`. Defaults to `0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above `auto_evict_threshold_pct` runs pressure eviction, `-1` runs only the idle-timeout checks, and any other value does nothing.
 
@@ -678,9 +678,13 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `async` | No | Run in the background and answer immediately. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `attach_if_running` | No | Add the models to a sync that is already running instead of reporting it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A background sync answers `202` with its status; poll [`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its `sync_id`. A `dry_run` finishes before answering, whatever `async` says, and answers `200` with what a sync would update.
+A background sync answers `202` with its status; poll [`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its `sync_id`.
 
-While a sync is running, a new request answers `200` with that sync's status instead of starting another. Offline mode (`offline=true`) answers `409` without any network request.
+A `dry_run` finishes before answering, whatever `async` says, and answers `200` with what a sync would update.
+
+While a sync is running, a new request answers `200` with that sync's status instead of starting another.
+
+Offline mode (`offline=true`) answers `409` without any network request.
 
 The `lemonade update-models` command uses this endpoint; see Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).
 
@@ -852,9 +856,10 @@ An alias stands in for its target in any request's `model` field. Aliases live i
 **Field Descriptions:**
 
 - `aliases`
+  - `alias` - The alias name.
   - `target` - Model or alias the alias points to.
   - `downloaded` - Whether the target model is downloaded.
-  - `recipe` - The target model's recipe; llamacpp when the target is not in the registry.
+  - `recipe` - The target model's recipe; `llamacpp` when the target is not in the registry.
 <!-- END GENERATED: internal.aliases_list -->
 
 <!-- BEGIN GENERATED: internal.aliases_create -->
@@ -1015,7 +1020,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 - `id` - `<page>.<name>`; names the route's generated region in `docs/api/<page>.md`.
 - `paths` - Paths without their prefix; entries after the first are aliases.
-- `prefixes` - Quad serves /api/v0/, /api/v1/, /v0/ and /v1/; Internal serves /internal/; Root serves each path as written.
+- `prefixes` - `Quad` serves each path under `/v1/` and older prefixes kept for existing clients; `Internal` under `/internal/`; `Root` as written.
 - `modality` - Empty on pages whose summary table has no Modality column.
 - `experimental` - The route may still change.
 - `args`

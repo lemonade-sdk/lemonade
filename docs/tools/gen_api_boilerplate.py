@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import collections
 import copy
 import difflib
 import hashlib
@@ -264,6 +265,90 @@ def iter_strings(value):
     elif isinstance(value, list):
         for item in value:
             yield from iter_strings(item)
+
+
+# --------------------------------------------------------------------------
+# Route text lint (the spec's Route Documentation Contract)
+# --------------------------------------------------------------------------
+
+GENERATED_PHRASES = ["Also served at", "Requires `LEMONADE_API_KEY`", "> **Note:**"]
+OTHER_PREFIXES = re.compile(r"/api/v[01]\b|(?<![\w/])/v0/")
+PLACEHOLDER = re.compile(r"<(?!(?:sub|br)\b)[A-Za-z_][\w-]*>")
+SENTENCE_END = re.compile(r"(?<!e\.g)(?<!i\.e)(?<=[.!?])\s+")
+MAX_SUMMARY_WORDS = 10
+MAX_DESCRIPTION_SENTENCES = 3
+REPEAT_MIN_CHARS = 40
+
+
+def without_code(text: str) -> str:
+    return re.sub(r"`[^`]*`", "", re.sub(r"```.*?```", "", text, flags=re.S))
+
+
+def sentences(text: str) -> list[str]:
+    return [part for part in SENTENCE_END.split(without_code(text).strip()) if part]
+
+
+def route_texts(spec: dict):
+    yield "summary", spec["summary"]
+    yield "description", spec["description"]
+    for index, note in enumerate(spec["notes"]):
+        yield f"notes[{index}]", note
+    for arg in spec["args"]:
+        yield f"argument {arg['name']}", arg["description"]
+
+    def walk(schema, path):
+        if not isinstance(schema, dict):
+            return
+        if isinstance(schema.get("description"), str):
+            yield f"field {path or '(root)'}", schema["description"]
+        for key, value in schema.get("properties", {}).items():
+            yield from walk(value, f"{path}.{key}" if path else key)
+        for key in ("items", "additionalProperties"):
+            yield from walk(schema.get(key), path)
+        for key in ("oneOf", "anyOf", "allOf"):
+            for branch in schema.get(key, []):
+                yield from walk(branch, path)
+
+    for response in spec["responses"]:
+        yield from walk(response["schema"], "")
+
+
+def lint_spec(spec: dict) -> list[str]:
+    problems = []
+    for where, text in route_texts(spec):
+        prose = without_code(text)
+        for phrase in GENERATED_PHRASES:
+            if phrase in text:
+                problems.append(f"{where} restates generated text: {phrase!r}")
+        if OTHER_PREFIXES.search(text):
+            problems.append(f"{where} names a prefix other than /v1/")
+        if "\u2014" in text:
+            problems.append(f"{where} has an em dash")
+        for match in PLACEHOLDER.finditer(prose):
+            problems.append(f"{where} has {match.group(0)} outside backticks")
+    if len(spec["summary"].split()) > MAX_SUMMARY_WORDS:
+        problems.append(f"summary runs over {MAX_SUMMARY_WORDS} words")
+    if len(sentences(spec["description"])) > MAX_DESCRIPTION_SENTENCES:
+        problems.append(f"description runs over {MAX_DESCRIPTION_SENTENCES} sentences")
+    return [f"{spec['id']}: {problem}" for problem in problems]
+
+
+def lint_region(route_id: str, body: str) -> list[str]:
+    """A sentence repeated within one route's region. Field lists and tables are left out,
+    since tabs for different formats list their shared fields each."""
+    lines = [
+        line.strip()
+        for line in re.sub(r"```.*?```", "", body, flags=re.S).split("\n")
+        if not line.strip().startswith(("- `", "|", "===", "#"))
+    ]
+    counts = collections.Counter(
+        part for part in sentences(" ".join(lines)) if len(part) >= REPEAT_MIN_CHARS
+    )
+    return [
+        f"{route_id}: repeats {sentence[:80]!r}"
+        for sentence, count in counts.items()
+        if count > 1
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -1054,10 +1139,8 @@ def render_parameters(spec: dict) -> str:
 
 
 def render_route(spec: dict, entries: dict) -> str:
-    urls = []
-    for path in spec["paths"]:
-        urls += urls_for(spec, path)
-    others = [url for url in urls if url != primary_url(spec)]
+    # A Quad route is documented only at /v1/; its other prefixes serve existing clients.
+    others = [urls_for(spec, path)[-1] for path in spec["paths"][1:]]
     served = (
         f"Also served at {oxford([f'`{url}`' for url in others])}. " if others else ""
     )
@@ -1269,6 +1352,8 @@ def main() -> int:
             )
 
     problems = []
+    for spec in route_list:
+        problems += lint_spec(spec)
     missing = [ref for ref, key in keys.items() if key not in cache]
     if missing and args.check:
         problems += [
@@ -1302,6 +1387,7 @@ def main() -> int:
             entries[example["name"]] = entry
         if len(entries) == len(spec["examples"]):
             rendered[spec["id"]] = render_route(spec, entries)
+            problems += lint_region(spec["id"], rendered[spec["id"]])
 
     pages: dict[str, list[dict]] = {}
     for spec in route_list:

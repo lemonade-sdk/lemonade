@@ -33,7 +33,7 @@ public:
         response.format = ResponseFormat::Json;
         response.schema = ordered_json::parse(R"({
             "type": "object",
-            "description": "Every config.json key with its current value.",
+            "description": "Every `config.json` key with its current value.",
             "required": ["port", "host", "log_level"],
             "properties": {
                 "port": {"type": "integer"},

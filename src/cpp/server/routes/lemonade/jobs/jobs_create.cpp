@@ -25,14 +25,14 @@ public:
             "data between steps and branching on results. A job survives client disconnects and "
             "server restarts, and can be paused, interrupted, resumed, read and deleted.";
         s.notes = {
-            "The step graph is validated at creation; an invalid one is answered with `400`. When "
-            "the job store holds 50 jobs that are all still active or resumable, the answer is "
-            "`429` until one is deleted or finishes.",
+            "An invalid step graph answers `400` at creation. While the job store holds 50 jobs "
+            "that are all still active or resumable, a new job answers `429` until one is deleted "
+            "or finishes.",
             "Exclusive ops (`load`, `unload`, `chat`) hold a Router slot, so normal traffic queues "
-            "behind a running job. See [`docs/dev/job-system.md`](../dev/job-system.md) for the "
-            "step schema, op set and lifecycle, and "
-            "[`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) for the "
-            "`when`/`branch` expression grammar.",
+            "behind a running job.",
+            "[`docs/dev/job-system.md`](../dev/job-system.md) specifies the step schema, op set and "
+            "lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) "
+            "the `when`/`branch` expression grammar.",
         };
         s.args = {
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available, "Display name."},

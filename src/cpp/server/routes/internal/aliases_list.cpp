@@ -36,10 +36,10 @@ public:
                     "type": "object",
                     "required": ["alias", "target", "downloaded", "recipe"],
                     "properties": {
-                        "alias": {"type": "string"},
+                        "alias": {"type": "string", "description": "The alias name."},
                         "target": {"type": "string", "description": "Model or alias the alias points to."},
                         "downloaded": {"type": "boolean", "description": "Whether the target model is downloaded."},
-                        "recipe": {"type": "string", "description": "The target model's recipe; llamacpp when the target is not in the registry."}
+                        "recipe": {"type": "string", "description": "The target model's recipe; `llamacpp` when the target is not in the registry."}
                     }
                 }}
             }

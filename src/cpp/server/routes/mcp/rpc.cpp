@@ -25,14 +25,14 @@ public:
         s.methods = {"POST"};
         s.paths = {"/mcp"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Model Context Protocol over JSON-RPC 2.0";
+        s.summary = "Call MCP methods over JSON-RPC 2.0";
         s.description = "Serves every MCP method over JSON-RPC 2.0.";
         s.notes = {
             "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
             "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
-            "The MCP specification mandates one endpoint URL per server, so `/mcp` has no "
-            "`/api/v1/`, `/v1/` or other prefixed form.",
+            "The MCP specification mandates one endpoint URL per server, so `/mcp` is the only "
+            "one.",
             "### Supported methods\n"
             "\n"
             "| Method | Purpose |\n"
@@ -89,7 +89,7 @@ public:
                 "result": {"type": "object", "description": "The method's result."},
                 "error": {
                     "type": "object",
-                    "description": "A JSON-RPC error, such as -32601 for an unknown method.",
+                    "description": "A JSON-RPC error, such as `-32601` for an unknown method.",
                     "required": ["code", "message"],
                     "properties": {
                         "code": {"type": "integer"},
@@ -105,7 +105,7 @@ public:
         s.responses = {reply, notification};
 
         RouteExample reply_example;
-        reply_example.name = "JSON";
+        reply_example.name = "request";
         reply_example.format = ResponseFormat::Json;
         reply_example.args = ordered_json::parse(R"({
             "jsonrpc": "2.0",
@@ -115,7 +115,7 @@ public:
         })");
 
         RouteExample notification_example;
-        notification_example.name = "empty";
+        notification_example.name = "notification";
         notification_example.format = ResponseFormat::Empty;
         notification_example.args = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
 

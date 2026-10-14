@@ -26,8 +26,7 @@ public:
             "Resolves the release asset that [`POST /v1/install`](#post-v1install) would download "
             "for a recipe/backend pair, without downloading or installing anything. Resolution "
             "reads local configuration and, for a backend version set to `latest`, GitHub release "
-            "metadata. With `arch`, CI can check which asset an architecture resolves to on a "
-            "runner without that GPU.";
+            "metadata.";
         s.notes = {
             "A device ISA may resolve to a family target name used by the release repository, for "
             "example `gfx1201` to `gfx120X`. That mapping is defined by `rocm_asset_families` in "
@@ -47,7 +46,7 @@ public:
              "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."},
             {"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
-             "detected one."},
+             "detected one, so CI can check an architecture's asset on a runner without that GPU."},
         };
 
         RouteResponse response;

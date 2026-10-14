@@ -13,7 +13,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/mcp"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Server-initiated event stream";
+        s.summary = "Open a server-initiated event stream";
         s.description =
             "Lemonade opens no server-initiated event stream, so tools return their full result "
             "in the `POST /mcp` reply.";

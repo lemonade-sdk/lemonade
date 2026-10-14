@@ -22,7 +22,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/embeddings"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Legacy embeddings";
+        s.summary = "Embed one text in the older format";
         s.description =
             "Returns the embedding of one text in Ollama's older format, loading the model on "
             "first use.";

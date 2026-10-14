@@ -30,11 +30,12 @@ public:
         s.notes = {
             "A background sync answers `202` with its status; poll "
             "[`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its "
-            "`sync_id`. A `dry_run` finishes before answering, whatever `async` says, and "
-            "answers `200` with what a sync would update.",
+            "`sync_id`.",
+            "A `dry_run` finishes before answering, whatever `async` says, and answers `200` "
+            "with what a sync would update.",
             "While a sync is running, a new request answers `200` with that sync's status "
-            "instead of starting another. Offline mode (`offline=true`) answers `409` without "
-            "any network request.",
+            "instead of starting another.",
+            "Offline mode (`offline=true`) answers `409` without any network request.",
             "The `lemonade update-models` command uses this endpoint; see "
             "Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).",
         };

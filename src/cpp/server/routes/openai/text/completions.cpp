@@ -48,7 +48,7 @@ public:
         s.id = "openai.completions";
         s.methods = {"POST"};
         s.paths = {"completions"};
-        s.summary = "Text Completions";
+        s.summary = "Continue a text prompt";
         s.modality = "prompt -> completion";
         s.description =
             "Continues a text prompt, loading the model on first use.";
@@ -58,31 +58,31 @@ public:
         };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The prompt to use for the completion."},
+             "The text to continue, as a string or an array of strings."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to use for the completion."},
+             "The model to run."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If true, tokens will be sent as they are generated. If false, the response will be "
-             "sent as a single message once complete. Defaults to false."},
+             "`true` sends tokens as server-sent events as they are generated; `false` sends one "
+             "response once complete. Defaults to `false`."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "Up to 4 sequences where the API will stop generating further tokens. The returned "
-             "text will not contain the stop sequence. Can be a string or an array of strings."},
+             "Sequences that stop generation, as a string or an array of strings. The returned "
+             "text leaves them out."},
             {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Echo back the prompt in addition to the completion. Non-streaming only."},
+             "`true` returns the prompt before the completion. Non-streaming only."},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
-             "If true, returns the log probability of each output token. Defaults to false. Non-streaming only."},
+             "`true` returns the log probability of each output token. Defaults to `false`. Non-streaming only."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "What sampling temperature to use."},
+             "Sampling temperature."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage "
+             "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
              "repetition."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Integer that controls the number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling."},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to "
-             "consider during nucleus sampling."},
+             "Cumulative probability of the top tokens to consider during nucleus sampling, from "
+             "`0.0` to `1.0`."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "An upper bound for the number of tokens that can be generated for a completion."},
+             "Upper bound on generated tokens."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the routing "
              "decision to the response as `x_lemonade_route`."},

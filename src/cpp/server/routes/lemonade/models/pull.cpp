@@ -62,8 +62,7 @@ public:
             "### Register an Omni Collection\n\n"
             "An omni collection bundles several models into one entry that is loaded, pulled and "
             "deleted as a unit. Register it with `recipe: \"collection.omni\"` and `components` "
-            "instead of a checkpoint. Components not yet downloaded are pulled by the same call, "
-            "and deleting the collection leaves them on disk.\n\n"
+            "instead of a checkpoint. Components not yet downloaded are pulled by the same call.\n\n"
             "```bash\n"
             "curl -X POST http://localhost:13305/v1/pull \\\n"
             "  -H \"Content-Type: application/json\" \\\n"
@@ -75,8 +74,7 @@ public:
             "```",
             "### Import an Exported Model File\n\n"
             "Files written by `lemonade export` and the desktop app's Export button are `/v1/pull` "
-            "request bodies: POST a file's contents as is to register and install its model. An "
-            "exported collection also carries `models`, so its components register with it. See "
+            "request bodies: POST a file's contents as is to register and install its model. See "
             "[Share a collection](../guide/configuration/custom-models.md#share-a-collection-between-machines) "
             "for the file format and workflows.",
         };
@@ -94,7 +92,7 @@ public:
              "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
              "registered models from colliding with built-in ones. `model` is accepted as an alias."},
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Registering, required: the recipe that loads and runs the model, such as `llamacpp`, "
+             "Required when registering: the recipe that loads and runs the model, such as `llamacpp`, "
              "or `collection.omni` for an omni collection."},
             {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to "
@@ -116,7 +114,7 @@ public:
              "Multimodal projector file for a vision model, in the `checkpoint` repository. The "
              "same as `checkpoints.mmproj`."},
             {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Omni collections, required: the component model names, in order; each must be a "
+             "Required for omni collections: the component model names, in order; each must be a "
              "regular model."},
             {"models", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Full model definitions, one per `components` entry, with the same fields as a single "

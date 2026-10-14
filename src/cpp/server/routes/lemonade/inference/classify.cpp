@@ -18,38 +18,35 @@ public:
         s.id = "lemonade.classify";
         s.methods = {"POST"};
         s.paths = {"classify"};
-        s.summary = "Classify input text with an encoder classifier (label scores)";
+        s.summary = "Score text against a classifier model's labels";
         s.experimental = true;
         s.description =
-            "Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string "
-            "and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` "
-            "recipe. Both sequence-classification (one label set) and token-classification "
-            "(aggregated span labels) models are supported.\n\n"
-            "**Supported architectures:** single-sequence encoder families: BERT, DistilBERT, "
-            "RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock "
-            "`optimum-cli export onnx` directory of one of these works as-is.\n\n"
-            "A servable model directory is `model.onnx` + `tokenizer.json` + `config.json`. The "
-            "`config.json` is **always required**: it declares the architecture, which is checked "
-            "against the list above so an unsupported family (e.g. XLNet, which uses different "
-            "segment/special-token conventions) is **rejected at load time** rather than served "
-            "with wrong scores. The output contract (labels, normalization, token budget) is read "
-            "from that same config; an optional `manifest.json` overrides it but does not replace "
-            "the config. Without a manifest, inference assumes **single-label softmax**; a "
-            "multi-label (sigmoid) model must declare `problem_type: multi_label_classification` "
-            "in its config or ship a `manifest.json`.\n\n"
-            "This endpoint provides the classification capability that the router's `classifier` "
-            "condition type consumes.";
+            "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
+            "a string and returns a score for each label. It serves `onnxruntime` models, both "
+            "sequence classifiers (one label set) and token classifiers (aggregated span labels), "
+            "and provides the classification that the router's `classifier` condition uses.";
         s.notes = {
-            "Label names come from the model's `id2label`. Some upstream models declare only generic "
-            "`LABEL_<n>` names; their model card explains them.",
+            "### Supported Models\n\n"
+            "Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa "
+            "(v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of "
+            "one of these works as is.\n\n"
+            "A servable model directory holds `model.onnx`, `tokenizer.json` and `config.json`. The "
+            "`config.json` is always required: its architecture is checked against the families "
+            "above, so an unsupported family such as XLNet is rejected at load time rather than "
+            "served with wrong scores. Label names (`id2label`), normalization and the token budget "
+            "come from the same config, and an optional `manifest.json` overrides them. Without a "
+            "manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model "
+            "declares `problem_type: multi_label_classification` in its config or ships a "
+            "`manifest.json`.",
+            "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
+            "explains them.",
             "A malformed request (invalid JSON, a missing `input`/`text`, non-string fields, a "
             "non-positive `top_k`) answers `400` before any model loads.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Classifier model id (a model with the `onnxruntime` recipe). Optional when exactly "
-             "one classification model is already loaded; the loaded model is used and echoed in "
-             "the response."},
+             "The classifier model. Optional when exactly one classification model is loaded; that "
+             "model is used."},
             {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Text to classify."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,

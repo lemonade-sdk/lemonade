@@ -56,9 +56,9 @@ public:
                 "suggested_labels": {"type": "array", "items": {"type": "string"},
                                      "description": "Inferred labels: `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings`/`reranking` if those substrings appear in the repo id, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
                 "mmproj_files": {"type": "array", "items": {"type": "string"},
-                                 "description": "Bare filenames of `mmproj-*.gguf` files in the repo; the first one should be passed as `mmproj` to `/v1/pull` for vision models."},
+                                 "description": "Bare filenames of `mmproj-*.gguf` files in the repo; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model."},
                 "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Bare names of draft-model GGUF files."},
-                "variants": {"type": "array", "description": "Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically).", "items": {
+                "variants": {"type": "array", "description": "Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the registry's file listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically).", "items": {
                     "type": "object",
                     "required": ["name", "primary_file", "files", "sharded", "size_bytes"],
                     "properties": {

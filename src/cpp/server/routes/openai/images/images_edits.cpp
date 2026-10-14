@@ -93,7 +93,7 @@ public:
         s.id = "openai.images_edits";
         s.methods = {"POST"};
         s.paths = {"images/edits"};
-        s.summary = "Image Editing";
+        s.summary = "Edit images as a prompt describes";
         s.modality = "image + prompt -> edited image";
         s.description =
             "Edits one or more reference images as a prompt describes. The request is "
@@ -105,7 +105,7 @@ public:
             "\n"
             "    ```python\n"
             "    from openai import OpenAI\n"
-            "    client = OpenAI(base_url=\"http://localhost:13305/api/v1\", api_key=\"not-needed\")\n"
+            "    client = OpenAI(base_url=\"http://localhost:13305/v1\", api_key=\"not-needed\")\n"
             "    with open(\"source_image.png\", \"rb\") as image_file:\n"
             "        response = client.images.edit(\n"
             "            model=\"Flux-2-Klein-4B\",\n"
@@ -130,23 +130,22 @@ public:
             {"prompt", ArgIn::Form, text, true, Support::Available,
              "A text description of the desired edit."},
             {"mask", ArgIn::Form, file, false, Support::Available,
-             "An optional mask image (PNG). White areas indicate regions to edit; black areas are "
-             "preserved."},
+             "A PNG mask: white areas are edited and black areas are kept."},
             {"size", ArgIn::Form, text, false, Support::Available,
-             "Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, use the first "
-             "reference image's dimensions, scaling down proportionally to the model's optional "
-             "`image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit "
-             "size bypasses this soft cap; backend limits still apply."},
+             "Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference "
+             "image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` "
+             "(2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips "
+             "that cap; backend limits still apply."},
             {"n", ArgIn::Form, integer, false, Support::Available,
              "Number of images to generate, from `1` to `10`; other values answer `400`. "
-             "Default: `1`."},
+             "Defaults to `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
+             "Only `b64_json`, a base64-encoded image, is supported."},
             {"steps", ArgIn::Form, integer, false, Support::Available,
-             "Number of inference steps. Default varies by model."},
+             "Number of inference steps. Defaults to the model's own."},
             {"cfg_scale", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. Default varies by model."},
-            {"seed", ArgIn::Form, integer, false, Support::Available, "Random seed for reproducibility."},
+             "Classifier-free guidance scale. Defaults to the model's own."},
+            {"seed", ArgIn::Form, integer, false, Support::Available, "Random seed for reproducible output."},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
              "Accepted for OpenAI compatibility and ignored."},
             {"background", ArgIn::Form, text, false, Support::NotAvailable,

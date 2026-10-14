@@ -5,14 +5,16 @@ A `collection.router` model is a virtual model whose routing policy picks one of
 <!-- BEGIN GENERATED: router.summary -->
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Evaluate an ad-hoc routing policy against a prompt without registering it |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Test a routing policy against a prompt without registering it |
 <!-- END GENERATED: router.summary -->
 
 ## Routing (`collection.router`)
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
 Naming a registered `collection.router` model in the `model` field of a
-`chat/completions`, `completions` or `responses` request triggers the routing engine: the
+[`chat/completions`](./openai.md#post-v1chatcompletions),
+[`completions`](./openai.md#post-v1completions) or
+[`responses`](./openai.md#post-v1responses) request triggers the routing engine: the
 server picks a candidate by the policy's first-matching rule (fail-open to
 `default_model`) and forwards the request to it. No dedicated endpoint or `"auto"`
 model is involved.
@@ -33,7 +35,7 @@ See [Router Policies](../dev/router-policy.md) for authoring the policy.
 
 Returns the decision a routing policy makes for a prompt, without registering the policy or sending the request to the chosen candidate. The Router Builder's **Test Prompt** tab uses it to iterate on a policy before attaching it to a `collection.router` model.
 
-Also served at `/api/v0/routing/validate`, `/api/v1/routing/validate` and `/v0/routing/validate`. Requires `LEMONADE_API_KEY` when it is set.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
@@ -49,7 +51,7 @@ Validation is structural: every `candidates` entry, `default_model`, rule `route
 
 Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier` and `llm`, including `routing.router`) may load and run their models. A model failure follows the classifier's `on_error` policy (`match_false` by default), so routing continues to a later rule or to `default_model`.
 
-`normalized_policy` is the policy as evaluated. The example below uses explicit `routing.rules`, so it comes back unchanged. The `routing.router` shorthand is expanded into an `llm` classifier plus one rule per candidate, so a `routing` block written as:
+The example below uses explicit `routing.rules`, so its `normalized_policy` comes back unchanged. The `routing.router` shorthand is expanded into an `llm` classifier plus one rule per candidate, so a `routing` block written as:
 
 ```json
 {
@@ -189,4 +191,5 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
 **Field Descriptions:**
 
 - `decision` - The routing decision, shaped like the `x_lemonade_route` object a routed completion returns with `route_trace: true`.
+- `normalized_policy` - The policy as evaluated, with any `routing.router` shorthand expanded.
 <!-- END GENERATED: router.routing_validate -->

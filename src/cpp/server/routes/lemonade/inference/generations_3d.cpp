@@ -24,23 +24,22 @@ public:
         s.experimental = true;
         s.description =
             "Generates a textured 3D mesh, as a glTF-binary (`.glb`) file, from a PNG, JPEG, BMP or "
-            "GIF image. Serves TRELLIS models such as `TRELLIS-3D`. This is a Lemonade "
-            "extension.\n\n"
-            "> **Performance:** 3D reconstruction runs on the GPU (Vulkan, ROCm, or CUDA) and "
-            "takes on the order of minutes; higher cascade resolutions take longer.";
+            "GIF image. It serves TRELLIS models such as `TRELLIS-3D` and is a Lemonade extension.";
         s.notes = {
+            "Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher "
+            "`resolution` values take longer.",
             "A failed request answers with a JSON `error` object: `400` for an invalid request, "
             "`404` for an unknown model, `500` when the backend reports an error, and `502` when "
             "it produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The 3D-generation model to use (e.g., `TRELLIS-3D`)."},
+             "The 3D-generation model."},
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Base64-encoded input image (optionally a `data:` URL)."},
             {"resolution", ArgIn::JsonBody,
              {{"enum", json::array({512, 1024, 1536, "512", "1024", "1536"})}}, false, Support::Available,
-             "Cascade resolution: `512`, `1024`, or `1536`. Default: `512`."},
+             "Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."},
             {"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
              false, Support::Available,
              "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
@@ -52,8 +51,8 @@ public:
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducibility."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only formats the backend natively produces are accepted (currently "
-             "`glb`); other values are rejected with `400 Bad Request`. Default: `glb`."},
+             "Output encoding. Only `glb`, the format the backend produces, is accepted; other values "
+             "answer `400`. Defaults to `glb`."},
         };
 
         RouteResponse response;

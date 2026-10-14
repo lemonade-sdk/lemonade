@@ -21,9 +21,9 @@ public:
         s.description =
             "Stops a job after its current step and releases the model slot, so queued requests "
             "run. A queued job pauses at once. Models the job loaded stay loaded for the resume.";
-        s.notes = {"An unknown job, or one that is not queued or running, is answered with `404`."};
+        s.notes = {"An unknown job, or one that is not queued or running, answers `404`."};
         s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from `POST /v1/jobs`."},
+            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
 
         RouteResponse response;

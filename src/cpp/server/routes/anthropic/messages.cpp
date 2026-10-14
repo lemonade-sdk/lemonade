@@ -784,7 +784,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/v1/messages"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Generate the next assistant message, streaming or not";
+        s.summary = "Generate the next assistant message";
         s.description =
             "Generates the next assistant message for a conversation in the Anthropic Messages "
             "format.";
@@ -854,14 +854,14 @@ public:
                     "type": "object",
                     "required": ["type"],
                     "properties": {
-                        "type": {"type": "string", "description": "text or tool_use. A relayed provider can add its own block types, such as thinking."},
+                        "type": {"type": "string", "description": "`text` or `tool_use`. A relayed provider can add its own block types, such as `thinking`."},
                         "text": {"type": "string"},
                         "id": {"type": "string"},
                         "name": {"type": "string"},
                         "input": {"type": "object"}
                     }
                 }},
-                "stop_reason": {"type": "string", "description": "end_turn, max_tokens or tool_use."},
+                "stop_reason": {"type": "string", "description": "`end_turn`, `max_tokens` or `tool_use`."},
                 "stop_sequence": {"type": ["string", "null"]},
                 "usage": {
                     "type": "object",
@@ -880,7 +880,7 @@ public:
             "type": "object",
             "required": ["type"],
             "properties": {
-                "type": {"type": "string", "description": "Matches the event's name: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, or error. A relayed provider can also send ping."}
+                "type": {"type": "string", "description": "Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`."}
             }
         })");
 

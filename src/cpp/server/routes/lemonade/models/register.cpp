@@ -26,10 +26,6 @@ public:
             "downloading any files, for clients that register and install as separate steps. "
             "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
         s.notes = {
-            "`checkpoint` is optional because registration records only metadata, and some model "
-            "types have no local weights.",
-            "The body holds one model definition; a collection's components must already be "
-            "registered.",
             "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
             "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
             "missing `recipe`, an embedded `models` array, and malformed `checkpoint`, "
@@ -39,17 +35,18 @@ public:
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Non-empty namespaced model name under `user.*`."},
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Lemonade recipe associated with the model definition."},
+             "Recipe that loads the model, such as `llamacpp`."},
             {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Main checkpoint, when the recipe uses one."},
+             "Main checkpoint. Optional, since registration records only metadata and some model "
+             "types have no local weights."},
             {"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "Named checkpoints for multi-checkpoint models."},
             {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Registry or local source. Remote values are `huggingface` or `modelscope`."},
             {"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Additional model labels."},
+             "Model labels; see [Model Labels](./openai.md#model-labels)."},
             {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Already-registered component model names for collection recipes."},
+             "Collections only: the component model names, each already registered."},
         };
 
         RouteResponse response;

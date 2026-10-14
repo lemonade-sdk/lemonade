@@ -9,14 +9,14 @@ A model name may carry a `:latest` tag, which Lemonade ignores. Errors answer wi
 <!-- BEGIN GENERATED: ollama.summary -->
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|
-| `POST` | [`/api/chat`](#post-apichat) | Supported | Chat completion, streaming or not |
-| `POST` | [`/api/generate`](#post-apigenerate) | Supported | Text completion or image generation |
-| `GET` | [`/api/tags`](#get-apitags) | Supported | Lists downloaded models |
-| `POST` | [`/api/show`](#post-apishow) | Supported | Model details |
+| `POST` | [`/api/chat`](#post-apichat) | Supported | Generate the next chat message |
+| `POST` | [`/api/generate`](#post-apigenerate) | Supported | Continue a prompt or generate an image |
+| `GET` | [`/api/tags`](#get-apitags) | Supported | List downloaded models |
+| `POST` | [`/api/show`](#post-apishow) | Supported | Describe a model |
 | `DELETE` | [`/api/delete`](#delete-apidelete) | Supported | Delete a model |
-| `POST` | [`/api/pull`](#post-apipull) | Supported | Download with progress |
-| `POST` | [`/api/embed`](#post-apiembed) | Supported | New embeddings format |
-| `POST` | [`/api/embeddings`](#post-apiembeddings) | Supported | Legacy embeddings |
+| `POST` | [`/api/pull`](#post-apipull) | Supported | Download a model |
+| `POST` | [`/api/embed`](#post-apiembed) | Supported | Embed one or more texts |
+| `POST` | [`/api/embeddings`](#post-apiembeddings) | Supported | Embed one text in the older format |
 | `GET` | [`/api/ps`](#get-apips) | Supported | List loaded models |
 | `GET` | [`/api/version`](#get-apiversion) | Supported | Report the Ollama version |
 | `POST` | [`/api/create`](#post-apicreate) | Not supported | Create a model from a Modelfile |
@@ -188,8 +188,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `seed` | No | Random seed for reproducible output. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `keep_alive` | No | `0` with an empty `prompt` unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `system` | No | System prompt. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `format` | No | Output format constraint. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `system` | No | System prompt. Ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `format` | No | Output format constraint. Ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 Image generation never streams.
 
@@ -515,17 +515,17 @@ This endpoint does not take any parameters.
 **Field Descriptions:**
 
 - `models`
-  - `name` - Lemonade model name with a :latest tag.
+  - `name` - Lemonade model name with a `:latest` tag.
   - `model` - Same as name.
-  - `modified_at` - Always 2024-01-01T00:00:00Z.
+  - `modified_at` - Always `2024-01-01T00:00:00Z`.
   - `size` - Size in bytes, from the registry's estimate.
   - `digest` - Always an all-zero sha256.
   - `details` - Inferred from the model name, recipe and checkpoint.
     - `parent_model` - Always empty.
-    - `format` - Always gguf.
-    - `family` - The model's recipe, e.g. llamacpp.
-    - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
-    - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
+    - `format` - Always `gguf`.
+    - `family` - The model's recipe, e.g. `llamacpp`.
+    - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
+    - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
 <!-- END GENERATED: ollama.tags -->
 
 <!-- BEGIN GENERATED: ollama.show -->
@@ -542,8 +542,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model` | Yes | Model to describe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-`capabilities` follows the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label.
 
 ### Example request
 
@@ -595,15 +593,16 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 **Field Descriptions:**
 
-- `modelfile` - A FROM line naming the checkpoint.
+- `modelfile` - A `FROM` line naming the checkpoint.
 - `parameters` - `num_ctx` followed by the model's configured context size.
 - `template` - Always empty.
 - `details` - Inferred from the model name, recipe and checkpoint.
   - `parent_model` - Always empty.
-  - `format` - Always gguf.
-  - `family` - The model's recipe, e.g. llamacpp.
-  - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
-  - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
+  - `format` - Always `gguf`.
+  - `family` - The model's recipe, e.g. `llamacpp`.
+  - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
+  - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
+- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always 0.
 <!-- END GENERATED: ollama.show -->
 
@@ -727,7 +726,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
     **Field Descriptions:**
 
     - `status` - `pulling manifest`, `downloading <file>`, or `success`.
-    - `digest` - Download lines: sha256: followed by the file name.
+    - `digest` - Download lines: `sha256:` followed by the file name.
     - `completed` - Download lines: bytes of the file downloaded so far.
     - `total` - Download lines: the file's size in bytes.
     - `error` - Only on a failed download's last line.
@@ -908,17 +907,17 @@ This endpoint does not take any parameters.
 **Field Descriptions:**
 
 - `models`
-  - `name` - Lemonade model name with a :latest tag.
+  - `name` - Lemonade model name with a `:latest` tag.
   - `model` - Same as name.
   - `size` - Always 0.
   - `digest` - Always an all-zero sha256.
   - `details` - Inferred from the model name, recipe and checkpoint.
     - `parent_model` - Always empty.
-    - `format` - Always gguf.
-    - `family` - The model's recipe, e.g. llamacpp.
-    - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
-    - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
-  - `expires_at` - Always 2099-01-01T00:00:00Z.
+    - `format` - Always `gguf`.
+    - `family` - The model's recipe, e.g. `llamacpp`.
+    - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
+    - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
+  - `expires_at` - Always `2099-01-01T00:00:00Z`.
   - `size_vram` - Always 0.
 <!-- END GENERATED: ollama.ps -->
 
@@ -961,7 +960,7 @@ This endpoint does not take any parameters.
 ## `POST /api/create`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported. Returns 501. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
+Answers `501`. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.create -->
@@ -970,7 +969,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /api/copy`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported. Returns 501. A model alias gives a model a second name instead; see [`POST /internal/aliases`](./internal.md#post-internalaliases).
+Answers `501`. A model alias gives a model a second name instead; see [`POST /internal/aliases`](./internal.md#post-internalaliases).
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.copy -->
@@ -979,7 +978,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /api/push`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported. Returns 501.
+Answers `501`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.push -->
@@ -988,7 +987,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /api/blobs/{digest}`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported. Returns 501.
+Answers `501`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.blobs -->

@@ -36,8 +36,8 @@ public:
                 "type": "object",
                 "required": ["id"],
                 "properties": {
-                    "id": {"type": "integer", "description": "Unique identifier for the slot"},
-                    "next_token": {"type": "array", "description": "Information about token generation state", "items": {
+                    "id": {"type": "integer", "description": "The slot's ID."},
+                    "next_token": {"type": "array", "description": "Generation state of the slot's current request.", "items": {
                         "type": "object",
                         "properties": {
                             "has_next_token": {"type": "boolean", "description": "Whether more tokens are expected"},
@@ -45,7 +45,7 @@ public:
                             "n_decoded": {"type": "integer", "description": "Number of tokens already decoded"}
                         }
                     }},
-                    "id_task": {"type": "integer", "description": "Identifier of the current task being processed (the last task processed if idle)"},
+                    "id_task": {"type": "integer", "description": "The task the slot is processing, or processed last when idle."},
                     "n_ctx": {"type": "integer", "description": "Context size of the slot."},
                     "is_processing": {"type": "boolean", "description": "Whether the slot is serving a request."},
                     "n_prompt_tokens": {"type": "integer", "description": "Tokens in the slot's current prompt."},

@@ -18,11 +18,12 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Check server liveness for load balancers and orchestrators";
         s.description =
-            "Liveness probe for load balancers and orchestrators. Unlike "
-            "[`/v1/health`](#get-v1health), it only confirms the process is up, without inspecting "
-            "models or backends, so it is safe to poll at high frequency. `HEAD /live` returns "
-            "`200 OK` with an empty body.\n\n"
-            "`/live` is served only at the root, not under the versioned prefixes.";
+            "Confirms the server process is up, for load balancers and orchestrators. Unlike "
+            "[`GET /v1/health`](#get-v1health), it inspects no models or backends, so it is safe to "
+            "poll at high frequency.";
+        s.notes = {
+            "`HEAD` returns `200 OK` with an empty body.",
+        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

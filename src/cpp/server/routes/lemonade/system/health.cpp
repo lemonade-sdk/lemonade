@@ -20,10 +20,10 @@ ordered_json health_schema() {
         "required": ["status", "version", "model_loaded", "all_models_loaded", "max_models",
                      "pinned_models", "pinned_helper_models", "update_check_done"],
         "properties": {
-            "status": {"const": "ok", "description": "Server health status, always `\"ok\"`"},
-            "version": {"type": "string", "description": "Version number of Lemonade Server"},
-            "model_loaded": {"type": ["string", "null"], "description": "Model name of the most recently accessed model"},
-            "update_check_done": {"type": "boolean", "description": "Whether the background Hugging Face model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready."},
+            "status": {"const": "ok", "description": "Always `\"ok\"`."},
+            "version": {"type": "string", "description": "Lemonade Server version."},
+            "model_loaded": {"type": ["string", "null"], "description": "The most recently used loaded model, or `null` when none is loaded."},
+            "update_check_done": {"type": "boolean", "description": "Whether the startup check for model updates on Hugging Face has finished. Until it has, models' `update_available` can be incomplete."},
             "all_models_loaded": {
                 "type": "array",
                 "description": "Every loaded model.",
@@ -33,20 +33,20 @@ ordered_json health_schema() {
                                  "recipe_options", "pinned", "pid", "backend_url", "last_use"],
                     "properties": {
                         "model_name": {"type": "string", "description": "Name of the loaded model"},
-                        "checkpoint": {"type": "string", "description": "Full checkpoint identifier"},
+                        "checkpoint": {"type": "string", "description": "The model's main checkpoint."},
                         "last_use": {"type": "integer", "description": "Monotonic timestamp of last access (load or inference), in milliseconds"},
-                        "type": {"type": "string", "description": "Model type: `\"llm\"`, `\"embedding\"`, `\"reranking\"`, `\"transcription\"`, `\"image\"`, `\"tts\"`, `\"audio-generation\"`, `\"classification\"`, or `\"mesh\"`"},
-                        "device": {"type": "string", "description": "Space-separated device list: `\"cpu\"`, `\"gpu\"`, `\"npu\"`, or combinations like `\"gpu npu\"`"},
+                        "type": {"type": "string", "description": "Model type: `llm`, `embedding`, `reranking`, `transcription`, `image`, `tts`, `audio-generation`, `classification` or `mesh`."},
+                        "device": {"type": "string", "description": "Space-separated devices the model runs on: `cpu`, `gpu`, `npu`, or a combination such as `gpu npu`."},
                         "pinned": {"type": "boolean", "description": "Whether the model is pinned, which exempts it from auto-eviction"},
                         "is_busy": {"type": "boolean", "description": "Whether the model has active requests or maintenance in progress"},
                         "is_streaming": {"type": "boolean", "description": "Whether the model is generating output tokens: true from the first chunk until every streaming request completes"},
-                        "backend_url": {"type": "string", "description": "URL of the backend server process handling this model (useful for debugging)"},
-                        "pid": {"type": "integer", "description": "The Process ID (PID) of the backend engine handling this model"},
-                        "launch_command": {"type": "array", "items": {"type": "string"}, "description": "*(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included."},
-                        "recipe": {"type": "string", "description": "Backend/device recipe used to load the model (e.g., `\"ryzenai-llm\"`, `\"llamacpp\"`, `\"flm\"`)"},
-                        "recipe_options": {"type": "object", "description": "Options used to load the model (e.g., `\"ctx_size\"`, `\"llamacpp_backend\"`, `\"llamacpp_args\"`, `\"whispercpp_args\"`)"},
-                        "residency_class": {"type": "string", "description": "standard, or routing_helper for a model a router policy keeps resident."},
-                        "slot_pool": {"type": "string", "description": "The loaded-model limit the model counts against, or unmetered."},
+                        "backend_url": {"type": "string", "description": "URL of the backend process serving the model."},
+                        "pid": {"type": "integer", "description": "Process ID of the backend process serving the model."},
+                        "launch_command": {"type": "array", "items": {"type": "string"}, "description": "The command that started the model's backend, program first, with the values actually used: an automatic `ctx_size` appears as a number, and flags Lemonade added are included. Absent for cloud models."},
+                        "recipe": {"type": "string", "description": "Recipe used to load the model, e.g. `llamacpp` or `flm`."},
+                        "recipe_options": {"type": "object", "description": "Options the model was loaded with, such as `ctx_size` or `llamacpp_args`."},
+                        "residency_class": {"type": "string", "description": "`standard`, or `routing_helper` for a model a router policy keeps resident."},
+                        "slot_pool": {"type": "string", "description": "The loaded-model limit the model counts against, or `unmetered`."},
                         "status": {"type": "string"},
                         "backend_alive": {"type": "boolean"},
                         "backend_health": {"type": "string"},
@@ -74,14 +74,14 @@ ordered_json health_schema() {
                 },
                 "additionalProperties": {"type": "integer"}
             },
-            "websocket_port": {"type": "integer", "description": "*(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned, or set by the `websocket_port` setting in [Server Configuration](../guide/configuration/README.md). The main port serves both APIs too."},
+            "websocket_port": {"type": "integer", "description": "Port of the dedicated WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket), present while it runs; the main port serves both APIs too. The port is OS-assigned, or set by the `websocket_port` setting in [Server Configuration](../guide/configuration/README.md)."},
             "telemetry": {
                 "type": "object",
                 "description": "Telemetry state.",
                 "required": ["enabled"],
                 "properties": {
                     "enabled": {"type": "boolean", "description": "Whether telemetry collection is active"},
-                    "captures": {"type": "array", "items": {"enum": ["inputs", "outputs", "thinking"]}, "description": "*(optional)* Array of captured telemetry components (e.g., `[\"inputs\", \"outputs\", \"thinking\"]`), only present when `enabled` is `true`."}
+                    "captures": {"type": "array", "items": {"enum": ["inputs", "outputs", "thinking"]}, "description": "The parts of each request telemetry captures, present when `enabled` is `true`."}
                 }
             },
             "pinned_helper_models": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Pinned routing-helper models of each type."}
@@ -98,7 +98,7 @@ public:
         s.id = "lemonade.health";
         s.methods = {"GET"};
         s.paths = {"health"};
-        s.summary = "Check server status, such as models loaded";
+        s.summary = "Check the server's status and loaded models";
         s.description =
             "Reports the server's status, including the models it has loaded.";
         s.notes = {

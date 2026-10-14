@@ -223,7 +223,7 @@ ordered_json system_info_schema() {
                                 "wire_format": {"enum": ["openai", "anthropic"], "description": "Request/response shape this provider speaks: `openai` (default) or `anthropic`."},
                                 "env_var": {"type": "string", "description": "Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value."},
                                 "env_var_set": {"type": "boolean", "description": "`true` if the env var is set in `lemond`'s environment."},
-                                "runtime_key_set": {"type": "boolean", "description": "`true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session."},
+                                "runtime_key_set": {"type": "boolean", "description": "`true` if an in-memory key has been supplied through [`POST /v1/cloud/auth`](#post-v1cloudauth) since lemond started."},
                                 "models_discovered": {"type": "integer", "description": "Number of chat-capable models currently in the catalog for this provider."},
                                 "allow_insecure_http": {"type": "boolean"},
                                 "warnings": {"type": "array", "items": {"type": "string"}},
@@ -248,7 +248,7 @@ public:
         s.id = "lemonade.system_info";
         s.methods = {"GET"};
         s.paths = {"system-info"};
-        s.summary = "System information and device enumeration";
+        s.summary = "Read the host's hardware and backend support";
         s.description =
             "Reports the host's hardware, the devices Lemonade can use, and which backends each "
             "recipe supports on this system.";
@@ -260,7 +260,7 @@ public:
             "|------|---------|\n"
             "| `core` | Supported by Lemonade's maintainers for production use. |\n"
             "| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |\n"
-            "| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from `GET /v1/models?show_all=true` until one of those backends is installed. |\n"
+            "| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed. |\n"
             "\n"
             "| Format | Meaning |\n"
             "|--------|---------|\n"

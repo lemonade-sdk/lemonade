@@ -98,7 +98,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"chat/completions"};
         s.prefixes = Prefixes::Quad;
-        s.summary = "Chat Completions";
+        s.summary = "Generate the next message in a conversation";
         s.modality = "messages -> completion";
         s.description =
             "Generates the next assistant message for a conversation, loading the model on first "
@@ -106,7 +106,7 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
-            "### Image understanding input format (OpenAI-compatible)\n"
+            "### Image Input\n"
             "\n"
             "To send images to `chat/completions`, pass a `messages[*].content` array that mixes "
             "`text` and `image_url` items. The image can be provided as a base64 data URL (for "
@@ -118,7 +118,7 @@ public:
             "curl -X POST http://localhost:13305/v1/chat/completions \\\n"
             "  -H \"Content-Type: application/json\" \\\n"
             "  -d '{\n"
-            "        \"model\": \"Qwen2.5-VL-7B-Instruct\",\n"
+            "        \"model\": \"Qwen2.5-VL-7B-Instruct-GGUF\",\n"
             "        \"messages\": [\n"
             "          {\n"
             "            \"role\": \"user\",\n"
@@ -139,7 +139,7 @@ public:
             "  \"id\": \"0\",\n"
             "  \"object\": \"chat.completion\",\n"
             "  \"created\": 1742927481,\n"
-            "  \"model\": \"Qwen2.5-VL-7B-Instruct\",\n"
+            "  \"model\": \"Qwen2.5-VL-7B-Instruct-GGUF\",\n"
             "  \"choices\": [{\n"
             "    \"index\": 0,\n"
             "    \"message\": {\n"
@@ -156,7 +156,7 @@ public:
             "requests to other models are unaffected.\n"
             "\n"
             "When `model` names an Omni **collection** model (`recipe: \"collection.omni\"`, e.g., "
-            "`LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a "
+            "`LMX-Omni-52B-Halo`), the route runs an internal tool-calling loop instead of a "
             "plain completion. The server injects the reference system prompt and tools, routes to "
             "the collection's chat component, executes the omni tools (image generation/editing, "
             "text-to-speech) against the matching components, and returns one OpenAI-compatible "
@@ -216,25 +216,25 @@ public:
              "The conversation so far, in OpenAI's message format: each message has a `role` and "
              "`content`."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to use for the completion."},
+             "The model to run."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If true, tokens will be sent as they are generated. If false, the response will be "
-             "sent as a single message once complete. Defaults to false."},
+             "`true` sends tokens as server-sent events as they are generated; `false` sends one "
+             "response once complete. Defaults to `false`."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "Up to 4 sequences where the API will stop generating further tokens. The returned "
-             "text will not contain the stop sequence. Can be a string or an array of strings."},
+             "Sequences that stop generation, as a string or an array of strings. The returned "
+             "text leaves them out."},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If true, returns the log probability of each output token. Defaults to false."},
+             "`true` returns the log probability of each output token. Defaults to `false`."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "What sampling temperature to use."},
+             "Sampling temperature."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage "
+             "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
              "repetition."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Integer that controls the number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling."},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to "
-             "consider during nucleus sampling."},
+             "Cumulative probability of the top tokens to consider during nucleus sampling, from "
+             "`0.0` to `1.0`."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "A list of tools the model may call."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
@@ -243,8 +243,8 @@ public:
             {"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "OpenAI's name for `max_tokens`."},
             {"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Lemonade extension: `false` turns off reasoning on models that think. The "
-             "OpenAI-compatible `thinking: false` is accepted too."},
+             "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
+             "false` does the same, and `enable_thinking` wins when both are sent."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the routing "
              "decision to the response as `x_lemonade_route`."},

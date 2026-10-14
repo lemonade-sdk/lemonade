@@ -24,7 +24,7 @@ public:
         s.id = "router.routing_validate";
         s.methods = {"POST"};
         s.paths = {"routing/validate"};
-        s.summary = "Evaluate an ad-hoc routing policy against a prompt without registering it";
+        s.summary = "Test a routing policy against a prompt without registering it";
         s.experimental = true;
         s.description =
             "Returns the decision a routing policy makes for a prompt, without registering the "
@@ -42,8 +42,8 @@ public:
             "`llm`, including `routing.router`) may load and run their models. A model failure "
             "follows the classifier's `on_error` policy (`match_false` by default), so routing "
             "continues to a later rule or to `default_model`.",
-            "`normalized_policy` is the policy as evaluated. The example below uses explicit "
-            "`routing.rules`, so it comes back unchanged. The `routing.router` shorthand is "
+            "The example below uses explicit `routing.rules`, so its `normalized_policy` comes "
+            "back unchanged. The `routing.router` shorthand is "
             "expanded into an `llm` classifier plus one rule per candidate, so a `routing` block "
             "written as:\n"
             "\n"
@@ -114,7 +114,7 @@ public:
 
         // A routed completion carries the trace only with route_trace: true; this endpoint
         // always returns it.
-        ordered_json decision = route_decision_schema();
+        ordered_json decision = route_decision_field_schema();
         decision["properties"]["trace"]["description"] = "Per-condition trace of the evaluation.";
         decision["description"] =
             "The routing decision, shaped like the `x_lemonade_route` object a routed completion "
@@ -128,7 +128,7 @@ public:
             {"required", ordered_json::array({"decision", "normalized_policy"})},
             {"properties", {
                 {"decision", decision},
-                {"normalized_policy", {{"type", "object"}}},
+                {"normalized_policy", {{"type", "object"}, {"description", "The policy as evaluated, with any `routing.router` shorthand expanded."}}},
             }},
         };
         s.responses = {response};

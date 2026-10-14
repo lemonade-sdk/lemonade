@@ -20,7 +20,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/api/tags"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Lists downloaded models";
+        s.summary = "List downloaded models";
         s.description = "Lists the downloaded models in Ollama's format.";
 
         RouteResponse response;
@@ -33,9 +33,9 @@ public:
                     "type": "object",
                     "required": ["name", "model", "modified_at", "size", "digest", "details"],
                     "properties": {
-                        "name": {"type": "string", "description": "Lemonade model name with a :latest tag."},
+                        "name": {"type": "string", "description": "Lemonade model name with a `:latest` tag."},
                         "model": {"type": "string", "description": "Same as name."},
-                        "modified_at": {"type": "string", "description": "Always 2024-01-01T00:00:00Z."},
+                        "modified_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
                         "size": {"type": "integer", "description": "Size in bytes, from the registry's estimate."},
                         "digest": {"type": "string", "description": "Always an all-zero sha256."},
                         "details": {}

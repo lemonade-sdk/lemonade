@@ -65,21 +65,20 @@ public:
         s.id = "openai.models_id_options_post";
         s.methods = {"POST"};
         s.paths = {"models/{id}/options"};
-        s.summary = "Save recipe options for a model without loading it";
+        s.summary = "Save a model's recipe options";
         s.modality = "n/a";
         s.description =
             "Saves recipe options for a model without loading it. The body is a flat object of "
-            "the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.\n\n"
-            "The request merges into the model's saved entry, so keys you don't mention are left "
-            "alone. `null` removes an option, and the model falls back to the next layer of the "
-            "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
-            "removes every saved option at once.";
+            "the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.";
         s.notes = {
+            "The request merges into the model's saved entry, so keys it leaves out keep their "
+            "values. `null` removes an option, and the model falls back to the next layer of the "
+            "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
+            "removes every saved option at once.",
             "A `400` reports an unrecognized option name, an option from a different recipe, a "
             "value of the wrong type, or an invalid `ctx_size`, and nothing from that request is "
             "saved.",
-            "Saving never loads or reloads the model, so a model that is already running keeps "
-            "its current options until it is next loaded.",
+            "A running model keeps its current options until it is next loaded.",
             "`pinned` is not settable here and is omitted from `effective` and `defaults`. It "
             "belongs to [`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",

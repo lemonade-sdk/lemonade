@@ -27,20 +27,20 @@ public:
             "download only for repositories whose files pass.";
         s.notes = {
             "A `400` answers a `query` shorter than 3 characters, an invalid `source`, `limit` or "
-            "`format`, or offline mode (`code: lemond_offline`). A `429` means the upstream registry rate-limited the request, and any other "
-            "upstream failure answers `502`, with the upstream status code when available.",
+            "`format`, or offline mode (`code: lemond_offline`). A `429` means the upstream "
+            "registry rate-limited the request, and any other upstream failure answers `502`, with "
+            "the upstream status code when available.",
         };
         s.args = {
             {"query", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
              "Search text, minimum 3 characters after trimming. `q` is accepted as an alias."},
             {"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
-             "Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` "
-             "are accepted; the canonical name is echoed in the response."},
+             "Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. "
+             "Defaults to `huggingface`."},
             {"limit", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
-             "Maximum number of results, an integer from 1 to 50. Default 12."},
+             "Maximum number of results, from `1` to `50`. Defaults to `12`."},
             {"format", ArgIn::Query, {{"enum", json::array({"gguf"})}}, false, Support::Available,
-             "The only accepted value is `gguf`. Biases search and ranking toward GGUF "
-             "repositories and echoes `\"format\": \"gguf\"` in the response."},
+             "Only `gguf`, which favors GGUF repositories in search and ranking."},
         };
 
         RouteResponse response;
@@ -52,8 +52,8 @@ public:
                 "source": {"enum": ["huggingface", "modelscope"], "description": "The registry searched, by its canonical name."},
                 "query": {"type": "string", "description": "The query as sent."},
                 "format": {"const": "gguf", "description": "Present only when `format=gguf` was requested."},
-                "total": {"type": "integer", "description": "Total match count reported by the upstream registry; may exceed the number of returned results."},
-                "results": {"type": "array", "description": "Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint from registry metadata; [`/v1/pull/variants`](#get-v1pullvariants) checks the files.", "items": {
+                "total": {"type": "integer", "description": "Matches the registry reports; can exceed the results returned."},
+                "results": {"type": "array", "description": "Up to `limit` repositories.", "items": {
                     "type": "object",
                     "required": ["repository_id", "display_name", "source"],
                     "properties": {
@@ -66,7 +66,7 @@ public:
                         "task": {"type": "string"},
                         "downloads": {"type": "integer"},
                         "likes": {"type": "integer"},
-                        "has_gguf": {"type": "boolean"}
+                        "has_gguf": {"type": "boolean", "description": "A hint from registry metadata; [`/v1/pull/variants`](#get-v1pullvariants) checks the files."}
                     }
                 }}
             }

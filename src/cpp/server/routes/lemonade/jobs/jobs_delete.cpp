@@ -21,9 +21,9 @@ public:
         s.description =
             "Removes a job. An active job is interrupted first, and the models it loaded are "
             "unloaded before it disappears.";
-        s.notes = {"An unknown job is answered with `404`."};
+        s.notes = {"An unknown job answers `404`."};
         s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from `POST /v1/jobs`."},
+            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
 
         RouteResponse response;

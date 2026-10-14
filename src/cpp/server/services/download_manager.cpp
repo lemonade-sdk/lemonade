@@ -418,7 +418,7 @@ nlohmann::ordered_json DownloadManager::job_schema() {
             "overall_bytes_downloaded": {"type": "integer", "description": "Older name for `cumulative_bytes_downloaded`."},
             "complete": {"type": "boolean", "description": "`true` when the download completed successfully."},
             "error": {"type": "string", "description": "Error message, present only for failed jobs."},
-            "code": {"type": "string", "description": "unknown_model when the model is not in the registry."}
+            "code": {"type": "string", "description": "`unknown_model` when the model is not in the registry."}
         }
     })");
 }
@@ -438,7 +438,7 @@ nlohmann::ordered_json DownloadManager::event_schema() {
             "percent": {"type": "number"},
             "status": {"const": "ok", "description": "Only on a complete event for an operation that had nothing to download."},
             "error": {"type": "string", "description": "Only on an error event."},
-            "code": {"type": "string", "description": "unknown_model when the model is not in the registry."}
+            "code": {"type": "string", "description": "`unknown_model` when the model is not in the registry."}
         }
     })");
 }

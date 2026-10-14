@@ -19,14 +19,14 @@ This page documents Lemonade's llama.cpp-specific compatibility surface. Lemonad
 
 Scores each document against a query. Only llama.cpp reranker models, such as `bge-reranker-v2-m3-GGUF`, serve this endpoint.
 
-Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/reranking`, `/api/v1/reranking`, `/v0/reranking`, `/v1/reranking`, `/api/v0/reranker`, `/api/v1/reranker`, `/v0/reranker` and `/v1/reranker`. Requires `LEMONADE_API_KEY` when it is set.
+Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `documents` | Yes | Array of document strings to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `documents` | Yes | Documents to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | Reranker model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
@@ -85,14 +85,14 @@ Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/rerank
 
 **Field Descriptions:**
 
-- `model` - Model identifier used for reranking
-- `object` - Type of response object, always `"list"`
-- `results` - Array of all input documents with relevance scores, sorted by `relevance_score`, highest first
-  - `index` - Original index of the document in the input array
-  - `relevance_score` - Relevance score assigned by the model; higher means more relevant
-- `usage` - Token usage statistics
-  - `prompt_tokens` - Number of tokens in the input
-  - `total_tokens` - Total tokens processed
+- `model` - The model that scored the documents.
+- `object` - Always `"list"`.
+- `results` - Every input document with its score, sorted by `relevance_score`, highest first.
+  - `index` - The document's position in `documents`.
+  - `relevance_score` - How relevant the model rates the document; higher is more relevant.
+- `usage` - Tokens processed.
+  - `prompt_tokens` - Tokens in the query and documents.
+  - `total_tokens` - All tokens processed.
 <!-- END GENERATED: llamacpp.rerank -->
 
 <!-- BEGIN GENERATED: llamacpp.slots -->
@@ -101,7 +101,7 @@ Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/rerank
 
 Returns the state of each processing slot in the llama.cpp server. Slots are the parallel contexts that serve concurrent requests.
 
-Also served at `/api/v0/slots`, `/api/v1/slots` and `/v0/slots`. Requires `LEMONADE_API_KEY` when it is set.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
@@ -201,12 +201,12 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 
 **Field Descriptions:**
 
-- `id` - Unique identifier for the slot
-- `next_token` - Information about token generation state
+- `id` - The slot's ID.
+- `next_token` - Generation state of the slot's current request.
   - `has_next_token` - Whether more tokens are expected
   - `n_remain` - Number of tokens remaining to generate
   - `n_decoded` - Number of tokens already decoded
-- `id_task` - Identifier of the current task being processed (the last task processed if idle)
+- `id_task` - The task the slot is processing, or processed last when idle.
 - `n_ctx` - Context size of the slot.
 - `is_processing` - Whether the slot is serving a request.
 - `n_prompt_tokens` - Tokens in the slot's current prompt.
@@ -219,7 +219,7 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 
 Saves a slot's prompt cache to a file, restores it from one, or erases it, so a conversation can resume where it left off.
 
-Also served at `/api/v0/slots/{id}`, `/api/v1/slots/{id}` and `/v0/slots/{id}`. Requires `LEMONADE_API_KEY` when it is set.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
@@ -339,9 +339,9 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
 ## `POST /v1/tokenize`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Tokenizes text with the tokenizer of the most recently used model, so after a request to a reranker, for example, the reranker's tokenizer answers. Tokenizing does not use the model's context window.
+Tokenizes text without using the model's context window. After a request to a reranker, for example, the reranker's tokenizer answers.
 
-Also served at `/api/v0/tokenize`, `/api/v1/tokenize` and `/v0/tokenize`. Requires `LEMONADE_API_KEY` when it is set.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
@@ -384,5 +384,5 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 
 **Field Descriptions:**
 
-- `tokens` - Array of token IDs, or of `{"id", "piece"}` objects when `with_pieces` is `true`
+- `tokens` - Token IDs, or `{"id", "piece"}` objects when `with_pieces` is `true`.
 <!-- END GENERATED: llamacpp.tokenize -->

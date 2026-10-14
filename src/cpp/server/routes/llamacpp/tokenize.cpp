@@ -21,9 +21,8 @@ public:
         s.summary = "Tokenize text";
         s.modality = "tokenization";
         s.description =
-            "Tokenizes text with the tokenizer of the most recently used model, so after a "
-            "request to a reranker, for example, the reranker's tokenizer answers. Tokenizing "
-            "does not use the model's context window.";
+            "Tokenizes text without using the model's context window. After a request to a "
+            "reranker, for example, the reranker's tokenizer answers.";
         s.notes = {
             "With no model loaded, or when the most recently used one is not a llama.cpp model, "
             "the answer is `400`.",
@@ -47,7 +46,7 @@ public:
             "properties": {
                 "tokens": {
                     "type": "array",
-                    "description": "Array of token IDs, or of `{\"id\", \"piece\"}` objects when `with_pieces` is `true`",
+                    "description": "Token IDs, or `{\"id\", \"piece\"}` objects when `with_pieces` is `true`.",
                     "items": {"type": ["integer", "object"]}
                 }
             }

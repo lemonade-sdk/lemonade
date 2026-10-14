@@ -19,8 +19,8 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Run the eviction engine at a simulated VRAM usage";
         s.description =
-            "Hands the eviction engine a simulated global VRAM usage of `pct`, so tests can "
-            "exercise pressure eviction without filling a GPU.";
+            "Hands the eviction engine a simulated global VRAM usage, so tests can exercise "
+            "pressure eviction without filling a GPU.";
         s.notes = {
             "Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above "
             "`auto_evict_threshold_pct` runs pressure eviction, `-1` runs only the idle-timeout "
@@ -32,7 +32,7 @@ public:
         };
         s.args = {
             {"pct", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Simulated fraction of VRAM in use, e.g. `0.95`. Defaults to `0`."},
+             "Simulated fraction of VRAM in use, such as `0.95`. Defaults to `0`."},
         };
 
         RouteResponse response;

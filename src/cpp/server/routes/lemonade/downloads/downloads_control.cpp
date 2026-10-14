@@ -57,7 +57,6 @@ public:
             }
         })");
         ordered_json snapshot = DownloadManager::job_schema();
-        snapshot["description"] = "pause, cancel, and remove of a running job: the job's snapshot.";
         response.schema = {{"oneOf", ordered_json::array({removed, snapshot})}};
         s.responses = {response};
 

@@ -46,13 +46,8 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/show"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Model details";
+        s.summary = "Describe a model";
         s.description = "Describes one registered model in Ollama's format.";
-        s.notes = {
-            "`capabilities` follows the model's labels: `completion` for chat models, "
-            "`embedding` for embedding models, plus `tools`, `vision` and `thinking` when the "
-            "model carries the matching label.",
-        };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Model to describe."},
@@ -66,11 +61,11 @@ public:
             "type": "object",
             "required": ["modelfile", "parameters", "template", "details", "capabilities", "model_info"],
             "properties": {
-                "modelfile": {"type": "string", "description": "A FROM line naming the checkpoint."},
+                "modelfile": {"type": "string", "description": "A `FROM` line naming the checkpoint."},
                 "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size."},
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
-                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}},
+                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label."},
                 "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always 0."}
             }
         })");

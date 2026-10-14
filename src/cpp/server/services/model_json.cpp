@@ -214,7 +214,7 @@ nlohmann::ordered_json ModelJson::schema() {
             "max_output_tokens": {"type": "integer", "description": "Cloud models only: the most tokens one completion can generate, when the provider reports it."},
             "max_completion_tokens": {"type": "integer", "description": "Cloud models only: `max_output_tokens` under its OpenAI name."},
             "downloaded": {"type": "boolean", "description": "Whether the model is downloaded."},
-            "update_available": {"type": "boolean", "description": "Whether Hugging Face has a newer commit; `false` except for downloaded Hugging Face models."},
+            "update_available": {"type": "boolean", "description": "Whether the model's registry has a newer commit; `false` except for downloaded registry models."},
             "suggested": {"type": "boolean", "description": "Whether the model is recommended for general use."},
             "labels": {"type": "array", "items": {"type": "string"}, "description": "Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list."},
             "image_defaults": {

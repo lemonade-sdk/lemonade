@@ -21,7 +21,7 @@ ordered_json response_schema() {
             "model": {"type": "string"},
             "status": {"type": "string"},
             "output": {"type": "array", "items": {"type": "object"},
-                       "description": "Output items; a message item carries its text in content[].text."},
+                       "description": "Output items; a message item carries its text in `content[].text`."},
             "usage": {"type": "object"}
         }
     })");
@@ -34,9 +34,9 @@ ordered_json response_event_schema() {
         "type": "object",
         "required": ["type"],
         "properties": {
-            "type": {"type": "string", "description": "Event type, one of the backend's OpenAI event types such as response.created, response.output_text.delta or response.completed."},
-            "response": {"type": "object", "description": "response.created and response.completed: the response so far."},
-            "delta": {"type": "string", "description": "response.output_text.delta: the next text."}
+            "type": {"type": "string", "description": "Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)."},
+            "response": {"type": "object", "description": "`response.created` and `response.completed` only: the response so far."},
+            "delta": {"type": "string", "description": "`response.output_text.delta` only: the next text."}
         }
     })");
 }
@@ -50,15 +50,12 @@ public:
         s.id = "openai.responses";
         s.methods = {"POST"};
         s.paths = {"responses"};
-        s.summary = "Responses API";
+        s.summary = "Generate a response in OpenAI's Responses format";
         s.modality = "prompt/messages -> event";
         s.description =
             "Generates a model response to an input, in OpenAI's Responses format, loading the "
             "model on first use.";
         s.notes = {
-            "With `stream: true`, the response is the backend's typed server-sent events, such as "
-            "`response.created`, `response.output_text.delta` and `response.completed`; see "
-            "OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).",
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
         };
@@ -66,22 +63,22 @@ public:
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
              "The input, as a string or an array of input items."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to use for the response."},
+             "The model to run."},
             {"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "The maximum number of output tokens to generate."},
+             "Upper bound on generated tokens."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "What sampling temperature to use."},
+             "Sampling temperature."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage "
+             "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
              "repetition."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Integer that controls the number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling."},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to "
-             "consider during nucleus sampling."},
+             "Cumulative probability of the top tokens to consider during nucleus sampling, from "
+             "`0.0` to `1.0`."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If true, tokens will be sent as they are generated. If false, the response will be "
-             "sent as a single message once complete. Defaults to false."},
+             "`true` sends tokens as server-sent events as they are generated; `false` sends one "
+             "response once complete. Defaults to `false`."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the routing "
              "decision to the response as `x_lemonade_route`."},

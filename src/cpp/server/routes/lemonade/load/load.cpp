@@ -72,12 +72,11 @@ public:
             "them (see [Server Configuration](../guide/configuration/README.md))\n"
             "4. Lemonade's built-in defaults\n\n"
             "An option sent as `null` skips the saved value for this load without changing "
-            "`recipe_options.json`. `ctx_size: -1` is a value, meaning automatic sizing. A "
-            "`*_args` in the request replaces the model's saved args for this load; server-wide "
-            "args still apply unless `merge_args` is `false`.",
+            "`recipe_options.json`. A `*_args` in the request replaces the model's saved args for "
+            "this load.",
             "Every option the model's recipe accepts can be passed; the [Backend "
-            "Reference](../dev/backends-reference.md#recipe-options) lists them per recipe. Load "
-            "failures answer with the same error object as inference requests: `404` for an "
+            "Reference](../dev/backends-reference.md#recipe-options) lists them per recipe.",
+            "Load failures answer with the same error object as inference requests: `404` for an "
             "unknown or unsupported model, `409` when pinned models fill every slot, and `500` "
             "when the backend fails to start.",
             "### Saved Options\n\n"
@@ -124,13 +123,13 @@ public:
              "whispercpp: extra arguments for whisper-server, such as `--convert`. `-m`, "
              "`--model` and `--port` are rejected."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "sd-cpp: inference steps per image. Default: 20."},
+             "sd-cpp: inference steps per image. Defaults to `20`."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "sd-cpp: classifier-free guidance scale. Default: 7.0."},
+             "sd-cpp: classifier-free guidance scale. Defaults to `7.0`."},
             {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "sd-cpp: image width in pixels. Default: 512."},
+             "sd-cpp: image width in pixels. Defaults to `512`."},
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "sd-cpp: image height in pixels. Default: 512."},
+             "sd-cpp: image height in pixels. Defaults to `512`."},
             {"merge_args", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "If `true` (the default), server-wide `*_args` still apply when the request sends "
              "`*_args`. If `false`, the request's `*_args` replace every server-wide argument "

@@ -19,7 +19,7 @@ public:
         s.id = "openai.models_id";
         s.methods = {"GET"};
         s.paths = {"models/{id}"};
-        s.summary = "Retrieve a specific model by ID";
+        s.summary = "Read one model";
         s.modality = "n/a";
         s.description =
             "Returns one model, as the same model object [`GET /v1/models`](#get-v1models) lists.";

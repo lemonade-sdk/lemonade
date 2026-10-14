@@ -20,7 +20,7 @@ public:
         s.id = "openai.images_generations";
         s.methods = {"POST"};
         s.paths = {"images/generations"};
-        s.summary = "Image Generation";
+        s.summary = "Generate an image from a text prompt";
         s.modality = "prompt -> image";
         s.description =
             "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
@@ -30,20 +30,19 @@ public:
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`)."},
             {"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, "
-             "`256x256`). Default: `512x512`."},
+             "Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to `512x512`."},
             {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Number of images to generate. Defaults to `1`."},
             {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
-             "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
+             "Only `b64_json`, a base64-encoded image, is supported."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of inference steps. SD-Turbo works well with 4 steps. Default varies by "
-             "model."},
+             "Number of inference steps. Defaults to the model's own; `SD-Turbo` works well with "
+             "`4`."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by "
-             "model."},
+             "Classifier-free guidance scale. Defaults to the model's own; `SD-Turbo` uses values "
+             "near `1.0`."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducibility. If not specified, a random seed is used."},
+             "Random seed for reproducible output. Defaults to a random seed."},
         };
 
         RouteResponse response;

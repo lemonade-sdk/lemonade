@@ -73,7 +73,7 @@ public:
             "properties": {
                 "status": {"const": "success"},
                 "updated": {"type": "object", "description": "The keys the request set, with their new values."},
-                "message": {"type": "string", "description": "Present when a legacy key was translated to its current form."}
+                "message": {"type": "string", "description": "Present when a deprecated value was replaced, such as `rocm_channel=preview`."}
             }
         })");
         s.responses = {response};

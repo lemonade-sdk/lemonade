@@ -27,27 +27,18 @@ public:
         s.paths = {"uninstall"};
         s.summary = "Remove a backend or cloud provider";
         s.description =
-            "Removes a recipe's backend, or a cloud provider when `backend` is `\"cloud\"`.";
+            "Removes a recipe's backend, unloading the models that use it first, or a cloud "
+            "provider when `backend` is `\"cloud\"`.";
         s.notes = {
             "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
-            "`provider`, is answered with `400`. Any other failure, including invalid JSON, is "
-            "answered with `500` and an `error` string.",
-            "Models loaded on the backend unload first.",
+            "`provider`, answers `400`. Any other failure, including invalid JSON, answers `500` "
+            "with an `error` string.",
             "### Uninstall a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
             "Removes the provider record from `config.json`, drops its in-memory API key, if any, "
             "and evicts every discovered model for that provider from the cache. A provider that "
-            "was never installed answers `404`.\n"
-            "\n"
-            "```bash\n"
-            "curl -X POST http://localhost:13305/v1/uninstall \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d '{\n"
-            "    \"backend\": \"cloud\",\n"
-            "    \"provider\": \"fireworks\"\n"
-            "  }'\n"
-            "```",
+            "was never installed answers `404`.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

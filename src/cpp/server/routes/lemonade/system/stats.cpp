@@ -18,7 +18,7 @@ public:
         s.id = "lemonade.stats";
         s.methods = {"GET"};
         s.paths = {"stats"};
-        s.summary = "Performance statistics from the last request";
+        s.summary = "Read performance statistics from the last request";
         s.description =
             "Reports performance statistics for the most recent request, plus counters since "
             "server start.";

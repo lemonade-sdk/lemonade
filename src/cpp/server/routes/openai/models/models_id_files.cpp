@@ -17,7 +17,7 @@ public:
         s.id = "openai.models_id_files";
         s.methods = {"GET"};
         s.paths = {"models/{id}/files"};
-        s.summary = "List resolved local file metadata for one model";
+        s.summary = "List one model's local files";
         s.modality = "n/a";
         s.description =
             "Lists the resolved local files of one model, for model-detail views such as the "
@@ -39,13 +39,13 @@ public:
             "type": "object",
             "required": ["model_id", "files"],
             "properties": {
-                "model_id": {"type": "string", "description": "Public model ID for the requested model."},
-                "files": {"type": "array", "description": "Array of resolved model files known to the registry.", "items": {
+                "model_id": {"type": "string", "description": "The model's public id."},
+                "files": {"type": "array", "description": "The model's resolved files.", "items": {
                     "type": "object",
                     "required": ["name", "role", "size_bytes", "exists"],
                     "properties": {
                         "name": {"type": "string", "description": "Base filename from the resolved path."},
-                        "path": {"type": "string", "description": "Absolute resolved path on the local system. Only included when `include_paths=true`; privacy-sensitive."},
+                        "path": {"type": "string", "description": "Absolute path; present only with `include_paths=true`."},
                         "role": {"type": "string", "description": "Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role."},
                         "size_bytes": {"type": "integer", "description": "File size in bytes. Directories are summed recursively. Missing files report `0`."},
                         "exists": {"type": "boolean", "description": "Whether the resolved path currently exists on disk."}

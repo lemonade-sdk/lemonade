@@ -18,7 +18,7 @@ public:
         s.id = "openai.models";
         s.methods = {"GET"};
         s.paths = {"models"};
-        s.summary = "List models available locally";
+        s.summary = "List the server's models";
         s.modality = "n/a";
         s.description =
             "Lists the models available on the server, in OpenAI's format extended with the "
@@ -45,9 +45,9 @@ public:
             {"required", ordered_json::array({"object", "data"})},
             {"properties", {
                 {"object", {{"const", "list"},
-                            {"description", "Type of response object, always `\"list\"`"}}},
+                            {"description", "Always `\"list\"`."}}},
                 {"data", {{"type", "array"},
-                          {"description", "Array of model objects with the following fields:"},
+                          {"description", "The model objects."},
                           {"items", ModelJson::schema()}}},
             }},
         };

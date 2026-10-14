@@ -20,7 +20,7 @@ public:
         s.id = "openai.images_variations";
         s.methods = {"POST"};
         s.paths = {"images/variations"};
-        s.summary = "Image Variations";
+        s.summary = "Generate a variation of an image";
         s.modality = "image -> varied image";
         s.description =
             "Generates a variation of a source image. The request is `multipart/form-data`, and "
@@ -32,7 +32,7 @@ public:
             "\n"
             "    ```python\n"
             "    from openai import OpenAI\n"
-            "    client = OpenAI(base_url=\"http://localhost:13305/api/v1\", api_key=\"not-needed\")\n"
+            "    client = OpenAI(base_url=\"http://localhost:13305/v1\", api_key=\"not-needed\")\n"
             "    with open(\"source_image.png\", \"rb\") as image_file:\n"
             "        response = client.images.create_variation(\n"
             "            model=\"Flux-2-Klein-4B\",\n"
@@ -52,13 +52,12 @@ public:
             {"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
              "The source image (PNG)."},
             {"size", ArgIn::Form, text, false, Support::Available,
-             "The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: "
-             "`512x512`."},
+             "Output size as `WIDTHxHEIGHT`. Defaults to `512x512`."},
             {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Available,
              "Number of images to generate, from `1` to `10`; other values answer `400`. "
-             "Default: `1`."},
+             "Defaults to `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
+             "Only `b64_json`, a base64-encoded image, is supported."},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
              "Accepted for OpenAI compatibility and ignored."},
         };

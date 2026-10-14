@@ -22,7 +22,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/embed"};
         s.prefixes = Prefixes::Root;
-        s.summary = "New embeddings format";
+        s.summary = "Embed one or more texts";
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
         s.args = {

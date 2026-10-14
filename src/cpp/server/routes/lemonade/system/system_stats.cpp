@@ -16,11 +16,10 @@ public:
         s.id = "lemonade.system_stats";
         s.methods = {"GET"};
         s.paths = {"system-stats"};
-        s.summary = "Current host resource usage";
+        s.summary = "Read the host's resource usage";
         s.description =
-            "Current host resource usage as measured by the Lemonade Server process. This endpoint "
-            "is useful for first-party clients and dashboards that need lightweight runtime "
-            "telemetry without scraping Prometheus.";
+            "Reports the host's resource usage as the server process measures it, for clients and "
+            "dashboards that want lightweight telemetry without scraping Prometheus.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
             "`primary_gpu_id` and `gpus` describe the individual host GPUs. `gpu_percent` and "
@@ -56,7 +55,7 @@ public:
                             "id": {"type": "string", "description": "Stable device ID, e.g. `amd:0000:c1:00.0`"},
                             "vendor": {"type": "string", "description": "`amd` or `nvidia`"},
                             "name": {"type": "string", "description": "Device name"},
-                            "memory_type": {"enum": ["dedicated", "shared", "unknown"], "description": "`dedicated`, `shared`, or `unknown`"},
+                            "memory_type": {"enum": ["dedicated", "shared", "unknown"], "description": "`dedicated` for the GPU's own memory, `shared` for system memory, or `unknown`."},
                             "gpu_percent": {"type": ["number", "null"], "description": "GPU utilization percentage, or `null` when unavailable"},
                             "memory_total_gb": {"type": ["number", "null"], "description": "GPU-accessible memory capacity, in GiB, or `null` when unavailable"},
                             "memory_used_gb": {"type": ["number", "null"], "description": "GPU memory currently in use, in GiB, or `null` when unavailable"}

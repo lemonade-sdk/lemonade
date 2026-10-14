@@ -21,7 +21,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/pull"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Download with progress";
+        s.summary = "Download a model";
         s.description =
             "Downloads a registered model, or updates it when its registry has a newer "
             "version.";
@@ -47,7 +47,7 @@ public:
             "description": "The first line is `pulling manifest`, then one line per progress report, then `success`.",
             "properties": {
                 "status": {"type": "string", "description": "`pulling manifest`, `downloading <file>`, or `success`."},
-                "digest": {"type": "string", "description": "Download lines: sha256: followed by the file name."},
+                "digest": {"type": "string", "description": "Download lines: `sha256:` followed by the file name."},
                 "completed": {"type": "integer", "description": "Download lines: bytes of the file downloaded so far."},
                 "total": {"type": "integer", "description": "Download lines: the file's size in bytes."},
                 "error": {"type": "string", "description": "Only on a failed download's last line."}

@@ -27,11 +27,11 @@ public:
         s.id = "openai.images_upscale";
         s.methods = {"POST"};
         s.paths = {"images/upscale"};
-        s.summary = "Image Upscaling";
+        s.summary = "Upscale an image";
         s.modality = "image + ESRGAN model -> upscaled image";
         s.description =
-            "Upscales an image with a Real-ESRGAN model. The request is JSON with the image "
-            "base64-encoded. The model sets the upscale factor, which its name usually states.";
+            "Upscales an image with a Real-ESRGAN model. The model sets the upscale factor, which "
+            "its name usually states.";
         s.notes = {
             "The model must carry the `upscaling` label and is downloaded on first use.",
             "A missing `image` or `model` answers `400`, an unknown model `404`, and a failed "
@@ -99,7 +99,7 @@ public:
             "    import requests\n"
             "    import base64\n"
             "\n"
-            "    BASE_URL = \"http://localhost:13305/api/v1\"\n"
+            "    BASE_URL = \"http://localhost:13305/v1\"\n"
             "\n"
             "    # Step 1: Generate an image\n"
             "    gen_response = requests.post(f\"{BASE_URL}/images/generations\", json={\n"

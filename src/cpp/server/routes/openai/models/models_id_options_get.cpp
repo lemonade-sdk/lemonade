@@ -19,7 +19,7 @@ public:
         s.id = "openai.models_id_options_get";
         s.methods = {"GET"};
         s.paths = {"models/{id}/options"};
-        s.summary = "Read a model's saved, effective, and default recipe options";
+        s.summary = "Read a model's recipe options by layer";
         s.modality = "n/a";
         s.description =
             "Reads a model's recipe options, separated by layer, without loading it. With `POST` "

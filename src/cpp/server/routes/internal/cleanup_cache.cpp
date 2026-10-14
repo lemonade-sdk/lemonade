@@ -23,7 +23,7 @@ public:
         s.summary = "Find or remove orphaned model files";
         s.description =
             "Finds model files that a multi-repository model left in another repository's "
-            "Hugging Face cache folder, and removes them when `dry_run` is `false`.";
+            "Hugging Face cache folder, and removes them.";
         s.notes = {
             "An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different "
             "repository, found inside the `main` checkpoint's cache folder.",
@@ -46,7 +46,7 @@ public:
                         "path": {"type": "string", "description": "Absolute path of the file."},
                         "size": {"type": "integer", "description": "Size in bytes."},
                         "model": {"type": "string", "description": "Model whose checkpoint the file is."},
-                        "type": {"type": "string", "description": "Checkpoint role, such as mmproj."},
+                        "type": {"type": "string", "description": "Checkpoint role, such as `mmproj`."},
                         "belongs_to": {"type": "string", "description": "Repository the file belongs to."}
                     }
                 }},

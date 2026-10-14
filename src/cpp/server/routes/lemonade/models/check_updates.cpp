@@ -21,7 +21,7 @@ public:
         s.paths = {"models/check-updates"};
         s.summary = "Manually check downloaded models for upstream updates";
         s.description =
-            "Checks downloaded Hugging Face models for newer upstream commits. It is the manual "
+            "Checks downloaded models for newer commits in their registry. It is the manual "
             "counterpart to the startup update check and runs even when "
             "`auto_check_model_updates` is `false`.";
         s.notes = {

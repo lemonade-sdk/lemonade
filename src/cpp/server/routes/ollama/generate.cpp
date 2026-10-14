@@ -159,7 +159,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/generate"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Text completion or image generation";
+        s.summary = "Continue a prompt or generate an image";
         s.description =
             "Continues a prompt, loading the model on first use. Lemonade runs it as an OpenAI "
             "text completion and converts the result. Naming an image model generates an image "
@@ -196,9 +196,9 @@ public:
              "Lemonade extension: context size to load the model with, when this request loads "
              "it. Wins over `options.num_ctx`."},
             {"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
-             "System prompt."},
+             "System prompt. Ignored."},
             {"format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
-             "Output format constraint."},
+             "Output format constraint. Ignored."},
         };
 
         RouteResponse full;

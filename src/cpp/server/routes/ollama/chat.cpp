@@ -299,7 +299,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/chat"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Chat completion, streaming or not";
+        s.summary = "Generate the next chat message";
         s.description =
             "Generates the next assistant message for a conversation, loading the model on "
             "first use. Lemonade runs it as an OpenAI chat completion and converts the result.";

@@ -32,13 +32,12 @@ public:
         s.notes = {
             "When `LEMONADE_<PROVIDER>_API_KEY` is set, it takes precedence: the request answers "
             "`409` without storing the key, with `error.type` `auth_conflict` and the `env_var` "
-            "that took precedence. An operator's key in the environment cannot be overridden by a "
-            "client.",
+            "that took precedence.",
             "A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a "
             "non-boolean `allow_insecure_http`, or a provider whose base URL is `http://` when "
             "neither this request nor the provider's install set "
             "`allow_insecure_http` (code `insecure_http_requires_opt_in`). A provider that is not "
-            "installed answers `404`; install it with `POST /v1/install` and `backend: \"cloud\"` "
+            "installed answers `404`; install it with [`POST /v1/install`](#post-v1install) and `backend: \"cloud\"` "
             "first.",
         };
         s.args = {
@@ -62,10 +61,10 @@ public:
                     "type": "object",
                     "properties": {
                         "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
-                        "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
+                        "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in `lemond`'s memory."}
                     }
                 },
-                "models_discovered": {"type": "integer", "description": "Chat models discovered with the key; 0 when discovery fails."},
+                "models_discovered": {"type": "integer", "description": "Chat models discovered with the key; `0` when discovery fails."},
                 "warnings": {"type": "array", "items": {"type": "string"}, "description": "Present when the provider's base URL is `http://`."},
                 "warning": {"type": "string", "description": "The warnings joined into one string, for older clients."}
             }

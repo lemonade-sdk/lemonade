@@ -25,11 +25,10 @@ public:
             "Generates an audio clip from a text prompt. The model decides the kind of audio: music "
             "with ACE-Step models such as `ACE-Step-Music`, sound effects with ThinkSound models "
             "such as `ThinkSound-SFX`. This is a Lemonade extension; OpenAI's audio endpoints cover "
-            "only speech and transcription.\n\n"
-            "> **Performance:** generation runs on the GPU (Vulkan, ROCm, or CUDA) and takes from "
-            "seconds (short sound effects) to minutes (full-length music) depending on duration "
-            "and hardware.";
+            "only speech and transcription.";
         s.notes = {
+            "Generation runs on the GPU (Vulkan, ROCm or CUDA) and takes from seconds for a short "
+            "sound effect to minutes for full-length music, depending on duration and hardware.",
             "### Lyrics\n\n"
             "ACE-Step vocals are a two-stage pipeline inside the backend: a language model first "
             "turns the style description and lyrics into audio codes, then the diffusion "
@@ -51,7 +50,7 @@ public:
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`)."},
+             "The audio-generation model."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Text description of the music or sound effect to generate. For music, this is the "
              "style description: genre, mood, tempo, instruments, and voice."},
@@ -61,10 +60,10 @@ public:
              "sentinel `[Instrumental]` (any case) produces an instrumental track. See "
              "[Lyrics](#lyrics) below for the expected format."},
             {"vocal_language", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Default: "
-             "`en`."},
+             "BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Defaults "
+             "to `en`."},
             {"duration", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Length of the clip in seconds. Defaults to the backend's native default."},
+             "Length of the clip in seconds. Defaults to the backend's own default."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Number of inference steps. Lower is faster, higher can improve quality."},
             {"cfg", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -72,8 +71,8 @@ public:
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducibility."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only formats the backend natively produces are accepted (currently "
-             "`wav`); other values are rejected with `400 Bad Request`. Default: `wav`."},
+             "Output encoding. Only `wav`, the format the backend produces, is accepted; other values "
+             "answer `400`. Defaults to `wav`."},
         };
 
         RouteResponse response;

@@ -21,9 +21,9 @@ public:
         s.description =
             "Cancels a job's current step now, aborting an in-flight load or chat. The step "
             "returns to pending, so resuming re-runs it, and the models the job loaded are unloaded.";
-        s.notes = {"An unknown job, or one that is not queued or running, is answered with `404`."};
+        s.notes = {"An unknown job, or one that is not queued or running, answers `404`."};
         s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from `POST /v1/jobs`."},
+            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
 
         RouteResponse response;

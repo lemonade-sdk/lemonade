@@ -7,8 +7,8 @@ The gateway implements the **MCP "Streamable HTTP" transport** (spec version `20
 <!-- BEGIN GENERATED: mcp.summary -->
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|
-| `POST` | [`/mcp`](#post-mcp) | Supported | Model Context Protocol over JSON-RPC 2.0 |
-| `GET` | [`/mcp`](#get-mcp) | Not supported | Server-initiated event stream |
+| `POST` | [`/mcp`](#post-mcp) | Supported | Call MCP methods over JSON-RPC 2.0 |
+| `GET` | [`/mcp`](#get-mcp) | Not supported | Open a server-initiated event stream |
 <!-- END GENERATED: mcp.summary -->
 
 <!-- BEGIN GENERATED: mcp.rpc -->
@@ -30,7 +30,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 The body is one JSON-RPC message or a batch array of them. The reply is `200` with the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
 
-The MCP specification mandates one endpoint URL per server, so `/mcp` has no `/api/v1/`, `/v1/` or other prefixed form.
+The MCP specification mandates one endpoint URL per server, so `/mcp` is the only one.
 
 ### Supported methods
 
@@ -90,7 +90,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
         }'
     ```
 
-=== "PowerShell (empty)"
+=== "PowerShell (notification)"
 
     ```powershell
     Invoke-WebRequest `
@@ -100,7 +100,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
       -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
     ```
 
-=== "Bash (empty)"
+=== "Bash (notification)"
 
     ```bash
     curl http://localhost:13305/mcp \
@@ -110,7 +110,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 ### Response format
 
-=== "JSON responses"
+=== "Request responses"
 
     `200`
 
@@ -129,9 +129,9 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
     **Field Descriptions:**
 
     - `result` - The method's result.
-    - `error` - A JSON-RPC error, such as -32601 for an unknown method.
+    - `error` - A JSON-RPC error, such as `-32601` for an unknown method.
 
-=== "Empty responses"
+=== "Notification responses"
 
     `202`
 <!-- END GENERATED: mcp.rpc -->

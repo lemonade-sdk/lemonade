@@ -20,13 +20,12 @@ public:
         s.methods = {"GET"};
         s.paths = {"/metrics"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Prometheus metrics scrape endpoint";
+        s.summary = "Serve metrics for Prometheus to scrape";
         s.description =
-            "Prometheus scrape endpoint, in the Prometheus text exposition format. Prometheus "
-            "scrapes it; Grafana reads from Prometheus, not from this endpoint.\n\n"
-            "`/metrics` is served only at the root, not under the versioned prefixes. `HEAD "
-            "/metrics` returns `200 OK` with an empty body.";
+            "Serves Lemonade's metrics in the Prometheus text exposition format, for Prometheus to "
+            "scrape.";
         s.notes = {
+            "`HEAD` returns `200 OK` with an empty body.",
             "### Polling and Refresh Rate\n\n"
             "`/metrics` has no refresh timer of its own: each scrape renders the server's state at "
             "that moment. Prometheus's `scrape_interval` sets how often that happens, for "
@@ -35,8 +34,8 @@ public:
             "global:\n"
             "  scrape_interval: 10s\n"
             "```\n\n"
-            "A Grafana dashboard's refresh rate sets how often it queries Prometheus, not how often "
-            "Prometheus scrapes Lemonade.",
+            "Grafana reads from Prometheus, not from this endpoint, so a dashboard's refresh rate "
+            "sets how often it queries Prometheus, not how often Prometheus scrapes Lemonade.",
             "### Metric Families\n"
             "\n"
             "The names, types, labels and help text are defined by the `metrics.describe(...)` "

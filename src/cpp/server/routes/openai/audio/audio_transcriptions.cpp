@@ -19,7 +19,7 @@ public:
         s.id = "openai.audio_transcriptions";
         s.methods = {"POST"};
         s.paths = {"audio/transcriptions"};
-        s.summary = "Audio Transcription";
+        s.summary = "Transcribe an audio file to text";
         s.modality = "audio file -> text";
         s.description =
             "Transcribes an audio file to text, loading the model on first use. Whisper "
@@ -30,7 +30,7 @@ public:
         };
         s.args = {
             {"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
-             "The audio file to transcribe. Supported formats: wav."},
+             "The audio file to transcribe, as WAV."},
             {"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
              "The transcription model to use (e.g., `Whisper-Tiny`)."},
             {"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
@@ -38,7 +38,7 @@ public:
              "`auto`, which detects the language."},
             {"response_format", ArgIn::Form,
              {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
-             "The response format: `json` (default), `verbose_json`, `text`, `srt` or `vtt`."},
+             "`json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`."},
             {"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
              "Text to guide the transcription's style or continue a previous segment."},
             {"temperature", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
@@ -51,8 +51,8 @@ public:
             "type": "object",
             "required": ["text"],
             "properties": {
-                "text": {"type": "string", "description": "The transcribed text from the audio file"},
-                "segments": {"type": "array", "description": "verbose_json only: timestamped segments."}
+                "text": {"type": "string", "description": "The transcribed text."},
+                "segments": {"type": "array", "description": "`verbose_json` only: timestamped segments."}
             }
         })");
 

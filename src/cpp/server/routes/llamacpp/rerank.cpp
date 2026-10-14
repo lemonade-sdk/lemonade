@@ -25,7 +25,7 @@ public:
             {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The search query text."},
             {"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
-             true, Support::Available, "Array of document strings to score against the query."},
+             true, Support::Available, "Documents to score against the query."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Reranker model to run; loaded on first use."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
@@ -39,22 +39,22 @@ public:
             "type": "object",
             "required": ["model", "object", "results"],
             "properties": {
-                "model": {"type": "string", "description": "Model identifier used for reranking"},
-                "object": {"const": "list", "description": "Type of response object, always `\"list\"`"},
-                "results": {"type": "array", "description": "Array of all input documents with relevance scores, sorted by `relevance_score`, highest first", "items": {
+                "model": {"type": "string", "description": "The model that scored the documents."},
+                "object": {"const": "list", "description": "Always `\"list\"`."},
+                "results": {"type": "array", "description": "Every input document with its score, sorted by `relevance_score`, highest first.", "items": {
                     "type": "object",
                     "required": ["index", "relevance_score"],
                     "properties": {
-                        "index": {"type": "integer", "description": "Original index of the document in the input array"},
-                        "relevance_score": {"type": "number", "description": "Relevance score assigned by the model; higher means more relevant"}
+                        "index": {"type": "integer", "description": "The document's position in `documents`."},
+                        "relevance_score": {"type": "number", "description": "How relevant the model rates the document; higher is more relevant."}
                     }
                 }},
                 "usage": {
                     "type": "object",
-                    "description": "Token usage statistics",
+                    "description": "Tokens processed.",
                     "properties": {
-                        "prompt_tokens": {"type": "integer", "description": "Number of tokens in the input"},
-                        "total_tokens": {"type": "integer", "description": "Total tokens processed"}
+                        "prompt_tokens": {"type": "integer", "description": "Tokens in the query and documents."},
+                        "total_tokens": {"type": "integer", "description": "All tokens processed."}
                     }
                 }
             }

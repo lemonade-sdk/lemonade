@@ -62,6 +62,11 @@ nlohmann::ordered_json route_decision_field_schema() {
         "The routing decision for a request that named a `collection.router` model, present "
         "when the request sets `route_trace`. The `x-lemonade-route` response header carries the "
         "matched rule id, or `default` when the request routed to `default_model`.";
+    schema["properties"]["outputs"]["description"] =
+        "The matched rule's `outputs`, passed through unchanged. When cost data is known for the "
+        "chosen candidate, an `estimated_cost` object is added with `cost_tier`, "
+        "`cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as "
+        "available; it is an estimate, not a billing figure.";
     return schema;
 }
 

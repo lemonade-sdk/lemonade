@@ -16,7 +16,7 @@ public:
         s.id = "openai.embeddings";
         s.methods = {"POST"};
         s.paths = {"embeddings"};
-        s.summary = "Embeddings";
+        s.summary = "Embed text as vectors";
         s.modality = "text -> vector representations";
         s.description =
             "Returns vector representations (embeddings) of the input text for semantic search, "
@@ -26,10 +26,9 @@ public:
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
              "The text to embed, as a string or an array of strings."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to use for generating embeddings."},
+             "The embedding model to run."},
             {"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
-             "The format to return embeddings in. Supported values: `\"float\"` (default), "
-             "`\"base64\"`."},
+             "`float` or `base64`. Defaults to `float`."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},
@@ -41,23 +40,23 @@ public:
             "type": "object",
             "required": ["object", "data", "model"],
             "properties": {
-                "object": {"const": "list", "description": "Type of response object, always `\"list\"`"},
-                "data": {"type": "array", "description": "Array of embedding objects", "items": {
+                "object": {"const": "list", "description": "Always `\"list\"`."},
+                "data": {"type": "array", "description": "One embedding per input.", "items": {
                     "type": "object",
                     "required": ["object", "index", "embedding"],
                     "properties": {
-                        "object": {"const": "embedding", "description": "Type of embedding object, always `\"embedding\"`"},
-                        "index": {"type": "integer", "description": "Index position of the input text in the request"},
-                        "embedding": {"type": ["array", "string"], "description": "Vector representation as an array of floats"}
+                        "object": {"const": "embedding", "description": "Always `\"embedding\"`."},
+                        "index": {"type": "integer", "description": "Position of the input text in the request."},
+                        "embedding": {"type": ["array", "string"], "description": "The vector, as an array of floats, or a base64 string when `encoding_format` is `base64`."}
                     }
                 }},
-                "model": {"type": "string", "description": "Model identifier used to generate the embeddings"},
+                "model": {"type": "string", "description": "The model that produced the embeddings."},
                 "usage": {
                     "type": "object",
-                    "description": "Token usage statistics",
+                    "description": "Token usage.",
                     "properties": {
-                        "prompt_tokens": {"type": "integer", "description": "Number of tokens in the input"},
-                        "total_tokens": {"type": "integer", "description": "Total tokens processed"}
+                        "prompt_tokens": {"type": "integer", "description": "Tokens in the input."},
+                        "total_tokens": {"type": "integer", "description": "Tokens processed in total."}
                     }
                 }
             }

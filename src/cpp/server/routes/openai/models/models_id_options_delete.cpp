@@ -19,7 +19,7 @@ public:
         s.id = "openai.models_id_options_delete";
         s.methods = {"DELETE"};
         s.paths = {"models/{id}/options"};
-        s.summary = "Reset a model's recipe options to defaults";
+        s.summary = "Reset a model's recipe options";
         s.modality = "n/a";
         s.description =
             "Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults "

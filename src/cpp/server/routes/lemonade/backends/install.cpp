@@ -54,12 +54,12 @@ ordered_json install_schema() {
             "auth_header_name": {"type": "string"},
             "auth_header_prefix": {"type": "string"},
             "wire_format": {"enum": ["openai", "anthropic"]},
-            "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key; 0 when no key resolves."},
+            "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key; `0` when no key resolves."},
             "auth_state": {
                 "type": "object",
                 "properties": {
                     "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
-                    "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
+                    "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in `lemond`'s memory."}
                 }
             },
             "warnings": {"type": "array", "items": {"type": "string"}, "description": "Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`."},
@@ -101,17 +101,7 @@ public:
             "\n"
             "Optional fields are applied only when present in the request body. Re-installing a "
             "provider without them keeps its stored values, so updating just the `base_url` never "
-            "resets a custom auth header or the `allow_insecure_http` opt-in.\n"
-            "\n"
-            "```bash\n"
-            "curl -X POST http://localhost:13305/v1/install \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d '{\n"
-            "    \"backend\": \"cloud\",\n"
-            "    \"provider\": \"fireworks\",\n"
-            "    \"base_url\": \"https://api.fireworks.ai/inference/v1\"\n"
-            "  }'\n"
-            "```",
+            "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
@@ -144,8 +134,9 @@ public:
              "pass `\"\"` for gateways that expect the bare key."},
             {"wire_format", ArgIn::JsonBody, {{"enum", json::array({"openai", "anthropic"})}},
              false, Support::Available,
-             "Cloud providers: `\"openai\"` (the default) or `\"anthropic\"`. An `\"anthropic\"` "
-             "provider is served only through `POST /v1/messages`."},
+             "Cloud providers: `\"openai\"` or `\"anthropic\"`. An `\"anthropic\"` provider is "
+             "served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults "
+             "to `\"openai\"`."},
             {"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Local backends with `stream: true`: `false` makes the download server-owned and "
              "answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) "

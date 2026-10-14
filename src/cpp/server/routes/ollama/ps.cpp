@@ -36,12 +36,12 @@ public:
                     "type": "object",
                     "required": ["name", "model", "size", "digest", "details", "expires_at", "size_vram"],
                     "properties": {
-                        "name": {"type": "string", "description": "Lemonade model name with a :latest tag."},
+                        "name": {"type": "string", "description": "Lemonade model name with a `:latest` tag."},
                         "model": {"type": "string", "description": "Same as name."},
                         "size": {"type": "integer", "description": "Always 0."},
                         "digest": {"type": "string", "description": "Always an all-zero sha256."},
                         "details": {},
-                        "expires_at": {"type": "string", "description": "Always 2099-01-01T00:00:00Z."},
+                        "expires_at": {"type": "string", "description": "Always `2099-01-01T00:00:00Z`."},
                         "size_vram": {"type": "integer", "description": "Always 0."}
                     }
                 }}

@@ -19,7 +19,7 @@ public:
         s.id = "openai.audio_speech";
         s.methods = {"POST"};
         s.paths = {"audio/speech"};
-        s.summary = "Text to speech";
+        s.summary = "Generate speech from text";
         s.modality = "text -> audio";
         s.description =
             "Generates speech audio from text. The model selects the engine: `kokoro-v1` speaks "
@@ -32,7 +32,7 @@ public:
             "`pcm` only, so a streaming request with another explicit `response_format` answers "
             "`400`. OpenMOSS PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and "
             "`X-MOSS-Channels` headers, since its format depends on the model (24 kHz mono for "
-            "OpenMOSS-TTS, 48 kHz stereo for MOSS-TTS-Local).",
+            "`OpenMOSS-TTS`, 48 kHz stereo for `MOSS-TTS-Local`).",
             "A request for a model that is not a text-to-speech model answers `400` with `code` "
             "`model_not_applicable`, before any model loads.",
         };
@@ -42,10 +42,10 @@ public:
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The model to use (e.g., `kokoro-v1`)."},
             {"speed", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Speaking speed. Default: `1.0`."},
+             "Speaking speed. Defaults to `1.0`."},
             {"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
              "For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own "
-             "(`af_sky`, `am_echo`, ...). Default: `shimmer`. For OpenMOSS models, a free-text "
+             "(`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text "
              "voice or style instruction, e.g. `a calm, deep male narrator voice`."},
             {"reference_wav_b64", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the "
@@ -58,9 +58,8 @@ public:
              "present. Only this field triggers design; `voice` never does."},
             {"response_format", ArgIn::JsonBody,
              {{"enum", json::array({"mp3", "opus", "aac", "flac", "wav", "pcm"})}}, false, Support::Partial,
-             "Container for the returned audio. Default: `mp3` when buffered and `pcm` when "
-             "streaming, or the backend's first supported format when it cannot encode that "
-             "default."},
+             "Container for the returned audio. Defaults to `mp3` when buffered and `pcm` when "
+             "streaming, or to the backend's first supported format when it cannot encode those."},
             {"stream_format", ArgIn::JsonBody, {{"const", "audio"}}, false, Support::Partial,
              "`audio` streams the response. It selects the transport only: the container still "
              "comes from `response_format`."},

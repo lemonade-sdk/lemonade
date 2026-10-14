@@ -29,8 +29,8 @@ public:
             "from `user_models.json`; delete its components to free their disk space.";
         s.notes = {
             "A file still held open, for example by a download that was just cancelled, is retried "
-            "up to 3 times, 5 seconds apart. An unknown model answers `422`; other failures answer "
-            "`500`.",
+            "up to 3 times, 5 seconds apart.",
+            "An unknown model answers `422`; other failures answer `500`.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

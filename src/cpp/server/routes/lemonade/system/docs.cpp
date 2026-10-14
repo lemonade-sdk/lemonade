@@ -22,14 +22,9 @@ public:
         s.paths = {"docs"};
         s.summary = "List the API reference pages bundled with the running server";
         s.description =
-            "Lists the API reference pages bundled with the server. They ship with the server, so "
-            "they describe the running version and need no internet access.\n\n"
-            "Fetch this index first, then read the pages it lists. Every entry carries its own "
-            "URL, so a release can add pages without breaking clients.";
-        s.notes = {
-            "`url` keeps the prefix the index was requested with, so a client that queries "
-            "`/api/v0/docs` receives `/api/v0/docs/...` URLs.",
-        };
+            "Lists the API reference pages bundled with the server, which describe the running "
+            "version and need no internet access. Fetch this index first, then read the pages it "
+            "lists.";
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -45,7 +40,7 @@ public:
                     "properties": {
                         "id": {"type": "string", "description": "Page id, mirroring the page's path on the documentation website."},
                         "title": {"type": "string"},
-                        "url": {"type": "string", "description": "Where to read the page."},
+                        "url": {"type": "string", "description": "Where to read the page. Clients follow it rather than building URLs, so a release can add pages without breaking them."},
                         "bytes": {"type": "integer"}
                     }
                 }}

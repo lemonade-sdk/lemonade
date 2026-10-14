@@ -21,9 +21,9 @@ public:
         s.description =
             "Continues a paused job at its next step, or re-runs an interrupted job's pending "
             "step after reloading the models the interrupt unloaded.";
-        s.notes = {"An unknown job, or one that is not paused or interrupted, is answered with `404`."};
+        s.notes = {"An unknown job, or one that is not paused or interrupted, answers `404`."};
         s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from `POST /v1/jobs`."},
+            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
 
         RouteResponse response;
