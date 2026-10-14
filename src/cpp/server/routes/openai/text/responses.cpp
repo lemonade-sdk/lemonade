@@ -15,14 +15,24 @@ ordered_json response_schema() {
         "type": "object",
         "required": ["id", "object", "created_at", "model", "output"],
         "properties": {
-            "id": {"type": "string"},
-            "object": {"const": "response"},
-            "created_at": {"type": "number"},
-            "model": {"type": "string"},
-            "status": {"type": "string"},
+            "id": {"type": "string", "description": "Identifier of the response."},
+            "object": {"const": "response", "description": "Always `\"response\"`."},
+            "created_at": {"type": "number", "description": "Unix timestamp of when the response was created."},
+            "completed_at": {"type": "number", "description": "Unix timestamp of when the response completed, when the backend reports it."},
+            "model": {"type": "string", "description": "The model that generated the response."},
+            "status": {"type": "string", "description": "State of the response, such as `completed`."},
             "output": {"type": "array", "items": {"type": "object"},
                        "description": "Output items; a message item carries its text in `content[].text`."},
-            "usage": {"type": "object"}
+            "usage": {
+                "type": "object",
+                "description": "Token counts for the request.",
+                "properties": {
+                    "input_tokens": {"type": "integer", "description": "Tokens in the input."},
+                    "output_tokens": {"type": "integer", "description": "Tokens generated."},
+                    "total_tokens": {"type": "integer", "description": "Sum of `input_tokens` and `output_tokens`."},
+                    "input_tokens_details": {"type": "object", "description": "Breakdown of the input tokens, such as `cached_tokens`, when the backend reports it."}
+                }
+            }
         }
     })");
     schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
@@ -36,7 +46,9 @@ ordered_json response_event_schema() {
         "properties": {
             "type": {"type": "string", "description": "Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)."},
             "response": {"type": "object", "description": "`response.created` and `response.completed` only: the response so far."},
-            "delta": {"type": "string", "description": "`response.output_text.delta` only: the next text."}
+            "item": {"type": "object", "description": "Output item events, such as `response.output_item.added`, only: the output item."},
+            "delta": {"type": "string", "description": "`response.output_text.delta` only: the next text."},
+            "timings": {"type": "object", "description": "`response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
 }

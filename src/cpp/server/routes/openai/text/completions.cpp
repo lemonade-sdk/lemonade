@@ -16,25 +16,48 @@ ordered_json text_completion_schema(bool chunk) {
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
-            "id": {"type": "string"},
-            "object": {"const": "text_completion"},
-            "created": {"type": "integer"},
-            "model": {"type": "string"},
-            "choices": {"type": "array", "items": {
+            "id": {"type": "string", "description": "Identifier of the completion."},
+            "object": {"const": "text_completion", "description": "Always `\"text_completion\"`."},
+            "created": {"type": "integer", "description": "Unix timestamp of when the completion was created."},
+            "model": {"type": "string", "description": "The model that generated the response."},
+            "system_fingerprint": {"type": "string", "description": "Build identifier of the backend, when it reports one."},
+            "choices": {"type": "array", "description": "The generated text, one entry per choice.", "items": {
                 "type": "object",
                 "required": ["index", "text"],
                 "properties": {
-                    "index": {"type": "integer"},
-                    "text": {"type": "string"},
-                    "finish_reason": {"type": ["string", "null"]}
+                    "index": {"type": "integer", "description": "Position of the choice in `choices`."},
+                    "text": {"type": "string", "description": "The generated text."},
+                    "logprobs": {"description": "Log probabilities of the output tokens when the request sets `logprobs`, else `null`."},
+                    "finish_reason": {"type": ["string", "null"], "description": "Why generation stopped, such as `stop` or `length`."}
                 }
             }},
-            "usage": {"type": "object"}
+            "usage": {
+                "type": "object",
+                "description": "Token counts for the request.",
+                "properties": {
+                    "prompt_tokens": {"type": "integer", "description": "Tokens in the prompt."},
+                    "completion_tokens": {"type": "integer", "description": "Tokens generated."},
+                    "total_tokens": {"type": "integer", "description": "Sum of `prompt_tokens` and `completion_tokens`."},
+                    "prompt_tokens_details": {"type": "object", "description": "Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it."}
+                }
+            },
+            "timings": {"type": "object", "description": "Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
     schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
     if (chunk) {
-        schema["properties"]["usage"]["description"] = "Final chunk only: token usage.";
+        auto& properties = schema["properties"];
+        properties["id"]["description"] = "Identifier of the completion, the same on every chunk.";
+        properties["choices"]["description"] = "The next part of each choice's text.";
+        properties["choices"]["items"]["properties"]["text"]["description"] =
+            "The text generated since the previous chunk.";
+        properties["choices"]["items"]["properties"]["finish_reason"]["description"] =
+            "Why generation stopped, such as `stop` or `length`, on the choice's last chunk; "
+            "`null` before it.";
+        properties["usage"]["description"] = "Final chunk only: token counts for the request.";
+        properties["timings"]["description"] =
+            "Final chunk only: prompt processing and generation timings, passed through from "
+            "backends that report them, such as llama.cpp.";
     }
     return schema;
 }

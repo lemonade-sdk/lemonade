@@ -18,37 +18,42 @@ ordered_json chat_completion_schema() {
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
-            "id": {"type": "string"},
-            "object": {"const": "chat.completion"},
-            "created": {"type": "integer"},
-            "model": {"type": "string"},
-            "choices": {"type": "array", "items": {
+            "id": {"type": "string", "description": "Identifier of the completion."},
+            "object": {"const": "chat.completion", "description": "Always `\"chat.completion\"`."},
+            "created": {"type": "integer", "description": "Unix timestamp of when the completion was created."},
+            "model": {"type": "string", "description": "The model that generated the response."},
+            "system_fingerprint": {"type": "string", "description": "Build identifier of the backend, when it reports one."},
+            "choices": {"type": "array", "description": "The generated messages, one per choice.", "items": {
                 "type": "object",
                 "required": ["index", "message", "finish_reason"],
                 "properties": {
-                    "index": {"type": "integer"},
+                    "index": {"type": "integer", "description": "Position of the choice in `choices`."},
                     "message": {
                         "type": "object",
+                        "description": "The generated assistant message.",
                         "required": ["role"],
                         "properties": {
-                            "role": {"const": "assistant"},
-                            "content": {"type": ["string", "null"]},
+                            "role": {"const": "assistant", "description": "Always `\"assistant\"`."},
+                            "content": {"type": ["string", "null"], "description": "The message text."},
                             "reasoning_content": {"type": "string", "description": "Reasoning models only: the model's thinking."},
                             "tool_calls": {"type": "array", "description": "Calls to the request's tools."}
                         }
                     },
-                    "finish_reason": {"type": "string"}
+                    "finish_reason": {"type": "string", "description": "Why generation stopped, such as `stop`, `length` or `tool_calls`."}
                 }
             }},
             "usage": {
                 "type": "object",
+                "description": "Token counts for the request.",
                 "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
                 "properties": {
-                    "prompt_tokens": {"type": "integer"},
-                    "completion_tokens": {"type": "integer"},
-                    "total_tokens": {"type": "integer"}
+                    "prompt_tokens": {"type": "integer", "description": "Tokens in the prompt."},
+                    "completion_tokens": {"type": "integer", "description": "Tokens generated."},
+                    "total_tokens": {"type": "integer", "description": "Sum of `prompt_tokens` and `completion_tokens`."},
+                    "prompt_tokens_details": {"type": "object", "description": "Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it."}
                 }
-            }
+            },
+            "timings": {"type": "object", "description": "Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
     // Router collections add their routing decision to the response.
@@ -61,27 +66,31 @@ ordered_json chat_completion_chunk_schema() {
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
-            "id": {"type": "string"},
-            "object": {"const": "chat.completion.chunk"},
-            "created": {"type": "integer"},
-            "model": {"type": "string"},
-            "choices": {"type": "array", "items": {
+            "id": {"type": "string", "description": "Identifier of the completion, the same on every chunk."},
+            "object": {"const": "chat.completion.chunk", "description": "Always `\"chat.completion.chunk\"`."},
+            "created": {"type": "integer", "description": "Unix timestamp of when the completion was created."},
+            "model": {"type": "string", "description": "The model that generated the response."},
+            "system_fingerprint": {"type": "string", "description": "Build identifier of the backend, when it reports one."},
+            "choices": {"type": "array", "description": "The next part of each choice's message.", "items": {
                 "type": "object",
                 "required": ["index", "delta"],
                 "properties": {
-                    "index": {"type": "integer"},
+                    "index": {"type": "integer", "description": "Position of the choice in `choices`."},
                     "delta": {
                         "type": "object",
+                        "description": "The part of the assistant message generated since the previous chunk.",
                         "properties": {
-                            "role": {"const": "assistant"},
-                            "content": {"type": ["string", "null"]},
-                            "reasoning_content": {"type": ["string", "null"]}
+                            "role": {"const": "assistant", "description": "First chunk only: always `\"assistant\"`."},
+                            "content": {"type": ["string", "null"], "description": "The next message text."},
+                            "reasoning_content": {"type": ["string", "null"], "description": "Reasoning models only: the next part of the model's thinking."},
+                            "tool_calls": {"type": "array", "description": "Parts of calls to the request's tools."}
                         }
                     },
-                    "finish_reason": {"type": ["string", "null"]}
+                    "finish_reason": {"type": ["string", "null"], "description": "Why generation stopped, such as `stop` or `length`, on the choice's last chunk; `null` before it."}
                 }
             }},
-            "usage": {"type": "object", "description": "Final chunk only: token usage."}
+            "usage": {"type": "object", "description": "Final chunk only: token usage."},
+            "timings": {"type": "object", "description": "Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
     schema["properties"]["x_lemonade_route"] = route_decision_field_schema();

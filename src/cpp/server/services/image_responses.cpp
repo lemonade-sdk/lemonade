@@ -15,13 +15,14 @@ ordered_json image_response_schema() {
         "required": ["created", "data"],
         "properties": {
             "created": {"type": "integer", "description": "Unix timestamp of when the image was generated."},
-            "data": {"type": "array", "items": {
+            "data": {"type": "array", "description": "The generated images, one entry per image.", "items": {
                 "type": "object",
                 "required": ["b64_json"],
                 "properties": {
                     "b64_json": {"type": "string", "description": "Base64-encoded PNG."}
                 }
-            }}
+            }},
+            "output_format": {"type": "string", "description": "File format of the images, such as `png`, when the backend reports it."}
         }
     })");
 }
