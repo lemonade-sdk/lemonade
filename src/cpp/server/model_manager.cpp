@@ -439,12 +439,15 @@ static bool is_repo_occupied(const std::string& repo_id,
                                 resolve_managed, /*stop_at_first=*/true).empty();
 }
 
-// Only for attributing an artifact that carries no name of its own, where
-// the catalog is the last signal left. Callers must hold models_cache_mutex_.
-static bool is_repo_claimed(const std::string& repo_id,
-                            const std::string& registry_source,
-                            const std::string& exclude_model,
-                            const std::map<std::string, ModelInfo>& cache) {
+// Every variant another model would pull from this repo. An unfinished
+// download carries no name of its own, so the catalog is the only signal left
+// for who is waiting on it. Callers must hold models_cache_mutex_.
+static std::vector<std::string> repo_claimant_variants(
+        const std::string& repo_id,
+        const std::string& registry_source,
+        const std::string& exclude_model,
+        const std::map<std::string, ModelInfo>& cache) {
+    std::vector<std::string> variants;
     const std::string normalized_source = remote_registry_source_name(
         parse_remote_registry_source(registry_source));
     for (const auto& [name, info] : cache) {
@@ -452,10 +455,12 @@ static bool is_repo_claimed(const std::string& repo_id,
         if (effective_registry_source(info) != normalized_source) continue;
         for (const auto& [type, cp] : info.checkpoints) {
             (void)type;
-            if (checkpoint_to_repo_id(cp) == repo_id) return true;
+            if (checkpoint_to_repo_id(cp) == repo_id) {
+                variants.push_back(checkpoint_to_variant(cp));
+            }
         }
     }
-    return false;
+    return variants;
 }
 
 // Parse image_defaults from a model JSON entry into ModelInfo
@@ -863,20 +868,6 @@ static void remove_shared_checkpoint_dir(const fs::path& dir,
     }
 }
 
-static void remove_stale_manifest_for_partial(const fs::path& partial_path,
-                                              const fs::path& stop_dir) {
-    fs::path parent = partial_path.parent_path();
-    for (int i = 0; i < 8 && !parent.empty() && parent != stop_dir; ++i) {
-        fs::path manifest_path = parent / ".download_manifest.json";
-        if (safe_exists(manifest_path)) {
-            remove_file_or_throw(manifest_path, "stale download manifest");
-            cleanup_empty_parents(manifest_path, stop_dir);
-            return;
-        }
-        parent = parent.parent_path();
-    }
-}
-
 // A variant claims the whole repo when it names nothing in particular, so no
 // file name can be matched against it.
 static bool variant_claims_whole_repo(const std::string& variant) {
@@ -982,12 +973,97 @@ static bool manifest_covers_variant(const fs::path& manifest_path,
     return false;
 }
 
+struct RepoDownload {
+    std::string owner;
+    std::vector<std::string> files;
+};
+
+static RepoDownload repo_download(const fs::path& repo_dir) {
+    std::error_code ec;
+    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
+    if (ec) return {};
+
+    const fs::recursive_directory_iterator end;
+    RepoDownload found;
+    while (it != end) {
+        if (it->path().filename() == ".download_manifest.json") {
+            std::string name;
+            std::vector<std::string> files;
+            try {
+                const json manifest = JsonUtils::load_from_file(path_to_utf8(it->path()));
+                if (manifest.contains("model_name") && manifest["model_name"].is_string()) {
+                    name = manifest["model_name"].get<std::string>();
+                }
+                if (manifest.contains("files") && manifest["files"].is_array()) {
+                    for (const auto& file_desc : manifest["files"]) {
+                        if (!file_desc.is_object() || !file_desc.contains("name")) continue;
+                        if (!file_desc["name"].is_string()) continue;
+                        files.push_back(file_desc["name"].get<std::string>());
+                    }
+                }
+            } catch (const std::exception&) {
+            }
+            if (name.empty() || (!found.owner.empty() && found.owner != name)) return {};
+            found.owner = name;
+            found.files.insert(found.files.end(), files.begin(), files.end());
+        }
+        it.increment(ec);
+        if (ec) return {};
+    }
+    return found;
+}
+
+static bool repo_has_unattributed_file(const fs::path& repo_dir,
+                                       const std::string& variant,
+                                       const std::vector<std::string>& own_download_files) {
+    const fs::path snapshots_dir = repo_dir / "snapshots";
+    if (!safe_exists(snapshots_dir)) return false;
+
+    std::error_code ec;
+    fs::recursive_directory_iterator it(snapshots_dir, safe_dir_options, ec);
+    if (ec) return true;
+
+    const fs::recursive_directory_iterator end;
+    while (it != end) {
+        const fs::path entry = it->path();
+        if (!safe_is_directory(entry) && !is_unfinished_download_artifact(entry)) {
+            const std::string rel = normalized_relative_path(entry, snapshots_dir);
+            const bool own = file_matches_variant(rel, variant) ||
+                std::any_of(own_download_files.begin(), own_download_files.end(),
+                            [&rel](const std::string& name) {
+                                return file_matches_variant(rel, name);
+                            });
+            if (!own) return true;
+        }
+        it.increment(ec);
+        if (ec) return true;
+    }
+    return false;
+}
+
+static bool download_belongs_to_variant(const fs::path& artifact,
+                                        const fs::path& snapshots_dir,
+                                        const std::string& variant,
+                                        bool is_manifest) {
+    if (variant_claims_whole_repo(variant)) return true;
+    return is_manifest ? manifest_covers_variant(artifact, variant)
+                       : partial_belongs_to_variant(artifact, snapshots_dir, variant);
+}
+
+static bool download_claimed_by_other(const fs::path& artifact,
+                                      const fs::path& snapshots_dir,
+                                      const std::vector<std::string>& other_variants,
+                                      bool is_manifest) {
+    return std::any_of(other_variants.begin(), other_variants.end(),
+                       [&](const std::string& other) {
+                           return download_belongs_to_variant(artifact, snapshots_dir,
+                                                              other, is_manifest);
+                       });
+}
+
 static bool repo_has_foreign_download(const fs::path& repo_dir,
                                       const std::string& variant,
-                                      bool repo_claimed_by_other_model) {
-
-    const bool claims_whole_repo = variant_claims_whole_repo(variant);
-
+                                      const std::vector<std::string>& other_variants) {
     const fs::path snapshots_dir = repo_dir / "snapshots";
     std::error_code ec;
     fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
@@ -996,14 +1072,10 @@ static bool repo_has_foreign_download(const fs::path& repo_dir,
     const fs::recursive_directory_iterator end;
     while (it != end) {
         const fs::path entry = it->path();
-        if (entry.extension() == ".partial") {
-            if (claims_whole_repo ? repo_claimed_by_other_model
-                                  : !partial_belongs_to_variant(entry, snapshots_dir, variant)) {
-                return true;
-            }
-        } else if (entry.filename() == ".download_manifest.json") {
-            if (claims_whole_repo ? repo_claimed_by_other_model
-                                  : !manifest_covers_variant(entry, variant)) {
+        const bool is_manifest = entry.filename() == ".download_manifest.json";
+        if (is_manifest || entry.extension() == ".partial") {
+            if (!download_belongs_to_variant(entry, snapshots_dir, variant, is_manifest) ||
+                download_claimed_by_other(entry, snapshots_dir, other_variants, is_manifest)) {
                 return true;
             }
         }
@@ -1013,9 +1085,31 @@ static bool repo_has_foreign_download(const fs::path& repo_dir,
     return false;
 }
 
+static void remove_stale_manifest_for_partial(const fs::path& partial_path,
+                                              const fs::path& stop_dir,
+                                              const fs::path& snapshots_dir,
+                                              const std::vector<std::string>& claimants) {
+    fs::path parent = partial_path.parent_path();
+    for (int i = 0; i < 8 && !parent.empty() && parent != stop_dir; ++i) {
+        fs::path manifest_path = parent / ".download_manifest.json";
+        if (safe_exists(manifest_path)) {
+            if (download_claimed_by_other(manifest_path, snapshots_dir, claimants,
+                                          /*is_manifest=*/true)) {
+                LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(manifest_path)
+                            << " (another model resumes from it)" << std::endl;
+                return;
+            }
+            remove_file_or_throw(manifest_path, "stale download manifest");
+            cleanup_empty_parents(manifest_path, stop_dir);
+            return;
+        }
+        parent = parent.parent_path();
+    }
+}
+
 static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
                                               bool repo_occupied,
-                                              bool repo_claimed) {
+                                              const std::vector<std::string>& other_variants) {
     const std::string main_checkpoint = info.checkpoint("main");
     const std::string main_repo = checkpoint_to_repo_id(main_checkpoint);
     if (main_repo.empty()) {
@@ -1029,12 +1123,25 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
 
     const std::string variant = checkpoint_to_variant(main_checkpoint);
 
+    const RepoDownload download = repo_download(model_cache_path);
+    const std::string& download_owner = download.owner;
+    const bool owner_known = !download_owner.empty();
+    const bool owned_by_self = download_owner == info.model_name;
+    const bool foreign_download =
+        owner_known ? !owned_by_self
+                    : repo_has_foreign_download(model_cache_path, variant, other_variants);
+
+    // Only a download this model started can account for a file it did not
+    // finish, so a manifest another model owns says nothing about what is here.
+    const std::vector<std::string> own_download_files =
+        owned_by_self ? download.files : std::vector<std::string>{};
+
     // Nothing else lives here, so the whole incomplete repo cache goes: .partial
     // files, stale manifests, any files that finished before cancellation, refs,
-    // and blobs in one atomic intent. A download that is not this model's is the
-    // one thing that still holds the repo back.
-    if (!repo_occupied &&
-        !repo_has_foreign_download(model_cache_path, variant, repo_claimed)) {
+    // and blobs in one atomic intent. A download that is not this model's holds
+    // the repo back, and so does a complete file that no download explains.
+    if (!repo_occupied && !foreign_download &&
+        !repo_has_unattributed_file(model_cache_path, variant, own_download_files)) {
         LOG(INFO, "ModelManager") << "Removing incomplete model cache: "
                                   << path_to_utf8(model_cache_path) << std::endl;
         std::error_code ec;
@@ -1044,6 +1151,12 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
                                      path_to_utf8(model_cache_path) + "': " + ec.message());
         }
         return true;
+    }
+
+    if (owner_known && !owned_by_self) {
+        LOG(INFO, "ModelManager") << "Keeping the unfinished download in " << main_repo
+                                  << " because it belongs to " << download_owner << std::endl;
+        return false;
     }
 
     // An occupied repo must not be removed wholesale. Remove only the resumable
@@ -1060,6 +1173,9 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         return false;
     }
 
+    const std::vector<std::string> claimants =
+        owner_known ? std::vector<std::string>{} : other_variants;
+
     bool removed_any = false;
     std::error_code ec;
     for (const auto& entry : fs::recursive_directory_iterator(snapshots_dir, safe_dir_options, ec)) {
@@ -1067,12 +1183,15 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
 
         const fs::path partial_path = entry.path();
         if (safe_is_directory(partial_path) ||
-            !partial_belongs_to_variant(partial_path, snapshots_dir, variant)) {
+            !partial_belongs_to_variant(partial_path, snapshots_dir, variant) ||
+            download_claimed_by_other(partial_path, snapshots_dir, claimants,
+                                      /*is_manifest=*/false)) {
             continue;
         }
 
         remove_file_or_throw(partial_path, "incomplete model download partial");
-        remove_stale_manifest_for_partial(partial_path, model_cache_path);
+        remove_stale_manifest_for_partial(partial_path, model_cache_path, snapshots_dir,
+                                          claimants);
         cleanup_empty_parents(partial_path, model_cache_path);
         removed_any = true;
     }
@@ -6419,6 +6538,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 
     json manifest;
     manifest["repo_id"] = main_repo_id;
+    manifest["model_name"] = info.model_name;
     manifest["registry_source"] = source_name;
     manifest["commit_hash"] = repo_snapshot_ids.at(main_repo_id);
     manifest["download_path"] = repo_snapshot_paths.at(main_repo_id);
@@ -6613,6 +6733,11 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
     }
 
+    if (resolved_outside_managed_cache && !is_user_model_name(canonical_model_name)) {
+        throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
+                                 "External files are user-managed; remove them manually.");
+    }
+
     // FLM models have no local HF cache; deletion is the backend's `flm remove`.
     if (info.recipe == "flm") {
         backends::fastflowlm::flm_remove(info.checkpoint());
@@ -6650,18 +6775,18 @@ void ModelManager::delete_model(const std::string& model_name) {
     // Clean those artifacts before falling back to registry-only cleanup.
     if (!own_main_on_disk) {
         bool main_repo_occupied;
-        bool main_repo_claimed;
+        std::vector<std::string> main_repo_other_variants;
         {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
             main_repo_occupied = is_repo_occupied(main_repo, registry_source,
                                                   canonical_model_name, models_cache_,
                                                   resolve_managed);
-            main_repo_claimed = is_repo_claimed(main_repo, registry_source,
-                                                canonical_model_name, models_cache_);
+            main_repo_other_variants = repo_claimant_variants(
+                main_repo, registry_source, canonical_model_name, models_cache_);
         }
 
         bool removed_incomplete_cache = cleanup_incomplete_hf_model_cache(
-            info, main_repo_occupied, main_repo_claimed);
+            info, main_repo_occupied, main_repo_other_variants);
 
         if (!removed_incomplete_cache) {
             LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;

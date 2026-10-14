@@ -105,6 +105,43 @@ int main() {
     // Two catalog entries that name the exact same checkpoint.
     fs::path twin_repo = make_repo(hf_root, "models--org--twin", {"x.gguf"});
 
+    // The same pair, but the download never finished. Neither model has a
+    // resolved file, so nothing occupies the repo, and the marker matches the
+    // deleted model's variant exactly -- which is also the twin's.
+    fs::path twinp_repo = hf_root / "models--org--twinp";
+    write_file(twinp_repo / "snapshots" / "snap" / "x.gguf.partial", "partial");
+    write_file(twinp_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"files":[{"name":"x.gguf"}]})");
+
+    // The same twin pair, but the manifest records which model started the
+    // download. A name settles what no file name can, so the leftovers of
+    // twinown-a's own cancelled download are not the twin's to keep.
+    fs::path twinown_repo = hf_root / "models--org--twinown";
+    write_file(twinown_repo / "snapshots" / "snap" / "x.gguf.partial", "partial");
+    write_file(twinown_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.twinown-a","files":[{"name":"x.gguf"}]})");
+
+    // The same shape from the other side: the name belongs to the twin.
+    fs::path twinoth_repo = hf_root / "models--org--twinoth";
+    write_file(twinoth_repo / "snapshots" / "snap" / "x.gguf.partial", "partial");
+    write_file(twinoth_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.twinoth-b","files":[{"name":"x.gguf"}]})");
+
+    // bareown-b names the whole repo, so no file name can be told apart from
+    // its claim. The manifest still names the download bareown-a's.
+    fs::path bareown_repo = hf_root / "models--org--bareown";
+    write_file(bareown_repo / "snapshots" / "snap" / "mine.gguf.partial", "partial");
+    write_file(bareown_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.bareown-a","files":[{"name":"mine.gguf"}]})");
+
+    // mansh-c holds the repo open, so the delete takes the selective path. The
+    // manifest predates the recorded name and covers mansh-b's file, because a
+    // later download wrote over the one mansh-a left.
+    fs::path mansh_repo = make_repo(hf_root, "models--org--mansh", {"occupant.gguf"});
+    write_file(mansh_repo / "snapshots" / "snap" / "a.gguf.partial", "partial");
+    write_file(mansh_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"files":[{"name":"b.gguf"}]})");
+
     // quant-a's checkpoint names a bare quantization, so the file it downloads
     // is much longer than the variant. Its own interrupted download must still
     // be recognized as its own.
@@ -160,6 +197,20 @@ int main() {
     write_file(midquant_repo / "snapshots" / "snap" / ".download_manifest.json",
                R"({"files":[{"name":"Model-IQ4_XS-Q8nextn.gguf"}]})");
 
+    // Resolution can come back empty while the files are still here, and then
+    // nothing reports the repo as occupied. A repo with no refs/main is one way.
+    fs::path norefs_repo = hf_root / "models--org--norefs";
+    write_file(norefs_repo / "snapshots" / "snap" / "a.gguf");
+    write_file(norefs_repo / "snapshots" / "snap" / "b.gguf");
+
+    // A snapshot that still holds a manifest is the other way: every file in it
+    // stays hidden until the download commits, including the complete ones that
+    // an earlier download already committed there.
+    fs::path coex_repo = make_repo(hf_root, "models--org--coex", {"a.gguf"});
+    write_file(coex_repo / "snapshots" / "snap" / "b.gguf.partial", "partial");
+    write_file(coex_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.coex-b","files":[{"name":"b.gguf"}]})");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -187,6 +238,17 @@ int main() {
         {"stale-b", json{{"checkpoint", "org/stale:b.gguf"}, {"recipe", "llamacpp"}}},
         {"twin-a", json{{"checkpoint", "org/twin:x.gguf"}, {"recipe", "llamacpp"}}},
         {"twin-b", json{{"checkpoint", "org/twin:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twinp-a", json{{"checkpoint", "org/twinp:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twinp-b", json{{"checkpoint", "org/twinp:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twinown-a", json{{"checkpoint", "org/twinown:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twinown-b", json{{"checkpoint", "org/twinown:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twinoth-a", json{{"checkpoint", "org/twinoth:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"twinoth-b", json{{"checkpoint", "org/twinoth:x.gguf"}, {"recipe", "llamacpp"}}},
+        {"bareown-a", json{{"checkpoint", "org/bareown:mine.gguf"}, {"recipe", "llamacpp"}}},
+        {"bareown-b", json{{"checkpoint", "org/bareown"}, {"recipe", "llamacpp"}}},
+        {"mansh-a", json{{"checkpoint", "org/mansh:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"mansh-b", json{{"checkpoint", "org/mansh:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"mansh-c", json{{"checkpoint", "org/mansh:occupant.gguf"}, {"recipe", "llamacpp"}}},
         {"quant-a", json{{"checkpoint", "org/quant:Q4_K_M"}, {"recipe", "llamacpp"}}},
         {"whole-a", json{{"checkpoint", "org/whole"}, {"recipe", "llamacpp"}}},
         {"wholeshared-a", json{{"checkpoint", "org/wholeshared"}, {"recipe", "llamacpp"}}},
@@ -215,6 +277,10 @@ int main() {
         {"adopt2-b", json{{"checkpoints", json{{"main", "org/adopt2:b.gguf"},
                                                {"vae", "org/adopt2:vae.bin"}}},
                           {"recipe", "llamacpp"}}},
+        {"norefs-a", json{{"checkpoint", "org/norefs:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"norefs-b", json{{"checkpoint", "org/norefs:b.gguf"}, {"recipe", "llamacpp"}}},
+        {"coex-a", json{{"checkpoint", "org/coex:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"coex-b", json{{"checkpoint", "org/coex:b.gguf"}, {"recipe", "llamacpp"}}},
         {"late-a", json{{"checkpoint", "org/late:a.gguf"}, {"recipe", "llamacpp"}}},
         {"late-b", json{{"checkpoint", "org/late:b.gguf"}, {"recipe", "llamacpp"}}},
         {"arrive-a", json{{"checkpoint", "org/arrive:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -312,6 +378,58 @@ int main() {
         manager.delete_model("user.twin-a");
         check("a file two models resolve to is not removed with one of them",
               fs::exists(twin_repo / "snapshots" / "snap" / "x.gguf"));
+
+        // Same pair mid-download. Matching this model's variant is not enough
+        // to call the marker this model's alone: twinp-b is still waiting on
+        // the very same file, and resuming is all it has left.
+        manager.delete_model("user.twinp-a");
+        check("a partial two models resolve to is not removed with one of them",
+              fs::exists(twinp_repo / "snapshots" / "snap" / "x.gguf.partial"));
+        check("the manifest that makes that partial resumable survives too",
+              fs::exists(twinp_repo / "snapshots" / "snap" / ".download_manifest.json"));
+
+        // The same pair once the manifest records a name. A catalog entry that
+        // merely names the same file has never asked for it, and the name on
+        // the download says so. The disk space has to come back.
+        manager.delete_model("user.twinown-a");
+        check("a named download is reclaimed despite an identical-variant twin",
+              !fs::exists(twinown_repo));
+
+        // The twin started this one, so none of it is this delete's to take.
+        manager.delete_model("user.twinoth-a");
+        check("a download named for another model survives the delete",
+              fs::exists(twinoth_repo / "snapshots" / "snap" / "x.gguf.partial"));
+        check("that model's manifest survives with it",
+              fs::exists(twinoth_repo / "snapshots" / "snap" / ".download_manifest.json"));
+
+        // A sibling that claims the whole repo claims every marker in it. The
+        // name on the manifest is the only thing that can tell them apart.
+        manager.delete_model("user.bareown-a");
+        check("a named download is reclaimed despite a variantless sibling",
+              !fs::exists(bareown_repo));
+
+        // mansh-c keeps the repo alive, so only mansh-a's own partial goes. The
+        // manifest beside it is mansh-b's resume marker, not mansh-a's.
+        manager.delete_model("user.mansh-a");
+        check("the deleted model's own partial is still removed",
+              !fs::exists(mansh_repo / "snapshots" / "snap" / "a.gguf.partial"));
+        check("a manifest another model resumes from is not removed with it",
+              fs::exists(mansh_repo / "snapshots" / "snap" / ".download_manifest.json"));
+        check("the occupying model's file survives that cleanup",
+              fs::exists(mansh_repo / "snapshots" / "snap" / "occupant.gguf"));
+
+        // Nothing resolves in this repo, so nothing reports it as occupied. The
+        // files are all still here, and a complete file is somebody's.
+        manager.delete_model("user.norefs-a");
+        check("a repo with no refs/main does not lose a sibling's complete file",
+              fs::exists(norefs_repo / "snapshots" / "snap" / "b.gguf"));
+
+        // coex-a finished long ago. Its file is hidden only because coex-b's
+        // download parked a manifest in the same snapshot folder. Cancelling and
+        // deleting coex-b must not take coex-a's file with it.
+        manager.delete_model("user.coex-b");
+        check("a complete file hidden by another model's manifest survives",
+              fs::exists(coex_repo / "snapshots" / "snap" / "a.gguf"));
 
         // A bare quantization is most of the catalog. Matching the variant
         // against the file name alone would call this download a stranger's and
@@ -439,6 +557,9 @@ int main() {
     // The same adoption, but this model's own cancelled download also left
     // artifacts in the managed cache. Refusing to follow resolution out of that
     // cache must not become a refusal to clean the cache the model does own.
+    // A registered model keeps its catalog entry in this situation (see
+    // test_021yj_extra_cache_keeps_registered_identity); a user model has
+    // nothing here but its registration, so the delete still takes that.
     {
         fs::path extra_root = temp / "extra_e";
         fs::path managed = hf_root / "models--org--adoptleft";
@@ -450,15 +571,54 @@ int main() {
         write_file(ext / "refs" / "main", "snap");
 
         ModelManager manager(path_to_utf8(extra_root));
+        bool threw = false;
         try {
             manager.delete_model("user.adoptleft-a");
         } catch (const std::exception& e) {
+            threw = true;
             std::printf("    [delete threw] %s\n", e.what());
         }
+        check("a user model pointing outside the managed cache is still deleted",
+              !threw);
         check("an adopted external copy survives a delete that has work to do",
               fs::exists(ext / "snapshots" / "snap" / "Model-Q4_K_M.gguf"));
         check("the managed leftovers of an adopted model are still reclaimed",
               !fs::exists(managed / "snapshots" / "snap" / "Model-Q4_K_M.gguf.partial"));
+    }
+
+    // The same adoption for a registered model, which keeps its catalog
+    // identity and refuses the delete. An error must report a server that did
+    // nothing, so the refusal has to come before the managed cache is touched.
+    {
+        const std::string registered = "Tiny-Test-Model-GGUF";
+        const std::string repo_dir = "models--unsloth--gemma-3-270m-it-GGUF";
+        const std::string gguf = "gemma-3-270m-it-UD-IQ2_M.gguf";
+
+        fs::path extra_root = temp / "extra_r";
+        fs::path managed = hf_root / repo_dir;
+        write_file(managed / "snapshots" / "snap" / (gguf + ".partial"), "partial");
+        write_file(managed / "snapshots" / "snap" / ".download_manifest.json",
+                   R"({"model_name":")" + registered + R"(","files":[{"name":")" + gguf + R"("}]})");
+        fs::path ext = extra_root / repo_dir;
+        write_file(ext / "snapshots" / "snap" / gguf);
+        write_file(ext / "refs" / "main", "snap");
+
+        ModelManager manager(path_to_utf8(extra_root));
+        if (!manager.model_exists(registered)) {
+            std::printf("[SKIP] %s is no longer in the catalog\n", registered.c_str());
+        } else {
+            bool threw = false;
+            try {
+                manager.delete_model(registered);
+            } catch (const std::exception&) {
+                threw = true;
+            }
+            check("a registered model outside its managed cache is refused", threw);
+            check("the refusal leaves the external files alone",
+                  fs::exists(ext / "snapshots" / "snap" / gguf));
+            check("the refusal removes nothing from the managed cache either",
+                  fs::exists(managed / "snapshots" / "snap" / (gguf + ".partial")));
+        }
     }
 
     // adopt2-b is served from the external cache, because its vae never landed
