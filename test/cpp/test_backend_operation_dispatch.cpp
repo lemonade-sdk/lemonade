@@ -9,16 +9,29 @@
 #include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
 #include "lemon/cloud_provider_registry.h"
+#include "lemon/router.h"
 #include "lemon/wrapped_server.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
+
+namespace lemon {
+
+struct RoutingHelperTestHook {
+    static std::unique_ptr<WrappedServer> create_backend(Router& router, const ModelInfo& model) {
+        return router.create_backend_server(model);
+    }
+};
+
+} // namespace lemon
 
 namespace {
 
@@ -49,6 +62,10 @@ struct Capture {
 class FakeHttpBackend {
 public:
     FakeHttpBackend() {
+        server_.set_pre_routing_handler([this](const httplib::Request&, httplib::Response&) {
+            ++requests_;
+            return httplib::Server::HandlerResponse::Unhandled;
+        });
         auto post = [this](const httplib::Request& request, httplib::Response& response) {
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -57,12 +74,12 @@ public:
                 form_ = request.form;
             }
             const auto body = json::parse(request.body, nullptr, false);
-            if (body.is_object() && body.value("stream", false)) {
+            if (request.path == "/v1/audio/speech") {
+                response.set_content("fixture-pcm", "audio/pcm");
+            } else if (body.is_object() && body.value("stream", false)) {
                 response.set_content("data: {\"choices\":[{\"delta\":{\"content\":\"fixture\"}}]}\n\ndata: [DONE]\n\n", "text/event-stream");
             } else if (request.path == "/inference") {
                 response.set_content("{\"text\":\"fixture transcription\"}", "application/json");
-            } else if (request.path == "/v1/audio/speech") {
-                response.set_content("fixture-pcm", "audio/pcm");
             } else {
                 response.set_content("{\"model\":\"upstream\",\"witness\":true}", "application/json");
             }
@@ -81,6 +98,7 @@ public:
     }
     ~FakeHttpBackend() { server_.stop(); thread_.join(); }
     int port() const { return port_; }
+    size_t request_count() const { return requests_.load(); }
     json last_body() {
         std::lock_guard<std::mutex> lock(mutex_);
         return json::parse(bodies_.back(), nullptr, false);
@@ -95,6 +113,14 @@ public:
         if (form_.has_field(name)) return form_.get_field(name);
         return "";
     }
+    std::string filename() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return form_.get_file("file").filename;
+    }
+    std::string content_type() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return form_.get_file("file").content_type;
+    }
 
 private:
     httplib::Server server_;
@@ -104,6 +130,15 @@ private:
     std::vector<std::string> paths_;
     std::vector<std::string> bodies_;
     httplib::MultipartFormData form_;
+    std::atomic<size_t> requests_{0};
+};
+
+class RunningFakeProcess : public ServerProcess {
+public:
+    RunningFakeProcess() : ServerProcess(ProcessOutput{}) {}
+    std::string start(const ServerCommand&) override { return "127.0.0.1"; }
+    void stop() override {}
+    bool running() const override { return true; }
 };
 
 template<class Server>
@@ -116,6 +151,13 @@ public:
         this->set_state(ModelState::READY);
     }
     bool is_backend_alive() const override { return true; }
+    // The factory fallback keeps its concrete type; attach a fake process without loading a model.
+    static void attach_transport(WrappedServer& server, int port) {
+        server.*(&LocalServer::port_) = port;
+        server.*(&LocalServer::process_) = std::make_unique<RunningFakeProcess>();
+        server.set_model_metadata("client-fixture", "upstream-fixture", ModelType::LLM, DEVICE_CPU, RecipeOptions{});
+        server.set_state(ModelState::READY);
+    }
 };
 
 void check_llama_dispatch(FakeHttpBackend& upstream) {
@@ -212,11 +254,15 @@ void check_flm_dispatch(FakeHttpBackend& upstream) {
     LocalServer<backends::FastFlowLMServer> server(upstream.port());
     check(!server.supports_operation(Op::Transcription, Delivery::Buffered, ModelType::LLM), "FLM rejects transcription in chat mode");
     auto* transcription_rejection = operation_rejection_adapter<ITranscriptionServer>(server, Op::Transcription, Delivery::Buffered, ModelType::LLM);
+    const auto before_transcription = upstream.request_count();
     check(transcription_rejection && transcription_rejection->audio_transcriptions({}) == unsupported("Audio transcription not supported by FLM llm model"), "FLM transcription rejection retains model-specific body");
+    check(upstream.request_count() == before_transcription, "FLM transcription mode rejection never reaches transport");
     check(server.supports_operation(Op::Embeddings, Delivery::Buffered, ModelType::LLM), "FLM embeddings remain available in chat mode");
     operation_adapter<IEmbeddingsServer>(server, Op::Embeddings, Delivery::Buffered, ModelType::LLM)->embeddings({});
     check(upstream.last_path() == "/v1/embeddings", "FLM embeddings in chat mode reach transport");
+    const auto before_responses = upstream.request_count();
     check(server.dispatch_completion_operation(Op::Responses, {}) == unsupported("Responses API not supported by flm"), "FLM buffered responses retain rejection");
+    check(upstream.request_count() == before_responses, "FLM buffered responses never reach transport");
     Capture legacy;
     server.dispatch_streaming_operation(Op::Responses, "{\"stream\":true}", legacy.sink);
     check(upstream.last_path() == "/v1/responses" && upstream.last_body().value("model", "") == "upstream-fixture" &&
@@ -225,18 +271,24 @@ void check_flm_dispatch(FakeHttpBackend& upstream) {
     for (const auto mode : {ModelType::EMBEDDING, ModelType::TRANSCRIPTION}) {
         LocalServer<backends::FastFlowLMServer> other(upstream.port(), mode);
         for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
+            const auto before = upstream.request_count();
             Capture rejection;
             other.dispatch_streaming_operation(operation, "{}", rejection.sink);
             check(!other.supports_operation(operation, Delivery::Streaming, mode) &&
                   rejection.bytes == "data: {\"error\":{\"message\":\"Streaming not supported for FLM " + model_type_to_string(mode) + " model\",\"type\":\"unsupported_operation\"}}\n\n" &&
                   rejection.done == 1, "exact FLM mode-specific SSE rejection and termination");
+            check(upstream.request_count() == before, "FLM rejected streaming operation never reaches transport");
         }
+        const auto before = upstream.request_count();
         check(other.dispatch_completion_operation(Op::ChatCompletion, {}) == unsupported("Chat completion not supported by FLM " + model_type_to_string(mode) + " model"), "FLM buffered chat preserves mode rejection");
         check(other.dispatch_completion_operation(Op::Completion, {}) == unsupported("Text completion not supported by FLM " + model_type_to_string(mode) + " model"), "FLM buffered completion preserves mode rejection");
+        check(upstream.request_count() == before, "FLM rejected buffered completion operations never reach transport");
     }
     LocalServer<backends::FastFlowLMServer> asr(upstream.port(), ModelType::TRANSCRIPTION);
     auto* embeddings_rejection = operation_rejection_adapter<IEmbeddingsServer>(asr, Op::Embeddings, Delivery::Buffered, ModelType::TRANSCRIPTION);
+    const auto before_embeddings = upstream.request_count();
     check(embeddings_rejection && embeddings_rejection->embeddings({}) == unsupported("Embeddings not supported by FLM transcription model"), "FLM embeddings preserve ASR rejection body");
+    check(upstream.request_count() == before_embeddings, "FLM rejected ASR embeddings never reach transport");
 }
 
 void check_whisper_wire(FakeHttpBackend& upstream) {
@@ -245,6 +297,32 @@ void check_whisper_wire(FakeHttpBackend& upstream) {
     const auto response = adapter->audio_transcriptions({{"file_data", "fixture-audio"}, {"filename", "fixture.mp3"}, {"language", "pl"}});
     check(response == json{{"text", "fixture transcription"}} && upstream.last_path() == "/inference" &&
           upstream.field("file") == "fixture-audio" && upstream.field("language") == "pl", "Whisper live in-memory multipart path survives and sends exact fields");
+    const std::string binary_audio("RIFF\0\xff\r\nWAVE", 12);
+    const std::vector<std::pair<std::string, std::string>> formats = {
+        {"mp3", "audio/mpeg"}, {"wav", "audio/wav"}, {"m4a", "audio/mp4"},
+        {"ogg", "audio/ogg"}, {"flac", "audio/flac"}, {"webm", "audio/webm"}, {"unknown", "audio/wav"}
+    };
+    for (const auto& [extension, mime] : formats) {
+        const auto before = upstream.request_count();
+        const auto result = adapter->audio_transcriptions({{"file_data", binary_audio}, {"filename", "uploads/fixture." + extension}});
+        check(result == json{{"text", "fixture transcription"}} && upstream.request_count() == before + 1 &&
+              upstream.field("file") == binary_audio && upstream.filename() == "fixture." + extension && upstream.content_type() == mime,
+              "Whisper preserves binary bytes, basename and MIME for " + extension);
+        check(upstream.field("language") == "auto" && upstream.field("response_format") == "json" &&
+              upstream.field("temperature") == "0.0" && upstream.field("translate").empty(), "Whisper live wire preserves omitted defaults without translation");
+    }
+    adapter->audio_transcriptions({{"file_data", binary_audio}, {"language", "de"}, {"prompt", "Noch einmal"},
+                                   {"response_format", "verbose_json"}, {"temperature", 0.25}});
+    check(upstream.filename() == "audio.wav" && upstream.field("language") == "de" && upstream.field("prompt") == "Noch einmal" &&
+          upstream.field("response_format") == "verbose_json" && upstream.field("temperature") == "0.250000",
+          "Whisper live multipart retains explicit parameters and default filename");
+    for (const auto request : {json::object(), json{{"file_data", ""}}}) {
+        const auto before = upstream.request_count();
+        const auto message = request.empty() ? "Transcription failed: Missing 'file_data' in request" : "Transcription failed: Empty audio data";
+        check(adapter->audio_transcriptions(request) == json{{"error", {{"message", message}, {"type", "audio_processing_error"}}}},
+              "Whisper invalid input retains exact error payload");
+        check(upstream.request_count() == before, "Whisper invalid input never reaches multipart transport");
+    }
 }
 
 void check_cloud_wire(FakeHttpBackend& upstream) {
@@ -258,7 +336,9 @@ void check_cloud_wire(FakeHttpBackend& upstream) {
     model.cloud_provider = "operation-contract-fixture";
     model.checkpoints["main"] = "fixture-upstream";
     cloud.load("fixture", model, RecipeOptions{}, false);
+    const auto before_responses = upstream.request_count();
     check(cloud.dispatch_completion_operation(Op::Responses, {}) == unsupported("Responses API not supported by cloud (operation-contract-fixture)"), "Cloud buffered responses still reject");
+    check(upstream.request_count() == before_responses, "Cloud buffered responses never reach transport");
     Capture capture;
     cloud.dispatch_streaming_operation(Op::Responses, "{\"stream\":true}", capture.sink);
     check(upstream.last_path() == "/v1/responses" && upstream.last_body().value("model", "") == "fixture-upstream" &&
@@ -268,16 +348,118 @@ void check_cloud_wire(FakeHttpBackend& upstream) {
     check(cloud.supports_operation(Op::Responses, Delivery::Streaming, ModelType::LLM), "Cloud unload does not mutate operation support");
 }
 
+class UnboundServer : public WrappedServer {
+public:
+    UnboundServer() : WrappedServer("fixture", "error") {}
+    void load(const std::string&, const ModelInfo&, const RecipeOptions&, bool) override {}
+    int transfers = 0;
+    void forward_streaming_request(const std::string&, const std::string&, httplib::DataSink&,
+                                   bool, long, TelemetryCallback) override { ++transfers; }
+};
+
+void check_default_rejection_framing() {
+    UnboundServer server;
+    for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
+        const auto label = operation == Op::ChatCompletion ? "chat completion" : operation == Op::Completion ? "text completion" : "responses";
+        check(server.dispatch_completion_operation(operation, {}) == unsupported(std::string("fixture does not support ") + label +
+              ". Use the appropriate endpoint for this model type instead.", true), "exact base buffered rejection payload");
+        Capture rejection;
+        server.dispatch_streaming_operation(operation, "{}", rejection.sink);
+        check(rejection.bytes == "data: {\"error\":{\"code\":\"model_not_applicable\",\"message\":\"fixture does not support streaming completion. Use the appropriate endpoint for this model type instead.\",\"type\":\"unsupported_operation\"}}\n\n" &&
+              rejection.done == 1 && server.transfers == 0, "base rejection preserves exact SSE frame, terminates once and invokes no transfer");
+    }
+}
+
+void check_rejection_transport_isolation(FakeHttpBackend& upstream) {
+    LocalServer<backends::KokoroServer> kokoro(upstream.port(), ModelType::TTS);
+    LocalServer<backends::WhisperServer> whisper(upstream.port(), ModelType::TRANSCRIPTION);
+    LocalServer<backends::MoonshineServer> moonshine(upstream.port(), ModelType::TRANSCRIPTION);
+    LocalServer<backends::SDServer> sd(upstream.port(), ModelType::IMAGE);
+    LocalServer<backends::TheNoiseServer> noise(upstream.port(), ModelType::IMAGE);
+    for (auto* server : std::vector<WrappedServer*>{&kokoro, &whisper, &moonshine, &sd, &noise}) {
+        const auto before = upstream.request_count();
+        for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
+            check(!server->supports_operation(operation, Delivery::Buffered, server->get_model_type()) &&
+                  server->dispatch_completion_operation(operation, {}).contains("error"), "exceptional buffered rejection remains selected on a transport-ready instance");
+        }
+        check(upstream.request_count() == before, "exceptional buffered rejections never reach fake HTTP transport");
+    }
+    const auto before = upstream.request_count();
+    auto* rejection = operation_rejection_adapter<IImageServer>(noise, Op::ImageVariations, Delivery::Buffered, ModelType::IMAGE);
+    check(rejection && rejection->image_variations({}) == unsupported("Image variations not supported by thenoise") &&
+          upstream.request_count() == before, "TheNoise rejection adapter never reaches transport on a ready image server");
+}
+
+void check_tts_delivery_wire(FakeHttpBackend& upstream) {
+    LocalServer<backends::KokoroServer> kokoro(upstream.port(), ModelType::TTS);
+    for (const auto delivery : {Delivery::Buffered, Delivery::Streaming}) {
+        auto* adapter = operation_adapter<ITextToSpeechServer>(kokoro, Op::TextToSpeech, delivery, ModelType::TTS);
+        check(adapter != nullptr, "Kokoro binds both public speech deliveries independently");
+        if (!adapter) continue;
+        const auto formats = delivery == Delivery::Buffered ? adapter->supported_audio_formats() : adapter->supported_streaming_audio_formats();
+        for (const auto& format : formats) {
+            Capture audio;
+            json request = {{"model", "client-fixture"}, {"input", "fixture"}, {"response_format", format}};
+            if (delivery == Delivery::Streaming) request["stream_format"] = "audio";
+            const auto before = upstream.request_count();
+            adapter->audio_speech(request, audio.sink);
+            auto expected = request;
+            expected["model"] = "kokoro";
+            if (delivery == Delivery::Streaming) expected["stream"] = true;
+            check(upstream.request_count() == before + 1 && upstream.last_path() == "/v1/audio/speech" && upstream.last_body() == expected &&
+                  audio.bytes == "fixture-pcm" && audio.done == 1, "speech adapter preserves delivery and selected format on wire: " + format);
+        }
+    }
+    check(!operation_adapter<ITextToSpeechServer>(kokoro, Op::TextToSpeech, Delivery::Realtime, ModelType::TTS), "Kokoro never enables realtime speech");
+    for (const auto mode : {ModelType::LLM, ModelType::AUDIO_GENERATION}) {
+        check(!operation_adapter<ITextToSpeechServer>(kokoro, Op::TextToSpeech, Delivery::Buffered, mode) &&
+              !operation_adapter<ITextToSpeechServer>(kokoro, Op::TextToSpeech, Delivery::Streaming, mode), "wrong mode cannot acquire either speech delivery");
+    }
+}
+
+void check_router_fallback_dispatch(FakeHttpBackend& upstream) {
+    RuntimeConfig config(json{{"auto_evict", false}, {"auto_evict_threshold_pct", 0.9}, {"inhibit_suspend", false},
+                              {"log_level", "error"}, {"max_loaded_models", 4}});
+    struct RestoreConfig {
+        RuntimeConfig* previous;
+        ~RestoreConfig() { RuntimeConfig::set_global(previous); }
+    } restore{RuntimeConfig::global()};
+    RuntimeConfig::set_global(&config);
+    Router router(&config, nullptr, nullptr);
+    ModelInfo model;
+    model.recipe = "unknown-operation-fixture";
+    auto fallback = RoutingHelperTestHook::create_backend(router, model);
+    check(dynamic_cast<backends::LlamaCppServer*>(fallback.get()) != nullptr && fallback->get_descriptor() == nullptr,
+          "actual router factory retains the direct llama.cpp fallback for an unknown recipe");
+    LocalServer<backends::LlamaCppServer>::attach_transport(*fallback, upstream.port());
+    for (const auto operation : {Op::ChatCompletion, Op::Completion, Op::Responses}) {
+        const auto before = upstream.request_count();
+        const auto response = fallback->dispatch_completion_operation(operation, json{{"model", "client-fixture"}});
+        const auto path = operation == Op::ChatCompletion ? "/v1/chat/completions" : operation == Op::Completion ? "/v1/completions" : "/v1/responses";
+        check(response == json{{"model", "client-fixture"}, {"witness", true}} && upstream.request_count() == before + 1 && upstream.last_path() == path,
+              "router fallback buffered adapter dispatches to the expected fake HTTP path");
+        Capture stream;
+        fallback->dispatch_streaming_operation(operation, "{\"stream\":true}", stream.sink);
+        check(upstream.request_count() == before + 2 && upstream.last_path() == path &&
+              stream.bytes == "data: {\"choices\":[{\"delta\":{\"content\":\"fixture\"}}]}\n\ndata: [DONE]\n\n",
+              "router fallback streaming adapter preserves the expected path and SSE bytes");
+    }
+}
+
 } // namespace
 
 int main() {
     try {
         check_rejections();
+        check_default_rejection_framing();
         FakeHttpBackend upstream;
+        check_rejection_transport_isolation(upstream);
         check_llama_dispatch(upstream);
         check_flm_dispatch(upstream);
         check_whisper_wire(upstream);
         check_cloud_wire(upstream);
+        check_tts_delivery_wire(upstream);
+        check_router_fallback_dispatch(upstream);
     } catch (const std::exception& error) {
         check(false, std::string("unexpected exception: ") + error.what());
     }
