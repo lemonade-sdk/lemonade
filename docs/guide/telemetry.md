@@ -216,7 +216,7 @@ lemonade config set telemetry.otlp.headers='{"x-project-name":"lemonade"}'
 
 ### Via Configuration API
 
-You can update the internal configuration by sending a POST request to the `/internal/set` endpoint:
+You can update the internal configuration by sending a POST request to the [`/internal/set`](../api/internal.md#post-internalset) endpoint:
 
 ```bash
 # Enable telemetry and select only OpenTelemetry GenAI semantics

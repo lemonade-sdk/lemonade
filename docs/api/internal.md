@@ -2,7 +2,11 @@
 
 Internal endpoints are used for server control and configuration. By default, they are secured by `LEMONADE_ADMIN_API_KEY` (if set) to separate control privileges from standard inference operations.
 
-The clients bundled with the server, such as the desktop app, the tray and the `lemonade` CLI, use these endpoints. They are served only under `/internal/`, and when only `LEMONADE_API_KEY` is set, it secures them too.
+The clients bundled with the server, such as the desktop app, the tray and the `lemonade` CLI, use these endpoints. They are served only under `/internal/`, and when only `LEMONADE_API_KEY` is set, it secures them too. They accept connections from any address, so a client on another machine can manage a shared `lemond`.
+
+Apps that talk to a system-wide Lemonade Server install must not use these endpoints: that server belongs to its bundled clients, and these endpoints may change without notice. An app that embeds its own `lemond` owns that instance and should use them to manage it; see [Embeddable Lemonade: Runtime](../embeddable/runtime.md).
+
+> **Warning:** When `lemond` is bound to a non-loopback host such as `0.0.0.0`, these endpoints, including shutdown and config, are reachable from the network. `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without `LEMONADE_API_KEY`.
 
 <!-- BEGIN GENERATED: internal.summary -->
 | Method | Endpoint | Description |
@@ -98,8 +102,6 @@ This endpoint does not take any parameters.
 {"status": "flushed"}
 ```
 <!-- END GENERATED: internal.telemetry_flush -->
-
-Returns a JSON object indicating successful completion of the flush operation.
 
 <!-- BEGIN GENERATED: internal.pin -->
 ## `POST /internal/pin`
@@ -628,6 +630,10 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above `auto_evict_threshold_pct` runs pressure eviction, `-1` runs only the idle-timeout checks, and any other value does nothing.
 
+The answer comes after the evaluation finishes, so a test can check the outcome right away. While an exclusive job session is active no evaluation runs, and the answer is still `200`.
+
+A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pct`.
+
 ### Example request
 
 === "PowerShell"
@@ -853,8 +859,6 @@ An alias stands in for its target in any request's `model` field. Aliases live i
   - `recipe` - The target model's recipe; llamacpp when the target is not in the registry.
 <!-- END GENERATED: internal.aliases_list -->
 
-Returns a JSON object containing an array of active alias objects.
-
 <!-- BEGIN GENERATED: internal.aliases_create -->
 ## `POST /internal/aliases`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -903,10 +907,6 @@ The `lemonade alias add` command uses this endpoint.
 ```
 <!-- END GENERATED: internal.aliases_create -->
 
-Returns a JSON object confirming the alias binding.
-
-Returns HTTP `400 Bad Request` if required fields are missing or invalid.
-
 <!-- BEGIN GENERATED: internal.aliases_delete -->
 ## `DELETE /internal/aliases/{alias}`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -920,6 +920,8 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `alias` (path) | Yes | The alias name to remove. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+An alias that does not exist answers `404`.
 
 ### Example request
 
@@ -945,10 +947,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 {"status": "deleted", "alias": "my-alias-1"}
 ```
 <!-- END GENERATED: internal.aliases_delete -->
-
-Returns a JSON object confirming deletion.
-
-Returns HTTP `404 Not Found` if the alias does not exist.
 
 <!-- BEGIN GENERATED: internal.routes -->
 ## `GET /internal/routes`

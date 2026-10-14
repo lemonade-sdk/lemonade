@@ -25,6 +25,10 @@ public:
             "Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above "
             "`auto_evict_threshold_pct` runs pressure eviction, `-1` runs only the idle-timeout "
             "checks, and any other value does nothing.",
+            "The answer comes after the evaluation finishes, so a test can check the outcome "
+            "right away. While an exclusive job session is active no evaluation runs, and the "
+            "answer is still `200`.",
+            "A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pct`.",
         };
         s.args = {
             {"pct", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,

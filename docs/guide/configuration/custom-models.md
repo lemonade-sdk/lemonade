@@ -292,7 +292,7 @@ The Tauri desktop app and the web app apply a display transformation on top of t
 
 You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
 
-1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API ([`POST /internal/aliases`](../../api/internal.md#post-internalaliases)).
 2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
 3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
 
@@ -325,7 +325,7 @@ response = client.chat.completions.create(
 )
 ```
 
-If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or [`POST /internal/aliases`](../../api/internal.md#post-internalaliases). Client application code requires no updates.
 
 #### Alias Resolution & Target Model Independence
 
@@ -462,7 +462,7 @@ Imported models are yours to manage, so `/v1/delete` on one returns an error nam
 
 ### Access and failure behavior
 
-An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../embeddable/runtime.md).
+An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../api/internal.md#post-internalset).
 
 During a scan, unreadable nested directories are skipped. Discovery is best-effort by design, so your registered and built-in catalogs stay intact through a filesystem failure.
 
