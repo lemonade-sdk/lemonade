@@ -9,6 +9,11 @@ namespace lemon {
 
 class CloudProviderRegistry;
 
+namespace models {
+struct CheckpointRef;
+class ArtifactLayout;
+}  // namespace models
+
 namespace backends {
 
 // Context handed to BackendOps methods: the server state model management needs
@@ -69,6 +74,14 @@ public:
     virtual std::string find_imported_checkpoint(const std::string& import_dir) const {
         (void)import_dir;
         return "";
+    }
+
+    // Where one checkpoint type's bytes land on disk. Default: the registry
+    // snapshot layout, chosen by ArtifactSourceResolver::layout_for().
+    virtual const models::ArtifactLayout* checkpoint_layout(
+        const models::CheckpointRef& checkpoint) const {
+        (void)checkpoint;
+        return nullptr;
     }
 
     // Validate a user-supplied checkpoint string when registering a new model.

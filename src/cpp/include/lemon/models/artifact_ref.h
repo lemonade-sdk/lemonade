@@ -16,6 +16,8 @@ struct ArtifactRef {
     std::optional<RegistryId> registry;
     std::string repo_id;
     std::string variant;
+    // Which files a repository provides for this ref depends on it.
+    std::string recipe;
     std::string revision;
     bool required = true;
 

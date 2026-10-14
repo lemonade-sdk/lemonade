@@ -39,7 +39,8 @@ set(COMMON_SOURCES
     ../server/models/registry_id.cpp
     # The CLI resolves --source through the same registry table, which the
     # repositories fill; without them it would know no hosts.
-    ../server/models/registry_repository.cpp
+    ../server/models/artifact_layout.cpp
+    ../server/models/registry_descriptors.cpp
     ../server/models/fetchable_repository.cpp
     ../server/backends/hf_cache_util.cpp
     ../server/utils/safe_fs.cpp

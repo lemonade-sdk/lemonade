@@ -30,6 +30,13 @@ std::optional<LocalPathArtifactSource::Origin> origin_of(const std::string& sour
     return std::nullopt;
 }
 
+ArtifactRef ref_for(const ModelInfo& info, bool required) {
+    ArtifactRef ref;
+    ref.recipe = info.recipe;
+    ref.required = required;
+    return ref;
+}
+
 const RegistryDescriptor* host_of_scheme_prefix(const std::string& checkpoint, RegistryId& id) {
     for (const auto& descriptor : all_registry_descriptors()) {
         const std::string prefix = descriptor.scheme_prefix + "://";
@@ -52,6 +59,29 @@ FileValidator ArtifactSourceResolver::validator_for(const std::string& recipe) c
     return [this, recipe](const std::string& path) { return hooks_.validate_file(recipe, path); };
 }
 
+std::unique_ptr<ArtifactSource> ArtifactSourceResolver::open_repository(
+    const RegistryId& host, const ArtifactRef& ref) const {
+    std::unique_ptr<FetchableRepository> repository = hooks_.repository_for != nullptr
+                                                            ? hooks_.repository_for(host, ref)
+                                                            : create_repository(host, ref);
+    if (repository == nullptr) {
+        throw RegistrationError("no repository registered for host '" + host.str() + "'");
+    }
+    return repository;
+}
+
+const ArtifactLayout& ArtifactSourceResolver::layout_for(const ModelInfo& info,
+                                                         const std::string& checkpoint_type) const {
+    if (hooks_.checkpoint_layout != nullptr) {
+        const ArtifactLayout* layout =
+            hooks_.checkpoint_layout(info.recipe, CheckpointRef{info.model_name, checkpoint_type});
+        if (layout != nullptr) {
+            return *layout;
+        }
+    }
+    return hf_hub_layout();
+}
+
 std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
     const std::string checkpoint = info.checkpoint(checkpoint_type);
@@ -65,9 +95,8 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
 
     if (hooks_.backend_self_manages_downloads != nullptr &&
         hooks_.backend_self_manages_downloads(info.recipe)) {
-        ArtifactRef ref;
+        ArtifactRef ref = ref_for(info, required);
         ref.repo_id = checkpoint;
-        ref.required = required;
         return std::make_unique<SelfManagedArtifactSource>(std::move(ref), info.recipe);
     }
 
@@ -75,34 +104,26 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         const std::string path =
             info.resolved_path(checkpoint_type).empty() ? checkpoint
                                                         : info.resolved_path(checkpoint_type);
-        ArtifactRef ref;
+        ArtifactRef ref = ref_for(info, required);
         ref.repo_id = path;
-        ref.required = required;
         return std::make_unique<LocalPathArtifactSource>(std::move(ref), path, *origin,
                                                          validator_for(info.recipe));
     }
 
     RegistryId scheme_host;
     if (host_of_scheme_prefix(checkpoint, scheme_host) != nullptr) {
-        ArtifactRef ref;
+        ArtifactRef ref = ref_for(info, required);
         ref.registry = scheme_host;
         ref.repo_id = checkpoint.substr(checkpoint.find("://") + 3);
-        ref.required = required;
-        auto repository = hooks_.repository_for ? hooks_.repository_for(scheme_host, ref)
-                                                 : nullptr;
-        if (repository == nullptr) {
-            throw RegistrationError("Model '" + info.model_name + "' checkpoint '" +
-                                    checkpoint_type + "' names host '" + scheme_host.str() +
-                                    "' with no repository registered for it");
-        }
-        return repository;
+        ref.variant = variant_from_checkpoint(ref.repo_id);
+        ref.repo_id = repo_id_from_checkpoint(ref.repo_id);
+        return open_repository(scheme_host, ref);
     }
 
     if (checkpoint.rfind(FILE_SCHEME, 0) == 0) {
         const std::string path = checkpoint.substr(sizeof(FILE_SCHEME) - 1);
-        ArtifactRef ref;
+        ArtifactRef ref = ref_for(info, required);
         ref.repo_id = path;
-        ref.required = required;
         return std::make_unique<LocalPathArtifactSource>(
             std::move(ref), path, LocalPathArtifactSource::Origin::LocalPath,
             validator_for(info.recipe));
@@ -111,19 +132,17 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
     // Before the repo-id heuristic, which tests only for '/' and so cannot tell an
     // absolute path from an org/repo.
     if (exists_on_disk(checkpoint)) {
-        ArtifactRef ref;
+        ArtifactRef ref = ref_for(info, required);
         ref.repo_id = checkpoint;
-        ref.required = required;
         return std::make_unique<LocalPathArtifactSource>(
             std::move(ref), checkpoint, LocalPathArtifactSource::Origin::LocalPath,
             validator_for(info.recipe));
     }
 
     if (checkpoint_looks_like_repo_id(checkpoint)) {
-        ArtifactRef ref;
+        ArtifactRef ref = ref_for(info, required);
         ref.repo_id = repo_id_from_checkpoint(checkpoint);
         ref.variant = variant_from_checkpoint(checkpoint);
-        ref.required = required;
 
         // An absent spelling means the default host to registry_id_from(), so ask
         // whether the entry names one before falling through to the config.
@@ -143,13 +162,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         }
         ref.registry = host;
 
-        auto repository = hooks_.repository_for ? hooks_.repository_for(*host, ref) : nullptr;
-        if (repository == nullptr) {
-            throw RegistrationError("Model '" + info.model_name + "' checkpoint '" +
-                                    checkpoint_type + "' needs host '" + host->str() +
-                                    "' with no repository registered for it");
-        }
-        return repository;
+        return open_repository(*host, ref);
     }
 
     throw RegistrationError("Model '" + info.model_name + "' checkpoint '" + checkpoint_type +

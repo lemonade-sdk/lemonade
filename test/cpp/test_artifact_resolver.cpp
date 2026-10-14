@@ -69,7 +69,7 @@ ArtifactSourceResolver::Hooks base_hooks() {
     hooks.backend_self_manages_downloads =
         [](const std::string& recipe) { return recipe == "flm"; };
     hooks.repository_for = [](const RegistryId& id, const ArtifactRef& ref)
-        -> std::unique_ptr<ArtifactSource> {
+        -> std::unique_ptr<FetchableRepository> {
         g_built_host = id;
         g_built_ref = ref;
         return std::make_unique<SpyRepository>(ref);

@@ -2,6 +2,8 @@
 
 #include <lemon/backends/hf_cache_util.h>
 #include <lemon/model_registry.h>
+#include <lemon/models/registry_descriptors.h>
+#include <lemon/registry_files.h>
 #include <lemon/utils/path_utils.h>
 
 #include <cctype>
@@ -15,26 +17,6 @@ namespace lemon {
 namespace models {
 
 namespace {
-
-RegistryDescriptor huggingface_value() {
-    return RegistryDescriptor{RegistryId("huggingface"),
-                              {"huggingface", "hf", ""},
-                              "Hugging Face",
-                              "hf",
-                              "models--",
-                              "main",
-                              "https://huggingface.co"};
-}
-
-RegistryDescriptor modelscope_value() {
-    return RegistryDescriptor{RegistryId("modelscope"),
-                              {"modelscope", "ms"},
-                              "ModelScope",
-                              "ms",
-                              "modelscope--models--",
-                              "master",
-                              ""};
-}
 
 // A full commit SHA cannot move; a branch name can.
 bool is_commit_sha(const std::string& revision) {
@@ -50,6 +32,40 @@ bool is_commit_sha(const std::string& revision) {
 }
 
 }  // namespace
+
+DownloadPlan registry_download_plan(const FetchableRepository& repository, const ArtifactRef& ref,
+                                    const ArtifactLayout& layout, const Placement& placement,
+                                    const RepoListing& listing) {
+    std::vector<std::string> available;
+    available.reserve(listing.files.size());
+    std::map<std::string, const RegistryFile*> by_name;
+    for (const auto& file : listing.files) {
+        if (file.directory) {
+            continue;
+        }
+        available.push_back(file.path);
+        by_name.emplace(file.path, &file);
+    }
+
+    DownloadPlan plan;
+    plan.download_path = layout.directory(placement);
+    const Revision revision{listing.download_revision.empty() ? listing.revision.id
+                                                              : listing.download_revision,
+                            listing.revision.pinned};
+    for (const auto& name :
+         registry_files::select_main_repo_files(ref.repo_id, ref.recipe, ref.variant, available)) {
+        DownloadFile file;
+        file.name = name;
+        file.url = repository.file_url(RepoRef{ref.repo_id, revision, name});
+        if (const auto found = by_name.find(name); found != by_name.end()) {
+            file.size = found->second->size;
+            file.expected_hash_algorithm = found->second->hash_algorithm;
+            file.expected_hash = found->second->hash;
+        }
+        plan.files.push_back(file);
+    }
+    return plan;
+}
 
 // Hosts differ in protocol, and ModelRegistry already holds that difference, so
 // one class serves every host it knows. A host needing divergent behavior
@@ -71,14 +87,19 @@ class RegistryBackedRepository : public FetchableRepository {
     }
 
     Acquisition acquisition() const override {
-        // A plan names files, and which files a checkpoint needs is the layout's
-        // answer; until layout_for() exists this cannot say anything true.
-        throw std::logic_error("RegistryBackedRepository::acquisition needs ArtifactLayout");
+        const RepoListing listing = list(ref_.repo_id, ref_.revision);
+        Acquisition acquisition;
+        acquisition.kind = Acquisition::Kind::Plan;
+        acquisition.plan = registry_download_plan(*this, ref_, hf_hub_layout(),
+                                                  placement(listing), listing);
+        return acquisition;
     }
 
     Deletion deletion() const override { return Deletion{Deletion::Kind::CacheDir, ""}; }
 
     RegistryId id() const override { return host(); }
+
+    const ArtifactRef& artifact_ref() const { return ref_; }
 
     Revision default_revision() const override { return Revision{registry().default_revision(), false}; }
 
@@ -87,6 +108,7 @@ class RegistryBackedRepository : public FetchableRepository {
         RepoListing listing;
         listing.repo_id = repo_id;
         listing.revision = Revision{repository.snapshot_id, is_commit_sha(repository.snapshot_id)};
+        listing.download_revision = repository.revision;
         listing.files = repository.files;
         return listing;
     }
@@ -139,6 +161,15 @@ class RegistryBackedRepository : public FetchableRepository {
 
     const ModelRegistry& registry() const { return model_registry(host()); }
 
+    // The checkout acquisition would stage into, and which revision its URLs carry.
+    Placement placement(const RepoListing& listing) const {
+        Placement placement;
+        placement.cache_dir = utils::path_to_utf8(cache_dir(ref_.repo_id));
+        placement.revision = listing.revision.id.empty() ? listing.download_revision
+                                                         : listing.revision.id;
+        return placement;
+    }
+
     fs::path cache_dir(const std::string& repo_id) const {
         return utils::path_from_utf8(utils::get_hf_cache_dir()) / cache_dir_name(repo_id);
     }
@@ -148,8 +179,10 @@ class RegistryBackedRepository : public FetchableRepository {
     }
 };
 
-LEMONADE_REGISTER_ARTIFACT_REPOSITORY(RegistryBackedRepository, huggingface_value());
-LEMONADE_REGISTER_ARTIFACT_REPOSITORY(RegistryBackedRepository, modelscope_value());
+LEMONADE_REGISTER_ARTIFACT_REPOSITORY(RegistryBackedRepository,
+                                              builtin_registries::huggingface());
+LEMONADE_REGISTER_ARTIFACT_REPOSITORY(RegistryBackedRepository,
+                                              builtin_registries::modelscope());
 
 }  // namespace models
 }  // namespace lemon
