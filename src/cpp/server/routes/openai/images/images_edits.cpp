@@ -18,6 +18,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
     auto at = [&bytes](size_t i) -> std::uint8_t {
@@ -94,62 +95,66 @@ public:
         s.methods = {"POST"};
         s.paths = {"images/edits"};
         s.summary = "Image Editing";
+        s.modality = "image + prompt -> edited image";
         s.description =
-            "Edits one or more reference images as a text prompt describes, loading the model on "
-            "first use. The request is `multipart/form-data`.";
-        s.notes = {
-            "Use an editing-capable model such as `Flux-2-Klein-4B` or `SD-Turbo`.",
-            "**Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
-            "significantly faster.",
-        };
-        const json integer = {{"type", "integer"}};
-        const json text = {{"type", "string"}};
-        const json file = {{"type", "string"}, {"format", "binary"}};
+            "Image Editing API. Provide one or more reference images and a prompt describing the "
+            "desired change, and receive an edited image.\n\n"
+            "> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use "
+            "editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.\n"
+            ">\n"
+            "> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
+            "significantly faster.";
+        const ordered_json integer = {{"type", "integer"}};
+        const ordered_json text = {{"type", "string"}};
+        const ordered_json file = {{"type", "string"}, {"format", "binary"}};
         s.args = {
             {"model", ArgIn::Form, text, true, Support::Available,
-             "Diffusion model, e.g. `Flux-2-Klein-4B` or `SD-Turbo`."},
+             "The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
             {"image", ArgIn::Form, file, true, Support::Available,
-             "PNG or JPEG reference image, forwarded without re-encoding. For several references, "
-             "repeat `image[]` in order; a request uses `image` or `image[]`, not both."},
-            {"prompt", ArgIn::Form, text, true, Support::Available, "Text description of the desired edit."},
+             "PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files "
+             "are forwarded without re-encoding."},
+            {"prompt", ArgIn::Form, text, true, Support::Available,
+             "A text description of the desired edit."},
             {"mask", ArgIn::Form, file, false, Support::Available,
-             "Mask image (PNG). White areas are edited; black areas are preserved."},
+             "An optional mask image (PNG). White areas indicate regions to edit; black areas are "
+             "preserved."},
             {"size", ArgIn::Form, text, false, Support::Available,
-             "Output size as `WIDTHxHEIGHT`, e.g. `512x512`. Defaults to the first reference "
-             "image's size, scaled down proportionally to the model's `image_defaults.soft_pixel_cap` "
-             "(default 2048x2048 pixels, about 4 MP). An explicit size skips this cap; backend "
-             "limits still apply."},
+             "Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, use the first "
+             "reference image's dimensions, scaling down proportionally to the model's optional "
+             "`image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit "
+             "size bypasses this soft cap; backend limits still apply."},
             {"n", ArgIn::Form, integer, false, Support::Partial,
-             "Number of images to generate, from `1` to `10`. Defaults to `1`; values outside "
-             "the range answer `400`."},
+             "Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside "
+             "this range are rejected with `400 Bad Request`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json` (a base64-encoded image) is supported."},
+             "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"steps", ArgIn::Form, integer, false, Support::Available,
-             "Number of inference steps. The default varies by model."},
+             "Number of inference steps. Default varies by model."},
             {"cfg_scale", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. The default varies by model."},
+             "Classifier-free guidance scale. Default varies by model."},
             {"seed", ArgIn::Form, integer, false, Support::Available, "Random seed for reproducibility."},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI compatibility field. Accepted but not forwarded to the backend."},
+             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
             {"background", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI compatibility field. Accepted but not forwarded to the backend."},
+             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
             {"quality", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI compatibility field. Accepted but not forwarded to the backend."},
+             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
             {"input_fidelity", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI compatibility field. Accepted but not forwarded to the backend."},
+             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
             {"output_compression", ArgIn::Form, integer, false, Support::NotAvailable,
-             "OpenAI compatibility field. Accepted and ignored by the backend."},
+             "OpenAI API compatibility field. Accepted; silently ignored by the backend."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
-        response.example = json::parse(R"({
-            "model": "SD-Turbo",
-            "image": "@fixtures/image.png",
-            "prompt": "Add a red barn in the background, photorealistic",
-            "size": "256x256",
-            "steps": 4
+        response.example = ordered_json::parse(R"({
+            "model": "Flux-2-Klein-4B",
+            "prompt": "Add a red barn and mountains in the background, photorealistic",
+            "size": "512x512",
+            "n": 1,
+            "response_format": "b64_json",
+            "image": "@fixtures/image.png"
         })");
         s.responses = {response};
         s.request_format = RequestFormat::Form;

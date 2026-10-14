@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class RegisterRoute : public ApiRoute {
 public:
@@ -21,17 +22,17 @@ public:
         s.paths = {"models/register"};
         s.summary = "Register or update a user model definition without downloading it";
         s.description =
-            "Registers or updates a `user.*` model definition without downloading its files, for "
-            "clients that register and install as separate actions. "
-            "[`POST /v1/pull`](#post-v1pull) performs the same registration step before "
-            "downloading.";
+            "Register or update a `user.*` model definition without downloading model files.\n"
+            "Use this endpoint when registration and installation are separate actions.\n"
+            "`POST /v1/pull` remains the install/download path and performs the same internal\n"
+            "registration step before downloading.";
         s.notes = {
-            "Registration updates `user_models.json` and invalidates the model cache, but starts "
-            "no download. A checkpoint is not required, since registration is a metadata "
-            "operation and some model types have no local weights; `/v1/pull` is what installs.",
-            "The endpoint accepts one model definition. A `models` array embedding several "
-            "definitions is a collection-import concern for `/v1/pull`; register those "
-            "components first when using this endpoint.",
+            "A checkpoint is intentionally not universally required: registration is a model\n"
+            "metadata operation and some present or future model types may not have local\n"
+            "weights. `/pull` remains the operation that attempts installation/download.",
+            "The endpoint accepts one model definition. An embedded `models` array represents\n"
+            "multiple definitions and remains a collection-import concern; register those\n"
+            "component definitions first when using this endpoint.",
             "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
             "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
             "missing `recipe`, and malformed `checkpoint`, `checkpoints`, `source` or "
@@ -39,36 +40,34 @@ public:
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Non-empty name in the `user.` namespace, e.g. `user.Phi-4-Mini-GGUF`."},
+             "Non-empty namespaced model name under `user.*`."},
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Recipe that loads the model, such as `llamacpp`."},
+             "Lemonade recipe associated with the model definition."},
             {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Main checkpoint, when the recipe uses one."},
             {"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "Checkpoints by role for multi-checkpoint models; must contain `main`."},
+             "Named checkpoints for multi-checkpoint models."},
             {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Registry or local source. Remote values are `huggingface` and `modelscope`."},
+             "Registry or local source. Remote values are `huggingface` or `modelscope`."},
             {"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Additional model labels; see [Model Labels](./openai.md#model-labels)."},
+             "Additional model labels."},
             {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Collection recipes only: names of already-registered component models."},
+             "Already-registered component model names for collection recipes."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = {
             {"type", "object"},
-            {"required", json::array({"status", "model_name", "canonical_model_name"})},
+            {"required", ordered_json::array({"status", "model_name", "canonical_model_name"})},
             {"properties", {
                 {"status", {{"const", "success"}}},
-                {"model_name", {{"type", "string"},
-                                {"description", "Public id that /v1/models reports."}}},
-                {"canonical_model_name", {{"type", "string"},
-                                          {"description", "Stable user.* registration id."}}},
+                {"model_name", {{"type", "string"}}},
+                {"canonical_model_name", {{"type", "string"}}},
                 {"model", ModelJson::schema()},
             }},
         };
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model_name": "user.Phi-4-Mini-GGUF",
             "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
             "recipe": "llamacpp"

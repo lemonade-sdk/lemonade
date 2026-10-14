@@ -5,6 +5,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class DownloadsControlRoute : public ApiRoute {
 public:
@@ -16,41 +17,47 @@ public:
         s.methods = {"POST"};
         s.paths = {"downloads/control"};
         s.summary = "Pause, cancel, or remove server-owned model download jobs";
-        s.description = "Pauses, cancels or removes a server-owned download job.";
+        s.description =
+            "Control a server-owned model download job.";
         s.notes = {
-            "`pause` asks the worker to stop and keeps the job listed as `paused`. `cancel` asks "
-            "it to stop and marks the job `cancelled`; clients should wait for `running: false` "
-            "before deleting partial files. Either may briefly report `running: true` while the "
-            "worker unwinds, and a job that already finished is left as it is.",
-            "`remove` drops a stopped job from the list. While its worker is still running, the "
-            "job stays listed and the request is treated as a `cancel` until the worker stops. "
-            "Removing a job that is not listed succeeds with `missing: true`.",
+            "### Actions\n\n"
+            "| Action | Description |\n"
+            "|--------|-------------|\n"
+            "| `pause` | Requests the worker to stop and keeps the job visible as `paused`. The "
+            "worker may briefly report `running=true` while it unwinds. |\n"
+            "| `cancel` | Requests the worker to stop and marks the job as `cancelled`. Clients "
+            "should wait for `running=false` before deleting partial files. |\n"
+            "| `remove` | Removes a stopped job from the server registry. If the worker is still "
+            "running, the server keeps the job visible and treats the request as a cancel request "
+            "until the worker stops. |",
+            "A `pause` or `cancel` for a job that already finished leaves it as it is.",
             "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. A "
             "`pause` or `cancel` for a job that is not listed answers `404`.",
         };
         s.args = {
             {"id", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Download id from `POST /v1/pull` or `GET /v1/downloads`, e.g. "
+             "Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example "
              "`model:Qwen3-0.6B-GGUF`."},
             {"action", ArgIn::JsonBody, {{"enum", json::array({"pause", "cancel", "remove"})}}, true,
-             Support::Available, "`pause`, `cancel` or `remove`."},
+             Support::Available,
+             "One of `pause`, `cancel`, or `remove`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        json removed = json::parse(R"({
+        ordered_json removed = ordered_json::parse(R"({
             "type": "object",
             "required": ["status"],
             "properties": {
                 "status": {"const": "ok"},
-                "missing": {"const": true, "description": "Only when the job was not listed."}
+                "missing": {"const": true}
             }
         })");
-        json snapshot = DownloadManager::job_schema();
+        ordered_json snapshot = DownloadManager::job_schema();
         snapshot["description"] = "pause, cancel, and remove of a running job: the job's snapshot.";
-        response.schema = {{"oneOf", json::array({removed, snapshot})}};
+        response.schema = {{"oneOf", ordered_json::array({removed, snapshot})}};
         response.setup = {{"lemonade.pull", ResponseFormat::Json}};
-        response.example = {{"id", "$lemonade.pull/id"}, {"action", "remove"}};
+        response.example = {{"id", "$lemonade.pull/id"}, {"action", "pause"}};
         s.responses = {response};
         return s;
     }

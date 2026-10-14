@@ -20,14 +20,11 @@ public:
         s.methods = {"DELETE"};
         s.paths = {"models/{id}/options"};
         s.summary = "Reset a model's recipe options to defaults";
+        s.modality = "n/a";
         s.description =
-            "Lemonade extension: resets a model to its defaults by erasing its "
-            "`recipe_options.json` entry. The response is the same as "
-            "[`GET /v1/models/{id}/options`](#get-v1modelsidoptions), with `saved` now `{}`.";
-        s.notes = {
+            "Reset a model to its defaults by erasing its `recipe_options.json` entry entirely. "
             "The model keeps the defaults that come from its registry entry and from the "
-            "server's global configuration; only the saved overrides are removed.",
-        };
+            "server's global configuration; only the user's saved overrides are removed.";
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},

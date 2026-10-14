@@ -398,7 +398,7 @@ struct UpdateCheckResult {
     // Query model sync status (running state, active/pending targets, completed count, or specific sync_id outcome)
     json get_sync_status(uint64_t sync_id = 0) const;
     // JSON Schema of get_sync_status()'s result, which both sync routes return.
-    static json sync_status_schema();
+    static nlohmann::ordered_json sync_status_schema();
 
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
     SyncEnqueueResult enqueue_sync(const std::vector<std::string>& target_models = {}, bool attach_if_running = false);

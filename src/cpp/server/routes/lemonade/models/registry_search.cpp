@@ -8,6 +8,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class RegistrySearchRoute : public ApiRoute {
 public:
@@ -20,41 +21,38 @@ public:
         s.paths = {"registry/search"};
         s.summary = "Search Hugging Face or ModelScope for model repositories";
         s.description =
-            "Searches a remote model registry (Hugging Face or ModelScope) for repositories "
-            "matching a query. It returns candidate repositories from registry metadata and does "
-            "not verify that a repository holds servable files.";
-        s.notes = {
+            "Search a remote model registry (Hugging Face or ModelScope) for repositories "
+            "matching a text query. This endpoint returns **candidate repositories** based on "
+            "registry metadata; it does not verify that a repository contains servable files. "
             "The desktop app's Model Manager follows up with "
-            "[`GET /v1/pull/variants`](#get-v1pullvariants) on each candidate and offers a "
-            "download only when that file-level validation passes; `has_gguf` is only a hint.",
-            "A `400` answers a `query` shorter than 3 characters, an invalid `source`, `limit` or "
-            "`format`, or offline mode (`code: \"lemond_offline\"`). A `429` passes on the "
-            "registry's rate limit, and other upstream transport or parsing failures answer "
-            "`502`, with the upstream status code when available.",
-        };
+            "[`/v1/pull/variants`](#get-v1pullvariants) on each candidate and only offers a "
+            "download for repositories whose file listing passes that validation.\n\n"
+            "Requires network access: returns 400 with code `lemond_offline` when the server is in "
+            "offline mode.";
         s.args = {
             {"query", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
-             "Search text, at least 3 characters after trimming. `q` is accepted as an alias."},
+             "Search text, minimum 3 characters after trimming. `q` is accepted as an alias."},
             {"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
-             "Registry to search: `huggingface` (default) or `modelscope`. The aliases `hf` and "
-             "`ms` are accepted; the response echoes the canonical name."},
+             "Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` "
+             "are accepted; the canonical name is echoed in the response."},
             {"limit", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
-             "Most results to return, from 1 to 50. Defaults to 12."},
+             "Maximum number of results, an integer from 1 to 50. Default 12."},
             {"format", ArgIn::Query, {{"enum", json::array({"gguf"})}}, false, Support::Available,
-             "`gguf`, the only accepted value, favors GGUF repositories in search and ranking."},
+             "The only accepted value is `gguf`. Biases search and ranking toward GGUF "
+             "repositories and echoes `\"format\": \"gguf\"` in the response."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["source", "query", "total", "results"],
             "properties": {
-                "source": {"enum": ["huggingface", "modelscope"]},
-                "query": {"type": "string", "description": "The trimmed query."},
-                "format": {"const": "gguf", "description": "Only when format=gguf was requested."},
-                "total": {"type": "integer", "description": "Matches the registry reported; may exceed the results returned."},
-                "results": {"type": "array", "items": {
+                "source": {"enum": ["huggingface", "modelscope"], "description": "Echoed input (`source` canonicalized to `huggingface` or `modelscope`)."},
+                "query": {"type": "string", "description": "Echoed input (`source` canonicalized to `huggingface` or `modelscope`)."},
+                "format": {"const": "gguf", "description": "Present only when `format=gguf` was requested."},
+                "total": {"type": "integer", "description": "Total match count reported by the upstream registry; may exceed the number of returned results."},
+                "results": {"type": "array", "description": "Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation.", "items": {
                     "type": "object",
                     "required": ["repository_id", "display_name", "source"],
                     "properties": {
@@ -67,12 +65,12 @@ public:
                         "task": {"type": "string"},
                         "downloads": {"type": "integer"},
                         "likes": {"type": "integer"},
-                        "has_gguf": {"type": "boolean", "description": "Hint from registry metadata that the repository holds GGUF files."}
+                        "has_gguf": {"type": "boolean"}
                     }
                 }}
             }
         })");
-        response.example = {{"query", "qwen3"}, {"limit", 2}, {"format", "gguf"}};
+        response.example = {{"source", "modelscope"}, {"query", "qwen"}, {"format", "gguf"}};
         s.responses = {response};
         return s;
     }

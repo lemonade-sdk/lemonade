@@ -7,9 +7,10 @@
 namespace lemon {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
-json image_response_schema() {
-    return json::parse(R"({
+ordered_json image_response_schema() {
+    return ordered_json::parse(R"({
         "type": "object",
         "required": ["created", "data"],
         "properties": {

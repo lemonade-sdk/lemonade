@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class ConfigRoute : public ApiRoute {
 public:
@@ -30,7 +31,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "description": "Every config.json key with its current value.",
             "required": ["port", "host", "log_level"],

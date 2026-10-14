@@ -6,6 +6,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class AliasesListRoute : public ApiRoute {
 public:
@@ -18,7 +19,7 @@ public:
         s.paths = {"aliases"};
         s.prefixes = Prefixes::Internal;
         s.summary = "List all active model aliases";
-        s.description = "Lists every model alias with the model it points to.";
+        s.description = "Retrieves a list of all active model alias mappings.";
         s.notes = {
             "An alias stands in for its target in any request's `model` field. Aliases live in "
             "`<cache_dir>/aliases.json`; see "
@@ -27,7 +28,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["aliases"],
             "properties": {

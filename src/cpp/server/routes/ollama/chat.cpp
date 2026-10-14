@@ -13,6 +13,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 // Ollama sends tool-call arguments as an object; OpenAI sends a JSON string.
 json normalize_ollama_tool_calls(json tool_calls) {
@@ -252,8 +253,8 @@ json convert_openai_delta_to_ollama(const json& openai_chunk, const std::string&
     return ollama_chunk;
 }
 
-json chat_response_schema(bool line) {
-    json schema = json::parse(R"({
+ordered_json chat_response_schema(bool line) {
+    ordered_json schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["model", "created_at", "done"],
         "properties": {
@@ -298,7 +299,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/chat"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Chat completion, streaming and non-streaming";
+        s.summary = "Chat completion. Streaming and non-streaming";
         s.description =
             "Generates the next assistant message for a conversation, loading the model on "
             "first use. Lemonade runs it as an OpenAI chat completion and converts the result.";
@@ -343,7 +344,7 @@ public:
         RouteResponse full;
         full.format = ResponseFormat::Json;
         full.schema = chat_response_schema(false);
-        full.example = json::parse(R"({
+        full.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
             "stream": false
@@ -352,7 +353,7 @@ public:
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
         stream.schema = chat_response_schema(true);
-        stream.example = json::parse(R"({
+        stream.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
             "stream": true

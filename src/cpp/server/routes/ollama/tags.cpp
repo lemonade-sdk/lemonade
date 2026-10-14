@@ -8,6 +8,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class TagsRoute : public ApiRoute {
 public:
@@ -19,7 +20,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/api/tags"};
         s.prefixes = Prefixes::Root;
-        s.summary = "List downloaded models";
+        s.summary = "Lists downloaded models";
         s.description = "Lists the downloaded models in Ollama's format.";
         s.notes = {
             "Every name carries a `:latest` tag, `modified_at` and `digest` are fixed "
@@ -28,7 +29,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["models"],
             "properties": {

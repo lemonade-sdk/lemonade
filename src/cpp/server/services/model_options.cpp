@@ -15,6 +15,7 @@
 namespace lemon {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
@@ -29,17 +30,17 @@ json resolve_all_recipe_options(const RecipeOptions& options) {
 
 } // namespace
 
-json model_options_schema() {
-    return json::parse(R"({
+ordered_json model_options_schema() {
+    return ordered_json::parse(R"({
         "type": "object",
         "required": ["model_name", "recipe", "saved", "effective", "defaults", "resolved_ctx_size"],
         "properties": {
-            "model_name": {"type": "string", "description": "The id from the URL. It appears again inside effective and defaults, so each is a complete /v1/load body."},
+            "model_name": {"type": "string", "description": "The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body."},
             "recipe": {"type": "string", "description": "The recipe the option names belong to."},
-            "saved": {"type": "object", "description": "The model's own entry in recipe_options.json: only what was explicitly saved, or {} when nothing is. It can hold keys this endpoint does not accept, such as pinned written by /v1/load, so replay effective rather than saved."},
-            "effective": {"type": "object", "description": "The exact /v1/load body for this model right now, with every option the recipe accepts resolved through the priority chain. Posting it back whole saves every resolved value as an override, so send only the options the user changed."},
-            "defaults": {"type": "object", "description": "What effective becomes if saved is erased, in the same shape. A ctx_size of -1 means the server picks the context size automatically."},
-            "resolved_ctx_size": {"type": "integer", "description": "The context size a load right now would use: the effective ctx_size, or the automatically computed size when that is -1."}
+            "saved": {"type": "object", "description": "The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`."},
+            "effective": {"type": "object", "description": "The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed."},
+            "defaults": {"type": "object", "description": "What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically."},
+            "resolved_ctx_size": {"type": "integer", "description": "The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`."}
         }
     })");
 }

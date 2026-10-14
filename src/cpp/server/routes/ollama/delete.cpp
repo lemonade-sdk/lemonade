@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class DeleteRoute : public ApiRoute {
 public:
@@ -39,7 +40,7 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Empty;
         response.setup = {{"ollama.pull", ResponseFormat::Json}};
-        response.example = json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
+        response.example = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
         s.responses = {response};
         return s;
     }

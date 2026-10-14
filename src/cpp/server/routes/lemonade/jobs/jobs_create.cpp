@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class JobsCreateRoute : public ApiRoute {
 public:
@@ -22,7 +23,7 @@ public:
         s.description =
             "Creates a job: a sequence of server operations that runs in the background, passes "
             "data between steps and branches on results, surviving client disconnects and "
-            "server restarts. See [Job Engine](#job-engine).";
+            "server restarts. See [Job Engine API](#job-engine-api).";
         s.notes = {
             "The step graph is validated at creation; an invalid one is answered with `400`. When "
             "the job store holds 50 jobs that are all still active or resumable, the answer is "
@@ -40,12 +41,12 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["id"],
             "properties": {"id": {"type": "string", "description": "The job's id."}}
         })");
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "name": "example",
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");

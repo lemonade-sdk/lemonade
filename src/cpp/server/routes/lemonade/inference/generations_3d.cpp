@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class Generations3dRoute : public ModelRoute {
 public:
@@ -22,45 +23,48 @@ public:
         s.summary = "Generate a textured 3D mesh (GLB) from an image";
         s.experimental = true;
         s.description =
-            "Reconstructs a textured 3D mesh from an image and returns it as a glTF-binary "
-            "(`.glb`) file. TRELLIS models, such as `TRELLIS-3D`, serve it.";
+            "3D Generation API. You provide an input image and receive a textured 3D mesh as a "
+            "glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`). The input image "
+            "must be PNG, JPEG, BMP, or GIF.\n\n"
+            "This endpoint is not part of the OpenAI API, so it is a Lemonade-specific "
+            "extension.\n\n"
+            "> **Performance:** 3D reconstruction runs on the GPU (Vulkan, ROCm, or CUDA) and "
+            "takes on the order of minutes; higher cascade resolutions take longer.";
         s.notes = {
-            "This is a Lemonade extension; OpenAI has no 3D endpoint.",
-            "**Performance:** reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes "
-            "minutes; higher resolutions take longer.",
-            "A failure is answered with a JSON `error` object instead of a mesh: `400` for an "
-            "invalid request, checked before the model loads, `404` for an unknown model, `500` "
-            "when the backend reports an error, and `502` when the backend produces no output.",
+            "### Response\n\n"
+            "On success the raw mesh bytes are returned as `model/gltf-binary`. On failure the "
+            "response is JSON with an `error` object: `400` for invalid requests, `404` for "
+            "unknown models, `500` when the backend reports an error, and `502` when the backend "
+            "produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "3D-generation model, e.g. `TRELLIS-3D`; loaded on first use."},
+             "The 3D-generation model to use (e.g., `TRELLIS-3D`)."},
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Base64-encoded input image, optionally as a `data:` URL. PNG, JPEG, BMP and GIF "
-             "are accepted."},
+             "Base64-encoded input image (optionally a `data:` URL)."},
             {"resolution", ArgIn::JsonBody,
              {{"enum", json::array({512, 1024, 1536, "512", "1024", "1536"})}}, false, Support::Available,
-             "Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."},
+             "Cascade resolution: `512`, `1024`, or `1536`. Default: `512`."},
             {"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
              false, Support::Available,
-             "Background removal mode: `threshold`, or `birefnet` for photos with real "
-             "backgrounds."},
+             "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
+             "real backgrounds."},
             {"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
-             "UV atlas method. `xatlas` (default) runs a full UV unwrap that gives every face "
-             "its own atlas space: the best quality, but its chart computation grows faster "
-             "than the face count. `box` is a faster 6-plane projection with occlusion-aware "
-             "bucket assignment and depth-tested rasterization; small texture artifacts remain "
-             "possible in concave regions."},
+             "UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving "
+             "every face unique atlas space — best quality, but chart computation is superlinear "
+             "in face count. `box` is a faster 6-plane projection with occlusion-aware bucket "
+             "assignment and depth-tested rasterization; small texture artifacts remain possible "
+             "in concave regions."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed, for reproducible output."},
+             "Random seed for reproducibility."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only formats the backend produces natively are accepted "
-             "(currently `glb`); any other is answered with `400`. Defaults to `glb`."},
+             "Output encoding. Only formats the backend natively produces are accepted (currently "
+             "`glb`); other values are rejected with `400 Bad Request`. Default: `glb`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Binary;
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model": "TRELLIS-3D",
             "image": "@fixtures/image.png",
             "resolution": 512,

@@ -395,36 +395,36 @@ void DownloadManager::stream(const Operation& operation, httplib::DataSink& sink
     sink.done();
 }
 
-json DownloadManager::job_schema() {
-    return json::parse(R"({
+nlohmann::ordered_json DownloadManager::job_schema() {
+    return nlohmann::ordered_json::parse(R"({
         "type": "object",
         "required": ["id", "type", "model_name", "status", "running"],
         "properties": {
-            "id": {"type": "string", "description": "Stable download id: model:<model_name> or backend:<recipe>:<backend>."},
-            "type": {"enum": ["model", "backend"], "description": "What the job downloads."},
-            "model_name": {"type": "string", "description": "Model name, or recipe:backend for a backend job."},
-            "status": {"enum": ["downloading", "paused", "cancelled", "completed", "error"]},
-            "running": {"type": "boolean", "description": "Whether the worker is still active. A terminal status can still have running=true while the worker releases its files."},
-            "file": {"type": "string", "description": "File currently downloading."},
-            "file_index": {"type": "integer"},
-            "total_files": {"type": "integer"},
-            "bytes_downloaded": {"type": "integer", "description": "Bytes of the current file downloaded so far."},
-            "bytes_total": {"type": "integer", "description": "Size of the current file."},
-            "total_download_size": {"type": "integer", "description": "Bytes across all files, when known."},
-            "bytes_previously_downloaded": {"type": "integer", "description": "Bytes of the current file already on disk when resuming."},
-            "completed_files_bytes": {"type": "integer", "description": "Bytes of the files finished before the current one."},
-            "cumulative_bytes_downloaded": {"type": "integer", "description": "Bytes downloaded across the whole job."},
-            "overall_bytes_downloaded": {"type": "integer", "description": "Older name for cumulative_bytes_downloaded."},
-            "percent": {"type": "number", "description": "Progress of the current file."},
-            "complete": {"type": "boolean", "description": "True when the download finished successfully."},
-            "error": {"type": "string", "description": "Failed jobs only: the error message."},
+            "id": {"type": "string", "description": "Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`."},
+            "type": {"enum": ["model", "backend"], "description": "Download type. Currently `model` or `backend` for server-owned jobs."},
+            "model_name": {"type": "string", "description": "Lemonade model name associated with the job, or `recipe:backend` for a backend job."},
+            "status": {"enum": ["downloading", "paused", "cancelled", "completed", "error"], "description": "Current state: `downloading`, `paused`, `cancelled`, `completed`, or `error`."},
+            "running": {"type": "boolean", "description": "Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources."},
+            "file": {"type": "string", "description": "Current file progress within the download."},
+            "file_index": {"type": "integer", "description": "Current file progress within the download."},
+            "total_files": {"type": "integer", "description": "Current file progress within the download."},
+            "bytes_downloaded": {"type": "integer", "description": "Current-file byte progress as reported by the downloader."},
+            "bytes_total": {"type": "integer", "description": "Current-file byte progress as reported by the downloader."},
+            "percent": {"type": "number", "description": "Current-file byte progress as reported by the downloader."},
+            "total_download_size": {"type": "integer", "description": "Total expected bytes across all files when known."},
+            "bytes_previously_downloaded": {"type": "integer", "description": "Bytes already present on disk for the current file when resuming or skipping existing data."},
+            "completed_files_bytes": {"type": "integer", "description": "Bytes from files completed before the current file."},
+            "cumulative_bytes_downloaded": {"type": "integer", "description": "Total bytes downloaded across the whole job. `overall_bytes_downloaded` is kept as a compatibility alias."},
+            "overall_bytes_downloaded": {"type": "integer", "description": "Total bytes downloaded across the whole job. `overall_bytes_downloaded` is kept as a compatibility alias."},
+            "complete": {"type": "boolean", "description": "`true` when the download completed successfully."},
+            "error": {"type": "string", "description": "Error message, present only for failed jobs."},
             "code": {"type": "string", "description": "unknown_model when the model is not in the registry."}
         }
     })");
 }
 
-json DownloadManager::event_schema() {
-    return json::parse(R"({
+nlohmann::ordered_json DownloadManager::event_schema() {
+    return nlohmann::ordered_json::parse(R"({
         "type": "object",
         "description": "progress events report one file; the complete event follows the last one, and an error event replaces it on failure.",
         "properties": {

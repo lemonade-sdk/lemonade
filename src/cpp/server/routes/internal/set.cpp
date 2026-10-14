@@ -11,6 +11,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 std::string json_type_name(const json& value) {
     if (value.is_boolean()) return "boolean";
@@ -52,7 +53,7 @@ public:
         // The keys are config.json's own, so they come from the canonical defaults and
         // cannot drift from what RuntimeConfig accepts. cloud_providers changes only
         // through /v1/install and /v1/uninstall.
-        const json defaults = ConfigFile::base_defaults();
+        const ordered_json defaults = ConfigFile::base_defaults();
         for (const auto& [key, value] : defaults.items()) {
             if (key == "_generated" || key == "cloud_providers") {
                 continue;
@@ -66,7 +67,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status", "updated"],
             "properties": {

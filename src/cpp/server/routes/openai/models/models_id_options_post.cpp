@@ -66,25 +66,29 @@ public:
         s.methods = {"POST"};
         s.paths = {"models/{id}/options"};
         s.summary = "Save recipe options for a model without loading it";
+        s.modality = "n/a";
         s.description =
-            "Lemonade extension: saves recipe options for a model without loading it. The body is "
-            "a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts, "
-            "and the response is the same as "
-            "[`GET /v1/models/{id}/options`](#get-v1modelsidoptions), after the write.";
-        s.notes = {
-            "The request merges into the model's saved entry, so options it does not mention keep "
-            "their saved values. `null` removes an option, and the model falls back to the next "
-            "layer of the [priority chain](./lemonade.md#post-v1load). "
-            "[`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.",
+            "Save recipe options for a model without loading it. The request body is a flat "
+            "object of the same recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. "
+            "The URL identifies the model; a `model_name` in the body is ignored.\n\n"
+            "The request merges into the model's saved entry, so keys you don't mention are left "
+            "alone. `null` removes an option, and the model falls back to the next layer of the "
+            "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
+            "removes every saved option at once.\n\n"
+            "`dry_run: true` validates and resolves the request identically but persists "
+            "nothing: `effective` and `resolved_ctx_size` describe the state the save would "
+            "produce, while `saved` keeps reporting the entry on disk. Use it to preview a change "
+            "before committing it.\n\n"
+            "`ctx_size` takes a positive whole number, or `-1` to pin the model to automatic "
+            "sizing even when the server-wide `ctx_size` is a specific number.\n\n"
             "A `400` reports an unrecognized option name, an option from a different recipe, a "
             "value of the wrong type, or an invalid `ctx_size`, and nothing from that request is "
-            "saved.",
+            "saved.\n\n"
             "Saving never loads or reloads the model, so a model that is already running keeps "
-            "its current options until it is next loaded.",
-            "`pinned` is not settable here and is omitted from `effective` and `defaults`. It "
-            "belongs to [`/v1/load`](./lemonade.md#post-v1load) and "
-            "[`/internal/pin`](./internal.md#post-internalpin).",
-        };
+            "its current options until it is next loaded.\n\n"
+            "> Note: `pinned` is not settable here and is omitted from `effective` and "
+            "`defaults`. It belongs to [`/v1/load`](./lemonade.md#post-v1load) and "
+            "`/internal/pin`.";
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},

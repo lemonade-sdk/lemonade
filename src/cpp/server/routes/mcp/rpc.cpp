@@ -8,6 +8,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class McpRpcRoute : public ApiRoute {
 public:
@@ -24,13 +25,12 @@ public:
         s.methods = {"POST"};
         s.paths = {"/mcp"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Model Context Protocol endpoint";
+        s.summary = "Model Context Protocol endpoint. JSON-RPC 2.0 envelope. Accepts a single "
+                    "message or a batch array.";
         s.description =
             "Serves the Model Context Protocol over JSON-RPC 2.0 (the Streamable HTTP "
             "transport, spec `2025-06-18`), so MCP clients can call Lemonade's models as tools.";
         s.notes = {
-            "The MCP specification mandates a single endpoint URL, so `/mcp` has no `/v1` "
-            "prefix.",
             "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
             "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
@@ -50,7 +50,7 @@ public:
 
         RouteResponse reply;
         reply.format = ResponseFormat::Json;
-        reply.schema = json::parse(R"({
+        reply.schema = ordered_json::parse(R"({
             "type": ["object", "array"],
             "description": "One JSON-RPC 2.0 response, or an array of them for a batch.",
             "required": ["jsonrpc", "id"],
@@ -69,7 +69,7 @@ public:
                 }
             }
         })");
-        reply.example = json::parse(R"({
+        reply.example = ordered_json::parse(R"({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",

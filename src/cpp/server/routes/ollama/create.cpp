@@ -13,8 +13,8 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/create"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Create a model from a Modelfile (not supported)";
-        s.description = "Not supported: answers `501`. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.";
+        s.summary = "Create a model from a Modelfile. Returns 501";
+        s.description = "Not supported. Returns 501. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.";
         return s;
     }
 

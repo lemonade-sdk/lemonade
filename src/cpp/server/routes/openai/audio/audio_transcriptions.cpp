@@ -8,6 +8,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class AudioTranscriptionsRoute : public ModelRoute {
 public:
@@ -19,50 +20,54 @@ public:
         s.methods = {"POST"};
         s.paths = {"audio/transcriptions"};
         s.summary = "Audio Transcription";
+        s.modality = "audio file -> text";
         s.description =
-            "Transcribes an audio file to text, loading the model on first use. The request is "
-            "`multipart/form-data`.";
-        s.notes = {
-            "Transcription models such as the Whisper family are downloaded automatically when "
-            "first used.",
-            "**Limitations:** Only `wav` audio input is supported. On the FastFlowLM (FLM) "
-            "backend, `srt` and `vtt` are rejected with a `400` because FLM returns no segment "
-            "timestamps, and `verbose_json` returns the compact shape without a `segments` field.",
-        };
+            "Audio Transcription API. You provide an audio file and receive a text transcription. "
+            "This API will also load the model if it is not already loaded.\n\n"
+            "> **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) "
+            "as the backend. Whisper models are automatically downloaded when first used.\n"
+            ">\n"
+            "> **Limitations:** Only `wav` audio input is currently supported. The "
+            "`response_format` field supports `json`, `verbose_json`, `text`, `srt`, and `vtt`. "
+            "On the FastFlowLM (FLM) backend, `srt` and `vtt` are rejected with a `400` because "
+            "FLM returns no segment timestamps, and `verbose_json` returns the compact shape "
+            "without a `segments` field.";
         s.args = {
             {"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
-             "The audio file to transcribe. Only `wav` is supported."},
+             "The audio file to transcribe. Supported formats: wav."},
             {"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
-             "Transcription model, e.g. `Whisper-Tiny`, `Whisper-Base` or `Whisper-Small`."},
+             "The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, "
+             "`Whisper-Small`)."},
             {"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
-             "Language of the audio as an ISO 639-1 code, e.g. `en`, `es` or `fr`. Defaults to "
-             "`auto`, which has whisper.cpp detect the language instead of assuming English."},
-            {"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
-             "Text to guide the transcription's style or continue a previous segment."},
+             "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to "
+             "`auto`, which tells whisper.cpp to detect the source language instead of using "
+             "whisper-server's English default."},
             {"response_format", ArgIn::Form,
              {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
-             "`json` (default), `verbose_json`, `text`, `srt` or `vtt`. `text`, `srt` and `vtt` "
-             "answer with plain text; `srt` and `vtt` need a backend that reports segment "
-             "timestamps, such as whisper.cpp."},
+             "The response format. Supported values: `json`, `verbose_json`, `text`, `srt`, "
+             "`vtt`. `srt` and `vtt` require a backend that reports segment timestamps "
+             "(whisper.cpp)."},
+            {"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
+             "Text to guide the transcription's style or continue a previous segment."},
             {"temperature", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
              "Sampling temperature."},
         };
 
         RouteResponse transcript;
         transcript.format = ResponseFormat::Json;
-        transcript.schema = json::parse(R"({
+        transcript.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["text"],
             "properties": {
-                "text": {"type": "string", "description": "The transcribed text."},
+                "text": {"type": "string", "description": "The transcribed text from the audio file"},
                 "segments": {"type": "array", "description": "verbose_json only: timestamped segments."}
             }
         })");
-        transcript.example = {{"model", "Whisper-Tiny"}, {"file", "@fixtures/speech.wav"}};
+        transcript.example = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"}};
 
         RouteResponse text;
         text.format = ResponseFormat::Text;
-        text.example = {{"model", "Whisper-Tiny"}, {"file", "@fixtures/speech.wav"},
+        text.example = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"},
                         {"response_format", "text"}};
 
         s.responses = {transcript, text};

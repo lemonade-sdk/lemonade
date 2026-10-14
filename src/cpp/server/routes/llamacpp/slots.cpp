@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class SlotsRoute : public ApiRoute {
 public:
@@ -17,10 +18,16 @@ public:
         s.id = "llamacpp.slots";
         s.methods = {"GET"};
         s.paths = {"slots"};
-        s.summary = "Processing state of the llama.cpp slots";
+        s.summary = "Returns the current slots processing state";
+        s.modality = "slots state";
         s.description =
-            "Returns the state of every processing slot of a loaded llama.cpp model. Slots are "
-            "parallel processing contexts, each able to serve one request at a time.";
+            "Returns the current state of all processing slots in the llama.cpp server. Slots are "
+            "parallel processing contexts that can handle multiple requests concurrently.\n\n"
+            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
+            "Internally, Lemonade forwards the request to llama.cpp's `/slots` endpoint.\n\n"
+            "> **Note:** This endpoint is only available when a llama.cpp model is loaded.\n\n"
+            "> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots`, "
+            "`/api/v1/slots`, `/v0/slots`, and `/v1/slots`.";
         s.notes = {
             "The request names no model: Lemonade forwards it to llama.cpp's `/slots` on the most "
             "recently used loaded model, which must be a llama.cpp model. With no model loaded, or "
@@ -29,22 +36,29 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"json({
             "type": "array",
             "items": {
                 "type": "object",
                 "required": ["id"],
                 "properties": {
-                    "id": {"type": "integer", "description": "Slot id, used by POST /v1/slots/{id}."},
+                    "id": {"type": "integer", "description": "Unique identifier for the slot"},
+                    "next_token": {"type": "array", "description": "Information about token generation state", "items": {
+                        "type": "object",
+                        "properties": {
+                            "has_next_token": {"type": "boolean", "description": "Whether more tokens are expected"},
+                            "n_remain": {"type": "integer", "description": "Number of tokens remaining to generate"},
+                            "n_decoded": {"type": "integer", "description": "Number of tokens already decoded"}
+                        }
+                    }},
+                    "id_task": {"type": "integer", "description": "Identifier of the current task being processed (the last task processed if idle)"},
                     "n_ctx": {"type": "integer", "description": "Context size of the slot."},
-                    "id_task": {"type": "integer", "description": "Task the slot is serving, or -1 when idle."},
                     "is_processing": {"type": "boolean", "description": "Whether the slot is serving a request."},
                     "n_prompt_tokens": {"type": "integer", "description": "Tokens in the slot's current prompt."},
-                    "params": {"type": "object", "description": "Sampling parameters of the slot's last request."},
-                    "next_token": {"type": "array", "description": "Generation state of the current request: has_next_token, n_decoded, n_remain."}
+                    "params": {"type": "object", "description": "Sampling parameters of the slot's last request."}
                 }
             }
-        })");
+        })json");
         response.setup = {{"lemonade.load", ResponseFormat::Json}};
         response.example = json::object();
         s.responses = {response};

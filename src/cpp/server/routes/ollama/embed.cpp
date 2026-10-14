@@ -10,6 +10,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class EmbedRoute : public ApiRoute {
 public:
@@ -21,7 +22,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/embed"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Embeddings";
+        s.summary = "New embeddings format";
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
         s.notes = {
@@ -41,7 +42,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["model", "embeddings"],
             "properties": {
@@ -53,7 +54,7 @@ public:
                 "prompt_eval_count": {"type": "integer", "description": "Always 0."}
             }
         })");
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model": "nomic-embed-text-v1-GGUF",
             "input": "Why is the sky blue?"
         })");

@@ -13,6 +13,7 @@
 namespace lemon {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
@@ -116,8 +117,8 @@ json ollama_details(const std::string& model_name, const std::string& recipe,
     };
 }
 
-json ollama_details_schema() {
-    return json::parse(R"({
+ordered_json ollama_details_schema() {
+    return ordered_json::parse(R"({
         "type": "object",
         "description": "Inferred from the model name, recipe and checkpoint.",
         "properties": {

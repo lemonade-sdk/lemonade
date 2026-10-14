@@ -8,6 +8,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class CheckUpdatesRoute : public ApiRoute {
 public:
@@ -20,18 +21,21 @@ public:
         s.paths = {"models/check-updates"};
         s.summary = "Manually check downloaded models for upstream updates";
         s.description =
-            "Checks downloaded Hugging Face-backed models for newer upstream commits. It is the "
-            "manual counterpart to the startup update check and works even when "
-            "`auto_check_model_updates=false`.";
+            "Explicitly checks downloaded Hugging Face-backed models for newer upstream\n"
+            "commits. This is the manual counterpart to the startup update check and works\n"
+            "even when `auto_check_model_updates=false`.\n\n"
+            "Full offline mode remains authoritative: when `offline=true`, this endpoint\n"
+            "returns HTTP 409 and does not make network requests.";
         s.notes = {
-            "Offline mode remains authoritative: with `offline=true` this answers `409` and makes "
-            "no network requests.",
-            "The CLI runs the same check with `lemonade check-updates`.",
+            "The same action is available from the CLI:\n\n"
+            "```bash\n"
+            "lemonade check-updates\n"
+            "```",
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status", "updates_available", "models", "failed_models"],
             "properties": {

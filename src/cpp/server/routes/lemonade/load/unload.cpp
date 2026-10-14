@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class UnloadRoute : public ApiRoute {
 public:
@@ -19,20 +20,22 @@ public:
         s.paths = {"unload"};
         s.summary = "Unload a model";
         s.description =
-            "Unloads a model, or every model, from memory, freeing it while the server keeps "
-            "running.";
+            "Explicitly unload a model from memory. This is useful to free up memory while still "
+            "leaving the server process running (which takes minimal resources but a few seconds "
+            "to start).";
         s.notes = {
-            "The body is optional: an empty or unparsable body unloads every model. A model "
-            "that is not loaded answers `404`.",
+            "The body is optional: an empty or unparsable body unloads every model. A model that "
+            "is not loaded answers `404`.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Model to unload; `model` is accepted as an alias. Omit it to unload every model."},
+             "Name of the specific model to unload. If not provided, all loaded models will be "
+             "unloaded. `model` is accepted as an alias."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status", "message"],
             "properties": {

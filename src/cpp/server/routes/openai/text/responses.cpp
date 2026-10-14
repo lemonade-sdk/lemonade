@@ -8,9 +8,10 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
-json response_schema() {
-    auto schema = json::parse(R"({
+ordered_json response_schema() {
+    auto schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["id", "object", "created_at", "model", "output"],
         "properties": {
@@ -28,8 +29,8 @@ json response_schema() {
     return schema;
 }
 
-json response_event_schema() {
-    return json::parse(R"({
+ordered_json response_event_schema() {
+    return ordered_json::parse(R"({
         "type": "object",
         "required": ["type"],
         "properties": {
@@ -50,37 +51,43 @@ public:
         s.methods = {"POST"};
         s.paths = {"responses"};
         s.summary = "Responses API";
-        s.description = "Generates a response to an input, loading the model on first use.";
+        s.modality = "prompt/messages -> event";
+        s.description =
+            "Responses API. You provide an input and receive a response. This API will also load "
+            "the model if it is not already loaded.";
         s.notes = {
-            "Streaming relays the backend's semantic events as they arrive. llama.cpp sends "
-            "OpenAI's event types, including `response.created`, `response.in_progress`, "
-            "`response.output_item.added`, `response.reasoning_text.delta` for reasoning "
-            "models, `response.output_text.delta`, `response.output_item.done` and "
-            "`response.completed`. See OpenAI's "
-            "[streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming) "
-            "for each type.",
+            "### Streaming Events\n\n"
+            "The Responses API uses semantic events for streaming. Each event is typed with a "
+            "predefined schema, so you can listen for events you care about. Our initial "
+            "implementation offers support to:\n\n"
+            "- `response.created`\n"
+            "- `response.output_text.delta`\n"
+            "- `response.completed`\n\n"
+            "For a full list of event types, see the "
+            "[API reference for streaming](https://platform.openai.com/docs/api-reference/responses-streaming).",
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to run; loaded on first use."},
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "A string, or a list of input items, for the model to respond to."},
+             "A list of dictionaries or a string input for the model to respond to."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The model to use for the response."},
             {"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens."},
+             "The maximum number of output tokens to generate."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Number between 1.0 and 2.0; 1.0 means no penalty. Higher values discourage "
+             "Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage "
              "repetition."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens considered during sampling."},
+             "Integer that controls the number of top tokens to consider during sampling."},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Cumulative probability, between 0.0 and 1.0, of the top tokens considered during "
-             "nucleus sampling."},
+             "Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to "
+             "consider during nucleus sampling."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream semantic events as they are generated. Defaults to `false`."},
+             "If true, tokens will be sent as they are generated. If false, the response will be "
+             "sent as a single message once complete. Defaults to false."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the routing "
              "decision to the response as `x_lemonade_route`."},
@@ -92,19 +99,18 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = response_schema();
-        response.example = json::parse(R"({
-            "model": "Qwen3-0.6B-GGUF",
-            "input": "What is the capital of France? Answer in one word.",
-            "max_output_tokens": 256
+        response.example = ordered_json::parse(R"({
+            "model": "Llama-3.2-1B-Instruct-GGUF",
+            "input": "What is the population of Paris?",
+            "stream": false
         })");
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
         stream.schema = response_event_schema();
-        stream.example = json::parse(R"({
-            "model": "Qwen3-0.6B-GGUF",
-            "input": "What is the capital of France? Answer in one word.",
-            "max_output_tokens": 256,
+        stream.example = ordered_json::parse(R"({
+            "model": "Llama-3.2-1B-Instruct-GGUF",
+            "input": "What is the population of Paris?",
             "stream": true
         })");
 

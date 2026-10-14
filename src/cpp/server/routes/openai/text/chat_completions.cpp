@@ -11,9 +11,10 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
-json chat_completion_schema() {
-    auto schema = json::parse(R"({
+ordered_json chat_completion_schema() {
+    auto schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
@@ -55,8 +56,8 @@ json chat_completion_schema() {
     return schema;
 }
 
-json chat_completion_chunk_schema() {
-    auto schema = json::parse(R"({
+ordered_json chat_completion_chunk_schema() {
+    auto schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
@@ -98,45 +99,50 @@ public:
         s.paths = {"chat/completions"};
         s.prefixes = Prefixes::Quad;
         s.summary = "Chat Completions";
+        s.modality = "messages -> completion";
         s.description =
-            "Generates the next assistant message for a conversation, loading the model on "
-            "first use.";
+            "Chat Completions API. You provide a list of messages and receive a completion. This "
+            "API will also load the model if it is not already loaded.";
         s.notes = {
             "Naming an Omni collection (`recipe: \"collection.omni\"`) runs a server-side "
-            "tool-calling loop instead; see [Server-Side Tools](#server-side-tools). Naming a "
+            "tool-calling loop instead; see [Server-side tools](#server-side-tools). Naming a "
             "`collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to run; loaded on first use."},
             {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
-             "Conversation so far. Each message has a `role` (`system`, `user`, `assistant` or "
-             "`tool`) and `content`; see [Image Input](#image-input) for images."},
+             "Array of messages in the conversation. Each message should have a `role` (\"user\" "
+             "or \"assistant\") and `content` (the message text)."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The model to use for the completion."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream tokens as server-sent events as they are generated. Defaults to `false`."},
+             "If true, tokens will be sent as they are generated. If false, the response will be "
+             "sent as a single message once complete. Defaults to false."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "A string or an array of up to 4 strings where generation stops. The returned text "
-             "does not contain the stop sequence."},
+             "Up to 4 sequences where the API will stop generating further tokens. The returned "
+             "text will not contain the stop sequence. Can be a string or an array of strings."},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
-             "Return the log probability of each output token."},
+             "Include log probabilities of the output tokens. If true, returns the log "
+             "probability of each output token. Defaults to false."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Number between 1.0 and 2.0; 1.0 means no penalty. Higher values discourage "
+             "Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage "
              "repetition."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens considered during sampling."},
+             "Integer that controls the number of top tokens to consider during sampling."},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Cumulative probability, between 0.0 and 1.0, of the top tokens considered during "
-             "nucleus sampling."},
+             "Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to "
+             "consider during nucleus sampling."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Tools the model may call."},
+             "A list of tools the model may call."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens. Deprecated by OpenAI in favor of "
-             "`max_completion_tokens`; the two are mutually exclusive."},
+             "An upper bound for the number of tokens that can be generated for a completion. "
+             "Mutually exclusive with `max_completion_tokens`. This value is now deprecated by "
+             "OpenAI in favor of `max_completion_tokens`"},
             {"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens. Mutually exclusive with `max_tokens`."},
+             "An upper bound for the number of tokens that can be generated for a completion. "
+             "Mutually exclusive with `max_tokens`."},
             {"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension: `false` turns off reasoning on models that think. The "
              "OpenAI-compatible `thinking: false` is accepted too."},
@@ -151,19 +157,18 @@ public:
         RouteResponse completion;
         completion.format = ResponseFormat::Json;
         completion.schema = chat_completion_schema();
-        completion.example = json::parse(R"({
+        completion.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
-            "messages": [{"role": "user", "content": "What is the capital of France?"}],
-            "enable_thinking": false
+            "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+            "stream": false
         })");
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
         stream.schema = chat_completion_chunk_schema();
-        stream.example = json::parse(R"({
+        stream.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
-            "messages": [{"role": "user", "content": "What is the capital of France?"}],
-            "enable_thinking": false,
+            "messages": [{"role": "user", "content": "What is the population of Paris?"}],
             "stream": true
         })");
 

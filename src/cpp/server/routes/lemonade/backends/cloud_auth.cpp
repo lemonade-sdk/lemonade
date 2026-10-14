@@ -11,6 +11,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class CloudAuthRoute : public ApiRoute {
 public:
@@ -24,34 +25,28 @@ public:
         s.summary = "Set an in-memory API key for a cloud provider";
         s.experimental = true;
         s.description =
-            "Stores an API key for an installed cloud provider in lemond's memory and refreshes "
-            "the provider's discovered models.";
-        s.notes = {
-            "The key is never written to disk and is cleared when lemond restarts; for a key "
-            "that persists, set `LEMONADE_<PROVIDER>_API_KEY` in lemond's environment instead.",
-            "**Precedence:** when `LEMONADE_<PROVIDER>_API_KEY` is set, it wins: the supplied key "
-            "is not stored and the answer is `409` with `{\"error\": {\"type\": "
-            "\"auth_conflict\", \"env_var\": \"LEMONADE_<PROVIDER>_API_KEY\", \"message\": "
-            "...}}`. An operator can provision a house key this way without a client overriding "
-            "it.",
-            "A missing or empty `provider` or `api_key` is answered with `400`, as is an "
-            "`http://` provider without `allow_insecure_http` (code "
-            "`insecure_http_requires_opt_in`). A provider that is not installed is answered with "
-            "`404`; install it with [`POST /v1/install`](#post-v1install) and `backend: \"cloud\"` "
-            "first.",
-        };
+            "Set an in-memory API key for a previously-installed cloud provider, and trigger a "
+            "refresh of that provider's discovered model list. The key lives in `lemond` process "
+            "memory only — it is never written to disk and is cleared on `lemond` restart. For "
+            "persistence across restarts, set `LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s "
+            "environment instead.\n\n"
+            "### Authentication precedence\n\n"
+            "If `LEMONADE_<PROVIDER>_API_KEY` is set in `lemond`'s environment, the env var takes "
+            "precedence and this endpoint returns **409 Conflict** without storing the supplied "
+            "key. This is the safety guarantee that lets an operator provision a \"house\" key via "
+            "env without worrying about a client silently overriding it.";
         s.args = {
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Installed provider name."},
             {"api_key", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "API key to hold in lemond's memory."},
+             "API key to store in `lemond` process memory."},
             {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Opt in to sending the key to a provider whose base URL is `http://`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["provider", "allow_insecure_http", "auth_state", "models_discovered"],
             "properties": {
@@ -70,9 +65,9 @@ public:
             }
         })");
         response.setup = {{"lemonade.install", ResponseFormat::Json}};
-        response.example = json::parse(R"({
-            "provider": "example",
-            "api_key": "example-key"
+        response.example = ordered_json::parse(R"({
+            "provider": "fireworks",
+            "api_key": "fw-XXXXX"
         })");
         s.responses = {response};
         return s;

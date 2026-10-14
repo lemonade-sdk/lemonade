@@ -10,6 +10,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class CloudAuthProviderRoute : public ApiRoute {
 public:
@@ -23,12 +24,10 @@ public:
         s.summary = "Clear the in-memory API key for a cloud provider";
         s.experimental = true;
         s.description =
-            "Clears the API key held in lemond's memory for a cloud provider. A key from "
-            "`LEMONADE_<PROVIDER>_API_KEY` stays in effect.";
-        s.notes = {
-            "Without an environment-variable key, the provider's discovered models are evicted "
-            "from the catalog, since they can no longer authenticate.",
-        };
+            "Clear the in-memory API key for a provider. Any env-var-based key "
+            "(`LEMONADE_<PROVIDER>_API_KEY`) remains in effect. If no env-var key is set, the "
+            "provider's discovered models are evicted from the catalog since they are no longer "
+            "authenticatable.";
         s.args = {
             {"provider", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Installed provider name."},
@@ -36,12 +35,12 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["provider", "cleared_runtime_key", "auth_state"],
             "properties": {
                 "provider": {"type": "string"},
-                "cleared_runtime_key": {"type": "boolean", "description": "false when no in-memory key was held, e.g. when the only key came from the environment variable."},
+                "cleared_runtime_key": {"type": "boolean"},
                 "auth_state": {
                     "type": "object",
                     "properties": {
@@ -52,7 +51,7 @@ public:
             }
         })");
         response.setup = {{"lemonade.cloud_auth", ResponseFormat::Json}};
-        response.example = {{"provider", "example"}};
+        response.example = {{"provider", "fireworks"}};
         s.responses = {response};
         return s;
     }

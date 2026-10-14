@@ -2500,8 +2500,8 @@ json ModelManager::get_sync_status_locked() const {
     return j;
 }
 
-json ModelManager::sync_status_schema() {
-    return json::parse(R"({
+nlohmann::ordered_json ModelManager::sync_status_schema() {
+    return nlohmann::ordered_json::parse(R"({
         "type": "object",
         "required": ["status", "sync_id", "completed_sync_id", "already_in_progress"],
         "properties": {

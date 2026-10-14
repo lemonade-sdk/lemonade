@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class PullVariantsRoute : public ApiRoute {
 public:
@@ -21,20 +22,17 @@ public:
         s.paths = {"pull/variants"};
         s.summary = "Enumerate GGUF variants for a Hugging Face checkpoint";
         s.description =
-            "Inspects a GGUF repository and lists the variants (quantizations and sharded folder "
-            "groups) available to install. The `lemonade pull <owner/repo>` CLI flow and the "
-            "desktop app's model search use it to fill in the install form.";
-        s.notes = {
-            "Only public registry metadata is read. When the server's environment sets "
-            "`HF_TOKEN`, it is forwarded as a bearer token so gated repositories can be read.",
-            "A `400` answers a missing or malformed `checkpoint`, a `source` that disagrees with "
-            "the checkpoint URL's registry, or offline mode (`code: \"lemond_offline\"`). A `404` "
-            "means the registry has no such repository; other failures answer `500`.",
-        };
+            "Inspect a Hugging Face GGUF repository and enumerate the variants (quantizations and "
+            "sharded folder groups) available for installation. Used by the `lemonade pull "
+            "<owner/repo>` CLI flow and by the desktop app's model search to auto-populate the "
+            "install form. The endpoint reads only public Hugging Face metadata; if the `HF_TOKEN` "
+            "environment variable is set on the server, it is forwarded as a bearer token to "
+            "access gated repositories.";
         s.args = {
             {"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
-             "Repository id such as `unsloth/Qwen3-8B-GGUF`, or a Hugging Face or ModelScope URL, "
-             "which is normalized to `owner/repo` and selects its registry."},
+             "Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. A "
+             "Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its "
+             "registry."},
             {"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
              "Registry: `huggingface` or `modelscope`. Defaults to the server's "
              "`default_model_source`."},
@@ -42,25 +40,25 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["checkpoint", "source", "recipe", "repo_kind", "suggested_name", "suggested_labels", "mmproj_files", "draft_files", "variants"],
             "properties": {
-                "checkpoint": {"type": "string", "description": "The repository id, after URL normalization."},
+                "checkpoint": {"type": "string", "description": "Echoed input (normalized to `owner/repo` when given as a URL)."},
                 "source": {"type": "string", "description": "Registry the variants came from."},
-                "recipe": {"type": "string", "description": "Suggested recipe: llamacpp for GGUF repositories, ryzenai-llm for RyzenAI ONNX ones, collection.omni for an exported collection."},
+                "recipe": {"type": "string", "description": "Suggested recipe (`llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection; future expansion may return other values)."},
                 "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection"]},
-                "suggested_name": {"type": "string", "description": "Repository id without its owner/ prefix, suitable for a user.<name> model name."},
+                "suggested_name": {"type": "string", "description": "Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name."},
                 "suggested_labels": {"type": "array", "items": {"type": "string"},
-                                     "description": "The labels /v1/pull would stamp: the recipe's deployment label (e.g. chat), plus vision when mmproj-*.gguf files exist, mtp or dflash when a draft model ships beside the weights, and embeddings or reranking when those words appear in the repository id."},
+                                     "description": "Inferred labels — `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings`/`reranking` if those substrings appear in the repo id, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
                 "mmproj_files": {"type": "array", "items": {"type": "string"},
-                                 "description": "Bare names of mmproj-*.gguf files; pass the first as mmproj to /v1/pull for vision models."},
+                                 "description": "Bare filenames of `mmproj-*.gguf` files in the repo; the first one should be passed as `mmproj` to `/v1/pull` for vision models."},
                 "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Bare names of draft-model GGUF files."},
-                "variants": {"type": "array", "description": "Every quantization in the repository, most common first: Q4_K_M, UD-Q4_K_XL, Q8_0 and Q4_0 lead, then the rest by name. Empty for a collection.", "items": {
+                "variants": {"type": "array", "description": "Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically). The CLI `lemonade pull` menu also accepts a free-text variant name.", "items": {
                     "type": "object",
                     "required": ["name", "primary_file", "files", "sharded", "size_bytes"],
                     "properties": {
-                        "name": {"type": "string", "description": "e.g. Q4_K_M or UD-Q4_K_XL."},
+                        "name": {"type": "string"},
                         "primary_file": {"type": "string"},
                         "draft_file": {"type": "string", "description": "The draft model paired with this variant, when the repository ships one."},
                         "files": {"type": "array", "items": {"type": "string"}},
@@ -72,7 +70,7 @@ public:
                 "component_count": {"type": "integer", "description": "collection only: how many models the collection bundles."}
             }
         })");
-        response.example = {{"checkpoint", "unsloth/Qwen3-0.6B-GGUF"}};
+        response.example = {{"checkpoint", "unsloth/Qwen3-8B-GGUF"}};
         s.responses = {response};
         return s;
     }

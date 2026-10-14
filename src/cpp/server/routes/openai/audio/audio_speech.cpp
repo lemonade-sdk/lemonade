@@ -20,66 +20,73 @@ public:
         s.methods = {"POST"};
         s.paths = {"audio/speech"};
         s.summary = "Text to speech";
+        s.modality = "text -> audio";
         s.description =
-            "Speaks the input text and returns the audio, loading the model on first use. Which "
-            "engine serves the request depends on the model.";
+            "Speech Generation API. You provide a text input and receive an audio file. Which "
+            "engine serves the request depends on the model.\n\n"
+            "> **Note:** Supported models are `kokoro-v1` (fixed voices, "
+            "[Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family "
+            "— `OpenMOSS-TTS` and `MOSS-TTS-Local` support cloning and integrated voice design. "
+            "`MOSS-VoiceGen` remains available as a legacy compatibility model while existing "
+            "GUI/settings paths migrate to the integrated design flow.\n"
+            ">\n"
+            "> **Limitations:** Which `response_format` values are accepted depends on the "
+            "model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS v0.3 "
+            "encodes buffered `wav` or `pcm`. Native streaming is narrower for both backends and "
+            "uses `pcm` only, so an explicit non-PCM `response_format` on a streaming request is "
+            "rejected rather than mislabeled or silently transcoded. OpenMOSS raw PCM is returned "
+            "as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels`, because its native "
+            "format is model-dependent (24 kHz mono for OpenMOSS-TTS and 48 kHz stereo for "
+            "MOSS-TTS-Local).";
         s.notes = {
-            "Supported models are `kokoro-v1` (fixed voices, "
-            "[Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS "
-            "family: `OpenMOSS-TTS` and `MOSS-TTS-Local` support cloning and integrated voice "
-            "design. `MOSS-VoiceGen` remains available as a legacy compatibility model.",
-            "**Limitations:** Which `response_format` values are accepted depends on the model's "
-            "backend: `kokoro-v1` encodes `mp3`, `wav`, `opus` and `pcm`; OpenMOSS encodes "
-            "buffered `wav` or `pcm`. Streaming is narrower for both backends and uses `pcm` only, "
-            "so an explicit non-PCM `response_format` on a streaming request is rejected rather "
-            "than mislabeled or silently transcoded. OpenMOSS raw PCM is returned as `audio/pcm` "
-            "with `X-MOSS-Sample-Rate` and `X-MOSS-Channels` headers, because its native format is "
-            "model-dependent (24 kHz mono for OpenMOSS-TTS, 48 kHz stereo for MOSS-TTS-Local).",
             "A request for a model that is not a text-to-speech model answers `400` with `code` "
             "`model_not_applicable`, before any model loads.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text-to-speech model, e.g. `kokoro-v1`."},
             {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text to speak."},
-            {"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
-             "For `kokoro-v1`, a voice name: every OpenAI voice (`alloy`, `ash`, ...) and the "
-             "Kokoro voices (`af_sky`, `am_echo`, ...). Defaults to `shimmer`. For OpenMOSS "
-             "models, a free-text voice or style instruction, e.g. "
-             "`a calm, deep male narrator voice`."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The model to use (e.g., `kokoro-v1`)."},
             {"speed", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Speaking speed. Defaults to `1.0`."},
+             "Speaking speed. Default: `1.0`."},
+            {"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
+             "The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as "
+             "well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: "
+             "`shimmer`"},
+            {"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "For OpenMOSS models the field is a free-text voice/style instruction instead of a "
+             "fixed voice name (e.g. `a calm, deep male narrator voice`)."},
             {"reference_wav_b64", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Lemonade extension for OpenMOSS voice cloning: a base64-encoded WAV sample of the "
+             "Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the "
              "voice to clone."},
             {"voice_design_description", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Lemonade extension for OpenMOSS voice design: a description of a voice to invent, "
+             "Lemonade extension (OpenMOSS voice design): a description of the voice to invent, "
              "e.g. `a warm low female voice with a British accent`. Lemonade renders a short "
-             "sample in that voice and uses it as the reference, with the same effect as "
-             "supplying `reference_wav_b64`. Ignored when `reference_wav_b64` is also present. "
-             "Only this field triggers design; `voice` never does."},
+             "sample in that voice and uses it as the reference, so the effect is the same as "
+             "supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also "
+             "present. Design is opt-in through this field only — `voice` never triggers it."},
             {"response_format", ArgIn::JsonBody,
              {{"enum", json::array({"mp3", "opus", "aac", "flac", "wav", "pcm"})}}, false, Support::Partial,
-             "Container for the returned audio; which values a model accepts depends on its "
-             "backend. Defaults to `mp3` when buffered and `pcm` when streaming, falling back to "
-             "the backend's first supported format when it cannot encode that default."},
+             "Container for the returned audio. Which values are accepted depends on the model's "
+             "backend (see Limitations above). Default: `mp3` when buffered and `pcm` when "
+             "streaming, falling back to the backend's first supported format when it cannot "
+             "encode that default."},
             {"stream_format", ArgIn::JsonBody, {{"const", "audio"}}, false, Support::Partial,
-             "Set to `audio` to stream the response; no other value is supported. This selects "
-             "the transport only: the container still comes from `response_format`, and an "
-             "explicit one is honored on both transports."},
+             "If set, the response is streamed. Only `audio` is supported. This selects the "
+             "transport only — the container still comes from `response_format`, and an "
+             "explicit one is honored on both transports. Default: not set"},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "`true` streams the response, like `stream_format: audio`."},
         };
 
         RouteResponse audio;
         audio.format = ResponseFormat::Binary;
-        audio.example = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"},
+        audio.example = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"}, {"speed", 1.0},
                          {"response_format", "mp3"}};
 
         RouteResponse stream;
         stream.format = ResponseFormat::BinaryStream;
-        stream.example = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"},
+        stream.example = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"}, {"speed", 1.0},
                           {"stream_format", "audio"}};
 
         s.responses = {audio, stream};

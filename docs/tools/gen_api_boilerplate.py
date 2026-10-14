@@ -7,7 +7,8 @@ starts a lemond through the Lemond harness, reads every RouteSpec from
 GET /internal/routes, and rewrites only the marker-delimited regions of the
 docs/api pages:
 
-    <!-- BEGIN GENERATED: <page>.summary -->   the page's summary table
+    <!-- BEGIN GENERATED: <page>.summary -->   the page's summary table; rows that
+                                               link to no route are hand-written
     <!-- BEGIN GENERATED: <route id> -->      one route's reference section
 
 Each route section shows real requests and the responses lemond returned to
@@ -762,31 +763,166 @@ def powershell_command(entry: dict) -> str:
     return "\n".join(prelude + [" `\n  ".join(lines)])
 
 
-def render_event(event: str) -> str:
+STREAMING_FORMATS = {"JsonLines", "EventStream", "BinaryStream"}
+FORMAT_LABELS = {
+    "Json": "JSON",
+    "JsonLines": "NDJSON",
+    "EventStream": "event stream",
+    "Text": "text",
+    "Binary": "binary",
+    "BinaryStream": "binary stream",
+    "Empty": "empty",
+}
+
+
+def dereferenced(schema, root=None):
+    """The schema with each $ref inlined, resolved within its enclosing $id resource."""
+    if isinstance(schema, list):
+        return [dereferenced(item, root) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    if root is None or "$id" in schema:
+        root = schema
+    if "$ref" in schema:
+        target = root
+        for part in schema["$ref"].removeprefix("#/").split("/"):
+            target = target[part]
+        rest = {key: value for key, value in schema.items() if key != "$ref"}
+        return dereferenced({**target, **rest}, root)
+    return {key: dereferenced(value, root) for key, value in schema.items()}
+
+
+def schema_branches(schema) -> list[dict]:
+    """The schema, then each of its oneOf, anyOf and allOf alternatives."""
+    if not isinstance(schema, dict):
+        return []
+    branches = [schema]
+    for key in ("oneOf", "anyOf", "allOf"):
+        for alternative in schema.get(key, []):
+            branches += schema_branches(alternative)
+    return branches
+
+
+def properties_of(schema) -> dict:
+    """Every property a value of this schema can have, in schema order; an array's are its items'."""
+    merged = {}
+    for branch in schema_branches(schema):
+        if "items" in branch:
+            for name, sub in properties_of(branch["items"]).items():
+                merged.setdefault(name, sub)
+        for name, sub in branch.get("properties", {}).items():
+            merged.setdefault(name, sub)
+    return merged
+
+
+def map_entry_of(schema):
+    """The schema of each entry of a map, such as system-info's recipes by name."""
+    return next(
+        (
+            b["additionalProperties"]
+            for b in schema_branches(schema)
+            if isinstance(b.get("additionalProperties"), dict)
+        ),
+        None,
+    )
+
+
+def description_of(schema) -> str:
+    return next(
+        (b["description"] for b in schema_branches(schema) if "description" in b),
+        "",
+    )
+
+
+def field_rows(schema) -> list[tuple[list[str], str, list]]:
+    """Described fields as (names, description, nested rows).
+
+    Adjacent fields sharing a description share a row, as in `file`, `file_index`,
+    `total_files`. A described map entry gets a row with no names, as in system-info's
+    "Each recipe ... contains:". A nested schema with its own $id, such as the routing
+    decision, is documented on its own page, so only its description is listed.
+    """
+    rows = []
+    for name, sub in properties_of(schema).items():
+        description = description_of(sub)
+        children = [] if "$id" in sub else field_rows(sub)
+        if not description and not children:
+            continue
+        previous = rows[-1] if rows else None
+        if previous and description == previous[1] and not children and not previous[2]:
+            previous[0].append(name)
+        else:
+            rows.append(([name], description, children))
+    entry = map_entry_of(schema)
+    if entry is not None and description_of(entry):
+        rows.append(([], description_of(entry), field_rows(entry)))
+    return rows
+
+
+def field_lines(rows: list, pad: str = "") -> list[str]:
+    lines = []
+    for names, description, children in rows:
+        if not names:
+            lines.append(f"{pad}- {description}")
+        else:
+            line = pad + "- " + ", ".join(f"`{name}`" for name in names)
+            lines.append(line + (f" - {description}" if description else ""))
+        lines += field_lines(children, pad + "  ")
+    return lines
+
+
+def render_fields(schema: dict) -> str:
+    rows = field_rows(schema)
+    if not rows:
+        return ""
+    return "**Field Descriptions:**\n\n" + "\n".join(field_lines(rows))
+
+
+def in_schema_order(value, schema):
+    """lemond answers with sorted keys; list each object's fields in its schema's order."""
+    if isinstance(value, list):
+        items = next((b["items"] for b in schema_branches(schema) if "items" in b), {})
+        return [in_schema_order(item, items) for item in value]
+    if not isinstance(value, dict):
+        return value
+    properties = properties_of(schema)
+    entry = map_entry_of(schema) or {}
+    rank = {name: index for index, name in enumerate(properties)}
+    return {
+        key: in_schema_order(value[key], properties.get(key, entry))
+        for key in sorted(value, key=lambda k: rank.get(k, len(rank)))
+    }
+
+
+def ordered_payload(text: str, schema: dict) -> str:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    return json.dumps(in_schema_order(payload, schema), ensure_ascii=False)
+
+
+def render_event(event: str, schema: dict) -> str:
     rendered = []
     for line in event.splitlines():
         if line.startswith("data:"):
-            payload = line[5:].strip()
-            try:
-                payload = json.dumps(json.loads(payload), ensure_ascii=False)
-            except json.JSONDecodeError:
-                pass
-            rendered.append(f"data: {payload}")
+            rendered.append(f"data: {ordered_payload(line[5:].strip(), schema)}")
         else:
             rendered.append(line)
     return "\n".join(rendered)
 
 
-def render_recorded(fmt: str, entry: dict) -> str:
+def render_recorded(fmt: str, entry: dict, schema: dict) -> str:
     recorded = entry["response"]
     status = f"`{recorded['status']}`"
     if fmt == "Json":
-        return status + "\n\n" + fence("json", json_layout(recorded["body"]))
+        body = in_schema_order(recorded["body"], schema)
+        return status + "\n\n" + fence("json", json_layout(body))
     if fmt in ("JsonLines", "EventStream"):
         render = (
-            (lambda line: json.dumps(json.loads(line), ensure_ascii=False))
+            (lambda line: ordered_payload(line, schema))
             if fmt == "JsonLines"
-            else render_event
+            else (lambda event: render_event(event, schema))
         )
         shown = [render(item) for item in recorded["head"]]
         if recorded["tail"]:
@@ -810,78 +946,66 @@ def render_tab(title: str, body: str) -> str:
     return f'=== "{title}"\n\n{indent(body)}\n'
 
 
-SCHEMA_KEY_ORDER = [
-    "$schema",
-    "$id",
-    "title",
-    "description",
-    "type",
-    "const",
-    "enum",
-    "required",
-    "properties",
-    "items",
-    "additionalProperties",
-    "oneOf",
-    "anyOf",
-    "allOf",
-    "$defs",
-]
+def like(template, value):
+    """value with each object's keys in the order template lists them."""
+    if isinstance(template, dict) and isinstance(value, dict):
+        rank = {key: index for index, key in enumerate(template)}
+        return {
+            key: like(template.get(key), value[key])
+            for key in sorted(value, key=lambda k: rank.get(k, len(rank)))
+        }
+    if isinstance(template, list) and isinstance(value, list):
+        return [like(t, v) for t, v in zip(template, value)] + value[len(template) :]
+    return value
 
 
-def in_schema_order(schema):
-    """lemond serves schemas with sorted keys; put each keyword where a reader expects it."""
-    if isinstance(schema, list):
-        return [in_schema_order(item) for item in schema]
-    if not isinstance(schema, dict):
-        return schema
-    rank = {key: index for index, key in enumerate(SCHEMA_KEY_ORDER)}
-    ordered = {}
-    for key in sorted(schema, key=lambda k: rank.get(k, len(rank))):
-        value = schema[key]
-        if key in ("properties", "$defs") and isinstance(value, dict):
-            value = {name: in_schema_order(sub) for name, sub in value.items()}
-        elif key in ("items", "additionalProperties", "oneOf", "anyOf", "allOf"):
-            value = in_schema_order(value)
-        ordered[key] = value
-    return ordered
-
-
-def in_argument_order(spec: dict, entry: dict) -> dict:
-    """lemond serves examples with sorted keys; show them in the route's argument order."""
+def in_example_order(example: dict, entry: dict) -> dict:
+    """A recorded request keeps the key order it was recorded with; show the example's."""
     request = entry["request"]
-    if not isinstance(request["json"], dict):
-        return entry
-    order = [arg["name"] for arg in spec["args"]]
-    rank = {name: index for index, name in enumerate(order)}
-    body = dict(
-        sorted(request["json"].items(), key=lambda kv: rank.get(kv[0], len(order)))
-    )
-    return {**entry, "request": {**request, "json": body}}
+    reordered = {
+        key: like(example, request[key]) for key in ("json", "query", "form", "files")
+    }
+    return {**entry, "request": {**request, **reordered}}
 
 
-def render_response(spec: dict, response: dict, entry: dict) -> str:
-    entry = in_argument_order(spec, entry)
-    fmt = response["format"]
-    parts = [f"### Response: `{fmt}`\n"]
-    parts.append(
-        render_tab("PowerShell", fence("powershell", powershell_command(entry)))
-    )
-    parts.append(render_tab("Bash", fence("bash", bash_command(entry))))
-    parts.append(render_tab("Response", render_recorded(fmt, entry)))
-    if response["schema"]:
+def response_labels(spec: dict) -> list[str]:
+    streaming = [r["format"] in STREAMING_FORMATS for r in spec["responses"]]
+    if any(streaming) and not all(streaming):
+        return ["streaming" if s else "non-streaming" for s in streaming]
+    return [FORMAT_LABELS[r["format"]] for r in spec["responses"]]
+
+
+def render_example_request(entries: list[dict], labels: list[str]) -> str:
+    parts = ["### Example request\n"]
+    for index, (entry, label) in enumerate(zip(entries, labels)):
+        suffix = f" ({label})" if index else ""
         parts.append(
             render_tab(
-                "Schema",
-                fence("json", json_layout(in_schema_order(response["schema"]))),
+                f"PowerShell{suffix}", fence("powershell", powershell_command(entry))
             )
         )
+        parts.append(render_tab(f"Bash{suffix}", fence("bash", bash_command(entry))))
+    return "\n".join(parts).rstrip()
+
+
+def render_response_format(spec: dict, entries: list[dict], labels: list[str]) -> str:
+    bodies = []
+    for response, entry in zip(spec["responses"], entries):
+        schema = dereferenced(response["schema"])
+        body = render_recorded(response["format"], entry, schema)
+        fields = render_fields(schema) if schema else ""
+        bodies.append(body + (f"\n\n{fields}" if fields else ""))
+    if len(bodies) == 1:
+        return "### Response format\n\n" + bodies[0]
+    parts = ["### Response format\n"]
+    for label, body in zip(labels, bodies):
+        parts.append(render_tab(f"{label[0].upper()}{label[1:]} responses", body))
     return "\n".join(parts).rstrip()
 
 
 def render_parameters(spec: dict) -> str:
     if not spec["args"]:
-        return "### Parameters\n\nThis endpoint takes no parameters."
+        return "### Parameters\n\nThis endpoint does not take any parameters."
     rows = [
         "### Parameters",
         "",
@@ -917,30 +1041,85 @@ def render_route(spec: dict, entries: dict) -> str:
         "",
         spec["description"],
         "",
+        served + auth_sentence(primary_url(spec)),
     ]
-    for note in spec["notes"]:
-        parts += [note, ""]
-    parts += [served + auth_sentence(primary_url(spec))]
     if spec["responses"]:
         parts += ["", render_parameters(spec)]
-    for response in spec["responses"]:
-        parts += ["", render_response(spec, response, entries[response["format"]])]
+    for note in spec["notes"]:
+        parts += ["", note]
+    if spec["responses"]:
+        ordered = [
+            in_example_order(response["example"], entries[response["format"]])
+            for response in spec["responses"]
+        ]
+        labels = response_labels(spec)
+        parts += [
+            "",
+            render_example_request(ordered, labels),
+            "",
+            render_response_format(spec, ordered, labels),
+        ]
     return "\n".join(parts)
 
 
-def render_summary(page_specs: list[dict]) -> str:
-    rows = [
-        "| Method | Endpoint | Description |",
-        "|--------|----------|-------------|",
-    ]
+def render_summary(page_specs: list[dict], current: str, page_text: str) -> str:
+    """Rows linking to a route's section are generated from its summary. Other rows, such
+    as a WebSocket endpoint's, are hand-written and stay after the row they follow."""
+    with_status = any(not spec["responses"] for spec in page_specs)
+    with_modality = any(spec["modality"] for spec in page_specs)
+    columns = (
+        ["Method", "Endpoint"]
+        + ["Status"] * with_status
+        + ["Description"]
+        + ["Modality"] * with_modality
+    )
+    generated = {}
     for spec in page_specs:
-        heading = heading_of(spec)
-        methods = ", ".join(f"`{method}`" for method in spec["methods"])
-        rows.append(
-            f"| {methods} | [`{primary_url(spec)}`](#{anchor(heading)}) | "
-            f"{md_cell(spec['summary'])} |"
+        if not spec["summary"]:
+            continue
+        target = anchor(heading_of(spec))
+        cells = (
+            [
+                ", ".join(f"`{method}`" for method in spec["methods"]),
+                f"[`{primary_url(spec)}`](#{target})",
+            ]
+            + ["Supported" if spec["responses"] else "Not supported"] * with_status
+            + [md_cell(spec["summary"])]
+            + [md_cell(spec["modality"])] * with_modality
         )
-    return "\n".join(rows)
+        generated[target] = f"| {' | '.join(cells)} |"
+    sections = {
+        anchor(line.lstrip("#").strip())
+        for line in page_text.splitlines()
+        if line.startswith("#")
+    }
+    kept: dict[str | None, list[str]] = {}
+    previous = None
+    for line in current.splitlines()[2:]:
+        match = re.search(r"\]\(#([^)]+)\)", line)
+        target = match.group(1) if match else None
+        if target in generated:
+            previous = target
+            continue
+        if target not in sections:
+            raise GenerationError(
+                f"summary row links to no section on the page: {line}"
+            )
+        kept.setdefault(previous, []).append(line)
+    rows = [
+        f"| {' | '.join(columns)} |",
+        f"|{'|'.join('-' * (len(column) + 2) for column in columns)}|",
+    ] + kept.get(None, [])
+    for target, row in generated.items():
+        rows.append(row)
+        rows += kept.get(target, [])
+    table = "\n".join(rows)
+    for spec in page_specs:
+        if f"](#{anchor(heading_of(spec))})" not in table:
+            raise GenerationError(
+                f"{spec['id']} has no summary and no hand-written row"
+            )
+    return table
 
 
 # --------------------------------------------------------------------------
@@ -1094,11 +1273,16 @@ def main() -> int:
     stale_pages = []
     for page, page_specs in pages.items():
         path = API_DOCS / f"{page}.md"
-        rendered[f"{page}.summary"] = render_summary(page_specs)
         original = (
             path.read_text(encoding="utf-8")
             if path.exists()
             else f"# {PAGE_TITLES.get(page, page)}\n"
+        )
+        current = {
+            match.group(1): match.group(2) for match in REGION_RE.finditer(original)
+        }
+        rendered[f"{page}.summary"] = render_summary(
+            page_specs, current.get(f"{page}.summary", ""), original
         )
         if any(spec["id"] not in rendered for spec in page_specs):
             continue

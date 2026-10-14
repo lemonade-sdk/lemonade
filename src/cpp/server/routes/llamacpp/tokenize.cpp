@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class TokenizeRoute : public ApiRoute {
 public:
@@ -17,38 +18,45 @@ public:
         s.id = "llamacpp.tokenize";
         s.methods = {"POST"};
         s.paths = {"tokenize"};
-        s.summary = "Tokenize text";
+        s.summary = "Tokenize a given text";
+        s.modality = "tokenization";
         s.description =
-            "Tokenizes text with a loaded llama.cpp model's tokenizer, without using any of the "
-            "model's context window.";
+            "Tokenize a given text. Does not count towards the current model's context window.\n\n"
+            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
+            "Internally, Lemonade forwards the request to llama.cpp's `/tokenize` endpoint.\n\n"
+            "> **Note:** This endpoint supports all four path prefixes: `/api/v0/tokenize`, "
+            "`/api/v1/tokenize`, `/v0/tokenize`, and `/v1/tokenize`.\n\n"
+            "> **Note:** Actual response values may vary for the same string across different "
+            "models if the models do not share the same tokenizer.";
         s.notes = {
             "The request names no model: Lemonade forwards it to llama.cpp's `/tokenize` on the most "
-            "recently used loaded model, which must be a llama.cpp model. With no model loaded, or "
-            "when that model is not a llama.cpp model, the answer is `400`. Models that do not "
-            "share a tokenizer return different tokens for the same text, so after a request to a "
-            "reranker, for example, the reranker's tokenizer answers.",
+            "recently used loaded model, which must be a llama.cpp model, so after a request to a "
+            "reranker, for example, the reranker's tokenizer answers. With no model loaded, or "
+            "when that model is not a llama.cpp model, the answer is `400`.",
         };
         s.args = {
-            {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available, "Text to tokenize."},
+            {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The text to tokenize."},
             {"add_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Insert special tokens, such as `BOS`. Defaults to `false`."},
+             "Boolean indicating if special tokens, i.e. `BOS`, should be inserted. Default: "
+             "`false`"},
             {"parse_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Tokenize special tokens; when `false`, they are treated as plain text. Defaults to "
-             "`true`."},
+             "Boolean indicating if special tokens should be tokenized. When `false` special "
+             "tokens are treated as plaintext. Default: `true`"},
             {"with_pieces", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Return each token as `{\"id\", \"piece\"}` instead of a bare id. Defaults to "
-             "`false`."},
+             "Boolean indicating whether to return token pieces along with IDs. Default: "
+             "`false`"},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["tokens"],
             "properties": {
                 "tokens": {
                     "type": "array",
-                    "description": "Token ids, or {id, piece} objects when with_pieces is true.",
+                    "description": "Array of token IDs",
                     "items": {"type": ["integer", "object"]}
                 }
             }

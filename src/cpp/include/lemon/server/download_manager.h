@@ -45,8 +45,8 @@ public:
     // progress/complete/error server-sent events.
     static void stream(const Operation& operation, httplib::DataSink& sink);
 
-    static nlohmann::json job_schema();
-    static nlohmann::json event_schema();
+    static nlohmann::ordered_json job_schema();
+    static nlohmann::ordered_json event_schema();
 
 private:
     struct Job {

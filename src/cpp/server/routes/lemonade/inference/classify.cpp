@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class ClassifyRoute : public ModelRoute {
 public:
@@ -20,35 +21,40 @@ public:
         s.summary = "Classify input text with an encoder classifier (label scores)";
         s.experimental = true;
         s.description =
-            "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, "
-            "on a string and returns a score in `[0, 1]` for each label.";
-        s.notes = {
-            "The model must use the `onnxruntime` recipe; see "
-            "[Classifier Models](#classifier-models) for the architectures it serves. Both "
-            "sequence-classification models (one label set) and token-classification models "
-            "(aggregated span labels) are supported.",
-            "Label names come from the model's `id2label`, in `config.json` or in a "
-            "`manifest.json` that overrides it. Some upstream models only declare generic "
-            "`LABEL_<n>` names; see the model card for their meaning.",
-            "A malformed request (invalid JSON, a missing `input`, a non-string field, or a "
-            "`top_k` that is not a positive integer) is answered with `400` before any model "
-            "is loaded.",
-        };
+            "Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string "
+            "and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` "
+            "recipe. Both sequence-classification (one label set) and token-classification "
+            "(aggregated span labels) models are supported.\n\n"
+            "**Supported architectures:** single-sequence encoder families — BERT, DistilBERT, "
+            "RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock "
+            "`optimum-cli export onnx` directory of one of these works as-is.\n\n"
+            "A servable model directory is `model.onnx` + `tokenizer.json` + `config.json`. The "
+            "`config.json` is **always required**: it declares the architecture, which is checked "
+            "against the list above so an unsupported family (e.g. XLNet, which uses different "
+            "segment/special-token conventions) is **rejected at load time** rather than served "
+            "with wrong scores. The output contract (labels, normalization, token budget) is read "
+            "from that same config; an optional `manifest.json` overrides it but does not replace "
+            "the config. Without a manifest, inference assumes **single-label softmax**; a "
+            "multi-label (sigmoid) model must declare `problem_type: multi_label_classification` "
+            "in its config or ship a `manifest.json`.\n\n"
+            "This endpoint provides the classification capability that the router's `classifier` "
+            "condition type consumes.";
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Classifier model, using the `onnxruntime` recipe; loaded on first use. Optional "
-             "when exactly one classification model is loaded, which then serves the request."},
+             "Classifier model id (a model with the `onnxruntime` recipe). Optional when exactly "
+             "one classification model is already loaded; the loaded model is used and echoed in "
+             "the response."},
             {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text to classify."},
+             "Text to classify. `text` is accepted as an alias."},
+            {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
+             "Return only the highest-scoring `k` labels."},
             {"text", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Alias for `input`."},
-            {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
-             "Return only the `top_k` highest-scoring labels."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["object", "model", "labels"],
             "properties": {
@@ -61,7 +67,7 @@ public:
                 }
             }
         })");
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model": "Phishing-Email-Detection-ONNX",
             "input": "Please verify your account at http://secure-login.example now."
         })");

@@ -5,6 +5,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class RerankRoute : public ModelRoute {
 public:
@@ -15,25 +16,28 @@ public:
         s.id = "llamacpp.rerank";
         s.methods = {"POST"};
         s.paths = {"rerank", "reranking", "reranker"};
-        s.summary = "Score documents by relevance to a query";
+        s.summary = "Reranking";
+        s.modality = "query + documents -> relevance-scored documents";
         s.description =
-            "Scores each document by its relevance to a query, loading the reranking model on "
-            "first use.";
-        s.notes = {
-            "Lemonade forwards the request to llama.cpp's `/v1/rerank`, so only reranking models "
-            "(the `reranking` label) using the `llamacpp` recipe, such as "
-            "`bge-reranker-v2-m3-GGUF`, serve it. `/rerank` is the path most clients expect; "
-            "`/reranking` and `/reranker` behave identically.",
-            "Results are returned in input order. To rank documents, sort `results` by "
-            "`relevance_score`, highest first.",
-        };
+            "Reranking API for llama.cpp-compatible reranker models. You provide a query and a "
+            "list of documents, and receive relevance scores for each document. Lemonade will load "
+            "the requested model automatically if it is not already loaded.\n\n"
+            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
+            "Internally, Lemonade forwards the request to llama.cpp's `/v1/rerank` endpoint.\n\n"
+            "> **Note:** Lemonade also accepts `/reranking` and `/reranker` as aliases — all "
+            "three route to the same handler and behave identically.\n\n"
+            "> **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, "
+            "`/api/v1/`, `/v0/`, and `/v1/`.\n\n"
+            "> **Note:** This endpoint is only available for reranker-specific models using the "
+            "`llamacpp` recipe, such as `bge-reranker-v2-m3-GGUF`.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Reranking model to run; loaded on first use."},
             {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Search query the documents are scored against."},
+             "The search query text."},
             {"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
-             true, Support::Available, "Document strings to score against the query."},
+             true, Support::Available, "Array of document strings to score against the query."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The reranking model to use. If not already loaded, Lemonade loads it before "
+             "forwarding the request."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},
@@ -41,31 +45,32 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["model", "object", "results"],
             "properties": {
-                "model": {"type": "string", "description": "Model that scored the documents."},
-                "object": {"const": "list"},
-                "results": {"type": "array", "description": "One entry per input document, in input order.", "items": {
+                "model": {"type": "string", "description": "Model identifier used for reranking"},
+                "object": {"const": "list", "description": "Type of response object, always `\"list\"`"},
+                "results": {"type": "array", "description": "Array of all input documents with relevance scores", "items": {
                     "type": "object",
                     "required": ["index", "relevance_score"],
                     "properties": {
-                        "index": {"type": "integer", "description": "Position of the document in the request."},
-                        "relevance_score": {"type": "number", "description": "Relevance to the query; higher is more relevant."}
+                        "index": {"type": "integer", "description": "Original index of the document in the input array"},
+                        "relevance_score": {"type": "number", "description": "Relevance score assigned by the model; higher means more relevant"}
                     }
                 }},
                 "usage": {
                     "type": "object",
+                    "description": "Token usage statistics",
                     "properties": {
-                        "prompt_tokens": {"type": "integer", "description": "Tokens in the input."},
-                        "total_tokens": {"type": "integer", "description": "Tokens processed."}
+                        "prompt_tokens": {"type": "integer", "description": "Number of tokens in the input"},
+                        "total_tokens": {"type": "integer", "description": "Total tokens processed"}
                     }
                 }
             }
         })");
-        response.example = json::parse(R"({
-            "model": "jina-reranker-v1-tiny-en-GGUF",
+        response.example = ordered_json::parse(R"({
+            "model": "bge-reranker-v2-m3-GGUF",
             "query": "What is the capital of France?",
             "documents": [
                 "Paris is the capital of France.",

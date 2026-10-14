@@ -9,9 +9,10 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
-json text_completion_schema(bool chunk) {
-    auto schema = json::parse(R"({
+ordered_json text_completion_schema(bool chunk) {
+    auto schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
@@ -48,37 +49,44 @@ public:
         s.methods = {"POST"};
         s.paths = {"completions"};
         s.summary = "Text Completions";
-        s.description = "Continues a prompt, loading the model on first use.";
+        s.modality = "prompt -> completion";
+        s.description =
+            "Text Completions API. You provide a prompt and receive a completion. This API will "
+            "also load the model if it is not already loaded.";
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to run; loaded on first use."},
             {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "Text to continue, or an array of strings."},
+             "The prompt to use for the completion."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The model to use for the completion."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream tokens as server-sent events as they are generated. Defaults to `false`."},
+             "If true, tokens will be sent as they are generated. If false, the response will be "
+             "sent as a single message once complete. Defaults to false."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "A string or an array of up to 4 strings where generation stops. The returned text "
-             "does not contain the stop sequence."},
+             "Up to 4 sequences where the API will stop generating further tokens. The returned "
+             "text will not contain the stop sequence. Can be a string or an array of strings."},
             {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Return the prompt in addition to the completion. Non-streaming only."},
+             "Echo back the prompt in addition to the completion. Available on non-streaming "
+             "mode."},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
-             "Return the log probability of each output token. Non-streaming only."},
+             "Include log probabilities of the output tokens. If true, returns the log "
+             "probability of each output token. Defaults to false. Only available when "
+             "`stream=False`."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Number between 1.0 and 2.0; 1.0 means no penalty. Higher values discourage "
+             "Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage "
              "repetition."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens considered during sampling."},
+             "Integer that controls the number of top tokens to consider during sampling."},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Cumulative probability, between 0.0 and 1.0, of the top tokens considered during "
-             "nucleus sampling."},
+             "Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to "
+             "consider during nucleus sampling."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens."},
+             "An upper bound for the number of tokens that can be generated for a completion."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the routing "
              "decision to the response as `x_lemonade_route`."},
@@ -90,20 +98,21 @@ public:
         RouteResponse completion;
         completion.format = ResponseFormat::Json;
         completion.schema = text_completion_schema(false);
-        completion.example = json::parse(R"({
+        completion.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
-            "prompt": "The capital of France is",
-            "max_tokens": 16
+            "prompt": "What is the population of Paris?",
+            "stream": false,
+            "max_tokens": 64
         })");
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
         stream.schema = text_completion_schema(true);
-        stream.example = json::parse(R"({
+        stream.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
-            "prompt": "The capital of France is",
-            "max_tokens": 16,
-            "stream": true
+            "prompt": "What is the population of Paris?",
+            "stream": true,
+            "max_tokens": 64
         })");
 
         s.responses = {completion, stream};

@@ -16,9 +16,10 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
-json install_schema() {
-    auto local = json::parse(R"({
+ordered_json install_schema() {
+    auto local = ordered_json::parse(R"({
         "type": "object",
         "description": "A local backend installed or already up to date.",
         "required": ["status", "recipe", "backend"],
@@ -28,7 +29,7 @@ json install_schema() {
             "backend": {"type": "string"}
         }
     })");
-    auto manual = json::parse(R"({
+    auto manual = ordered_json::parse(R"({
         "type": "object",
         "description": "A backend that needs manual setup on this system, such as FLM on Linux: nothing was installed and action is the setup guide's URL.",
         "required": ["action", "recipe", "backend"],
@@ -38,7 +39,7 @@ json install_schema() {
             "backend": {"type": "string"}
         }
     })");
-    auto cloud = json::parse(R"({
+    auto cloud = ordered_json::parse(R"({
         "type": "object",
         "description": "A cloud provider registered.",
         "required": ["status", "backend", "provider", "base_url", "allow_insecure_http",
@@ -53,7 +54,7 @@ json install_schema() {
             "auth_header_name": {"type": "string"},
             "auth_header_prefix": {"type": "string"},
             "wire_format": {"enum": ["openai", "anthropic"]},
-            "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key; 0 when no key resolves."},
+            "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key."},
             "auth_state": {
                 "type": "object",
                 "properties": {
@@ -67,7 +68,7 @@ json install_schema() {
     })");
     auto job = DownloadManager::job_schema();
     job["description"] = "stream=true with subscribe=false: the server-owned download job just started.";
-    return {{"oneOf", json::array({local, manual, cloud, job})}};
+    return {{"oneOf", ordered_json::array({local, manual, cloud, job})}};
 }
 
 class InstallRoute : public ApiRoute {
@@ -81,74 +82,74 @@ public:
         s.paths = {"install"};
         s.summary = "Install or update a backend, or register a cloud provider";
         s.description =
-            "Installs or updates the backend for a recipe, or registers a cloud provider when "
-            "`backend` is `\"cloud\"`.";
+            "Install or update a backend for a specific recipe/backend pair, **or** register a "
+            "cloud OpenAI-compatible provider. The request body is dispatched by the `backend` "
+            "field: any value other than `\"cloud\"` is treated as a local backend install.";
         s.notes = {
-            "**Status:** the cloud-provider branch is experimental.",
-            "A local backend that is already installed but outdated is updated to the configured "
-            "version. A backend this system does not support is refused with `400` unless "
-            "`force` is set, and one that needs manual setup answers with the setup guide's URL "
-            "instead of installing. See [Install a Cloud Provider](#install-a-cloud-provider) for "
-            "the cloud branch.",
+            "A backend this system does not support is refused with `400` unless `force` is set, "
+            "and one that needs manual setup answers with the setup guide's URL instead of "
+            "installing.",
             "`stream: true` sends progress as server-sent events; with `subscribe: false` as well, "
             "the server owns the download, which [`GET /v1/downloads`](#get-v1downloads) and "
             "[`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control.",
             "A local install without both `recipe` and `backend`, or a backend this system does "
-            "not support, is answered with `400` and an `error` string; an invalid cloud "
-            "provider field is answered with `400` and an `error` object. Any other failure, "
-            "including invalid JSON, is answered with `500` and an `error` string.",
+            "not support, is answered with `400` and an `error` string; an invalid cloud provider "
+            "field is answered with `400` and an `error` object. Any other failure, including "
+            "invalid JSON, is answered with `500` and an `error` string.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Local backends, required: recipe name, e.g. `llamacpp`, `flm`, `whispercpp`, "
-             "`sd-cpp` or `ryzenai-llm`."},
+             "Local backends, required: Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, "
+             "`sd-cpp`, `ryzenai-llm`)"},
             {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Backend within the recipe, e.g. `vulkan`, `rocm`, `cpu` or `default`, or "
-             "`\"cloud\"` to register a cloud provider."},
+             "Local backends: Backend name within the recipe (for example, `vulkan`, `rocm`, "
+             "`cpu`, `default`). Cloud providers: Must be the literal string `\"cloud\"`."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends: send progress as server-sent events. Defaults to `false`."},
+             "Local backends: If `true`, returns Server-Sent Events with progress. Defaults to "
+             "`false`."},
+            {"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+             "Local backends: If `true`, bypasses hardware filtering for `unsupported` backends "
+             "and attempts installation anyway. Defaults to `false`."},
+            {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Cloud providers, required: Short identifier (e.g. `fireworks`). Used as the "
+             "model-name prefix. Must match `[a-z0-9_-]+`."},
+            {"base_url", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Cloud providers, required: OpenAI-compatible base URL ending in `/v1` (or "
+             "equivalent)."},
+            {"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Cloud providers: Optional. If set, stored in process memory; honors env-wins "
+             "precedence (see `/v1/cloud/auth`)."},
+            {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+             "Cloud providers: Default `false`. Must be `true` to send an API key to an `http://` "
+             "base URL."},
+            {"auth_header_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Cloud providers: Header carrying the API key. Must be a valid HTTP header name. "
+             "Default `\"Authorization\"`."},
+            {"auth_header_prefix", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Cloud providers: Value prefix before the key. Default `\"Bearer \"`; pass `\"\"` for "
+             "gateways that expect the bare key."},
+            {"wire_format", ArgIn::JsonBody, {{"enum", json::array({"openai", "anthropic"})}},
+             false, Support::Available,
+             "Cloud providers: `\"openai\"` (default) or `\"anthropic\"`. An `\"anthropic\"` "
+             "provider is served from `POST /v1/messages` only; any other value returns 400."},
             {"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Local backends with `stream: true`: `false` starts a server-owned download and "
              "answers with its snapshot at once. Defaults to `true`."},
-            {"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends: install even when this system does not support the backend. "
-             "Defaults to `false`."},
-            {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: short name, e.g. `fireworks`, matching `[a-z0-9_-]+`. "
-             "It prefixes the provider's model names."},
-            {"base_url", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: base URL, usually ending in `/v1`, saved to "
-             "`config.json`."},
-            {"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: API key, held in lemond's memory only. An environment variable "
-             "for the provider takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth)."},
-            {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Cloud providers: must be `true` to send an API key to an `http://` base URL. "
-             "Defaults to `false`."},
-            {"auth_header_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: header that carries the API key. Defaults to `Authorization`."},
-            {"auth_header_prefix", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: text before the key in that header. Defaults to `\"Bearer \"`; "
-             "pass `\"\"` for gateways that expect the bare key."},
-            {"wire_format", ArgIn::JsonBody, {{"enum", json::array({"openai", "anthropic"})}},
-             false, Support::Available,
-             "Cloud providers: `openai` (default), or `anthropic` for a provider served only "
-             "from `POST /v1/messages`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = install_schema();
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "backend": "cloud",
-            "provider": "example",
-            "base_url": "https://api.example.com/v1"
+            "provider": "fireworks",
+            "base_url": "https://api.fireworks.ai/inference/v1"
         })");
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
         stream.schema = DownloadManager::event_schema();
-        stream.example = json::parse(R"({
+        stream.example = ordered_json::parse(R"({
             "recipe": "llamacpp",
             "backend": "vulkan",
             "stream": true

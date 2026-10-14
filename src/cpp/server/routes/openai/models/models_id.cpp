@@ -20,21 +20,14 @@ public:
         s.methods = {"GET"};
         s.paths = {"models/{id}"};
         s.summary = "Retrieve a specific model by ID";
+        s.modality = "n/a";
         s.description =
-            "Returns one model, in the same shape as the entries of "
-            "[`GET /v1/models`](#get-v1models).";
-        s.notes = {
-            "An Omni collection (`recipe: \"collection.omni\"`) additionally carries `components` "
-            "(its ordered component names) and `models` (each component's full model object), so "
-            "its response is a complete collection file; see "
-            "[Share a Collection](../guide/configuration/custom-models.md#share-a-collection-between-machines).",
-            "An unknown model answers `404` with an `error` object whose `code` is "
-            "`model_not_found`, or `model_not_supported` for a model this system cannot run.",
-        };
+            "Retrieve a specific model by its ID. Returns the same model object format as the "
+            "list endpoint above.";
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. See the "
-             "[model list](https://lemonade-server.ai/models.html)."},
+             "The ID of the model to retrieve. Must match one of the model IDs from the "
+             "[models list](https://lemonade-server.ai/models.html) or an alias."},
         };
 
         RouteResponse response;

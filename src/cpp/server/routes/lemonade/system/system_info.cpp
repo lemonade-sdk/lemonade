@@ -21,6 +21,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 json get_model_storage_stats(const std::string& model_storage_path) {
     auto make_error_result = [](const fs::path& path, const std::string& error) {
@@ -138,50 +139,65 @@ void enrich_recipes(BackendManager* backend_manager, json& recipes) {
     }
 }
 
-json system_info_schema() {
-    return json::parse(R"({
+ordered_json system_info_schema() {
+    return ordered_json::parse(R"json({
         "type": "object",
         "required": ["devices", "recipes", "unavailable_recipes", "model_storage", "cloud"],
         "properties": {
-            "OS Version": {"type": "string", "description": "Operating system name and version."},
-            "Processor": {"type": "string", "description": "CPU model name."},
-            "Physical Memory": {"type": "string", "description": "Total RAM."},
-            "OEM System": {"type": "string", "description": "Windows only: system or laptop model."},
-            "BIOS Version": {"type": "string", "description": "Windows only."},
-            "CPU Max Clock": {"type": "string", "description": "Windows only."},
-            "Windows Power Setting": {"type": "string", "description": "Windows only: current power plan."},
+            "OS Version": {"type": "string", "description": "Operating system name and version"},
+            "Processor": {"type": "string", "description": "CPU model name"},
+            "Physical Memory": {"type": "string", "description": "Total RAM"},
+            "OEM System": {"type": "string", "description": "System/laptop model name (Windows only)"},
+            "BIOS Version": {"type": "string", "description": "BIOS information (Windows only)"},
+            "CPU Max Clock": {"type": "string", "description": "Maximum CPU clock speed (Windows only)"},
+            "Windows Power Setting": {"type": "string", "description": "Current power plan (Windows only)"},
+            "model_storage": {
+                "type": "object",
+                "description": "Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.",
+                "required": ["path", "used_bytes", "total_bytes", "free_bytes"],
+                "properties": {
+                    "path": {"type": "string", "description": "Active model storage path from server configuration"},
+                    "used_bytes": {"type": ["integer", "null"], "description": "Used bytes on the model-storage drive"},
+                    "total_bytes": {"type": ["integer", "null"], "description": "Total capacity of the model-storage drive"},
+                    "free_bytes": {"type": ["integer", "null"], "description": "Free bytes available to the Lemonade Server process on the model-storage drive"},
+                    "error": {"type": "string", "description": "Only when the drive could not be measured."}
+                }
+            },
             "devices": {
                 "type": "object",
-                "description": "Hardware detected on the system, without software support information: cpu, plus amd_gpu and nvidia_gpu arrays and amd_npu when present.",
+                "description": "Hardware devices detected on the system (no software/support information)",
                 "properties": {
-                    "cpu": {"type": "object", "description": "Name, cores and threads."},
-                    "amd_gpu": {"type": "array", "description": "AMD GPUs, integrated and discrete."},
-                    "nvidia_gpu": {"type": "array"},
-                    "amd_npu": {"type": "object"}
+                    "cpu": {"type": "object", "description": "CPU information (name, cores, threads)"},
+                    "amd_gpu": {"type": "array", "description": "Array of AMD GPUs, both integrated and discrete (if present)"},
+                    "nvidia_gpu": {"type": "array", "description": "Array of NVIDIA GPUs (if present)"},
+                    "amd_npu": {"type": "object", "description": "AMD NPU device (if present)"}
                 }
             },
             "recipes": {
                 "type": "object",
-                "description": "Each recipe's backends and their support on this system.",
+                "description": "Software recipes and their backend support status",
                 "additionalProperties": {
                     "type": "object",
+                    "description": "Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:",
                     "required": ["experimental", "backends"],
                     "properties": {
-                        "default_backend": {"type": "string", "description": "Backend the server prefers on this system; present when at least one backend is not unsupported."},
-                        "experimental": {"type": "boolean", "description": "Whether the default_backend's tier is experimental or guest."},
+                        "default_backend": {"type": "string", "description": "Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)"},
+                        "experimental": {"type": "boolean", "description": "`true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                         "backends": {
                             "type": "object",
+                            "description": "Available backends for this recipe",
                             "additionalProperties": {
                                 "type": "object",
+                                "description": "Each backend contains:",
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
-                                    "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices on this system that support the backend; empty when unsupported."},
-                                    "state": {"enum": ["unsupported", "installable", "update_required", "installed"]},
-                                    "message": {"type": "string", "description": "Status text for GUI and CLI users: required for unsupported, installable and update_required; empty for installed."},
-                                    "action": {"type": "string", "description": "What the user should do, typically an exact CLI command for install and update, or a URL; may be empty."},
-                                    "version": {"type": "string", "description": "Installed or configured backend version, when available."},
-                                    "tier": {"enum": ["core", "experimental", "guest"], "description": "Who supports the backend on this operating system."},
-                                    "format": {"enum": ["native", "python", "container"], "description": "How the backend is packaged on this operating system."},
+                                    "devices": {"type": "array", "items": {"type": "string"}, "description": "List of devices **on this system** that support this backend (empty if not supported)"},
+                                    "state": {"enum": ["unsupported", "installable", "update_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`"},
+                                    "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
+                                    "action": {"type": "string", "description": "Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL)."},
+                                    "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
+                                    "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
+                                    "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "release_url": {"type": "string"},
                                     "download_filename": {"type": "string"}
                                 }
@@ -190,46 +206,38 @@ json system_info_schema() {
                     }
                 }
             },
-            "unavailable_recipes": {"type": "array", "items": {"type": "string"},
-                                    "description": "Recipes all of whose models are filtered out on this host. Reported separately so recipes stays the same on every host; dynamic-model backends (cloud, flm) are never listed."},
-            "no_fetch_executables": {"type": "boolean", "description": "Whether the server is configured not to download backend executables."},
-            "model_storage": {
-                "type": "object",
-                "description": "Drive-level storage for the configured model storage path, for storage meters. Not a recursive sum of model files.",
-                "required": ["path", "used_bytes", "total_bytes", "free_bytes"],
-                "properties": {
-                    "path": {"type": "string"},
-                    "used_bytes": {"type": ["integer", "null"]},
-                    "total_bytes": {"type": ["integer", "null"]},
-                    "free_bytes": {"type": ["integer", "null"], "description": "Bytes available to the server process."},
-                    "error": {"type": "string", "description": "Only when the drive could not be measured."}
-                }
-            },
             "cloud": {
                 "type": "object",
+                "description": "Cloud OpenAI-compatible providers configured on this server. Contains:",
                 "required": ["providers"],
                 "properties": {
-                    "providers": {"type": "array", "description": "One entry per installed cloud provider; the API key itself is never reported.", "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string", "description": "Provider name, used as the model-name prefix, e.g. fireworks."},
-                            "base_url": {"type": "string", "description": "Base URL persisted in config.json."},
-                            "allow_insecure_http": {"type": "boolean"},
-                            "auth_header_name": {"type": "string", "description": "Header the API key is sent in; default Authorization."},
-                            "auth_header_prefix": {"type": "string", "description": "Value prefix before the key; default \"Bearer \"."},
-                            "wire_format": {"enum": ["openai", "anthropic"]},
-                            "env_var": {"type": "string", "description": "Name of the provider's API key environment variable, e.g. LEMONADE_FIREWORKS_API_KEY."},
-                            "env_var_set": {"type": "boolean", "description": "Whether that variable is set in lemond's environment."},
-                            "runtime_key_set": {"type": "boolean", "description": "Whether a key was supplied with POST /v1/cloud/auth since the server started."},
-                            "models_discovered": {"type": "integer", "description": "Chat-capable models in the catalog for this provider."},
-                            "warnings": {"type": "array", "items": {"type": "string"}},
-                            "warning": {"type": "string"}
+                    "providers": {
+                        "type": "array",
+                        "description": "Array, one entry per installed provider:",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Provider name used as the model-name prefix (e.g. `fireworks`)."},
+                                "base_url": {"type": "string", "description": "Persisted base URL from `config.json`."},
+                                "auth_header_name": {"type": "string", "description": "Header this provider's API key is sent in (default `Authorization`)."},
+                                "auth_header_prefix": {"type": "string", "description": "Value prefix placed before the key (default `Bearer `)."},
+                                "wire_format": {"enum": ["openai", "anthropic"], "description": "Request/response shape this provider speaks: `openai` (default) or `anthropic`."},
+                                "env_var": {"type": "string", "description": "Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value."},
+                                "env_var_set": {"type": "boolean", "description": "`true` if the env var is set in `lemond`'s environment."},
+                                "runtime_key_set": {"type": "boolean", "description": "`true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session."},
+                                "models_discovered": {"type": "integer", "description": "Number of chat-capable models currently in the catalog for this provider."},
+                                "allow_insecure_http": {"type": "boolean"},
+                                "warnings": {"type": "array", "items": {"type": "string"}},
+                                "warning": {"type": "string"}
+                            }
                         }
-                    }}
+                    }
                 }
-            }
+            },
+            "unavailable_recipes": {"type": "array", "items": {"type": "string"}, "description": "Recipes all of whose models are filtered out on this host. Reported separately so recipes stays the same on every host; dynamic-model backends (cloud, flm) are never listed."},
+            "no_fetch_executables": {"type": "boolean", "description": "Whether the server is configured not to download backend executables."}
         }
-    })");
+    })json");
 }
 
 class SystemInfoRoute : public ApiRoute {
@@ -243,12 +251,10 @@ public:
         s.paths = {"system-info"};
         s.summary = "System information and device enumeration";
         s.description =
-            "Reports hardware details, detected devices, each recipe's backend support on this "
-            "system, model storage, and installed cloud providers.";
+            "System information endpoint that provides complete hardware details and device "
+            "enumeration.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
-            "Each backend's `tier` and `format` are defined in "
-            "[Backend Tiers and Formats](#backend-tiers-and-formats).",
         };
 
         RouteResponse response;

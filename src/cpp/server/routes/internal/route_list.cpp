@@ -5,6 +5,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class RouteListRoute : public ApiRoute {
 public:
@@ -33,12 +34,12 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["id", "methods", "paths", "prefixes", "summary", "description", "notes",
-                             "experimental", "args", "responses", "request_format",
+                "required": ["id", "methods", "paths", "prefixes", "summary", "modality", "description",
+                             "notes", "experimental", "args", "responses", "request_format",
                              "validate_args", "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "<page>.<name>; also the docs anchor."},
@@ -46,6 +47,7 @@ public:
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Paths without their prefix; entries after the first are aliases."},
                     "prefixes": {"enum": ["Quad", "Internal", "Root"], "description": "Quad serves /api/v0/, /api/v1/, /v0/ and /v1/; Internal serves /internal/; Root serves each path as written."},
                     "summary": {"type": "string"},
+                    "modality": {"type": "string", "description": "Empty on pages whose summary table has no Modality column."},
                     "description": {"type": "string"},
                     "notes": {"type": "array", "items": {"type": "string"}},
                     "experimental": {"type": "boolean", "description": "The route may still change."},
@@ -90,10 +92,10 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        json routes = ctx_.registry->list();
+        auto routes = ctx_.registry->list();
         if (req.http.has_param("id")) {
             const std::string id = req.http.get_param_value("id");
-            json matching = json::array();
+            auto matching = ordered_json::array();
             for (const auto& route : routes) {
                 if (route.value("id", std::string()) == id) {
                     matching.push_back(route);

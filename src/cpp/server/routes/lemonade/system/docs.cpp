@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class DocsRoute : public ApiRoute {
 public:
@@ -21,17 +22,15 @@ public:
         s.paths = {"docs"};
         s.summary = "List the API reference pages bundled with the running server";
         s.description =
-            "Lists the API reference pages bundled with the server. The pages ship with the "
-            "server, so they describe the version actually running and need no internet access.";
-        s.notes = {
-            "Fetch this index first, then read the pages it advertises with "
-            "[`GET /v1/docs/{page}`](#get-v1docspage). Every entry carries its own `url`, so new "
-            "pages can appear in future releases without breaking clients.",
-        };
+            "List the API reference pages bundled with the server. The documentation ships with the\n"
+            "server, so it describes the version you are actually running and requires no internet\n"
+            "access.\n\n"
+            "Fetch this index first, then read the pages it advertises. New pages can be added in\n"
+            "future releases without breaking clients, because every entry carries its own URL.";
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["version", "format", "docs"],
             "properties": {
@@ -43,7 +42,7 @@ public:
                     "properties": {
                         "id": {"type": "string", "description": "Page id, mirroring the page's path on the documentation website."},
                         "title": {"type": "string"},
-                        "url": {"type": "string", "description": "Where to read the page, under the same prefix the index was requested with: a client that queries /api/v0/docs receives /api/v0/docs/... URLs."},
+                        "url": {"type": "string", "description": "Where to read the page."},
                         "bytes": {"type": "integer"}
                     }
                 }}

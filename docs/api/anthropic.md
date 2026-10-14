@@ -1,24 +1,22 @@
 # Anthropic-Compatible API
 
-Lemonade supports the Anthropic Messages API for applications that call Claude-style APIs.
+Lemonade supports an initial Anthropic Messages compatibility endpoint for applications that call Claude-style APIs.
 
 <!-- BEGIN GENERATED: anthropic.summary -->
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | [`/v1/messages`](#post-v1messages) | Messages, streaming and non-streaming |
+| `POST` | [`/v1/messages`](#post-v1messages) | Messages. Supports both streaming and non-streaming. Query params like `?beta=true` are accepted. |
 <!-- END GENERATED: anthropic.summary -->
+
+Current scope focuses on message generation parity for common fields (`model`, `messages`, `system`, `max_tokens`, `temperature`, `stream`, and basic `tools`). Unsupported or unimplemented Anthropic-specific fields are ignored and surfaced via warning logs/headers.
+
+Those limits apply only where Lemonade converts to and from the OpenAI shape. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so no field is dropped — see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
 
 <!-- BEGIN GENERATED: anthropic.messages -->
 ## `POST /v1/messages`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Generates the next assistant message for a conversation in the Anthropic Messages format, loading the model on first use, for applications that call Claude-style APIs.
-
-Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, in a `warnings` array.
-
-A model from a cloud provider registered with `--wire-format anthropic` is relayed to the provider unconverted, so no field is dropped; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
-
-Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. An unknown model answers `404` with a `not_found_error`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -44,7 +42,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `beta` (query) | No | Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; `true` is passed on to providers that are relayed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `Json`
+Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, in a `warnings` array.
+
+Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. An unknown model answers `404` with a `not_found_error`.
+
+### Example request
 
 === "PowerShell"
 
@@ -55,9 +57,9 @@ Requires `LEMONADE_API_KEY` when it is set.
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
           "max_tokens": 64,
-          "temperature": 0
+          "temperature": 0,
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
         }'
     ```
 
@@ -68,134 +70,87 @@ Requires `LEMONADE_API_KEY` when it is set.
       -H "Content-Type: application/json" \
       -d '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
           "max_tokens": 64,
-          "temperature": 0
+          "temperature": 0,
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
         }'
     ```
 
-=== "Response"
+=== "PowerShell (streaming)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/messages" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Qwen3-0.6B-GGUF",
+          "max_tokens": 64,
+          "temperature": 0,
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+          "stream": true
+        }'
+    ```
+
+=== "Bash (streaming)"
+
+    ```bash
+    curl http://localhost:13305/v1/messages \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen3-0.6B-GGUF",
+          "max_tokens": 64,
+          "temperature": 0,
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+          "stream": true
+        }'
+    ```
+
+### Response format
+
+=== "Non-streaming responses"
 
     `200`
 
     ```json
     {
-      "content": [{"text": "The capital of France is **Paris**.", "type": "text"}],
       "id": "chatcmpl-7nHuJwc1c2OHLcsAfvSnubux6kPMFCPH",
-      "model": "Qwen3-0.6B-GGUF",
+      "type": "message",
       "role": "assistant",
+      "model": "Qwen3-0.6B-GGUF",
+      "content": [{"type": "text", "text": "The capital of France is **Paris**."}],
       "stop_reason": "end_turn",
       "stop_sequence": null,
-      "type": "message",
       "usage": {"input_tokens": 19, "output_tokens": 14}
     }
     ```
 
-=== "Schema"
+    **Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["id", "type", "role", "model", "content", "stop_reason", "usage"],
-      "properties": {
-        "content": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["type"],
-            "properties": {
-              "id": {"type": "string"},
-              "input": {"type": "object"},
-              "name": {"type": "string"},
-              "text": {"type": "string"},
-              "type": {
-                "description": "text or tool_use. A relayed provider can add its own block types, such as thinking.",
-                "type": "string"
-              }
-            }
-          }
-        },
-        "id": {"type": "string"},
-        "model": {"type": "string"},
-        "role": {"const": "assistant"},
-        "stop_reason": {"description": "end_turn, max_tokens or tool_use.", "type": "string"},
-        "stop_sequence": {"type": ["string", "null"]},
-        "type": {"const": "message"},
-        "usage": {
-          "type": "object",
-          "properties": {"input_tokens": {"type": "integer"}, "output_tokens": {"type": "integer"}}
-        },
-        "warnings": {
-          "description": "Fields Lemonade ignored while converting.",
-          "type": "array",
-          "items": {"type": "string"}
-        }
-      }
-    }
-    ```
+    - `content`
+      - `type` - text or tool_use. A relayed provider can add its own block types, such as thinking.
+    - `stop_reason` - end_turn, max_tokens or tool_use.
+    - `warnings` - Fields Lemonade ignored while converting.
 
-### Response: `EventStream`
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/messages" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
-          "max_tokens": 64,
-          "temperature": 0,
-          "stream": true
-        }'
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/v1/messages \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
-          "max_tokens": 64,
-          "temperature": 0,
-          "stream": true
-        }'
-    ```
-
-=== "Response"
+=== "Streaming responses"
 
     `200`
 
     ```text
     event: message_start
-    data: {"message": {"content": [], "id": "chatcmpl-Gj4QYW9KTblYxvvmII9QEEZ1KEp6Vz5e", "model": "Qwen3-0.6B-GGUF", "role": "assistant", "stop_reason": null, "stop_sequence": null, "type": "message", "usage": {"input_tokens": 0, "output_tokens": 0}}, "type": "message_start"}
+    data: {"type": "message_start", "message": {"content": [], "id": "chatcmpl-Gj4QYW9KTblYxvvmII9QEEZ1KEp6Vz5e", "model": "Qwen3-0.6B-GGUF", "role": "assistant", "stop_reason": null, "stop_sequence": null, "type": "message", "usage": {"input_tokens": 0, "output_tokens": 0}}}
     event: content_block_start
-    data: {"content_block": {"text": "", "type": "text"}, "index": 0, "type": "content_block_start"}
+    data: {"type": "content_block_start", "content_block": {"text": "", "type": "text"}, "index": 0}
     event: content_block_delta
-    data: {"delta": {"text": "The", "type": "text_delta"}, "index": 0, "type": "content_block_delta"}
+    data: {"type": "content_block_delta", "delta": {"text": "The", "type": "text_delta"}, "index": 0}
     ...
     event: message_delta
-    data: {"delta": {"stop_reason": "end_turn", "stop_sequence": null}, "type": "message_delta", "usage": {"input_tokens": 0, "output_tokens": 0}}
+    data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"input_tokens": 0, "output_tokens": 0}}
     event: message_stop
     data: {"type": "message_stop"}
     ```
 
-=== "Schema"
+    **Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "description": "Matches the event's name: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, or error. A relayed provider can also send ping.",
-          "type": "string"
-        }
-      }
-    }
-    ```
+    - `type` - Matches the event's name: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, or error. A relayed provider can also send ping.
 <!-- END GENERATED: anthropic.messages -->

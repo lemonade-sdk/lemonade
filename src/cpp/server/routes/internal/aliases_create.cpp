@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 // Alias failures are not model-lookup failures. ModelLoader::model_error() reports any
 // name missing from the registry as "model not found", which a new alias always is.
@@ -33,7 +34,7 @@ public:
         s.paths = {"aliases"};
         s.prefixes = Prefixes::Internal;
         s.summary = "Create or update a model alias";
-        s.description = "Points a model alias at a target model, creating or updating it.";
+        s.description = "Binds a model alias to a target model name.";
         s.notes = {
             "A `400` answers a missing `alias` or `target`, an alias equal to its target, or an "
             "alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an "
@@ -42,14 +43,14 @@ public:
         };
         s.args = {
             {"alias", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Alias name to create or update."},
+             "The alias name to create or update."},
             {"target", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model name or canonical ID the alias points to. `model` is accepted as an alias."},
+             "The target model name or canonical ID (also accepted as `model`)."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status", "alias", "target"],
             "properties": {
@@ -58,7 +59,7 @@ public:
                 "target": {"type": "string"}
             }
         })");
-        response.example = {{"alias", "my-chat-model"}, {"target", "Qwen3-0.6B-GGUF"}};
+        response.example = {{"alias", "my-alias-1"}, {"target", "user.custom-llama"}};
         s.responses = {response};
         return s;
     }

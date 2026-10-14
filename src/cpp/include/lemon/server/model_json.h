@@ -26,7 +26,7 @@ public:
     // The smaller window.SERVER_MODELS entry the legacy status page reads.
     nlohmann::json status_page_json(const std::string& model_id, const ModelInfo& info) const;
 
-    static nlohmann::json schema();
+    static nlohmann::ordered_json schema();
 
 private:
     // Effective context window, or 0 when nothing knows it: a loaded backend's own ctx_size,

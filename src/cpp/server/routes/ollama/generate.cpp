@@ -14,6 +14,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 json convert_ollama_to_openai_completion(const json& ollama_request) {
     json openai_req;
@@ -119,8 +120,8 @@ void generate_image(Router& router, const json& request_json, httplib::Response&
     }
 }
 
-json generate_response_schema(bool line) {
-    json schema = json::parse(R"({
+ordered_json generate_response_schema(bool line) {
+    ordered_json schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["model", "created_at", "done"],
         "properties": {
@@ -158,7 +159,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/generate"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Text completion, or image generation for image models";
+        s.summary = "Text completion + image generation";
         s.description =
             "Continues a prompt, loading the model on first use. Lemonade runs it as an OpenAI "
             "text completion and converts the result. Naming an image model generates an image "
@@ -208,7 +209,7 @@ public:
         RouteResponse full;
         full.format = ResponseFormat::Json;
         full.schema = generate_response_schema(false);
-        full.example = json::parse(R"({
+        full.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "prompt": "The capital of France is",
             "options": {"num_predict": 16},
@@ -218,7 +219,7 @@ public:
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
         stream.schema = generate_response_schema(true);
-        stream.example = json::parse(R"({
+        stream.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "prompt": "The capital of France is",
             "options": {"num_predict": 16},

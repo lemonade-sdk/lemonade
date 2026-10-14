@@ -25,6 +25,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 void add_warning(std::vector<std::string>& warnings, const std::string& warning) {
     if (std::find(warnings.begin(), warnings.end(), warning) == warnings.end()) {
@@ -783,7 +784,8 @@ public:
         s.methods = {"POST"};
         s.paths = {"/v1/messages"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Messages, streaming and non-streaming";
+        s.summary = "Messages. Supports both streaming and non-streaming. Query params like "
+                    "`?beta=true` are accepted.";
         s.description =
             "Generates the next assistant message for a conversation in the Anthropic Messages "
             "format, loading the model on first use, for applications that call Claude-style "
@@ -793,9 +795,6 @@ public:
             "Fields it cannot convert are ignored, and each one is reported in the "
             "`X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, "
             "in a `warnings` array.",
-            "A model from a cloud provider registered with `--wire-format anthropic` is relayed "
-            "to the provider unconverted, so no field is dropped; see "
-            "[Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
             "Errors use Anthropic's shape, `{\"type\": \"error\", \"error\": {\"type\", "
             "\"message\"}}`. An unknown model answers `404` with a `not_found_error`.",
         };
@@ -843,7 +842,7 @@ public:
 
         RouteResponse message;
         message.format = ResponseFormat::Json;
-        message.schema = json::parse(R"({
+        message.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["id", "type", "role", "model", "content", "stop_reason", "usage"],
             "properties": {
@@ -874,7 +873,7 @@ public:
                 "warnings": {"type": "array", "items": {"type": "string"}, "description": "Fields Lemonade ignored while converting."}
             }
         })");
-        message.example = json::parse(R"({
+        message.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "max_tokens": 64,
             "temperature": 0,
@@ -883,14 +882,14 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = json::parse(R"({
+        stream.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["type"],
             "properties": {
                 "type": {"type": "string", "description": "Matches the event's name: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, or error. A relayed provider can also send ping."}
             }
         })");
-        stream.example = json::parse(R"({
+        stream.example = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "max_tokens": 64,
             "temperature": 0,

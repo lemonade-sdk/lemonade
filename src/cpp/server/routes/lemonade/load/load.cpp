@@ -14,9 +14,10 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
-json load_schema() {
-    return json::parse(R"({
+ordered_json load_schema() {
+    return ordered_json::parse(R"({
         "oneOf": [
             {
                 "type": "object",
@@ -55,64 +56,97 @@ public:
         s.paths = {"load"};
         s.summary = "Load a model";
         s.description =
-            "Loads a registered model into memory ahead of the requests that use it, downloading "
-            "it first if needed.";
+            "Explicitly load a registered model into memory. This is useful to ensure that the "
+            "model is loaded before you make a request. Installs the model if necessary.\n\n"
+            "> Note: loading a collection (`recipe: \"collection.omni\"`) loads each of its "
+            "components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not "
+            "forwarded to components — set them on each component's own `recipe_options.json` "
+            "entry instead.\n\n"
+            "Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps "
+            "using its saved per-model value. Passing explicit `null` ignores only that saved key "
+            "for this load and falls through to the lower default layers without changing "
+            "`recipe_options.json`. Passing a concrete value overrides the saved value. For "
+            "`*_args`, a concrete value replaces the model/architecture args scope for that load; "
+            "backend/machine args remain only when `merge_args` is true. `ctx_size: -1` is a "
+            "concrete value meaning automatic context sizing, not a tombstone. With `save_options: "
+            "true`, concrete values are persisted as usual while a `null` tombstone preserves the "
+            "existing saved value for that key.";
         s.notes = {
-            "Recipe options have three states. Omitting one keeps the model's saved value. "
-            "`null` ignores only that saved value for this load, falling through to the lower "
-            "default layers without changing `recipe_options.json`. A concrete value overrides "
-            "the saved one; for `*_args` it replaces the model and architecture args for this "
-            "load, while backend and machine args remain only when `merge_args` is true. "
-            "`ctx_size: -1` is a concrete value meaning automatic sizing, not a tombstone. With "
-            "`save_options: true`, concrete values are persisted and a `null` keeps the existing "
-            "saved value for its key.",
-            "Loading a model that is already loaded with the same options does nothing; "
-            "different options reload it.",
-            "Loading a collection (`recipe: \"collection.omni\"`) loads each component in turn. "
-            "Per-model options such as `ctx_size` or `llamacpp_backend` are not forwarded to "
-            "components; set them on each component's own `recipe_options.json` entry instead. "
+            "**Setting Priority:**\n\n"
+            "When loading a model, settings are applied in this priority order:\n"
+            "1. Values explicitly passed in the `load` request (highest priority)\n"
+            "2. Per-model values configurable in `recipe_options.json` (see below for details)\n"
+            "3. Values from environment variables or server startup arguments (see [Server "
+            "Configuration](../guide/configuration/README.md))\n"
+            "4. Default hardcoded values in `lemond` (lowest priority)",
+            "Loading a model that is already loaded with the same options does nothing; different "
+            "options reload it.",
             "A `collection.router` model loads nothing until a request routes to a candidate.",
-            "Every option the model's recipe accepts can be passed; the "
-            "[Backend Reference](../dev/backends-reference.md#recipe-options) lists them per "
-            "recipe. Load failures answer with the same error object as inference requests: "
-            "`404` for an unknown or unsupported model, `409` when pinned models fill every slot, "
-            "and `500` when the backend fails to start.",
+            "Every option the model's recipe accepts can be passed; the [Backend "
+            "Reference](../dev/backends-reference.md#recipe-options) lists them per recipe. Load "
+            "failures answer with the same error object as inference requests: `404` for an "
+            "unknown or unsupported model, `409` when pinned models fill every slot, and `500` "
+            "when the backend fails to start.",
+            "### Per-model options\n\n"
+            "You can configure recipe-specific options on a per-model basis. Lemonade manages a "
+            "file called `recipe_options.json` in the user's Lemonade config directory (default: "
+            "`~/.config/lemonade`). The available options depend on the model's recipe:\n\n"
+            "```json\n"
+            "{\n"
+            "  \"user.Qwen2.5-Coder-1.5B-Instruct\": {\n"
+            "    \"ctx_size\": 16384,\n"
+            "    \"llamacpp_backend\": \"vulkan\",\n"
+            "    \"llamacpp_args\": \"-np 2 -kvu\"\n"
+            "  },\n"
+            "  \"Qwen3-Coder-30B-A3B-Instruct-GGUF\" : {\n"
+            "    \"llamacpp_backend\": \"rocm\"\n"
+            "  },\n"
+            "  \"whisper-large-v3-turbo-q8_0.bin\": {\n"
+            "    \"whispercpp_backend\": \"npu\",\n"
+            "    \"whispercpp_args\": \"--convert\"\n"
+            "  }\n"
+            "}\n"
+            "```\n\n"
+            "Note that model names include any applicable prefix, such as `user.` and `extra.`.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "[Lemonade model name](https://lemonade-server.ai/models.html) to load."},
+             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to load."},
             {"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Pin the model so the LRU never evicts it. Defaults to `false`."},
+             "Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`."},
             {"save_options", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Save this request's recipe options to `recipe_options.json`, replacing the model's "
-             "saved values. To save options without loading, or to change one option without "
-             "resending the rest, use [`POST /v1/models/{id}/options`](./openai.md#post-v1modelsidoptions)."},
+             "Boolean. If true, saves recipe options to `recipe_options.json`. Any previously "
+             "stored value for `model_name` is replaced. To save options without loading, or to "
+             "change one option without resending the rest, use [`POST "
+             "/v1/models/{id}/options`](openai.md#post-v1modelsidoptions) instead."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "`llamacpp`, `flm` and `ryzenai-llm`: context size. `-1` sizes it automatically "
-             "instead of using a saved value."},
+             "llamacpp, flm, ryzenai-llm: Context size for the model. Overrides the default value. "
+             "Pass `-1` to size it automatically instead of using a saved value; omit it to use "
+             "the saved value."},
             {"llamacpp_backend", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "`llamacpp`: backend to use, such as `vulkan`, `rocm`, `metal` or `cpu`."},
+             "llamacpp: LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`)."},
             {"llamacpp_args", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "`llamacpp`: extra llama-server arguments. `-m`, `--port`, `--ctx-size`, `-ngl`, "
-             "`--jinja`, `--mmproj`, `--embeddings` and `--reranking` are not allowed."},
+             "llamacpp: Custom arguments to pass to llama-server. The following are NOT allowed: "
+             "`-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, "
+             "`--reranking`."},
             {"whispercpp_backend", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "`whispercpp`: `npu` or `cpu` on Windows, `cpu` or `vulkan` on Linux. Defaults to "
-             "`npu` where supported."},
+             "whispercpp: WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on "
+             "Linux. Default is `npu` if supported."},
             {"whispercpp_args", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "`whispercpp`: extra whisper-server arguments, such as `--convert`. `-m`, `--model` "
-             "and `--port` are not allowed."},
+             "whispercpp: Custom arguments to pass to whisper-server. The following are NOT "
+             "allowed: `-m`, `--model`, `--port`. Example: `--convert`."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "`sd-cpp`: inference steps for image generation. Defaults to 20."},
+             "sd-cpp: Number of inference steps for image generation. Default: 20."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "`sd-cpp`: classifier-free guidance scale. Defaults to 7.0."},
+             "sd-cpp: Classifier-free guidance scale for image generation. Default: 7.0."},
             {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "`sd-cpp`: image width in pixels. Defaults to 512."},
+             "sd-cpp: Image width in pixels. Default: 512."},
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "`sd-cpp`: image height in pixels. Defaults to 512."},
+             "sd-cpp: Image height in pixels. Default: 512."},
             {"merge_args", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` (default) inherits backend and machine `*_args`; a request's `*_args` then "
-             "replace only the model and architecture args. `false` applies no inherited custom "
-             "args or overridable runtime defaults."},
+             "Boolean. If true (default), backend/machine `*_args` are inherited; concrete request "
+             "`*_args` replace model/architecture args while keeping backend args. If false, no "
+             "inherited custom args or overridable runtime defaults are applied."},
         };
 
         RouteResponse response;

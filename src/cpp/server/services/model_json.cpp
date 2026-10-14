@@ -198,58 +198,58 @@ json ModelJson::status_page_json(const std::string& model_id, const ModelInfo& i
     return model_json;
 }
 
-json ModelJson::schema() {
-    return json::parse(R"({
+nlohmann::ordered_json ModelJson::schema() {
+    return nlohmann::ordered_json::parse(R"json({
         "type": "object",
         "required": ["id", "object", "created", "owned_by", "checkpoint", "checkpoints", "recipe",
                      "downloaded", "update_available", "suggested", "source", "registry_source",
                      "labels", "components", "recipe_options"],
         "properties": {
-            "id": {"type": "string", "description": "Model identifier, used for loading and inference requests."},
-            "object": {"const": "model"},
-            "created": {"type": "integer", "description": "Unix timestamp of when the model entry was created."},
-            "owned_by": {"const": "lemonade"},
-            "checkpoint": {"type": "string", "description": "Main checkpoint: a Hugging Face or ModelScope repository and file, or a local path."},
-            "checkpoints": {"type": "object", "description": "Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.",
-                            "additionalProperties": {"type": "string"}},
-            "recipe": {"type": "string", "description": "Backend recipe that loads the model, such as llamacpp, flm or ryzenai-llm."},
-            "downloaded": {"type": "boolean", "description": "Whether the model's files are on disk."},
-            "update_available": {"type": "boolean", "description": "Whether a newer upstream commit exists. Set only for downloaded registry-backed models."},
-            "suggested": {"type": "boolean", "description": "Whether the model is recommended for general use."},
-            "source": {"type": "string", "description": "Where the model came from: a registry name, local_upload, local_path or extra_models_dir."},
-            "registry_source": {"type": "string", "description": "Remote registry the checkpoint downloads from: huggingface or modelscope."},
-            "labels": {"type": "array", "items": {"type": "string"}, "description": "Capabilities and characteristics; see Model Labels."},
-            "components": {"type": "array", "items": {"type": "string"}, "description": "Collections only: ordered component model names. Empty for other models."},
-            "recipe_options": {"type": "object", "description": "Options saved for this model in recipe_options.json."},
-            "cloud_provider": {"type": "string", "description": "Cloud models only: the provider that serves the model."},
-            "size": {"type": "number", "description": "Model size in GB, when known."},
-            "max_context_window": {"type": "integer", "description": "Largest context the model supports, from local metadata. Set for downloaded GGUF models and installed FLM models."},
-            "context_length": {"type": "integer", "description": "Tokens one request can use: the loaded value when the model is running, else the configured ctx_size or the cloud provider's reported length."},
-            "max_output_tokens": {"type": "integer", "description": "Cloud models only: the most tokens one completion can generate, when the provider reports it."},
-            "max_completion_tokens": {"type": "integer", "description": "OpenAI's name for max_output_tokens."},
-            "cost_input_per_million": {"type": "number", "description": "Cloud models only: USD per million input tokens, when the provider reports it."},
-            "cost_output_per_million": {"type": "number", "description": "Cloud models only: USD per million output tokens, when the provider reports it."},
-            "system_prompt": {"type": "string", "description": "Omni collections only: the collection's system prompt override."},
-            "audio_defaults": {"type": "object", "description": "Audio models only: default generation parameters."},
+            "id": {"type": "string", "description": "Model identifier (used for loading and inference requests)"},
+            "created": {"type": "integer", "description": "Unix timestamp of when the model entry was created"},
+            "object": {"const": "model", "description": "Type of object, always `\"model\"`"},
+            "owned_by": {"const": "lemonade", "description": "Owner of the model, always `\"lemonade\"`"},
+            "checkpoint": {"type": "string", "description": "Full checkpoint identifier on Hugging Face"},
+            "recipe": {"type": "string", "description": "Backend/device recipe used to load the model (e.g., `\"ryzenai-llm\"`, `\"llamacpp\"`, `\"flm\"`)"},
+            "size": {"type": "number", "description": "Model size in GB (omitted for models without size information)"},
+            "max_context_window": {"type": "integer", "description": "Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models."},
+            "context_length": {"type": "integer", "description": "Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known)."},
+            "max_output_tokens": {"type": "integer", "description": "Optional integer indicating the maximum output tokens the model can generate in a single completion, when reported by cloud providers."},
+            "max_completion_tokens": {"type": "integer", "description": "Optional integer alias for `max_output_tokens` adhering to OpenAI convention, when reported by cloud providers."},
+            "downloaded": {"type": "boolean", "description": "Boolean indicating if the model is downloaded and available locally"},
+            "update_available": {"type": "boolean", "description": "Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise."},
+            "suggested": {"type": "boolean", "description": "Boolean indicating if the model is recommended for general use"},
+            "labels": {"type": "array", "items": {"type": "string"}, "description": "Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list."},
             "image_defaults": {
                 "type": "object",
-                "description": "Image models only: default generation parameters.",
+                "description": "(Image models only) Default generation parameters for the model:",
                 "properties": {
-                    "steps": {"type": "integer", "description": "Inference steps, e.g. 4 for turbo models and 20 for standard models."},
-                    "cfg_scale": {"type": "number", "description": "Classifier-free guidance scale, e.g. 1.0 for turbo models and 7.5 for standard models."},
-                    "width": {"type": "integer", "description": "Default image width in pixels."},
-                    "height": {"type": "integer", "description": "Default image height in pixels."},
+                    "steps": {"type": "integer", "description": "Number of inference steps (e.g., 4 for turbo models, 20 for standard models)"},
+                    "cfg_scale": {"type": "number", "description": "Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)"},
+                    "width": {"type": "integer", "description": "Default image width in pixels"},
+                    "height": {"type": "integer", "description": "Default image height in pixels"},
                     "sampling_method": {"type": "string"},
                     "flow_shift": {"type": "number"},
                     "soft_pixel_cap": {"type": "integer", "description": "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted."}
                 }
             },
-            "version": {"description": "Router collections only: the policy document's version."},
-            "routing": {"type": "object", "description": "Router collections only: the routing policy."},
+            "components": {"type": "array", "items": {"type": "string"}, "description": "(Omni collections only, `recipe: \"collection.omni\"`) Ordered array of the component model names that make up the collection"},
             "models": {"type": "array", "items": {"type": "object"},
-                       "description": "Collections only: each component's full model object, parallel to components, so an exported collection imports through /v1/pull."}
+                       "description": "(Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)"},
+            "checkpoints": {"type": "object", "description": "Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.",
+                            "additionalProperties": {"type": "string"}},
+            "source": {"type": "string", "description": "Where the model came from: a registry name, local_upload, local_path or extra_models_dir."},
+            "registry_source": {"type": "string", "description": "Remote registry the checkpoint downloads from: huggingface or modelscope."},
+            "recipe_options": {"type": "object", "description": "Options saved for this model in recipe_options.json."},
+            "cloud_provider": {"type": "string", "description": "Cloud models only: the provider that serves the model."},
+            "cost_input_per_million": {"type": "number", "description": "Cloud models only: USD per million input tokens, when the provider reports it."},
+            "cost_output_per_million": {"type": "number", "description": "Cloud models only: USD per million output tokens, when the provider reports it."},
+            "system_prompt": {"type": "string", "description": "Omni collections only: the collection's system prompt override."},
+            "audio_defaults": {"type": "object", "description": "Audio models only: default generation parameters."},
+            "version": {"description": "Router collections only: the policy document's version."},
+            "routing": {"type": "object", "description": "Router collections only: the routing policy."}
         }
-    })");
+    })json");
 }
 
 } // namespace lemon

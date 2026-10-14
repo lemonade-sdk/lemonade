@@ -38,7 +38,7 @@ nlohmann::json gateway_load_options(const nlohmann::json& request);
 // Ollama's "details" object, inferred from the model name, recipe and checkpoint.
 nlohmann::json ollama_details(const std::string& model_name, const std::string& recipe,
                               const std::string& checkpoint);
-nlohmann::json ollama_details_schema();
+nlohmann::ordered_json ollama_details_schema();
 
 // Copies Ollama sampling options, from "options" or the top level, to OpenAI names.
 void map_ollama_options(const nlohmann::json& ollama_request, nlohmann::json& openai_request);

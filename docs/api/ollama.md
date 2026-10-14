@@ -5,22 +5,22 @@ Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/do
 To enable auto-detection by Ollama-integrated apps, configure the server to use the Ollama default port `11434`. See [Server Configuration](../guide/configuration/README.md#settings-reference) for how to change the port.
 
 <!-- BEGIN GENERATED: ollama.summary -->
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | [`/api/chat`](#post-apichat) | Chat completion, streaming and non-streaming |
-| `POST` | [`/api/generate`](#post-apigenerate) | Text completion, or image generation for image models |
-| `GET` | [`/api/tags`](#get-apitags) | List downloaded models |
-| `POST` | [`/api/show`](#post-apishow) | Model details |
-| `DELETE` | [`/api/delete`](#delete-apidelete) | Delete a model |
-| `POST` | [`/api/pull`](#post-apipull) | Download a model, with progress |
-| `POST` | [`/api/embed`](#post-apiembed) | Embeddings |
-| `POST` | [`/api/embeddings`](#post-apiembeddings) | Legacy embeddings |
-| `GET` | [`/api/ps`](#get-apips) | List running models |
-| `GET` | [`/api/version`](#get-apiversion) | Version |
-| `POST` | [`/api/create`](#post-apicreate) | Create a model from a Modelfile (not supported) |
-| `POST` | [`/api/copy`](#post-apicopy) | Copy a model (not supported) |
-| `POST` | [`/api/push`](#post-apipush) | Push a model to a registry (not supported) |
-| `POST` | [`/api/blobs/{digest}`](#post-apiblobsdigest) | Upload a blob (not supported) |
+| Method | Endpoint | Status | Description |
+|--------|----------|--------|-------------|
+| `POST` | [`/api/chat`](#post-apichat) | Supported | Chat completion. Streaming and non-streaming |
+| `POST` | [`/api/generate`](#post-apigenerate) | Supported | Text completion + image generation |
+| `GET` | [`/api/tags`](#get-apitags) | Supported | Lists downloaded models |
+| `POST` | [`/api/show`](#post-apishow) | Supported | Model details |
+| `DELETE` | [`/api/delete`](#delete-apidelete) | Supported | Delete a model |
+| `POST` | [`/api/pull`](#post-apipull) | Supported | Download with progress |
+| `POST` | [`/api/embed`](#post-apiembed) | Supported | New embeddings format |
+| `POST` | [`/api/embeddings`](#post-apiembeddings) | Supported | Legacy embeddings |
+| `GET` | [`/api/ps`](#get-apips) | Supported | Running models |
+| `GET` | [`/api/version`](#get-apiversion) | Supported | Version |
+| `POST` | [`/api/create`](#post-apicreate) | Not supported | Create a model from a Modelfile. Returns 501 |
+| `POST` | [`/api/copy`](#post-apicopy) | Not supported | Copy a model. Returns 501 |
+| `POST` | [`/api/push`](#post-apipush) | Not supported | Push a model to a registry. Returns 501 |
+| `POST` | [`/api/blobs/{digest}`](#post-apiblobsdigest) | Not supported | Upload a blob. Returns 501 |
 <!-- END GENERATED: ollama.summary -->
 
 <!-- BEGIN GENERATED: ollama.chat -->
@@ -28,14 +28,6 @@ To enable auto-detection by Ollama-integrated apps, configure the server to use 
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Generates the next assistant message for a conversation, loading the model on first use. Lemonade runs it as an OpenAI chat completion and converts the result.
-
-Ollama streams by default: without `"stream": false` the response is newline-delimited JSON.
-
-A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
-
-An empty `messages` array with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
-
-An unknown model answers `404` with `model '<name>' not found, try pulling it first`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -53,7 +45,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `keep_alive` | No | `0` with an empty `messages` array unloads the model. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `Json`
+Ollama streams by default: without `"stream": false` the response is newline-delimited JSON.
+
+A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
+
+An empty `messages` array with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
+
+An unknown model answers `404` with `model '<name>' not found, try pulling it first`.
+
+### Example request
 
 === "PowerShell"
 
@@ -64,7 +64,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": false
         }'
     ```
@@ -76,164 +76,97 @@ Requires `LEMONADE_API_KEY` when it is set.
       -H "Content-Type: application/json" \
       -d '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": false
         }'
     ```
 
-=== "Response"
+=== "PowerShell (streaming)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/api/chat" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Qwen3-0.6B-GGUF",
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+          "stream": true
+        }'
+    ```
+
+=== "Bash (streaming)"
+
+    ```bash
+    curl http://localhost:13305/api/chat \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen3-0.6B-GGUF",
+          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+          "stream": true
+        }'
+    ```
+
+### Response format
+
+=== "Non-streaming responses"
 
     `200`
 
     ```json
     {
+      "model": "Qwen3-0.6B-GGUF",
       "created_at": "2024-01-01T00:00:00Z",
+      "message": {"role": "assistant", "content": "The capital of France is **Paris**."},
       "done": true,
       "done_reason": "stop",
-      "eval_count": 14,
-      "eval_duration": 39445000,
-      "load_duration": 0,
-      "message": {"content": "The capital of France is **Paris**.", "role": "assistant"},
-      "model": "Qwen3-0.6B-GGUF",
       "prompt_eval_count": 19,
+      "eval_count": 14,
+      "total_duration": 0,
+      "load_duration": 0,
       "prompt_eval_duration": 9895000,
-      "total_duration": 0
+      "eval_duration": 39445000
     }
     ```
 
-=== "Schema"
+    **Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["model", "created_at", "done"],
-      "properties": {
-        "created_at": {"description": "Always 2024-01-01T00:00:00Z.", "type": "string"},
-        "done": {"type": "boolean"},
-        "done_reason": {
-          "description": "stop, length, tool_calls, or unload after an unload request.",
-          "type": "string"
-        },
-        "eval_count": {"description": "Generated tokens.", "type": "integer"},
-        "eval_duration": {
-          "description": "Generation time in nanoseconds, when the backend reports timings; otherwise 0.",
-          "type": "integer"
-        },
-        "load_duration": {"description": "Always 0.", "type": "integer"},
-        "message": {
-          "type": "object",
-          "required": ["role", "content"],
-          "properties": {
-            "content": {"type": "string"},
-            "role": {"type": "string"},
-            "thinking": {
-              "description": "Reasoning models only: the model's thinking.",
-              "type": "string"
-            },
-            "tool_calls": {
-              "description": "Calls to the request's tools, with arguments as objects.",
-              "type": "array"
-            }
-          }
-        },
-        "model": {"type": "string"},
-        "prompt_eval_count": {"description": "Prompt tokens.", "type": "integer"},
-        "prompt_eval_duration": {
-          "description": "Prompt processing time in nanoseconds, when the backend reports timings; otherwise 0.",
-          "type": "integer"
-        },
-        "total_duration": {"description": "Always 0.", "type": "integer"}
-      }
-    }
-    ```
+    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `message`
+      - `thinking` - Reasoning models only: the model's thinking.
+      - `tool_calls` - Calls to the request's tools, with arguments as objects.
+    - `done_reason` - stop, length, tool_calls, or unload after an unload request.
+    - `prompt_eval_count` - Prompt tokens.
+    - `eval_count` - Generated tokens.
+    - `total_duration`, `load_duration` - Always 0.
+    - `prompt_eval_duration` - Prompt processing time in nanoseconds, when the backend reports timings; otherwise 0.
+    - `eval_duration` - Generation time in nanoseconds, when the backend reports timings; otherwise 0.
 
-### Response: `JsonLines`
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/chat" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
-          "stream": true
-        }'
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/api/chat \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"content": "What is the capital of France? /no_think", "role": "user"}],
-          "stream": true
-        }'
-    ```
-
-=== "Response"
+=== "Streaming responses"
 
     `200`
 
     ```text
-    {"created_at": "2024-01-01T00:00:00Z", "done": false, "message": {"content": "", "role": "assistant"}, "model": "Qwen3-0.6B-GGUF"}
-    {"created_at": "2024-01-01T00:00:00Z", "done": false, "message": {"content": "The", "role": "assistant"}, "model": "Qwen3-0.6B-GGUF"}
-    {"created_at": "2024-01-01T00:00:00Z", "done": false, "message": {"content": " capital", "role": "assistant"}, "model": "Qwen3-0.6B-GGUF"}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": false}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": "The"}, "done": false}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": " capital"}, "done": false}
     ...
-    {"created_at": "2024-01-01T00:00:00Z", "done": true, "done_reason": "stop", "message": {"content": "", "role": "assistant"}, "model": "Qwen3-0.6B-GGUF"}
-    {"created_at": "2024-01-01T00:00:00Z", "done": true, "done_reason": "stop", "eval_count": 0, "eval_duration": 0, "load_duration": 0, "message": {"content": "", "role": "assistant"}, "model": "Qwen3-0.6B-GGUF", "prompt_eval_count": 0, "prompt_eval_duration": 0, "total_duration": 0}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop"}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop", "prompt_eval_count": 0, "eval_count": 0, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
     ```
 
-=== "Schema"
+    **Field Descriptions:**
 
-    ```json
-    {
-      "description": "Each line carries the next message piece with done=false. When the message ends, a line with done=true and the real done_reason follows, then a last done=true line with the token counts, which are 0 when the backend reports no usage, and done_reason stop.",
-      "type": "object",
-      "required": ["model", "created_at", "done"],
-      "properties": {
-        "created_at": {"description": "Always 2024-01-01T00:00:00Z.", "type": "string"},
-        "done": {"type": "boolean"},
-        "done_reason": {
-          "description": "stop, length, tool_calls, or unload after an unload request.",
-          "type": "string"
-        },
-        "eval_count": {"description": "Generated tokens.", "type": "integer"},
-        "eval_duration": {
-          "description": "Generation time in nanoseconds, when the backend reports timings; otherwise 0.",
-          "type": "integer"
-        },
-        "load_duration": {"description": "Always 0.", "type": "integer"},
-        "message": {
-          "type": "object",
-          "required": ["role", "content"],
-          "properties": {
-            "content": {"type": "string"},
-            "role": {"type": "string"},
-            "thinking": {
-              "description": "Reasoning models only: the model's thinking.",
-              "type": "string"
-            },
-            "tool_calls": {
-              "description": "Calls to the request's tools, with arguments as objects.",
-              "type": "array"
-            }
-          }
-        },
-        "model": {"type": "string"},
-        "prompt_eval_count": {"description": "Prompt tokens.", "type": "integer"},
-        "prompt_eval_duration": {
-          "description": "Prompt processing time in nanoseconds, when the backend reports timings; otherwise 0.",
-          "type": "integer"
-        },
-        "total_duration": {"description": "Always 0.", "type": "integer"}
-      }
-    }
-    ```
+    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `message`
+      - `thinking` - Reasoning models only: the model's thinking.
+      - `tool_calls` - Calls to the request's tools, with arguments as objects.
+    - `done_reason` - stop, length, tool_calls, or unload after an unload request.
+    - `prompt_eval_count` - Prompt tokens.
+    - `eval_count` - Generated tokens.
+    - `total_duration`, `load_duration` - Always 0.
+    - `prompt_eval_duration` - Prompt processing time in nanoseconds, when the backend reports timings; otherwise 0.
+    - `eval_duration` - Generation time in nanoseconds, when the backend reports timings; otherwise 0.
 <!-- END GENERATED: ollama.chat -->
 
 <!-- BEGIN GENERATED: ollama.generate -->
@@ -241,12 +174,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Continues a prompt, loading the model on first use. Lemonade runs it as an OpenAI text completion and converts the result. Naming an image model generates an image instead.
-
-Ollama streams by default: without `"stream": false` the response is newline-delimited JSON. Image generation never streams.
-
-An empty `prompt` with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
-
-An unknown model answers `404` with `model '<name>' not found, try pulling it first`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -268,7 +195,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `system` | No | System prompt. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `format` | No | Output format constraint. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
-### Response: `Json`
+Ollama streams by default: without `"stream": false` the response is newline-delimited JSON. Image generation never streams.
+
+An empty `prompt` with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
+
+An unknown model answers `404` with `model '<name>' not found, try pulling it first`.
+
+### Example request
 
 === "PowerShell"
 
@@ -280,8 +213,8 @@ Requires `LEMONADE_API_KEY` when it is set.
       -Body '{
           "model": "Qwen3-0.6B-GGUF",
           "prompt": "The capital of France is",
-          "stream": false,
-          "options": {"num_predict": 16}
+          "options": {"num_predict": 16},
+          "stream": false
         }'
     ```
 
@@ -293,135 +226,96 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{
           "model": "Qwen3-0.6B-GGUF",
           "prompt": "The capital of France is",
-          "stream": false,
-          "options": {"num_predict": 16}
+          "options": {"num_predict": 16},
+          "stream": false
         }'
     ```
 
-=== "Response"
+=== "PowerShell (streaming)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/api/generate" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Qwen3-0.6B-GGUF",
+          "prompt": "The capital of France is",
+          "options": {"num_predict": 16},
+          "stream": true
+        }'
+    ```
+
+=== "Bash (streaming)"
+
+    ```bash
+    curl http://localhost:13305/api/generate \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen3-0.6B-GGUF",
+          "prompt": "The capital of France is",
+          "options": {"num_predict": 16},
+          "stream": true
+        }'
+    ```
+
+### Response format
+
+=== "Non-streaming responses"
 
     `200`
 
     ```json
     {
-      "context": [],
+      "model": "Qwen3-0.6B-GGUF",
       "created_at": "2024-01-01T00:00:00Z",
+      "response": " Paris, and the capital of France is also the capital of the United States,",
       "done": true,
       "done_reason": "stop",
-      "eval_count": 16,
-      "eval_duration": 0,
-      "load_duration": 0,
-      "model": "Qwen3-0.6B-GGUF",
+      "context": [],
       "prompt_eval_count": 5,
+      "eval_count": 16,
+      "total_duration": 0,
+      "load_duration": 0,
       "prompt_eval_duration": 0,
-      "response": " Paris, and the capital of France is also the capital of the United States,",
-      "total_duration": 0
+      "eval_duration": 0
     }
     ```
 
-=== "Schema"
+    **Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["model", "created_at", "done"],
-      "properties": {
-        "context": {"description": "Always empty.", "type": "array"},
-        "created_at": {"description": "Always 2024-01-01T00:00:00Z.", "type": "string"},
-        "done": {"type": "boolean"},
-        "done_reason": {
-          "description": "stop, length, or unload after an unload request.",
-          "type": "string"
-        },
-        "eval_count": {"description": "Generated tokens.", "type": "integer"},
-        "eval_duration": {"description": "Always 0.", "type": "integer"},
-        "image": {
-          "description": "Image models only: the generated image, base64-encoded.",
-          "type": "string"
-        },
-        "load_duration": {"description": "Always 0.", "type": "integer"},
-        "model": {"type": "string"},
-        "prompt_eval_count": {"description": "Prompt tokens.", "type": "integer"},
-        "prompt_eval_duration": {"description": "Always 0.", "type": "integer"},
-        "response": {"description": "Generated text. Empty for an image model.", "type": "string"},
-        "total_duration": {"description": "Always 0.", "type": "integer"}
-      }
-    }
-    ```
+    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `response` - Generated text. Empty for an image model.
+    - `image` - Image models only: the generated image, base64-encoded.
+    - `done_reason` - stop, length, or unload after an unload request.
+    - `context` - Always empty.
+    - `prompt_eval_count` - Prompt tokens.
+    - `eval_count` - Generated tokens.
+    - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always 0.
 
-### Response: `JsonLines`
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/generate" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "The capital of France is",
-          "stream": true,
-          "options": {"num_predict": 16}
-        }'
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/api/generate \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "The capital of France is",
-          "stream": true,
-          "options": {"num_predict": 16}
-        }'
-    ```
-
-=== "Response"
+=== "Streaming responses"
 
     `200`
 
     ```text
-    {"created_at": "2024-01-01T00:00:00Z", "done": false, "model": "Qwen3-0.6B-GGUF", "response": " Paris"}
-    {"created_at": "2024-01-01T00:00:00Z", "done": false, "model": "Qwen3-0.6B-GGUF", "response": "."}
-    {"created_at": "2024-01-01T00:00:00Z", "done": false, "model": "Qwen3-0.6B-GGUF", "response": " Which"}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ".", "done": false}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Which", "done": false}
     ...
-    {"created_at": "2024-01-01T00:00:00Z", "done": true, "done_reason": "length", "model": "Qwen3-0.6B-GGUF", "response": ""}
-    {"context": [], "created_at": "2024-01-01T00:00:00Z", "done": true, "done_reason": "stop", "eval_count": 16, "eval_duration": 0, "load_duration": 0, "model": "Qwen3-0.6B-GGUF", "prompt_eval_count": 5, "prompt_eval_duration": 0, "response": "", "total_duration": 0}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
     ```
 
-=== "Schema"
+    **Field Descriptions:**
 
-    ```json
-    {
-      "description": "Each line carries the next piece of text with done=false. When the text ends, a line with done=true and the real done_reason follows, then a last done=true line with the token counts and done_reason stop.",
-      "type": "object",
-      "required": ["model", "created_at", "done"],
-      "properties": {
-        "context": {"description": "Always empty.", "type": "array"},
-        "created_at": {"description": "Always 2024-01-01T00:00:00Z.", "type": "string"},
-        "done": {"type": "boolean"},
-        "done_reason": {
-          "description": "stop, length, or unload after an unload request.",
-          "type": "string"
-        },
-        "eval_count": {"description": "Generated tokens.", "type": "integer"},
-        "eval_duration": {"description": "Always 0.", "type": "integer"},
-        "image": {
-          "description": "Image models only: the generated image, base64-encoded.",
-          "type": "string"
-        },
-        "load_duration": {"description": "Always 0.", "type": "integer"},
-        "model": {"type": "string"},
-        "prompt_eval_count": {"description": "Prompt tokens.", "type": "integer"},
-        "prompt_eval_duration": {"description": "Always 0.", "type": "integer"},
-        "response": {"description": "Generated text. Empty for an image model.", "type": "string"},
-        "total_duration": {"description": "Always 0.", "type": "integer"}
-      }
-    }
-    ```
+    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `response` - Generated text. Empty for an image model.
+    - `image` - Image models only: the generated image, base64-encoded.
+    - `done_reason` - stop, length, or unload after an unload request.
+    - `context` - Always empty.
+    - `prompt_eval_count` - Prompt tokens.
+    - `eval_count` - Generated tokens.
+    - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always 0.
 <!-- END GENERATED: ollama.generate -->
 
 <!-- BEGIN GENERATED: ollama.tags -->
@@ -430,15 +324,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Lists the downloaded models in Ollama's format.
 
-Every name carries a `:latest` tag, `modified_at` and `digest` are fixed placeholders, and `size` is the registry's size estimate in bytes.
-
 Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
-This endpoint takes no parameters.
+This endpoint does not take any parameters.
 
-### Response: `Json`
+Every name carries a `:latest` tag, `modified_at` and `digest` are fixed placeholders, and `size` is the registry's size estimate in bytes.
+
+### Example request
 
 === "PowerShell"
 
@@ -452,227 +346,196 @@ This endpoint takes no parameters.
     curl http://localhost:13305/api/tags
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 
-    ```json
+```json
+{
+  "models": [
     {
-      "models": [
-        {
-          "details": {
-            "families": ["onnxruntime"],
-            "family": "onnxruntime",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "Phishing-Email-Detection-ONNX:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "Phishing-Email-Detection-ONNX:latest",
-          "size": 268435456
-        },
-        {
-          "details": {
-            "families": ["llamacpp"],
-            "family": "llamacpp",
-            "format": "gguf",
-            "parameter_size": "0.6B",
-            "parent_model": "",
-            "quantization_level": "Q4_0"
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "Qwen3-0.6B-GGUF:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "Qwen3-0.6B-GGUF:latest",
-          "size": 382252089
-        },
-        {
-          "details": {
-            "families": ["llamacpp-hrx"],
-            "family": "llamacpp-hrx",
-            "format": "gguf",
-            "parameter_size": "0.6B",
-            "parent_model": "",
-            "quantization_level": "Q4_0"
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "Qwen3-0.6B-HRX:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "Qwen3-0.6B-HRX:latest",
-          "size": 382252089
-        },
-        {
-          "details": {
-            "families": ["sd-cpp"],
-            "family": "sd-cpp",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "RealESRGAN-x4plus:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "RealESRGAN-x4plus:latest",
-          "size": 66571993
-        },
-        {
-          "details": {
-            "families": ["sd-cpp"],
-            "family": "sd-cpp",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "SD-Turbo:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "SD-Turbo:latest",
-          "size": 5218385264
-        },
-        {
-          "details": {
-            "families": ["trellis"],
-            "family": "trellis",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "TRELLIS-3D:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "TRELLIS-3D:latest",
-          "size": 32963873996
-        },
-        {
-          "details": {
-            "families": ["thinksound"],
-            "family": "thinksound",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "ThinkSound-SFX:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "ThinkSound-SFX:latest",
-          "size": 6871947673
-        },
-        {
-          "details": {
-            "families": ["whispercpp"],
-            "family": "whispercpp",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "Whisper-Tiny:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "Whisper-Tiny:latest",
-          "size": 77309411
-        },
-        {
-          "details": {
-            "families": ["llamacpp"],
-            "family": "llamacpp",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": "Q8_0"
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "jina-reranker-v1-tiny-en-GGUF:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "jina-reranker-v1-tiny-en-GGUF:latest",
-          "size": 36507222
-        },
-        {
-          "details": {
-            "families": ["kokoro"],
-            "family": "kokoro",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": ""
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "kokoro-v1:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "kokoro-v1:latest",
-          "size": 0
-        },
-        {
-          "details": {
-            "families": ["llamacpp"],
-            "family": "llamacpp",
-            "format": "gguf",
-            "parameter_size": "",
-            "parent_model": "",
-            "quantization_level": "Q4_K_S"
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "model": "nomic-embed-text-v1-GGUF:latest",
-          "modified_at": "2024-01-01T00:00:00Z",
-          "name": "nomic-embed-text-v1-GGUF:latest",
-          "size": 78383153
-        }
-      ]
-    }
-    ```
-
-=== "Schema"
-
-    ```json
+      "name": "Phishing-Email-Detection-ONNX:latest",
+      "model": "Phishing-Email-Detection-ONNX:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 268435456,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "onnxruntime",
+        "families": ["onnxruntime"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
     {
-      "type": "object",
-      "required": ["models"],
-      "properties": {
-        "models": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["name", "model", "modified_at", "size", "digest", "details"],
-            "properties": {
-              "details": {
-                "description": "Inferred from the model name, recipe and checkpoint.",
-                "type": "object",
-                "properties": {
-                  "families": {"type": "array", "items": {"type": "string"}},
-                  "family": {"description": "The model's recipe, e.g. llamacpp.", "type": "string"},
-                  "format": {"description": "Always gguf.", "type": "string"},
-                  "parameter_size": {
-                    "description": "From the model name, e.g. 0.6B; empty when the name has none.",
-                    "type": "string"
-                  },
-                  "parent_model": {"description": "Always empty.", "type": "string"},
-                  "quantization_level": {
-                    "description": "From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.",
-                    "type": "string"
-                  }
-                }
-              },
-              "digest": {"description": "Always an all-zero sha256.", "type": "string"},
-              "model": {"description": "Same as name.", "type": "string"},
-              "modified_at": {"description": "Always 2024-01-01T00:00:00Z.", "type": "string"},
-              "name": {"description": "Lemonade model name with a :latest tag.", "type": "string"},
-              "size": {
-                "description": "Size in bytes, from the registry's estimate.",
-                "type": "integer"
-              }
-            }
-          }
-        }
+      "name": "Qwen3-0.6B-GGUF:latest",
+      "model": "Qwen3-0.6B-GGUF:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 382252089,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp",
+        "families": ["llamacpp"],
+        "parameter_size": "0.6B",
+        "quantization_level": "Q4_0"
+      }
+    },
+    {
+      "name": "Qwen3-0.6B-HRX:latest",
+      "model": "Qwen3-0.6B-HRX:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 382252089,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp-hrx",
+        "families": ["llamacpp-hrx"],
+        "parameter_size": "0.6B",
+        "quantization_level": "Q4_0"
+      }
+    },
+    {
+      "name": "RealESRGAN-x4plus:latest",
+      "model": "RealESRGAN-x4plus:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 66571993,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "sd-cpp",
+        "families": ["sd-cpp"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
+    {
+      "name": "SD-Turbo:latest",
+      "model": "SD-Turbo:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 5218385264,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "sd-cpp",
+        "families": ["sd-cpp"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
+    {
+      "name": "TRELLIS-3D:latest",
+      "model": "TRELLIS-3D:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 32963873996,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "trellis",
+        "families": ["trellis"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
+    {
+      "name": "ThinkSound-SFX:latest",
+      "model": "ThinkSound-SFX:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 6871947673,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "thinksound",
+        "families": ["thinksound"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
+    {
+      "name": "Whisper-Tiny:latest",
+      "model": "Whisper-Tiny:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 77309411,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "whispercpp",
+        "families": ["whispercpp"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
+    {
+      "name": "jina-reranker-v1-tiny-en-GGUF:latest",
+      "model": "jina-reranker-v1-tiny-en-GGUF:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 36507222,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp",
+        "families": ["llamacpp"],
+        "parameter_size": "",
+        "quantization_level": "Q8_0"
+      }
+    },
+    {
+      "name": "kokoro-v1:latest",
+      "model": "kokoro-v1:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 0,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "kokoro",
+        "families": ["kokoro"],
+        "parameter_size": "",
+        "quantization_level": ""
+      }
+    },
+    {
+      "name": "nomic-embed-text-v1-GGUF:latest",
+      "model": "nomic-embed-text-v1-GGUF:latest",
+      "modified_at": "2024-01-01T00:00:00Z",
+      "size": 78383153,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp",
+        "families": ["llamacpp"],
+        "parameter_size": "",
+        "quantization_level": "Q4_K_S"
       }
     }
-    ```
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `models`
+  - `name` - Lemonade model name with a :latest tag.
+  - `model` - Same as name.
+  - `modified_at` - Always 2024-01-01T00:00:00Z.
+  - `size` - Size in bytes, from the registry's estimate.
+  - `digest` - Always an all-zero sha256.
+  - `details` - Inferred from the model name, recipe and checkpoint.
+    - `parent_model` - Always empty.
+    - `format` - Always gguf.
+    - `family` - The model's recipe, e.g. llamacpp.
+    - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
+    - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
 <!-- END GENERATED: ollama.tags -->
 
 <!-- BEGIN GENERATED: ollama.show -->
@@ -680,10 +543,6 @@ This endpoint takes no parameters.
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Describes one registered model in Ollama's format.
-
-`capabilities` follows the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label.
-
-An unknown model answers `404` with `model '<name>' not found`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -694,7 +553,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Model to describe. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `Json`
+`capabilities` follows the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label.
+
+An unknown model answers `404` with `model '<name>' not found`.
+
+### Example request
 
 === "PowerShell"
 
@@ -714,76 +577,46 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "Qwen3-0.6B-GGUF"}'
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 
-    ```json
-    {
-      "capabilities": ["completion", "tools", "thinking"],
-      "details": {
-        "families": ["llamacpp"],
-        "family": "llamacpp",
-        "format": "gguf",
-        "parameter_size": "0.6B",
-        "parent_model": "",
-        "quantization_level": "Q4_0"
-      },
-      "model_info": {
-        "general.architecture": "llamacpp",
-        "general.file_type": 0,
-        "general.parameter_count": 0,
-        "general.quantization_version": 0,
-        "llamacpp.context_length": -1
-      },
-      "modelfile": "# Modelfile generated by Lemonade\nFROM unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "parameters": "num_ctx -1",
-      "template": ""
-    }
-    ```
+```json
+{
+  "modelfile": "# Modelfile generated by Lemonade\nFROM unsloth/Qwen3-0.6B-GGUF:Q4_0",
+  "parameters": "num_ctx -1",
+  "template": "",
+  "details": {
+    "parent_model": "",
+    "format": "gguf",
+    "family": "llamacpp",
+    "families": ["llamacpp"],
+    "parameter_size": "0.6B",
+    "quantization_level": "Q4_0"
+  },
+  "capabilities": ["completion", "tools", "thinking"],
+  "model_info": {
+    "general.architecture": "llamacpp",
+    "general.file_type": 0,
+    "general.parameter_count": 0,
+    "general.quantization_version": 0,
+    "llamacpp.context_length": -1
+  }
+}
+```
 
-=== "Schema"
+**Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["modelfile", "parameters", "template", "details", "capabilities", "model_info"],
-      "properties": {
-        "capabilities": {
-          "type": "array",
-          "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}
-        },
-        "details": {
-          "description": "Inferred from the model name, recipe and checkpoint.",
-          "type": "object",
-          "properties": {
-            "families": {"type": "array", "items": {"type": "string"}},
-            "family": {"description": "The model's recipe, e.g. llamacpp.", "type": "string"},
-            "format": {"description": "Always gguf.", "type": "string"},
-            "parameter_size": {
-              "description": "From the model name, e.g. 0.6B; empty when the name has none.",
-              "type": "string"
-            },
-            "parent_model": {"description": "Always empty.", "type": "string"},
-            "quantization_level": {
-              "description": "From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.",
-              "type": "string"
-            }
-          }
-        },
-        "model_info": {
-          "description": "general.architecture (the recipe) and <recipe>.context_length; the other keys are always 0.",
-          "type": "object"
-        },
-        "modelfile": {"description": "A FROM line naming the checkpoint.", "type": "string"},
-        "parameters": {
-          "description": "num_ctx followed by the model's configured context size.",
-          "type": "string"
-        },
-        "template": {"description": "Always empty.", "type": "string"}
-      }
-    }
-    ```
+- `modelfile` - A FROM line naming the checkpoint.
+- `parameters` - num_ctx followed by the model's configured context size.
+- `template` - Always empty.
+- `details` - Inferred from the model name, recipe and checkpoint.
+  - `parent_model` - Always empty.
+  - `format` - Always gguf.
+  - `family` - The model's recipe, e.g. llamacpp.
+  - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
+  - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
+- `model_info` - general.architecture (the recipe) and <recipe>.context_length; the other keys are always 0.
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->
@@ -791,8 +624,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Deletes a downloaded model's files, unloading it first when it is loaded.
-
-Success answers `200` with an empty body, as Ollama does. An unknown or unsupported model answers `404`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -803,7 +634,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Model to delete. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `Empty`
+Success answers `200` with an empty body, as Ollama does. An unknown or unsupported model answers `404`.
+
+### Example request
 
 === "PowerShell"
 
@@ -823,9 +656,9 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "RealESRGAN-x4plus-anime"}'
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 <!-- END GENERATED: ollama.delete -->
 
 <!-- BEGIN GENERATED: ollama.pull -->
@@ -833,12 +666,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Downloads a registered model, or updates it when its registry has a newer version.
-
-Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one. An unknown model answers `404` with `model '<name>' not found`.
-
-Ollama streams by default: without `"stream": false` the response is newline-delimited JSON progress. A failed download ends the stream with an `error` line.
-
-In offline mode the request answers `400` with code `lemond_offline`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -850,7 +677,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `JsonLines`
+Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one. An unknown model answers `404` with `model '<name>' not found`.
+
+Ollama streams by default: without `"stream": false` the response is newline-delimited JSON progress. A failed download ends the stream with an `error` line.
+
+In offline mode the request answers `400` with code `lemond_offline`.
+
+### Example request
 
 === "PowerShell"
 
@@ -870,47 +703,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
     ```
 
-=== "Response"
-
-    `200`
-
-    ```text
-    {"status": "pulling manifest"}
-    {"completed": 0, "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "status": "downloading Qwen3-0.6B-Q4_0.gguf", "total": 382156480}
-    {"completed": 382156480, "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "status": "downloading Qwen3-0.6B-Q4_0.gguf", "total": 382156480}
-    ...
-    {"status": "success"}
-    {"status": "success"}
-    ```
-
-=== "Schema"
-
-    ```json
-    {
-      "description": "The first line is pulling manifest, then one line per progress report, then success.",
-      "type": "object",
-      "properties": {
-        "completed": {
-          "description": "Download lines: bytes of the file downloaded so far.",
-          "type": "integer"
-        },
-        "digest": {
-          "description": "Download lines: sha256: followed by the file name.",
-          "type": "string"
-        },
-        "error": {"description": "Only on a failed download's last line.", "type": "string"},
-        "status": {
-          "description": "pulling manifest, downloading <file>, or success.",
-          "type": "string"
-        },
-        "total": {"description": "Download lines: the file's size in bytes.", "type": "integer"}
-      }
-    }
-    ```
-
-### Response: `Json`
-
-=== "PowerShell"
+=== "PowerShell (non-streaming)"
 
     ```powershell
     Invoke-WebRequest `
@@ -920,7 +713,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -Body '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
     ```
 
-=== "Bash"
+=== "Bash (non-streaming)"
 
     ```bash
     curl http://localhost:13305/api/pull \
@@ -928,18 +721,35 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
     ```
 
-=== "Response"
+### Response format
+
+=== "Streaming responses"
+
+    `200`
+
+    ```text
+    {"status": "pulling manifest"}
+    {"status": "downloading Qwen3-0.6B-Q4_0.gguf", "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "completed": 0, "total": 382156480}
+    {"status": "downloading Qwen3-0.6B-Q4_0.gguf", "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "completed": 382156480, "total": 382156480}
+    ...
+    {"status": "success"}
+    {"status": "success"}
+    ```
+
+    **Field Descriptions:**
+
+    - `status` - pulling manifest, downloading <file>, or success.
+    - `digest` - Download lines: sha256: followed by the file name.
+    - `completed` - Download lines: bytes of the file downloaded so far.
+    - `total` - Download lines: the file's size in bytes.
+    - `error` - Only on a failed download's last line.
+
+=== "Non-streaming responses"
 
     `200`
 
     ```json
     {"status": "success"}
-    ```
-
-=== "Schema"
-
-    ```json
-    {"type": "object", "required": ["status"], "properties": {"status": {"const": "success"}}}
     ```
 <!-- END GENERATED: ollama.pull -->
 
@@ -948,8 +758,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Returns one embedding per input text, loading the model on first use.
-
-An unknown model answers `404` with `model '<name>' not found`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -962,7 +770,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `options` | No | `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `Json`
+An unknown model answers `404` with `model '<name>' not found`.
+
+### Example request
 
 === "PowerShell"
 
@@ -982,41 +792,26 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 
-    ```json
-    {
-      "embeddings": [
-        [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more]
-      ],
-      "load_duration": 0,
-      "model": "nomic-embed-text-v1-GGUF",
-      "prompt_eval_count": 0,
-      "total_duration": 0
-    }
-    ```
+```json
+{
+  "model": "nomic-embed-text-v1-GGUF",
+  "embeddings": [
+    [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more]
+  ],
+  "total_duration": 0,
+  "load_duration": 0,
+  "prompt_eval_count": 0
+}
+```
 
-=== "Schema"
+**Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["model", "embeddings"],
-      "properties": {
-        "embeddings": {
-          "description": "One vector per input, in input order.",
-          "type": "array",
-          "items": {"type": "array", "items": {"type": "number"}}
-        },
-        "load_duration": {"description": "Always 0.", "type": "integer"},
-        "model": {"type": "string"},
-        "prompt_eval_count": {"description": "Always 0.", "type": "integer"},
-        "total_duration": {"description": "Always 0.", "type": "integer"}
-      }
-    }
-    ```
+- `embeddings` - One vector per input, in input order.
+- `total_duration`, `load_duration`, `prompt_eval_count` - Always 0.
 <!-- END GENERATED: ollama.embed -->
 
 <!-- BEGIN GENERATED: ollama.embeddings -->
@@ -1024,8 +819,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Returns the embedding of one text in Ollama's older format, loading the model on first use.
-
-Only the first input's embedding is returned. An unknown model answers `404` with `model '<name>' not found`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1039,7 +832,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `options` | No | `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Response: `Json`
+Only the first input's embedding is returned. An unknown model answers `404` with `model '<name>' not found`.
+
+### Example request
 
 === "PowerShell"
 
@@ -1059,29 +854,16 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 
-    ```json
-    {
-      "embedding": [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more],
-      "model": "nomic-embed-text-v1-GGUF"
-    }
-    ```
-
-=== "Schema"
-
-    ```json
-    {
-      "type": "object",
-      "required": ["model", "embedding"],
-      "properties": {
-        "embedding": {"type": "array", "items": {"type": "number"}},
-        "model": {"type": "string"}
-      }
-    }
-    ```
+```json
+{
+  "model": "nomic-embed-text-v1-GGUF",
+  "embedding": [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more]
+}
+```
 <!-- END GENERATED: ollama.embeddings -->
 
 <!-- BEGIN GENERATED: ollama.ps -->
@@ -1090,15 +872,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Lists the loaded models in Ollama's format.
 
-`size` and `size_vram` are always 0 and `expires_at` is a fixed far-future date. [`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.
-
 Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
-This endpoint takes no parameters.
+This endpoint does not take any parameters.
 
-### Response: `Json`
+`size` and `size_vram` are always 0 and `expires_at` is a fixed far-future date. [`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.
+
+### Example request
 
 === "PowerShell"
 
@@ -1112,76 +894,48 @@ This endpoint takes no parameters.
     curl http://localhost:13305/api/ps
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 
-    ```json
+```json
+{
+  "models": [
     {
-      "models": [
-        {
-          "details": {
-            "families": ["llamacpp"],
-            "family": "llamacpp",
-            "format": "gguf",
-            "parameter_size": "0.6B",
-            "parent_model": "",
-            "quantization_level": "Q4_0"
-          },
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-          "expires_at": "2099-01-01T00:00:00Z",
-          "model": "Qwen3-0.6B-GGUF:latest",
-          "name": "Qwen3-0.6B-GGUF:latest",
-          "size": 0,
-          "size_vram": 0
-        }
-      ]
+      "name": "Qwen3-0.6B-GGUF:latest",
+      "model": "Qwen3-0.6B-GGUF:latest",
+      "size": 0,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp",
+        "families": ["llamacpp"],
+        "parameter_size": "0.6B",
+        "quantization_level": "Q4_0"
+      },
+      "expires_at": "2099-01-01T00:00:00Z",
+      "size_vram": 0
     }
-    ```
+  ]
+}
+```
 
-=== "Schema"
+**Field Descriptions:**
 
-    ```json
-    {
-      "type": "object",
-      "required": ["models"],
-      "properties": {
-        "models": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["name", "model", "size", "digest", "details", "expires_at", "size_vram"],
-            "properties": {
-              "details": {
-                "description": "Inferred from the model name, recipe and checkpoint.",
-                "type": "object",
-                "properties": {
-                  "families": {"type": "array", "items": {"type": "string"}},
-                  "family": {"description": "The model's recipe, e.g. llamacpp.", "type": "string"},
-                  "format": {"description": "Always gguf.", "type": "string"},
-                  "parameter_size": {
-                    "description": "From the model name, e.g. 0.6B; empty when the name has none.",
-                    "type": "string"
-                  },
-                  "parent_model": {"description": "Always empty.", "type": "string"},
-                  "quantization_level": {
-                    "description": "From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.",
-                    "type": "string"
-                  }
-                }
-              },
-              "digest": {"description": "Always an all-zero sha256.", "type": "string"},
-              "expires_at": {"description": "Always 2099-01-01T00:00:00Z.", "type": "string"},
-              "model": {"description": "Same as name.", "type": "string"},
-              "name": {"description": "Lemonade model name with a :latest tag.", "type": "string"},
-              "size": {"description": "Always 0.", "type": "integer"},
-              "size_vram": {"description": "Always 0.", "type": "integer"}
-            }
-          }
-        }
-      }
-    }
-    ```
+- `models`
+  - `name` - Lemonade model name with a :latest tag.
+  - `model` - Same as name.
+  - `size` - Always 0.
+  - `digest` - Always an all-zero sha256.
+  - `details` - Inferred from the model name, recipe and checkpoint.
+    - `parent_model` - Always empty.
+    - `format` - Always gguf.
+    - `family` - The model's recipe, e.g. llamacpp.
+    - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
+    - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
+  - `expires_at` - Always 2099-01-01T00:00:00Z.
+  - `size_vram` - Always 0.
 <!-- END GENERATED: ollama.ps -->
 
 <!-- BEGIN GENERATED: ollama.version -->
@@ -1194,9 +948,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
-This endpoint takes no parameters.
+This endpoint does not take any parameters.
 
-### Response: `Json`
+### Example request
 
 === "PowerShell"
 
@@ -1210,26 +964,20 @@ This endpoint takes no parameters.
     curl http://localhost:13305/api/version
     ```
 
-=== "Response"
+### Response format
 
-    `200`
+`200`
 
-    ```json
-    {"version": "0.16.1"}
-    ```
-
-=== "Schema"
-
-    ```json
-    {"type": "object", "required": ["version"], "properties": {"version": {"type": "string"}}}
-    ```
+```json
+{"version": "0.16.1"}
+```
 <!-- END GENERATED: ollama.version -->
 
 <!-- BEGIN GENERATED: ollama.create -->
 ## `POST /api/create`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported: answers `501`. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
+Not supported. Returns 501. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.create -->
@@ -1238,7 +986,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /api/copy`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported: answers `501`. A model alias gives a model a second name instead; see [`POST /internal/aliases`](./internal.md#post-internalaliases).
+Not supported. Returns 501. A model alias gives a model a second name instead; see [`POST /internal/aliases`](./internal.md#post-internalaliases).
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.copy -->
@@ -1247,7 +995,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /api/push`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported: answers `501`.
+Not supported. Returns 501.
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.push -->

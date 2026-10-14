@@ -55,15 +55,16 @@ struct RouteResponse {
 
     // JSON formats only. JSON Schema for the body, each NDJSON line, or each SSE event's data;
     // --check validates against it. A format with several shapes, such as /load's three, uses oneOf.
-    nlohmann::json schema;
+    // Ordered, so the docs list the fields as written rather than alphabetically.
+    nlohmann::ordered_json schema;
 
     // Examples to run first, in order, when generating the documentation. Examples can reference
     // their dependences' responses, for example {"id": "$lemonade.jobs_create/id"}.
     std::vector<ExampleRef> setup;
 
     // A request producing this format; gen_api_boilerplate.py records its response into the docs
-    // and --check validates it.
-    nlohmann::json example;
+    // and --check validates it. Ordered, so the docs show the body as written.
+    nlohmann::ordered_json example;
 };
 
 struct RouteSpec {
@@ -71,9 +72,10 @@ struct RouteSpec {
     std::vector<std::string> methods; // e.g. {"POST"}
     std::vector<std::string> paths;   // without prefix; extra entries are aliases, e.g. rerank, reranking
     Prefixes prefixes = Prefixes::Quad;
-    std::string summary;              // one line in the page's summary table
+    std::string summary;              // one line in the page's summary table; empty when hand-written rows replace it
+    std::string modality;             // the summary table's Modality cell, e.g. "messages -> completion"
     std::string description;          // reference text for the route's docs section
-    std::vector<std::string> notes;
+    std::vector<std::string> notes;   // sections the docs place after Parameters, such as an actions table
     bool experimental = false;        // badged as experimental in the docs
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
@@ -82,7 +84,7 @@ struct RouteSpec {
     bool quiet_log = false;           // leave out of the access log
 };
 
-nlohmann::json route_spec_to_json(const RouteSpec& spec);
+nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec);
 
 // One request's data, built by ApiRoute::serve() and handed to handle().
 struct RouteRequest {

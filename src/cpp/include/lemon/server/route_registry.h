@@ -25,7 +25,7 @@ public:
     void apply(httplib::Server& server) const;
 
     // Every RouteSpec, in registration order, for GET /internal/routes.
-    nlohmann::json list() const;
+    nlohmann::ordered_json list() const;
 
     // RequestMiddleware leaves these exact paths out of the access log.
     bool is_quiet(const std::string& path) const;

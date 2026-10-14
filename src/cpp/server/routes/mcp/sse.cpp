@@ -13,7 +13,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/mcp"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Server-initiated event stream (not supported)";
+        s.summary = "Server-initiated SSE channel is not supported. Returns `405 Method Not Allowed`.";
         s.description =
             "Not supported: Lemonade opens no server-initiated event stream, so tools return "
             "their full result in the `POST /mcp` reply.";

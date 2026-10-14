@@ -28,28 +28,32 @@ public:
         s.methods = {"POST"};
         s.paths = {"images/upscale"};
         s.summary = "Image Upscaling";
+        s.modality = "image + ESRGAN model -> upscaled image";
         s.description =
-            "Upscales a base64-encoded image with a Real-ESRGAN model. The upscale factor depends "
-            "on the model and is usually in its name.";
+            "Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, "
+            "and receive an upscaled image. The upscale factor depends on the selected model, and "
+            "it is usually reflected in its name.\n\n"
+            "> **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a "
+            "JSON body (not multipart/form-data). The image must be provided as a base64-encoded "
+            "string.";
         s.notes = {
-            "Unlike [`/v1/images/edits`](#post-v1imagesedits) and "
-            "[`/v1/images/variations`](#post-v1imagesvariations), this endpoint takes a JSON body, "
-            "with the image as a base64 string.",
-            "The model must carry the `upscaling` label and is downloaded on first use. A missing "
-            "`image` or `model`, or a model without the label, answers `400`; an unknown model "
-            "answers `404`; a failed upscale answers `500`. Each error body is "
-            "`{\"error\": {\"message\": ..., \"type\": ...}}`.",
+            "The model must carry the `upscaling` label and is downloaded on first use.",
         };
         s.args = {
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Base64-encoded PNG image to upscale."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Upscaling model, e.g. `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."},
+             "The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `Remacri-4x-TheNoise`)."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
+        response.schema["properties"]["created"]["description"] =
+            "Unix timestamp of when the upscaled image was generated";
+        response.schema["properties"]["data"]["description"] = "Array containing the upscaled image";
+        response.schema["properties"]["data"]["items"]["properties"]["b64_json"]["description"] =
+            "Base64-encoded PNG of the upscaled image";
         response.example = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
         s.responses = {response};
         return s;

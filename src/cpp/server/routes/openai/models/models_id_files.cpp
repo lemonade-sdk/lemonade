@@ -6,6 +6,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class ModelsIdFilesRoute : public ApiRoute {
 public:
@@ -17,13 +18,16 @@ public:
         s.methods = {"GET"};
         s.paths = {"models/{id}/files"};
         s.summary = "List resolved local file metadata for one model";
+        s.modality = "n/a";
         s.description =
-            "Lemonade extension: lists the files one model resolves to on disk, for model-detail "
-            "UIs such as a Files tab. It is per-model inventory, not drive storage accounting.";
+            "List resolved local file metadata for a single model. This endpoint is intended for "
+            "model-detail UIs such as the Files tab. It is per-model inventory, not system or "
+            "drive storage accounting.\n\n"
+            "By default, the response does not include absolute filesystem paths. Trusted local "
+            "clients that need paths for native UI actions can request them explicitly with "
+            "`?include_paths=true`. Absolute paths may reveal local usernames and cache layout, "
+            "so clients should only request them when that disclosure is acceptable.";
         s.notes = {
-            "Absolute paths are left out by default, since they can reveal local usernames and "
-            "the cache layout. Trusted local clients that need them for native UI actions can ask "
-            "with `?include_paths=true`.",
             "An unknown model answers `404` with an `error` object whose `code` is "
             "`model_not_found`.",
         };
@@ -36,19 +40,19 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["model_id", "files"],
             "properties": {
-                "model_id": {"type": "string", "description": "Public model id of the requested model."},
-                "files": {"type": "array", "description": "Resolved model files known to the registry.", "items": {
+                "model_id": {"type": "string", "description": "Public model ID for the requested model."},
+                "files": {"type": "array", "description": "Array of resolved model files known to the registry.", "items": {
                     "type": "object",
                     "required": ["name", "role", "size_bytes", "exists"],
                     "properties": {
                         "name": {"type": "string", "description": "Base filename from the resolved path."},
-                        "path": {"type": "string", "description": "Absolute resolved path on the local system. Only with include_paths=true; privacy-sensitive."},
-                        "role": {"type": "string", "description": "Checkpoint role, for example main, mmproj, or another recipe-specific role."},
-                        "size_bytes": {"type": "integer", "description": "File size in bytes. Directories are summed recursively; missing files report 0."},
+                        "path": {"type": "string", "description": "Absolute resolved path on the local system. Only included when `include_paths=true`; privacy-sensitive."},
+                        "role": {"type": "string", "description": "Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role."},
+                        "size_bytes": {"type": "integer", "description": "File size in bytes. Directories are summed recursively. Missing files report `0`."},
                         "exists": {"type": "boolean", "description": "Whether the resolved path currently exists on disk."}
                     }
                 }}

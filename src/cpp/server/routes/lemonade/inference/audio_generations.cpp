@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class AudioGenerationsRoute : public ModelRoute {
 public:
@@ -21,51 +22,69 @@ public:
         s.paths = {"audio/generations"};
         s.summary = "Generate audio (music or sound effects) from a text prompt";
         s.description =
-            "Generates an audio clip from a text prompt. The model decides the kind of audio: "
-            "music with ACE-Step models (e.g. `ACE-Step-Music`), sound effects with ThinkSound "
-            "models (e.g. `ThinkSound-SFX`).";
+            "Audio Generation API. You provide a text prompt and receive a generated audio clip. "
+            "The loaded model decides the kind of audio: music with ACE-Step models (e.g. "
+            "`ACE-Step-Music`), sound effects with ThinkSound models (e.g. `ThinkSound-SFX`).\n\n"
+            "This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover speech "
+            "and transcription only), so it is a Lemonade-specific extension.\n\n"
+            "> **Performance:** generation runs on the GPU (Vulkan, ROCm, or CUDA) and takes from "
+            "seconds (short sound effects) to minutes (full-length music) depending on duration "
+            "and hardware.";
         s.notes = {
-            "This is a Lemonade extension: OpenAI's audio endpoints cover only speech and "
-            "transcription.",
-            "**Performance:** generation runs on the GPU (Vulkan, ROCm or CUDA) and takes from "
-            "seconds for short sound effects to minutes for full-length music.",
-            "A failure is answered with a JSON `error` object instead of audio: `400` for an "
-            "invalid request, `404` for an unknown model, `500` when the backend reports an "
-            "error, and `502` when the backend produces no output.",
+            "### Lyrics\n\n"
+            "ACE-Step vocals are a two-stage pipeline inside the backend: a language model first "
+            "turns the style description and lyrics into audio codes, then the diffusion "
+            "synthesizer renders those codes into audio. The instrumental path skips the "
+            "language-model stage entirely, which also means lyrics embedded in the `prompt` field "
+            "are treated as style text — they are never sung. Vocal generations take noticeably "
+            "longer than instrumental ones of the same duration because of the extra "
+            "language-model pass.\n\n"
+            "Format the `lyrics` value the way the ACE-Step authors recommend:\n\n"
+            "- Mark each song section with a structure tag on its own line: `[verse]`, `[chorus]`, "
+            "`[bridge]`, `[intro]`, `[outro]`.\n"
+            "- Write one sung phrase per line and separate sections with a blank line.\n"
+            "- Describe the voice (\"gentle female vocals\", \"raspy male baritone\") in `prompt`, "
+            "not in the lyrics.\n"
+            "- Lyrics may be in any supported language; set `vocal_language` to match.",
+            "### Response\n\n"
+            "On success the raw audio bytes are returned with the matching content type "
+            "(`audio/wav`). On failure the response is JSON with an `error` object: `400` for "
+            "invalid requests, `404` for unknown models, `500` when the backend reports an error, "
+            "and `502` when the backend produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Audio-generation model, e.g. `ThinkSound-SFX` or `ACE-Step-Music`; loaded on "
-             "first use."},
+             "The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`)."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Description of the music or sound effect. For music, this is the style: genre, "
-             "mood, tempo, instruments and voice."},
+             "Text description of the music or sound effect to generate. For music, this is the "
+             "style description: genre, mood, tempo, instruments, and voice."},
             {"lyrics", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "ACE-Step only: lyrics to sing. Omitted, empty, or `[Instrumental]` (any case) "
-             "produces an instrumental track; see [Lyrics](#lyrics) for the format."},
+             "Lyrics to sing (ACE-Step only). When present and not empty, the track is generated "
+             "with vocals singing these lyrics. Omitting the field, an empty string, or the "
+             "sentinel `[Instrumental]` (any case) produces an instrumental track. See "
+             "[Lyrics](#lyrics) below for the expected format."},
             {"vocal_language", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "ACE-Step only: BCP-47 language code of the lyrics, e.g. `en`, `fr` or `ja`. "
-             "Defaults to `en`."},
+             "BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Default: "
+             "`en`."},
             {"duration", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Length of the clip in seconds. Defaults to the backend's own default."},
+             "Length of the clip in seconds. Defaults to the backend's native default."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Inference steps. Fewer is faster; more can improve quality."},
+             "Number of inference steps. Lower is faster, higher can improve quality."},
             {"cfg", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "ThinkSound only: classifier-free guidance strength."},
+             "Classifier-free guidance strength (ThinkSound only)."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed, for reproducible output."},
+             "Random seed for reproducibility."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only formats the backend produces natively are accepted "
-             "(currently `wav`); any other is answered with `400`. Defaults to `wav`."},
+             "Output encoding. Only formats the backend natively produces are accepted (currently "
+             "`wav`); other values are rejected with `400 Bad Request`. Default: `wav`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Binary;
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model": "ThinkSound-SFX",
             "prompt": "glass shattering on a stone floor",
-            "duration": 2,
-            "steps": 8,
+            "duration": 5,
             "seed": 42
         })");
         s.responses = {response};

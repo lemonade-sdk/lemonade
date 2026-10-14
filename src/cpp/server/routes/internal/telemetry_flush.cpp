@@ -5,6 +5,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class TelemetryFlushRoute : public ApiRoute {
 public:
@@ -18,12 +19,13 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Force-flush all queued telemetry trace spans";
         s.description =
-            "Sends every queued trace span to the configured OTLP collector now, and answers "
-            "once they are serialized and sent.";
+            "Forces the in-memory telemetry queue to flush all buffered trace spans immediately to "
+            "the configured OTLP collector. This call blocks until all currently queued spans are "
+            "serialized and sent.";
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status"],
             "properties": {

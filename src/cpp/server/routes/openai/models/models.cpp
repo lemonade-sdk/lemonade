@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class ModelsRoute : public ApiRoute {
 public:
@@ -18,35 +19,40 @@ public:
         s.methods = {"GET"};
         s.paths = {"models"};
         s.summary = "List models available locally";
+        s.modality = "n/a";
         s.description =
-            "Lists the models on the server in OpenAI's format, extended with Lemonade fields such "
-            "as `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, `context_length` and, when "
-            "known, `max_context_window`. By default only downloaded models are listed, as OpenAI "
-            "does.";
-        s.notes = {
+            "Returns a list of models available on the server in an OpenAI-compatible format. "
+            "Each model object includes extended fields like `checkpoint`, `recipe`, `size`, "
+            "`downloaded`, `labels`, `context_length`, and, when known, `max_context_window`.\n\n"
+            "By default, only models available locally (downloaded) are shown, matching OpenAI "
+            "API behavior.\n\n"
             "When `lemond` is configured with cloud providers, cloud-routed models appear here "
             "alongside local ones with `recipe: \"cloud\"` and a `cloud_provider` field. They are "
-            "dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard chat "
-            "completions and completions requests; see "
-            "[Cloud Offload](../guide/configuration/cloud.md).",
+            "dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard "
+            "chat-completions / completions requests below — see "
+            "[Cloud Offload](../guide/configuration/cloud.md).";
+        s.notes = {
             "Model aliases are listed too, each as a copy of its target model with the alias as "
             "its `id`.",
             "`HEAD` answers `200` with no body.",
         };
         s.args = {
             {"show_all", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
-             "`true` lists every model in the catalog, including ones not downloaded yet. "
-             "Defaults to `false`."},
+             "If set to `true`, returns all models from the catalog including those not yet "
+             "downloaded. Defaults to `false`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = {
             {"type", "object"},
-            {"required", json::array({"object", "data"})},
+            {"required", ordered_json::array({"object", "data"})},
             {"properties", {
-                {"object", {{"const", "list"}}},
-                {"data", {{"type", "array"}, {"items", ModelJson::schema()}}},
+                {"object", {{"const", "list"},
+                            {"description", "Type of response object, always `\"list\"`"}}},
+                {"data", {{"type", "array"},
+                          {"description", "Array of model objects with the following fields:"},
+                          {"items", ModelJson::schema()}}},
             }},
         };
         response.example = json::object();

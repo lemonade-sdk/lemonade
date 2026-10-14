@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class PullRoute : public ApiRoute {
 public:
@@ -20,7 +21,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/pull"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Download a model, with progress";
+        s.summary = "Download with progress";
         s.description =
             "Downloads a registered model, or updates it when its registry has a newer "
             "version.";
@@ -44,7 +45,7 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
-        stream.schema = json::parse(R"({
+        stream.schema = ordered_json::parse(R"({
             "type": "object",
             "description": "The first line is pulling manifest, then one line per progress report, then success.",
             "properties": {
@@ -55,16 +56,16 @@ public:
                 "error": {"type": "string", "description": "Only on a failed download's last line."}
             }
         })");
-        stream.example = json::parse(R"({"model": "Qwen3-0.6B-GGUF", "stream": true})");
+        stream.example = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF", "stream": true})");
 
         RouteResponse full;
         full.format = ResponseFormat::Json;
-        full.schema = json::parse(R"({
+        full.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status"],
             "properties": {"status": {"const": "success"}}
         })");
-        full.example = json::parse(R"({"model": "RealESRGAN-x4plus-anime", "stream": false})");
+        full.example = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime", "stream": false})");
 
         s.responses = {stream, full};
         return s;

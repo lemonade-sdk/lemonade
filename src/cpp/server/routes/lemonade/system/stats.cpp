@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class StatsRoute : public ApiRoute {
 public:
@@ -18,33 +19,31 @@ public:
         s.methods = {"GET"};
         s.paths = {"stats"};
         s.summary = "Performance statistics from the last request";
-        s.description =
-            "Reports performance statistics from the last inference request, plus counters "
-            "accumulated since the server started.";
+        s.description = "Performance statistics from the last request.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"json({
             "type": "object",
             "properties": {
-                "time_to_first_token": {"type": ["number", "null"], "description": "Seconds until the first token was generated."},
-                "tokens_per_second": {"type": ["number", "null"], "description": "Generation speed."},
-                "input_tokens": {"type": ["integer", "null"], "description": "Tokens processed."},
-                "output_tokens": {"type": ["integer", "null"], "description": "Tokens generated."},
-                "prompt_tokens": {"type": ["integer", "null"], "description": "Prompt tokens, including cached tokens."},
-                "cache_tokens": {"type": ["integer", "null"], "description": "Prompt tokens served from the backend's prefix cache: llama.cpp's timings.cache_n, or usage.prompt_tokens_details.cached_tokens (input_tokens_details.cached_tokens for the Responses API) from OpenAI-compatible cloud providers. null when the last request reported no cache usage."},
-                "request_count_total": {"type": "integer", "description": "Requests since the server started. The other *_total fields also count since start."},
-                "input_tokens_total": {"type": "integer"},
-                "output_tokens_total": {"type": "integer"},
-                "prompt_tokens_total": {"type": "integer"},
-                "cache_tokens_total": {"type": "integer"},
-                "routing_decisions_total": {"type": "integer", "description": "Routing decisions made by collection.router dispatch."},
-                "routing_switches_total": {"type": "integer", "description": "Routing decisions that changed a conversation's routed model, a proxy for route ping-pong. A conversation is identified by a hash of its system prompt and first user message."}
+                "time_to_first_token": {"type": ["number", "null"], "description": "Time in seconds until the first token was generated"},
+                "tokens_per_second": {"type": ["number", "null"], "description": "Generation speed in tokens per second"},
+                "input_tokens": {"type": ["integer", "null"], "description": "Number of tokens processed"},
+                "output_tokens": {"type": ["integer", "null"], "description": "Number of tokens generated"},
+                "prompt_tokens": {"type": ["integer", "null"], "description": "Total prompt tokens including cached tokens"},
+                "cache_tokens": {"type": ["integer", "null"], "description": "Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` / Responses-API `input_tokens_details.cached_tokens` from OpenAI-compatible cloud providers). `null` when the last request did not report cache usage"},
+                "request_count_total": {"type": "integer", "description": "Cumulative counters since server start"},
+                "input_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
+                "output_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
+                "prompt_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
+                "cache_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
+                "routing_decisions_total": {"type": "integer", "description": "Routing decisions made by `collection.router` dispatch"},
+                "routing_switches_total": {"type": "integer", "description": "Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)"}
             }
-        })");
+        })json");
         response.setup = {{"openai.chat_completions", ResponseFormat::Json}};
         response.example = json::object();
         s.responses = {response};

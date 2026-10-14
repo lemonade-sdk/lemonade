@@ -22,27 +22,28 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Prometheus metrics scrape endpoint";
         s.description =
-            "Returns Lemonade, model, backend and system metrics in the Prometheus text "
-            "exposition format (`text/plain; version=0.0.4; charset=utf-8`), for Prometheus to "
-            "scrape; Grafana queries Prometheus rather than this endpoint.";
+            "Prometheus scrape endpoint for Lemonade Server. The endpoint returns Prometheus text "
+            "exposition format and is intended to be scraped by Prometheus, not by Grafana "
+            "directly.\n\n"
+            "Unlike most Lemonade API endpoints, `/metrics` is root-level only. It is not mounted "
+            "under `/api/v0/`, `/api/v1/`, `/v0/`, or `/v1/`.\n\n"
+            "`HEAD /metrics` is also supported and returns `200 OK` with an empty body.";
         s.notes = {
-            "Unlike most Lemonade endpoints, `/metrics` is root-level only: it is not mounted "
-            "under `/api/v0/`, `/api/v1/`, `/v0/` or `/v1/`. `HEAD /metrics` returns `200 OK` "
-            "with an empty body.",
-            "**Authentication:** when `LEMONADE_API_KEY` is set, `/metrics` requires bearer "
-            "authentication with either that key or `LEMONADE_ADMIN_API_KEY`. When only "
-            "`LEMONADE_ADMIN_API_KEY` is set, `/metrics` needs no key, like the regular API "
-            "endpoints.",
-            "**Metric families:** the names, types, labels and help text are defined by the "
-            "`metrics.describe(...)` calls in "
-            "[`src/cpp/server/prometheus_metrics.cpp`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/server/prometheus_metrics.cpp). "
-            "Unsupported, unavailable, null, NaN and infinite values are omitted rather than "
-            "emitted as samples.",
-            "**llama.cpp backend metrics:** Lemonade starts llama.cpp backends with metrics "
-            "enabled and, for each loaded `llamacpp` model, makes a best-effort scrape of the "
-            "backend's private `/metrics` endpoint. Those metrics are renamed under the "
-            "`lemonade_llamacpp_*` prefix and labeled with the same model metadata as "
-            "`lemonade_model_info`. A failed backend scrape does not fail the response.",
+            "### Authentication\n\n"
+            "If `LEMONADE_API_KEY` is set, `/metrics` requires bearer authentication. Either the "
+            "regular API key or `LEMONADE_ADMIN_API_KEY` is accepted.\n\n"
+            "If only `LEMONADE_ADMIN_API_KEY` is set and `LEMONADE_API_KEY` is unset, `/metrics` "
+            "is accessible without authentication, matching regular API endpoint behavior.",
+            "### Polling and Refresh Rate\n\n"
+            "The `/metrics` endpoint has no internal refresh timer. It renders the latest server "
+            "state at the moment it is scraped.\n\n"
+            "Polling frequency is configured in Prometheus via `scrape_interval`, for example:\n\n"
+            "```yaml\n"
+            "global:\n"
+            "  scrape_interval: 10s\n"
+            "```\n\n"
+            "Grafana queries Prometheus. Grafana's dashboard refresh controls how often panels "
+            "query Prometheus, but it does not control how often Prometheus scrapes Lemonade.",
         };
 
         RouteResponse response;

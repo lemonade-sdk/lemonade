@@ -51,9 +51,9 @@ std::optional<EventBoundary> find_sse_event_boundary(const std::string& buffer) 
 
 } // namespace
 
-json route_decision_schema() {
+nlohmann::ordered_json route_decision_schema() {
     std::ifstream file(utils::get_resource_path("resources/schemas/decision.schema.json"));
-    return json::parse(file);
+    return nlohmann::ordered_json::parse(file);
 }
 
 json route_decision_to_json(const Decision& decision) {

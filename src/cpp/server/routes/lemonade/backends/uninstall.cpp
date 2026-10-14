@@ -14,6 +14,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class UninstallRoute : public ApiRoute {
 public:
@@ -26,30 +27,26 @@ public:
         s.paths = {"uninstall"};
         s.summary = "Remove a backend or cloud provider";
         s.description =
-            "Removes the backend for a recipe, or a cloud provider when `backend` is "
-            "`\"cloud\"`.";
+            "Uninstall a backend for a specific recipe/backend pair, **or** remove a cloud "
+            "provider. Dispatched by the `backend` field, mirroring `/v1/install`.";
         s.notes = {
-            "**Status:** the cloud-provider branch is experimental.",
-            "Loaded models that use the backend are unloaded first.",
-            "Removing a cloud provider deletes its record from `config.json`, drops its "
-            "in-memory API key, and evicts every model discovered for it. A provider that was "
-            "never installed is answered with `404`.",
             "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
             "`provider`, is answered with `400`. Any other failure, including invalid JSON, is "
             "answered with `500` and an `error` string.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Local backends, required: recipe name."},
+             "Local backends, required: Recipe name"},
             {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Backend within the recipe, or `\"cloud\"` to remove a cloud provider."},
+             "Local backends: Backend name. Cloud providers: Must be the literal string "
+             "`\"cloud\"`."},
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: the installed provider's name."},
+             "Cloud providers, required: Installed provider name."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({"oneOf": [
+        response.schema = ordered_json::parse(R"({"oneOf": [
             {
                 "type": "object",
                 "description": "A local backend removed.",
@@ -73,9 +70,9 @@ public:
             }
         ]})");
         response.setup = {{"lemonade.install", ResponseFormat::Json}};
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "backend": "cloud",
-            "provider": "example"
+            "provider": "fireworks"
         })");
         s.responses = {response};
         return s;

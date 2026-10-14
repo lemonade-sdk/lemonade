@@ -8,6 +8,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class PsRoute : public ApiRoute {
 public:
@@ -19,7 +20,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/api/ps"};
         s.prefixes = Prefixes::Root;
-        s.summary = "List running models";
+        s.summary = "Running models";
         s.description = "Lists the loaded models in Ollama's format.";
         s.notes = {
             "`size` and `size_vram` are always 0 and `expires_at` is a fixed far-future date. "
@@ -28,7 +29,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["models"],
             "properties": {

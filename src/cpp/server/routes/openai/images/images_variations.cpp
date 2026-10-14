@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class ImagesVariationsRoute : public ModelRoute {
 public:
@@ -20,39 +21,42 @@ public:
         s.methods = {"POST"};
         s.paths = {"images/variations"};
         s.summary = "Image Variations";
+        s.modality = "image -> varied image";
         s.description =
-            "Generates a variation of a source image, loading the model on first use. The request "
-            "is `multipart/form-data`.";
-        s.notes = {
-            "Unlike [`/v1/images/edits`](#post-v1imagesedits), this takes no `prompt`; a prompt "
-            "field is ignored and the variation follows the input image alone.",
-            "**Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
-            "significantly faster.",
-        };
-        const json text = {{"type", "string"}};
+            "Image Variations API. You provide a source image and receive a variation of it.\n\n"
+            "> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike "
+            "`/images/edits`, a `prompt` parameter is not supported and will be ignored — the "
+            "model generates a variation based solely on the input image.\n"
+            ">\n"
+            "> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
+            "significantly faster.";
+        const ordered_json text = {{"type", "string"}};
         s.args = {
             {"model", ArgIn::Form, text, true, Support::Available,
-             "Diffusion model, e.g. `Flux-2-Klein-4B` or `SD-Turbo`."},
+             "The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
             {"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
-             "Source image (PNG). The field may also be named `image[]`."},
+             "The source image file (PNG). Sent as a file in multipart/form-data."},
             {"size", ArgIn::Form, text, false, Support::Available,
-             "Output size as `WIDTHxHEIGHT`, e.g. `512x512`. Defaults to `512x512`."},
+             "The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: "
+             "`512x512`."},
             {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Partial,
-             "Number of variations to generate, from `1` to `10`. Defaults to `1`; values "
-             "outside the range answer `400`."},
+             "Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. "
+             "Values outside this range result in a 400 Bad Request error."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json` (a base64-encoded image) is supported."},
+             "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI compatibility field. Accepted but not forwarded to the backend."},
+             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
-        response.example = json::parse(R"({
-            "model": "SD-Turbo",
-            "image": "@fixtures/image.png",
-            "size": "256x256"
+        response.example = ordered_json::parse(R"({
+            "model": "Flux-2-Klein-4B",
+            "size": "512x512",
+            "n": 1,
+            "response_format": "b64_json",
+            "image": "@fixtures/image.png"
         })");
         s.responses = {response};
         s.request_format = RequestFormat::Form;

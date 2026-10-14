@@ -5,6 +5,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class EmbeddingsRoute : public ModelRoute {
 public:
@@ -16,20 +17,21 @@ public:
         s.methods = {"POST"};
         s.paths = {"embeddings"};
         s.summary = "Embeddings";
+        s.modality = "text -> vector representations";
         s.description =
-            "Returns vector representations of input text for semantic search, clustering and "
-            "similarity comparisons, loading the model on first use.";
-        s.notes = {
-            "Only embedding models (the `embeddings` label) using the `llamacpp` or `flm` recipe "
-            "serve this endpoint.",
-        };
+            "Embeddings API. You provide input text and receive vector representations "
+            "(embeddings) that can be used for semantic search, clustering, and similarity "
+            "comparisons. This API will also load the model if it is not already loaded.\n\n"
+            "> **Note:** This endpoint is only available for models using the `llamacpp` or "
+            "`flm` recipes. ONNX models (OGA recipes) do not support embeddings.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Embedding model to run; loaded on first use."},
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "Text to embed, or an array of texts."},
+             "The input text or array of texts to embed. Can be a string or an array of strings."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The model to use for generating embeddings."},
             {"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
-             "Format of the returned embeddings: `float` (default) or `base64`."},
+             "The format to return embeddings in. Supported values: `\"float\"` (default), "
+             "`\"base64\"`."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},
@@ -37,31 +39,32 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["object", "data", "model"],
             "properties": {
-                "object": {"const": "list"},
-                "data": {"type": "array", "items": {
+                "object": {"const": "list", "description": "Type of response object, always `\"list\"`"},
+                "data": {"type": "array", "description": "Array of embedding objects", "items": {
                     "type": "object",
                     "required": ["object", "index", "embedding"],
                     "properties": {
-                        "object": {"const": "embedding"},
-                        "index": {"type": "integer", "description": "Position of the input text in the request."},
-                        "embedding": {"type": ["array", "string"], "description": "The vector, as floats or a base64 string."}
+                        "object": {"const": "embedding", "description": "Type of embedding object, always `\"embedding\"`"},
+                        "index": {"type": "integer", "description": "Index position of the input text in the request"},
+                        "embedding": {"type": ["array", "string"], "description": "Vector representation as an array of floats"}
                     }
                 }},
-                "model": {"type": "string"},
+                "model": {"type": "string", "description": "Model identifier used to generate the embeddings"},
                 "usage": {
                     "type": "object",
+                    "description": "Token usage statistics",
                     "properties": {
-                        "prompt_tokens": {"type": "integer"},
-                        "total_tokens": {"type": "integer"}
+                        "prompt_tokens": {"type": "integer", "description": "Number of tokens in the input"},
+                        "total_tokens": {"type": "integer", "description": "Total tokens processed"}
                     }
                 }
             }
         })");
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model": "nomic-embed-text-v1-GGUF",
             "input": ["Hello, world!", "How are you?"],
             "encoding_format": "float"

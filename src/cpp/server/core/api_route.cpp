@@ -157,8 +157,9 @@ void set_router_residency_conflict_response(const std::exception& error, httplib
 
 } // namespace
 
-json route_spec_to_json(const RouteSpec& spec) {
-    json args = json::array();
+nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
+    using ordered_json = nlohmann::ordered_json;
+    ordered_json args = ordered_json::array();
     for (const auto& arg : spec.args) {
         args.push_back({
             {"name", arg.name},
@@ -169,9 +170,9 @@ json route_spec_to_json(const RouteSpec& spec) {
             {"description", arg.description},
         });
     }
-    json responses = json::array();
+    ordered_json responses = ordered_json::array();
     for (const auto& response : spec.responses) {
-        json setup = json::array();
+        ordered_json setup = ordered_json::array();
         for (const auto& ref : response.setup) {
             setup.push_back({{"route", ref.route}, {"format", to_string(ref.format)}});
         }
@@ -188,6 +189,7 @@ json route_spec_to_json(const RouteSpec& spec) {
         {"paths", spec.paths},
         {"prefixes", to_string(spec.prefixes)},
         {"summary", spec.summary},
+        {"modality", spec.modality},
         {"description", spec.description},
         {"notes", spec.notes},
         {"experimental", spec.experimental},

@@ -6,6 +6,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class AliasesDeleteRoute : public ApiRoute {
 public:
@@ -18,18 +19,15 @@ public:
         s.paths = {"aliases/{alias}"};
         s.prefixes = Prefixes::Internal;
         s.summary = "Remove a model alias";
-        s.description = "Removes a model alias. Its target model is unaffected.";
-        s.notes = {
-            "An alias that does not exist answers `404` with code `alias_not_found`.",
-        };
+        s.description = "Removes an existing model alias binding by name.";
         s.args = {
             {"alias", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Alias to remove."},
+             "The alias name to remove."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status", "alias"],
             "properties": {

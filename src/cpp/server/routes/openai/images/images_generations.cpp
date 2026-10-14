@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class ImagesGenerationsRoute : public ModelRoute {
 public:
@@ -20,39 +21,40 @@ public:
         s.methods = {"POST"};
         s.paths = {"images/generations"};
         s.summary = "Image Generation";
-        s.description = "Generates an image from a text prompt, loading the model on first use.";
-        s.notes = {
-            "**Performance:** CPU inference takes about 4 to 5 minutes per image. GPU (ROCm) is "
-            "significantly faster.",
-        };
+        s.modality = "prompt -> image";
+        s.description =
+            "Image Generation API. You provide a text prompt and receive a generated image.\n\n"
+            "> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (ROCm) is "
+            "significantly faster.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Diffusion model, e.g. `SD-Turbo` or `Krea-2-Turbo`."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text description of the image to generate."},
+             "The text description of the image to generate."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`)."},
             {"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Image size as `WIDTHxHEIGHT`, e.g. `512x512` or `256x256`. Defaults to `512x512`."},
+             "The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, "
+             "`256x256`). Default: `512x512`."},
             {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Partial,
-             "Number of images to generate. Only `1` is supported."},
+             "Number of images to generate. Currently only `1` is supported."},
             {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json` (a base64-encoded image) is supported."},
+             "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of inference steps. SD-Turbo works well with 4. The default varies by "
+             "Number of inference steps. SD-Turbo works well with 4 steps. Default varies by "
              "model."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. SD-Turbo uses low values (about 1.0). The default "
-             "varies by model."},
+             "Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by "
+             "model."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducibility. A random seed is used when omitted."},
+             "Random seed for reproducibility. If not specified, a random seed is used."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "model": "SD-Turbo",
             "prompt": "A serene mountain landscape at sunset",
-            "size": "256x256",
+            "size": "512x512",
             "steps": 4,
             "response_format": "b64_json"
         })");

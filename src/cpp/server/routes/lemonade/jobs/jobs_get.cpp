@@ -5,6 +5,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class JobsGetRoute : public ApiRoute {
 public:
@@ -27,7 +28,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["id", "name", "status", "inputs", "context", "steps", "cursor", "created_at"],
             "properties": {

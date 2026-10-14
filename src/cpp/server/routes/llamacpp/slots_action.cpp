@@ -7,6 +7,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class SlotsActionRoute : public ApiRoute {
 public:
@@ -17,41 +18,62 @@ public:
         s.id = "llamacpp.slots_action";
         s.methods = {"POST"};
         s.paths = {"slots/{id}"};
-        s.summary = "Save, restore or erase the prompt cache of one slot";
+        // Empty: the summary table has a hand-written row per action instead.
+        s.summary = "";
+        s.modality = "prompt cache";
         s.description =
-            "Saves a slot's prompt cache to a file, restores it from one, or erases it, so a "
-            "conversation's context can be persisted and resumed later.";
+            "Save the prompt cache of a specific slot to a file. This allows you to persist the "
+            "current context state for later restoration.\n\n"
+            "Restore the prompt cache of a specific slot from a previously saved file. This allows "
+            "you to resume a conversation or context from where you left off.\n\n"
+            "Erase (clear) the prompt cache of a specific slot. This removes all cached context "
+            "from the slot, resetting it to an empty state.\n\n"
+            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
+            "Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=save`, "
+            "`/slots/{id}?action=restore` or `/slots/{id}?action=erase` endpoint.\n\n"
+            "> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument "
+            "for save, restore and erase operations to work. See "
+            "[Server Configuration](../guide/configuration/README.md) for details on configuring "
+            "backend arguments.\n"
+            ">\n"
+            "> Example configuration:\n"
+            "> ```bash\n"
+            "> lemonade config set llamacpp.args=\"--slot-save-path /path/to/slot/saves\"\n"
+            "> ```\n\n"
+            "> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots/{id}`, "
+            "`/api/v1/slots/{id}`, `/v0/slots/{id}`, and `/v1/slots/{id}`.";
         s.notes = {
-            "The request names no model: Lemonade forwards it to llama.cpp's "
-            "`/slots/{id}?action=...` on the most recently used loaded model, which must be a "
-            "llama.cpp model. With no model loaded, or when that model is not a llama.cpp model, "
-            "the answer is `400`. An `error` from llama.cpp, such as an unknown slot, is returned "
-            "with its status.",
-            "llama.cpp answers every action with `501` unless the model was loaded with "
-            "`--slot-save-path` in its llama.cpp arguments; see [Saving Slots](#saving-slots).",
+            "The request names no model: Lemonade sends it to the most recently used loaded model, "
+            "which must be a llama.cpp model. With no model loaded, or when that model is not a "
+            "llama.cpp model, the answer is `400`. An `error` from llama.cpp is returned with its "
+            "status.",
+            "Without `--slot-save-path`, llama.cpp answers `501`. Besides the server "
+            "configuration, [`POST /v1/load`](./lemonade.md#post-v1load) can set it for one load "
+            "with `llamacpp_args`.",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "integer"}}, true, Support::Available,
-             "Slot id, from `GET /v1/slots`."},
+             "The slot ID to save, restore to or erase (path parameter)."},
+            {"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "The filename where the slot cache should be saved, or from which to restore the "
+             "slot cache (JSON body). Required for `save` and `restore`, relative to llama.cpp's "
+             "`--slot-save-path`."},
             {"action", ArgIn::Query, {{"enum", json::array({"save", "restore", "erase"})}}, true, Support::Available,
              "`save` writes the slot's prompt cache to `filename`, `restore` reads it back from "
              "`filename`, and `erase` clears the slot."},
-            {"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Required for `save` and `restore`: the cache file, relative to llama.cpp's "
-             "`--slot-save-path`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["id_slot"],
             "properties": {
-                "id_slot": {"type": "integer", "description": "The slot acted on."},
-                "filename": {"type": "string", "description": "save and restore: the cache file."},
-                "n_saved": {"type": "integer", "description": "save: tokens written to the file."},
+                "id_slot": {"type": "integer", "description": "The slot ID that was saved, restored or erased"},
+                "filename": {"type": "string", "description": "The filename where the cache was saved, or from which the cache was restored"},
+                "n_saved": {"type": "integer", "description": "Number of tokens saved to the cache file"},
+                "n_restored": {"type": "integer", "description": "Number of tokens restored from the cache file"},
                 "n_written": {"type": "integer", "description": "save: bytes written."},
-                "n_restored": {"type": "integer", "description": "restore: tokens read from the file."},
                 "n_read": {"type": "integer", "description": "restore: bytes read."},
                 "n_erased": {"type": "integer", "description": "erase: tokens cleared."},
                 "timings": {"type": "object", "description": "save and restore: how long the file operation took."}

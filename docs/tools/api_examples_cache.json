@@ -80,7 +80,7 @@
       }
     }
   },
-  "28f29f58d4fe7c4545344824ab55d5f55c23df5848cd8ab33b64065b1b5b1242": {
+  "c13bd252f7689ed0ed6e2b1e2fa818af53ff5fc06fbc97bc3606731954ee40f3": {
     "route": "internal.aliases_create",
     "format": "Json",
     "request": {
@@ -88,8 +88,8 @@
       "path": "/internal/aliases",
       "query": {},
       "json": {
-        "alias": "my-chat-model",
-        "target": "Qwen3-0.6B-GGUF"
+        "alias": "my-alias-1",
+        "target": "user.custom-llama"
       },
       "form": {},
       "files": {}
@@ -98,18 +98,18 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "alias": "my-chat-model",
+        "alias": "my-alias-1",
         "status": "ok",
-        "target": "Qwen3-0.6B-GGUF"
+        "target": "user.custom-llama"
       }
     }
   },
-  "f8e030b07d2c00424ffb392713421f4505aaa9ef70c0aedf89c9ed3b89c3ed67": {
+  "5cacfe6ccc9a0da372e88cf3955fe65e42d2b31b01547eb35ad767a0db25d78a": {
     "route": "internal.aliases_delete",
     "format": "Json",
     "request": {
       "method": "DELETE",
-      "path": "/internal/aliases/my-chat-model",
+      "path": "/internal/aliases/my-alias-1",
       "query": {},
       "json": null,
       "form": {},
@@ -119,12 +119,12 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "alias": "my-chat-model",
+        "alias": "my-alias-1",
         "status": "deleted"
       }
     }
   },
-  "e5cab2e093c54fe65b353954d0d797a972636919950f3daf670d83d5febb37af": {
+  "5b789fbfacdd06530615f7a04aef6e6a00dc035e8b260856e353940cc57886d7": {
     "route": "internal.aliases_list",
     "format": "Json",
     "request": {
@@ -141,10 +141,10 @@
       "body": {
         "aliases": [
           {
-            "alias": "my-chat-model",
-            "downloaded": true,
+            "alias": "my-alias-1",
+            "downloaded": false,
             "recipe": "llamacpp",
-            "target": "Qwen3-0.6B-GGUF"
+            "target": "user.custom-llama"
           }
         ]
       }
@@ -627,40 +627,41 @@
       "content_type": "application/json",
       "body": [
         {
-          "args": [],
-          "description": "Sends every queued trace span to the configured OTLP collector now, and answers once they are serialized and sent.",
-          "experimental": false,
           "id": "internal.telemetry_flush",
           "methods": [
             "POST"
           ],
-          "notes": [],
           "paths": [
             "telemetry/flush"
           ],
           "prefixes": "Internal",
-          "quiet_log": false,
-          "request_format": "Raw",
+          "summary": "Force-flush all queued telemetry trace spans",
+          "modality": "",
+          "description": "Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.",
+          "notes": [],
+          "experimental": false,
+          "args": [],
           "responses": [
             {
-              "example": {},
               "format": "Json",
               "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
                 "properties": {
                   "status": {
                     "const": "flushed"
                   }
-                },
-                "required": [
-                  "status"
-                ],
-                "type": "object"
+                }
               },
-              "setup": []
+              "setup": [],
+              "example": {}
             }
           ],
-          "summary": "Force-flush all queued telemetry trace spans",
-          "validate_args": false
+          "request_format": "Raw",
+          "validate_args": false,
+          "quiet_log": false
         }
       ]
     }
@@ -770,7 +771,7 @@
       "bytes": 4534160
     }
   },
-  "a820d0a62ad678e466dfea4092ce3e4a7380818f6182d22a63c6361b5a47f8bf": {
+  "ef7b8e39b1288cd3c45f4d0b0ffd5cde6efbe02c2d42c04b1cae4a795d2432cb": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -778,11 +779,10 @@
       "path": "/v1/audio/generations",
       "query": {},
       "json": {
-        "duration": 2,
         "model": "ThinkSound-SFX",
         "prompt": "glass shattering on a stone floor",
-        "seed": 42,
-        "steps": 8
+        "duration": 5,
+        "seed": 42
       },
       "form": {},
       "files": {}
@@ -790,7 +790,7 @@
     "response": {
       "status": 200,
       "content_type": "audio/wav",
-      "bytes": 352300
+      "bytes": 884780
     }
   },
   "d882ab2725e2de9614b742d512074747aa05bceeabb9b5c771e9ed81b287541b": {
@@ -822,7 +822,7 @@
       }
     }
   },
-  "60ffbf63e74901a6fd49b4fcc486f336e46ff37d711466b1b1b6bd94f59094e1": {
+  "add5081820c9abc63f50237e66669273b5782560ce88b084308b7af7c5250718": {
     "route": "lemonade.cloud_auth",
     "format": "Json",
     "request": {
@@ -830,8 +830,8 @@
       "path": "/v1/cloud/auth",
       "query": {},
       "json": {
-        "api_key": "example-key",
-        "provider": "example"
+        "provider": "fireworks",
+        "api_key": "fw-XXXXX"
       },
       "form": {},
       "files": {}
@@ -846,16 +846,16 @@
           "runtime_key_set": true
         },
         "models_discovered": 0,
-        "provider": "example"
+        "provider": "fireworks"
       }
     }
   },
-  "5b4262d6463e96d44d4aba29b6af7ac0046201f1fabcfea79992c1fac762dd1b": {
+  "1cfb1543cbd72fc81580542efda79373425119bf873ca7ac08e21445f627c88d": {
     "route": "lemonade.cloud_auth_provider",
     "format": "Json",
     "request": {
       "method": "DELETE",
-      "path": "/v1/cloud/auth/example",
+      "path": "/v1/cloud/auth/fireworks",
       "query": {},
       "json": null,
       "form": {},
@@ -870,7 +870,7 @@
           "runtime_key_set": false
         },
         "cleared_runtime_key": true,
-        "provider": "example"
+        "provider": "fireworks"
       }
     }
   },
@@ -972,12 +972,12 @@
       }
     }
   },
-  "a9165c4bf0ca8007077b87543b7fefe4835fca2d422390534326b2ebdc89fde6": {
+  "5778e5b3c93f57785e54a2cced24cdfbb69e11fb3d67f895df7666f45db480b1": {
     "route": "lemonade.docs_page",
     "format": "Text",
     "request": {
       "method": "GET",
-      "path": "/v1/docs/api/README",
+      "path": "/v1/docs/api/lemonade",
       "query": {},
       "json": null,
       "form": {},
@@ -987,31 +987,31 @@
       "status": 200,
       "content_type": "text/markdown",
       "lines": [
-        "# Lemonade Endpoints Spec",
+        "# Lemonade API",
         "",
-        "The Lemonade HTTP service provides a wide array of standards-compliant and custom endpoints.",
+        "We have designed a set of Lemonade-specific endpoints to enable client applications by extending the existing cloud-focused APIs (e.g., OpenAI). These extensions allow for a greater degree of UI/UX responsiveness in native applications by allowing applications to:",
         "",
-        "Our design philosophy is:",
+        "- Download models at setup time.",
+        "- Pre-load models at UI-loading-time, as opposed to completion-request time.",
+        "- Unload models to save memory space.",
+        "- Understand system resources and state to make dynamic choices.",
         "",
-        "1. Ensure that Lemonade works out-of-box with all popular local AI apps.",
-        "2. Prioritize using a pre-existing standard for functionality whenever possible.",
-        "3. Add sufficient custom functionality to enable developers to build highly polished experiences.",
-        "",
-        "This spec details all supported endpoints. It is organized into pages that correspond to  which organization (OpenAI, Ollama, Lemonade, etc.) defined the endpoints.",
-        "",
-        "| API | Description |",
-        "|-----|-------------|",
-        "| [OpenAI-Compatible API](./openai.md) | Start here for the main API surface used by most SDKs and clients. |",
-        "| [Ollama-Compatible API](./ollama.md) | Use this if your client expects Ollama-style behavior and routes. |",
-        "| [Anthropic-Compatible API](./anthropic.md) | Use this for clients built around Anthropic's message format. |",
-        "| [MCP Gateway](./mcp.md) | Use this to expose Lemonade as a Model Context Protocol server (POST /mcp). |",
-        "| [llama.cpp-Specific API](./llamacpp.md) | Reference for llama.cpp-specific compatibility and conventions. |",
-        "| [Lemonade-Specific API](./lemonade.md) | Local-first API for managing lifecycle, configuration, backends, etc. |"
+        "<!-- BEGIN GENERATED: lemonade.summary -->",
+        "| Method | Endpoint | Description |",
+        "|--------|----------|-------------|",
+        "| `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |",
+        "| `POST` | [`/v1/models/register`](#post-v1modelsregister) | Register or update a user model definition without downloading it |",
+        "| `POST` | [`/v1/pull`](#post-v1pull) | Install a model |",
+        "| `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |",
+        "| `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |",
+        "| `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |",
+        "| `POST` | [`/v1/load`](#post-v1load) | Load a model |",
+        "| `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |"
       ],
-      "line_count": 24
+      "line_count": 4453
     }
   },
-  "6e7513d14ac80c348c4727a6ad5f0e8cbc8fc60e77683b49aeb86ad0ca0b15cb": {
+  "cd51dd68e32ba7f96aaf3b4b625ab8df99281381ee0400be0431811e7e448eed": {
     "route": "lemonade.downloads",
     "format": "Json",
     "request": {
@@ -1030,7 +1030,7 @@
           "bytes_downloaded": 0,
           "bytes_previously_downloaded": 0,
           "bytes_total": 0,
-          "complete": true,
+          "complete": false,
           "completed_files_bytes": 0,
           "cumulative_bytes_downloaded": 0,
           "file": "",
@@ -1038,9 +1038,9 @@
           "id": "model:Qwen3-0.6B-GGUF",
           "model_name": "Qwen3-0.6B-GGUF",
           "overall_bytes_downloaded": 0,
-          "percent": 100,
-          "running": false,
-          "status": "completed",
+          "percent": 0,
+          "running": true,
+          "status": "downloading",
           "total_download_size": 0,
           "total_files": 0,
           "type": "model"
@@ -1048,7 +1048,7 @@
       ]
     }
   },
-  "9d7b843e4993d3b0b94c77d7c70bcff5adcd1b86c2278374f38d415519acb6c9": {
+  "eb60db7933a2c3f6997304904d3405bc5d4b32b4532f5d61677c019343406488": {
     "route": "lemonade.downloads_control",
     "format": "Json",
     "request": {
@@ -1056,8 +1056,8 @@
       "path": "/v1/downloads/control",
       "query": {},
       "json": {
-        "action": "remove",
-        "id": "model:Qwen3-0.6B-GGUF"
+        "id": "model:Qwen3-0.6B-GGUF",
+        "action": "pause"
       },
       "form": {},
       "files": {}
@@ -1066,11 +1066,27 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "status": "ok"
+        "bytes_downloaded": 0,
+        "bytes_previously_downloaded": 0,
+        "bytes_total": 0,
+        "complete": false,
+        "completed_files_bytes": 0,
+        "cumulative_bytes_downloaded": 0,
+        "file": "",
+        "file_index": 0,
+        "id": "model:Qwen3-0.6B-GGUF",
+        "model_name": "Qwen3-0.6B-GGUF",
+        "overall_bytes_downloaded": 0,
+        "percent": 0,
+        "running": true,
+        "status": "paused",
+        "total_download_size": 0,
+        "total_files": 0,
+        "type": "model"
       }
     }
   },
-  "8fa784614efe0658c2b5de3cfa6740638c718b0192fb61fed7edf1dd6e0c62e1": {
+  "a4d4411c14a89dde9a981ab2ab4c3133b7d55fad6c24d9a59cd767bc122f1087": {
     "route": "lemonade.health",
     "format": "Json",
     "request": {
@@ -1090,11 +1106,43 @@
             "backend_alive": true,
             "backend_health": "ready",
             "backend_url": "http://127.0.0.1:8001/v1",
+            "checkpoint": "ilintar/thinksound-gguf",
+            "device": "gpu",
+            "is_busy": false,
+            "is_streaming": false,
+            "last_use": 2578826,
+            "launch_command": [
+              "~/.cache/lemonade/bin/thinksound/vulkan/ts-server",
+              "--dir",
+              "~/.cache/huggingface/hub/models--ilintar--thinksound-gguf/snapshots/312db8bebb99aec28fb02022c8cdb635d94a4a42",
+              "--host",
+              "127.0.0.1",
+              "--port",
+              "8001"
+            ],
+            "loaded": true,
+            "model_name": "ThinkSound-SFX",
+            "pid": 41641,
+            "pinned": false,
+            "recipe": "thinksound",
+            "recipe_options": {
+              "ctx_size": 32768
+            },
+            "residency_class": "standard",
+            "slot_pool": "standard/audio-generation",
+            "status": "ready",
+            "type": "audio-generation",
+            "watchdog_reset": false
+          },
+          {
+            "backend_alive": true,
+            "backend_health": "ready",
+            "backend_url": "http://127.0.0.1:8002/v1",
             "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
             "device": "gpu",
             "is_busy": false,
             "is_streaming": false,
-            "last_use": 680809329,
+            "last_use": 2597470,
             "launch_command": [
               "~/.cache/lemonade/bin/llamacpp/vulkan/llama-server",
               "-m",
@@ -1102,7 +1150,7 @@
               "--ctx-size",
               "40960",
               "--port",
-              "8001",
+              "8002",
               "--jinja",
               "--metrics",
               "--temp",
@@ -1121,7 +1169,7 @@
             "loaded": true,
             "max_context_window": 40960,
             "model_name": "Qwen3-0.6B-GGUF",
-            "pid": 2557435,
+            "pid": 41942,
             "pinned": false,
             "recipe": "llamacpp",
             "recipe_options": {
@@ -1168,7 +1216,7 @@
           "enabled": false
         },
         "update_check_done": true,
-        "version": "2026.43.0~1693.f279660b",
+        "version": "2026.43.0~1683.e377af06",
         "websocket_port": 9001
       }
     }
@@ -1198,7 +1246,7 @@
       "count": 1
     }
   },
-  "d6c71e6f71de8c67bd8e716136c2616f52fc4904c1d9a4d5dc91ea56fc409300": {
+  "9f56bcca93f186b71feea24cd17d040912e9d85de8687b054da33d3de37b755b": {
     "route": "lemonade.install",
     "format": "Json",
     "request": {
@@ -1207,8 +1255,8 @@
       "query": {},
       "json": {
         "backend": "cloud",
-        "base_url": "https://api.example.com/v1",
-        "provider": "example"
+        "provider": "fireworks",
+        "base_url": "https://api.fireworks.ai/inference/v1"
       },
       "form": {},
       "files": {}
@@ -1225,9 +1273,9 @@
           "runtime_key_set": false
         },
         "backend": "cloud",
-        "base_url": "https://api.example.com/v1",
+        "base_url": "https://api.fireworks.ai/inference/v1",
         "models_discovered": 0,
-        "provider": "example",
+        "provider": "fireworks",
         "status": "success",
         "wire_format": "openai"
       }
@@ -1602,7 +1650,7 @@
       }
     }
   },
-  "5614b721fd4084bad99773d0d316469bfb05bd18229418cea7d8092fd3dcb926": {
+  "7381b1fe9cad2f4d211beb39f87b728620be03af3d3f4e1c8987548bb7d4e75d": {
     "route": "lemonade.pull",
     "format": "EventStream",
     "request": {
@@ -1610,7 +1658,6 @@
       "path": "/v1/pull",
       "query": {},
       "json": {
-        "do_not_upgrade": true,
         "model_name": "Qwen3-0.6B-GGUF",
         "stream": true
       },
@@ -1621,13 +1668,13 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "event: complete\ndata: {\"status\":\"ok\"}"
+        "event: error\ndata: {\"error\":\"Hugging Face API returned status 500 for unsloth/Qwen3-0.6B-GGUF\"}"
       ],
       "tail": [],
       "count": 1
     }
   },
-  "1d717e95984f99482a470c38a6eb0b35822d0bc88bae91c6e057c493a55cc209": {
+  "770e11420008f7927f81ce4c64dd43d1670d41f88224bad7445e6304b5e47c0f": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -1635,7 +1682,6 @@
       "path": "/v1/pull",
       "query": {},
       "json": {
-        "do_not_upgrade": true,
         "model_name": "Qwen3-0.6B-GGUF",
         "stream": true,
         "subscribe": false
@@ -1667,14 +1713,14 @@
       }
     }
   },
-  "61fede6e5820e7f115dff2e9c2a86e7e2673bf80d851e138e76e67bf42d525ca": {
+  "8f4275ba22b46b5e0c58235fbe2321fc889239d27081bbfed40361bcaae770f0": {
     "route": "lemonade.pull_variants",
     "format": "Json",
     "request": {
       "method": "GET",
       "path": "/v1/pull/variants",
       "query": {
-        "checkpoint": "unsloth/Qwen3-0.6B-GGUF"
+        "checkpoint": "unsloth/Qwen3-8B-GGUF"
       },
       "json": null,
       "form": {},
@@ -1684,7 +1730,7 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "checkpoint": "unsloth/Qwen3-0.6B-GGUF",
+        "checkpoint": "unsloth/Qwen3-8B-GGUF",
         "draft_files": [],
         "mmproj_files": [],
         "recipe": "llamacpp",
@@ -1693,256 +1739,247 @@
         "suggested_labels": [
           "chat"
         ],
-        "suggested_name": "Qwen3-0.6B-GGUF",
+        "suggested_name": "Qwen3-8B-GGUF",
         "variants": [
           {
             "files": [
-              "Qwen3-0.6B-Q4_K_M.gguf"
+              "Qwen3-8B-Q4_K_M.gguf"
             ],
             "name": "Q4_K_M",
-            "primary_file": "Qwen3-0.6B-Q4_K_M.gguf",
+            "primary_file": "Qwen3-8B-Q4_K_M.gguf",
             "sharded": false,
-            "size_bytes": 396705472
+            "size_bytes": 5027784512
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-Q4_K_XL.gguf"
+              "Qwen3-8B-UD-Q4_K_XL.gguf"
             ],
             "name": "UD-Q4_K_XL",
-            "primary_file": "Qwen3-0.6B-UD-Q4_K_XL.gguf",
+            "primary_file": "Qwen3-8B-UD-Q4_K_XL.gguf",
             "sharded": false,
-            "size_bytes": 405372608
+            "size_bytes": 5135722304
           },
           {
             "files": [
-              "Qwen3-0.6B-Q8_0.gguf"
+              "Qwen3-8B-Q8_0.gguf"
             ],
             "name": "Q8_0",
-            "primary_file": "Qwen3-0.6B-Q8_0.gguf",
+            "primary_file": "Qwen3-8B-Q8_0.gguf",
             "sharded": false,
-            "size_bytes": 639447744
+            "size_bytes": 8709519168
           },
           {
             "files": [
-              "Qwen3-0.6B-Q4_0.gguf"
-            ],
-            "name": "Q4_0",
-            "primary_file": "Qwen3-0.6B-Q4_0.gguf",
-            "sharded": false,
-            "size_bytes": 382156480
-          },
-          {
-            "files": [
-              "Qwen3-0.6B-BF16.gguf"
+              "Qwen3-8B-BF16.gguf"
             ],
             "name": "BF16",
-            "primary_file": "Qwen3-0.6B-BF16.gguf",
+            "primary_file": "Qwen3-8B-BF16.gguf",
             "sharded": false,
-            "size_bytes": 1198182848
+            "size_bytes": 16388044384
           },
           {
             "files": [
-              "Qwen3-0.6B-IQ4_NL.gguf"
+              "Qwen3-8B-IQ4_NL.gguf"
             ],
             "name": "IQ4_NL",
-            "primary_file": "Qwen3-0.6B-IQ4_NL.gguf",
+            "primary_file": "Qwen3-8B-IQ4_NL.gguf",
             "sharded": false,
-            "size_bytes": 381566656
+            "size_bytes": 4793624384
           },
           {
             "files": [
-              "Qwen3-0.6B-IQ4_XS.gguf"
+              "Qwen3-8B-IQ4_XS.gguf"
             ],
             "name": "IQ4_XS",
-            "primary_file": "Qwen3-0.6B-IQ4_XS.gguf",
+            "primary_file": "Qwen3-8B-IQ4_XS.gguf",
             "sharded": false,
-            "size_bytes": 367804096
+            "size_bytes": 4581287744
           },
           {
             "files": [
-              "Qwen3-0.6B-Q2_K.gguf"
+              "Qwen3-8B-Q2_K.gguf"
             ],
             "name": "Q2_K",
-            "primary_file": "Qwen3-0.6B-Q2_K.gguf",
+            "primary_file": "Qwen3-8B-Q2_K.gguf",
             "sharded": false,
-            "size_bytes": 296238784
+            "size_bytes": 3281733440
           },
           {
             "files": [
-              "Qwen3-0.6B-Q2_K_L.gguf"
+              "Qwen3-8B-Q2_K_L.gguf"
             ],
             "name": "Q2_K_L",
-            "primary_file": "Qwen3-0.6B-Q2_K_L.gguf",
+            "primary_file": "Qwen3-8B-Q2_K_L.gguf",
             "sharded": false,
-            "size_bytes": 296238784
+            "size_bytes": 3427592000
           },
           {
             "files": [
-              "Qwen3-0.6B-Q3_K_M.gguf"
+              "Qwen3-8B-Q3_K_M.gguf"
             ],
             "name": "Q3_K_M",
-            "primary_file": "Qwen3-0.6B-Q3_K_M.gguf",
+            "primary_file": "Qwen3-8B-Q3_K_M.gguf",
             "sharded": false,
-            "size_bytes": 347127488
+            "size_bytes": 4124161856
           },
           {
             "files": [
-              "Qwen3-0.6B-Q3_K_S.gguf"
+              "Qwen3-8B-Q3_K_S.gguf"
             ],
             "name": "Q3_K_S",
-            "primary_file": "Qwen3-0.6B-Q3_K_S.gguf",
+            "primary_file": "Qwen3-8B-Q3_K_S.gguf",
             "sharded": false,
-            "size_bytes": 323075776
+            "size_bytes": 3769612096
           },
           {
             "files": [
-              "Qwen3-0.6B-Q4_1.gguf"
+              "Qwen3-8B-Q4_1.gguf"
             ],
             "name": "Q4_1",
-            "primary_file": "Qwen3-0.6B-Q4_1.gguf",
+            "primary_file": "Qwen3-8B-Q4_1.gguf",
             "sharded": false,
-            "size_bytes": 409091776
+            "size_bytes": 5247756096
           },
           {
             "files": [
-              "Qwen3-0.6B-Q4_K_S.gguf"
+              "Qwen3-8B-Q4_K_S.gguf"
             ],
             "name": "Q4_K_S",
-            "primary_file": "Qwen3-0.6B-Q4_K_S.gguf",
+            "primary_file": "Qwen3-8B-Q4_K_S.gguf",
             "sharded": false,
-            "size_bytes": 383270592
+            "size_bytes": 4802012992
           },
           {
             "files": [
-              "Qwen3-0.6B-Q5_K_M.gguf"
+              "Qwen3-8B-Q5_K_M.gguf"
             ],
             "name": "Q5_K_M",
-            "primary_file": "Qwen3-0.6B-Q5_K_M.gguf",
+            "primary_file": "Qwen3-8B-Q5_K_M.gguf",
             "sharded": false,
-            "size_bytes": 444415680
+            "size_bytes": 5851113280
           },
           {
             "files": [
-              "Qwen3-0.6B-Q5_K_S.gguf"
+              "Qwen3-8B-Q5_K_S.gguf"
             ],
             "name": "Q5_K_S",
-            "primary_file": "Qwen3-0.6B-Q5_K_S.gguf",
+            "primary_file": "Qwen3-8B-Q5_K_S.gguf",
             "sharded": false,
-            "size_bytes": 436616896
+            "size_bytes": 5720762176
           },
           {
             "files": [
-              "Qwen3-0.6B-Q6_K.gguf"
+              "Qwen3-8B-Q6_K.gguf"
             ],
             "name": "Q6_K",
-            "primary_file": "Qwen3-0.6B-Q6_K.gguf",
+            "primary_file": "Qwen3-8B-Q6_K.gguf",
             "sharded": false,
-            "size_bytes": 495107776
+            "size_bytes": 6725900096
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-IQ1_M.gguf"
+              "Qwen3-8B-UD-IQ1_M.gguf"
             ],
             "name": "UD-IQ1_M",
-            "primary_file": "Qwen3-0.6B-UD-IQ1_M.gguf",
+            "primary_file": "Qwen3-8B-UD-IQ1_M.gguf",
             "sharded": false,
-            "size_bytes": 220754624
+            "size_bytes": 2396489536
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-IQ1_S.gguf"
+              "Qwen3-8B-UD-IQ1_S.gguf"
             ],
             "name": "UD-IQ1_S",
-            "primary_file": "Qwen3-0.6B-UD-IQ1_S.gguf",
+            "primary_file": "Qwen3-8B-UD-IQ1_S.gguf",
             "sharded": false,
-            "size_bytes": 214643392
+            "size_bytes": 2275379008
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-IQ2_M.gguf"
+              "Qwen3-8B-UD-IQ2_M.gguf"
             ],
             "name": "UD-IQ2_M",
-            "primary_file": "Qwen3-0.6B-UD-IQ2_M.gguf",
+            "primary_file": "Qwen3-8B-UD-IQ2_M.gguf",
             "sharded": false,
-            "size_bytes": 268702400
+            "size_bytes": 3110897472
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-IQ2_XXS.gguf"
+              "Qwen3-8B-UD-IQ2_XXS.gguf"
             ],
             "name": "UD-IQ2_XXS",
-            "primary_file": "Qwen3-0.6B-UD-IQ2_XXS.gguf",
+            "primary_file": "Qwen3-8B-UD-IQ2_XXS.gguf",
             "sharded": false,
-            "size_bytes": 234074816
+            "size_bytes": 2605221696
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-IQ3_XXS.gguf"
+              "Qwen3-8B-UD-IQ3_XXS.gguf"
             ],
             "name": "UD-IQ3_XXS",
-            "primary_file": "Qwen3-0.6B-UD-IQ3_XXS.gguf",
+            "primary_file": "Qwen3-8B-UD-IQ3_XXS.gguf",
             "sharded": false,
-            "size_bytes": 282088128
+            "size_bytes": 3410265920
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-Q2_K_XL.gguf"
+              "Qwen3-8B-UD-Q2_K_XL.gguf"
             ],
             "name": "UD-Q2_K_XL",
-            "primary_file": "Qwen3-0.6B-UD-Q2_K_XL.gguf",
+            "primary_file": "Qwen3-8B-UD-Q2_K_XL.gguf",
             "sharded": false,
-            "size_bytes": 301727424
+            "size_bytes": 3501975360
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-Q3_K_XL.gguf"
+              "Qwen3-8B-UD-Q3_K_XL.gguf"
             ],
             "name": "UD-Q3_K_XL",
-            "primary_file": "Qwen3-0.6B-UD-Q3_K_XL.gguf",
+            "primary_file": "Qwen3-8B-UD-Q3_K_XL.gguf",
             "sharded": false,
-            "size_bytes": 356622016
+            "size_bytes": 4307052352
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-Q5_K_XL.gguf"
+              "Qwen3-8B-UD-Q5_K_XL.gguf"
             ],
             "name": "UD-Q5_K_XL",
-            "primary_file": "Qwen3-0.6B-UD-Q5_K_XL.gguf",
+            "primary_file": "Qwen3-8B-UD-Q5_K_XL.gguf",
             "sharded": false,
-            "size_bytes": 446381760
+            "size_bytes": 5878081344
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-Q6_K_XL.gguf"
+              "Qwen3-8B-UD-Q6_K_XL.gguf"
             ],
             "name": "UD-Q6_K_XL",
-            "primary_file": "Qwen3-0.6B-UD-Q6_K_XL.gguf",
+            "primary_file": "Qwen3-8B-UD-Q6_K_XL.gguf",
             "sharded": false,
-            "size_bytes": 576467648
+            "size_bytes": 7490549568
           },
           {
             "files": [
-              "Qwen3-0.6B-UD-Q8_K_XL.gguf"
+              "Qwen3-8B-UD-Q8_K_XL.gguf"
             ],
             "name": "UD-Q8_K_XL",
-            "primary_file": "Qwen3-0.6B-UD-Q8_K_XL.gguf",
+            "primary_file": "Qwen3-8B-UD-Q8_K_XL.gguf",
             "sharded": false,
-            "size_bytes": 844288704
+            "size_bytes": 10824038208
           }
         ]
       }
     }
   },
-  "2eab95906e6648f657f21832580889492f0705a97361171df73544e37fdab866": {
+  "145d89582dc2c41ad0f3bdb3c8ad92e5069df8599285837ebcc340d9defc43f5": {
     "route": "lemonade.registry_search",
     "format": "Json",
     "request": {
       "method": "GET",
       "path": "/v1/registry/search",
       "query": {
-        "format": "gguf",
-        "limit": 2,
-        "query": "qwen3"
+        "source": "modelscope",
+        "query": "qwen",
+        "format": "gguf"
       },
       "json": null,
       "form": {},
@@ -1953,65 +1990,267 @@
       "content_type": "application/json",
       "body": {
         "format": "gguf",
-        "query": "qwen3",
+        "query": "qwen",
         "results": [
           {
             "description": "",
-            "display_name": "Qwen3.8-27B-GGUF",
-            "downloads": 6553039,
+            "display_name": "Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+            "downloads": 5432220,
             "has_gguf": true,
-            "likes": 4916,
+            "likes": 30,
+            "repository_id": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:apache-2.0",
+              "library:gguf",
+              "library:pytorch",
+              "task:image-text-to-text",
+              "custom_tag:gguf",
+              "custom_tag:gsq",
+              "custom_tag:rco",
+              "custom_tag:quantization",
+              "custom_tag:mixed-precision",
+              "custom_tag:ist-daslab",
+              "custom_tag:moe",
+              "custom_tag:multimodal",
+              "custom_tag:vision"
+            ],
+            "task": "image-text-to-text"
+          },
+          {
+            "description": "Qwen1.5版本本次开源了包括0.5B、1.8B、4B、7B、14B和72B在内的六种大小的基础和聊天模型，同时，也开源了量化模型。不仅提供了Int4和Int8的GPTQ模型，还有AWQ模型，以及GGUF量化模型。为了提升开发者体验，Qwen1.5的代码合并到Hugging Face Transformers中，开发者现在可以直接使用transformers>=4.37.0而无需trust_remote_code。此外，Qwen1.5支持了例如vLLM、SGLang、AutoGPTQ等框架对Qwen1.5的支持。Qwen1.5显著提升了聊天模型与人类偏好的一致性，并且改善了它们的多语言能力。所有模型提供了统一的上下文长度支持，支持32K上下文, 基础语言模型的质量也有所改进。",
+            "display_name": "千问1.5-7B-Chat",
+            "downloads": 1409896,
+            "has_gguf": true,
+            "likes": 168,
+            "repository_id": "Qwen/Qwen1.5-7B-Chat",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:other",
+              "model_type:qwen2",
+              "library:transformer",
+              "library:safetensors",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:chat",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "",
+            "display_name": "Qwen3-30B-A3B-GGUF",
+            "downloads": 1120829,
+            "has_gguf": true,
+            "likes": 16,
+            "repository_id": "unsloth/Qwen3-30B-A3B-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:apache-2.0",
+              "model_type:qwen3_moe",
+              "library:transformer",
+              "library:gguf",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:qwen3",
+              "custom_tag:qwen",
+              "custom_tag:unsloth",
+              "custom_tag:transformers",
+              "custom_tag:gguf",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "",
+            "display_name": "Qwen3.6-35B-A3B-GGUF",
+            "downloads": 435575,
+            "has_gguf": true,
+            "likes": 133,
+            "repository_id": "unsloth/Qwen3.6-35B-A3B-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:apache-2.0",
+              "library:gguf",
+              "library:pytorch",
+              "task:image-text-to-text",
+              "custom_tag:unsloth",
+              "custom_tag:qwen",
+              "custom_tag:qwen3_5_moe",
+              "custom_tag:gguf"
+            ],
+            "task": "image-text-to-text"
+          },
+          {
+            "description": "",
+            "display_name": "Qwen3.8-Flash-Next-GGUF",
+            "downloads": 422506,
+            "has_gguf": true,
+            "likes": 57,
+            "repository_id": "unsloth/Qwen3.8-Flash-Next-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:other",
+              "library:gguf",
+              "library:pytorch",
+              "task:image-text-to-text",
+              "custom_tag:unsloth",
+              "custom_tag:gguf"
+            ],
+            "task": "image-text-to-text"
+          },
+          {
+            "description": "",
+            "display_name": "Qwen3.8-27B-GGUF",
+            "downloads": 406958,
+            "has_gguf": true,
+            "likes": 302,
             "repository_id": "unsloth/Qwen3.8-27B-GGUF",
             "repository_type": "model",
-            "source": "huggingface",
+            "source": "modelscope",
             "tags": [
-              "gguf",
-              "qwen3_5",
-              "unsloth",
-              "base_model:Qwen/Qwen3.8-27B",
-              "base_model:quantized:Qwen/Qwen3.8-27B",
               "license:apache-2.0",
-              "endpoints_compatible",
-              "region:us",
-              "imatrix",
-              "conversational"
+              "model_type:qwen3_5",
+              "library:gguf",
+              "library:pytorch",
+              "custom_tag:unsloth",
+              "custom_tag:gguf"
             ],
             "task": ""
           },
           {
-            "description": "",
-            "display_name": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
-            "downloads": 6499878,
+            "description": "Qwen1.5版本本次开源了包括0.5B、1.8B、4B、7B、14B和72B在内的六种大小的基础和聊天模型，同时，也开源了量化模型。不仅提供了Int4和Int8的GPTQ模型，还有AWQ模型，以及GGUF量化模型。为了提升开发者体验，Qwen1.5的代码合并到Hugging Face Transformers中，开发者现在可以直接使用transformers>=4.37.0而无需trust_remote_code。此外，Qwen1.5支持了例如vLLM、SGLang、AutoGPTQ等框架对Qwen1.5的支持。Qwen1.5显著提升了聊天模型与人类偏好的一致性，并且改善了它们的多语言能力。所有模型提供了统一的上下文长度支持，支持32K上下文, 基础语言模型的质量也有所改进。",
+            "display_name": "千问1.5-0.5B-Chat",
+            "downloads": 371658,
             "has_gguf": true,
-            "likes": 1116,
-            "repository_id": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+            "likes": 71,
+            "repository_id": "Qwen/Qwen1.5-0.5B-Chat",
             "repository_type": "model",
-            "source": "huggingface",
+            "source": "modelscope",
             "tags": [
-              "transformers",
-              "gguf",
-              "unsloth",
-              "qwen3",
-              "qwen",
-              "text-generation",
-              "arxiv:2505.09388",
-              "base_model:Qwen/Qwen3-Coder-30B-A3B-Instruct",
-              "base_model:quantized:Qwen/Qwen3-Coder-30B-A3B-Instruct",
+              "license:other",
+              "model_type:qwen2",
+              "library:transformer",
+              "library:safetensors",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:chat",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "",
+            "display_name": "千问3-8B-GGUF",
+            "downloads": 325784,
+            "has_gguf": true,
+            "likes": 60,
+            "repository_id": "Qwen/Qwen3-8B-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
               "license:apache-2.0",
-              "endpoints_compatible",
-              "region:us",
-              "imatrix",
-              "conversational"
+              "library:gguf",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:gguf",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "",
+            "display_name": "千问2.5-3B-Instruct-GGUF",
+            "downloads": 323057,
+            "has_gguf": true,
+            "likes": 46,
+            "repository_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:other",
+              "library:gguf",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:chat",
+              "custom_tag:gguf",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "Qwen1.5版本本次开源了包括0.5B、1.8B、4B、7B、14B和72B在内的六种大小的基础和聊天模型，同时，也开源了量化模型。不仅提供了Int4和Int8的GPTQ模型，还有AWQ模型，以及GGUF量化模型。为了提升开发者体验，Qwen1.5的代码合并到Hugging Face Transformers中，开发者现在可以直接使用transformers>=4.37.0而无需trust_remote_code。此外，Qwen1.5支持了例如vLLM、SGLang、AutoGPTQ等框架对Qwen1.5的支持。Qwen1.5显著提升了聊天模型与人类偏好的一致性，并且改善了它们的多语言能力。所有模型提供了统一的上下文长度支持，支持32K上下文, 基础语言模型的质量也有所改进。",
+            "display_name": "千问1.5-0.5B-Chat-GPTQ-Int8",
+            "downloads": 320739,
+            "has_gguf": true,
+            "likes": 6,
+            "repository_id": "Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int8",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:other",
+              "model_type:qwen2",
+              "library:transformer",
+              "library:safetensors",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:chat",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "",
+            "display_name": "千问2.5-7B-Instruct-GGUF",
+            "downloads": 256996,
+            "has_gguf": true,
+            "likes": 94,
+            "repository_id": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:apache-2.0",
+              "library:gguf",
+              "task:text-generation",
+              "custom_tag:chat",
+              "custom_tag:gguf",
+              "deploy:swingdeploy"
+            ],
+            "task": "text-generation"
+          },
+          {
+            "description": "Qwen1.5版本本次开源了包括0.5B、1.8B、4B、7B、14B和72B在内的六种大小的基础和聊天模型，同时，也开源了量化模型。不仅提供了Int4和Int8的GPTQ模型，还有AWQ模型，以及GGUF量化模型。为了提升开发者体验，Qwen1.5的代码合并到Hugging Face Transformers中，开发者现在可以直接使用transformers>=4.37.0而无需trust_remote_code。此外，Qwen1.5支持了例如vLLM、SGLang、AutoGPTQ等框架对Qwen1.5的支持。Qwen1.5显著提升了聊天模型与人类偏好的一致性，并且改善了它们的多语言能力。所有模型提供了统一的上下文长度支持，支持32K上下文, 基础语言模型的质量也有所改进。",
+            "display_name": "千问1.5-72B-Chat-GPTQ-Int4",
+            "downloads": 201742,
+            "has_gguf": true,
+            "likes": 26,
+            "repository_id": "Qwen/Qwen1.5-72B-Chat-GPTQ-Int4",
+            "repository_type": "model",
+            "source": "modelscope",
+            "tags": [
+              "license:other",
+              "model_type:qwen2",
+              "library:transformer",
+              "library:safetensors",
+              "library:pytorch",
+              "task:text-generation",
+              "custom_tag:chat",
+              "deploy:swingdeploy"
             ],
             "task": "text-generation"
           }
         ],
-        "source": "huggingface",
-        "total": 2
+        "source": "modelscope",
+        "total": 3277
       }
     }
   },
-  "20a39a535788ed976be7b652c0578b33beee88ceb2ca057c500340ebd05e99e5": {
+  "765c71aa0501deb9c364e16ceeb4cd1b79c0db1262534c3ef14d29baef26820c": {
     "route": "lemonade.stats",
     "format": "Json",
     "request": {
@@ -2026,19 +2265,19 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "cache_tokens": 22,
-        "cache_tokens_total": 44,
+        "cache_tokens": 14,
+        "cache_tokens_total": 14,
         "input_tokens": 1,
-        "input_tokens_total": 50,
-        "output_tokens": 10,
-        "output_tokens_total": 302,
-        "prompt_tokens": 23,
-        "prompt_tokens_total": 94,
-        "request_count_total": 5,
+        "input_tokens_total": 16,
+        "output_tokens": 184,
+        "output_tokens_total": 363,
+        "prompt_tokens": 15,
+        "prompt_tokens_total": 30,
+        "request_count_total": 2,
         "routing_decisions_total": 0,
         "routing_switches_total": 0,
-        "time_to_first_token": 0.003305,
-        "tokens_per_second": 351.87864096649326
+        "time_to_first_token": 0.0032930000000000004,
+        "tokens_per_second": 339.58377791592056
       }
     }
   },
@@ -3957,7 +4196,7 @@
       }
     }
   },
-  "43baffbb3a1e10e60a86576133b82dd385ef8c37c6d34ec4053902acb5943182": {
+  "5ee373a52dbbbe7e35a72e0729a79ece8b368eeedb2931e34c800236f20c709b": {
     "route": "lemonade.uninstall",
     "format": "Json",
     "request": {
@@ -3966,7 +4205,7 @@
       "query": {},
       "json": {
         "backend": "cloud",
-        "provider": "example"
+        "provider": "fireworks"
       },
       "form": {},
       "files": {}
@@ -3977,7 +4216,7 @@
       "body": {
         "backend": "cloud",
         "models_evicted": 0,
-        "provider": "example",
+        "provider": "fireworks",
         "status": "success"
       }
     }
@@ -4005,7 +4244,7 @@
       }
     }
   },
-  "273052e62655e4fb15a833c121d8756a852cedcb42501ccc203d20b75d0417ce": {
+  "78ad54eaa0aa278e09304da97f440fc95b463810305c8f24359a550296a0f6b6": {
     "route": "llamacpp.rerank",
     "format": "Json",
     "request": {
@@ -4013,13 +4252,13 @@
       "path": "/v1/rerank",
       "query": {},
       "json": {
+        "model": "bge-reranker-v2-m3-GGUF",
+        "query": "What is the capital of France?",
         "documents": [
           "Paris is the capital of France.",
           "Berlin is the capital of Germany.",
           "Madrid is the capital of Spain."
-        ],
-        "model": "jina-reranker-v1-tiny-en-GGUF",
-        "query": "What is the capital of France?"
+        ]
       },
       "form": {},
       "files": {}
@@ -4028,25 +4267,25 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "model": "jina-reranker-v1-tiny-en-GGUF",
+        "model": "bge-reranker-v2-m3-GGUF",
         "object": "list",
         "results": [
           {
             "index": 0,
-            "relevance_score": 0.11989831924438477
-          },
-          {
-            "index": 1,
-            "relevance_score": 0.03523308038711548
+            "relevance_score": 8.634263038635254
           },
           {
             "index": 2,
-            "relevance_score": 0.028406262397766113
+            "relevance_score": -3.4511733055114746
+          },
+          {
+            "index": 1,
+            "relevance_score": -5.399629592895508
           }
         ],
         "usage": {
-          "prompt_tokens": 57,
-          "total_tokens": 57
+          "prompt_tokens": 51,
+          "total_tokens": 51
         }
       }
     }
@@ -6295,7 +6534,7 @@
       }
     }
   },
-  "ad6149ba0b40d7cefc356a99c05906f2786da7fbca2a3d9954fcc3e1a75eef74": {
+  "9b19823137caf48b77a529685fbf296ef6fdbf76e4b51f89aa24dc9bee49ecfb": {
     "route": "openai.audio_speech",
     "format": "Binary",
     "request": {
@@ -6303,8 +6542,9 @@
       "path": "/v1/audio/speech",
       "query": {},
       "json": {
-        "input": "Lemonade can speak!",
         "model": "kokoro-v1",
+        "input": "Lemonade can speak!",
+        "speed": 1.0,
         "response_format": "mp3"
       },
       "form": {},
@@ -6316,7 +6556,7 @@
       "bytes": 40516
     }
   },
-  "e7dc2f394219b9ec55609ae5ce4919959bceacd2a6a95eb2561841c515807bc3": {
+  "b0f88b38c3508e0fba4bace0246983e5faffb21d4fe1d7906e775bca057f1ac2": {
     "route": "openai.audio_speech",
     "format": "BinaryStream",
     "request": {
@@ -6324,8 +6564,9 @@
       "path": "/v1/audio/speech",
       "query": {},
       "json": {
-        "input": "Lemonade can speak!",
         "model": "kokoro-v1",
+        "input": "Lemonade can speak!",
+        "speed": 1.0,
         "stream_format": "audio"
       },
       "form": {},
@@ -6385,7 +6626,7 @@
       "line_count": 1
     }
   },
-  "edd0dc547a9a8e75878a05c83b417be55fb3c2d516ee18bc6ae6209dde1e7cb8": {
+  "875b34bb52fb2a3e484497491c3323202cf666f5eb6a68263871481f0d7e0937": {
     "route": "openai.chat_completions",
     "format": "EventStream",
     "request": {
@@ -6393,14 +6634,13 @@
       "path": "/v1/chat/completions",
       "query": {},
       "json": {
-        "enable_thinking": false,
+        "model": "Qwen3-0.6B-GGUF",
         "messages": [
           {
-            "content": "What is the capital of France?",
-            "role": "user"
+            "role": "user",
+            "content": "What is the population of Paris?"
           }
         ],
-        "model": "Qwen3-0.6B-GGUF",
         "stream": true
       },
       "form": {},
@@ -6410,18 +6650,18 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1791396305,\"id\":\"chatcmpl-oD69li5P5xakMLDbNnQQWLwNaYugoz9j\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"content\":\"The\"}}],\"created\":1791396305,\"id\":\"chatcmpl-oD69li5P5xakMLDbNnQQWLwNaYugoz9j\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"content\":\" capital\"}}],\"created\":1791396305,\"id\":\"chatcmpl-oD69li5P5xakMLDbNnQQWLwNaYugoz9j\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}"
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1791925307,\"id\":\"chatcmpl-23vv5wHzaN070bYeodqDoe98C6CrPOoF\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1791925307,\"id\":\"chatcmpl-23vv5wHzaN070bYeodqDoe98C6CrPOoF\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1791925307,\"id\":\"chatcmpl-23vv5wHzaN070bYeodqDoe98C6CrPOoF\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}"
       ],
       "tail": [
-        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1791396305,\"id\":\"chatcmpl-oD69li5P5xakMLDbNnQQWLwNaYugoz9j\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":0,\"prompt_n\":23,\"prompt_ms\":70.621,\"prompt_per_token_ms\":3.070478260869565,\"prompt_per_second\":325.6821625295592,\"predicted_n\":10,\"predicted_ms\":35.399,\"predicted_per_token_ms\":3.933222222222222,\"predicted_per_second\":254.2444701827735}}",
+        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1791925308,\"id\":\"chatcmpl-23vv5wHzaN070bYeodqDoe98C6CrPOoF\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":4.409,\"prompt_per_token_ms\":4.409,\"prompt_per_second\":226.80880018144705,\"predicted_n\":284,\"predicted_ms\":895.144,\"predicted_per_token_ms\":3.163053003533569,\"predicted_per_second\":316.15025068592314}}",
         "data: [DONE]"
       ],
-      "count": 12
+      "count": 282
     }
   },
-  "5bedd27ea6a276c33be395f5354f0b3e3aee20b706ca4d8593b66a04b8ebe28b": {
+  "a981e5dd10b9de8dae98e0dd74131e821b7f9dc583ceacf9b4a04d5c1094c0f0": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -6429,14 +6669,14 @@
       "path": "/v1/chat/completions",
       "query": {},
       "json": {
-        "enable_thinking": false,
+        "model": "Qwen3-0.6B-GGUF",
         "messages": [
           {
-            "content": "What is the capital of France?",
-            "role": "user"
+            "role": "user",
+            "content": "What is the population of Paris?"
           }
         ],
-        "model": "Qwen3-0.6B-GGUF"
+        "stream": false
       },
       "form": {},
       "files": {}
@@ -6450,39 +6690,40 @@
             "finish_reason": "stop",
             "index": 0,
             "message": {
-              "content": "The capital of France is **Paris**.",
+              "content": "The population of Paris, France, is approximately **15 million**. This makes it one of the most populous cities in the world, with a population that includes a wide range of demographics and cultural influences.",
+              "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me start by recalling... (1,103 characters)",
               "role": "assistant"
             }
           }
         ],
-        "created": 1791392196,
-        "id": "chatcmpl-c42RVaWGJWcJv8fCzyJ9fsBzfjxtQ6Ra",
+        "created": 1791925307,
+        "id": "chatcmpl-Pn8E860bJURzu7BXlNhwaKYdMiRaX8nw",
         "model": "Qwen3-0.6B-GGUF",
         "object": "chat.completion",
         "system_fingerprint": "b11393-dbe4c3ed4",
         "timings": {
           "cache_n": 0,
-          "predicted_ms": 29.43,
-          "predicted_n": 10,
-          "predicted_per_second": 305.81039755351685,
-          "predicted_per_token_ms": 3.27,
-          "prompt_ms": 10.14,
-          "prompt_n": 23,
-          "prompt_per_second": 2268.2445759368834,
-          "prompt_per_token_ms": 0.44086956521739135
+          "predicted_ms": 960.13,
+          "predicted_n": 308,
+          "predicted_per_second": 319.7483674085801,
+          "predicted_per_token_ms": 3.1274592833876222,
+          "prompt_ms": 9.719,
+          "prompt_n": 15,
+          "prompt_per_second": 1543.3686593270913,
+          "prompt_per_token_ms": 0.6479333333333333
         },
         "usage": {
-          "completion_tokens": 10,
-          "prompt_tokens": 23,
+          "completion_tokens": 308,
+          "prompt_tokens": 15,
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "total_tokens": 33
+          "total_tokens": 323
         }
       }
     }
   },
-  "565d6be8a125d37f670451b98d183a0bce0e8e737699ebe77d205e8ae665d8d1": {
+  "b95a905af20eed8a6f6dad72e480226f609b3fc932c1d1c62fa3185af1103345": {
     "route": "openai.completions",
     "format": "EventStream",
     "request": {
@@ -6490,10 +6731,10 @@
       "path": "/v1/completions",
       "query": {},
       "json": {
-        "max_tokens": 16,
         "model": "Qwen3-0.6B-GGUF",
-        "prompt": "The capital of France is",
-        "stream": true
+        "prompt": "What is the population of Paris?",
+        "stream": true,
+        "max_tokens": 64
       },
       "form": {},
       "files": {}
@@ -6502,18 +6743,18 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "data: {\"choices\":[{\"text\":\" Paris\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1791396305,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-2VMB52VrUkSqkUqJmoZxPUfXOjR884st\"}",
-        "data: {\"choices\":[{\"text\":\",\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1791396305,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-2VMB52VrUkSqkUqJmoZxPUfXOjR884st\"}",
-        "data: {\"choices\":[{\"text\":\" and\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1791396305,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-2VMB52VrUkSqkUqJmoZxPUfXOjR884st\"}"
+        "data: {\"choices\":[{\"text\":\" What\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1791926311,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-1KGJDN8pF92u7VOkrYTSVmuXamlJyUO0\"}",
+        "data: {\"choices\":[{\"text\":\" is\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1791926311,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-1KGJDN8pF92u7VOkrYTSVmuXamlJyUO0\"}",
+        "data: {\"choices\":[{\"text\":\" the\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"created\":1791926311,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"id\":\"chatcmpl-1KGJDN8pF92u7VOkrYTSVmuXamlJyUO0\"}"
       ],
       "tail": [
-        "data: {\"choices\":[{\"text\":\"\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"length\"}],\"created\":1791396305,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"usage\":{\"completion_tokens\":16,\"prompt_tokens\":5,\"total_tokens\":21,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"id\":\"chatcmpl-2VMB52VrUkSqkUqJmoZxPUfXOjR884st\",\"timings\":{\"cache_n\":0,\"prompt_n\":5,\"prompt_ms\":114.001,\"prompt_per_token_ms\":22.8002,\"prompt_per_second\":43.85926439241761,\"predicted_n\":16,\"predicted_ms\":45.312,\"predicted_per_token_ms\":3.0208,\"predicted_per_second\":331.0381355932204}}",
+        "data: {\"choices\":[{\"text\":\"\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"length\"}],\"created\":1791926311,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"text_completion\",\"usage\":{\"completion_tokens\":64,\"prompt_tokens\":7,\"total_tokens\":71,\"prompt_tokens_details\":{\"cached_tokens\":6}},\"id\":\"chatcmpl-1KGJDN8pF92u7VOkrYTSVmuXamlJyUO0\",\"timings\":{\"cache_n\":6,\"prompt_n\":1,\"prompt_ms\":3.206,\"prompt_per_token_ms\":3.206,\"prompt_per_second\":311.91515907673113,\"predicted_n\":64,\"predicted_ms\":182.177,\"predicted_per_token_ms\":2.8916984126984127,\"predicted_per_second\":345.8175291063087}}",
         "data: [DONE]"
       ],
-      "count": 18
+      "count": 66
     }
   },
-  "498857cd214654d3677517d746f02adb59b911282583a8eabe516768d6734e5d": {
+  "0fc2b08c23846acd94cf138d897cb0748c47f6b524fa0f41507a6c3a46bdbf99": {
     "route": "openai.completions",
     "format": "Json",
     "request": {
@@ -6521,9 +6762,10 @@
       "path": "/v1/completions",
       "query": {},
       "json": {
-        "max_tokens": 16,
         "model": "Qwen3-0.6B-GGUF",
-        "prompt": "The capital of France is"
+        "prompt": "What is the population of Paris?",
+        "stream": false,
+        "max_tokens": 64
       },
       "form": {},
       "files": {}
@@ -6537,32 +6779,32 @@
             "finish_reason": "length",
             "index": 0,
             "logprobs": null,
-            "text": " Paris. The capital of France is located in the city of Paris. The capital"
+            "text": " And what is the population of the city of Rome?\n\nAlso, what is the population of the capital of the city of Rome?\n\nAnd what is the population of the city of Rome?\n\nWhat is the population of the city of Rome?\n\nWhat is the population of the city of Rome?\n\nWhat is the population of the city"
           }
         ],
-        "created": 1791392196,
-        "id": "chatcmpl-OarKDHHMyaKkOWVrMOMjlYjPwLcNcjjG",
+        "created": 1791926311,
+        "id": "chatcmpl-OCvpUrtJjV1CRBKuAsR0EHzXyBzAM2bh",
         "model": "Qwen3-0.6B-GGUF",
         "object": "text_completion",
         "system_fingerprint": "b11393-dbe4c3ed4",
         "timings": {
           "cache_n": 0,
-          "predicted_ms": 46.695,
-          "predicted_n": 16,
-          "predicted_per_second": 321.23353678124,
-          "predicted_per_token_ms": 3.113,
-          "prompt_ms": 5.261,
-          "prompt_n": 5,
-          "prompt_per_second": 950.3896597605018,
-          "prompt_per_token_ms": 1.0522
+          "predicted_ms": 186.532,
+          "predicted_n": 64,
+          "predicted_per_second": 337.7436579246456,
+          "predicted_per_token_ms": 2.960825396825397,
+          "prompt_ms": 6.753,
+          "prompt_n": 7,
+          "prompt_per_second": 1036.5763364430625,
+          "prompt_per_token_ms": 0.9647142857142857
         },
         "usage": {
-          "completion_tokens": 16,
-          "prompt_tokens": 5,
+          "completion_tokens": 64,
+          "prompt_tokens": 7,
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "total_tokens": 21
+          "total_tokens": 71
         }
       }
     }
@@ -8148,7 +8390,7 @@
       }
     }
   },
-  "e53555757dd4db81b52879c740d3722a018807d5d18741f9f7e5566f850460c1": {
+  "ce8fa0a515989262c0c020a2fa07fa129b9bf403bf2968e6e398c9c9a287e34f": {
     "route": "openai.images_edits",
     "format": "Json",
     "request": {
@@ -8157,10 +8399,11 @@
       "query": {},
       "json": null,
       "form": {
-        "model": "SD-Turbo",
-        "prompt": "Add a red barn in the background, photorealistic",
-        "size": "256x256",
-        "steps": 4
+        "model": "Flux-2-Klein-4B",
+        "prompt": "Add a red barn and mountains in the background, photorealistic",
+        "size": "512x512",
+        "n": 1,
+        "response_format": "b64_json"
       },
       "files": {
         "image": "@fixtures/image.png"
@@ -8170,17 +8413,17 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791392208,
+        "created": 1791926347,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAEi3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (129,408 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFOnRFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (702,248 characters)"
           }
         ],
         "output_format": "png"
       }
     }
   },
-  "6f058f8b4a23012f72efd9465304157be4cbf99ceddf8c0ab6b9d5c442b57481": {
+  "6175bb7751d2274feb5da85a029608a7018a633d861218ec13a6d9df24ef4daa": {
     "route": "openai.images_generations",
     "format": "Json",
     "request": {
@@ -8190,9 +8433,9 @@
       "json": {
         "model": "SD-Turbo",
         "prompt": "A serene mountain landscape at sunset",
-        "response_format": "b64_json",
-        "size": "256x256",
-        "steps": 4
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json"
       },
       "form": {},
       "files": {}
@@ -8201,10 +8444,10 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791392207,
+        "created": 1791926323,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAEdXRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (169,204 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEdXRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,088 characters)"
           }
         ],
         "output_format": "png"
@@ -8238,7 +8481,7 @@
       }
     }
   },
-  "4bce595ebf0003ca7f3a26d0244e0e953711aaa43a7c7a06a18f7af8d0fe9cca": {
+  "2fe86b3bccc7fd26315adc740c98e7e2ab0cc43f4d4ec602fd6602570233e7d7": {
     "route": "openai.images_variations",
     "format": "Json",
     "request": {
@@ -8247,8 +8490,10 @@
       "query": {},
       "json": null,
       "form": {
-        "model": "SD-Turbo",
-        "size": "256x256"
+        "model": "Flux-2-Klein-4B",
+        "size": "512x512",
+        "n": 1,
+        "response_format": "b64_json"
       },
       "files": {
         "image": "@fixtures/image.png"
@@ -8258,10 +8503,10 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791392209,
+        "created": 1791926364,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAEPXRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (146,288 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE0HRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (171,400 characters)"
           }
         ],
         "output_format": "png"
@@ -8676,12 +8921,12 @@
       }
     }
   },
-  "c147bca9342fa3294c6249d9bec8504a98ae3e3b943e30b6e9b09de9e3716d62": {
+  "6be372a820848f1cbe5aadde1ec5c82988c611dba8ef10e909757e6ac85b2785": {
     "route": "openai.models_id_options_get",
     "format": "Json",
     "request": {
       "method": "GET",
-      "path": "/v1/models/Qwen3-4B-GGUF/options",
+      "path": "/v1/models/Qwen3-0.6B-GGUF/options",
       "query": {},
       "json": null,
       "form": {},
@@ -8698,31 +8943,29 @@
           "downsize_idle_timeout": 60,
           "evict_idle_timeout": 300,
           "evict_weight_factor": 1.0,
-          "llamacpp_args": "--parallel 1",
+          "llamacpp_args": "--temp 0.6 --top-p 0.85 --top-k 20 --min-p 0.0 --repeat-penalty 1.0 --parallel 1",
           "llamacpp_backend": "vulkan",
           "llamacpp_device": "",
           "merge_args": true,
-          "model_name": "Qwen3-4B-GGUF"
+          "model_name": "Qwen3-0.6B-GGUF"
         },
         "effective": {
           "auto_evict": null,
           "auto_update": null,
-          "ctx_size": 8192,
+          "ctx_size": -1,
           "downsize_idle_timeout": 60,
           "evict_idle_timeout": 300,
           "evict_weight_factor": 1.0,
-          "llamacpp_args": "--parallel 1",
+          "llamacpp_args": "--temp 0.6 --top-p 0.85 --top-k 20 --min-p 0.0 --repeat-penalty 1.0 --parallel 1",
           "llamacpp_backend": "vulkan",
           "llamacpp_device": "",
           "merge_args": true,
-          "model_name": "Qwen3-4B-GGUF"
+          "model_name": "Qwen3-0.6B-GGUF"
         },
-        "model_name": "Qwen3-4B-GGUF",
+        "model_name": "Qwen3-0.6B-GGUF",
         "recipe": "llamacpp",
-        "resolved_ctx_size": 8192,
-        "saved": {
-          "ctx_size": 8192
-        }
+        "resolved_ctx_size": 40960,
+        "saved": {}
       }
     }
   },
@@ -8778,7 +9021,7 @@
       }
     }
   },
-  "4a0e87717c4272ba1f7fb7573ebc4a9170c96a20cefce758a21d49a863be0426": {
+  "6f7f9f5fbbf83feab9a5acedb8df5b3722a950dd384e21c3e2b87296a2434f9f": {
     "route": "openai.responses",
     "format": "EventStream",
     "request": {
@@ -8786,9 +9029,8 @@
       "path": "/v1/responses",
       "query": {},
       "json": {
-        "input": "What is the capital of France? Answer in one word.",
-        "max_output_tokens": 256,
-        "model": "Qwen3-0.6B-GGUF",
+        "model": "Llama-3.2-1B-Instruct-GGUF",
+        "input": "What is the population of Paris?",
         "stream": true
       },
       "form": {},
@@ -8798,18 +9040,18 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_jmcW4byv4WFMKP8TIOvuFDR3jYCfkgtj\",\"object\":\"response\",\"status\":\"in_progress\"}}",
-        "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_jmcW4byv4WFMKP8TIOvuFDR3jYCfkgtj\",\"object\":\"response\",\"status\":\"in_progress\"}}",
-        "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"rs_GaqUgRMOKlLoMWfNPtTtAtJE4dtZYnza\",\"summary\":[],\"type\":\"reasoning\",\"content\":[],\"encrypted_content\":\"\",\"status\":\"in_progress\"}}"
+        "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_lMNMagnOg7BbRHzxtGD2pV4faApEUoPa\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+        "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_lMNMagnOg7BbRHzxtGD2pV4faApEUoPa\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+        "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"content\":[],\"id\":\"msg_klLo7m2mWdUM7iwQrwKTgKrR4xbKcnqy\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"}}"
       ],
       "tail": [
-        "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_jmcW4byv4WFMKP8TIOvuFDR3jYCfkgtj\",\"object\":\"response\",\"created_at\":1791396306,\"status\":\"completed\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"output\":[{\"id\":\"rs_GaqUgRMOKlLoMWfNPtTtAtJE4dtZYnza\",\"summary\":[],\"type\":\"reasoning\",\"content\":[{\"text\":\"Okay, so the user is asking, \\\"What is the capital of France?\\\" and wants the answ... (1,039 characters)\",\"type\":\"reasoning_text\"}],\"encrypted_content\":\"\"}],\"usage\":{\"input_tokens\":20,\"output_tokens\":256,\"total_tokens\":276,\"input_tokens_details\":{\"cached_tokens\":0}}},\"timings\":{\"cache_n\":0,\"prompt_n\":20,\"prompt_ms\":8.398,\"prompt_per_token_ms\":0.4199,\"prompt_per_second\":2381.5194093831865,\"predicted_n\":256,\"predicted_ms\":769.261,\"predicted_per_token_ms\":3.0167098039215685,\"predicted_per_second\":331.4869725619783}}",
+        "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_lMNMagnOg7BbRHzxtGD2pV4faApEUoPa\",\"object\":\"response\",\"created_at\":1791926317,\"status\":\"completed\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf\",\"output\":[{\"type\":\"message\",\"status\":\"completed\",\"id\":\"msg_klLo7m2mWdUM7iwQrwKTgKrR4xbKcnqy\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The population of Paris, the capital city of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area of Paris, known as the Île-de-France region, has a population of around 12.2 million people, making it one of the most populous metropolitan areas in Europe.\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":42,\"output_tokens\":68,\"total_tokens\":110,\"input_tokens_details\":{\"cached_tokens\":41}}},\"timings\":{\"cache_n\":41,\"prompt_n\":1,\"prompt_ms\":4.908,\"prompt_per_token_ms\":4.908,\"prompt_per_second\":203.7489812550937,\"predicted_n\":68,\"predicted_ms\":307.396,\"predicted_per_token_ms\":4.588,\"predicted_per_second\":217.9598953792502}}",
         "data: [DONE]"
       ],
-      "count": 260
+      "count": 76
     }
   },
-  "43bfb94c98769a57204169eda460a010351e22de233c0742c89ee8c860e3ef81": {
+  "48f5e25ed0fce0865099558e7cb51155c7c5575295aba31c7fd4596aa68550f1": {
     "route": "openai.responses",
     "format": "Json",
     "request": {
@@ -8817,9 +9059,9 @@
       "path": "/v1/responses",
       "query": {},
       "json": {
-        "input": "What is the capital of France? Answer in one word.",
-        "max_output_tokens": 256,
-        "model": "Qwen3-0.6B-GGUF"
+        "model": "Llama-3.2-1B-Instruct-GGUF",
+        "input": "What is the population of Paris?",
+        "stream": false
       },
       "form": {},
       "files": {}
@@ -8828,35 +9070,22 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "completed_at": 1791392197,
-        "created_at": 1791392197,
-        "id": "resp_woKVIHTKNqr7dSxlecLSw7CBhVfyIECP",
-        "model": "Qwen3-0.6B-GGUF",
+        "completed_at": 1791926316,
+        "created_at": 1791926316,
+        "id": "resp_DLvSJbNwNtUVCqjTdt1RMtVYnDTNqFEQ",
+        "model": "Llama-3.2-1B-Instruct-GGUF",
         "object": "response",
         "output": [
           {
             "content": [
               {
-                "text": "Okay, so the user is asking, \"What is the capital of France?\" and wants the answer in one word. Let me think about this.\n\nFirst, I need to recall the capital of France. I remember that France's capital is Paris. But wait, the user is asking for it in one word. So, maybe the answer is Paris. But wait, sometimes people might think of other capitals, like Brussels, but that's in Belgium. So Paris is definitely the capital. The user might be testing if I know the correct capital, and the answer is just Paris. But maybe I should confirm if there's another capital. Let me think again. France's capital is indeed Paris. So the answer is Paris. But the user wants it in one word. So the answer is Paris. That's correct. No other capitals are in use. So the answer is Paris.\n",
-                "type": "reasoning_text"
-              }
-            ],
-            "encrypted_content": "",
-            "id": "rs_NVWj4XjE93GYvpsHHM6DjhKPat6t3iaS",
-            "status": "completed",
-            "summary": [],
-            "type": "reasoning"
-          },
-          {
-            "content": [
-              {
                 "annotations": [],
                 "logprobs": [],
-                "text": "Paris",
+                "text": "As of 2021, the population of Paris, France is approximately 2.1 million people. However, the metropolitan area of Paris, which includes the surrounding suburbs, has a population of around 12.2 million people, making it one of the largest metropolitan areas in the world.",
                 "type": "output_text"
               }
             ],
-            "id": "msg_vv9SH0nWM89iqCAKFCthNPQgqVR4qb7s",
+            "id": "msg_1antHRuSr4ZHFS3LebITc4XNk8pEnqOe",
             "role": "assistant",
             "status": "completed",
             "type": "message"
@@ -8864,12 +9093,12 @@
         ],
         "status": "completed",
         "usage": {
-          "input_tokens": 20,
+          "input_tokens": 42,
           "input_tokens_details": {
             "cached_tokens": 0
           },
-          "output_tokens": 184,
-          "total_tokens": 204
+          "output_tokens": 60,
+          "total_tokens": 102
         }
       }
     }

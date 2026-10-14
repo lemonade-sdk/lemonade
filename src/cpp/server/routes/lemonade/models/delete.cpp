@@ -11,6 +11,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class DeleteRoute : public ApiRoute {
 public:
@@ -23,24 +24,25 @@ public:
         s.paths = {"delete"};
         s.summary = "Delete a model";
         s.description =
-            "Deletes a model from local storage, unloading it first if it is loaded.";
+            "Delete a model by removing it from local storage. If the model is currently loaded, "
+            "it will be unloaded first.\n\n"
+            "> Note: deleting a collection (`recipe: \"collection.omni\"`) removes only the "
+            "collection entry from `user_models.json`; its components stay on disk. Delete the "
+            "components individually if you want to free their disk space.";
         s.notes = {
-            "Deleting a collection (`recipe: \"collection.omni\"`) removes only the collection "
-            "entry from `user_models.json`; its components stay on disk. Delete the components "
-            "individually to free their disk space.",
-            "A file still held open, for example by a download that was just cancelled, is "
-            "retried up to 3 times, 5 seconds apart. An unknown model answers `422`; other "
-            "failures answer `500`.",
+            "A file still held open, for example by a download that was just cancelled, is retried "
+            "up to 3 times, 5 seconds apart. An unknown model answers `422`; other failures answer "
+            "`500`.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "[Lemonade model name](https://lemonade-server.ai/models.html) to delete. `model` is "
-             "accepted as an alias."},
+             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. "
+             "`model` is accepted as an alias."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status", "message"],
             "properties": {

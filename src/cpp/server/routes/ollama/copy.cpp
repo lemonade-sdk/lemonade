@@ -13,8 +13,8 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/copy"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Copy a model (not supported)";
-        s.description = "Not supported: answers `501`. A model alias gives a model a second name instead; see [`POST /internal/aliases`](./internal.md#post-internalaliases).";
+        s.summary = "Copy a model. Returns 501";
+        s.description = "Not supported. Returns 501. A model alias gives a model a second name instead; see [`POST /internal/aliases`](./internal.md#post-internalaliases).";
         return s;
     }
 

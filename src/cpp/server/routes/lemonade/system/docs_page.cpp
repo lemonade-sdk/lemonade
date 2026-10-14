@@ -19,10 +19,10 @@ public:
         s.methods = {"GET"};
         s.paths = {"docs/{page}"};
         s.summary = "Read one bundled API reference page";
-        s.description = "Returns one bundled page as Markdown (`Content-Type: text/markdown`).";
-        s.notes = {
-            "Unknown pages return `404`.",
-        };
+        s.description =
+            "Read one page, served as `Content-Type: text/markdown`. "
+            "`{page}` is the `id` from the index,\n"
+            "which mirrors the path used on the documentation website; the `.md` suffix is optional.";
         s.args = {
             {"page", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "The `id` from the [`GET /v1/docs`](#get-v1docs) index, which mirrors the page's path "
@@ -31,7 +31,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Text;
-        response.example = {{"page", "api/README"}};
+        response.example = {{"page", "api/lemonade"}};
         s.responses = {response};
         return s;
     }

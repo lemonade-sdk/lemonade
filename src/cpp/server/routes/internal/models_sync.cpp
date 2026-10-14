@@ -10,6 +10,7 @@
 namespace lemon {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
@@ -53,7 +54,7 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = ModelManager::sync_status_schema();
-        response.example = {{"models", json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
+        response.example = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.responses = {response};
         s.quiet_log = true;
         return s;

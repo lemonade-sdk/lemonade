@@ -144,8 +144,8 @@ void RouteRegistry::apply(httplib::Server& server) const {
     }
 }
 
-json RouteRegistry::list() const {
-    json routes = json::array();
+nlohmann::ordered_json RouteRegistry::list() const {
+    auto routes = nlohmann::ordered_json::array();
     for (const auto& entry : entries_) {
         routes.push_back(route_spec_to_json(entry->spec));
     }

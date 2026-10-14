@@ -15,7 +15,7 @@ using ModelOptionsMutation =
     std::function<bool(const std::string& model_key, ModelInfo& info, httplib::Response& res)>;
 
 // The saved, effective and default options that every models/{id}/options route returns.
-nlohmann::json model_options_schema();
+nlohmann::ordered_json model_options_schema();
 
 // The three options routes resolve the model from the path, apply their mutation
 // (none for GET), and answer with the saved, effective and default options. The

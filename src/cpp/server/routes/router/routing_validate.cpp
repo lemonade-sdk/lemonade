@@ -13,6 +13,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 class RoutingValidateRoute : public ApiRoute {
 public:
@@ -26,49 +27,46 @@ public:
         s.summary = "Evaluate an ad-hoc routing policy against a prompt without registering it";
         s.experimental = true;
         s.description =
-            "Evaluates a routing policy document against a prompt and returns the decision the "
-            "engine would make, without registering the policy or dispatching the request to the "
-            "selected candidate. The Router Builder's **Test Prompt** tab uses it to iterate on a "
-            "policy before attaching it to a `collection.router` model.";
-        s.notes = {
-            "The policy is validated structurally, as registration would: every `candidates` "
-            "entry, `default_model`, rule `route_to` and classifier model must be listed in "
-            "`components`. Component names are not looked up in the model registry, so a policy "
-            "can be tested before its candidates are downloaded, and registration-time registry "
-            "checks, such as whether a `semantic_similarity` model can embed, are not performed.",
-            "Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, ...) are "
-            "evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier` and "
-            "`llm`, including `routing.router`) may load and run their models. A model failure is "
-            "handled by the classifier's `on_error` policy (`match_false` by default), so routing "
-            "continues to a later rule or to `default_model` instead of failing.",
-            "`decision` has the shape of the `x_lemonade_route` object a routed completion returns "
-            "with `route_trace: true`, and always includes the trace. When no rule matches, "
-            "`matched_rule` is empty, `default_used` is `true`, and `route_to` is the policy's "
-            "`default_model`. `normalized_policy` is the policy as evaluated; see "
-            "[Normalized Policies](#normalized-policies).",
-            "A `400` answers invalid JSON, a missing or non-object `policy`, a non-string "
-            "`prompt`, non-boolean `has_images` or `has_tools`, `metadata` that is not an object "
-            "of strings, or an invalid policy, whose `error` starts with "
-            "`Invalid routing policy:`.",
-        };
+            "Evaluate a routing policy document against a prompt and return the decision the\n"
+            "engine would make, without registering the policy or dispatching the user\n"
+            "request to the selected candidate. This is the endpoint behind the Router\n"
+            "Builder's **Test Prompt** tab: it lets a policy be iterated on before it is\n"
+            "attached to a `collection.router` model.\n"
+            "\n"
+            "The endpoint performs parser-level structural policy validation: every\n"
+            "`candidates` entry, `default_model`, rule `route_to`, and classifier model must\n"
+            "be listed in `components`. It does not consult the live model registry:\n"
+            "component names are accepted as-is, so a policy can be tested before its\n"
+            "candidates are downloaded. Because names and component model types are not\n"
+            "resolved through the registry, registration-time registry checks (for example,\n"
+            "whether a `semantic_similarity` model can embed or a `classifier` model can\n"
+            "classify/chat) are not performed by this endpoint.\n"
+            "\n"
+            "Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)\n"
+            "are evaluated locally. Model-backed conditions (`semantic_similarity`,\n"
+            "`classifier`, and `llm`, including `routing.router`) may load and run their\n"
+            "referenced models. A model-evaluation failure is handled by the classifier's\n"
+            "`on_error` policy (`match_false` by default), so routing normally continues to a\n"
+            "later rule or falls through to `default_model` rather than treating the policy\n"
+            "as invalid.";
         s.args = {
             {"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
-             "A `collection.router` policy document; see [Router Policies](../dev/router-policy.md). "
-             "`model_name` is accepted but not required."},
+             "A `collection.router` policy document. `model_name` is accepted but is not required "
+             "for validation. See [Router Policies](../dev/router-policy.md)."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Prompt to route. Defaults to `\"\"`, which still exercises `min_chars` and any "
-             "prompt-independent rules."},
+             "The prompt text to route. Defaults to `\"\"`, which still exercises `min_chars` (0 "
+             "chars) and any prompt-independent rules."},
             {"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Simulate a request carrying image input. Defaults to `false`."},
+             "Simulate a request carrying image input. Default `false`."},
             {"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Simulate a request carrying tool definitions. Defaults to `false`."},
+             "Simulate a request carrying tool definitions. Default `false`."},
             {"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "String-valued pairs matched by `metadata` conditions."},
+             "String-valued metadata pairs matched by `metadata` conditions."},
         };
 
         // A routed completion carries the trace only with route_trace: true; this endpoint
         // always returns it.
-        json decision = route_decision_schema();
+        ordered_json decision = route_decision_schema();
         decision["properties"]["trace"]["description"] = "Per-condition trace of the evaluation.";
         decision["required"].push_back("trace");
 
@@ -76,16 +74,13 @@ public:
         response.format = ResponseFormat::Json;
         response.schema = {
             {"type", "object"},
-            {"required", json::array({"decision", "normalized_policy"})},
+            {"required", ordered_json::array({"decision", "normalized_policy"})},
             {"properties", {
                 {"decision", decision},
-                {"normalized_policy", {
-                    {"type", "object"},
-                    {"description", "The policy as evaluated, with routing.router desugared into "
-                                    "explicit classifiers and rules."}}},
+                {"normalized_policy", {{"type", "object"}}},
             }},
         };
-        response.example = json::parse(R"({
+        response.example = ordered_json::parse(R"({
             "policy": {
                 "version": "1",
                 "recipe": "collection.router",

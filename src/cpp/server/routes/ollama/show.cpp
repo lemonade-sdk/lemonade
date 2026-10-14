@@ -9,6 +9,7 @@ namespace lemon {
 namespace {
 
 using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
 
 json build_ollama_capabilities(const ModelInfo& info) {
     json capabilities = json::array();
@@ -62,7 +63,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = json::parse(R"({
+        response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["modelfile", "parameters", "template", "details", "capabilities", "model_info"],
             "properties": {
@@ -75,7 +76,7 @@ public:
             }
         })");
         response.schema["properties"]["details"] = ollama_details_schema();
-        response.example = json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
+        response.example = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
         s.responses = {response};
         return s;
     }
