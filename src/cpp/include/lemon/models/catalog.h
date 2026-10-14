@@ -11,6 +11,13 @@
 namespace lemon {
 namespace models {
 
+// What a catalog declares at construction. The docs-facing fields arrive with
+// the generator that reads them.
+struct CatalogDescriptor {
+    std::string id;
+    bool required = false;
+};
+
 // One catalog's contribution. `id` is stable, used for provenance.
 struct CatalogEntry {
     std::string catalog_id;
@@ -49,10 +56,10 @@ class ModelCatalog {
   public:
     virtual ~ModelCatalog() = default;
 
-    virtual const std::string& id() const = 0;
+    virtual const CatalogDescriptor& descriptor() const = 0;
 
-// True when this catalog's failures stop the build.
-    virtual bool required() const { return false; }
+    const std::string& id() const { return descriptor().id; }
+    bool required() const { return descriptor().required; }
 
     virtual void enumerate(CatalogAccumulator& accumulator) const = 0;
 };
@@ -64,24 +71,20 @@ class EnumeratedCatalog : public ModelCatalog {
     using OnConflict = std::function<void(const std::string& model_name)>;
 
 // `on_conflict` reports an entry lost to one already claimed.
-    EnumeratedCatalog(std::string id, Discover discover, OnConflict on_conflict = nullptr,
-                      bool required = false)
-        : id_(std::move(id)),
+    explicit EnumeratedCatalog(CatalogDescriptor descriptor, Discover discover,
+                               OnConflict on_conflict = nullptr)
+        : descriptor_(std::move(descriptor)),
           discover_(std::move(discover)),
-          on_conflict_(std::move(on_conflict)),
-          required_(required) {}
+          on_conflict_(std::move(on_conflict)) {}
 
-    const std::string& id() const override { return id_; }
-    bool required() const override { return required_; }
+    const CatalogDescriptor& descriptor() const override { return descriptor_; }
 
-// An unconfigured catalog contributes nothing; a required one stops the build.
     void enumerate(CatalogAccumulator& accumulator) const override;
 
   private:
-    std::string id_;
+    CatalogDescriptor descriptor_;
     Discover discover_;
     OnConflict on_conflict_;
-    bool required_;
 };
 
 }  // namespace models

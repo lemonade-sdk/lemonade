@@ -1,4 +1,5 @@
 #include "lemon/models/catalog.h"
+#include "lemon/models/listed_catalog.h"
 #include "lemon/models/locator.h"
 #include "lemon/models/model_index.h"
 
@@ -230,7 +231,9 @@ static lemon::ModelInfo model(const std::string& name, const std::string& recipe
 
 using lemon::models::CatalogAccumulator;
 using lemon::models::CatalogEntry;
+using lemon::models::CatalogDescriptor;
 using lemon::models::EnumeratedCatalog;
+using lemon::models::ListedCatalog;
 
 typedef std::vector<lemon::ModelInfo> Models;
 
@@ -270,7 +273,7 @@ static void test_catalog_is_told_what_earlier_ones_claimed() {
     acc.add(CatalogEntry{"registry", model("Taken", "llamacpp")});
 
     std::vector<std::string> seen;
-    EnumeratedCatalog catalog("extra_models_dir", [&](const CatalogAccumulator& so_far) -> Models {
+    EnumeratedCatalog catalog(CatalogDescriptor{"extra_models_dir"}, [&](const CatalogAccumulator& so_far) -> Models {
         for (const auto& entry : so_far.models()) {
             seen.push_back(entry.first);
         }
@@ -287,7 +290,7 @@ static void test_catalog_reports_only_the_entries_it_lost() {
     acc.add(CatalogEntry{"registry", model("Taken", "llamacpp")});
 
     std::vector<std::string> conflicts;
-    EnumeratedCatalog catalog("extra_models_dir",
+    EnumeratedCatalog catalog(CatalogDescriptor{"extra_models_dir"},
                               [](const CatalogAccumulator&) {
                                   return Models{model("Taken", "sd-cpp"),
                                                 model("Fresh", "sd-cpp")};
@@ -302,7 +305,7 @@ static void test_catalog_reports_only_the_entries_it_lost() {
 static void test_a_failing_source_does_not_take_the_set_down_with_it() {
     CatalogAccumulator optional;
     optional.add(CatalogEntry{"registry", model("Kept", "llamacpp")});
-    EnumeratedCatalog unreadable("extra_models_dir",
+    EnumeratedCatalog unreadable(CatalogDescriptor{"extra_models_dir"},
                                  [](const CatalogAccumulator&) -> Models {
                                      throw std::runtime_error("unreadable directory");
                                  });
@@ -310,11 +313,11 @@ static void test_a_failing_source_does_not_take_the_set_down_with_it() {
     check("an unreadable optional source costs only its own models", optional.size() == 1);
 
     CatalogAccumulator required;
-    EnumeratedCatalog registry("server_models.json",
-                               [](const CatalogAccumulator&) -> Models {
-                                   throw std::runtime_error("unreadable resource");
-                               },
-                               nullptr, /*required=*/true);
+    EnumeratedCatalog registry(
+        CatalogDescriptor{"server_models.json", true},
+        [](const CatalogAccumulator&) -> Models {
+            throw std::runtime_error("unreadable resource");
+        });
     bool threw = false;
     try {
         registry.enumerate(required);
@@ -322,6 +325,34 @@ static void test_a_failing_source_does_not_take_the_set_down_with_it() {
         threw = true;
     }
     check("a required source still fails the build", threw);
+}
+
+static void test_a_listing_names_the_provider_it_came_from() {
+    const ListedCatalog catalog("fireworks",
+                                [] { return Models{model("fireworks.deepseek-v4-pro", "cloud")}; });
+    check_eq("the catalog id names the provider", catalog.id(), "listed:fireworks");
+}
+
+static void test_a_provider_that_will_not_answer_costs_only_its_own_models() {
+    CatalogAccumulator acc;
+    acc.add(CatalogEntry{"registry", model("Kept", "llamacpp")});
+
+    const ListedCatalog silent(
+        "fireworks", []() -> Models { throw std::runtime_error("connection refused"); });
+    bool threw = false;
+    try {
+        silent.enumerate(acc);
+    } catch (...) {
+        threw = true;
+    }
+    check("an unreachable provider does not fail the build", !threw);
+    check("it contributes nothing", acc.size() == 1);
+
+    // The point of one catalog per provider: a second provider still lists.
+    const ListedCatalog answering("openrouter",
+                                  [] { return Models{model("openrouter.llama-70b", "cloud")}; });
+    answering.enumerate(acc);
+    check("another provider is unaffected", acc.contains("openrouter.llama-70b"));
 }
 
 int main() {
@@ -343,6 +374,8 @@ int main() {
     test_catalog_is_told_what_earlier_ones_claimed();
     test_catalog_reports_only_the_entries_it_lost();
     test_a_failing_source_does_not_take_the_set_down_with_it();
+    test_a_listing_names_the_provider_it_came_from();
+    test_a_provider_that_will_not_answer_costs_only_its_own_models();
 
     if (g_failures == 0) {
         std::printf("All model catalog tests passed.\n");

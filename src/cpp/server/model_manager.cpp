@@ -5,6 +5,7 @@
 #include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
+#include <lemon/models/listed_catalog.h>
 #include <lemon/models/locator.h>
 #include <lemon/models/scan_catalog.h>
 #include <lemon/models/store_builder.h>
@@ -2903,7 +2904,7 @@ void ModelManager::build_cache() {
     // lives in the directory, which also suppresses duplicates across cache
     // roots; unrelated GGUFs are still discovered.
     catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
-        "extra_models_dir",
+        models::CatalogDescriptor{"extra_models_dir"},
         [this](const models::CatalogAccumulator& claimed) {
             std::set<fs::path> registered_extra_paths;
             if (!extra_models_dir_.empty()) {
@@ -2955,16 +2956,31 @@ void ModelManager::build_cache() {
                 continue;
             }
 
-            if (offline && desc->recipe == "cloud") {
-                LOG(DEBUG, "ModelManager")
-                    << "Offline mode enabled, skipping cloud model discovery"
-                    << std::endl;
+            // A cloud provider is a listing, not a backend listing models from
+            // its own runtime: one catalog per provider, so one provider's
+            // failure costs only that provider's entries.
+            if (desc->recipe == "cloud") {
+                if (offline) {
+                    LOG(DEBUG, "ModelManager")
+                        << "Offline mode enabled, skipping cloud model listings" << std::endl;
+                    continue;
+                }
+                if (cloud_registry_ != nullptr) {
+                    for (const auto& rec : cloud_registry_->list_installed()) {
+                        const std::string provider = rec.name;
+                        catalogs.push_back(std::make_unique<models::ListedCatalog>(
+                            provider, [this, provider] {
+                                return backends::CloudServer::discover_provider_models(
+                                    *cloud_registry_, provider);
+                            }));
+                    }
+                }
                 continue;
             }
 
             const backends::BackendOps* ops = backends::ops_for(desc->recipe);
             catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
-                "discovered:" + desc->recipe,
+                models::CatalogDescriptor{"discovered:" + desc->recipe},
                 [ops, octx](const models::CatalogAccumulator&) {
                     return ops->discover_models(octx);
                 }));
@@ -3613,47 +3629,12 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         return 0;
     }
 
-    // Resolve creds outside the cache lock - resolve_key takes a shared
-    // lock on the registry's mutex internally; holding the cache lock here
-    // doesn't matter but keeping it tight is cheaper.
-    const std::string api_key = cloud_registry_->resolve_key(provider);
-    const std::string base_url = cloud_registry_->base_url_for(provider);
-    if (api_key.empty() || base_url.empty()) {
-        // Drop any stale entries for this provider but don't try to discover -
-        // there's nothing to discover with. The contract is "models present
-        // after refresh", so return 0 (not the evicted count).
-        evict_cloud_models(provider);
-        return 0;
-    }
-    if (CloudProviderRegistry::is_http_base_url(base_url) &&
-        !cloud_registry_->allow_insecure_http_for(provider)) {
-        LOG(WARNING, "ModelManager") << "Skipping cloud discovery for provider '"
-                                      << provider << "': http:// with API key "
-                                      << "requires allow_insecure_http=true"
-                                      << std::endl;
-        evict_cloud_models(provider);
-        return 0;
-    }
-
-    // discover_models() is best-effort; it logs upstream failures and
-    // returns an empty list rather than throwing, so we can keep going for
-    // other providers regardless of network state. This call happens
-    // outside the cache lock because it can take up to 15 s on a slow
-    // provider and we don't want to block /models on it.
-    std::vector<ModelInfo> models;
-    try {
-        models = backends::CloudServer::discover_models(
-            provider, api_key, base_url,
-            cloud_registry_->allow_insecure_http_for(provider),
-            cloud_registry_->auth_header_for(provider),
-            cloud_registry_->wire_format_for(provider));
-    } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
-                                      << provider << "': " << e.what() << std::endl;
-        // Same contract: evict stale entries, report 0 present after refresh.
-        evict_cloud_models(provider);
-        return 0;
-    }
+    // The same listing the catalogs enumerate, and it never throws: no key,
+    // plaintext policy or an upstream failure all mean "nothing listed", which
+    // reseeds to none and reports 0 present. Runs outside the cache lock because
+    // a slow provider can take 15 s.
+    const std::vector<ModelInfo> models =
+        backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
 
     StoreWrite store_write(*this);
 

@@ -261,11 +261,6 @@ public:
     virtual CatalogId id() const = 0;
     virtual CatalogDescriptor descriptor() const = 0;
 
-    // Middle segment minted into machine-authored IDs; empty when the catalog
-    // mints none. An open set — ModelSource stays closed, see
-    // [Identity](#identity-handles-and-provenance).
-    virtual std::string locality() const { return {}; }
-
     // True: a load failure aborts startup. False: the catalog contributes none.
     virtual bool required() const { return false; }
 
@@ -279,14 +274,14 @@ public:
 
 The catalogs lemond ships, with the policy each one carries:
 
-| Catalog | Entries come from | `required()` | `locality()` | Enumeration staleness |
-| --- | --- | --- | --- | --- |
-| `JsonCatalog(ResourceLocator{"resources/server_models.json"}, true)` | the built-in registry shipped with lemond | true | empty | contents digest of the installed resource |
-| `JsonCatalog(FileLocator{config_dir + "/user_models.json"}, false)` | `lemonade pull` and `POST /pull` | false | empty | file mtime |
-| `JsonCatalog(FileLocator{<path>}, bool)` | any other JSON document of the same shape, added by code | per construction | per construction | file mtime |
-| `ScanCatalog(extra_models_dir)` | an `--extra-models-dir` scan plus GGUF identification | false | empty | a `DirectoryWatcher` callback for the directory |
-| `ListedCatalog(provider)` | a cloud provider's model listing | false | the provider id, e.g. `fireworks` | digest of the listing |
-| `DiscoveredCatalog(recipe)` | a backend's `BackendOps::discover_models()`, used by cloud providers and `dynamic_models` descriptors | false | the recipe id | the backend reports a change, or a refresh interval elapses |
+| Catalog | Entries come from | `required()` | Enumeration staleness |
+| --- | --- | --- | --- |
+| `JsonCatalog(ResourceLocator{"resources/server_models.json"}, true)` | the built-in registry shipped with lemond | true | contents digest of the installed resource |
+| `JsonCatalog(FileLocator{config_dir + "/user_models.json"}, false)` | `lemonade pull` and `POST /pull` | false | file mtime |
+| `JsonCatalog(FileLocator{<path>}, bool)` | any other JSON document of the same shape, added by code | per construction | file mtime |
+| `ScanCatalog(extra_models_dir)` | an `--extra-models-dir` scan plus GGUF identification | false | a `DirectoryWatcher` callback for the directory |
+| `ListedCatalog(provider)` | a cloud provider's model listing | false | digest of the listing |
+| `DiscoveredCatalog(recipe)` | a backend's `BackendOps::discover_models()`, used by cloud providers and `dynamic_models` descriptors | false | the backend reports a change, or a refresh interval elapses |
 
 Rules:
 
@@ -489,31 +484,30 @@ The artifact key is `f(registry, repo, snapshot)`, computed without touching the
 `ModelSource` and the prefixes `user.`, `extra.` and `builtin.` stay closed. The guard is a security boundary: `is_reserved_registration_name()` (`canonical_id.h`) prevents `user.builtin.Foo` from taking a built-in alias slot, and `precedence_rank()` defines shadowing. New catalogs register into the store; they mint no new source token.
 
 ```text
-handle ::= <source-token> '.' <bare>     // closed set: user | extra | builtin
-bare   ::= [ <locality> '.' ] <name>     // locality only when the ID is machine-minted
+handle ::= <source-token> '.' <name>     // closed set: user | extra | builtin
 ```
 
 Each source mints handles under these rules:
 
-| Catalog | Source token | Authored by | Locality | Handle minted |
-| --- | --- | --- | --- | --- |
-| `JsonCatalog` over `server_models.json` | `builtin.` | the registry shipped with lemond | none | `builtin.Qwen3-0.6B-GGUF` |
-| `JsonCatalog` over `user_models.json` | `user.` | a human at `lemonade pull` | never | `user.MyQwen` |
-| `ScanCatalog` | `extra.` | the extra-directory scan | registry of origin, when inferable | `extra.Qwen3-0.6B-GGUF` |
-| `ListedCatalog` | `extra.` | a cloud provider listing | the provider id | `extra.fireworks.deepseek-v3` |
-| `DiscoveredCatalog` | `extra.` | a backend's `discover_models()` | the recipe id | `extra.flm.deepseek-r1` |
+| Catalog | Source token | Authored by | Handle minted |
+| --- | --- | --- | --- |
+| `JsonCatalog` over `server_models.json` | `builtin.` | the registry shipped with lemond | `builtin.Qwen3-0.6B-GGUF` |
+| `JsonCatalog` over `user_models.json` | `user.` | a human at `lemonade pull` | `user.MyQwen` |
+| `ScanCatalog` | `extra.` | the extra-directory scan | `extra.Qwen3-0.6B-GGUF` |
+| `ListedCatalog` | `extra.` | a cloud provider listing | `extra.fireworks.deepseek-v3` |
+| `DiscoveredCatalog` | `extra.` | a backend's `discover_models()` | `extra.deepseek-r1-FLM` |
 
-The source token is part of every handle, including a catalog's, and `builtin.` `user.` and `extra.` are the only three. A listing emits the bare name for a precedence winner, so `extra.fireworks.deepseek-v3` is listed as `fireworks.deepseek-v3` — the locality carries the minter, and the source token carries the precedence class.
+The source token is part of every handle, including a catalog's, and `builtin.` `user.` and `extra.` are the only three. A listing emits the bare name for a precedence winner, so `extra.fireworks.deepseek-v3` is listed as `fireworks.deepseek-v3` — the source token carries the precedence class, and the minter identifies itself inside the name: a listing leads with its provider id, a backend minter carries its recipe, a scan qualifies a colliding stem with its directory. Nothing in the grammar recognizes that difference. It is a naming rule each minter owns, and the minter travels on the entry as data (`cloud_provider`, `source`).
 
-A locality token set is open, `ModelSource` stays closed, and both are known at compile time. `is_reserved_registration_name()` rejects `user.<known-locality>.…`, which closes the case where a user registers `user.fireworks.foo` and shadows a cloud entry's public name through precedence.
+There is no locality vocabulary, and no registry of minted namespaces to validate against. A name that reads like a namespace is just a name: whether `fireworks.foo` means a provider's model or a user's own file is answered by [precedence](#model-store), which the user guide documents. A `user.` registration that collides with a machine-minted public name takes it, exactly as one that collides with a built-in takes it, and installing a provider afterwards never hides a model a user already registered.
 
 Rules:
 
-1. The rejection applies at registration: `ModelManager::validate()`, `ModelIngest`, and `lemonade recipe-import`. An entry already on disk under a name the rule would reject keeps loading and resolving, so an upgrade never hides a user's model.
+1. The reserved-token guard applies at registration — `ModelManager::validate()`, `ModelIngest`, and `lemonade recipe-import` — and rejects a name whose source token is reserved, or whose bare part begins with one. Nothing is rejected for the *shape* of a name. An entry already on disk keeps loading and resolving, so an upgrade never hides a user's model.
 2. `user.` holds one repository per bare name. Repointing a `user.` model at a different registry is a provenance change: an explicit replace that errors on conflict, never two coexisting IDs a user disambiguates.
 3. Every registered catalog's minted IDs round-trip through `parse_canonical_id()` and pass `is_reserved_registration_name()`, asserted in a unit test that enumerates the catalogs. The grammar is a checked contract, and its [generated table](#descriptors) is the same list.
-4. `extra.` is the token a machine mints under, because no human authors it, and the locality names which machine: a scan with no inferable origin mints none, a listing mints its provider id, a backend mints its recipe id. `builtin.` and `user.` are never machine-minted.
-5. Two registered catalogs never claim the same locality under one source token. The `(source token, locality)` pairs come from the descriptors, startup checks them for duplicates, and the [drift check](#drift-check) holds the docs to the same set.
+4. `extra.` is the token a machine mints under, because no human authors it. `builtin.` and `user.` are never machine-minted.
+5. Two catalogs never contribute one ID. A collision means two minters emitted the same name, and the [accumulator](#model-catalogs) settles it: the first claimant keeps the ID, the loser is reported rather than dropped in silence. Startup rejects no catalog for the shape of its name.
 
 ### Registry Identity
 
@@ -1087,7 +1081,7 @@ This section states the persistent and wire formats this design owns.
 | Cache directories | `<repo-cache>/{refs/main, snapshots/<snapshot-id>/, .lemonade_registry.json}` under a provider-qualified directory, per `docs/dev/model-registries.md` |
 | `.partial`, `.download_manifest.json` | In-flight transfer state, cleared on commit |
 
-`ModelSource` tokens, registry ids and locality tokens are stable across releases: a value written by any release resolves in every later one. An id a build does not recognize skips its model with a warning and never aborts startup.
+`ModelSource` tokens, registry ids and local origin tokens are stable across releases: a value written by any release resolves in every later one. An id a build does not recognize skips its model with a warning and never aborts startup.
 
 ### API Surfaces
 
@@ -1134,20 +1128,19 @@ struct CatalogDescriptor {
     DocEntry doc;
     LocatorKind kind;                    // File | Resource | Http | Directory | Provider | Backend
     bool required;
-    std::string locality;                // minted middle segment, empty when none
     std::string config_key;              // "" when not user-configurable
     MintedBy minted_by;                  // Human | Machine
 };
 ```
 
-Registration carries the descriptor, and a catalog receives one in its constructor. `GET /internal/model-sources` returns both lists plus the closed sets they depend on: source tokens, locality tokens, local origin tokens, and the accepted `source` values for `/pull`.
+Registration carries the descriptor, and a catalog receives one in its constructor. `GET /internal/model-sources` returns both lists plus the closed sets they depend on: source tokens, local origin tokens, and the accepted `source` values for `/pull`.
 
 ### Generator
 
 `docs/tools/gen_model_source_boilerplate.py` follows `gen_backend_boilerplate.py`: it starts lemond through that file's `Lemond` harness with no model loaded, reads `/internal/model-sources`, and rewrites only `BEGIN`/`END GENERATED` regions.
 
 1. `docs/dev/model-registries.md` — the source table, and one region per repository with its endpoint, environment variables, cache-directory prefix, revision semantics, staleness basis, capabilities and a URL example.
-2. `docs/guide/configuration/custom-models.md` — the canonical-ID table and the locality-token list in *Model naming spec*, the reserved-prefix text, and the accepted `--source` values.
+2. `docs/guide/configuration/custom-models.md` — the canonical-ID table in *Model naming spec*, the reserved-prefix text, and the accepted `--source` values.
 3. `docs/guide/cli.md` — the `--source` value list, in a region keyed separately from `recipe-values`.
 
 Page intros and prose that is not a table stay hand-written between the regions.
@@ -1169,7 +1162,6 @@ CatalogDescriptor scan_catalog_descriptor() {
                  ""},
         LocatorKind::Directory,
         false,                  // required
-        "",                     // locality: minted IDs carry none
         "extra_models_dir",     // config_key
         MintedBy::Machine,
     };
@@ -1180,10 +1172,10 @@ The generator writes those fields into `docs/guide/configuration/custom-models.m
 
 ```markdown
 <!-- BEGIN GENERATED model-catalogs -->
-| Catalog | Entries come from | Required | Locality | Config key | Handle minted |
-| --- | --- | --- | --- | --- | --- |
-| Extra models directory | a scan of the extra models directory; GGUF by header | no | none | `extra_models_dir` | `extra.NAME` |
-| Cloud: Fireworks | a provider's model listing | no | `fireworks` | `cloud_providers` | `extra.fireworks.NAME` |
+| Catalog | Entries come from | Required | Config key | Handle minted |
+| --- | --- | --- | --- | --- |
+| Extra models directory | a scan of the extra models directory; GGUF by header | no | `extra_models_dir` | `extra.NAME` |
+| Cloud: Fireworks | a provider's model listing | no | `cloud_providers` | `extra.fireworks.NAME` |
 <!-- END GENERATED model-catalogs -->
 ```
 
@@ -1244,7 +1236,7 @@ CI runs `gen_model_source_boilerplate.py --check` beside the other generators, w
 - a registered repository or catalog has no descriptor, or a descriptor with an empty `summary`
 - a region has no source, or a source has no region
 - any generated text is stale
-- a source token, locality token or accepted `source` value in the docs is not in the compiled set, or the reverse
+- a source token, local origin token or accepted `source` value in the docs is not in the compiled set, or the reverse
 
 The author fixes it by running the generator and committing the result, which is the same loop as the API docs.
 
