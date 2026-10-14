@@ -5,6 +5,7 @@
 #include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
+#include <lemon/models/json_catalog.h>
 #include <lemon/models/listed_catalog.h>
 #include <lemon/models/locator.h>
 #include <lemon/models/scan_catalog.h>
@@ -154,31 +155,6 @@ RegistryId ModelManager::download_source_for(const ModelInfo& info) const {
     return models::huggingface_descriptor().id;
 }
 
-static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
-    const std::string raw_source = JsonUtils::get_or_default<std::string>(model_json, "source", "");
-    const std::string explicit_registry = JsonUtils::get_or_default<std::string>(
-        model_json, "registry_source", "");
-
-    std::string normalized_explicit;
-    if (!explicit_registry.empty()) {
-        normalized_explicit = remote_registry_source_name(
-            parse_remote_registry_source(explicit_registry));
-        info.registry_source = normalized_explicit;
-    }
-    if (is_remote_registry_source(raw_source)) {
-        const std::string normalized_public = remote_registry_source_name(
-            parse_remote_registry_source(raw_source));
-        if (!normalized_explicit.empty() && normalized_explicit != normalized_public) {
-            throw std::invalid_argument(
-                "Model source and registry_source identify different registries");
-        }
-        info.registry_source = normalized_public;
-        info.source.clear();
-    } else {
-        info.source = raw_source;
-    }
-}
-
 static std::string repo_id_to_cache_dir_name(const std::string& repo_id,
                                              const std::string& registry_source) {
     return registry_repo_cache_dir_name(repo_id,
@@ -259,42 +235,6 @@ static bool is_repo_shared(const std::string& repo_id,
         }
     }
     return false;
-}
-
-// Parse image_defaults from a model JSON entry into ModelInfo
-static void parse_image_defaults(ModelInfo& info, const json& model_json) {
-    if (model_json.contains("image_defaults") && model_json["image_defaults"].is_object()) {
-        const auto& img_defaults = model_json["image_defaults"];
-        info.image_defaults.has_defaults = true;
-        info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
-        info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
-        info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
-        info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
-        info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-        info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-        const auto edit_cap = img_defaults.find("soft_pixel_cap");
-        if (edit_cap != img_defaults.end() && edit_cap->is_number_unsigned()) {
-            info.image_defaults.soft_pixel_cap = edit_cap->get<std::uint64_t>();
-        }
-    }
-}
-
-// Populate ModelInfo::extras with any model-JSON key not consumed by a typed
-// ModelInfo field. This lets a new backend read custom per-model fields in load()
-// without editing the shared ModelInfo struct. Keep this set in sync with the
-// keys read by the parse blocks in build_cache().
-static void parse_extras(ModelInfo& info, const json& model_json) {
-    static const std::set<std::string> kKnownKeys = {
-        "checkpoint", "checkpoints", "components", "mmproj", "recipe", "suggested",
-        "source", "registry_source", "size", "cloud_provider",
-        "labels", "image_defaults", "recipe_options"
-    };
-    if (!model_json.is_object()) return;
-    for (auto& [key, value] : model_json.items()) {
-        if (kKnownKeys.count(key) == 0) {
-            info.extras[key] = value;
-        }
-    }
 }
 
 // Default device for a recipe: the backend descriptor is authoritative for
@@ -2389,39 +2329,6 @@ json ModelManager::sync_models(const std::vector<std::string>& target_models, bo
     return execute_sync();
 }
 
-static void load_checkpoints(ModelInfo& info, json& model_json) {
-    if (model_json.contains("checkpoints") && model_json["checkpoints"].is_object()) {
-        for (auto& [key, value] : model_json["checkpoints"].items()) {
-            info.checkpoints[key] = value.get<std::string>();
-        }
-    }
-}
-
-static std::string legacy_mmproj_to_checkpoint(std::string main, std::string mmproj) {
-    return repo_id_from_checkpoint(main) + ":" + mmproj;
-}
-
-static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
-    std::string mmproj = JsonUtils::get_or_default<std::string>(model_json, "mmproj", "");
-
-    if (!mmproj.empty()) {
-        std::string main = JsonUtils::get_or_default<std::string>(model_json, "checkpoint", "");
-        info.checkpoints["mmproj"] = legacy_mmproj_to_checkpoint(main, mmproj);
-    }
-}
-
-static void parse_components(ModelInfo& info, const json& model_json) {
-    if (!model_json.contains("components") || !model_json["components"].is_array()) {
-        return;
-    }
-
-    for (const auto& component : model_json["components"]) {
-        if (component.is_string()) {
-            info.components.push_back(component.get<std::string>());
-        }
-    }
-}
-
 static std::string join_conflict_parts(const std::vector<std::string>& parts) {
     std::string result;
     for (size_t i = 0; i < parts.size(); ++i) {
@@ -2494,7 +2401,7 @@ static std::string describe_registration_conflict(const ModelInfo& existing,
             : requested_main;
         add_diff("mmproj",
                  existing.checkpoint("mmproj"),
-                 legacy_mmproj_to_checkpoint(main_for_mmproj, requested_mmproj));
+                 models::legacy_mmproj_to_checkpoint(main_for_mmproj, requested_mmproj));
     }
 
     return join_conflict_parts(diffs);
@@ -2733,171 +2640,54 @@ void ModelManager::build_cache() {
     LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
 
     models_cache_.clear();
-    std::map<std::string, ModelInfo> all_models;
-    std::map<std::string, json> json_recipe_options;  // Per-model recipe_options from JSON
+    // The authored `recipe_options` layer of each registry row. The layering pass
+    // at the end of the build folds it with saved options for the whole set, so
+    // it is collected as the rows parse rather than re-read from the documents.
+    std::map<std::string, json> json_recipe_options;
 
-    // Step 1: Load ALL models from JSON (server models)
-    for (auto& [key, value] : server_models_.items()) {
-        ModelInfo info;
-        info.model_name = key;
-        info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
-        parse_legacy_mmproj(info, value);
-        load_checkpoints(info, value);
-        parse_components(info, value);
-        info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
-        info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
-        try {
-            parse_model_source_fields(info, value);
-        } catch (const std::exception& e) {
-            LOG(ERROR, "ModelManager")
-                << "Skipping invalid built-in model '" << key
-                << "': " << e.what() << std::endl;
-            continue;
-        }
-        info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
-        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
-        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
-        info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
-        if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
-            info.auto_update = value["auto_update"].get<bool>();
-        }
-
-        // Registry-backed collections store their components remotely — the
-        // cached manifest is the single source of truth. Rebuild the component
-        // list from it on every cache build whenever a repo pointer is present,
-        // so a refreshed manifest is always reflected (and any stale components
-        // a previous version may have persisted are ignored/self-healed). A
-        // pure inline collection has no checkpoint pointer; it keeps its
-        // authored components and only falls back to the cache when empty.
-        if (is_model_collection_recipe(info.recipe) &&
-            (info.components.empty() || !info.checkpoint().empty())) {
-            info.components.clear();
-            populate_collection_components_from_cache_locked(info);
-        }
-
-        if (value.contains("labels") && value["labels"].is_array()) {
-            for (const auto& label : value["labels"]) {
-                info.labels.push_back(label.get<std::string>());
-            }
-        }
-
-        parse_image_defaults(info, value);
-        parse_extras(info, value);
-
-        // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
-        if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
-            json_recipe_options[key] = value["recipe_options"];
-        }
-
-        // Built-ins declare their mode in server_models.json, so this normally
-        // changes nothing — but it is what makes "an LLM always carries `chat`"
-        // hold for every ingest path rather than only for the ones that happen
-        // to call it.
-        std::string illegal =
-            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
-        if (!illegal.empty()) {
-            LOG(ERROR, "ModelManager")
-                << "Skipping " << describe_illegal_labels(info.model_name, illegal)
-                << std::endl;
-            continue;
-        }
-        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
-
-        // Populate type and device fields (multi-model support)
-        info.type = get_model_type_from_labels(info.labels);
-        info.device = device_type_for_recipe(info.recipe);
-
-        try {
-            resolve_all_model_paths(info);
-        } catch (const std::exception& e) {
-            LOG(ERROR, "ModelManager") << "  EXCEPTION resolving '" << key << "': " << e.what() << std::endl;
-        }
-        all_models[key] = info;
-    }
-
-    // Load user models with "user." prefix
-    for (auto& [key, value] : user_models_.items()) {
-        ModelInfo info;
-        info.model_name = "user." + key;
-        info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
-        parse_legacy_mmproj(info, value);
-        load_checkpoints(info, value);
-        parse_components(info, value);
-        info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
-        info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
-        try {
-            parse_model_source_fields(info, value);
-        } catch (const std::exception& e) {
-            LOG(ERROR, "ModelManager")
-                << "Skipping invalid user model '" << info.model_name
-                << "': " << e.what() << std::endl;
-            continue;
-        }
-        info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
-        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
-        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
-        info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
-        if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
-            info.auto_update = value["auto_update"].get<bool>();
-        }
-
-        // Registry-backed user collections (created by `lemonade pull <org>/<repo>` or `--source`)
-        // keep only a repo pointer in user_models.json; their components live in
-        // the cached manifest. Rebuild them from it whenever a pointer is present
-        // so a refreshed manifest is reflected and no stale list can shadow it.
-        // A pure inline user collection has no checkpoint pointer and keeps its
-        // authored components, falling back to the cache only when empty.
-        if (is_model_collection_recipe(info.recipe) &&
-            (info.components.empty() || !info.checkpoint().empty())) {
-            info.components.clear();
-            populate_collection_components_from_cache_locked(info);
-        }
-
-        if (value.contains("labels") && value["labels"].is_array()) {
-            for (const auto& label : value["labels"]) {
-                info.labels.push_back(label.get<std::string>());
-            }
-        }
-        // Registration is not re-run on load, so an entry persisted before the
-        // deployment labels existed is checked and stamped here instead. Skipping
-        // it costs the user one model; guessing which of its mode claims was
-        // meant would make every consumer trust an answer nobody wrote.
-        std::string illegal =
-            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
-        if (!illegal.empty()) {
-            LOG(ERROR, "ModelManager")
-                << "Skipping " << describe_illegal_labels(info.model_name, illegal)
-                << std::endl;
-            continue;
-        }
-        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
-
-        parse_image_defaults(info, value);
-        parse_extras(info, value);
-
-        // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
-        if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
-            json_recipe_options[info.model_name] = value["recipe_options"];
-        }
-
-        // Populate type and device fields (multi-model support)
-        info.type = get_model_type_from_labels(info.labels);
-        info.device = device_type_for_recipe(info.recipe);
-
-        try {
-            resolve_all_model_paths(info);
-        } catch (const std::exception& e) {
-            LOG(ERROR, "ModelManager") << "  EXCEPTION resolving '" << info.model_name << "': " << e.what() << std::endl;
-        }
-        all_models[info.model_name] = info;
-    }
-
-    // Steps 1.5 and 1.6: the sources that scan or list rather than read a JSON
-    // document. Registering them here keeps the set of sources readable in one
-    // place, and a new source is one registration. Everything above already owns
-    // its names, so these catalogs keep an existing entry on conflict.
-    models::CatalogAccumulator accumulated(std::move(all_models));
     std::vector<std::unique_ptr<models::ModelCatalog>> catalogs;
+
+    // What a row says about itself is parsed in models/json_catalog.cpp. These
+    // are the facts it cannot answer, plus where its own options layer goes.
+    models::RegistryRowRules rows;
+    rows.device_for_recipe = [](const std::string& recipe) {
+        return device_type_for_recipe(recipe);
+    };
+    rows.stamp_labels = [](ModelInfo& info) {
+        std::string illegal =
+            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+        if (!illegal.empty()) {
+            return describe_illegal_labels(info.model_name, illegal);
+        }
+        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
+        return std::string();
+    };
+    rows.populate_components = [this](ModelInfo& info) {
+        populate_collection_components_from_cache_locked(info);
+    };
+    rows.resolve_paths = [this](ModelInfo& info) { resolve_all_model_paths(info); };
+    rows.recipe_options = [&json_recipe_options](const std::string& name, const json& authored) {
+        json_recipe_options[name] = authored;
+    };
+
+    // Every source of models registers here, in the order that decides a claimed
+    // name. The two JSON registries author theirs; everything after them keeps an
+    // existing entry.
+    models::RegistryRowRules builtin_rows = rows;
+    builtin_rows.source_label = "built-in model";
+    catalogs.push_back(std::make_unique<models::JsonCatalog>(
+        models::CatalogDescriptor{"server_models.json"}, server_models_, std::move(builtin_rows)));
+
+    // Registrations are keyed bare on disk and "user.<name>" in the cache.
+    models::RegistryRowRules user_rows = rows;
+    user_rows.name_prefix = "user.";
+    user_rows.suggested_default = true;
+    user_rows.source_label = "user model";
+    catalogs.push_back(std::make_unique<models::JsonCatalog>(
+        models::CatalogDescriptor{"user_models.json"}, user_models_, std::move(user_rows)));
+
+    // The sources that scan or list rather than read a JSON document. A scanning
+    // or listing source keeps what an earlier one claimed.
 
     // An --extra-models-dir scan plus GGUF identification. A registered model
     // stays attached to its catalog id when a complete repository cache also
@@ -2987,11 +2777,12 @@ void ModelManager::build_cache() {
         }
     }
 
+    models::CatalogAccumulator accumulated;
     for (const auto& catalog : catalogs) {
         catalog->enumerate(accumulated);
     }
 
-    all_models = accumulated.take();
+    std::map<std::string, ModelInfo> all_models = accumulated.take();
 
     // Clients are not guaranteed to handle a model that declares no deployment
     // label. Every ingest path above stamps one; name any model that reached
@@ -3192,22 +2983,20 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     // Build ModelInfo
     ModelInfo info;
     info.model_name = model_name;
-    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
-    parse_legacy_mmproj(info, *model_json);
-    load_checkpoints(info, *model_json);
-    parse_components(info, *model_json);
+    models::parse_checkpoints(info, *model_json);
+    models::parse_components(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.cloud_provider = JsonUtils::get_or_default<std::string>(*model_json, "cloud_provider", "");
 
-    parse_image_defaults(info, *model_json);
-    parse_extras(info, *model_json);
+    models::parse_image_defaults(info, *model_json);
+    models::parse_extras(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
         ? (*model_json)["recipe_options"] : json(nullptr);
     info.recipe_options = build_recipe_options(
         info, jro, cache_key_to_canonical_id(model_name), recipe_options_.all());
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
-    parse_model_source_fields(info, *model_json);
+    models::parse_model_source_fields(info, *model_json);
     info.system_prompt = JsonUtils::get_or_default<std::string>(*model_json, "system_prompt", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
@@ -3948,14 +3737,11 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
 // Build a ModelInfo from a raw model definition (server_models.json /
 // collection-manifest shape) using the same parsing as build_cache, so a
 // manifest component can be compared field-for-field against a registered model.
-static ModelInfo model_info_from_def(const json& def_in) {
-    json def = def_in;  // load_checkpoints needs a non-const json
+static ModelInfo model_info_from_def(const json& def) {
     ModelInfo info;
-    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(def, "checkpoint", "");
-    parse_legacy_mmproj(info, def);
-    load_checkpoints(info, def);
+    models::parse_checkpoints(info, def);
     info.recipe = JsonUtils::get_or_default<std::string>(def, "recipe", "");
-    parse_model_source_fields(info, def);
+    models::parse_model_source_fields(info, def);
     return info;
 }
 
@@ -5821,13 +5607,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.model_name = is_user_lookup
         ? canonical_id(ModelSource::Registered, registry_name)
         : registry_name;
-    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
-    parse_legacy_mmproj(info, *model_json);
-    load_checkpoints(info, *model_json);
-    parse_components(info, *model_json);
+    models::parse_checkpoints(info, *model_json);
+    models::parse_components(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
-    parse_model_source_fields(info, *model_json);
+    models::parse_model_source_fields(info, *model_json);
     info.system_prompt = JsonUtils::get_or_default<std::string>(*model_json, "system_prompt", "");
 
     // Parse labels array
@@ -5855,7 +5639,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         }
     }
 
-    parse_extras(info, *model_json);
+    models::parse_extras(info, *model_json);
 
     return info;
 }
