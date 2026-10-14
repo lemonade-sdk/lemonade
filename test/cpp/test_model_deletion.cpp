@@ -74,8 +74,14 @@ struct Fixture {
     fs::path hf_main_repo;
     fs::path hf_aux_repo;
     fs::path imported_file;
+    fs::path uploaded_file;
     fs::path extra_dir;
     fs::path extra_file;
+    fs::path pair_main_a;
+    fs::path pair_main_b;
+    fs::path pair_aux;
+    fs::path adopted_repo;
+    fs::path foreign_upload;
 };
 
 static Fixture create_fixture() {
@@ -93,9 +99,24 @@ static Fixture create_fixture() {
 
     fx.imported_file = fx.root / "imported" / "zz-model.gguf";
     write_file(fx.imported_file, "GGUF");
+    // An upload wrote its copy into the models directory itself, not into a
+    // models-- repository cache.
+    fx.uploaded_file = fx.models_dir / "uploads" / "zz-upload.gguf";
+    write_file(fx.uploaded_file, "GGUF");
     fx.extra_dir = fx.root / "extra";
     fx.extra_file = fx.extra_dir / "zz-extra.gguf";
     write_file(fx.extra_file, "GGUF");
+    // A complete repository cache in the extra directory, which a registered model
+    // adopts instead of downloading its own copy.
+    // Two models whose auxiliary checkpoint is the very same file: one model's
+    // delete must not take the bytes the other one reads.
+    fx.pair_main_a = make_hf_repo(fx.models_dir, "zz/reg1", "snap-r1", {"one.gguf"});
+    fx.pair_main_b = make_hf_repo(fx.models_dir, "zz/reg3", "snap-r3", {"two.gguf"});
+    fx.pair_aux = make_hf_repo(fx.models_dir, "zz/regaux", "snap-ra", {"enc.gguf"});
+    fx.adopted_repo = make_hf_repo(fx.extra_dir, "zz/adopted", "snap-ad", {"main.gguf"});
+    // A legacy upload row whose copy ended up outside the models directory.
+    fx.foreign_upload = fx.root / "elsewhere" / "zz-foreign.gguf";
+    write_file(fx.foreign_upload, "GGUF");
 
     json user_models = {
         {"zz-hf-single",
@@ -115,6 +136,24 @@ static Fixture create_fixture() {
          json{{"checkpoints", json{{"main", path_to_utf8(fx.imported_file)}}},
               {"recipe", "llamacpp"},
               {"source", "local_path"}}},
+        {"zz-pair-a",
+         json{{"checkpoints",
+               json{{"main", "zz/reg1:one.gguf"}, {"text_encoder", "zz/regaux:enc.gguf"}}},
+          {"recipe", "llamacpp"}}},
+        {"zz-pair-b",
+         json{{"checkpoints",
+               json{{"main", "zz/reg3:two.gguf"}, {"text_encoder", "zz/regaux:enc.gguf"}}},
+          {"recipe", "llamacpp"}}},
+        {"zz-adopted",
+         json{{"checkpoint", "zz/adopted:main.gguf"}, {"recipe", "llamacpp"}}},
+        {"zz-foreign-upload",
+         json{{"checkpoints", json{{"main", path_to_utf8(fx.foreign_upload)}}},
+              {"recipe", "llamacpp"},
+              {"source", "local_upload"}}},
+        {"zz-uploaded",
+         json{{"checkpoints", json{{"main", "uploads/zz-upload.gguf"}}},
+              {"recipe", "llamacpp"},
+              {"source", "local_upload"}}},
     };
     write_file(fx.user_models_file, user_models.dump(2));
     return fx;
@@ -237,6 +276,75 @@ static void test_extra_model_delete(ModelManager& manager, const Fixture& fx) {
     check("refused delete leaves the model resolvable", !gone_from_cache(manager, "extra.zz-extra"));
 }
 
+// An uploaded copy sits in the models directory rather than in a repository cache,
+// and lemond wrote it, so a delete removes the copy along with the registration.
+static void test_uploaded_model_delete(ModelManager& manager, const Fixture& fx) {
+    check("uploaded model resolves to its copy in the models directory",
+          path_from_utf8(manager.get_model_info("user.zz-uploaded").resolved_path()) ==
+              fx.uploaded_file);
+
+    std::string error;
+    check("uploaded delete completes",
+          delete_model(manager, "user.zz-uploaded", error));
+    check("uploaded copy removed", !fs::exists(fx.uploaded_file));
+    check("uploaded entry removed from user_models.json", !still_registered(fx, "zz-uploaded"));
+    check("uploaded model no longer resolves", gone_from_cache(manager, "user.zz-uploaded"));
+    check("uploaded delete leaves other repositories alone",
+          fs::exists(fx.hf_shared / "snapshots" / "snap-s" / "b.gguf") &&
+          fs::exists(fx.imported_file));
+}
+
+// A registered model that adopted a complete cache from a separate models
+// directory points at bytes lemond does not own: the delete forgets the
+// registration and leaves them where they are.
+static void test_adopted_cache_delete(ModelManager& manager, const Fixture& fx) {
+    const ModelInfo adopted = manager.get_model_info("user.zz-adopted");
+    check("adopted model resolves into the extra directory",
+          path_from_utf8(adopted.resolved_path()).string().find(path_to_utf8(fx.extra_dir)) == 0);
+    check("adopted model starts downloaded", adopted.downloaded);
+
+    std::string error;
+    check("adopted delete completes", delete_model(manager, "user.zz-adopted", error));
+    check("adopted delete leaves the adopted cache on disk", fs::exists(fx.adopted_repo));
+    check("adopted entry removed from user_models.json", !still_registered(fx, "zz-adopted"));
+    check("adopted model no longer resolves", gone_from_cache(manager, "user.zz-adopted"));
+}
+
+// Lemonade removes only bytes inside the models directory. An upload row naming a
+// file elsewhere is forgotten, never deleted.
+static void test_upload_outside_models_dir_delete(ModelManager& manager, const Fixture& fx) {
+    const ModelInfo foreign = manager.get_model_info("user.zz-foreign-upload");
+    check("upload outside the models directory resolves to its own path",
+          path_from_utf8(foreign.resolved_path()) == fx.foreign_upload);
+
+    std::string error;
+    check("delete of an outside upload completes",
+          delete_model(manager, "user.zz-foreign-upload", error));
+    check("bytes outside the models directory are left alone", fs::exists(fx.foreign_upload));
+    check("outside upload entry removed from user_models.json",
+          !still_registered(fx, "zz-foreign-upload"));
+}
+
+// Two models asking for the identical auxiliary checkpoint: deleting one removes
+// what only it used and leaves the shared file, so the other stays downloaded.
+static void test_shared_checkpoint_delete(ModelManager& manager, const Fixture& fx) {
+    const fs::path aux_file = fx.pair_aux / "snapshots" / "snap-ra" / "enc.gguf";
+    check("pair models start downloaded",
+          manager.get_model_info("user.zz-pair-a").downloaded &&
+              manager.get_model_info("user.zz-pair-b").downloaded);
+
+    std::string error;
+    check("delete of one pair member completes",
+          delete_model(manager, "user.zz-pair-a", error));
+    check("the checkpoint only it used is gone",
+          !fs::exists(fx.pair_main_a / "snapshots" / "snap-r1" / "one.gguf"));
+    check("the checkpoint the other model reads is kept", fs::exists(aux_file));
+    check("the other model is still downloaded", manager.get_model_info("user.zz-pair-b").downloaded);
+    check("the other model's own main file is kept",
+          fs::exists(fx.pair_main_b / "snapshots" / "snap-r3" / "two.gguf"));
+    check("pair member removed from user_models.json", !still_registered(fx, "zz-pair-a"));
+}
+
 int main() {
     ShowAllModels show_all_models;
     Fixture fx = create_fixture();
@@ -252,6 +360,10 @@ int main() {
         test_multi_repo_delete_removes_every_owned_repo(manager, fx);
         test_registry_only_delete(manager, fx);
         test_imported_model_delete(manager, fx);
+        test_uploaded_model_delete(manager, fx);
+        test_adopted_cache_delete(manager, fx);
+        test_shared_checkpoint_delete(manager, fx);
+        test_upload_outside_models_dir_delete(manager, fx);
         test_extra_model_delete(manager, fx);
     }
 

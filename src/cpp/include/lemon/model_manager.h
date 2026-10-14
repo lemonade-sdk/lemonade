@@ -68,6 +68,7 @@ struct RoutePolicy;
 
 namespace models {
 class ArtifactSource;
+class ModelArtifactStore;
 struct FilterReasons;
 struct StoreSnapshot;
 }  // namespace models
@@ -201,14 +202,12 @@ public:
     std::unique_ptr<models::ArtifactSource> source_for(
         const ModelInfo& info, const std::string& checkpoint_type) const;
 
-    // What removal may touch, decided per checkpoint by its source rather than by
-    // the recipe name. `owned` holds the types whose bytes lemond wrote;
-    // `delegated_recipe` names a backend that removes its own weights.
-    struct DeletionPlan {
-        std::vector<std::string> owned;
-        std::string delegated_recipe;
-    };
-    DeletionPlan deletion_plan(const ModelInfo& info) const;
+    // Unfiltered: see models::KnownModels.
+    std::map<std::string, ModelInfo> all_models() const;
+
+    // Drop the model's own registration, if it has one. Rows the catalog re-creates
+    // have none.
+    void forget_registered_model(const std::string& canonical_model_name);
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
@@ -400,8 +399,11 @@ public:
     // so should be skipped by the router's load-time auto-download path.
     bool backend_self_manages_downloads(const std::string& recipe) const;
 
-    // Shared registry-backed completeness check: true if all required checkpoints
-    // are present and complete (per-backend file validation runs via ops).
+    // A recipe whose models have no local bytes at all, so nothing is fetched,
+    // reported downloaded, or removed.
+    bool fetches_no_artifacts(const std::string& recipe) const;
+
+    // The artifact store's completeness answer for this model.
     bool checkpoints_complete(const ModelInfo& info) const;
 
     // Shared remote-registry download engine. The default BackendOps::download_model
@@ -516,8 +518,8 @@ private:
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
-    // Resolve model checkpoint to absolute path on disk
-    std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
+    // Fills info.resolved_paths from the artifact store, adopting a complete
+    // repository from the extra models directory when the managed cache lacks it.
     void resolve_all_model_paths(ModelInfo& info);
 
     // Download from a JSON manifest
@@ -599,6 +601,7 @@ private:
 
     // Declared last so it dies first: the worker joins before the store it
     // publishes to does.
+    const std::unique_ptr<models::ModelArtifactStore> artifacts_;
     models::SyncService sync_;
 };
 

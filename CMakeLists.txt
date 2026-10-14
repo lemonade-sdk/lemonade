@@ -1040,6 +1040,7 @@ set(SOURCES_CORE
     src/cpp/server/models/artifact_layout.cpp
     src/cpp/server/models/artifact_ref.cpp
     src/cpp/server/models/artifact_resolver.cpp
+    src/cpp/server/models/artifact_store.cpp
     src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp

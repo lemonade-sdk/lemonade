@@ -12,6 +12,7 @@ class CloudProviderRegistry;
 namespace models {
 struct CheckpointRef;
 class ArtifactLayout;
+class ModelArtifactStore;
 }  // namespace models
 
 namespace backends {
@@ -20,6 +21,7 @@ namespace backends {
 // without a running subprocess.
 struct BackendOpsContext {
     ModelManager* model_manager = nullptr;
+    const models::ModelArtifactStore* artifacts = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
 };
 
@@ -116,8 +118,8 @@ public:
         return {};
     }
 
-    // Whether a model's local artifacts are present. Default: the shared registry
-    // checkpoint-completeness check (ModelManager::checkpoints_complete).
+    // Whether a model's local artifacts are present. Default: the artifact
+    // store's checkpoint-completeness check.
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
 
     // Validate a resolved checkpoint file for the cache. Returns "" if valid, or

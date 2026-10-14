@@ -77,5 +77,16 @@ void ensure_create_directories(const std::filesystem::path& path) {
 }
 #endif
 
+bool path_inside(const std::filesystem::path& path, const std::filesystem::path& root) {
+    if (path.empty() || root.empty()) return false;
+    std::error_code ec;
+    const std::filesystem::path actual = std::filesystem::weakly_canonical(path, ec);
+    if (ec) return false;
+    const std::filesystem::path base = std::filesystem::weakly_canonical(root, ec);
+    if (ec) return false;
+    const std::filesystem::path relative = actual.lexically_relative(base);
+    return !relative.empty() && *relative.begin() != std::filesystem::path("..");
+}
+
 }  // namespace utils
 }  // namespace lemon

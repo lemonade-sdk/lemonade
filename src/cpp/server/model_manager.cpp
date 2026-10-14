@@ -3,6 +3,7 @@
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/artifact_resolver.h>
+#include <lemon/models/artifact_store.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -56,13 +57,6 @@ using namespace lemon::utils;
 using namespace lemon::models;
 
 
-// fs::recursive_directory_iterator throws on entries it cannot open; skipping
-// them keeps a cache scan going past one unreadable directory.
-#ifdef _WIN32
-static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
-#else
-static constexpr auto safe_dir_options = fs::directory_options::none;
-#endif
 
 namespace lemon {
 
@@ -78,9 +72,6 @@ static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 
-static bool are_required_checkpoints_complete(const ModelInfo& info);
-static bool is_checkpoint_path_complete(const std::string& path);
-static bool path_inside(const fs::path& path, const fs::path& root);
 
 
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
@@ -145,10 +136,6 @@ static const json* registry_row(const models::RegistryDocuments::Pin& rows,
                     strip_user_model_prefix(cache_key));
 }
 
-static std::string effective_registry_source(const ModelInfo& info) {
-    return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
-}
-
 void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
     default_model_source_provider_ = std::move(provider);
 }
@@ -169,81 +156,11 @@ static std::string repo_id_to_cache_dir_name(const std::string& repo_id,
         parse_remote_registry_source(registry_source));
 }
 
-static std::string read_hf_ref_main(const fs::path& model_cache_path) {
-    return backends::hf_cache::read_ref_main(model_cache_path);
-}
 
-static std::string registry_model_selection(const ModelInfo& info) {
-    std::ostringstream selection;
-    selection << info.recipe;
-    for (const auto& [type, checkpoint] : info.checkpoints) {
-        selection << '\n' << type << '=' << checkpoint;
-    }
-    return selection.str();
-}
 
-static std::string read_processed_registry_snapshot_id(
-    const fs::path& model_cache_path,
-    const std::string& model_name,
-    const std::string& selection) {
-    const fs::path provenance_path = model_cache_path / ".lemonade_registry.json";
-    if (!safe_exists(provenance_path)) {
-        return "";
-    }
 
-    try {
-        const json provenance = JsonUtils::load_from_file(path_to_utf8(provenance_path));
-        if (!provenance.contains("processed_models") ||
-            !provenance["processed_models"].is_object()) {
-            return "";
-        }
 
-        const auto& processed_models = provenance["processed_models"];
-        auto model_it = processed_models.find(model_name);
-        if (model_it == processed_models.end() || !model_it->is_object()) {
-            return "";
-        }
-        if (JsonUtils::get_or_default<std::string>(
-                *model_it, "selection", "") != selection) {
-            return "";
-        }
-        return JsonUtils::get_or_default<std::string>(*model_it, "snapshot_id", "");
-    } catch (const std::exception&) {
-        return "";
-    }
-}
 
-static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
-    std::string ref = read_hf_ref_main(model_cache_path);
-    if (ref.empty()) {
-        return fs::path();
-    }
-
-    fs::path snapshot_path = model_cache_path / "snapshots" / ref;
-    return safe_exists(snapshot_path) ? snapshot_path : fs::path();
-}
-
-static void write_hf_ref_main(const fs::path& model_cache_path, const std::string& commit_hash) {
-    backends::hf_cache::write_ref_main(model_cache_path, commit_hash);
-}
-
-// Check if any model other than exclude_model references the given repo_id
-static bool is_repo_shared(const std::string& repo_id,
-                           const std::string& registry_source,
-                           const std::string& exclude_model,
-                           const std::map<std::string, ModelInfo>& cache) {
-    const std::string normalized_source = remote_registry_source_name(
-        parse_remote_registry_source(registry_source));
-    for (const auto& [name, info] : cache) {
-        if (name == exclude_model || !info.source.empty()) continue;
-        if (effective_registry_source(info) != normalized_source) continue;
-        for (const auto& [type, cp] : info.checkpoints) {
-            (void)type;
-            if (repo_id_from_checkpoint(cp) == repo_id) return true;
-        }
-    }
-    return false;
-}
 
 // Default device for a recipe: the backend descriptor is authoritative for
 // registered backends; collection/unknown recipes fall back to the recipe map.
@@ -290,106 +207,7 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
         info.recipe, image_defaults, json_recipe_options, user_saved);
 }
 
-// Clean up orphaned HF cache blobs after deleting a symlink.
-// HF hub downloads use: snapshots/<hash>/file.gguf -> ../../blobs/<sha256>
-// If no remaining symlink in the repo points to the blob, it's safe to remove.
-//
-// TODO: A more robust approach would be to extend cleanup_orphaned_cache()
-// to scan for orphaned blobs across all repos, triggered automatically after
-// delete. This would need integration tests that use huggingface_hub Python
-// tooling (e.g. hf_hub_download()) to create the blob+symlink layout, since
-// Lemonade's own downloader writes real files without blobs.
-static void cleanup_orphaned_blob(const fs::path& file_path,
-                                  const fs::path& models_dir) {
-    std::error_code ec;
-    if (!fs::is_symlink(file_path, ec) || ec) {
-        return;  // Not a symlink (real file) or error - nothing to clean up
-    }
 
-    // Resolve the blob target (relative symlink like ../../blobs/<hash>)
-    fs::path link_target = fs::read_symlink(file_path, ec);
-    if (ec) return;
-    fs::path blob_path = fs::canonical(file_path.parent_path() / link_target, ec);
-    if (ec || !fs::exists(blob_path)) return;
-
-    // Check if any other symlink in the repo still references this blob
-    fs::path snapshots_dir = models_dir / "snapshots";
-    if (!fs::exists(snapshots_dir)) return;
-
-    for (auto& entry : fs::recursive_directory_iterator(snapshots_dir, ec)) {
-        if (ec) break;
-        if (entry.path() == file_path) continue;  // Skip the file we're about to delete
-        if (!fs::is_symlink(entry.path(), ec) || ec) continue;
-
-        fs::path other_target = fs::read_symlink(entry.path(), ec);
-        if (ec) continue;
-        fs::path other_blob = fs::canonical(entry.path().parent_path() / other_target, ec);
-        if (!ec && other_blob == blob_path) {
-            // Another symlink still references this blob - keep it
-            return;
-        }
-    }
-
-    // No other symlink references this blob - safe to remove
-    LOG(INFO, "ModelManager") << "Removing orphaned blob: " << path_to_utf8(blob_path) << std::endl;
-    fs::remove(blob_path, ec);
-
-    // Clean up empty blobs/ directory
-    fs::path blobs_dir = blob_path.parent_path();
-    if (fs::exists(blobs_dir) && fs::is_empty(blobs_dir, ec) && !ec) {
-        fs::remove(blobs_dir, ec);
-    }
-}
-
-// Remove empty parent directories up to (but not including) the stop directory
-static void cleanup_empty_parents(const fs::path& file_path, const fs::path& stop_dir) {
-    std::error_code ec;
-    fs::path parent = file_path.parent_path();
-    for (int i = 0; i < 6 && !parent.empty() && parent != stop_dir; ++i) {
-        if (fs::is_empty(parent, ec) && !ec) {
-            fs::remove(parent, ec);
-            parent = parent.parent_path();
-        } else {
-            break;
-        }
-    }
-}
-
-// Size of one resolved path. Deliberately per-path: list_model_files() reports
-// this as an individual file's size, so shard aggregation must not happen here.
-// Directories (e.g. Moonshine artifacts) are summed recursively because
-// std::filesystem::file_size() fails on them.
-static uintmax_t resolved_path_size_bytes(const fs::path& path) {
-    std::error_code ec;
-    if (!safe_exists(path)) {
-        return 0;
-    }
-
-    if (!safe_is_directory(path)) {
-        auto size = fs::file_size(path, ec);
-        return ec ? 0 : size;
-    }
-
-    uintmax_t total = 0;
-    for (const auto& entry : fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
-        if (ec) {
-            ec.clear();
-            break;
-        }
-        if (!entry.is_regular_file(ec)) {
-            ec.clear();
-            continue;
-        }
-
-        auto size = fs::file_size(entry.path(), ec);
-        if (!ec) {
-            total += size;
-        } else {
-            ec.clear();
-        }
-    }
-    return total;
-}
 
 
 std::uintmax_t sharded_gguf_size_bytes(const fs::path& shard_path) {
@@ -437,7 +255,7 @@ static void refresh_on_disk_size(ModelInfo& info) {
         (void)type;
         fs::path resolved = path_from_utf8(path);
         uintmax_t shard_total = sharded_gguf_size_bytes(resolved);
-        total_size += (shard_total > 0) ? shard_total : resolved_path_size_bytes(resolved);
+        total_size += (shard_total > 0) ? shard_total : models::ModelArtifactStore::size_bytes(resolved);
     }
     if (total_size == 0) {
         return;
@@ -453,508 +271,15 @@ static void refresh_on_disk_size(ModelInfo& info) {
 }
 
 std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
-    ModelInfo info = get_model_info(model_name);
-    std::vector<ModelFileInfo> files;
-    files.reserve(info.resolved_paths.size());
-
-    for (const auto& [role, resolved_path] : info.resolved_paths) {
-        if (resolved_path.empty()) {
-            continue;
-        }
-
-        fs::path path = path_from_utf8(resolved_path);
-        const bool path_exists = safe_exists(path);
-
-        ModelFileInfo file;
-        file.name = path_to_utf8(path.filename());
-        file.path = resolved_path;
-        file.role = role;
-        file.exists = path_exists;
-        file.size_bytes = path_exists
-            ? static_cast<std::uint64_t>(resolved_path_size_bytes(path))
-            : 0;
-        files.push_back(std::move(file));
-    }
-
-    return files;
-}
-
-static void cleanup_orphaned_blobs_under(const fs::path& path,
-                                         const fs::path& models_dir) {
-    if (!safe_exists(path)) {
-        return;
-    }
-
-    if (!safe_is_directory(path)) {
-        cleanup_orphaned_blob(path, models_dir);
-        return;
-    }
-
-    std::error_code ec;
-    for (const auto& entry : fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
-        if (ec) {
-            ec.clear();
-            break;
-        }
-        cleanup_orphaned_blob(entry.path(), models_dir);
-    }
-}
-
-static void remove_resolved_path_or_throw(const fs::path& path,
-                                          const std::string& description) {
-    if (!safe_exists(path)) {
-        return;
-    }
-
-    LOG(INFO, "ModelManager") << "Removing " << description << ": "
-                              << path_to_utf8(path) << std::endl;
-
-    std::error_code ec;
-    if (safe_is_directory(path)) {
-        fs::remove_all(path, ec);
-    } else {
-        fs::remove(path, ec);
-    }
-
-    if (ec) {
-        throw std::runtime_error("Failed to remove " + description + " '" +
-                                 path_to_utf8(path) + "': " + ec.message());
-    }
+    return artifacts_->list_files(get_model_info(model_name));
 }
 
 
-static std::string normalized_relative_path(const fs::path& path, const fs::path& root) {
-    std::string rel = path_to_utf8(path.lexically_relative(root));
-    std::replace(rel.begin(), rel.end(), '\\', '/');
-    return rel;
-}
 
-static void remove_file_or_throw(const fs::path& path, const std::string& description) {
-    if (!safe_exists(path)) {
-        return;
-    }
 
-    LOG(INFO, "ModelManager") << "Removing " << description << ": "
-                              << path_to_utf8(path) << std::endl;
-    std::error_code ec;
-    fs::remove(path, ec);
-    if (ec) {
-        throw std::runtime_error("Failed to remove " + description + " '" +
-                                 path_to_utf8(path) + "': " + ec.message());
-    }
-}
 
-static bool path_is_within(const fs::path& path, const fs::path& base) {
-    if (base.empty()) return false;
-    const fs::path relative = path.lexically_relative(base);
-    return !relative.empty() && *relative.begin() != "..";
-}
 
-static bool is_unfinished_download_artifact(const fs::path& path) {
-    return path.extension() == ".partial" ||
-           path.filename() == ".download_manifest.json";
-}
 
-static bool repo_has_unfinished_download(const fs::path& repo_dir) {
-    if (!safe_exists(repo_dir)) return false;
-    std::error_code ec;
-    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
-    if (ec) return true;
-    const fs::recursive_directory_iterator end;
-    while (it != end) {
-        if (is_unfinished_download_artifact(it->path())) return true;
-        it.increment(ec);
-        if (ec) return true;
-    }
-    return false;
-}
-
-static void remove_shared_checkpoint_dir(const fs::path& dir,
-                                         const fs::path& repo_root,
-                                         const std::set<fs::path>& keep) {
-    const fs::path refs_dir = repo_root / "refs";
-    const fs::path blobs_dir = repo_root / "blobs";
-
-    std::vector<fs::path> doomed;
-    std::error_code ec;
-    fs::recursive_directory_iterator it(dir, safe_dir_options, ec);
-    if (ec) {
-        LOG(WARNING, "ModelManager") << "Cannot scan checkpoint directory "
-                    << path_to_utf8(dir) << " (" << ec.message()
-                    << "); keeping it" << std::endl;
-        return;
-    }
-
-    const fs::recursive_directory_iterator end;
-    while (it != end) {
-        const fs::path entry = it->path();
-        const bool keep_entry =
-            safe_is_directory(entry) ||
-            is_unfinished_download_artifact(entry) ||
-            path_is_within(entry, refs_dir) ||
-            path_is_within(entry, blobs_dir) ||
-            std::any_of(keep.begin(), keep.end(),
-                        [&entry](const fs::path& owned) {
-                            return path_is_within(entry, owned);
-                        });
-        if (!keep_entry) doomed.push_back(entry);
-
-        it.increment(ec);
-        if (ec) {
-            LOG(WARNING, "ModelManager") << "Scan of " << path_to_utf8(dir)
-                        << " stopped early (" << ec.message()
-                        << "); keeping the directory" << std::endl;
-            return;
-        }
-    }
-
-    for (const fs::path& victim : doomed) {
-        cleanup_orphaned_blob(victim, repo_root);
-        remove_file_or_throw(victim, "checkpoint file");
-        cleanup_empty_parents(victim, repo_root);
-    }
-}
-
-// A variant claims the whole repo when it names nothing in particular, so no
-// file name can be matched against it.
-static bool variant_claims_whole_repo(const std::string& variant) {
-    return variant.empty() || variant == "*";
-}
-
-static std::string strip_shard_suffix(const std::string& filename) {
-    const size_t dot = filename.find_last_of('.');
-    const std::string stem = dot == std::string::npos ? filename : filename.substr(0, dot);
-    const std::string extension = dot == std::string::npos ? "" : filename.substr(dot);
-
-    const size_t of = stem.rfind("-of-");
-    if (of == std::string::npos) return filename;
-
-    auto all_digits = [&stem](size_t from, size_t to) {
-        if (from >= to) return false;
-        for (size_t i = from; i < to; ++i) {
-            if (stem[i] < '0' || stem[i] > '9') return false;
-        }
-        return true;
-    };
-    if (!all_digits(of + 4, stem.size())) return filename;
-
-    size_t index_begin = of;
-    while (index_begin > 0 && stem[index_begin - 1] >= '0' && stem[index_begin - 1] <= '9') {
-        --index_begin;
-    }
-    if (index_begin == of || index_begin == 0 || stem[index_begin - 1] != '-') return filename;
-
-    return stem.substr(0, index_begin - 1) + extension;
-}
-
-// Mirrors resolve_gguf_path()'s matching so attribution agrees with resolution.
-static bool file_matches_variant(const std::string& relative_name,
-                                 const std::string& variant) {
-    if (relative_name.empty() || variant_claims_whole_repo(variant)) return false;
-
-    auto normalize = [](std::string value) {
-        std::replace(value.begin(), value.end(), '\\', '/');
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return value;
-    };
-    auto ends_with = [](const std::string& value, const std::string& tail) {
-        return value.size() >= tail.size() &&
-               value.compare(value.size() - tail.size(), tail.size(), tail) == 0;
-    };
-
-    const std::string rel = normalize(relative_name);
-    const std::string want = normalize(variant);
-
-    if (rel == want || ends_with(rel, "/" + want)) return true;
-    if (rel.find(want + "/") != std::string::npos) return true;
-
-    const size_t slash = rel.find_last_of('/');
-    const std::string base = slash == std::string::npos ? rel : rel.substr(slash + 1);
-    const std::string quant_suffix = want + ".gguf";
-    for (const std::string& candidate : {base, strip_shard_suffix(base)}) {
-        if (candidate == want || ends_with(candidate, quant_suffix)) return true;
-    }
-
-    // resolve_gguf_path()'s quant-token fallback: some repos put the token in
-    // the middle of the name (Model-IQ4_XS-Q8nextn.gguf for variant IQ4_XS)
-    const std::string want_quant = gguf_quant_token(variant);
-    std::string upper_variant = variant;
-    std::transform(upper_variant.begin(), upper_variant.end(), upper_variant.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    if (!want_quant.empty() && want_quant == upper_variant &&
-        gguf_quant_token(base) == want_quant) {
-        return true;
-    }
-    return false;
-}
-
-static bool partial_belongs_to_variant(const fs::path& partial_path,
-                                       const fs::path& snapshots_dir,
-                                       const std::string& variant) {
-    static const std::string kMarker = ".partial";
-    if (partial_path.extension() != kMarker || safe_is_directory(partial_path)) {
-        return false;
-    }
-
-    std::string rel = normalized_relative_path(partial_path, snapshots_dir);
-    rel.resize(rel.size() - kMarker.size());
-    return file_matches_variant(rel, variant);
-}
-
-static bool manifest_covers_variant(const fs::path& manifest_path,
-                                    const std::string& variant) {
-    try {
-        const json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
-        if (!manifest.contains("files") || !manifest["files"].is_array()) return false;
-        for (const auto& file_desc : manifest["files"]) {
-            if (!file_desc.is_object() || !file_desc.contains("name")) continue;
-            if (!file_desc["name"].is_string()) continue;
-            if (file_matches_variant(file_desc["name"].get<std::string>(), variant)) {
-                return true;
-            }
-        }
-    } catch (const std::exception&) {
-        return false;
-    }
-    return false;
-}
-
-struct RepoDownload {
-    std::string owner;
-    std::vector<std::string> files;
-};
-
-static RepoDownload repo_download(const fs::path& repo_dir) {
-    std::error_code ec;
-    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
-    if (ec) return {};
-
-    const fs::recursive_directory_iterator end;
-    RepoDownload found;
-    while (it != end) {
-        if (it->path().filename() == ".download_manifest.json") {
-            std::string name;
-            std::vector<std::string> files;
-            try {
-                const json manifest = JsonUtils::load_from_file(path_to_utf8(it->path()));
-                if (manifest.contains("model_name") && manifest["model_name"].is_string()) {
-                    name = manifest["model_name"].get<std::string>();
-                }
-                if (manifest.contains("files") && manifest["files"].is_array()) {
-                    for (const auto& file_desc : manifest["files"]) {
-                        if (!file_desc.is_object() || !file_desc.contains("name")) continue;
-                        if (!file_desc["name"].is_string()) continue;
-                        files.push_back(file_desc["name"].get<std::string>());
-                    }
-                }
-            } catch (const std::exception&) {
-            }
-            if (name.empty() || (!found.owner.empty() && found.owner != name)) return {};
-            found.owner = name;
-            found.files.insert(found.files.end(), files.begin(), files.end());
-        }
-        it.increment(ec);
-        if (ec) return {};
-    }
-    return found;
-}
-
-static bool repo_has_unattributed_file(const fs::path& repo_dir,
-                                       const std::string& variant,
-                                       const std::vector<std::string>& own_download_files) {
-    const fs::path snapshots_dir = repo_dir / "snapshots";
-    if (!safe_exists(snapshots_dir)) return false;
-
-    std::error_code ec;
-    fs::recursive_directory_iterator it(snapshots_dir, safe_dir_options, ec);
-    if (ec) return true;
-
-    static const std::string kMarker = ".partial";
-    const bool claims_every_file = variant_claims_whole_repo(variant);
-
-    const fs::recursive_directory_iterator end;
-    while (it != end) {
-        const fs::path entry = it->path();
-        if (!safe_is_directory(entry) && entry.filename() != ".download_manifest.json") {
-            std::string rel = normalized_relative_path(entry, snapshots_dir);
-            if (entry.extension() == kMarker) rel.resize(rel.size() - kMarker.size());
-            const bool own = claims_every_file || file_matches_variant(rel, variant) ||
-                std::any_of(own_download_files.begin(), own_download_files.end(),
-                            [&rel](const std::string& name) {
-                                return file_matches_variant(rel, name);
-                            });
-            if (!own) return true;
-        }
-        it.increment(ec);
-        if (ec) return true;
-    }
-    return false;
-}
-
-static bool download_belongs_to_variant(const fs::path& artifact,
-                                        const fs::path& snapshots_dir,
-                                        const std::string& variant,
-                                        bool is_manifest) {
-    if (variant_claims_whole_repo(variant)) return true;
-    return is_manifest ? manifest_covers_variant(artifact, variant)
-                       : partial_belongs_to_variant(artifact, snapshots_dir, variant);
-}
-
-static bool download_claimed_by_other(const fs::path& artifact,
-                                      const fs::path& snapshots_dir,
-                                      const std::vector<std::string>& other_variants,
-                                      bool is_manifest) {
-    return std::any_of(other_variants.begin(), other_variants.end(),
-                       [&](const std::string& other) {
-                           return download_belongs_to_variant(artifact, snapshots_dir,
-                                                              other, is_manifest);
-                       });
-}
-
-static bool repo_has_foreign_download(const fs::path& repo_dir,
-                                      const std::string& variant,
-                                      const std::vector<std::string>& other_variants) {
-    const fs::path snapshots_dir = repo_dir / "snapshots";
-    std::error_code ec;
-    fs::recursive_directory_iterator it(repo_dir, safe_dir_options, ec);
-    if (ec) return true;
-
-    const fs::recursive_directory_iterator end;
-    while (it != end) {
-        const fs::path entry = it->path();
-        const bool is_manifest = entry.filename() == ".download_manifest.json";
-        if (is_manifest || entry.extension() == ".partial") {
-            if (!download_belongs_to_variant(entry, snapshots_dir, variant, is_manifest) ||
-                download_claimed_by_other(entry, snapshots_dir, other_variants, is_manifest)) {
-                return true;
-            }
-        }
-        it.increment(ec);
-        if (ec) return true;
-    }
-    return false;
-}
-
-static void remove_stale_manifest_for_partial(const fs::path& partial_path,
-                                              const fs::path& stop_dir,
-                                              const fs::path& snapshots_dir,
-                                              const std::vector<std::string>& claimants) {
-    fs::path parent = partial_path.parent_path();
-    for (int i = 0; i < 8 && !parent.empty() && parent != stop_dir; ++i) {
-        fs::path manifest_path = parent / ".download_manifest.json";
-        if (safe_exists(manifest_path)) {
-            if (download_claimed_by_other(manifest_path, snapshots_dir, claimants,
-                                          /*is_manifest=*/true)) {
-                LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(manifest_path)
-                            << " (another model resumes from it)" << std::endl;
-                return;
-            }
-            remove_file_or_throw(manifest_path, "stale download manifest");
-            cleanup_empty_parents(manifest_path, stop_dir);
-            return;
-        }
-        parent = parent.parent_path();
-    }
-}
-
-static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
-                                              bool repo_occupied,
-                                              const std::vector<std::string>& other_variants) {
-    const std::string main_checkpoint = info.checkpoint("main");
-    const std::string main_repo = repo_id_from_checkpoint(main_checkpoint);
-    if (main_repo.empty()) {
-        return false;
-    }
-
-    fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
-    if (!safe_exists(model_cache_path)) {
-        return false;
-    }
-
-    const std::string variant = checkpoint_to_variant(main_checkpoint);
-
-    const RepoDownload download = repo_download(model_cache_path);
-    const std::string& download_owner = download.owner;
-    const bool owner_known = !download_owner.empty();
-    const bool owned_by_self = download_owner == info.model_name;
-    const bool foreign_download =
-        owner_known ? !owned_by_self
-                    : repo_has_foreign_download(model_cache_path, variant, other_variants);
-
-    // Only a download this model started can account for a file it did not
-    // finish, so a manifest another model owns says nothing about what is here.
-    const std::vector<std::string> own_download_files =
-        owned_by_self ? download.files : std::vector<std::string>{};
-
-    // Nothing else lives here, so the whole incomplete repo cache goes: .partial
-    // files, stale manifests, any files that finished before cancellation, refs,
-    // and blobs in one atomic intent. A download that is not this model's holds
-    // the repo back, and so does a complete file that no download explains.
-    if (!repo_occupied && !foreign_download &&
-        !repo_has_unattributed_file(model_cache_path, variant, own_download_files)) {
-        LOG(INFO, "ModelManager") << "Removing incomplete model cache: "
-                                  << path_to_utf8(model_cache_path) << std::endl;
-        std::error_code ec;
-        fs::remove_all(model_cache_path, ec);
-        if (ec) {
-            throw std::runtime_error("Failed to remove incomplete model cache '" +
-                                     path_to_utf8(model_cache_path) + "': " + ec.message());
-        }
-        return true;
-    }
-
-    if (owner_known && !owned_by_self) {
-        LOG(INFO, "ModelManager") << "Keeping the unfinished download in " << main_repo
-                                  << " because it belongs to " << download_owner << std::endl;
-        return false;
-    }
-
-    // An occupied repo must not be removed wholesale. Remove only the resumable
-    // partial for this model's requested variant, plus the manifest that made
-    // that partial visible as an incomplete download.
-    const std::string variant = variant_from_checkpoint(main_checkpoint);
-    if (variant.empty()) {
-        LOG(INFO, "ModelManager") << "Keeping occupied incomplete cache for " << main_repo
-                                  << " because the model has no exact variant" << std::endl;
-        return false;
-    }
-
-    fs::path snapshots_dir = model_cache_path / "snapshots";
-    if (!safe_exists(snapshots_dir)) {
-        return false;
-    }
-
-    const std::vector<std::string> claimants =
-        owner_known ? std::vector<std::string>{} : other_variants;
-
-    bool removed_any = false;
-    std::error_code ec;
-    for (const auto& entry : fs::recursive_directory_iterator(snapshots_dir, safe_dir_options, ec)) {
-        if (ec) break;
-
-        const fs::path partial_path = entry.path();
-        if (safe_is_directory(partial_path) ||
-            !partial_belongs_to_variant(partial_path, snapshots_dir, variant) ||
-            download_claimed_by_other(partial_path, snapshots_dir, claimants,
-                                      /*is_manifest=*/false)) {
-            continue;
-        }
-
-        remove_file_or_throw(partial_path, "incomplete model download partial");
-        remove_stale_manifest_for_partial(partial_path, model_cache_path, snapshots_dir,
-                                          claimants);
-        cleanup_empty_parents(partial_path, model_cache_path);
-        removed_any = true;
-    }
-
-    if (!removed_any) {
-        LOG(INFO, "ModelManager") << "No incomplete cache artifacts found for occupied repo "
-                                  << main_repo << std::endl;
-    }
-
-    return removed_any;
-}
 
 
 void ModelManager::publish_store_locked() {
@@ -1009,6 +334,10 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     : extra_models_dir_(extra_models_dir),
       registries_(load_server_models(), get_user_models_file()),
       recipe_options_(get_recipe_options_file()),
+      artifacts_(std::make_unique<models::ModelArtifactStore>(models::ModelArtifactStore::Hooks{
+          [this] { return get_hf_cache_dir(); },
+          [this](const ModelInfo& info, const std::string& type) { return source_for(info, type); },
+      })),
       sync_(make_sync_deps()) {
     // Readers must always have a snapshot; an invalid one tells them to build.
     std::atomic_store(&store_snapshot_, std::shared_ptr<const models::StoreSnapshot>(
@@ -1117,7 +446,9 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
 std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
     models::ArtifactSourceResolver::Hooks hooks;
-    hooks.fetches_no_artifacts = [](const std::string& recipe) { return recipe == "cloud"; };
+    hooks.fetches_no_artifacts = [this](const std::string& recipe) {
+        return fetches_no_artifacts(recipe);
+    };
     hooks.backend_self_manages_downloads = [this](const std::string& recipe) {
         return backend_self_manages_downloads(recipe);
     };
@@ -1134,60 +465,6 @@ std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
                                                         : std::string();
     };
     return models::ArtifactSourceResolver(hooks).source_for(info, checkpoint_type);
-}
-
-std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
-    // Collections are virtual entries with no direct checkpoint to resolve.
-    if (is_model_collection_recipe(info.recipe)) {
-        return "";
-    }
-
-    // Local-path models use the checkpoint as-is (absolute path to a file).
-    if (info.source == "local_path") {
-        return checkpoint;
-    }
-
-    std::string hf_cache = get_hf_cache_dir();
-
-    // Local uploads: checkpoint is a relative path from the HF cache.
-    if (info.source == "local_upload") {
-        std::string normalized = checkpoint;
-        std::replace(normalized.begin(), normalized.end(), '\\', '/');
-        return hf_cache + "/" + normalized;
-    }
-
-    // Compute the HF cache location for this checkpoint's repo, then let the
-    // backend's ops find its artifact within (a .gguf file, a genai_config.json
-    // directory, a .bin, …).
-    backends::CheckpointResolveContext ctx;
-    ctx.hf_cache = hf_cache;
-    ctx.repo_id = repo_id_from_checkpoint(checkpoint);
-    ctx.main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
-    ctx.variant = variant_from_checkpoint(checkpoint);
-    ctx.registry_source = effective_registry_source(info);
-    ctx.model_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(ctx.repo_id, ctx.registry_source);
-    ctx.type = type;
-    ctx.checkpoint = checkpoint;
-
-    return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
-}
-
-// Reuse the backend-specific registry resolver against an alternative cache
-// root, without changing how the managed cache is resolved by default.
-static std::string resolve_registered_extra_checkpoint(
-    const ModelInfo& info, const std::string& type,
-    const std::string& checkpoint, const std::string& extra_dir) {
-    backends::CheckpointResolveContext ctx;
-    ctx.hf_cache = extra_dir;
-    ctx.repo_id = repo_id_from_checkpoint(checkpoint);
-    ctx.main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
-    ctx.variant = variant_from_checkpoint(checkpoint);
-    ctx.registry_source = effective_registry_source(info);
-    ctx.model_cache_path = extra_dir + "/" +
-        repo_id_to_cache_dir_name(ctx.repo_id, ctx.registry_source);
-    ctx.type = type;
-    ctx.checkpoint = checkpoint;
-    return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
 }
 
 // Resolve the complete family of a registered sharded GGUF. A first shard
@@ -1219,7 +496,7 @@ static bool collect_registered_shards(const fs::path& resolved, const fs::path& 
         }
         owned_paths.insert(entry.path().lexically_normal());
         const std::string path = path_to_utf8(entry.path());
-        if (!is_checkpoint_path_complete(path) ||
+        if (!models::ModelArtifactStore::path_complete(path) ||
             !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
             complete = false;  // Still scan remaining siblings for discovery exclusion.
         }
@@ -1230,17 +507,17 @@ static bool collect_registered_shards(const fs::path& resolved, const fs::path& 
 
 // Only complete repository caches can reclaim registered model identities;
 // loose GGUFs remain independent extra.* entries.
-static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::string& extra_dir,
+static bool try_resolve_registered_extra_cache(const models::ModelArtifactStore& artifacts,
+                                               ModelInfo& info, const std::string& extra_dir,
                                                std::set<fs::path>* registered_paths = nullptr) {
     if (extra_dir.empty() || !info.source.empty() ||
-        info.recipe == "flm" || info.recipe == "cloud" ||
         is_model_collection_recipe(info.recipe)) return false;
 
     const fs::path root = path_from_utf8(extra_dir);
     const std::string repo = repo_id_from_checkpoint(info.checkpoint("main"));
     if (repo.empty()) return false;
     const fs::path main_repo = root /
-        repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+        repo_id_to_cache_dir_name(repo, models::registry_source_of(info));
     if (!safe_is_directory(main_repo) || !path_inside(main_repo, root)) {
         return false;
     }
@@ -1256,9 +533,9 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
             const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
             if (checkpoint_repo.empty()) return false;
             const fs::path expected_repo = root /
-                repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
+                repo_id_to_cache_dir_name(checkpoint_repo, models::registry_source_of(info));
             candidate.resolved_paths[type] =
-                resolve_registered_extra_checkpoint(info, type, checkpoint, extra_dir);
+                artifacts.resolve_path_in(info, type, checkpoint, extra_dir);
             const std::string& resolved = candidate.resolved_paths[type];
             if (info.recipe == "llamacpp" && type == "main" &&
                 (safe_is_directory(path_from_utf8(resolved)) ||
@@ -1278,7 +555,7 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
                 return false;
             }
         }
-        if (!are_required_checkpoints_complete(candidate)) return false;
+        if (!artifacts.complete(candidate)) return false;
     } catch (const std::exception&) {
         return false;  // An optional directory must never break catalog discovery.
     }
@@ -1288,14 +565,15 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
 
 void ModelManager::resolve_all_model_paths(ModelInfo& info) {
     for (auto const& [type, checkpoint] : info.checkpoints) {
-        info.resolved_paths[type] = resolve_model_path(info, type, checkpoint);
+        info.resolved_paths[type] =
+            artifacts_->resolve_path(info, type, checkpoint);
     }
     // Prefer the managed cache, falling back only when incomplete.
     if (!extra_models_dir_.empty() && info.source.empty() &&
-        info.recipe != "flm" && info.recipe != "cloud" &&
+        !backend_self_manages_downloads(info.recipe) && !fetches_no_artifacts(info.recipe) &&
         !is_model_collection_recipe(info.recipe) &&
-        !are_required_checkpoints_complete(info)) {
-        try_resolve_registered_extra_cache(info, extra_models_dir_);
+        !artifacts_->complete(info)) {
+        try_resolve_registered_extra_cache(*artifacts_, info, extra_models_dir_);
     }
 }
 
@@ -1461,12 +739,11 @@ ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<
     deps.ensure_store = [this] { build_cache(); };
     deps.snapshot = [this] { return std::atomic_load(&store_snapshot_); };
     deps.hf_cache_dir = [this] { return get_hf_cache_dir(); };
-    deps.registry_source = [](const ModelInfo& info) { return effective_registry_source(info); };
-    deps.processed_snapshot_id = [](const fs::path& model_cache_dir,
-                                    const std::string& model_name,
-                                    const ModelInfo& info) {
-        return read_processed_registry_snapshot_id(model_cache_dir, model_name,
-                                                   registry_model_selection(info));
+    deps.registry_source = [](const ModelInfo& info) { return models::registry_source_of(info); };
+    deps.processed_snapshot_id = [this](const fs::path& model_cache_dir,
+                                        const std::string& model_name,
+                                        const ModelInfo& info) {
+        return artifacts_->processed_snapshot_id(model_cache_dir, info);
     };
     deps.cancel_requested = [this] { return sync_.cancel_requested(); };
     deps.scan_override = update_check_override_;
@@ -1664,7 +941,7 @@ static std::string describe_registration_conflict(const ModelInfo& existing,
     add_diff("recipe", existing.recipe, requested_recipe);
 
     const std::string requested_source = requested_registry_source(requested);
-    add_diff("source", effective_registry_source(existing), requested_source);
+    add_diff("source", models::registry_source_of(existing), requested_source);
 
     const std::string requested_mmproj = requested.value("mmproj", std::string());
     if (!requested_mmproj.empty()) {
@@ -1690,68 +967,6 @@ static bool check_component_downloaded(const ModelInfo& info,
         }
     }
     return true;
-}
-
-static bool has_partial_files(const fs::path& dir) {
-    std::error_code ec;
-    if (!safe_is_directory(dir)) return false;
-    // Non-recursive scan for .partial markers to confirm folder integrity
-    for (const auto& entry : fs::directory_iterator(dir, ec)) {
-        if (entry.path().extension() == ".partial") {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool is_checkpoint_path_complete(const std::string& path_str) {
-    if (path_str.empty()) return false;
-
-    fs::path resolved = path_from_utf8(path_str);
-    if (!safe_exists(resolved)) return false;
-
-    // A manifest or .partial file indicates an interrupted multi-file download.
-    // Preserve the existing semantics: file checkpoints check their parent
-    // directory for the manifest and their own .partial marker; directory
-    // checkpoints check the directory itself.
-    fs::path marker_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
-    if (safe_exists(marker_dir / ".download_manifest.json")) return false;
-
-    if (!safe_is_directory(resolved)) {
-        return !safe_exists(path_from_utf8(path_str + ".partial"));
-    }
-
-    return !has_partial_files(resolved);
-}
-
-/**
- * Returns true if all files required by the model recipe are present and complete.
- * Note: npu_cache is skipped as it is managed lazily by the flm-npu backend.
- */
-static bool are_required_checkpoints_complete(const ModelInfo& info) {
-    for (const auto& [type, checkpoint] : info.checkpoints) {
-        (void)checkpoint;
-
-        if (type == "npu_cache") continue;
-
-        const std::string resolved_path = info.resolved_path(type);
-        if (!is_checkpoint_path_complete(resolved_path)) {
-            return false;
-        }
-
-        // Per-backend file validation (e.g. llamacpp checks GGUF magic).
-        std::string invalid = backends::ops_for(info.recipe)->validate_checkpoint_file(resolved_path);
-        if (!invalid.empty()) {
-            LOG(WARNING, "ModelManager")
-                << invalid << "; marking model as not downloaded: " << resolved_path << std::endl;
-            return false;
-        }
-    }
-    return true;
-}
-
-bool ModelManager::checkpoints_complete(const ModelInfo& info) const {
-    return are_required_checkpoints_complete(info);
 }
 
 void ModelManager::download_from_registry_engine(const ModelInfo& info,
@@ -1974,7 +1189,7 @@ void ModelManager::build_cache() {
             if (!extra_models_dir_.empty()) {
                 for (const auto& [name, info] : claimed.models()) {
                     ModelInfo candidate = info;
-                    try_resolve_registered_extra_cache(candidate, extra_models_dir_,
+                    try_resolve_registered_extra_cache(*artifacts_, candidate, extra_models_dir_,
                                                        &registered_extra_paths);
                 }
             }
@@ -2013,6 +1228,7 @@ void ModelManager::build_cache() {
 
         backends::BackendOpsContext octx;
         octx.model_manager = this;
+        octx.artifacts = artifacts_.get();
         octx.cloud_registry = cloud_registry_;
 
         for (const auto* desc : backends::all_descriptors()) {
@@ -2114,6 +1330,7 @@ void ModelManager::build_cache() {
     // its backend ops (default = shared registry-cache completeness check).
     backends::BackendOpsContext status_ctx;
     status_ctx.model_manager = this;
+    status_ctx.artifacts = artifacts_.get();
 
     int downloaded_count = 0;
     // First pass: determine download status for non-collection models
@@ -2297,6 +1514,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     } else {
         backends::BackendOpsContext octx;
         octx.model_manager = this;
+        octx.artifacts = artifacts_.get();
         info.downloaded = backends::ops_for(info.recipe)->is_downloaded(info, octx);
     }
 
@@ -2927,7 +2145,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
         return false;
     }
     if (!cached->downloaded || backend_self_manages_downloads(cached->recipe) ||
-        are_required_checkpoints_complete(*cached)) {
+        artifacts_->complete(*cached)) {
         return cached->downloaded;
     }
 
@@ -2946,6 +2164,16 @@ bool ModelManager::backend_self_manages_downloads(const std::string& recipe) con
     return desc && desc->self_manages_downloads;
 }
 
+// A route to someone else's GPU has no bytes to fetch or remove. Not a descriptor
+// field, because cloud ships no descriptor at all: its spec() is null.
+bool ModelManager::fetches_no_artifacts(const std::string& recipe) const {
+    return recipe == "cloud";
+}
+
+bool ModelManager::checkpoints_complete(const ModelInfo& info) const {
+    return artifacts_->complete(info);
+}
+
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
     // Serialize downloads per checkpoint repo. A second request for the same
     // repo (e.g. a client that timed out and retried /pull while the first
@@ -2956,7 +2184,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     {
         std::lock_guard<std::mutex> guard(download_locks_mutex_);
         auto& slot = download_locks_[
-            effective_registry_source(info) + ":" +
+            models::registry_source_of(info) + ":" +
             repo_id_from_checkpoint(info.checkpoint("main"))];
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;
@@ -2967,6 +2195,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     // via the flm CLI; cloud is a no-op).
     backends::BackendOpsContext octx;
     octx.model_manager = this;
+    octx.artifacts = artifacts_.get();
     backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, progress_callback, octx);
 
     // Update cache after successful download
@@ -3015,9 +2244,9 @@ static std::string collection_component_drift(const ModelInfo& local, const json
     if (!m.recipe.empty() && m.recipe != local.recipe) {
         diffs.push_back("recipe (manifest='" + m.recipe + "' local='" + local.recipe + "')");
     }
-    if (effective_registry_source(m) != effective_registry_source(local)) {
-        diffs.push_back("source (manifest='" + effective_registry_source(m) +
-                        "' local='" + effective_registry_source(local) + "')");
+    if (models::registry_source_of(m) != models::registry_source_of(local)) {
+        diffs.push_back("source (manifest='" + models::registry_source_of(m) +
+                        "' local='" + models::registry_source_of(local) + "')");
     }
     for (const auto& [type, ck] : m.checkpoints) {
         if (ck.empty()) continue;
@@ -3041,8 +2270,9 @@ static std::string collection_component_drift(const ModelInfo& local, const json
 // filename-keyed on <RepoName>.json (see fetch_pull_variants in hf_variants.cpp),
 // but once the snapshot is cached this reader is content-based, so the filename is
 // not load-bearing here. Returns an empty json when no manifest is cached.
-static json read_cached_collection_manifest(const fs::path& cache_dir) {
-    fs::path snap = active_hf_snapshot_path(cache_dir);
+static json read_cached_collection_manifest(const models::ModelArtifactStore& artifacts,
+                                           const fs::path& cache_dir) {
+    fs::path snap = artifacts.active_snapshot_path(cache_dir);
     if (snap.empty()) return json();
 
     std::error_code ec;
@@ -3111,7 +2341,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id,
                m.contains("models") && m["models"].is_array();
     };
 
-    json manifest = read_cached_collection_manifest(cache_dir);
+    json manifest = read_cached_collection_manifest(*artifacts_, cache_dir);
     bool have_cache = manifest_complete(manifest);
 
     bool offline = false;
@@ -3134,7 +2364,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id,
         try {
             manifest_info.registry_source = source;
             download_from_registry(manifest_info, nullptr);
-            manifest = read_cached_collection_manifest(cache_dir);
+            manifest = read_cached_collection_manifest(*artifacts_, cache_dir);
         } catch (const std::exception& e) {
             if (!have_cache) throw;
             LOG(WARNING, "ModelManager") << "Could not refresh collection manifest for "
@@ -3266,8 +2496,8 @@ void ModelManager::populate_collection_components_from_cache(ModelInfo& info) {
     if (repo_id.empty()) return;
 
     fs::path cache_dir = path_from_utf8(get_hf_cache_dir()) /
-        repo_id_to_cache_dir_name(repo_id, effective_registry_source(info));
-    json manifest = read_cached_collection_manifest(cache_dir);
+        repo_id_to_cache_dir_name(repo_id, models::registry_source_of(info));
+    json manifest = read_cached_collection_manifest(*artifacts_, cache_dir);
     if (!manifest.is_object() || !manifest.contains("components") ||
         !manifest["components"].is_array()) {
         return;
@@ -3431,7 +2661,7 @@ void ModelManager::download_model(const std::string& model_name,
         auto info = get_model_info(model_name);
         if (!registration_data.contains("source") &&
             !registration_data.contains("registry_source")) {
-            registration_data["source"] = effective_registry_source(info);
+            registration_data["source"] = models::registry_source_of(info);
         }
 
         const bool explicit_definition =
@@ -3538,7 +2768,7 @@ void ModelManager::download_model(const std::string& model_name,
                 // inline in `models` (the exported-collection format). Register unknown
                 // components from those definitions and canonicalize the list.
                 components = register_components(model_data["components"], model_data["models"],
-                                                effective_registry_source(info));
+                                                models::registry_source_of(info));
 
                 // The early registration above persisted the raw component names from
                 // the file; re-register with the canonical list so cache lookups
@@ -3560,7 +2790,7 @@ void ModelManager::download_model(const std::string& model_name,
                 // (do_not_upgrade=false) always refresh so newly added components are
                 // picked up.
                 components = resolve_collection_components_from_manifest(
-                    repo_id, effective_registry_source(info), do_not_upgrade);
+                    repo_id, models::registry_source_of(info), do_not_upgrade);
             }
 
             if (components.empty()) {
@@ -3744,27 +2974,6 @@ void ModelManager::download_model(const std::string& model_name,
 }
 
 
-static void remove_unused_hf_snapshot(const fs::path& cache_path,
-                                      const std::string& snapshot_path,
-                                      const std::string& active_ref) {
-    if (cache_path.empty() || snapshot_path.empty() || active_ref.empty()) {
-        return;
-    }
-
-    fs::path unused_snapshot = path_from_utf8(snapshot_path);
-    fs::path active_snapshot = cache_path / "snapshots" / active_ref;
-    std::error_code ec;
-    if (!safe_exists(unused_snapshot) || fs::equivalent(unused_snapshot, active_snapshot, ec)) {
-        return;
-    }
-    ec.clear();
-    fs::remove_all(unused_snapshot, ec);
-    if (ec) {
-        LOG(WARNING, "ModelManager") << "Could not remove unused Hugging Face snapshot: "
-                                     << path_to_utf8(unused_snapshot)
-                                     << " (" << ec.message() << ")" << std::endl;
-    }
-}
 
 void ModelManager::download_from_manifest(const json& manifest,
                                           std::map<std::string, std::string>& headers,
@@ -3795,7 +3004,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         throw std::runtime_error("Model checkpoint does not contain a repository id");
     }
 
-    const std::string source_name = effective_registry_source(info);
+    const std::string source_name = models::registry_source_of(info);
     const auto source = parse_remote_registry_source(source_name);
     const auto& registry = model_registry(source);
     const std::string source_display = remote_registry_display_name(source);
@@ -3888,7 +3097,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         const auto& repo = repositories.at(repo_id);
         fs::path repo_cache = cache_root / repo_id_to_cache_dir_name(repo_id, source_name);
         ensure_create_directories(repo_cache);
-        const std::string previous_ref = read_hf_ref_main(repo_cache);
+        const std::string previous_ref = artifacts_->active_snapshot_ref(repo_cache);
         fs::path snapshot = repo_cache / "snapshots" / repo.snapshot_id;
         ensure_create_directories(snapshot);
 
@@ -4005,43 +3214,20 @@ void ModelManager::download_from_registry(const ModelInfo& info,
             ? repo_previous_refs.at(repo_id)
             : snapshot_id;
 
-        write_hf_ref_main(cache_path, active_snapshot_id);
+        artifacts_->write_active_snapshot(cache_path, active_snapshot_id);
         if (reusing_previous_snapshot) {
-            remove_unused_hf_snapshot(
+            artifacts_->remove_unused_snapshot(
                 cache_path, repo_snapshot_paths.at(repo_id), active_snapshot_id);
         }
 
-        const fs::path provenance_path = cache_path / ".lemonade_registry.json";
-        json processed_models = json::object();
-        if (safe_exists(provenance_path)) {
-            try {
-                const json previous_provenance =
-                    JsonUtils::load_from_file(path_to_utf8(provenance_path));
-                if (previous_provenance.contains("processed_models") &&
-                    previous_provenance["processed_models"].is_object()) {
-                    processed_models = previous_provenance["processed_models"];
-                }
-            } catch (const std::exception&) {
-                // Replace invalid provenance after a successful download.
-            }
-        }
-
-        if (repo_id == main_repo_id) {
-            processed_models[info.model_name] = {
-                {"selection", registry_model_selection(info)},
-                {"snapshot_id", snapshot_id}
-            };
-        }
-
         const auto& repo = repositories.at(repo_id);
-        json provenance = {
-            {"source", source_name},
-            {"repo_id", repo_id},
-            {"revision", repo.revision},
-            {"snapshot_id", active_snapshot_id},
-            {"processed_models", std::move(processed_models)}
-        };
-        JsonUtils::save_to_file(provenance, path_to_utf8(provenance_path));
+        artifacts_->record_processed_model(cache_path, info, models::Provenance{
+            source_name,
+            repo_id,
+            repo.revision,
+            active_snapshot_id,
+            snapshot_id,
+        });
     }
 
     if (progress_callback) {
@@ -4059,42 +3245,6 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         << repo_download_paths.at(main_repo_id) << std::endl;
 }
 
-// Files in a separate extra_models_dir remain user-managed even when their
-// complete repository cache is recognized under a catalog model's ID.
-static bool path_inside(const fs::path& path, const fs::path& root) {
-    if (path.empty() || root.empty()) return false;
-    std::error_code ec;
-    const fs::path actual = fs::weakly_canonical(path, ec);
-    if (ec) return false;
-    const fs::path base = fs::weakly_canonical(root, ec);
-    if (ec) return false;
-    const fs::path relative = actual.lexically_relative(base);
-    return !relative.empty() && *relative.begin() != fs::path("..");
-}
-
-// A checkpoint whose source cannot be classified counts as owned, which is the
-// safe direction: removal then has to prove the bytes sit in the managed cache.
-ModelManager::DeletionPlan ModelManager::deletion_plan(const ModelInfo& info) const {
-    DeletionPlan plan;
-    for (const auto& [type, checkpoint] : info.checkpoints) {
-        // A lazily fetched side cache retires with the engine's working set.
-        if (type == "npu_cache") {
-            continue;
-        }
-        models::Deletion deletion;
-        try {
-            deletion = source_for(info, type)->deletion();
-        } catch (const std::exception&) {
-            deletion.kind = models::Deletion::Kind::CacheDir;
-        }
-        if (deletion.kind == models::Deletion::Kind::Delegate) {
-            plan.delegated_recipe = deletion.reason;
-        } else if (deletion.kind == models::Deletion::Kind::CacheDir) {
-            plan.owned.push_back(type);
-        }
-    }
-    return plan;
-}
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
@@ -4126,332 +3276,70 @@ void ModelManager::delete_model(const std::string& model_name) {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
     }
-    const DeletionPlan plan = deletion_plan(info);
+    // Everything on disk is the artifact store's decision; this decides what the
+    // caller hears and what the registry loses.
+    const models::DeleteReport report = artifacts_->delete_artifacts(info, all_models());
 
-    // Never delete an adopted external cache through its registered catalog ID.
-    if (info.source.empty() && plan.delegated_recipe.empty() &&
-        !is_model_collection_recipe(info.recipe)) {
-        const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
-        const std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
-        const fs::path managed_main_repo = main_repo.empty() ? fs::path() :
-            managed_root / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
-        for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "npu_cache" || info.resolved_path(type).empty()) continue;
-            const std::string repo = repo_id_from_checkpoint(checkpoint);
-            if (repo.empty()) {
-                throw std::runtime_error("Cannot delete a registered model with an invalid checkpoint.");
-            }
-            const fs::path managed_repo = managed_root /
-                repo_id_to_cache_dir_name(repo, effective_registry_source(info));
-            const fs::path resolved_path = path_from_utf8(resolved_self.resolved_path(type));
-            const bool own_repo = path_inside(managed_repo, managed_root) &&
-                path_inside(resolved_path, managed_repo);
-            // Legacy downloads placed auxiliary files in the main repo cache.
-            // Never extend that exception to main files or external paths.
-            const bool legacy_main_repo = type != "main" && !main_repo.empty() &&
-                path_inside(managed_main_repo, managed_root) &&
-                path_inside(resolved_path, managed_main_repo);
-            if (!own_repo && !legacy_main_repo) {
-                if (!is_user_model_name(canonical_model_name)) {
-                    throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
-                                             "External files are user-managed; remove them manually.");
-                }
-                unregister_user_model(canonical_model_name);
-                remove_model_from_cache(canonical_model_name);
-                return;
-            }
-        }
+    // Bytes outside the models directory belong to whoever placed them. A user
+    // registration is the only record of such a model, so forgetting it is the
+    // whole delete; a registered model is not ours to forget.
+    if (report.outside_managed_cache && !is_user_model_name(canonical_model_name)) {
+        throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
+                                 "External files are user-managed; remove them manually.");
+    }
+    if (report.cleaned_partial_download) {
+        LOG(INFO, "ModelManager") << "Cleaned up an interrupted download of "
+                                  << canonical_model_name << std::endl;
     }
 
-    if (!plan.delegated_recipe.empty()) {
-        backends::ops_for(plan.delegated_recipe)->remove_self_managed_model(info);
-
-        // Remove from user models if it's a user model
-        if (is_user_model_name(canonical_model_name)) {
-            StoreWrite store_write(*this);
-            registries_.update_user([&](json& user_models) {
-                user_models.erase(strip_user_model_prefix(canonical_model_name));
-                return true;
-            });
-            cache_valid_ = false;
-            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
-        }
-
-        // Remove from cache after successful deletion
-        remove_model_from_cache(canonical_model_name);
-
-        return;
-    }
-
-    const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
-    const std::string registry_source = effective_registry_source(info);
-
-    const std::string own_main_path =
-        resolved_outside_managed_cache ? std::string() : resolved_self.resolved_path("main");
-    const bool own_main_on_disk =
-        !own_main_path.empty() && safe_exists(path_from_utf8(own_main_path));
-
-    // Cancelled or interrupted downloads have no resolved model file, but they
-    // can still leave resumable .partial files and manifests in the HF cache.
-    // Clean those artifacts before falling back to registry-only cleanup.
-    if (!own_main_on_disk) {
-        bool main_repo_occupied;
-        std::vector<std::string> main_repo_other_variants;
-        {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
-            main_repo_occupied = is_repo_occupied(main_repo, registry_source,
-                                                  canonical_model_name, models_cache_,
-                                                  resolve_managed);
-            main_repo_other_variants = repo_claimant_variants(
-                main_repo, registry_source, canonical_model_name, models_cache_);
-        }
-
-        bool removed_incomplete_cache = cleanup_incomplete_hf_model_cache(
-            info, main_repo_occupied, main_repo_other_variants);
-
-        if (!removed_incomplete_cache) {
-            LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
-        }
-
-        if (is_user_model_name(canonical_model_name)) {
-            StoreWrite store_write(*this);
-            registries_.update_user([&](json& user_models) {
-                user_models.erase(strip_user_model_prefix(canonical_model_name));
-                return true;
-            });
-            cache_valid_ = false;
-            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
-        }
-
-        remove_model_from_cache(canonical_model_name);
-        LOG(INFO, "ModelManager") << "Successfully removed model from registry: " << canonical_model_name << std::endl;
-        return;
-    }
-
-    // Every source disclaimed the bytes, so the registration is the whole record
-    // of this model and forgetting it is the entire delete.
-    if (plan.owned.empty()) {
-        if (is_user_model_name(canonical_model_name)) {
-            StoreWrite store_write(*this);
-            registries_.update_user([&](json& user_models) {
-                user_models.erase(strip_user_model_prefix(canonical_model_name));
-                return true;
-            });
-            cache_valid_ = false;
-            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
-        }
-        remove_model_from_cache(canonical_model_name);
-        LOG(INFO, "ModelManager") << "Successfully removed model from registry: "
-                                 << canonical_model_name << std::endl;
-        return;
-    }
-
-    // Find the models--* directory from resolved_path
-    // resolved_path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(path_from_utf8(info.resolved_path()));
-    std::string model_cache_path;
-
-    // Walk up the directory tree to find models--* directory
-    while (!path_obj.empty() && path_obj.has_filename()) {
-        std::string dirname = path_obj.filename().string();
-        if (dirname.rfind("models--", 0) == 0 ||
-            dirname.rfind("modelscope--models--", 0) == 0) {
-            model_cache_path = path_to_utf8(path_obj);
-            break;
-        }
-        path_obj = path_obj.parent_path();
-    }
-
-    if (model_cache_path.empty()) {
-        throw std::runtime_error("Could not find models-- directory in path: " + own_main_path);
-    }
-
-    LOG(INFO, "ModelManager") << "Cache path: " << model_cache_path << std::endl;
-
-    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
-    std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
-
-    // Check if the main repo is shared with another model
-    bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_);
-
-    const bool main_occupied = !main_repo_occupants.empty();
-    const bool main_busy = !main_occupied && repo_has_unfinished_download(model_cache_path_fs);
-
-    if (!main_occupied && !main_busy) {
-        // No other model uses this repo - safe to delete the entire directory
-        if (fs::exists(model_cache_path_fs)) {
-            LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
-            fs::remove_all(model_cache_path_fs);
-            LOG(INFO, "ModelManager") << "✓ Deleted model files: " << canonical_model_name << std::endl;
-        } else {
-            LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
-        }
-    } else {
-        // Repo still in use - only delete this model's specific resolved variant path
-        LOG(INFO, "ModelManager") << "Main repo " << main_repo
-                    << (main_busy ? " has an unfinished download, deleting variant path only"
-                                  : " is still occupied by other models, deleting variant path only")
-                    << std::endl;
-        fs::path variant_path = path_from_utf8(own_main_path);
-        if (safe_is_directory(variant_path)) {
-            // A directory checkpoint is shared ground, so clearing it wholesale
-            // would take the sibling files or the unfinished download that put
-            // this delete on the variant-only path in the first place.
-            remove_shared_checkpoint_dir(variant_path, model_cache_path_fs,
-                                         main_repo_occupants);
-        } else if (safe_exists(variant_path)) {
-            // Resolution names one file, but a sharded checkpoint reaches every
-            // sibling shard. Leaving those behind is the disk leak this delete
-            // exists to close.
-            std::set<fs::path> own_files{variant_path};
-            insert_shard_family(variant_path, own_files);
-
-            for (const fs::path& own_file : own_files) {
-                if (!safe_exists(own_file)) continue;
-                // Two catalog entries can name the exact same checkpoint, so the
-                // file under this model's name is not always this model's alone.
-                const bool owned_by_sibling = std::any_of(
-                    main_repo_occupants.begin(), main_repo_occupants.end(),
-                    [&own_file](const fs::path& owned) {
-                        return path_is_within(own_file, owned);
-                    });
-                if (owned_by_sibling) {
-                    LOG(INFO, "ModelManager") << "Keeping " << path_to_utf8(own_file)
-                                << " (another model resolves to the same file)" << std::endl;
-                    continue;
-                }
-                // Clean any HF symlink blobs before removing the snapshot entries.
-                cleanup_orphaned_blobs_under(own_file, model_cache_path_fs);
-                remove_resolved_path_or_throw(own_file, "variant path");
-                cleanup_empty_parents(own_file, model_cache_path_fs);
-            }
-        }
-        LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
-    }
-
-    // Clean up non-main checkpoint files in their own repo dirs (multi-repo models)
-    // Only delete if no other model on disk occupies the same repo
-    for (const auto& [type, checkpoint] : info.checkpoints) {
-        if (type == "main" || type == "npu_cache") continue;
-
-        std::string cp_repo = repo_id_from_checkpoint(checkpoint);
-        if (cp_repo.empty() || cp_repo == main_repo) continue;
-
-        bool cp_repo_occupied;
-        {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
-            cp_repo_occupied = is_repo_occupied(cp_repo, registry_source,
-                                                canonical_model_name, models_cache_,
-                                                resolve_managed);
-        }
-        if (cp_repo_occupied) {
-            LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
-                        << " (still occupied by other models)" << std::endl;
-            continue;
-        }
-
-        std::string cp_cache_dir = get_hf_cache_dir() + "/" + repo_id_to_cache_dir_name(cp_repo, registry_source);
-        fs::path cp_cache_path = path_from_utf8(cp_cache_dir);
-
-        if (repo_has_unfinished_download(cp_cache_path)) {
-            LOG(INFO, "ModelManager") << "Keeping repo " << cp_repo
-                        << " (unfinished download in progress)" << std::endl;
-            continue;
-        }
-
-        // Nothing else is living here — safe to delete the entire repo directory
-        if (fs::exists(cp_cache_path)) {
-            LOG(INFO, "ModelManager") << "Removing non-main repo directory: " << cp_cache_dir << std::endl;
-            fs::remove_all(cp_cache_path);
-        }
-    }
-
-    // Remove from user models if it's a user model
-    if (is_user_model_name(canonical_model_name)) {
-        StoreWrite store_write(*this);
-        registries_.update_user([&](json& user_models) {
-            user_models.erase(strip_user_model_prefix(canonical_model_name));
-            return true;
-        });
-        cache_valid_ = false;
-        LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
-    }
-
-    // Remove from cache after successful deletion
+    forget_registered_model(canonical_model_name);
     remove_model_from_cache(canonical_model_name);
+}
+
+std::map<std::string, ModelInfo> ModelManager::all_models() const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return models_cache_;
+}
+
+// Drop the model's own registration, if it has one. Rows the catalog re-creates
+// have none.
+void ModelManager::forget_registered_model(const std::string& canonical_model_name) {
+    if (!is_user_model_name(canonical_model_name)) {
+        return;
+    }
+    StoreWrite store_write(*this);
+    registries_.update_user([&](json& user_models) {
+        user_models.erase(strip_user_model_prefix(canonical_model_name));
+        return true;
+    });
+    cache_valid_ = false;
+    LOG(INFO, "ModelManager") << "\u2713 Removed from user_models.json" << std::endl;
 }
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();
 
-    std::string hf_cache = get_hf_cache_dir();
+    const models::CleanupReport report = artifacts_->cleanup_orphaned_cache(all_models(), dry_run);
+
     json orphaned_files = json::array();
-    size_t total_bytes = 0;
-
-    StoreWrite store_write(*this);
-
-    // Find multi-repo models where non-main checkpoints reference different repos
-    for (const auto& [name, info] : models_cache_) {
-        if (info.checkpoints.size() <= 1) continue;
-
-        std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
-        std::string main_cache = hf_cache + "/" + repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
-
-        for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "main" || type == "npu_cache") continue;
-
-            std::string cp_repo = repo_id_from_checkpoint(checkpoint);
-            if (cp_repo == main_repo) continue;  // Same repo, no orphan possible
-
-            std::string variant = variant_from_checkpoint(checkpoint);
-            if (variant.empty()) continue;
-
-            // Check if file exists in main repo dir (orphaned location)
-            fs::path main_cache_fs = path_from_utf8(main_cache);
-            if (!fs::exists(main_cache_fs)) continue;
-
-            // Search for the variant file in the main repo's cache
-            for (const auto& entry : fs::recursive_directory_iterator(main_cache_fs)) {
-                if (!entry.is_regular_file()) continue;
-
-                std::string filename = entry.path().filename().string();
-                // Match by filename for simple variants, or by path suffix for nested variants
-                bool matches = (filename == variant) ||
-                    (variant.find('/') != std::string::npos &&
-                     path_to_utf8(entry.path()).find(variant) != std::string::npos);
-
-                if (matches) {
-                    size_t file_size = fs::file_size(entry.path());
-                    std::string file_path = path_to_utf8(entry.path());
-
-                    orphaned_files.push_back({
-                        {"path", file_path},
-                        {"size", file_size},
-                        {"model", name},
-                        {"type", type},
-                        {"belongs_to", cp_repo}
-                    });
-                    total_bytes += file_size;
-
-                    if (!dry_run) {
-                        LOG(INFO, "ModelManager") << "Removing orphaned file: " << file_path << std::endl;
-                        fs::remove(entry.path());
-                    }
-                    break;  // Found the orphan for this checkpoint
-                }
-            }
-        }
+    for (const auto& orphan : report.orphaned) {
+        orphaned_files.push_back({
+            {"path", orphan.path},
+            {"size", orphan.size},
+            {"model", orphan.model},
+            {"type", orphan.type},
+            {"belongs_to", orphan.belongs_to}
+        });
     }
+
+    LOG(INFO, "ModelManager") << "Cache cleanup: found " << report.orphaned.size()
+                              << " orphaned file(s), " << (report.total_bytes / (1024 * 1024))
+                              << " MB" << (dry_run ? " (dry run)" : " (deleted)") << std::endl;
 
     json result;
     result["orphaned_files"] = orphaned_files;
-    result["total_bytes"] = total_bytes;
+    result["total_bytes"] = report.total_bytes;
     result["dry_run"] = dry_run;
-
-    LOG(INFO, "ModelManager") << "Cache cleanup: found " << orphaned_files.size()
-                << " orphaned file(s), " << (total_bytes / (1024 * 1024)) << " MB"
-                << (dry_run ? " (dry run)" : " (deleted)") << std::endl;
-
     return result;
 }
 
