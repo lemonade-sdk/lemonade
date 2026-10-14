@@ -70,8 +70,8 @@ public:
                         "size_bytes": {"type": "integer"}
                     }
                 }},
-                "size": {"type": "number", "description": "collection only: the collection's total size, from its manifest."},
-                "component_count": {"type": "integer", "description": "collection only: how many models the collection bundles."}
+                "size": {"type": "number", "description": "Collections only: the collection's total size, from its manifest."},
+                "component_count": {"type": "integer", "description": "Collections only: how many models the collection bundles."}
             }
         })");
         s.responses = {response};

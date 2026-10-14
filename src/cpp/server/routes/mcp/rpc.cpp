@@ -31,8 +31,8 @@ public:
             "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
             "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
-            "The MCP specification mandates one endpoint URL per server, so `/mcp` is an exception "
-            "to Lemonade's quad-prefix convention.",
+            "The MCP specification mandates one endpoint URL per server, so `/mcp` has no "
+            "`/api/v1/`, `/v1/` or other prefixed form.",
             "### Supported methods\n"
             "\n"
             "| Method | Purpose |\n"

@@ -40,14 +40,14 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 | `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `logprobs` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tools` | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`, which OpenAI recommends instead. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_tokens` | No | Upper bound on generated tokens. Wins over `max_completion_tokens` when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_completion_tokens` | No | OpenAI's name for `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `enable_thinking` | No | Lemonade extension: `false` turns off reasoning on models that think. The OpenAI-compatible `thinking: false` is accepted too. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the routing decision to the response as `x_lemonade_route`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -108,7 +108,7 @@ When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.
 
 Both non-streaming and `stream: true` are supported. In streaming mode the media arrives as a content delta on a `chat.completion.chunk` frame the moment its tool finishes.
 
-**Merge semantics.** A client-provided system prompt is prepended by the built-in omni system prompt. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
+**Merge semantics.** The built-in omni system prompt goes before a client-provided one. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
 
 #### Example request
 
@@ -247,7 +247,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
       - `message`
         - `reasoning_content` - Reasoning models only: the model's thinking.
         - `tool_calls` - Calls to the request's tools.
-    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 
 === "Streaming responses"
 
@@ -265,7 +265,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
     **Field Descriptions:**
 
     - `usage` - Final chunk only: token usage.
-    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -397,7 +397,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
     **Field Descriptions:**
 
-    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 
 === "Streaming responses"
 
@@ -415,7 +415,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     **Field Descriptions:**
 
     - `usage` - Final chunk only: token usage.
-    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 <!-- END GENERATED: openai.completions -->
 
 <!-- BEGIN GENERATED: openai.embeddings -->
@@ -512,7 +512,7 @@ Also served at `/api/v0/responses`, `/api/v1/responses` and `/v0/responses`. Req
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `input` | Yes | A list of dictionaries or a string input for the model to respond to. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `input` | Yes | The input, as a string or an array of input items. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to use for the response. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_output_tokens` | No | The maximum number of output tokens to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -623,7 +623,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     **Field Descriptions:**
 
     - `output` - Output items; a message item carries its text in content[].text.
-    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 
 === "Streaming responses"
 
@@ -871,7 +871,7 @@ Also served at `/api/v0/images/generations`, `/api/v1/images/generations` and `/
 | `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, `256x256`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate. Only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of images to generate. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. SD-Turbo works well with 4 steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -949,7 +949,7 @@ Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/ed
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, use the first reference image's dimensions, scaling down proportionally to the model's optional `image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit size bypasses this soft cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Default: `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1043,7 +1043,7 @@ Also served at `/api/v0/images/variations`, `/api/v1/images/variations` and `/v0
 | `model` | Yes | The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `image` | Yes | The source image (PNG). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Default: `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `user` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
@@ -1634,7 +1634,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
   - `size` - Size in GB; omitted when unknown.
   - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
-  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known).
+  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when none is known).
   - `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
   - `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
   - `downloaded` - Whether the model is downloaded.
@@ -1666,14 +1666,14 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 
 Labels describe what a model can do. A model may carry multiple labels.
 
-**Deployment labels** — determine which backend endpoint the model is routed to.
+**Deployment labels:** determine which backend endpoint the model is routed to.
 Every model names exactly one deployment mode, and a model is never given two
 labels that name different modes:
 
 | Label | Endpoint | Description |
 |-------|----------|-------------|
-| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`/`chat-transcription`, which are characteristics rather than deployment modes. |
-| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). An omni LLM that accepts audio in a chat turn is not one of these — it carries `chat` and the `chat-transcription` capability below. |
+| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM; it is not inferred from `reasoning`/`vision`/`tool-calling`/`chat-transcription`, which are characteristics rather than deployment modes. |
+| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). An omni LLM that accepts audio in a chat turn is not one of these: it carries `chat` and the `chat-transcription` capability below. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. Also accepted as `embedding`. |
 | `reranking` | `/rerank` | Scores and reranks a list of passages given a query. |
 | `image` | `/images/generations`, `/images/edits`, `/images/variations` | Text-to-image generation model. |
@@ -1683,7 +1683,7 @@ labels that name different modes:
 | `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
 
 When a model declares no deployment label at all, it inherits its recipe's
-default — `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
+default: `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
 `transcription` for `whispercpp`, `image` for `sd-cpp`, `tts` for `kokoro`, and
 so on.
 
@@ -1692,7 +1692,7 @@ repaired:
 
 - **A mode the recipe's backend does not serve.** `/classify` is served only by
   `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
-  error — register it as the chat model it is.
+  error; register it as the chat model it is.
 - **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
   is an error even though llama.cpp serves both: the subprocess is launched for
   one mode, so the second would name an endpoint it was never configured to
@@ -1700,37 +1700,36 @@ repaired:
   booleans count as mode claims here, exactly as the labels do.
 
 [`POST /v1/pull`](./lemonade.md#post-v1pull) answers `400` and registers nothing.
-An entry already stored in `user_models.json` — written before these rules — is
-skipped at startup with an error naming it, and the file is left untouched so it
-can be corrected by hand.
+A stored `user_models.json` entry that breaks these rules is skipped at startup with
+an error naming it; the file is left for you to correct.
 
-**Input-modality labels** — the model accepts additional input types in `/chat/completions`:
+**Input-modality labels:** the model accepts additional input types in `/chat/completions`:
 
 | Label | Description |
 |-------|-------------|
 | `vision` | Accepts image attachments in chat messages. |
-| `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own — a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
+| `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own; a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
 
-**Streaming labels** — capability flags for real-time features:
+**Streaming labels:** capability flags for real-time features:
 
 | Label | Description |
 |-------|-------------|
 | `realtime-transcription` | Supports the WebSocket `/realtime` endpoint for live microphone transcription. |
 
-**Runtime labels** — affect backend launch defaults:
+**Runtime labels:** affect backend launch defaults:
 
 | Label | Description |
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
 
-**Image capability labels** — carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
+**Image capability labels:** carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
 
 | Label | Description |
 |-------|-------------|
 | `edit` | Tuned for editing an input image (`/images/edits`). Also selects the model for the `edit_image` role in an omni collection. |
 | `upscaling` | Image upscaling model (e.g. Real-ESRGAN, `/images/upscale`). Used as a component in image pipelines rather than offered on its own. |
 
-**Characteristic labels** — informational, do not affect routing:
+**Characteristic labels:** informational, do not affect routing:
 
 | Label | Description |
 |-------|-------------|
@@ -1806,7 +1805,7 @@ An unknown model answers `404` with `code` `model_not_found`.
 - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
 - `size` - Size in GB; omitted when unknown.
 - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
-- `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known).
+- `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when none is known).
 - `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
 - `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
 - `downloaded` - Whether the model is downloaded.

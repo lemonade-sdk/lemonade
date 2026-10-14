@@ -54,7 +54,7 @@ public:
             {"size", ArgIn::Form, text, false, Support::Available,
              "The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: "
              "`512x512`."},
-            {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Partial,
+            {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Available,
              "Number of images to generate, from `1` to `10`; other values answer `400`. "
              "Default: `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,

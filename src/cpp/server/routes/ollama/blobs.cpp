@@ -13,7 +13,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/blobs/{digest}"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Upload a blob. Returns 501";
+        s.summary = "Upload a blob";
         s.description = "Not supported. Returns 501.";
         s.args = {
             {"digest", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::NotAvailable,

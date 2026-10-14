@@ -23,7 +23,7 @@ public:
             "Reads one page from the [`GET /v1/docs`](#get-v1docs) index, as `text/markdown`.";
         s.notes = {
             "An unknown page answers `404`.",
-            "### Reading the files directly\n"
+            "### Reading the Files Directly\n"
             "\n"
             "The same files are installed on disk, so they can be read without a running server:\n"
             "\n"

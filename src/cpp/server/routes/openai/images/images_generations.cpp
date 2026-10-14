@@ -32,8 +32,8 @@ public:
             {"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, "
              "`256x256`). Default: `512x512`."},
-            {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Partial,
-             "Number of images to generate. Only `1` is supported."},
+            {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+             "Number of images to generate. Defaults to `1`."},
             {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
              "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,

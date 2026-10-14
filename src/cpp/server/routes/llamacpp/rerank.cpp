@@ -16,7 +16,7 @@ public:
         s.id = "llamacpp.rerank";
         s.methods = {"POST"};
         s.paths = {"rerank", "reranking", "reranker"};
-        s.summary = "Reranking";
+        s.summary = "Score documents against a query";
         s.modality = "query + documents -> relevance-scored documents";
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "

@@ -2,17 +2,15 @@
 
 This page documents Lemonade's llama.cpp-specific compatibility surface. Lemonade forwards each of these requests to a llama.cpp server: rerank to the model it names, and slots and tokenize, which name no model, to the most recently used loaded model.
 
-## Summary
-
 <!-- BEGIN GENERATED: llamacpp.summary -->
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
-| `POST` | [`/v1/rerank`](#post-v1rerank) | Reranking | query + documents -> relevance-scored documents |
-| `GET` | [`/v1/slots`](#get-v1slots) | Returns the current slots processing state | slots state |
+| `POST` | [`/v1/rerank`](#post-v1rerank) | Score documents against a query | query + documents -> relevance-scored documents |
+| `GET` | [`/v1/slots`](#get-v1slots) | Read each slot's processing state | slots state |
 | `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsid) | Save the prompt cache of the specified slot to a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsid) | Restore the prompt cache of the specified slot from a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsid) | Erase the prompt cache of the specified slot | prompt cache |
-| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize a given text | tokenization |
+| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize text | tokenization |
 <!-- END GENERATED: llamacpp.summary -->
 
 <!-- BEGIN GENERATED: llamacpp.rerank -->

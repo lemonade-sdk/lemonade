@@ -1,6 +1,6 @@
 # Anthropic-Compatible API
 
-Lemonade supports an initial Anthropic Messages compatibility endpoint for applications that call Claude-style APIs.
+Lemonade serves the Anthropic Messages API for applications that call Claude-style APIs.
 
 <!-- BEGIN GENERATED: anthropic.summary -->
 | Method | Endpoint | Description |

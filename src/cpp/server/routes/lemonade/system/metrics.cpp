@@ -37,14 +37,14 @@ public:
             "```\n\n"
             "A Grafana dashboard's refresh rate sets how often it queries Prometheus, not how often "
             "Prometheus scrapes Lemonade.",
-            "### Metric families\n"
+            "### Metric Families\n"
             "\n"
             "The names, types, labels and help text are defined by the `metrics.describe(...)` "
             "calls in "
             "[`src/cpp/server/prometheus_metrics.cpp`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/server/prometheus_metrics.cpp). "
             "Unsupported, unavailable, null, NaN and infinite values are omitted rather than "
             "emitted as samples.",
-            "### llama.cpp backend metrics\n"
+            "### llama.cpp Backend Metrics\n"
             "\n"
             "Lemonade starts llama.cpp backends with metrics enabled and, for each loaded "
             "`llamacpp` model, makes a best-effort scrape of the backend's private `/metrics` "

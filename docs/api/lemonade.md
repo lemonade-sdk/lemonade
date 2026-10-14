@@ -194,7 +194,7 @@ Also served at `/api/v0/models/register`, `/api/v1/models/register` and `/v0/mod
 
 `checkpoint` is optional because registration records only metadata, and some model types have no local weights.
 
-The body holds one model definition. A collection's components must already be registered: an embedded `models` array is rejected.
+The body holds one model definition; a collection's components must already be registered.
 
 A `400` answers a body that is not a JSON object, a missing `model_name`, a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a missing `recipe`, an embedded `models` array, and malformed `checkpoint`, `checkpoints`, `source` or `components` values.
 
@@ -268,7 +268,7 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
   - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
   - `size` - Size in GB; omitted when unknown.
   - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
-  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known).
+  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when none is known).
   - `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
   - `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
   - `downloaded` - Whether the model is downloaded.
@@ -314,18 +314,20 @@ Also served at `/api/v0/pull`, `/api/v1/pull` and `/v0/pull`. Requires `LEMONADE
 | `recipe` | No | Registering, required: the recipe that loads and runs the model, such as `llamacpp`, or `collection.omni` for an omni collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoint` | No | The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoints` | No | Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, `draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for image generation, each when `main` does not embed it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `reranking` | No | Whether the model is a reranking model (default: false). Adds 'reranking' label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `reasoning` | No | `true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `vision` | No | `true` adds the `vision` label, for a model that accepts images. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `embedding` | No | `true` adds the `embeddings` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `reranking` | No | `true` adds the `reranking` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mmproj` | No | Multimodal projector file for a vision model, in the `checkpoint` repository. The same as `checkpoints.mmproj`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `components` | No | Omni-model, required: Ordered, non-empty array of model names. Each component must be a regular model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `components` | No | Omni collections, required: the component model names, in order; each must be a regular model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `models` | No | Full model definitions, one per `components` entry, with the same fields as a single registration. Components not yet registered are registered from them; registered ones keep their local definition. Without `models`, every component must already be registered. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `labels` | No | Registering only: model labels. A model deploys in exactly one [deployment mode](./openai.md#model-labels): naming a mode the recipe cannot serve, or naming two, through `labels` or the `embedding` and `reranking` flags, is rejected with `400`. Omitting the deployment label applies the recipe's default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` | No | Registry to download from: `huggingface` or `modelscope`. Defaults to the server's `default_model_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `registry_source` | No | Same as `source`; when both are given they must name the same registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `do_not_upgrade` | No | `true` skips checking an already-downloaded model's registry for updates. Only `/v1/pull` checks; loading a model on first use never does. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `local_import` | No | Register model files a client already copied into the Hugging Face cache, without downloading. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A `400` answers an invalid definition, an unknown model (with `code: "unknown_model"`), or offline mode (with `code: "lemond_offline"`), and nothing is registered.
 
 ### Register and Install a Model
 
@@ -358,8 +360,6 @@ curl -X POST http://localhost:13305/v1/pull \
 ### Import an Exported Model File
 
 Files written by `lemonade export` and the desktop app's Export button are `/v1/pull` request bodies: POST a file's contents as is to register and install its model. An exported collection also carries `models`, so its components register with it. See [Share a collection](../guide/configuration/custom-models.md#share-a-collection-between-machines) for the file format and workflows.
-
-A `400` answers an invalid definition, an unknown model (with `code: "unknown_model"`), or offline mode (with `code: "lemond_offline"`), and nothing is registered.
 
 ### Example request
 
@@ -1193,8 +1193,8 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `so
 - `draft_files` - Bare names of draft-model GGUF files.
 - `variants` - Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically).
   - `draft_file` - The draft model paired with this variant, when the repository ships one.
-- `size` - collection only: the collection's total size, from its manifest.
-- `component_count` - collection only: how many models the collection bundles.
+- `size` - Collections only: the collection's total size, from its manifest.
+- `component_count` - Collections only: how many models the collection bundles.
 <!-- END GENERATED: lemonade.pull_variants -->
 
 <!-- BEGIN GENERATED: lemonade.delete -->
@@ -1266,7 +1266,7 @@ Also served at `/api/v0/load`, `/api/v1/load` and `/v0/load`. Requires `LEMONADE
 | `cfg_scale` | No | sd-cpp: classifier-free guidance scale. Default: 7.0. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` | No | sd-cpp: image width in pixels. Default: 512. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | sd-cpp: image height in pixels. Default: 512. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `merge_args` | No | If `true` (the default), server-wide `*_args` still apply when the request sends `*_args`. If `false`, no inherited custom args or overridable runtime defaults apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `merge_args` | No | If `true` (the default), server-wide `*_args` still apply when the request sends `*_args`. If `false`, the request's `*_args` replace every server-wide argument instead of adding to them. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Loading a collection (`recipe: "collection.omni"`) loads each component in turn with the component's own saved options; options in the request are not forwarded. A `collection.router` model loads nothing until a request routes to a candidate.
 
@@ -1516,7 +1516,7 @@ Also served at `/api/v0/3d/generations`, `/api/v1/3d/generations` and `/v0/3d/ge
 | `image` | Yes | Base64-encoded input image (optionally a `data:` URL). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `uv` | No | UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving every face unique atlas space: best quality, but chart computation is superlinear in face count. `box` is a faster 6-plane projection with occlusion-aware bucket assignment and depth-tested rasterization; small texture artifacts remain possible in concave regions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `uv` | No | UV atlas method. `xatlas` (default) unwraps every face into its own atlas space for the best texture quality, but slows down on large meshes. `box` is a faster six-plane projection that can leave small artifacts in concave regions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
@@ -1664,7 +1664,7 @@ Also served at `/api/v0/docs/{page}`, `/api/v1/docs/{page}` and `/v0/docs/{page}
 
 An unknown page answers `404`.
 
-### Reading the files directly
+### Reading the Files Directly
 
 The same files are installed on disk, so they can be read without a running server:
 
@@ -1824,7 +1824,7 @@ This endpoint does not take any parameters.
 - `status` - Server health status, always `"ok"`
 - `version` - Version number of Lemonade Server
 - `model_loaded` - Model name of the most recently accessed model
-- `update_check_done` - Whether the background HuggingFace model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready.
+- `update_check_done` - Whether the background Hugging Face model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready.
 - `all_models_loaded` - Every loaded model.
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
@@ -1850,7 +1850,8 @@ This endpoint does not take any parameters.
   - `transcription` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
-- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`. The main port serves both APIs too.
+  - `classification` - Maximum classification models
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned, or set by the `websocket_port` setting in [Server Configuration](../guide/configuration/README.md). The main port serves both APIs too.
 - `telemetry` - Telemetry state.
   - `enabled` - Whether telemetry collection is active
   - `captures` - *(optional)* Array of captured telemetry components (e.g., `["inputs", "outputs", "thinking"]`), only present when `enabled` is `true`.
@@ -2025,11 +2026,11 @@ global:
 
 A Grafana dashboard's refresh rate sets how often it queries Prometheus, not how often Prometheus scrapes Lemonade.
 
-### Metric families
+### Metric Families
 
 The names, types, labels and help text are defined by the `metrics.describe(...)` calls in [`src/cpp/server/prometheus_metrics.cpp`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/server/prometheus_metrics.cpp). Unsupported, unavailable, null, NaN and infinite values are omitted rather than emitted as samples.
 
-### llama.cpp backend metrics
+### llama.cpp Backend Metrics
 
 Lemonade starts llama.cpp backends with metrics enabled and, for each loaded `llamacpp` model, makes a best-effort scrape of the backend's private `/metrics` endpoint. Those metrics are renamed under the `lemonade_llamacpp_*` prefix and labeled with the same model metadata as `lemonade_model_info`. A failed backend scrape does not fail the response.
 
@@ -3632,7 +3633,7 @@ A local install without both `recipe` and `backend`, or of a backend this system
 ### Install a cloud provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Registers an OpenAI-compatible chat provider. The base URL is persisted to `config.json`; the optional `api_key` lives in `lemond` process memory only and is cleared on restart. See the [Cloud Offload guide](../guide/configuration/cloud.md) for the full workflow.
+Registers a cloud chat provider. The base URL is persisted to `config.json`; the optional `api_key` lives in `lemond` process memory only and is cleared on restart. See the [Cloud Offload guide](../guide/configuration/cloud.md) for the full workflow.
 
 Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
@@ -3717,7 +3718,7 @@ curl -X POST http://localhost:13305/v1/install \
 
     - `models_discovered` - Chat models discovered with the resolved API key; 0 when no key resolves.
     - `auth_state`
-      - `env_var_set` - Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond.
+      - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
       - `runtime_key_set` - Whether a key is held in lemond's memory.
     - `warnings` - Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`.
     - `warning` - The warnings joined into one string, for older clients.
@@ -3952,7 +3953,7 @@ A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a non-
 **Field Descriptions:**
 
 - `auth_state`
-  - `env_var_set` - Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond.
+  - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
   - `runtime_key_set` - Whether a key is held in lemond's memory.
 - `models_discovered` - Chat models discovered with the key; 0 when discovery fails.
 - `warnings` - Present when the provider's base URL is `http://`.
@@ -4005,7 +4006,7 @@ Also served at `/api/v0/cloud/auth/{provider}`, `/api/v1/cloud/auth/{provider}` 
 
 - `cleared_runtime_key` - `false` when no in-memory key was present, for example when the only key came from the env var.
 - `auth_state`
-  - `env_var_set` - Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond.
+  - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
   - `runtime_key_set` - Whether a key is held in lemond's memory.
 <!-- END GENERATED: lemonade.cloud_auth_provider -->
 

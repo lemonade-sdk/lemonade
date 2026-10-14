@@ -23,7 +23,7 @@ ordered_json health_schema() {
             "status": {"const": "ok", "description": "Server health status, always `\"ok\"`"},
             "version": {"type": "string", "description": "Version number of Lemonade Server"},
             "model_loaded": {"type": ["string", "null"], "description": "Model name of the most recently accessed model"},
-            "update_check_done": {"type": "boolean", "description": "Whether the background HuggingFace model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready."},
+            "update_check_done": {"type": "boolean", "description": "Whether the background Hugging Face model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready."},
             "all_models_loaded": {
                 "type": "array",
                 "description": "Every loaded model.",
@@ -69,11 +69,12 @@ ordered_json health_schema() {
                     "reranking": {"type": "integer", "description": "Maximum reranking models"},
                     "transcription": {"type": "integer", "description": "Maximum speech-to-text models"},
                     "image": {"type": "integer", "description": "Maximum image models"},
-                    "tts": {"type": "integer", "description": "Maximum text-to-speech models"}
+                    "tts": {"type": "integer", "description": "Maximum text-to-speech models"},
+                    "classification": {"type": "integer", "description": "Maximum classification models"}
                 },
                 "additionalProperties": {"type": "integer"}
             },
-            "websocket_port": {"type": "integer", "description": "*(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`. The main port serves both APIs too."},
+            "websocket_port": {"type": "integer", "description": "*(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned, or set by the `websocket_port` setting in [Server Configuration](../guide/configuration/README.md). The main port serves both APIs too."},
             "telemetry": {
                 "type": "object",
                 "description": "Telemetry state.",

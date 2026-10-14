@@ -13,7 +13,7 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/push"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Push a model to a registry. Returns 501";
+        s.summary = "Push a model to a registry";
         s.description = "Not supported. Returns 501.";
         return s;
     }

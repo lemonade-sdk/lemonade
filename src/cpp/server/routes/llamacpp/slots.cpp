@@ -18,7 +18,7 @@ public:
         s.id = "llamacpp.slots";
         s.methods = {"GET"};
         s.paths = {"slots"};
-        s.summary = "Returns the current slots processing state";
+        s.summary = "Read each slot's processing state";
         s.modality = "slots state";
         s.description =
             "Returns the state of each processing slot in the llama.cpp server. Slots are the "

@@ -133,8 +133,8 @@ public:
              "sd-cpp: image height in pixels. Default: 512."},
             {"merge_args", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "If `true` (the default), server-wide `*_args` still apply when the request sends "
-             "`*_args`. If `false`, no inherited custom args or overridable runtime defaults "
-             "apply."},
+             "`*_args`. If `false`, the request's `*_args` replace every server-wide argument "
+             "instead of adding to them."},
         };
 
         RouteResponse response;

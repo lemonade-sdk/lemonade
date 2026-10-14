@@ -299,15 +299,13 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/chat"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Chat completion. Streaming and non-streaming";
+        s.summary = "Chat completion, streaming or not";
         s.description =
             "Generates the next assistant message for a conversation, loading the model on "
             "first use. Lemonade runs it as an OpenAI chat completion and converts the result.";
         s.notes = {
             "A request with tools and streaming runs non-streaming on the backend and answers "
             "with two NDJSON lines: the whole message, then the final line.",
-            "An empty `messages` array with `\"keep_alive\": 0` unloads the model instead, "
-            "answering with `done_reason: \"unload\"`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -331,7 +329,8 @@ public:
              "Not applied: reasoning models think regardless. Qwen3 models skip their "
              "reasoning when the prompt ends with `/no_think`."},
             {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-             "`0` with an empty `messages` array unloads the model. Other values are ignored."},
+             "`0` with an empty `messages` array unloads the model, answering with "
+             "`done_reason: \"unload\"`. Other values are ignored."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request loads "
              "it. Wins over `options.num_ctx`."},

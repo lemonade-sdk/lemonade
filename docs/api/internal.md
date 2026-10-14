@@ -728,11 +728,11 @@ The `lemonade update-models` command uses this endpoint; see Model Synchronizati
 - `sync_id` - The sync this status describes; 0 before any sync.
 - `completed_sync_id` - The most recent sync that finished.
 - `already_in_progress` - Whether a sync is running.
-- `dry_run` - Dry runs only: true.
-- `async` - Background dispatch only: true.
-- `message` - Background dispatch only.
+- `dry_run` - `true` when the request was a dry run.
+- `async` - `true` when the sync was started in the background.
+- `message` - Present when the sync was started in the background.
 - `is_full_sync` - Whether the sync covers every downloaded model.
-- `models_updated` - Models with an update; downloaded unless dry_run.
+- `models_updated` - Models with an update; downloaded unless `dry_run`.
 - `failed_models` - Error message per model that could not be checked or updated.
 - `progress` - While a sync runs: the file downloading now.
 <!-- END GENERATED: internal.models_sync -->
@@ -795,11 +795,11 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 - `sync_id` - The sync this status describes; 0 before any sync.
 - `completed_sync_id` - The most recent sync that finished.
 - `already_in_progress` - Whether a sync is running.
-- `dry_run` - Dry runs only: true.
-- `async` - Background dispatch only: true.
-- `message` - Background dispatch only.
+- `dry_run` - `true` when the request was a dry run.
+- `async` - `true` when the sync was started in the background.
+- `message` - Present when the sync was started in the background.
 - `is_full_sync` - Whether the sync covers every downloaded model.
-- `models_updated` - Models with an update; downloaded unless dry_run.
+- `models_updated` - Models with an update; downloaded unless `dry_run`.
 - `failed_models` - Error message per model that could not be checked or updated.
 - `progress` - While a sync runs: the file downloading now.
 <!-- END GENERATED: internal.models_sync_status -->
@@ -1013,13 +1013,13 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 **Field Descriptions:**
 
-- `id` - `<page>.<name>`, also the docs anchor.
+- `id` - `<page>.<name>`; names the route's generated region in `docs/api/<page>.md`.
 - `paths` - Paths without their prefix; entries after the first are aliases.
 - `prefixes` - Quad serves /api/v0/, /api/v1/, /v0/ and /v1/; Internal serves /internal/; Root serves each path as written.
 - `modality` - Empty on pages whose summary table has no Modality column.
 - `experimental` - The route may still change.
 - `args`
-  - `supported` - not_available documents an argument Lemonade accepts but ignores; partial, one it honors only in part, as its description says.
+  - `supported` - `available`; `partial`, honored only in part as the argument's description says; or `not_available`, accepted but ignored.
 - `responses`
   - `schema` - JSON Schema of the body, each NDJSON line, or each event's data; null for other formats.
 - `examples` - The first is the route's main example.

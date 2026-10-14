@@ -28,8 +28,8 @@ public:
         s.notes = {
             "`checkpoint` is optional because registration records only metadata, and some model "
             "types have no local weights.",
-            "The body holds one model definition. A collection's components must already be "
-            "registered: an embedded `models` array is rejected.",
+            "The body holds one model definition; a collection's components must already be "
+            "registered.",
             "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
             "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
             "missing `recipe`, an embedded `models` array, and malformed `checkpoint`, "

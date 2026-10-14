@@ -67,11 +67,11 @@ public:
             "required": ["modelfile", "parameters", "template", "details", "capabilities", "model_info"],
             "properties": {
                 "modelfile": {"type": "string", "description": "A FROM line naming the checkpoint."},
-                "parameters": {"type": "string", "description": "num_ctx followed by the model's configured context size."},
+                "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size."},
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
                 "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}},
-                "model_info": {"type": "object", "description": "general.architecture (the recipe) and <recipe>.context_length; the other keys are always 0."}
+                "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always 0."}
             }
         })");
         response.schema["properties"]["details"] = ollama_details_schema();

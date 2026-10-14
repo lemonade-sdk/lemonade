@@ -1125,7 +1125,7 @@ std::vector<McpTool> McpServer::build_tools() {
                 {"description",
                  "List models known to the Lemonade server. ALWAYS call this "
                  "first if you don't already know the exact model name to use "
-                 "for chat/transcribe/image — passing a wrong name may trigger a "
+                 "for chat/transcribe/image: passing a wrong name may trigger a "
                  "multi-GB download. Returns a summary text block plus a JSON "
                  "block with `{loaded, available, suggested_to_pull, "
                  "recommended_chat_model}`."},
@@ -1159,7 +1159,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "downloaded one; if neither exists it asks you to either pass a "
                  "`model` or `allow_download: true` (which downloads the default, "
                  "Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you "
-                 "want to choose explicitly — a wrong name may trigger a multi-GB "
+                 "want to choose explicitly, since a wrong name may trigger a multi-GB "
                  "download."},
                 {"inputSchema", {
                     {"type", "object"},
@@ -1173,13 +1173,13 @@ std::vector<McpTool> McpServer::build_tools() {
                         {"temperature", {{"type", "number"}, {"description", "Sampling temperature."}}},
                         {"top_p",       {{"type", "number"}, {"description", "Nucleus sampling probability."}}},
                         {"max_tokens",  {{"type", "integer"}, {"description", "Maximum number of output tokens."}}},
-                        {"stop",        {{"description", "stop sequences (string or array)"}}},
+                        {"stop",        {{"description", "Stop sequences: a string or an array of strings."}}},
                         {"seed",        {{"type", "integer"}, {"description", "Optional random seed for reproducible sampling."}}},
                         {"tools",       {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "OpenAI-compatible tool definitions available to the model."}}},
-                        {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
+                        {"tool_choice", {{"description", "`auto`, `none`, `required`, or `{\"type\": \"function\", ...}`."}}},
                         {"response_format", {{"type", "object"}, {"description", "OpenAI-compatible response format configuration."}}},
                         {"chat_template_kwargs", {{"type", "object"},
-                                                  {"description", "e.g. {\"enable_thinking\": true} to enable reasoning blocks; disabled by default"}}},
+                                                  {"description", "e.g. `{\"enable_thinking\": true}` to enable reasoning blocks; disabled by default"}}},
                     }},
                 }},
                 {"_meta", {
@@ -1250,7 +1250,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "MCP server always runs on the same machine as the caller, so "
                  "PREFER writing the result directly to disk by passing "
                  "`output_path` (single image) or `output_dir` (one or more). "
-                 "When you do, the tool returns absolute file path(s) as text — "
+                 "When you do, the tool returns absolute file path(s) as text, with "
                  "no base64 round-trip and dramatically fewer tokens. Only omit "
                  "both arguments when you genuinely need the image inline. For "
                  "safety, disk writes are confined to a sandbox directory "
@@ -1332,10 +1332,10 @@ std::vector<McpTool> McpServer::build_tools() {
                         {"temperature", {{"type", "number"}, {"description", "Sampling temperature for the planner LLM."}}},
                         {"top_p",       {{"type", "number"}, {"description", "Nucleus sampling probability for the planner LLM."}}},
                         {"max_tokens",  {{"type", "integer"}, {"description", "Maximum number of planner output tokens."}}},
-                        {"stop",        {{"description", "stop sequences (string or array)"}}},
+                        {"stop",        {{"description", "Stop sequences: a string or an array of strings."}}},
                         {"seed",        {{"type", "integer"}, {"description", "Optional random seed forwarded to the planner LLM."}}},
                         {"tools",       {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "OpenAI-compatible application tool definitions passed to the planner."}}},
-                        {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
+                        {"tool_choice", {{"description", "`auto`, `none`, `required`, or `{\"type\": \"function\", ...}`."}}},
                         {"response_format", {{"type", "object"}, {"description", "OpenAI-compatible response format configuration for the planner."}}},
                         {"chat_template_kwargs", {{"type", "object"}, {"description", "Additional chat-template arguments forwarded to the planner LLM."}}},
                     }},

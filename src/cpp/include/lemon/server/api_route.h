@@ -70,7 +70,7 @@ struct RouteExample {
 };
 
 struct RouteSpec {
-    std::string id;                   // "<page>.<name>", e.g. "openai.chat_completions"; docs anchor
+    std::string id;                   // "<page>.<name>", e.g. "openai.chat_completions"; names the generated docs region
     std::vector<std::string> methods; // e.g. {"POST"}
     std::vector<std::string> paths;   // without prefix; extra entries are aliases, e.g. rerank, reranking
     Prefixes prefixes = Prefixes::Quad;

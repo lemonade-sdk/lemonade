@@ -58,7 +58,7 @@ ordered_json install_schema() {
             "auth_state": {
                 "type": "object",
                 "properties": {
-                    "env_var_set": {"type": "boolean", "description": "Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond."},
+                    "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
                     "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
                 }
             },
@@ -94,7 +94,7 @@ public:
             "### Install a cloud provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
-            "Registers an OpenAI-compatible chat provider. The base URL is persisted to "
+            "Registers a cloud chat provider. The base URL is persisted to "
             "`config.json`; the optional `api_key` lives in `lemond` process memory only and is "
             "cleared on restart. See the [Cloud Offload guide](../guide/configuration/cloud.md) for "
             "the full workflow.\n"

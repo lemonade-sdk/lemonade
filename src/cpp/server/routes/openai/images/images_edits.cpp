@@ -137,7 +137,7 @@ public:
              "reference image's dimensions, scaling down proportionally to the model's optional "
              "`image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit "
              "size bypasses this soft cap; backend limits still apply."},
-            {"n", ArgIn::Form, integer, false, Support::Partial,
+            {"n", ArgIn::Form, integer, false, Support::Available,
              "Number of images to generate, from `1` to `10`; other values answer `400`. "
              "Default: `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,

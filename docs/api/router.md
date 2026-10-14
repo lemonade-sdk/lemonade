@@ -20,10 +20,10 @@ model is involved.
 The decision is reported on the response:
 
 - Header **`x-lemonade-route`**: the matched rule id, or `default`.
-- Request field **`route_trace: true`** adds an **`x_lemonade_route`** object to the
-  response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
-  (`route_to` is the candidate that answered). For streaming responses it is
-  attached to the first SSE event.
+- Request field **`route_trace: true`** adds the routing decision to the response body as
+  **`x_lemonade_route`**, with the fields listed under
+  [`POST /v1/routing/validate`](#post-v1routingvalidate)'s `decision`. For streaming
+  responses it is attached to the first SSE event.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
 

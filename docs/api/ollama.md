@@ -9,20 +9,20 @@ A model name may carry a `:latest` tag, which Lemonade ignores. Errors answer wi
 <!-- BEGIN GENERATED: ollama.summary -->
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|
-| `POST` | [`/api/chat`](#post-apichat) | Supported | Chat completion. Streaming and non-streaming |
-| `POST` | [`/api/generate`](#post-apigenerate) | Supported | Text completion + image generation |
+| `POST` | [`/api/chat`](#post-apichat) | Supported | Chat completion, streaming or not |
+| `POST` | [`/api/generate`](#post-apigenerate) | Supported | Text completion or image generation |
 | `GET` | [`/api/tags`](#get-apitags) | Supported | Lists downloaded models |
 | `POST` | [`/api/show`](#post-apishow) | Supported | Model details |
 | `DELETE` | [`/api/delete`](#delete-apidelete) | Supported | Delete a model |
 | `POST` | [`/api/pull`](#post-apipull) | Supported | Download with progress |
 | `POST` | [`/api/embed`](#post-apiembed) | Supported | New embeddings format |
 | `POST` | [`/api/embeddings`](#post-apiembeddings) | Supported | Legacy embeddings |
-| `GET` | [`/api/ps`](#get-apips) | Supported | Running models |
-| `GET` | [`/api/version`](#get-apiversion) | Supported | Version |
-| `POST` | [`/api/create`](#post-apicreate) | Not supported | Create a model from a Modelfile. Returns 501 |
-| `POST` | [`/api/copy`](#post-apicopy) | Not supported | Copy a model. Returns 501 |
-| `POST` | [`/api/push`](#post-apipush) | Not supported | Push a model to a registry. Returns 501 |
-| `POST` | [`/api/blobs/{digest}`](#post-apiblobsdigest) | Not supported | Upload a blob. Returns 501 |
+| `GET` | [`/api/ps`](#get-apips) | Supported | List loaded models |
+| `GET` | [`/api/version`](#get-apiversion) | Supported | Report the Ollama version |
+| `POST` | [`/api/create`](#post-apicreate) | Not supported | Create a model from a Modelfile |
+| `POST` | [`/api/copy`](#post-apicopy) | Not supported | Copy a model |
+| `POST` | [`/api/push`](#post-apipush) | Not supported | Push a model to a registry |
+| `POST` | [`/api/blobs/{digest}`](#post-apiblobsdigest) | Not supported | Upload a blob |
 <!-- END GENERATED: ollama.summary -->
 
 <!-- BEGIN GENERATED: ollama.chat -->
@@ -44,12 +44,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `tools` | No | Tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `format` | No | `json` constrains the reply to a JSON object. JSON schemas are not supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `think` | No | Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `keep_alive` | No | `0` with an empty `messages` array unloads the model. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `keep_alive` | No | `0` with an empty `messages` array unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
-
-An empty `messages` array with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
 
 ### Example request
 
@@ -182,20 +180,18 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Image models read `width`, `height`, `steps`, `cfg_scale` and `seed` here. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` | No | Image models only: image width in pixels. Defaults to 512. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | Image models only: image height in pixels. Defaults to 512. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `steps` | No | Image models only: inference steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Image models only: classifier-free guidance scale. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducible output. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `keep_alive` | No | `0` with an empty `prompt` unloads the model. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `keep_alive` | No | `0` with an empty `prompt` unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `system` | No | System prompt. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `format` | No | Output format constraint. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 Image generation never streams.
-
-An empty `prompt` with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
 
 ### Example request
 
@@ -600,7 +596,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 **Field Descriptions:**
 
 - `modelfile` - A FROM line naming the checkpoint.
-- `parameters` - num_ctx followed by the model's configured context size.
+- `parameters` - `num_ctx` followed by the model's configured context size.
 - `template` - Always empty.
 - `details` - Inferred from the model name, recipe and checkpoint.
   - `parent_model` - Always empty.
@@ -608,7 +604,7 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `family` - The model's recipe, e.g. llamacpp.
   - `parameter_size` - From the model name, e.g. 0.6B; empty when the name has none.
   - `quantization_level` - From the checkpoint, e.g. Q4_0; empty when the checkpoint has none.
-- `model_info` - general.architecture (the recipe) and <recipe>.context_length; the other keys are always 0.
+- `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always 0.
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->

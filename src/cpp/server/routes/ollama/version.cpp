@@ -16,7 +16,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/api/version"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Version";
+        s.summary = "Report the Ollama version";
         s.description =
             "Reports an Ollama version recent enough for Ollama clients' version checks. "
             "[`GET /v1/health`](./lemonade.md#get-v1health) reports Lemonade's own version.";

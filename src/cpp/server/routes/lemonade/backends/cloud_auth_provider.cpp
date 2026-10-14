@@ -43,7 +43,7 @@ public:
                 "auth_state": {
                     "type": "object",
                     "properties": {
-                        "env_var_set": {"type": "boolean", "description": "Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond."},
+                        "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
                         "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
                     }
                 }

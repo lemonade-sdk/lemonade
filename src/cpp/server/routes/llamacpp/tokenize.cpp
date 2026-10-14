@@ -18,7 +18,7 @@ public:
         s.id = "llamacpp.tokenize";
         s.methods = {"POST"};
         s.paths = {"tokenize"};
-        s.summary = "Tokenize a given text";
+        s.summary = "Tokenize text";
         s.modality = "tokenization";
         s.description =
             "Tokenizes text with the tokenizer of the most recently used model, so after a "

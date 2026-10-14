@@ -20,7 +20,7 @@ public:
         s.methods = {"GET"};
         s.paths = {"/api/ps"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Running models";
+        s.summary = "List loaded models";
         s.description = "Lists the loaded models in Ollama's format.";
         s.notes = {
             "[`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.",

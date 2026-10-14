@@ -159,15 +159,13 @@ public:
         s.methods = {"POST"};
         s.paths = {"/api/generate"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Text completion + image generation";
+        s.summary = "Text completion or image generation";
         s.description =
             "Continues a prompt, loading the model on first use. Lemonade runs it as an OpenAI "
             "text completion and converts the result. Naming an image model generates an image "
             "instead.";
         s.notes = {
             "Image generation never streams.",
-            "An empty `prompt` with `\"keep_alive\": 0` unloads the model instead, answering "
-            "with `done_reason: \"unload\"`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -177,11 +175,10 @@ public:
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."},
             {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
-             "generated tokens) and `repeat_penalty`. These keys are also accepted at the top "
-             "level, where they win. `num_ctx` sets the context size when this request loads "
-             "the model. Image models read `width`, `height`, `steps`, `cfg_scale` and `seed` "
-             "here."},
+             "Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum "
+             "generated tokens), `repeat_penalty`, and the `seed`, `width`, `height`, `steps` and "
+             "`cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets "
+             "the context size when this request loads the model."},
             {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Image models only: image width in pixels. Defaults to 512."},
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
@@ -193,7 +190,8 @@ public:
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducible output."},
             {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-             "`0` with an empty `prompt` unloads the model. Other values are ignored."},
+             "`0` with an empty `prompt` unloads the model, answering with "
+             "`done_reason: \"unload\"`. Other values are ignored."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request loads "
              "it. Wins over `options.num_ctx`."},

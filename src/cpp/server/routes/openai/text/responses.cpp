@@ -64,7 +64,7 @@ public:
         };
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "A list of dictionaries or a string input for the model to respond to."},
+             "The input, as a string or an array of input items."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The model to use for the response."},
             {"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,

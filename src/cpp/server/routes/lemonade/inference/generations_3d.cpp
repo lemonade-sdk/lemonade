@@ -46,11 +46,9 @@ public:
              "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
              "real backgrounds."},
             {"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
-             "UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving "
-             "every face unique atlas space: best quality, but chart computation is superlinear "
-             "in face count. `box` is a faster 6-plane projection with occlusion-aware bucket "
-             "assignment and depth-tested rasterization; small texture artifacts remain possible "
-             "in concave regions."},
+             "UV atlas method. `xatlas` (default) unwraps every face into its own atlas space for "
+             "the best texture quality, but slows down on large meshes. `box` is a faster "
+             "six-plane projection that can leave small artifacts in concave regions."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducibility."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

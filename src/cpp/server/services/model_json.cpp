@@ -210,7 +210,7 @@ nlohmann::ordered_json ModelJson::schema() {
             "recipe": {"type": "string", "description": "Recipe used to load the model, e.g. `llamacpp` or `flm`."},
             "size": {"type": "number", "description": "Size in GB; omitted when unknown."},
             "max_context_window": {"type": "integer", "description": "Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models."},
-            "context_length": {"type": "integer", "description": "Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known)."},
+            "context_length": {"type": "integer", "description": "Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when none is known)."},
             "max_output_tokens": {"type": "integer", "description": "Cloud models only: the most tokens one completion can generate, when the provider reports it."},
             "max_completion_tokens": {"type": "integer", "description": "Cloud models only: `max_output_tokens` under its OpenAI name."},
             "downloaded": {"type": "boolean", "description": "Whether the model is downloaded."},

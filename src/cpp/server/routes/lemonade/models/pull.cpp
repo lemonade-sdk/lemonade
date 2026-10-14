@@ -42,6 +42,9 @@ public:
             "Installs a model from the built-in registry, or registers a new `user.*` model from "
             "a Hugging Face or ModelScope checkpoint and installs it.";
         s.notes = {
+            "A `400` answers an invalid definition, an unknown model (with `code: "
+            "\"unknown_model\"`), or offline mode (with `code: \"lemond_offline\"`), and nothing "
+            "is registered.",
             "### Register and Install a Model\n\n"
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
             "(`~/.config/lemonade` by default), after which `/v1/models` lists it beside the "
@@ -76,9 +79,6 @@ public:
             "exported collection also carries `models`, so its components register with it. See "
             "[Share a collection](../guide/configuration/custom-models.md#share-a-collection-between-machines) "
             "for the file format and workflows.",
-            "A `400` answers an invalid definition, an unknown model (with `code: "
-            "\"unknown_model\"`), or offline mode (with `code: \"lemond_offline\"`), and nothing "
-            "is registered.",
         };
         s.args = {
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -104,21 +104,20 @@ public:
              "`draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for "
              "image generation, each when `main` does not embed it."},
             {"reasoning", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Whether the model is a reasoning model, like DeepSeek (default: false). Adds "
-             "'reasoning' label."},
+             "`true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults "
+             "to `false`."},
             {"vision", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Whether the model has vision capabilities for processing images (default: false). "
-             "Adds 'vision' label."},
+             "`true` adds the `vision` label, for a model that accepts images. Defaults to `false`."},
             {"embedding", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Whether the model is an embedding model (default: false). Adds 'embeddings' label."},
+             "`true` adds the `embeddings` label. Defaults to `false`."},
             {"reranking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Whether the model is a reranking model (default: false). Adds 'reranking' label."},
+             "`true` adds the `reranking` label. Defaults to `false`."},
             {"mmproj", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Multimodal projector file for a vision model, in the `checkpoint` repository. The "
              "same as `checkpoints.mmproj`."},
             {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Omni-model, required: Ordered, non-empty array of model names. Each component must "
-             "be a regular model."},
+             "Omni collections, required: the component model names, in order; each must be a "
+             "regular model."},
             {"models", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Full model definitions, one per `components` entry, with the same fields as a single "
              "registration. Components not yet registered are registered from them; registered "

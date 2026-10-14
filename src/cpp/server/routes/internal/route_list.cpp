@@ -42,7 +42,7 @@ public:
                              "notes", "experimental", "args", "responses", "examples", "request_format",
                              "validate_args", "quiet_log"],
                 "properties": {
-                    "id": {"type": "string", "description": "`<page>.<name>`, also the docs anchor."},
+                    "id": {"type": "string", "description": "`<page>.<name>`; names the route's generated region in `docs/api/<page>.md`."},
                     "methods": {"type": "array", "items": {"type": "string"}},
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Paths without their prefix; entries after the first are aliases."},
                     "prefixes": {"enum": ["Quad", "Internal", "Root"], "description": "Quad serves /api/v0/, /api/v1/, /v0/ and /v1/; Internal serves /internal/; Root serves each path as written."},
@@ -59,7 +59,7 @@ public:
                             "in": {"enum": ["JsonBody", "Query", "Path", "Form"]},
                             "schema": {"type": "object"},
                             "required": {"type": "boolean"},
-                            "supported": {"enum": ["available", "partial", "not_available"], "description": "not_available documents an argument Lemonade accepts but ignores; partial, one it honors only in part, as its description says."},
+                            "supported": {"enum": ["available", "partial", "not_available"], "description": "`available`; `partial`, honored only in part as the argument's description says; or `not_available`, accepted but ignored."},
                             "description": {"type": "string"}
                         }
                     }},

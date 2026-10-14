@@ -169,8 +169,8 @@ public:
             "arrives as a content delta on a `chat.completion.chunk` frame the moment its tool "
             "finishes.\n"
             "\n"
-            "**Merge semantics.** A client-provided system prompt is prepended by the built-in omni "
-            "system prompt. Client-provided `tools` are merged with the built-in omni tools. The "
+            "**Merge semantics.** The built-in omni system prompt goes before a client-provided "
+            "one. Client-provided `tools` are merged with the built-in omni tools. The "
             "server resolves omni tool calls internally; calls to client-provided tools are "
             "returned in a `finish_reason: \"tool_calls\"` response for the client to execute and "
             "resume. Targeting a collection name invokes the server-side loop; targeting a "
@@ -224,7 +224,7 @@ public:
              "Up to 4 sequences where the API will stop generating further tokens. The returned "
              "text will not contain the stop sequence. Can be a string or an array of strings."},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
-             "If true, returns the log probability of each output token. Defaults to false."},
+             "Accepted for OpenAI compatibility and ignored."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -238,11 +238,10 @@ public:
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "A list of tools the model may call."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "An upper bound for the number of tokens that can be generated for a completion. "
-             "Mutually exclusive with `max_completion_tokens`, which OpenAI recommends instead."},
+             "Upper bound on generated tokens. Wins over `max_completion_tokens` when both are "
+             "sent."},
             {"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "An upper bound for the number of tokens that can be generated for a completion. "
-             "Mutually exclusive with `max_tokens`."},
+             "OpenAI's name for `max_tokens`."},
             {"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension: `false` turns off reasoning on models that think. The "
              "OpenAI-compatible `thinking: false` is accepted too."},
