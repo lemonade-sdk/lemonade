@@ -290,9 +290,13 @@ void RequestMiddleware::log_response(const httplib::Request& req, const httplib:
         return;
     }
 
-    // Static assets and the page shell are fetched on every UI load.
+    // The UI fetches these on every load, so they would drown out the requests that matter.
     bool is_quiet_get = (req.method == "GET" && (
         req.path == "/" ||
+        req.path == "/api/v0/models" || req.path == "/api/v1/models" ||
+        req.path == "/v0/models" || req.path == "/v1/models" ||
+        req.path == "/api/v0/system-info" || req.path == "/api/v1/system-info" ||
+        req.path == "/v0/system-info" || req.path == "/v1/system-info" ||
         req.path.find(".js") != std::string::npos ||
         req.path.find(".css") != std::string::npos ||
         req.path.find(".svg") != std::string::npos ||
