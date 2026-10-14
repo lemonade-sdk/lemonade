@@ -1036,6 +1036,8 @@ set(SOURCES_CORE
     src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
+    src/cpp/server/registry_files.cpp
+    src/cpp/server/models/artifact_layout.cpp
     src/cpp/server/models/artifact_ref.cpp
     src/cpp/server/models/artifact_resolver.cpp
     src/cpp/server/models/artifact_transfer.cpp
@@ -1048,6 +1050,7 @@ set(SOURCES_CORE
     src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/models/scan_catalog.cpp
     src/cpp/server/models/registry_id.cpp
+    src/cpp/server/models/registry_descriptors.cpp
     src/cpp/server/models/registry_repository.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
@@ -3108,6 +3111,19 @@ if(BUILD_TESTING AND EXISTS "${_ARTIFACT_SOURCE_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ArtifactSourceTest CI ON COMMAND test_artifact_source)
+endif()
+
+set(_ARTIFACT_LAYOUT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_layout.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARTIFACT_LAYOUT_TEST_SRC}")
+    add_executable(test_artifact_layout
+        test/cpp/test_artifact_layout.cpp
+    )
+    target_link_libraries(test_artifact_layout PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ArtifactLayoutTest CI ON COMMAND test_artifact_layout)
 endif()
 
 set(_ARTIFACT_RESOLVER_TEST_SRC

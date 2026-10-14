@@ -2,6 +2,7 @@
 
 #include "artifact_source.h"
 #include "lemon/model_registry.h"
+#include "artifact_layout.h"
 #include "registry_id.h"
 
 #include <cstdint>
@@ -25,6 +26,8 @@ struct Revision {
 struct RepoListing {
     std::string repo_id;
     Revision revision;
+    // A host's file endpoint may want a different spelling than refs/main keeps.
+    std::string download_revision;
     std::vector<RegistryFile> files;
 };
 
@@ -72,6 +75,11 @@ class FetchableRepository : public ArtifactSource {
     // A source carries the checkpoint it was built for.
     explicit FetchableRepository(ArtifactRef ref) : ArtifactSource(std::move(ref)) {}
 };
+
+// The files the ref needs, at the listing's revision, placed by the layout.
+DownloadPlan registry_download_plan(const FetchableRepository& repository, const ArtifactRef& ref,
+                                    const ArtifactLayout& layout, const Placement& placement,
+                                    const RepoListing& listing);
 
 // A source is built for one checkpoint, so a factory takes the ref it will carry.
 using RepositoryFactory =

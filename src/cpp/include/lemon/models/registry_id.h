@@ -44,8 +44,7 @@ std::optional<RegistryId> registry_id_from(const std::string& spelling);
 const RegistryDescriptor* descriptor_for(const RegistryId& id);
 
 namespace detail {
-// Registration is the only writer; the built-ins seed the table on first touch.
-// A row with the same id is replaced.
+// Registration is the only writer. A row with the same id is replaced.
 void add_descriptor(const RegistryDescriptor& descriptor);
 }  // namespace detail
 
@@ -56,3 +55,11 @@ std::vector<RegistryDescriptor> all_registry_descriptors();
 
 }  // namespace models
 }  // namespace lemon
+
+// Static initializer. Nothing here may throw: an unrecognized host must not
+// abort startup.
+#define LEMONADE_REGISTER_REGISTRY_DESCRIPTOR(name, descriptor_expr)                 \
+    static const bool lemonade_descriptor_registered_##name = [] {                   \
+        ::lemon::models::detail::add_descriptor(descriptor_expr);                    \
+        return true;                                                                 \
+    }()

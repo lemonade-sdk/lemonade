@@ -5,6 +5,8 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/artifact_layout.h"
+#include "lemon/models/artifact_ref.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -607,6 +609,13 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 namespace {
 class WhisperOps : public BackendOps {
 public:
+    // The NPU cache is useful only beside the .bin it was built for.
+    const lemon::models::ArtifactLayout* checkpoint_layout(
+        const lemon::models::CheckpointRef& checkpoint) const override {
+        return checkpoint.checkpoint_type == "npu_cache" ? &lemon::models::sibling_layout()
+                                                        : nullptr;
+    }
+
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
         // With no variant, find any .bin model file; otherwise use the shared
