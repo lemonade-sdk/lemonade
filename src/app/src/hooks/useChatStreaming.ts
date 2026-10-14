@@ -318,7 +318,18 @@ export function useChatStreaming(
           },
           onDone: (stats) => {
             delete tokenBufferRef.current[convoId];
-            onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
+            if (controller.signal.aborted) {
+              cleanup(convoId);
+              resolve();
+              return;
+            }
+            if (stats.finishReason === 'length') {
+              onError(convoId, 'The model reached its context or output token limit (finish_reason=length). Increase context size or reduce chat history/tools.');
+            } else if (!stats.content.trim() && allToolCalls.length === 0) {
+              onError(convoId, 'The model returned no visible answer (reasoning-only or empty completion). Its context may be full; increase context size or disable tools.');
+            } else {
+              onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
+            }
             cleanup(convoId);
             resolve();
           },

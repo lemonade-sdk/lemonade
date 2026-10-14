@@ -859,8 +859,8 @@ function friendlyErrorMessage(error: unknown): string {
 
 function friendlyChatError(message: string): string {
   const cleaned = message.replace(/^Error:\s*/i, '').trim();
-  if (!cleaned) return "I couldn't complete that request. Please check the server logs for details.";
-  return `I couldn't complete that request.\n\n${cleaned}`;
+  if (!cleaned) return "I could not complete that request. Please check the server logs for details.";
+  return `I could not complete that request.\n\n${cleaned}`;
 }
 
 function friendlyRouterChatError(message: string): string {
