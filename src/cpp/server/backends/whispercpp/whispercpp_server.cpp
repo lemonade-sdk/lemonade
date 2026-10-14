@@ -12,7 +12,6 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "whispercpp_multipart_fields.h"
 #include <iostream>
@@ -67,7 +66,7 @@ WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_m
 }
 
 WhisperServer::~WhisperServer() {
-    unload();
+    stop_server();
 
     try {
         if (fs::exists(temp_dir_)) {
@@ -265,7 +264,6 @@ void WhisperServer::load(const std::string& model_name,
 
     // Lemonade manages the model path and port;
     // optional whisper-server flags like --convert come from whispercpp_args.
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "-m", model_path,
         "--port", std::to_string(port_)
@@ -323,37 +321,12 @@ void WhisperServer::load(const std::string& model_name,
     }
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start whisper-server process");
-    }
-
-    LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("whisper-server failed to start or become ready");
-    }
-
-    LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
-}
-
-void WhisperServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
 // ICompletionServer implementation - not supported for Whisper
@@ -630,7 +603,6 @@ namespace whispercpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<WhisperServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
-
 
 namespace {
 class WhisperOps : public BackendOps {
