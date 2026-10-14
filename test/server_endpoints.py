@@ -1037,6 +1037,55 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Pull (streaming): received events: {set(events_received)}")
 
+    def test_008b_inference_pulls_missing_model(self):
+        """Inference on a registered model that is not downloaded pulls it first."""
+        delete_response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(delete_response.status_code, [200, 422])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be deleted before the inference request",
+        )
+
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["choices"])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be downloaded after the inference request",
+        )
+
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        print(f"[OK] Inference pulled missing model: {ENDPOINT_TEST_MODEL}")
+
     def test_009_load_model_basic(self):
         """Test loading a model into memory."""
         # Model is already pulled (setUpClass or previous pull tests)

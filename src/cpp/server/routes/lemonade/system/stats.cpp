@@ -43,7 +43,11 @@ public:
                 "prompt_tokens_total": {"type": "integer", "description": "Prompt tokens since server start"},
                 "cache_tokens_total": {"type": "integer", "description": "Prompt tokens served from the prefix cache since server start"},
                 "routing_decisions_total": {"type": "integer", "description": "Routing decisions made by `collection.router` dispatch"},
-                "routing_switches_total": {"type": "integer", "description": "Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)"}
+                "routing_switches_total": {"type": "integer", "description": "Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)"},
+                "live": {"type": "object", "description": "Streams generating output right now. The rate is estimated from streamed text, not counted, so use the last-request fields above for exact numbers. Status and keepalive events are ignored, and both values drop to zero about 3 seconds after output stops or as soon as a request ends.", "properties": {
+                    "active_requests": {"type": "integer", "description": "Streams that produced output in the last few seconds."},
+                    "estimated_tokens_per_second": {"type": "number", "description": "Their combined generation rate, estimated."}
+                }}
             }
         })json");
         s.responses = {response};
