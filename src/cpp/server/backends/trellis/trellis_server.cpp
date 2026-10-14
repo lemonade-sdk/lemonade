@@ -1,22 +1,22 @@
-#include "lemon/backends/trellis/trellis_server.h"
-#include "lemon/backends/trellis/trellis.h"
-#include "lemon/backends/backend_registry.h"
+#include <cstdlib>
+#include <filesystem>
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
-#include "lemon/backend_manager.h"
+#include "lemon/backends/trellis/trellis.h"
+#include "lemon/backends/trellis/trellis_server.h"
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include <lemon/utils/aixlog.hpp>
-#include <cstdlib>
-#include <filesystem>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -42,7 +42,9 @@ InstallParams TrellisServer::get_install_params(const std::string& backend, cons
 TrellisServer::TrellisServer(const std::string& log_level,
                              ModelManager* model_manager,
                              BackendManager* backend_manager)
-    : WrappedServer("trellis-server", log_level, model_manager, backend_manager) {}
+    : WrappedServer("trellis-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::Trellis, *this);
+}
 
 std::string TrellisServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = trellis::spec();

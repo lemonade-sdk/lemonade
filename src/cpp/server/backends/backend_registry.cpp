@@ -37,6 +37,9 @@ std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const Ba
         if (reg.descriptor->recipe == recipe) {
             std::unique_ptr<WrappedServer> server = reg.create(ctx);
             if (server) {
+                if (!server->operation_bindings()) {
+                    throw std::logic_error("Backend factory returned an instance without operation bindings");
+                }
                 server->set_descriptor(reg.descriptor);
             }
             return server;

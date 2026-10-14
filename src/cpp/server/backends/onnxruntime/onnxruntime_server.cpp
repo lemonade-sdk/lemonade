@@ -1,21 +1,21 @@
-#include "lemon/backends/onnxruntime/onnxruntime_server.h"
-#include "lemon/backends/onnxruntime/onnxruntime.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/backend_manager.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/process_manager.h"
 #include <algorithm>
 #include <filesystem>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/onnxruntime/onnxruntime.h"
+#include "lemon/backends/onnxruntime/onnxruntime_server.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/custom_args.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -134,6 +134,7 @@ InstallParams OnnxRuntimeServer::get_install_params(const std::string& backend,
 OnnxRuntimeServer::OnnxRuntimeServer(const std::string& log_level, ModelManager* model_manager,
                                      BackendManager* backend_manager)
     : WrappedServer("ort-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::OnnxRuntime, *this);
 }
 
 void OnnxRuntimeServer::load(const std::string& model_name,

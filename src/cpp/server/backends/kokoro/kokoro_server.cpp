@@ -1,19 +1,19 @@
-#include "lemon/backends/kokoro/kokoro_server.h"
-#include "lemon/backends/kokoro/kokoro.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/model_manager.h"
-#include "lemon/utils/path_utils.h"
 #include <filesystem>
-#include "lemon/backend_manager.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/error_types.h"
 #include <httplib.h>
 #include <iostream>
-#include <vector>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/kokoro/kokoro.h"
+#include "lemon/backends/kokoro/kokoro_server.h"
+#include "lemon/error_types.h"
+#include "lemon/model_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -62,6 +62,7 @@ InstallParams KokoroServer::get_install_params(const std::string& backend, const
 
 KokoroServer::KokoroServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("kokoro-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::Kokoro, *this);
 
 }
 

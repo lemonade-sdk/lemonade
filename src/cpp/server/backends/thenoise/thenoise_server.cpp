@@ -1,24 +1,24 @@
-#include "lemon/backends/thenoise/thenoise_server.h"
-#include "lemon/backends/thenoise/thenoise.h"
-#include "lemon/backends/thenoise/thenoise_bundle.h"
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/backend_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/utils/process_manager.h"
+#include "lemon/backends/thenoise/thenoise.h"
+#include "lemon/backends/thenoise/thenoise_bundle.h"
+#include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/error_types.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include <ctime>
-#include <filesystem>
-#include <utility>
-#include <fstream>
+#include "lemon/utils/process_manager.h"
 #include <random>
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -79,6 +79,7 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
 
 TheNoiseServer::TheNoiseServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("thenoise-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::TheNoise, *this);
     LOG(DEBUG, "TheNoise") << "Created with log_level=" << log_level << std::endl;
 }
 

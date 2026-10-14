@@ -1037,6 +1037,7 @@ set(SOURCES_CORE
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
+    src/cpp/server/backend_operation.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/server_process.cpp
     src/cpp/server/streaming_proxy.cpp
@@ -2628,6 +2629,18 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_operation_contract.cpp")
+    add_executable(test_backend_operation_contract test/cpp/test_backend_operation_contract.cpp)
+    target_link_libraries(test_backend_operation_contract PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendOperationContractTest CI ON COMMAND test_backend_operation_contract)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_operation_dispatch.cpp")
+    add_executable(test_backend_operation_dispatch test/cpp/test_backend_operation_dispatch.cpp)
+    target_link_libraries(test_backend_operation_dispatch PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendOperationDispatchTest CI ON COMMAND test_backend_operation_dispatch)
 endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")

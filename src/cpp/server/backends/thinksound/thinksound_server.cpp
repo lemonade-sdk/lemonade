@@ -1,19 +1,19 @@
-#include "lemon/backends/thinksound/thinksound_server.h"
-#include "lemon/backends/thinksound/thinksound.h"
-#include "lemon/backends/backend_registry.h"
+#include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
-#include "lemon/backend_manager.h"
+#include "lemon/backends/thinksound/thinksound.h"
+#include "lemon/backends/thinksound/thinksound_server.h"
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/utils/path_utils.h"
 #include <lemon/utils/aixlog.hpp>
-#include <algorithm>
-#include <cstdlib>
-#include <filesystem>
+#include "lemon/utils/path_utils.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -39,7 +39,9 @@ InstallParams ThinkSoundServer::get_install_params(const std::string& backend, c
 ThinkSoundServer::ThinkSoundServer(const std::string& log_level,
                                    ModelManager* model_manager,
                                    BackendManager* backend_manager)
-    : WrappedServer("thinksound-server", log_level, model_manager, backend_manager) {}
+    : WrappedServer("thinksound-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::ThinkSound, *this);
+}
 
 std::string ThinkSoundServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = thinksound::spec();

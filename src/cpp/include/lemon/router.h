@@ -232,11 +232,13 @@ public:
     json responses(const json& request);
 
     json audio_transcriptions(const json& request);
-    void audio_speech(const json& request, httplib::DataSink& sink);
+    void audio_speech(const json& request, httplib::DataSink& sink,
+                      OperationDelivery delivery = OperationDelivery::Buffered);
     std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
     std::vector<std::string> audio_speech_supported_streaming_formats(const std::string& model_name);
     AudioFormatMetadata audio_speech_format_metadata(
-        const std::string& model_name, const std::string& response_format);
+        const std::string& model_name, const std::string& response_format,
+        OperationDelivery delivery = OperationDelivery::Buffered);
 
     json image_generations(const json& request);
     json image_edits(const json& request);

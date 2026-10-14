@@ -1,20 +1,20 @@
-#include "lemon/backends/moonshine/moonshine_server.h"
-#include "lemon/backends/moonshine/moonshine.h"
+#include <cctype>
+#include <filesystem>
+#include <iostream>
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/backend_manager.h"
+#include "lemon/backends/moonshine/moonshine.h"
+#include "lemon/backends/moonshine/moonshine_server.h"
+#include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
+#include <lemon/utils/aixlog.hpp>
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
-#include "lemon/error_types.h"
-#include <cctype>
-#include <iostream>
-#include <filesystem>
 #include <optional>
 #include <set>
 #include <vector>
-#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -56,6 +56,7 @@ InstallParams MoonshineServer::get_install_params(const std::string& backend, co
 MoonshineServer::MoonshineServer(const std::string& log_level, ModelManager* model_manager,
                                  BackendManager* backend_manager)
     : WrappedServer("moonshine-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::Moonshine, *this);
 }
 
 void MoonshineServer::load(const std::string& model_name,

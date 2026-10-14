@@ -1,17 +1,3 @@
-#include "lemon/backends/vllm/vllm_server.h"
-#include "lemon/backends/vllm/vllm.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/backends/vllm/vllm_arg_resolver.h"
-#include "lemon/model_manager.h"
-#include "lemon/model_registry.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/path_utils.h"
-#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -19,6 +5,20 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/vllm/vllm.h"
+#include "lemon/backends/vllm/vllm_arg_resolver.h"
+#include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/model_manager.h"
+#include "lemon/model_registry.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 #include <random>
 #include <regex>
 #include <sstream>
@@ -346,6 +346,7 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 
 VLLMServer::VLLMServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("vllm-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::Vllm, *this);
 }
 
 VLLMServer::~VLLMServer() {

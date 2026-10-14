@@ -1,14 +1,14 @@
-#include "lemon/backends/ds4/ds4_server.h"
-#include "lemon/backends/ds4/ds4.h"
-#include "lemon/backends/backend_registry.h"
+#include <filesystem>
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
-#include <lemon/utils/aixlog.hpp>
-#include <filesystem>
 #include <set>
 
 namespace fs = std::filesystem;
@@ -57,6 +57,7 @@ InstallParams Ds4Server::get_install_params(const std::string& backend, const st
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
                      BackendManager* backend_manager)
     : WrappedServer("ds4-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::Ds4, *this);
 }
 
 void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,

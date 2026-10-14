@@ -12,7 +12,11 @@ namespace backends {
 
 class HrxServer : public LlamaCppServer {
 public:
-    using LlamaCppServer::LlamaCppServer;
+    HrxServer(const std::string& log_level, ModelManager* model_manager,
+              BackendManager* backend_manager)
+        : LlamaCppServer(log_level, model_manager, backend_manager) {
+        bind_legacy_operations(LegacyOperationProfile::Hrx, *this);
+    }
 
     static InstallParams get_install_params(const std::string& backend,
                                             const std::string& version);

@@ -23,6 +23,7 @@ InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, 
 
 RyzenAIServer::RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::RyzenAI, *this);
 }
 
 void RyzenAIServer::load(const std::string& model_name,

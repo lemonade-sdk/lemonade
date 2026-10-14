@@ -4930,6 +4930,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
+        const auto delivery = is_streaming ? OperationDelivery::Streaming : OperationDelivery::Buffered;
         const std::string speech_model = request_json["model"].get<std::string>();
         // A backend's streaming encoder is often narrower than its buffered one, so
         // which constraint applies depends on the transport in play.
@@ -4985,7 +4986,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         const auto format_metadata =
-            router_->audio_speech_format_metadata(speech_model, response_format);
+            router_->audio_speech_format_metadata(speech_model, response_format, delivery);
         std::string mime_type = format_metadata.content_type.empty()
             ? MIME_TYPES[response_format].get<std::string>()
             : format_metadata.content_type;
@@ -5000,7 +5001,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
 
-        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+        auto audio_source = [this, request_json, delivery](size_t offset, httplib::DataSink& sink) {
             // For chunked responses, offset tracks bytes sent so far
             // We only want to stream once when offset is 0
             if (offset > 0) {
@@ -5008,7 +5009,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
 
             // Use unified Router path for streaming
-            router_->audio_speech(request_json, sink);
+            router_->audio_speech(request_json, sink, delivery);
 
             return false;
         };
@@ -5021,8 +5022,8 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
-                router_->audio_speech(request_json, sink);
+            serve_media_or_error(res, mime_type, [this, request_json, delivery](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink, delivery);
             });
         }
 
@@ -5747,7 +5748,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         context.cloud_registry = cloud_registry_.get();
         context.model_info = &info;
         auto server = backends::create_server(info.recipe, context);
-        if (!server || !supports_capability<IUpscaleServer>(server.get())) {
+        if (!server || !server->supports_operation(BackendOperation::Upscale, OperationDelivery::Buffered, info.type)) {
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Upscale is not supported by recipe: " + info.recipe},
@@ -5756,7 +5757,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-        auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
+        auto* upscale_server = operation_adapter<IUpscaleServer>(*server, BackendOperation::Upscale, OperationDelivery::Buffered, info.type);
         std::string upscaled = upscale_server->upscale_via_cli(b64_image, info.resolved_path("main"));
 
         if (upscaled.empty()) {

@@ -1,37 +1,37 @@
-#include "lemon/backends/llamacpp/llamacpp_server.h"
-#include "lemon/backends/llamacpp/llamacpp.h"
-#include "lemon/backends/llamacpp/llamacpp_gguf.h"
-#include "lemon/backends/llamacpp/llamacpp_request.h"
-#include "llamacpp_system_utils.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/gguf_capabilities.h"
-#include "lemon/gguf_reader.h"
-#include "lemon/model_manager.h"
+#include <algorithm>
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
-#include <regex>
-#include <system_error>
-#include <utility>
-#include "lemon/auto_tune.h"
-#include "lemon/backend_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/recipe_arg_resolver.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/error_types.h"
-#include "lemon/system_info.h"
-#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <filesystem>
 #include <iostream>
+#include "lemon/auto_tune.h"
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
+#include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/error_types.h"
+#include "lemon/gguf_capabilities.h"
+#include "lemon/gguf_reader.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/custom_args.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/recipe_arg_resolver.h"
+#include "llamacpp_system_utils.h"
+#include <regex>
 #include <set>
+#include <system_error>
+#include <utility>
 #ifdef __APPLE__
 #include <pwd.h>
 #include <unistd.h>
@@ -265,6 +265,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 
 LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::LlamaCpp, *this);
 }
 
 void LlamaCppServer::load(const std::string& model_name,

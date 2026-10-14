@@ -1,26 +1,31 @@
 #pragma once
 
-#include <string>
-#include <memory>
-#include <functional>
-#include <chrono>
-#include <mutex>
-#include <condition_variable>
-#include <thread>
-#include <atomic>
-#include <stdexcept>
-#include <nlohmann/json.hpp>
-#include <httplib.h>
-#include "utils/process_manager.h"
-#include "utils/http_client.h"
-#include "server_capabilities.h"
+#include "backend_manager.h"
+#include "backend_operation.h"
+#include "backends/backend_descriptor.h"
 #include "model_manager.h"
 #include "model_residency.h"
-#include "backend_manager.h"
+#include "operation_adapters.h"
 #include "recipe_options.h"
-#include "streaming_proxy.h"
-#include "backends/backend_descriptor.h"
+#include "server_capabilities.h"
 #include "server_process.h"
+#include "streaming_proxy.h"
+#include "utils/http_client.h"
+#include "utils/process_manager.h"
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <httplib.h>
+#include <memory>
+#include <mutex>
+#include <nlohmann/json.hpp>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <type_traits>
+#include <utility>
 
 namespace lemon {
 
@@ -97,6 +102,15 @@ public:
     uint64_t get_instance_id() const { return instance_id_; }
 
     virtual ~WrappedServer();
+
+    virtual bool supports_operation(BackendOperation operation, OperationDelivery delivery,
+                                    ModelType model_type) const noexcept {
+        return operation_bindings_ && operation_bindings_->supports({operation, delivery, model_type});
+    }
+
+    const OperationBindings* operation_bindings() const noexcept { return operation_bindings_.get(); }
+
+    json dispatch_completion_operation(BackendOperation operation, const json& request);
 
 
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
@@ -522,6 +536,10 @@ public:
                                            long timeout_seconds = 0,
                                            TelemetryCallback telemetry_callback = nullptr);
 
+    void dispatch_streaming_operation(BackendOperation operation, const std::string& request_body,
+                                      httplib::DataSink& sink, bool sse = true, long timeout_seconds = 0,
+                                      TelemetryCallback telemetry_callback = nullptr);
+
     // Get the server address
     std::string get_address() const {
         return get_base_url() + "/v1";
@@ -559,6 +577,43 @@ public:
     }
 
 protected:
+    template<class Server>
+    void bind_legacy_operations(LegacyOperationProfile profile, Server& server) {
+        OperationAdapters adapters;
+        adapters.completion = dynamic_cast<ICompletionServer*>(&server);
+        adapters.embeddings = dynamic_cast<IEmbeddingsServer*>(&server);
+        adapters.reranking = dynamic_cast<IRerankingServer*>(&server);
+        adapters.classification = dynamic_cast<IClassificationServer*>(&server);
+        adapters.transcription = dynamic_cast<ITranscriptionServer*>(&server);
+        adapters.streaming_transcription = dynamic_cast<IStreamingTranscriptionServer*>(&server);
+        adapters.text_to_speech = dynamic_cast<ITextToSpeechServer*>(&server);
+        adapters.image = dynamic_cast<IImageServer*>(&server);
+        adapters.upscale = dynamic_cast<IUpscaleServer*>(&server);
+        adapters.audio_generation = dynamic_cast<IAudioGenerationServer*>(&server);
+        adapters.model_3d = dynamic_cast<IModel3DServer*>(&server);
+        adapters.slots = dynamic_cast<ISlotsServer*>(&server);
+        adapters.tokenizer = dynamic_cast<ITokenizerServer*>(&server);
+        adapters.completion_implementations = {
+            !std::is_same_v<decltype(&Server::chat_completion), decltype(&WrappedServer::chat_completion)>,
+            !std::is_same_v<decltype(&Server::completion), decltype(&WrappedServer::completion)>,
+            !std::is_same_v<decltype(&Server::responses), decltype(&WrappedServer::responses)>
+        };
+        adapters.responses = [](WrappedServer& instance, const json& request) {
+            return instance.responses(request);
+        };
+        adapters.completion_rejections = {
+            [](WrappedServer& instance, const json& request) { return instance.chat_completion(request); },
+            [](WrappedServer& instance, const json& request) { return instance.completion(request); },
+            [](WrappedServer& instance, const json& request) { return instance.responses(request); }
+        };
+        adapters.streaming_forwarder = [](WrappedServer& instance, const std::string& endpoint,
+                                          const std::string& body, httplib::DataSink& sink,
+                                          bool sse, long timeout, TelemetryCallback callback) {
+            instance.forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
+        };
+        operation_bindings_ = std::make_unique<const OperationBindings>(legacy_operation_bindings(profile, adapters));
+    }
+
     struct BackendWatchdogPolicy {
         std::string health_endpoint = "/health";
         bool enabled = true;
@@ -699,6 +754,49 @@ private:
     std::atomic<int> active_backend_requests_{0};
     std::atomic<int> active_streaming_requests_{0};
     std::atomic<int> active_non_streaming_requests_{0};
+    std::unique_ptr<const OperationBindings> operation_bindings_;
+
 };
+
+template<class Interface>
+Interface* operation_adapter(WrappedServer& server, BackendOperation operation,
+                             OperationDelivery delivery, ModelType model_type) noexcept {
+    const auto* bindings = server.operation_bindings();
+    if (!bindings || !server.supports_operation(operation, delivery, model_type)) {
+        return nullptr;
+    }
+    return bindings->adapters().get<Interface>(operation);
+}
+
+template<class Interface>
+Interface* operation_adapter(WrappedServer* server, BackendOperation operation,
+                             OperationDelivery delivery, ModelType model_type) noexcept {
+    return server ? operation_adapter<Interface>(*server, operation, delivery, model_type) : nullptr;
+}
+
+template<class Interface>
+Interface* operation_rejection_adapter(WrappedServer& server, BackendOperation operation,
+                                       OperationDelivery delivery, ModelType model_type) noexcept {
+    const auto* bindings = server.operation_bindings();
+    return bindings && bindings->has_rejection({operation, delivery, model_type})
+        ? bindings->adapters().get<Interface>(operation) : nullptr;
+}
+
+template<class Interface>
+Interface* operation_metadata_adapter(WrappedServer* server, BackendOperation operation,
+                                      OperationDelivery delivery) noexcept {
+    static_assert(std::is_same_v<Interface, ITextToSpeechServer> || std::is_same_v<Interface, IAudioGenerationServer>);
+    if (!server || !valid_operation_delivery(operation, delivery)) {
+        return nullptr;
+    }
+    auto* adapter = operation_adapter<Interface>(*server, operation, delivery, server->get_model_type());
+    const auto* bindings = server->operation_bindings();
+    // Legacy format negotiation precedes the router's model-mode rejection.
+    if (adapter) {
+        return adapter;
+    }
+    return bindings && bindings->compiled_compatibility()
+        ? bindings->adapters().get<Interface>(operation) : nullptr;
+}
 
 } // namespace lemon

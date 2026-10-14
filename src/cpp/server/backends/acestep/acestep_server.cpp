@@ -1,22 +1,22 @@
-#include "lemon/backends/acestep/acestep_server.h"
-#include "lemon/backends/acestep/acestep.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/backend_manager.h"
-#include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/path_utils.h"
-#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/acestep/acestep.h"
+#include "lemon/backends/acestep/acestep_server.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/error_types.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -69,7 +69,9 @@ InstallParams AceStepServer::get_install_params(const std::string& backend, cons
 AceStepServer::AceStepServer(const std::string& log_level,
                              ModelManager* model_manager,
                              BackendManager* backend_manager)
-    : WrappedServer("acestep-server", log_level, model_manager, backend_manager) {}
+    : WrappedServer("acestep-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::AceStep, *this);
+}
 
 std::string AceStepServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = acestep::spec();

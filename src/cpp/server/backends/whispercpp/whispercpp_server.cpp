@@ -31,6 +31,7 @@ namespace backends {
 
 WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("whisper-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::Whisper, *this);
 }
 
 WhisperServer::~WhisperServer() {

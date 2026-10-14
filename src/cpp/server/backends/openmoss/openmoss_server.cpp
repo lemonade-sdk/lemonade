@@ -1,26 +1,26 @@
-#include "lemon/backends/openmoss/openmoss_server.h"
-#include "lemon/backends/openmoss/openmoss.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backend_manager.h"
-#include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/url_utils.h"
-#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <thread>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/openmoss/openmoss.h"
+#include "lemon/backends/openmoss/openmoss_server.h"
+#include "lemon/error_types.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/url_utils.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,7 +90,9 @@ InstallParams OpenMossServer::get_install_params(const std::string& backend, con
 OpenMossServer::OpenMossServer(const std::string& log_level,
                                ModelManager* model_manager,
                                BackendManager* backend_manager)
-    : WrappedServer("openmoss-server", log_level, model_manager, backend_manager) {}
+    : WrappedServer("openmoss-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::OpenMoss, *this);
+}
 
 OpenMossServer::~OpenMossServer() {
     unload();
