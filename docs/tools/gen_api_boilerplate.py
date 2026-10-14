@@ -1079,10 +1079,11 @@ def field_lines(rows: list, pad: str = "") -> list[str]:
     return lines
 
 
-def render_fields(schema: dict) -> str:
+def render_fields(schema: dict, shapes: list | None = None) -> str:
     """The schema's top-level description, then its fields; a format with several shapes
-    lists each shape's fields under that shape's description."""
-    shapes = schema.get("oneOf", [])
+    lists each of shapes (all of them by default) under that shape's description."""
+    if shapes is None:
+        shapes = schema.get("oneOf", [])
     blocks = [schema.get("description", "")]
     blocks.append("\n".join(field_lines(field_rows({**schema, "oneOf": []}))))
     for shape in shapes:
@@ -1230,17 +1231,49 @@ def render_example_request(entries: list[dict], labels: list[str]) -> str:
     return "\n".join(parts).rstrip()
 
 
+def tab_fields(schema: dict, fmt: str, entry: dict, shown: list) -> str:
+    """The Field Descriptions not yet shown in an earlier tab: the format's own fields in
+    its first tab, and each shape in the first tab whose response matches it."""
+    import jsonschema
+
+    shapes = schema.get("oneOf", [])
+    payloads = recorded_payloads(fmt, entry["response"])
+    new_shapes = [
+        shape
+        for shape in shapes
+        if not any(shape is seen for seen in shown)
+        and any(
+            jsonschema.Draft202012Validator(shape).is_valid(payload)
+            for payload in payloads
+        )
+    ]
+    first = not any(schema is seen for seen in shown)
+    shown += [schema] + new_shapes
+    if not first and not new_shapes:
+        return ""
+    if first:
+        return render_fields(schema, new_shapes)
+    return render_fields({"oneOf": []}, new_shapes)
+
+
 def render_response_format(spec: dict, entries: list[dict], labels: list[str]) -> str:
     """Each format's Field Descriptions appear once: after the tabs when every example
-    shares one format, else inside each example's tab."""
+    shares one format, else inside the tabs, each part in the first tab it applies to.
+    """
     shared = len({example["format"] for example in spec["examples"]}) == 1
-    bodies, fields = [], ""
+    bodies, fields, shown, schemas = [], "", [], {}
     for example, entry in zip(spec["examples"], entries):
         response = find_response(spec, example["format"])
-        schema = dereferenced(response["schema"])
+        schema = schemas.setdefault(
+            response["format"], dereferenced(response["schema"])
+        )
         body = render_recorded(response["format"], entry, schema)
-        fields = render_fields(schema) if schema else ""
-        bodies.append(body if shared or not fields else f"{body}\n\n{fields}")
+        if shared:
+            fields = render_fields(schema) if schema else ""
+            bodies.append(body)
+            continue
+        tab = tab_fields(schema, response["format"], entry, shown) if schema else ""
+        bodies.append(f"{body}\n\n{tab}" if tab else body)
     if len(bodies) == 1:
         return (
             "### Response format\n\n" + bodies[0] + (f"\n\n{fields}" if fields else "")

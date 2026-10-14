@@ -1114,6 +1114,29 @@
       }
     }
   },
+  "e46d6e438e363efd4ea5ba880a0163e1d60249812e1b2cc547fe9cba98cf86c6": {
+    "route": "lemonade.downloads_control",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/downloads/control",
+      "query": {},
+      "json": {
+        "id": "model:Qwen3-1.7B-GGUF",
+        "action": "remove"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "missing": true,
+        "status": "ok"
+      }
+    }
+  },
   "30032a8905fab1c904c12607f7249fb3193faa3b007ff9a67dd5e4b48a2a463b": {
     "route": "lemonade.health",
     "format": "Json",
@@ -1274,6 +1297,70 @@
         "provider": "fireworks",
         "status": "success",
         "wire_format": "openai"
+      }
+    }
+  },
+  "0d39634e91c94ea68250342140d89a3d2d91f327808da3b28ffe8e728d9e7729": {
+    "route": "lemonade.install",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/install",
+      "query": {},
+      "json": {
+        "recipe": "llamacpp",
+        "backend": "cpu"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "backend": "cpu",
+        "recipe": "llamacpp",
+        "status": "success"
+      }
+    }
+  },
+  "b95549bb27bdf7ed5fda7cb4dac5fc4e8809b5ed19e658da5670c1f62ba06dac": {
+    "route": "lemonade.install",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/install",
+      "query": {},
+      "json": {
+        "recipe": "llamacpp",
+        "backend": "vulkan",
+        "stream": true,
+        "subscribe": false
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "bytes_downloaded": 0,
+        "bytes_previously_downloaded": 0,
+        "bytes_total": 0,
+        "complete": false,
+        "completed_files_bytes": 0,
+        "cumulative_bytes_downloaded": 0,
+        "file": "",
+        "file_index": 0,
+        "id": "backend:llamacpp:vulkan",
+        "model_name": "llamacpp:vulkan",
+        "overall_bytes_downloaded": 0,
+        "percent": 0,
+        "running": true,
+        "status": "downloading",
+        "total_download_size": 0,
+        "total_files": 0,
+        "type": "backend"
       }
     }
   },
@@ -1513,6 +1600,29 @@
       }
     }
   },
+  "dd30b36585ddf29005426076f1db876391c8cd6794429b24c831420717d45d0f": {
+    "route": "lemonade.load",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/load",
+      "query": {},
+      "json": {
+        "model_name": "LMX-Omni-5.5B-Lite"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_name": "LMX-Omni-5.5B-Lite",
+        "recipe": "collection.omni",
+        "status": "success"
+      }
+    }
+  },
   "04cbd80e9425bedeaeee4c225242435f7930069ec4bb3725a91082c9a26bea7a": {
     "route": "lemonade.load",
     "format": "Json",
@@ -1709,6 +1819,28 @@
         "total_download_size": 0,
         "total_files": 0,
         "type": "model"
+      }
+    }
+  },
+  "98f63b01ae5326ca11c3445db164ffc3478ab29a6d62bf0568e148c8b9d12495": {
+    "route": "lemonade.pull",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/pull",
+      "query": {},
+      "json": {
+        "model_name": "Qwen3-0.6B-GGUF"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_name": "Qwen3-0.6B-GGUF",
+        "status": "success"
       }
     }
   },
@@ -4232,6 +4364,30 @@
         "backend": "cloud",
         "models_evicted": 0,
         "provider": "fireworks",
+        "status": "success"
+      }
+    }
+  },
+  "42d00b34746a98180cadb6781400cf5a87de0d1c79fda0316bc6af2995eee85c": {
+    "route": "lemonade.uninstall",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/uninstall",
+      "query": {},
+      "json": {
+        "recipe": "llamacpp",
+        "backend": "cpu"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "backend": "cpu",
+        "recipe": "llamacpp",
         "status": "success"
       }
     }
