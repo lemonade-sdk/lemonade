@@ -14,7 +14,8 @@ RegistryDescriptor huggingface() {
                               "hf",
                               "models--",
                               "main",
-                              "https://huggingface.co"};
+                              "https://huggingface.co",
+                              download_protocols::hf_hub};
 }
 
 RegistryDescriptor modelscope() {
@@ -24,7 +25,8 @@ RegistryDescriptor modelscope() {
                               "ms",
                               "modelscope--models--",
                               "master",
-                              ""};
+                              "",
+                              download_protocols::modelscope_api};
 }
 
 }  // namespace builtin_registries

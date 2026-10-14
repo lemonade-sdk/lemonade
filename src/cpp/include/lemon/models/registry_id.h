@@ -25,7 +25,14 @@ class RegistryId {
     std::string canonical_;
 };
 
-// Per-host facts that are not protocol.
+// How a host serves files. A backend maps a protocol to its own command line and
+// must refuse one it has no mapping for, rather than fall back to some other host.
+namespace download_protocols {
+inline constexpr const char hf_hub[] = "hf-hub";
+inline constexpr const char modelscope_api[] = "modelscope-api";
+}  // namespace download_protocols
+
+// Per-host facts a caller may ask without naming the host.
 struct RegistryDescriptor {
     RegistryId id;
     std::vector<std::string> aliases;  // accepted spellings, lower case
@@ -35,6 +42,7 @@ struct RegistryDescriptor {
     std::string default_revision;
     // Empty when the host serves files only through its own API.
     std::string endpoint_default;
+    std::string download_protocol;
 };
 
 // Resolves any accepted spelling. Empty means the default host.

@@ -346,6 +346,11 @@ VLLMServer::~VLLMServer() {
     unload();
 }
 
+static std::string registry_protocol(const RegistryId& source) {
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(source);
+    return descriptor != nullptr ? descriptor->download_protocol : std::string();
+}
+
 void VLLMServer::load(const std::string& model_name,
                      const ModelInfo& model_info,
                      const RecipeOptions& options,
@@ -374,13 +379,12 @@ void VLLMServer::load(const std::string& model_name,
                                     ? path_from_utf8(model_manager_->get_hf_cache_dir())
                                     : fs::path();
 
-    // vLLM can resolve Hugging Face IDs itself, but it has no native knowledge
-    // of Lemonade's ModelScope cache namespace. Point it at the normalized
-    // active snapshot so it stays offline and uses the exact revision Lemonade
-    // recorded for update checks.
-    if (registry_source == models::modelscope_descriptor().id) {
+    // An engine that cannot resolve the id itself gets the normalized active
+    // snapshot, so it stays offline and uses the exact revision Lemonade recorded
+    // for update checks.
+    if (!vllm::ops()->resolves_download_protocol(registry_protocol(registry_source))) {
         if (model_manager_ == nullptr) {
-            throw std::runtime_error("Model manager is unavailable while resolving ModelScope cache");
+            throw std::runtime_error("Model manager is unavailable while resolving a local snapshot");
         }
         const std::string repo_id = registry_repo_id_from_checkpoint(model_id);
         const fs::path repo_cache = cache_root /
@@ -388,7 +392,7 @@ void VLLMServer::load(const std::string& model_name,
         active_snapshot = hf_cache::active_snapshot_path(repo_cache);
         if (active_snapshot.empty() || !fs::exists(active_snapshot)) {
             throw std::runtime_error(
-                "ModelScope snapshot is not downloaded or refs/main is invalid for: " + model_name);
+                "Local snapshot is not downloaded or refs/main is invalid for: " + model_name);
         }
         model_target = path_to_utf8(active_snapshot);
     }
@@ -785,13 +789,20 @@ namespace lemon {
 namespace backends {
 namespace vllm {
 
+class VLLMOps : public BackendOps {
+  public:
+    bool resolves_download_protocol(const std::string& protocol) const override {
+        return protocol == models::download_protocols::hf_hub;
+    }
+};
+
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<VLLMServer>(ctx);
 }
 
 
 const BackendSpec* spec() { return make_spec<VLLMServer>(descriptor, /*split=*/true); }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() { return single_ops<VLLMOps>(); }
 }  // namespace vllm
 }  // namespace backends
 }  // namespace lemon
