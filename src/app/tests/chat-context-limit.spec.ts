@@ -115,3 +115,82 @@ test('a length-terminated partial answer is not reported as a complete answer', 
   await sendImage(page);
   await expect(page.locator('.message--assistant').last()).toContainText('finish_reason=length');
 });
+
+test('tool-heavy vision chat retries once without tools and keeps the image', async ({ page }) => {
+  await mockVisionModel(page, true);
+  const requests: Record<string, any>[] = [];
+  await page.route(/\/api\/v1\/chat\/completions$/, async route => {
+    const body = route.request().postDataJSON() as Record<string, any>;
+    requests.push(body);
+    await route.fulfill({
+      status: 200, contentType: 'text/event-stream',
+      body: body.tools
+        ? complete({ reasoning_content: 'Analyzing...' }, 'length')
+        : complete({ content: 'A display in front of a building.' }),
+    });
+  });
+
+  await sendImage(page);
+  await expect(page.locator('.message--assistant').last()).toContainText('A display in front of a building.');
+  expect(requests).toHaveLength(2);
+  expect(requests[0].tools.length).toBeGreaterThan(0);
+  expect(requests[1].tools).toBeUndefined();
+  expect(requests[1].messages).toHaveLength(1);
+  expect(requests[1].messages[0]).toEqual(requests[0].messages.at(-1));
+  expect(requests[1].messages[0].content.some((part: { type: string }) => part.type === 'image_url')).toBe(true);
+  await expect(page.locator('.message--assistant')).toHaveCount(1);
+});
+
+test('a second exhausted response is an error rather than a silent success or loop', async ({ page }) => {
+  await mockVisionModel(page, true);
+  const requests: Record<string, unknown>[] = [];
+  await page.route(/\/api\/v1\/chat\/completions$/, async route => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200, contentType: 'text/event-stream',
+      body: complete({ reasoning_content: 'Still thinking...' }, 'length'),
+    });
+  });
+
+  await sendImage(page);
+  await expect(page.locator('.message--assistant').last()).toContainText('finish_reason=length');
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toHaveProperty('tools');
+  expect(requests[1]).not.toHaveProperty('tools');
+});
+
+test('a successful reply with tools enabled is not retried', async ({ page }) => {
+  await mockVisionModel(page, true);
+  const requests: Record<string, unknown>[] = [];
+  await page.route(/\/api\/v1\/chat\/completions$/, async route => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200, contentType: 'text/event-stream',
+      body: complete({ content: 'Direct response with tools enabled.' }),
+    });
+  });
+
+  await sendImage(page);
+  await expect(page.locator('.message--assistant').last()).toContainText('Direct response with tools enabled.');
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toHaveProperty('tools');
+});
+
+test('a tools-enabled text completion reports exhaustion without a hidden retry', async ({ page }) => {
+  await mockVisionModel(page, true);
+  let requests = 0;
+  await page.route(/\/api\/v1\/chat\/completions$/, route => {
+    requests++;
+    return route.fulfill({
+      status: 200, contentType: 'text/event-stream',
+      body: complete({ reasoning_content: 'No answer...' }, 'length'),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.locator('.composer__input')).toHaveAttribute('placeholder', /Message Qwen3\.8-27B-GGUF/);
+  await page.locator('.composer__input').fill('Summarize this sentence.');
+  await page.locator('.composer__send').click();
+  await expect(page.locator('.message--assistant').last()).toContainText('finish_reason=length');
+  expect(requests).toBe(1);
+});

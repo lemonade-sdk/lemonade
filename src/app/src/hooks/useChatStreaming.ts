@@ -191,6 +191,15 @@ export function useChatStreaming(
     controllersRef.current.set(convoId, controller);
 
     let fullMessages = [...messages];
+    // When a small context is exhausted by tool schemas, retry with exactly
+    // the original conversation and attachments, omitting the tool-only prompt.
+    const withoutToolPrompt = runtime?.systemPrompt
+      && messages[0]?.role === 'system'
+      && messages[0].content === runtime.systemPrompt
+      ? messages.slice(1) : messages;
+    let retriedWithoutTools = false;
+    const hasImageInput = messages.some(message => Array.isArray(message.content)
+      && message.content.some(part => part.type === 'image_url'));
 
     let toolRound = 0;
     const allToolCalls: ToolCallEntry[] = [];
@@ -198,9 +207,9 @@ export function useChatStreaming(
     const runCompletion = async (): Promise<void> => {
       const { default: api } = await import(/* webpackChunkName: "api-client" */ '../api');
       return new Promise<void>((resolve, reject) => {
-        api.chatCompletion(model, fullMessages, {
+        api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : fullMessages, {
           params: chatThinkingParams(thinkingMode),
-          tools: runtime?.tools?.length ? runtime.tools : undefined,
+          tools: !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
@@ -321,6 +330,24 @@ export function useChatStreaming(
             if (controller.signal.aborted) {
               cleanup(convoId);
               resolve();
+              return;
+            }
+            // The selected tools can consume almost the entire vision context.
+            // Do not re-run executed tools, and never retry more than once.
+            if (!retriedWithoutTools && hasImageInput && runtime?.tools?.length && allToolCalls.length === 0
+                && (!stats.content.trim() || stats.finishReason === 'length')) {
+              retriedWithoutTools = true;
+              setActiveStreams(prev => ({
+                ...prev,
+                [convoId]: { content: '', thinking: '', toolCalls: [] },
+              }));
+              setLiveStats(prev => {
+                const next = { ...prev };
+                delete next[convoId];
+                return next;
+              });
+              setThinkingExpanded(false);
+              void runCompletion().then(resolve, reject);
               return;
             }
             if (stats.finishReason === 'length') {
