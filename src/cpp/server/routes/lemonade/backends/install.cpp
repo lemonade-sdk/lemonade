@@ -24,7 +24,7 @@ ordered_json install_schema() {
         "description": "A local backend installed or already up to date.",
         "required": ["status", "recipe", "backend"],
         "properties": {
-            "status": {"const": "success"},
+            "status": {"const": "success", "description": "`success`, or, in a server-owned job snapshot, the job's state."},
             "recipe": {"type": "string"},
             "backend": {"type": "string"}
         }
@@ -34,7 +34,7 @@ ordered_json install_schema() {
         "description": "A backend that needs manual setup on this system, such as FLM on Linux: nothing was installed and action is the setup guide's URL.",
         "required": ["action", "recipe", "backend"],
         "properties": {
-            "action": {"type": "string"},
+            "action": {"type": "string", "description": "Present instead of `status` when the backend needs manual setup on this system, such as FLM on Linux: the setup guide's URL. Nothing was installed."},
             "recipe": {"type": "string"},
             "backend": {"type": "string"}
         }
@@ -67,7 +67,7 @@ ordered_json install_schema() {
         }
     })");
     auto job = DownloadManager::job_schema();
-    job["description"] = "stream=true with subscribe=false: the server-owned download job just started.";
+    job["description"] = "`stream: true` with `subscribe: false`: the server-owned download job just started.";
     return {{"oneOf", ordered_json::array({local, manual, cloud, job})}};
 }
 
@@ -82,11 +82,8 @@ public:
         s.paths = {"install"};
         s.summary = "Install or update a backend, or register a cloud provider";
         s.description =
-            "Installs a recipe's backend, updating it when the installed version is outdated, or "
-            "registers a cloud provider when `backend` is `\"cloud\"`.";
+            "Installs or updates a recipe's backend, or registers a cloud provider.";
         s.notes = {
-            "A backend that needs manual setup on this system answers with the setup guide's URL "
-            "instead of installing.",
             "A local install without both `recipe` and `backend`, or of a backend this system "
             "does not support and without `force`, answers `400` with an `error` string; an "
             "invalid cloud provider field answers `400` with an `error` object. Any other failure, "
@@ -94,9 +91,8 @@ public:
             "### Install a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
-            "Registers a cloud chat provider. The base URL is persisted to "
-            "`config.json`; the optional `api_key` lives in `lemond` process memory only and is "
-            "cleared on restart. See the [Cloud Offload guide](../guide/configuration/cloud.md) for "
+            "The base URL is saved to `config.json`. "
+            "See the [Cloud Offload guide](../guide/configuration/cloud.md) for "
             "the full workflow.\n"
             "\n"
             "Optional fields are applied only when present in the request body. Re-installing a "

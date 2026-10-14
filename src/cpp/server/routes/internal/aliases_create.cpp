@@ -34,12 +34,13 @@ public:
         s.paths = {"aliases"};
         s.prefixes = Prefixes::Internal;
         s.summary = "Create or update a model alias";
-        s.description = "Points an alias at a target model, replacing any target it had.";
+        s.description =
+            "Points an alias at a target model, replacing any target it had. The "
+            "`lemonade alias add` command uses it.";
         s.notes = {
             "A `400` answers a missing `alias` or `target`, an alias equal to its target, or an "
             "alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an "
             "alias that is already a model's canonical name, or one that would form a cycle.",
-            "The `lemonade alias add` command uses this endpoint.",
         };
         s.args = {
             {"alias", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

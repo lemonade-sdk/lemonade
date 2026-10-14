@@ -46,7 +46,8 @@ public:
             {"api_key", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The API key."},
             {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Opt in to sending the key to a provider whose base URL is `http://`."},
+             "Opt in to sending the key to a provider whose base URL is `http://`; the opt-in is "
+             "saved with the provider. Defaults to `false`."},
         };
 
         RouteResponse response;
@@ -55,8 +56,8 @@ public:
             "type": "object",
             "required": ["provider", "allow_insecure_http", "auth_state", "models_discovered"],
             "properties": {
-                "provider": {"type": "string"},
-                "allow_insecure_http": {"type": "boolean"},
+                "provider": {"type": "string", "description": "The provider the key was set for."},
+                "allow_insecure_http": {"type": "boolean", "description": "Whether the provider may receive keys over `http://`, after this request."},
                 "auth_state": {
                     "type": "object",
                     "properties": {

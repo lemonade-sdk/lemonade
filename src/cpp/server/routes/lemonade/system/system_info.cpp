@@ -146,10 +146,6 @@ ordered_json system_info_schema() {
             "OS Version": {"type": "string", "description": "Operating system name and version"},
             "Processor": {"type": "string", "description": "CPU model name"},
             "Physical Memory": {"type": "string", "description": "Total RAM"},
-            "OEM System": {"type": "string", "description": "System/laptop model name (Windows only)"},
-            "BIOS Version": {"type": "string", "description": "BIOS information (Windows only)"},
-            "CPU Max Clock": {"type": "string", "description": "Maximum CPU clock speed (Windows only)"},
-            "Windows Power Setting": {"type": "string", "description": "Current power plan (Windows only)"},
             "model_storage": {
                 "type": "object",
                 "description": "Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.",
@@ -193,12 +189,12 @@ ordered_json system_info_schema() {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
                                     "state": {"enum": ["unsupported", "installable", "update_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`"},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
-                                    "action": {"type": "string", "description": "Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL)."},
+                                    "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
-                                    "release_url": {"type": "string"},
-                                    "download_filename": {"type": "string"}
+                                    "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
+                                    "download_filename": {"type": "string", "description": "The release asset's filename."}
                                 }
                             }
                         }
@@ -225,15 +221,15 @@ ordered_json system_info_schema() {
                                 "env_var_set": {"type": "boolean", "description": "`true` if the env var is set in `lemond`'s environment."},
                                 "runtime_key_set": {"type": "boolean", "description": "`true` if an in-memory key has been supplied through [`POST /v1/cloud/auth`](#post-v1cloudauth) since `lemond` started."},
                                 "models_discovered": {"type": "integer", "description": "Number of chat-capable models currently in the catalog for this provider."},
-                                "allow_insecure_http": {"type": "boolean"},
-                                "warnings": {"type": "array", "items": {"type": "string"}},
-                                "warning": {"type": "string"}
+                                "allow_insecure_http": {"type": "boolean", "description": "Whether the provider may be reached over `http://`."},
+                                "warnings": {"type": "array", "items": {"type": "string"}, "description": "Problems found with the provider's configuration."},
+                                "warning": {"type": "string", "description": "`warnings` joined into one string, for older clients."}
                             }
                         }
                     }
                 }
             },
-            "unavailable_recipes": {"type": "array", "items": {"type": "string"}, "description": "Recipes all of whose models are filtered out on this host. Reported separately so recipes stays the same on every host; dynamic-model backends (cloud, flm) are never listed."},
+            "unavailable_recipes": {"type": "array", "items": {"type": "string"}, "description": "Recipes all of whose models are filtered out on this host. Reported separately so `recipes` stays the same on every host; dynamic-model backends (`cloud`, `flm`) are never listed."},
             "no_fetch_executables": {"type": "boolean", "description": "Whether the server is configured not to download backend executables."}
         }
     })json");

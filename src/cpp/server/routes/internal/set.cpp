@@ -35,19 +35,18 @@ public:
         s.summary = "Change config settings at runtime";
         s.description =
             "Changes one or more `config.json` settings without restarting `lemond`, and saves "
-            "them.";
+            "them. The `lemonade config set` command uses it.";
         s.notes = {
             "Every key is validated before any is applied, so one invalid value rejects the "
             "whole request with `400` and changes nothing.",
-            "Settings with a runtime effect apply immediately: a `port` or `host` change rebinds "
-            "the listeners, `log_level` reconfigures logging, and a backend section's `*_bin` "
-            "change reinstalls that backend and reloads its models. The rest apply to the next "
-            "model load or eviction decision. See the "
+            "Settings with a runtime effect apply immediately, such as `port` and `host`, which "
+            "rebind the listeners, the logging settings, and a backend section's `*_bin`, which "
+            "reinstalls that backend and reloads its models. Other settings are read the next "
+            "time they are needed, such as at the next model load. See the "
             "[Settings Reference](../guide/configuration/README.md#settings-reference) for every "
             "key.",
             "`config.json` keeps only values that differ from the defaults, so setting a key to "
-            "its default removes it from the file. The `lemonade config set` command uses this "
-            "endpoint.",
+            "its default removes it from the file.",
         };
 
         // The keys are config.json's own, so they come from the canonical defaults and

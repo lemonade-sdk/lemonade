@@ -116,7 +116,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `model_name` | Yes | Loaded model to pin or unpin. `model` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pinned` | Yes | `true` pins the model; `false` unpins it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A load that needs a slot held only by pinned models fails with `409` and a `slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).
+A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a slot held only by pinned models fails with `409` and a `slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).
 
 A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pinned`, or a model that is not loaded.
 
@@ -158,7 +158,7 @@ A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pi
 ## `POST /internal/set`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Changes one or more `config.json` settings without restarting `lemond`, and saves them.
+Changes one or more `config.json` settings without restarting `lemond`, and saves them. The `lemonade config set` command uses it.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -214,9 +214,9 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 Every key is validated before any is applied, so one invalid value rejects the whole request with `400` and changes nothing.
 
-Settings with a runtime effect apply immediately: a `port` or `host` change rebinds the listeners, `log_level` reconfigures logging, and a backend section's `*_bin` change reinstalls that backend and reloads its models. The rest apply to the next model load or eviction decision. See the [Settings Reference](../guide/configuration/README.md#settings-reference) for every key.
+Settings with a runtime effect apply immediately, such as `port` and `host`, which rebind the listeners, the logging settings, and a backend section's `*_bin`, which reinstalls that backend and reloads its models. Other settings are read the next time they are needed, such as at the next model load. See the [Settings Reference](../guide/configuration/README.md#settings-reference) for every key.
 
-`config.json` keeps only values that differ from the defaults, so setting a key to its default removes it from the file. The `lemonade config set` command uses this endpoint.
+`config.json` keeps only values that differ from the defaults, so setting a key to its default removes it from the file.
 
 ### Example request
 
@@ -256,7 +256,7 @@ Settings with a runtime effect apply immediately: a `port` or `host` change rebi
 ## `GET /internal/config`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the full runtime configuration: every `config.json` key, server-level and per-backend, with its current value.
+Returns the full runtime configuration: every `config.json` key, server-level and per-backend, with its current value. The `lemonade config` command reads it.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -264,7 +264,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-The `lemonade config` command reads this endpoint. See the [Settings Reference](../guide/configuration/README.md#settings-reference) for each key.
+See the [Settings Reference](../guide/configuration/README.md#settings-reference) for each key.
 
 ### Example request
 
@@ -408,7 +408,7 @@ The `lemonade config` command reads this endpoint. See the [Settings Reference](
 ## `GET /internal/config/defaults`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the default configuration built into this release, independent of this instance's `config.json` and of any deployment override.
+Returns the default configuration built into this release, independent of this instance's `config.json` and of any deployment override. `docs/tools/gen_backend_boilerplate.py` reads it to regenerate `src/cpp/resources/defaults.json`.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -416,7 +416,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-The per-backend sections come from the backend descriptors, so this is the authoritative list of factory defaults. `docs/tools/gen_backend_boilerplate.py` reads it to regenerate `src/cpp/resources/defaults.json`.
+The per-backend sections come from the backend descriptors, so this is the authoritative list of factory defaults.
 
 ### Example request
 
@@ -665,7 +665,7 @@ A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pc
 ## `POST /internal/models/sync`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Checks downloaded models for newer upstream commits and downloads the updates.
+Checks downloaded models for newer upstream commits and downloads the updates. The `lemonade update-models` command uses it.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -676,7 +676,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `models` | No | Models to sync. Defaults to every downloaded model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `dry_run` | No | Check for updates without downloading them. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `async` | No | Run in the background and answer immediately. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `attach_if_running` | No | Add the models to a sync that is already running instead of reporting it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `attach_if_running` | No | `true` reports a running sync, or with `async: false` waits for it, without adding this request's models to it. Defaults to `false`, which queues the models into the running sync. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A background sync answers `202` with its status; poll [`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its `sync_id`.
 
@@ -686,7 +686,7 @@ While a sync is running, a new request answers `200` with that sync's status ins
 
 Offline mode (`offline=true`) answers `409` without any network request.
 
-The `lemonade update-models` command uses this endpoint; see Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).
+See Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).
 
 ### Example request
 
@@ -731,7 +731,7 @@ The `lemonade update-models` command uses this endpoint; see Model Synchronizati
 
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
-- `already_in_progress` - Whether a sync is running.
+- `already_in_progress` - Whether a sync this request did not start is running.
 - `dry_run` - `true` when the request was a dry run.
 - `async` - `true` when the sync was started in the background.
 - `message` - Present when the sync was started in the background.
@@ -798,7 +798,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
-- `already_in_progress` - Whether a sync is running.
+- `already_in_progress` - Whether a sync this request did not start is running.
 - `dry_run` - `true` when the request was a dry run.
 - `async` - `true` when the sync was started in the background.
 - `message` - Present when the sync was started in the background.
@@ -820,7 +820,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-An alias stands in for its target in any request's `model` field. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
+An alias stands in for its target in the `model` field of OpenAI-compatible and Lemonade requests; the Ollama and Anthropic gateways do not resolve aliases. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
 
 ### Example request
 
@@ -866,7 +866,7 @@ An alias stands in for its target in any request's `model` field. Aliases live i
 ## `POST /internal/aliases`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Points an alias at a target model, replacing any target it had.
+Points an alias at a target model, replacing any target it had. The `lemonade alias add` command uses it.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -878,8 +878,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `target` | Yes | The target model name or canonical ID (also accepted as `model`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A `400` answers a missing `alias` or `target`, an alias equal to its target, or an alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an alias that is already a model's canonical name, or one that would form a cycle.
-
-The `lemonade alias add` command uses this endpoint.
 
 ### Example request
 

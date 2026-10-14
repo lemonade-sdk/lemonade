@@ -24,8 +24,8 @@ public:
             "Lists the models available on the server, in OpenAI's format extended with the "
             "fields described below.";
         s.notes = {
-            "Model aliases are listed too, each as a copy of its target model with the alias as "
-            "its `id`.",
+            "A model alias whose target is listed appears too, as a copy of the target with the "
+            "alias as its `id`.",
             "With cloud providers configured, their models are listed too, with "
             "`recipe: \"cloud\"`, a `cloud_provider` field and a provider-prefixed id such as "
             "`fireworks.kimi-k2p5`. Models of `openai`-wire providers accept chat completions and "

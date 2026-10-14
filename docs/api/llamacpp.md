@@ -28,7 +28,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 | `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `documents` | Yes | Documents to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | Reranker model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -326,13 +326,13 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
 **Field Descriptions:**
 
 - `id_slot` - The slot acted on.
-- `filename` - save and restore: the file written or read.
-- `n_saved` - save: tokens written.
-- `n_restored` - restore: tokens read.
-- `n_written` - save: bytes written.
-- `n_read` - restore: bytes read.
-- `n_erased` - erase: tokens cleared.
-- `timings` - save and restore: how long the file operation took.
+- `filename` - `save` and `restore`: the file written or read.
+- `n_saved` - `save`: tokens written.
+- `n_restored` - `restore`: tokens read.
+- `n_written` - `save`: bytes written.
+- `n_read` - `restore`: bytes read.
+- `n_erased` - `erase`: tokens cleared.
+- `timings` - `save` and `restore`: how long the file operation took.
 <!-- END GENERATED: llamacpp.slots_action -->
 
 <!-- BEGIN GENERATED: llamacpp.tokenize -->

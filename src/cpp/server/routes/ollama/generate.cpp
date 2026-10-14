@@ -125,26 +125,28 @@ ordered_json generate_response_schema(bool line) {
         "type": "object",
         "required": ["model", "created_at", "done"],
         "properties": {
-            "model": {"type": "string"},
+            "model": {"type": "string", "description": "The model that generated the response."},
             "created_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
             "response": {"type": "string", "description": "Generated text. Empty for an image model."},
             "image": {"type": "string", "description": "Image models only: the generated image, base64-encoded."},
-            "done": {"type": "boolean"},
-            "done_reason": {"type": "string", "description": "`stop`, `length`, or `unload` after an unload request."},
+            "done": {"type": "boolean", "description": "`true` on the last line, or on the whole response when not streaming."},
+            "done_reason": {"type": "string", "description": "`stop`, or `unload` after an unload request."},
             "context": {"type": "array", "description": "Always empty."},
             "prompt_eval_count": {"type": "integer", "description": "Prompt tokens."},
             "eval_count": {"type": "integer", "description": "Generated tokens."},
-            "total_duration": {"type": "integer", "description": "Always 0."},
-            "load_duration": {"type": "integer", "description": "Always 0."},
-            "prompt_eval_duration": {"type": "integer", "description": "Always 0."},
-            "eval_duration": {"type": "integer", "description": "Always 0."}
+            "total_duration": {"type": "integer", "description": "Always `0`."},
+            "load_duration": {"type": "integer", "description": "Always `0`."},
+            "prompt_eval_duration": {"type": "integer", "description": "Always `0`."},
+            "eval_duration": {"type": "integer", "description": "Always `0`."}
         }
     })");
     if (line) {
-        schema["description"] = "Each line carries the next piece of text with done=false. When the "
-                                "text ends, a line with done=true and the real done_reason follows, "
-                                "then a last done=true line with the token counts and done_reason "
-                                "stop.";
+        schema["description"] = "Each line carries the next piece of text with `done: false`. When "
+                                "the text ends, a line with `done: true` and the real `done_reason` "
+                                "follows, then a last `done: true` line with the token counts and "
+                                "`done_reason` `stop`.";
+        schema["properties"]["done_reason"]["description"] =
+            "`stop`, `length`, or `unload` after an unload request.";
     }
     return schema;
 }
@@ -180,9 +182,9 @@ public:
              "`cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets "
              "the context size when this request loads the model."},
             {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: image width in pixels. Defaults to 512."},
+             "Image models only: image width in pixels. Defaults to `512`."},
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: image height in pixels. Defaults to 512."},
+             "Image models only: image height in pixels. Defaults to `512`."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Image models only: inference steps. Defaults to the model's own."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,

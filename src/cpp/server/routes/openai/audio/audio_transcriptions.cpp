@@ -34,8 +34,8 @@ public:
             {"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
              "The transcription model to use (e.g., `Whisper-Tiny`)."},
             {"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
-             "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to "
-             "`auto`, which detects the language."},
+             "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to the "
+             "backend's own."},
             {"response_format", ArgIn::Form,
              {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
              "`json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`."},
@@ -62,12 +62,12 @@ public:
         s.responses = {transcript, text};
 
         RouteExample transcript_example;
-        transcript_example.name = "JSON";
+        transcript_example.name = "transcript";
         transcript_example.format = ResponseFormat::Json;
         transcript_example.args = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"}};
 
         RouteExample text_example;
-        text_example.name = "text";
+        text_example.name = "plain text";
         text_example.format = ResponseFormat::Text;
         text_example.args = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"},
                         {"response_format", "text"}};

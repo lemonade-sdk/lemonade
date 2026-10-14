@@ -22,9 +22,9 @@ public:
         s.summary = "Read the runtime config";
         s.description =
             "Returns the full runtime configuration: every `config.json` key, server-level and "
-            "per-backend, with its current value.";
+            "per-backend, with its current value. The `lemonade config` command reads it.";
         s.notes = {
-            "The `lemonade config` command reads this endpoint. See the "
+            "See the "
             "[Settings Reference](../guide/configuration/README.md#settings-reference) for "
             "each key.",
         };

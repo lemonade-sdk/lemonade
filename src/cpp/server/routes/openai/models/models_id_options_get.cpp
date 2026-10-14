@@ -26,9 +26,9 @@ public:
             "and `DELETE` on the same path, this manages per-model options independently of "
             "[`/v1/load`](./lemonade.md#post-v1load).";
         s.notes = {
-            "Per-architecture defaults come from the model's GGUF metadata. For a model that has "
-            "not been downloaded yet, every key is still present but carries the value it has "
-            "before those defaults apply.",
+            "Per-architecture defaults are chosen by the architecture in the model's GGUF "
+            "metadata, so a model that has not been downloaded yet shows every key with the "
+            "value it has before those defaults apply.",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,

@@ -37,8 +37,7 @@ public:
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Recipe that loads the model, such as `llamacpp`."},
             {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Main checkpoint. Optional, since registration records only metadata and some model "
-             "types have no local weights."},
+             "Main checkpoint. Model types with no local weights have none."},
             {"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "Named checkpoints for multi-checkpoint models."},
             {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
@@ -56,9 +55,15 @@ public:
             {"required", ordered_json::array({"status", "model_name", "canonical_model_name"})},
             {"properties", {
                 {"status", {{"const", "success"}}},
-                {"model_name", {{"type", "string"}, {"description", "The ID `/v1/models` lists for the model."}}},
+                {"model_name", {{"type", "string"}, {"description", "The ID [`GET /v1/models`](./openai.md#get-v1models) lists for the model."}}},
                 {"canonical_model_name", {{"type", "string"}, {"description", "The `user.*` name the request registered."}}},
-                {"model", ModelJson::schema()},
+                {"model", [] {
+                    ordered_json model = ModelJson::schema();
+                    model["description"] =
+                        "The registered model, in the shape "
+                        "[`GET /v1/models/{id}`](./openai.md#get-v1modelsid) returns.";
+                    return model;
+                }()},
             }},
         };
         s.responses = {response};

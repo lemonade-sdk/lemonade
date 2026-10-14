@@ -26,7 +26,7 @@ public:
         response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["version"],
-            "properties": {"version": {"type": "string"}}
+            "properties": {"version": {"type": "string", "description": "The Ollama version Lemonade reports to clients."}}
         })");
         s.responses = {response};
 

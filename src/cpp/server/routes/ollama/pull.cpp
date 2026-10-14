@@ -28,12 +28,11 @@ public:
         s.notes = {
             "Only models already in Lemonade's registry can be pulled; use "
             "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
-            "A failed download ends the stream with an `error` line.",
             "In offline mode the request answers `400` with code `lemond_offline`.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to download."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Model to download. Required unless `name` is given."},
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Older name for `model`; wins when both are given."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -59,7 +58,7 @@ public:
         full.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status"],
-            "properties": {"status": {"const": "success"}}
+            "properties": {"status": {"const": "success", "description": "Always `success`."}}
         })");
 
         s.responses = {stream, full};

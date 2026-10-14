@@ -29,8 +29,8 @@ public:
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Embedding model to run."},
-            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text to embed."},
+            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Text to embed. Required unless `input` is given."},
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Accepted in place of `prompt`. For an array, only the first text's embedding is "
              "returned."},
@@ -47,8 +47,8 @@ public:
             "type": "object",
             "required": ["model", "embedding"],
             "properties": {
-                "model": {"type": "string"},
-                "embedding": {"type": "array", "items": {"type": "number"}}
+                "model": {"type": "string", "description": "The model that produced the embedding."},
+                "embedding": {"type": "array", "items": {"type": "number"}, "description": "The text's embedding vector."}
             }
         })");
         s.responses = {response};

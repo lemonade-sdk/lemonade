@@ -25,7 +25,8 @@ public:
             "Pins or unpins a loaded model without reloading it. Least-recently-used eviction "
             "skips pinned models.";
         s.notes = {
-            "A load that needs a slot held only by pinned models fails with `409` and a "
+            "A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a "
+            "slot held only by pinned models fails with `409` and a "
             "`slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).",
             "A `400` answers invalid JSON, a missing model name, a missing or non-boolean "
             "`pinned`, or a model that is not loaded.",

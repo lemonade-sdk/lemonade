@@ -30,12 +30,13 @@ public:
         s.summary = "Upscale an image";
         s.modality = "image + ESRGAN model -> upscaled image";
         s.description =
-            "Upscales an image with a Real-ESRGAN model. The model sets the upscale factor, which "
-            "its name usually states.";
+            "Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets "
+            "the upscale factor, which its name usually states.";
         s.notes = {
-            "The model must carry the `upscaling` label and is downloaded on first use.",
-            "A missing `image` or `model` answers `400`, an unknown model `404`, and a failed "
-            "upscale `500`, each with an `error` object.",
+            "The model is downloaded on first use.",
+            "A missing `image` or `model`, a model without the `upscaling` label, or one whose "
+            "recipe cannot upscale answers `400`; an unknown model `404`; a failed upscale `500`; "
+            "each with an `error` object.",
             "### Upscale a Generated Image\n"
             "\n"
             "A typical workflow is to generate an image first, then upscale it:\n"
@@ -127,17 +128,17 @@ public:
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Base64-encoded PNG image to upscale."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `Remacri-4x-TheNoise`)."},
+             "The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."},
         };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
         response.schema["properties"]["created"]["description"] =
-            "Unix timestamp of when the upscaled image was generated";
+            "Unix timestamp of when the upscaled image was generated.";
         response.schema["properties"]["data"]["description"] = "The upscaled image.";
         response.schema["properties"]["data"]["items"]["properties"]["b64_json"]["description"] =
-            "Base64-encoded PNG of the upscaled image";
+            "Base64-encoded PNG of the upscaled image.";
         s.responses = {response};
 
         RouteExample example;

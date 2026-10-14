@@ -20,36 +20,36 @@ public:
         s.id = "lemonade.3d_generations";
         s.methods = {"POST"};
         s.paths = {"3d/generations"};
-        s.summary = "Generate a textured 3D mesh (GLB) from an image";
+        s.summary = "Generate a textured 3D mesh from an image";
         s.experimental = true;
         s.description =
-            "Generates a textured 3D mesh, as a glTF-binary (`.glb`) file, from a PNG, JPEG, BMP or "
-            "GIF image. It serves TRELLIS models such as `TRELLIS-3D` and is a Lemonade extension.";
+            "Generates a textured 3D mesh, as a glTF-binary (`.glb`) file, from an image. It serves "
+            "TRELLIS models such as `TRELLIS-3D` and is a Lemonade extension.";
         s.notes = {
             "Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher "
             "`resolution` values take longer.",
-            "A failed request answers with a JSON `error` object: `400` for an invalid request, "
-            "`404` for an unknown model, `500` when the backend reports an error, and `502` when "
-            "it produces no output.",
+            "A failed request answers with a JSON `error` object: `400` for an invalid field, "
+            "`404` for an unknown model, `500` for a body that is not JSON or a backend error, and "
+            "`502` when the backend produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The 3D-generation model."},
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Base64-encoded input image (optionally a `data:` URL)."},
+             "Base64-encoded PNG, JPEG, BMP or GIF image, optionally as a `data:` URL."},
             {"resolution", ArgIn::JsonBody,
              {{"enum", json::array({512, 1024, 1536, "512", "1024", "1536"})}}, false, Support::Available,
              "Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."},
             {"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
              false, Support::Available,
              "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
-             "real backgrounds."},
+             "real backgrounds. Defaults to the backend's own."},
             {"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
-             "UV atlas method. `xatlas` (default) unwraps every face into its own atlas space for "
-             "the best texture quality, but slows down on large meshes. `box` is a faster "
-             "six-plane projection that can leave small artifacts in concave regions."},
+             "UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
+             "texture quality, but slows down on large meshes. `box` is a faster six-plane "
+             "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducibility."},
+             "Random seed for reproducibility. Defaults to the backend's own."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Output encoding. Only `glb`, the format the backend produces, is accepted; other values "
              "answer `400`. Defaults to `glb`."},

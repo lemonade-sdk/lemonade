@@ -285,7 +285,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `stream` | No | `true` sends tokens as server-sent events as they are generated; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Sequences that stop generation, as a string or an array of strings. The returned text leaves them out. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `echo` | No | `true` returns the prompt before the completion. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | `true` returns the log probability of each output token. Defaults to `false`. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `logprobs` | No | `true`, or a number of top alternatives per token, returns the log probability of each output token. Defaults to `false`. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -661,7 +661,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `file` | Yes | The audio file to transcribe, as WAV. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `model` | Yes | The transcription model to use (e.g., `Whisper-Tiny`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, which detects the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | `json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -686,7 +686,7 @@ On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400`
       -F file=@speech.wav
     ```
 
-=== "PowerShell (text)"
+=== "PowerShell (plain text)"
 
     ```powershell
     curl.exe http://localhost:13305/v1/audio/transcriptions `
@@ -695,7 +695,7 @@ On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400`
       -F file=@speech.wav
     ```
 
-=== "Bash (text)"
+=== "Bash (plain text)"
 
     ```bash
     curl http://localhost:13305/v1/audio/transcriptions \
@@ -706,7 +706,7 @@ On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400`
 
 ### Response format
 
-=== "JSON responses"
+=== "Transcript responses"
 
     `200`
 
@@ -719,7 +719,7 @@ On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400`
     - `text` - The transcribed text.
     - `segments` - `verbose_json` only: timestamped segments.
 
-=== "Text responses"
+=== "Plain text responses"
 
     `200`
 
@@ -868,12 +868,12 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to the model's own, else `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `steps` | No | Number of inference steps. Defaults to the model's own; `SD-Turbo` works well with `4`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own; `SD-Turbo` uses values near `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `seed` | No | Random seed for reproducible output. Defaults to a random seed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | Number of inference steps. Defaults to the model's own, else `20`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own, else `7.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducible output; a negative value picks a random seed. Defaults to the backend's fixed seed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -1030,7 +1030,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/images/variations`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Generates a variation of a source image. The request is `multipart/form-data`, and the variation depends only on the image: a `prompt` is ignored. CPU inference takes minutes per image; a GPU backend is much faster.
+Generates a variation of a source image, sent as `multipart/form-data`. CPU inference takes minutes per image; a GPU backend is much faster.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1040,7 +1040,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model` | Yes | The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `image` | Yes | The source image (PNG). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | Output size as `WIDTHxHEIGHT`. Defaults to `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | No | Ignored; the variation depends only on the image. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `size` | No | Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `user` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
@@ -1115,7 +1116,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Upscales an image with a Real-ESRGAN model. The model sets the upscale factor, which its name usually states.
+Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the upscale factor, which its name usually states.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1124,11 +1125,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `Remacri-4x-TheNoise`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-The model must carry the `upscaling` label and is downloaded on first use.
+The model is downloaded on first use.
 
-A missing `image` or `model` answers `400`, an unknown model `404`, and a failed upscale `500`, each with an `error` object.
+A missing `image` or `model`, a model without the `upscaling` label, or one whose recipe cannot upscale answers `400`; an unknown model `404`; a failed upscale `500`; each with an `error` object.
 
 ### Upscale a Generated Image
 
@@ -1258,9 +1259,9 @@ A typical workflow is to generate an image first, then upscale it:
 
 **Field Descriptions:**
 
-- `created` - Unix timestamp of when the upscaled image was generated
+- `created` - Unix timestamp of when the upscaled image was generated.
 - `data` - The upscaled image.
-  - `b64_json` - Base64-encoded PNG of the upscaled image
+  - `b64_json` - Base64-encoded PNG of the upscaled image.
 <!-- END GENERATED: openai.images_upscale -->
 
 <!-- BEGIN GENERATED: openai.audio_speech -->
@@ -1376,7 +1377,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `show_all` (query) | No | `true` also lists catalog models that are not downloaded. Defaults to `false`, which lists downloaded models only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Model aliases are listed too, each as a copy of its target model with the alias as its `id`.
+A model alias whose target is listed appears too, as a copy of the target with the alias as its `id`.
 
 With cloud providers configured, their models are listed too, with `recipe: "cloud"`, a `cloud_provider` field and a provider-prefixed id such as `fireworks.kimi-k2p5`. Models of `openai`-wire providers accept chat completions and completions requests; `anthropic`-wire providers are served through [`POST /v1/messages`](./anthropic.md#post-v1messages). See [Cloud Offload](../guide/configuration/cloud.md).
 
@@ -1625,14 +1626,14 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 - `object` - Always `"list"`.
 - `data` - The model objects.
   - `id` - Model identifier for loading and inference requests.
-  - `created` - Unix time the model entry was created.
+  - `created` - Always `1234567890`, for OpenAI compatibility.
   - `object` - Always `"model"`.
   - `owned_by` - Always `"lemonade"`.
   - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
   - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
   - `size` - Size in GB; omitted when unknown.
   - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
-  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when none is known).
+  - `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.
   - `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
   - `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
   - `downloaded` - Whether the model is downloaded.
@@ -1644,13 +1645,15 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
     - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
     - `width` - Default image width in pixels.
     - `height` - Default image height in pixels.
+    - `sampling_method` - Default sampler, when the model sets one.
+    - `flow_shift` - Default flow shift, when the model sets one.
     - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
   - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
-  - `recipe_options` - Options saved for this model in `recipe_options.json`.
+  - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
@@ -1796,14 +1799,14 @@ An unknown model answers `404` with `code` `model_not_found`.
 **Field Descriptions:**
 
 - `id` - Model identifier for loading and inference requests.
-- `created` - Unix time the model entry was created.
+- `created` - Always `1234567890`, for OpenAI compatibility.
 - `object` - Always `"model"`.
 - `owned_by` - Always `"lemonade"`.
 - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
 - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
 - `size` - Size in GB; omitted when unknown.
 - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
-- `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when none is known).
+- `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.
 - `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
 - `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
 - `downloaded` - Whether the model is downloaded.
@@ -1815,13 +1818,15 @@ An unknown model answers `404` with `code` `model_not_found`.
   - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
   - `width` - Default image width in pixels.
   - `height` - Default image height in pixels.
+  - `sampling_method` - Default sampler, when the model sets one.
+  - `flow_shift` - Default flow shift, when the model sets one.
   - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
 - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
 - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
 - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
-- `recipe_options` - Options saved for this model in `recipe_options.json`.
+- `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
 - `cloud_provider` - Cloud models only: the provider that serves the model.
 - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
 - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
@@ -1900,7 +1905,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
+Per-architecture defaults are chosen by the architecture in the model's GGUF metadata, so a model that has not been downloaded yet shows every key with the value it has before those defaults apply.
 
 ### Example request
 
@@ -1978,17 +1983,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | A positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number. Any other option the model's recipe accepts is set the same way. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Context size to save: a positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `dry_run` | No | `true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The request merges into the model's saved entry, so keys it leaves out keep their values. `null` removes an option, and the model falls back to the next layer of the [priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
 
-A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
+A `400` answers an empty or invalid body, an unrecognized option or one from another recipe, a value of the wrong type or an invalid `ctx_size`, a non-boolean `dry_run`, and nothing from that request is saved.
 
 A running model keeps its current options until it is next loaded.
 
-`pinned` is not settable here and is omitted from `effective` and `defaults`. It belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
+`pinned` answers `400` here and is omitted from `effective` and `defaults`; it belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
 
 ### Example request
 

@@ -26,7 +26,8 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Download updates for downloaded models";
         s.description =
-            "Checks downloaded models for newer upstream commits and downloads the updates.";
+            "Checks downloaded models for newer upstream commits and downloads the updates. The "
+            "`lemonade update-models` command uses it.";
         s.notes = {
             "A background sync answers `202` with its status; poll "
             "[`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its "
@@ -36,8 +37,8 @@ public:
             "While a sync is running, a new request answers `200` with that sync's status "
             "instead of starting another.",
             "Offline mode (`offline=true`) answers `409` without any network request.",
-            "The `lemonade update-models` command uses this endpoint; see "
-            "Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).",
+            "See Model Synchronization & Auto-Updates in "
+            "[Server Configuration](../guide/configuration/README.md).",
         };
         s.args = {
             {"models", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
@@ -47,8 +48,9 @@ public:
             {"async", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Run in the background and answer immediately. Defaults to `true`."},
             {"attach_if_running", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Add the models to a sync that is already running instead of reporting it. "
-             "Defaults to `false`."},
+             "`true` reports a running sync, or with `async: false` waits for it, without adding "
+             "this request's models to it. Defaults to `false`, which queues the models into the "
+             "running sync."},
         };
 
         RouteResponse response;

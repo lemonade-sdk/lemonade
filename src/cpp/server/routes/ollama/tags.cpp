@@ -29,12 +29,12 @@ public:
             "type": "object",
             "required": ["models"],
             "properties": {
-                "models": {"type": "array", "items": {
+                "models": {"type": "array", "description": "The downloaded models.", "items": {
                     "type": "object",
                     "required": ["name", "model", "modified_at", "size", "digest", "details"],
                     "properties": {
                         "name": {"type": "string", "description": "Lemonade model name with a `:latest` tag."},
-                        "model": {"type": "string", "description": "Same as name."},
+                        "model": {"type": "string", "description": "Same as `name`."},
                         "modified_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
                         "size": {"type": "integer", "description": "Size in bytes, from the registry's estimate."},
                         "digest": {"type": "string", "description": "Always an all-zero sha256."},

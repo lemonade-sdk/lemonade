@@ -23,8 +23,8 @@ public:
         s.summary = "Generate a variation of an image";
         s.modality = "image -> varied image";
         s.description =
-            "Generates a variation of a source image. The request is `multipart/form-data`, and "
-            "the variation depends only on the image: a `prompt` is ignored. CPU inference takes minutes per image; a GPU backend is much faster.";
+            "Generates a variation of a source image, sent as `multipart/form-data`. CPU "
+            "inference takes minutes per image; a GPU backend is much faster.";
         s.notes = {
             "### Create Variations with the OpenAI Python Client\n"
             "\n"
@@ -51,8 +51,10 @@ public:
              "The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
             {"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
              "The source image (PNG)."},
+            {"prompt", ArgIn::Form, text, false, Support::NotAvailable,
+             "Ignored; the variation depends only on the image."},
             {"size", ArgIn::Form, text, false, Support::Available,
-             "Output size as `WIDTHxHEIGHT`. Defaults to `512x512`."},
+             "Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`."},
             {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Available,
              "Number of images to generate, from `1` to `10`; other values answer `400`. "
              "Defaults to `1`."},

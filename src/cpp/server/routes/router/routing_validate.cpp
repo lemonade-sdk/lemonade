@@ -102,8 +102,7 @@ public:
              "A `collection.router` policy document. `model_name` is accepted but is not required "
              "for validation. See [Router Policies](../dev/router-policy.md)."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The prompt text to route. Defaults to `\"\"`, which still exercises `min_chars` (0 "
-             "chars) and any prompt-independent rules."},
+             "The prompt text to route. Defaults to `\"\"`."},
             {"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Simulate a request carrying image input. Defaults to `false`."},
             {"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,

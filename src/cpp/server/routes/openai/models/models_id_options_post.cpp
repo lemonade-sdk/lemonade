@@ -75,11 +75,11 @@ public:
             "values. `null` removes an option, and the model falls back to the next layer of the "
             "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
             "removes every saved option at once.",
-            "A `400` reports an unrecognized option name, an option from a different recipe, a "
-            "value of the wrong type, or an invalid `ctx_size`, and nothing from that request is "
-            "saved.",
+            "A `400` answers an empty or invalid body, an unrecognized option or one from another "
+            "recipe, a value of the wrong type or an invalid `ctx_size`, a non-boolean "
+            "`dry_run`, and nothing from that request is saved.",
             "A running model keeps its current options until it is next loaded.",
-            "`pinned` is not settable here and is omitted from `effective` and `defaults`. It "
+            "`pinned` answers `400` here and is omitted from `effective` and `defaults`; it "
             "belongs to [`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",
         };
@@ -87,9 +87,8 @@ public:
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
             {"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-             "A positive whole number, or `-1` to pin the model to automatic sizing even when the "
-             "server-wide `ctx_size` is a specific number. Any other option the model's recipe "
-             "accepts is set the same way."},
+             "Context size to save: a positive whole number, or `-1` to pin the model to automatic "
+             "sizing even when the server-wide `ctx_size` is a specific number."},
             {"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "`true` validates and resolves the request identically but persists nothing: "
              "`effective` and `resolved_ctx_size` describe the state the save would produce, while "

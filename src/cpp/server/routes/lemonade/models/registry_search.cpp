@@ -26,8 +26,7 @@ public:
             "Manager checks each one with [`/v1/pull/variants`](#get-v1pullvariants) and offers a "
             "download only for repositories whose files pass.";
         s.notes = {
-            "A `400` answers a `query` shorter than 3 characters, an invalid `source`, `limit` or "
-            "`format`, or offline mode (`code: lemond_offline`). A `429` means the upstream "
+            "A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mode (`code: lemond_offline`). A `429` means the upstream "
             "registry rate-limited the request, and any other upstream failure answers `502`, with "
             "the upstream status code when available.",
         };
@@ -50,23 +49,23 @@ public:
             "required": ["source", "query", "total", "results"],
             "properties": {
                 "source": {"enum": ["huggingface", "modelscope"], "description": "The registry searched, by its canonical name."},
-                "query": {"type": "string", "description": "The query as sent."},
+                "query": {"type": "string", "description": "The query, trimmed."},
                 "format": {"const": "gguf", "description": "Present only when `format=gguf` was requested."},
                 "total": {"type": "integer", "description": "Matches the registry reports; can exceed the results returned."},
                 "results": {"type": "array", "description": "Up to `limit` repositories.", "items": {
                     "type": "object",
                     "required": ["repository_id", "display_name", "source"],
                     "properties": {
-                        "repository_id": {"type": "string"},
-                        "display_name": {"type": "string"},
-                        "source": {"type": "string"},
-                        "repository_type": {"type": "string"},
-                        "description": {"type": "string"},
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "task": {"type": "string"},
-                        "downloads": {"type": "integer"},
-                        "likes": {"type": "integer"},
-                        "has_gguf": {"type": "boolean", "description": "A hint from registry metadata; [`/v1/pull/variants`](#get-v1pullvariants) checks the files."}
+                        "repository_id": {"type": "string", "description": "Repository id, such as `unsloth/Qwen3-8B-GGUF`."},
+                        "display_name": {"type": "string", "description": "Name to show for the repository."},
+                        "source": {"type": "string", "description": "The registry the repository is on."},
+                        "repository_type": {"type": "string", "description": "The registry's repository type."},
+                        "description": {"type": "string", "description": "The repository's description."},
+                        "tags": {"type": "array", "items": {"type": "string"}, "description": "The repository's tags."},
+                        "task": {"type": "string", "description": "The repository's task, such as `text-generation`."},
+                        "downloads": {"type": "integer", "description": "Download count the registry reports."},
+                        "likes": {"type": "integer", "description": "Like count the registry reports."},
+                        "has_gguf": {"type": "boolean", "description": "A hint from registry metadata."}
                     }
                 }}
             }

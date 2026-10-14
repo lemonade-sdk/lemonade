@@ -15,7 +15,7 @@ The gateway implements the **MCP "Streamable HTTP" transport** (spec version `20
 ## `POST /mcp`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Serves every MCP method over JSON-RPC 2.0.
+Serves the MCP methods listed under [Supported Methods](#supported-methods) over JSON-RPC 2.0.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -30,14 +30,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 The body is one JSON-RPC message or a batch array of them. The reply is `200` with the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
 
-The MCP specification mandates one endpoint URL per server, so `/mcp` is the only one.
-
 ### Supported Methods
 
 | Method | Purpose |
 |--------|---------|
 | `initialize` | Negotiate protocol version, return server identity and capabilities. |
 | `notifications/initialized` | Client acknowledgement; silently accepted. |
+| `notifications/cancelled` | Client cancellation; silently accepted. |
 | `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |
 | `tools/call` | Invoke one of the tools below. |
 | `ping` | Liveness probe; returns `{}`. |
@@ -140,7 +139,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 ## `GET /mcp`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Lemonade opens no server-initiated event stream, so tools return their full result in the `POST /mcp` reply.
+Lemonade opens no server-initiated event stream, so tools return their full result in the [`POST /mcp`](#post-mcp) reply.
 
 Requires `LEMONADE_API_KEY` when it is set.
 

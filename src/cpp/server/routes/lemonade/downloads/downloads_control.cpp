@@ -34,8 +34,8 @@ public:
             "A `pause` or `cancel` for a job that already finished leaves it as it is.",
             "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. A "
             "`pause` or `cancel` for a job that is not listed answers `404`.",
-            "`pause`, `cancel`, and `remove` of a running job answer the job's latest snapshot. "
-            "Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
+            "`pause` and `cancel` answer the job's latest snapshot, as does `remove` for a running "
+            "job. Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
             "the job was already gone.",
         };
         s.args = {

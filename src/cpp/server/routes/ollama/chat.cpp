@@ -258,7 +258,7 @@ ordered_json chat_response_schema(bool line) {
         "type": "object",
         "required": ["model", "created_at", "done"],
         "properties": {
-            "model": {"type": "string"},
+            "model": {"type": "string", "description": "The model that generated the response."},
             "created_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
             "message": {
                 "type": "object",
@@ -274,17 +274,24 @@ ordered_json chat_response_schema(bool line) {
             "done_reason": {"type": "string", "description": "`stop`, `length`, `tool_calls`, or `unload` after an unload request."},
             "prompt_eval_count": {"type": "integer", "description": "Prompt tokens."},
             "eval_count": {"type": "integer", "description": "Generated tokens."},
-            "total_duration": {"type": "integer", "description": "Always 0."},
-            "load_duration": {"type": "integer", "description": "Always 0."},
-            "prompt_eval_duration": {"type": "integer", "description": "Prompt processing time in nanoseconds, when the backend reports timings; otherwise 0."},
-            "eval_duration": {"type": "integer", "description": "Generation time in nanoseconds, when the backend reports timings; otherwise 0."}
+            "total_duration": {"type": "integer", "description": "Always `0`."},
+            "load_duration": {"type": "integer", "description": "Always `0`."},
+            "prompt_eval_duration": {"type": "integer", "description": "Prompt processing time in nanoseconds, when the backend reports timings; otherwise `0`."},
+            "eval_duration": {"type": "integer", "description": "Generation time in nanoseconds, when the backend reports timings; otherwise `0`."}
         }
     })");
     if (line) {
-        schema["description"] = "Each line carries the next message piece with done=false. When the "
-                                "message ends, a line with done=true and the real done_reason "
-                                "follows, then a last done=true line with the token counts, which "
-                                "are 0 when the backend reports no usage, and done_reason stop.";
+        schema["description"] = "Each line carries the next message piece with `done: false`. When "
+                                "the message ends, a line with `done: true` and the real "
+                                "`done_reason` follows, then a last `done: true` line with the token "
+                                "counts, which are `0` when the backend reports no usage, and "
+                                "`done_reason` `stop`.";
+        schema["properties"]["prompt_eval_duration"]["description"] =
+            "Prompt processing time in nanoseconds on a request with tools, when the backend "
+            "reports timings; otherwise `0`.";
+        schema["properties"]["eval_duration"]["description"] =
+            "Generation time in nanoseconds on a request with tools, when the backend reports "
+            "timings; otherwise `0`.";
     }
     return schema;
 }
@@ -318,16 +325,16 @@ public:
              "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."},
             {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
-             "generated tokens) and `repeat_penalty`. These keys are also accepted at the top "
-             "level, where they win. `num_ctx` sets the context size when this request loads "
-             "the model."},
+             "generated tokens) and `repeat_penalty`, which is sent as OpenAI's "
+             "`frequency_penalty`. These keys are also accepted at the top level, where they win. "
+             "`num_ctx` sets the context size when this request loads the model."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Tools the model may call."},
-            {"format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
              "`json` constrains the reply to a JSON object. JSON schemas are not supported."},
             {"think", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
-             "Not applied: reasoning models think regardless. Qwen3 models skip their "
-             "reasoning when the prompt ends with `/no_think`."},
+             "Not applied: reasoning models think regardless. Qwen3 models skip their reasoning "
+             "when the prompt ends with `/no_think`."},
             {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
              "`0` with an empty `messages` array unloads the model, answering with "
              "`done_reason: \"unload\"`. Other values are ignored."},

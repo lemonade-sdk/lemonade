@@ -16,7 +16,7 @@ public:
         s.summary = "Open a server-initiated event stream";
         s.description =
             "Lemonade opens no server-initiated event stream, so tools return their full result "
-            "in the `POST /mcp` reply.";
+            "in the [`POST /mcp`](#post-mcp) reply.";
         s.notes = {
             "Answers `405` with `Allow: POST` and a JSON-RPC `-32600` error.",
         };

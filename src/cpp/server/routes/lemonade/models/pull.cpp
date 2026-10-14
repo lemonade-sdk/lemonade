@@ -18,13 +18,13 @@ ordered_json pull_schema() {
         "type": "object",
         "required": ["status", "model_name"],
         "properties": {
-            "status": {"const": "success"},
-            "model_name": {"type": "string"},
-            "message": {"type": "string", "description": "Only for `local_import`."}
+            "status": {"const": "success", "description": "`success`, or, in a server-owned job snapshot, the job's state."},
+            "model_name": {"type": "string", "description": "The installed model, or the job's model."},
+            "message": {"type": "string", "description": "Present for `local_import`: a confirmation that the files were registered."}
         }
     })");
     ordered_json job = DownloadManager::job_schema();
-    job["description"] = "With stream=true and subscribe=false: the server-owned download job.";
+    job["description"] = "With `stream: true` and `subscribe: false`: the server-owned download job.";
     return {{"oneOf", ordered_json::array({success, job})}};
 }
 
@@ -42,12 +42,17 @@ public:
             "Installs a model from the built-in registry, or registers a new `user.*` model from "
             "a Hugging Face or ModelScope checkpoint and installs it.";
         s.notes = {
-            "A `400` answers an invalid definition, an unknown model (with `code: "
-            "\"unknown_model\"`), or offline mode (with `code: \"lemond_offline\"`), and nothing "
-            "is registered.",
+            "Only this route checks a downloaded model's registry for updates; loading a model on "
+            "first use never does.",
+            "A `400` answers an invalid definition, including labels or `embedding`/`reranking` "
+            "flags that name a deployment mode the recipe cannot serve or name two, or an unknown "
+            "model (with `code: "
+            "\"unknown_model\"`), and nothing is registered. In offline mode the request still "
+            "registers a new definition, then answers `400` with `code: \"lemond_offline\"` "
+            "without downloading.",
             "### Register and Install a Model\n\n"
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
-            "(`~/.config/lemonade` by default), after which `/v1/models` lists it beside the "
+            "(`~/.config/lemonade` by default), after which [`GET /v1/models`](./openai.md#get-v1models) lists it beside the "
             "built-in models. The definition needs a `main` checkpoint, given as `checkpoint` or "
             "as the `main` key of `checkpoints`.\n\n"
             "```bash\n"
@@ -60,8 +65,8 @@ public:
             "  }'\n"
             "```",
             "### Register an Omni Collection\n\n"
-            "An omni collection bundles several models into one entry that is loaded, pulled and "
-            "deleted as a unit. Register it with `recipe: \"collection.omni\"` and `components` "
+            "An omni collection bundles several models into one entry that is loaded and pulled as "
+            "a unit. Register it with `recipe: \"collection.omni\"` and `components` "
             "instead of a checkpoint. Components not yet downloaded are pulled by the same call.\n\n"
             "```bash\n"
             "curl -X POST http://localhost:13305/v1/pull \\\n"
@@ -122,18 +127,16 @@ public:
              "ones keep their local definition. Without `models`, every component must already be "
              "registered."},
             {"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Registering only: model labels. A model deploys in exactly one "
-             "[deployment mode](./openai.md#model-labels): naming a mode the recipe cannot "
-             "serve, or naming two, through `labels` or the `embedding` and `reranking` flags, is "
-             "rejected with `400`. Omitting the deployment label applies the recipe's default."},
+             "Registering only: model labels; see [Model Labels](./openai.md#model-labels). "
+             "Omitting the deployment label applies the recipe's default."},
             {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Registry to download from: `huggingface` or `modelscope`. Defaults to the server's "
              "`default_model_source`."},
             {"registry_source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Same as `source`; when both are given they must name the same registry."},
             {"do_not_upgrade", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` skips checking an already-downloaded model's registry for updates. Only "
-             "`/v1/pull` checks; loading a model on first use never does. Defaults to `false`."},
+             "`true` skips checking an already-downloaded model's registry for updates. Defaults "
+             "to `false`."},
             {"local_import", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Register model files a client already copied into the Hugging Face cache, without "
              "downloading. Defaults to `false`."},

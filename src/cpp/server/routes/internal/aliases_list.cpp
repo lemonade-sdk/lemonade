@@ -21,7 +21,9 @@ public:
         s.summary = "List all active model aliases";
         s.description = "Lists every model alias with its target.";
         s.notes = {
-            "An alias stands in for its target in any request's `model` field. Aliases live in "
+            "An alias stands in for its target in the `model` field of OpenAI-compatible and "
+            "Lemonade requests; the Ollama and Anthropic gateways do not resolve aliases. "
+            "Aliases live in "
             "`<cache_dir>/aliases.json`; see "
             "[Model Aliases](../guide/configuration/custom-models.md).",
         };

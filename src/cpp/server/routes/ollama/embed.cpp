@@ -43,12 +43,12 @@ public:
             "type": "object",
             "required": ["model", "embeddings"],
             "properties": {
-                "model": {"type": "string"},
+                "model": {"type": "string", "description": "The model that produced the embeddings."},
                 "embeddings": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
                                "description": "One vector per input, in input order."},
-                "total_duration": {"type": "integer", "description": "Always 0."},
-                "load_duration": {"type": "integer", "description": "Always 0."},
-                "prompt_eval_count": {"type": "integer", "description": "Always 0."}
+                "total_duration": {"type": "integer", "description": "Always `0`."},
+                "load_duration": {"type": "integer", "description": "Always `0`."},
+                "prompt_eval_count": {"type": "integer", "description": "Always `0`."}
             }
         })");
         s.responses = {response};

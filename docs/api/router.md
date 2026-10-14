@@ -42,7 +42,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `policy` | Yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `prompt` | No | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | No | The prompt text to route. Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `has_images` | No | Simulate a request carrying image input. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `has_tools` | No | Simulate a request carrying tool definitions. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `metadata` | No | String-valued metadata pairs matched by `metadata` conditions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

@@ -50,7 +50,7 @@ public:
             {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Text to classify."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
-             "Return only the highest-scoring `k` labels."},
+             "Return only the highest-scoring `k` labels. Defaults to every label."},
             {"text", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Alias for `input`."},
         };
@@ -65,7 +65,7 @@ public:
                 "model": {"type": "string", "description": "The model that classified the input, including one chosen because it was the only one loaded."},
                 "labels": {
                     "type": "object",
-                    "description": "Score in [0, 1] for each label.",
+                    "description": "Score in `[0, 1]` for each label.",
                     "additionalProperties": {"type": "number"}
                 }
             }

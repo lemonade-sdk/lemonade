@@ -31,22 +31,22 @@ public:
             "provider when `backend` is `\"cloud\"`.";
         s.notes = {
             "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
-            "`provider`, answers `400`. Any other failure, including invalid JSON, answers `500` "
-            "with an `error` string.",
+            "`provider`, answers `400`, and a cloud provider that was never installed answers "
+            "`404`. Any other failure, including invalid JSON, answers `500` with an `error` "
+            "string.",
             "### Uninstall a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
             "Removes the provider record from `config.json`, drops its in-memory API key, if any, "
-            "and evicts every discovered model for that provider from the cache. A provider that "
-            "was never installed answers `404`.",
+            "and evicts every discovered model for that provider from the catalog.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Local backends, required: the recipe."},
+             "The recipe of the local backend to remove."},
             {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Local backends: the backend within the recipe. Cloud providers: `\"cloud\"`."},
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: the installed provider's name."},
+             "The installed cloud provider to remove."},
         };
 
         RouteResponse response;

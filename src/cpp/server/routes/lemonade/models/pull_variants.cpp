@@ -51,23 +51,23 @@ public:
                 "checkpoint": {"type": "string", "description": "Echoed input (normalized to `owner/repo` when given as a URL)."},
                 "source": {"type": "string", "description": "Registry the variants came from."},
                 "recipe": {"type": "string", "description": "Suggested recipe: `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection."},
-                "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection"]},
+                "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection"], "description": "Kind of repository: `gguf`, `onnx-ryzenai` or `collection`."},
                 "suggested_name": {"type": "string", "description": "Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name."},
                 "suggested_labels": {"type": "array", "items": {"type": "string"},
-                                     "description": "Inferred labels: `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings`/`reranking` if those substrings appear in the repo id, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
+                                     "description": "Inferred labels: `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
                 "mmproj_files": {"type": "array", "items": {"type": "string"},
                                  "description": "Bare filenames of `mmproj-*.gguf` files in the repo; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model."},
                 "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Bare names of draft-model GGUF files."},
-                "variants": {"type": "array", "description": "Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the registry's file listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically).", "items": {
+                "variants": {"type": "array", "description": "Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order.", "items": {
                     "type": "object",
                     "required": ["name", "primary_file", "files", "sharded", "size_bytes"],
                     "properties": {
-                        "name": {"type": "string"},
-                        "primary_file": {"type": "string"},
+                        "name": {"type": "string", "description": "Variant name, such as `Q4_K_M`."},
+                        "primary_file": {"type": "string", "description": "The file to load."},
                         "draft_file": {"type": "string", "description": "The draft model paired with this variant, when the repository ships one."},
-                        "files": {"type": "array", "items": {"type": "string"}},
-                        "sharded": {"type": "boolean"},
-                        "size_bytes": {"type": "integer"}
+                        "files": {"type": "array", "items": {"type": "string"}, "description": "Every file in the variant."},
+                        "sharded": {"type": "boolean", "description": "Whether the variant is split across files."},
+                        "size_bytes": {"type": "integer", "description": "Total size, from the registry's file listing."}
                     }
                 }},
                 "size": {"type": "number", "description": "Collections only: the collection's total size, from its manifest."},

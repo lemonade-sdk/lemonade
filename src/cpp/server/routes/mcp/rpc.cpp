@@ -26,19 +26,20 @@ public:
         s.paths = {"/mcp"};
         s.prefixes = Prefixes::Root;
         s.summary = "Call MCP methods over JSON-RPC 2.0";
-        s.description = "Serves every MCP method over JSON-RPC 2.0.";
+        s.description =
+            "Serves the MCP methods listed under [Supported Methods](#supported-methods) over "
+            "JSON-RPC 2.0.";
         s.notes = {
             "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
             "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
-            "The MCP specification mandates one endpoint URL per server, so `/mcp` is the only "
-            "one.",
             "### Supported Methods\n"
             "\n"
             "| Method | Purpose |\n"
             "|--------|---------|\n"
             "| `initialize` | Negotiate protocol version, return server identity and capabilities. |\n"
             "| `notifications/initialized` | Client acknowledgement; silently accepted. |\n"
+            "| `notifications/cancelled` | Client cancellation; silently accepted. |\n"
             "| `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |\n"
             "| `tools/call` | Invoke one of the tools below. |\n"
             "| `ping` | Liveness probe; returns `{}`. |",

@@ -30,7 +30,7 @@ public:
              "Reranker model to run; loaded on first use."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
-             "loads it. Ignored when the model is already loaded."},
+             "loads it."},
         };
 
         RouteResponse response;

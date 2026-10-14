@@ -49,8 +49,8 @@ public:
         s.summary = "Describe a model";
         s.description = "Describes one registered model in Ollama's format.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to describe."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Model to describe. Required unless `name` is given."},
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Older name for `model`; wins when both are given."},
         };
@@ -66,7 +66,7 @@ public:
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
                 "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label."},
-                "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always 0."}
+                "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always `0`."}
             }
         })");
         response.schema["properties"]["details"] = ollama_details_schema();

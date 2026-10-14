@@ -915,14 +915,21 @@ def schema_branches(schema) -> list[dict]:
 
 
 def properties_of(schema) -> dict:
-    """Every property a value of this schema can have, in schema order; an array's are its items'."""
+    """Every property a value of this schema can have, in schema order; an array's are its
+    items'. When alternatives share a property, the first described definition wins."""
     merged = {}
+
+    def add(name, sub):
+        current = merged.get(name)
+        if current is None or (not description_of(current) and description_of(sub)):
+            merged[name] = sub
+
     for branch in schema_branches(schema):
         if "items" in branch:
             for name, sub in properties_of(branch["items"]).items():
-                merged.setdefault(name, sub)
+                add(name, sub)
         for name, sub in branch.get("properties", {}).items():
-            merged.setdefault(name, sub)
+            add(name, sub)
     return merged
 
 

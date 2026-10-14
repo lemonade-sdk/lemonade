@@ -51,13 +51,13 @@ public:
             "required": ["id_slot"],
             "properties": {
                 "id_slot": {"type": "integer", "description": "The slot acted on."},
-                "filename": {"type": "string", "description": "save and restore: the file written or read."},
-                "n_saved": {"type": "integer", "description": "save: tokens written."},
-                "n_restored": {"type": "integer", "description": "restore: tokens read."},
-                "n_written": {"type": "integer", "description": "save: bytes written."},
-                "n_read": {"type": "integer", "description": "restore: bytes read."},
-                "n_erased": {"type": "integer", "description": "erase: tokens cleared."},
-                "timings": {"type": "object", "description": "save and restore: how long the file operation took."}
+                "filename": {"type": "string", "description": "`save` and `restore`: the file written or read."},
+                "n_saved": {"type": "integer", "description": "`save`: tokens written."},
+                "n_restored": {"type": "integer", "description": "`restore`: tokens read."},
+                "n_written": {"type": "integer", "description": "`save`: bytes written."},
+                "n_read": {"type": "integer", "description": "`restore`: bytes read."},
+                "n_erased": {"type": "integer", "description": "`erase`: tokens cleared."},
+                "timings": {"type": "object", "description": "`save` and `restore`: how long the file operation took."}
             }
         })");
         s.responses = {response};

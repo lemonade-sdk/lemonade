@@ -70,7 +70,8 @@ public:
             {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "`true` returns the prompt before the completion. Non-streaming only."},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
-             "`true` returns the log probability of each output token. Defaults to `false`. Non-streaming only."},
+             "`true`, or a number of top alternatives per token, returns the log probability of each "
+             "output token. Defaults to `false`. Non-streaming only."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Sampling temperature."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,

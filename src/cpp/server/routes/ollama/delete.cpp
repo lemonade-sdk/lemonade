@@ -29,8 +29,8 @@ public:
             "does not support also answers `404`.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to delete."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Model to delete. Required unless `name` is given."},
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Older name for `model`; wins when both are given."},
         };

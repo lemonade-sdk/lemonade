@@ -22,11 +22,12 @@ public:
         s.summary = "Read the factory default config";
         s.description =
             "Returns the default configuration built into this release, independent of this "
-            "instance's `config.json` and of any deployment override.";
+            "instance's `config.json` and of any deployment override. "
+            "`docs/tools/gen_backend_boilerplate.py` reads it to regenerate "
+            "`src/cpp/resources/defaults.json`.";
         s.notes = {
             "The per-backend sections come from the backend descriptors, so this is the "
-            "authoritative list of factory defaults. `docs/tools/gen_backend_boilerplate.py` "
-            "reads it to regenerate `src/cpp/resources/defaults.json`.",
+            "authoritative list of factory defaults.",
         };
 
         RouteResponse response;

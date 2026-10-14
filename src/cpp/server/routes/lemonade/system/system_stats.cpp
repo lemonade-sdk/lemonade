@@ -22,12 +22,10 @@ public:
             "dashboards that want lightweight telemetry without scraping Prometheus.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
-            "`primary_gpu_id` and `gpus` describe the individual host GPUs. `gpu_percent` and "
-            "`vram_gb` come from the primary GPU: the one with the largest known GPU-accessible "
-            "memory capacity (ties broken by stable ID), whatever its current utilization. It is "
-            "not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name "
-            "but reports GPU memory usage, which can be shared system memory on AMD APUs. Device "
-            "IDs stay stable across ordinary telemetry failures.",
+            "`gpu_percent` and `vram_gb` come from the primary GPU: the one with the largest known "
+            "GPU-accessible memory capacity (ties broken by ID), whatever its current utilization, "
+            "and not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical "
+            "name but reports GPU memory usage, which can be shared system memory on AMD APUs.",
             "GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On "
             "Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML; on "
             "macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so "
@@ -52,7 +50,7 @@ public:
                         "type": "object",
                         "required": ["id", "vendor", "name", "memory_type", "gpu_percent", "memory_total_gb", "memory_used_gb"],
                         "properties": {
-                            "id": {"type": "string", "description": "Stable device ID, e.g. `amd:0000:c1:00.0`"},
+                            "id": {"type": "string", "description": "Device ID, stable across ordinary telemetry failures, such as `amd:0000:c1:00.0`."},
                             "vendor": {"type": "string", "description": "`amd` or `nvidia`"},
                             "name": {"type": "string", "description": "Device name"},
                             "memory_type": {"enum": ["dedicated", "shared", "unknown"], "description": "`dedicated` for the GPU's own memory, `shared` for system memory, or `unknown`."},
