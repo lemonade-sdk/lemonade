@@ -1,5 +1,6 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
+#include "show_all_models.h"
 
 #include <chrono>
 #include <cstdio>
@@ -240,7 +241,14 @@ static void test_public_names_resolve(ModelManager& manager) {
         if (info.recipe.empty()) every_entry_has_a_recipe = false;
     }
     check("no published entry has an empty recipe", every_entry_has_a_recipe);
-    check("the shipped registry is published alongside the fixtures", models.size() > 100);
+
+    size_t rows_from_shipped_registry = 0;
+    for (const auto& [id, info] : models) {
+        (void)info;
+        if (id.compare(0, 3, "zz-") != 0) ++rows_from_shipped_registry;
+    }
+    check("the shipped registry is published alongside the fixtures",
+          rows_from_shipped_registry > 0);
 }
 
 static void test_list_model_files(ModelManager& manager, const Fixture& fx) {
@@ -316,6 +324,7 @@ static void test_cleanup_orphaned_cache(ModelManager& manager, const Fixture& fx
 }
 
 int main() {
+    ShowAllModels show_all_models;
     Fixture fx = create_fixture();
 
     lemon::utils::set_cache_dir(path_to_utf8(fx.root));

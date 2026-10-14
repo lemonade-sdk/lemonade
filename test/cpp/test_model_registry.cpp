@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "show_all_models.h"
 
 using lemon::ModelManager;
 using lemon::RegistryFile;
@@ -254,6 +255,7 @@ static void test_registration_persists_remote_provenance() {
 }
 
 int main() {
+    ShowAllModels show_all_models;
     test_source_parsing_and_cache_names();
     test_search_result_normalization();
     test_search_response_normalization();
