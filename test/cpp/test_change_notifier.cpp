@@ -11,6 +11,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "show_all_models.h"
 
 using lemon::ModelInfo;
 using lemon::ModelManager;
@@ -143,6 +144,7 @@ static void test_generation_survives_a_rebuild(ModelManager& manager) {
 }
 
 int main() {
+    ShowAllModels show_all_models;
     std::filesystem::path temp = std::filesystem::temp_directory_path();
     temp /= "change_notifier_" +
             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());

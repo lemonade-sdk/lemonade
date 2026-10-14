@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include "show_all_models.h"
 
 namespace fs = std::filesystem;
 using lemon::ModelManager;
@@ -246,6 +247,7 @@ static void test_corrupt_file_is_not_fatal() {
 }
 
 int main() {
+    ShowAllModels show_all_models;
     Fixture fx = create_fixture();
     use_fixture_dirs(fx);
 

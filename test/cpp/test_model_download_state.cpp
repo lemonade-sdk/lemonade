@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "show_all_models.h"
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
@@ -206,7 +207,8 @@ static void test_collection_component_download_state(
 }
 
 int main() {
-    const fs::path temp = lemon::test::state_dir();
+    ShowAllModels show_all_models;
+    fs::path temp = make_temp_dir();
     fs::path hf_root = temp / "hf";
     fs::create_directories(hf_root);
 

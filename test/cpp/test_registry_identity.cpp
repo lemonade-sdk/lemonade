@@ -11,6 +11,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "show_all_models.h"
 
 using lemon::RegistryId;
 using lemon::models::descriptor_for;
@@ -167,6 +168,7 @@ static void test_a_persisted_entry_naming_an_unknown_host_is_skipped() {
 }
 
 int main() {
+    ShowAllModels show_all_models;
     test_every_spelling_resolves_to_its_own_host();
     test_an_unknown_host_resolves_to_nothing();
     test_hosts_keep_their_own_namespace_on_disk();

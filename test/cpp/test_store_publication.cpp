@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "show_all_models.h"
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
@@ -205,6 +206,7 @@ static void test_republish_while_reading(ModelManager& manager) {
 }
 
 int main() {
+    ShowAllModels show_all_models;
     fs::path temp = fs::temp_directory_path();
     temp /= "store_publication_" +
             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());

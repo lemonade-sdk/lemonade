@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include "show_all_models.h"
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
@@ -237,6 +238,7 @@ static void test_extra_model_delete(ModelManager& manager, const Fixture& fx) {
 }
 
 int main() {
+    ShowAllModels show_all_models;
     Fixture fx = create_fixture();
 
     lemon::utils::set_cache_dir(path_to_utf8(fx.root));
