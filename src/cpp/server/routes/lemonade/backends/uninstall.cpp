@@ -33,6 +33,22 @@ public:
             "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
             "`provider`, is answered with `400`. Any other failure, including invalid JSON, is "
             "answered with `500` and an `error` string.",
+            "Models loaded on the backend unload first.",
+            "### Uninstall a cloud provider\n"
+            "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
+            "\n"
+            "Removes the provider record from `config.json`, drops its in-memory API key, if any, "
+            "and evicts every discovered model for that provider from the cache. A provider that "
+            "was never installed answers `404`.\n"
+            "\n"
+            "```bash\n"
+            "curl -X POST http://localhost:13305/v1/uninstall \\\n"
+            "  -H \"Content-Type: application/json\" \\\n"
+            "  -d '{\n"
+            "    \"backend\": \"cloud\",\n"
+            "    \"provider\": \"fireworks\"\n"
+            "  }'\n"
+            "```",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

@@ -97,15 +97,13 @@ Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/rerank
 
 - `model` - Model identifier used for reranking
 - `object` - Type of response object, always `"list"`
-- `results` - Array of all input documents with relevance scores
+- `results` - Array of all input documents with relevance scores, sorted by `relevance_score`, highest first
   - `index` - Original index of the document in the input array
   - `relevance_score` - Relevance score assigned by the model; higher means more relevant
 - `usage` - Token usage statistics
   - `prompt_tokens` - Number of tokens in the input
   - `total_tokens` - Total tokens processed
 <!-- END GENERATED: llamacpp.rerank -->
-
-> **Note:** Results are returned sorted by `relevance_score` in descending order.
 
 <!-- BEGIN GENERATED: llamacpp.slots -->
 ## `GET /v1/slots`
@@ -302,8 +300,6 @@ Without `--slot-save-path`, llama.cpp answers `501`. Besides the server configur
     }
     ```
 
-> **Note:** If the server returns an error, it may indicate that the save file was not found or that the operation failed.
-
 <!-- BEGIN GENERATED: llamacpp.tokenize -->
 ## `POST /v1/tokenize`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -359,17 +355,5 @@ The request names no model: Lemonade forwards it to llama.cpp's `/tokenize` on t
 
 **Field Descriptions:**
 
-- `tokens` - Array of token IDs
+- `tokens` - Array of token IDs, or of `{"id", "piece"}` objects when `with_pieces` is `true`
 <!-- END GENERATED: llamacpp.tokenize -->
-
-If `with_pieces` is `true`:
-
-```json
-{
-  "tokens": [
-    {"id": 123, "piece": "Hello"},
-    {"id": 456, "piece": " world"},
-    {"id": 789, "piece": "!"}
-  ]
-}
-```

@@ -33,6 +33,8 @@ public:
             "A `pause` or `cancel` for a job that already finished leaves it as it is.",
             "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. A "
             "`pause` or `cancel` for a job that is not listed answers `404`.",
+            "`pause` and `cancel` answer the job's latest snapshot. `remove` answers `{\"status\": "
+            "\"ok\"}`, with `\"missing\": true` when the job was already gone.",
         };
         s.args = {
             {"id", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

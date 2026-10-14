@@ -37,6 +37,9 @@ public:
             "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
             "missing `recipe`, and malformed `checkpoint`, `checkpoints`, `source` or "
             "`components` values.",
+            "`model_name` is the public ID that `/v1/models` lists; `canonical_model_name` is the "
+            "stable `user.*` registration ID. Registration writes `user_models.json` and refreshes "
+            "the model cache.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

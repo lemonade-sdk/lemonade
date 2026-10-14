@@ -54,6 +54,95 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 
 Naming an Omni collection (`recipe: "collection.omni"`) runs a server-side tool-calling loop instead; see [Server-side tools](#server-side-tools). Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
+### Image understanding input format (OpenAI-compatible)
+
+To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-VL-7B-Instruct",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is in this image?"},
+              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
+            ]
+          }
+        ],
+        "stream": false
+      }'
+```
+
+#### Example response
+
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": 1742927481,
+  "model": "Qwen2.5-VL-7B-Instruct",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "The image shows a red apple resting on a wooden table."
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
+### Server-side tools
+
+> **Note:** Omni collection orchestration is a Lemonade-specific extension to the Chat Completions API; it is not part of the OpenAI specification. Requests that target ordinary (non-collection) models are unaffected and are fully OpenAI-compatible.
+
+When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.g., `LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a plain completion. The server injects the reference system prompt and tools, routes to the collection's chat component, executes the omni tools (image generation/editing, text-to-speech) against the matching components, and returns one OpenAI-compatible response. Generated media is embedded in the assistant `content`:
+
+- **images** → markdown `![generated image](data:image/png;base64,…)`
+- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
+
+Both non-streaming and `stream: true` are supported. In streaming mode the media arrives as a content delta on a `chat.completion.chunk` frame the moment its tool finishes.
+
+**Merge semantics.** A client-provided system prompt is prepended by the built-in omni system prompt. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "LMX-Omni-52B-Halo",
+        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+        "stream": false
+      }'
+```
+
+#### Example response
+
+The image tool runs during the loop and its output is embedded as a markdown image in the assistant `content`:
+
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": 1742927481,
+  "model": "LMX-Omni-52B-Halo",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)"
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
 ### Example request
 
 === "PowerShell"
@@ -178,97 +267,6 @@ Naming an Omni collection (`recipe: "collection.omni"`) runs a server-side tool-
     - `usage` - Final chunk only: token usage.
     - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
 <!-- END GENERATED: openai.chat_completions -->
-
-For streaming responses, the API returns a stream of server-sent events (however, Open AI recommends using their streaming libraries for parsing streaming responses).
-
-### Image understanding input format (OpenAI-compatible)
-
-To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
-
-#### Example request
-
-```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "Qwen2.5-VL-7B-Instruct",
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {"type": "text", "text": "What is in this image?"},
-              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
-            ]
-          }
-        ],
-        "stream": false
-      }'
-```
-
-#### Example response
-
-```json
-{
-  "id": "0",
-  "object": "chat.completion",
-  "created": 1742927481,
-  "model": "Qwen2.5-VL-7B-Instruct",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "The image shows a red apple resting on a wooden table."
-    },
-    "finish_reason": "stop"
-  }]
-}
-```
-
-### Server-side tools
-
-> **Note:** Omni collection orchestration is a Lemonade-specific extension to the Chat Completions API; it is not part of the OpenAI specification. Requests that target ordinary (non-collection) models are unaffected and are fully OpenAI-compatible.
-
-When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.g., `LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a plain completion. The server injects the reference system prompt and tools, routes to the collection's chat component, executes the omni tools (image generation/editing, text-to-speech) against the matching components, and returns one OpenAI-compatible response. Generated media is embedded in the assistant `content`:
-
-- **images** → markdown `![generated image](data:image/png;base64,…)`
-- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
-
-Both non-streaming and `stream: true` are supported. In streaming mode the media arrives as a content delta on a `chat.completion.chunk` frame the moment its tool finishes.
-
-**Merge semantics.** A client-provided system prompt is prepended by the built-in omni system prompt. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
-
-#### Example request
-
-```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "LMX-Omni-52B-Halo",
-        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
-        "stream": false
-      }'
-```
-
-#### Example response
-
-The image tool runs during the loop and its output is embedded as a markdown image in the assistant `content`:
-
-```json
-{
-  "id": "0",
-  "object": "chat.completion",
-  "created": 1742927481,
-  "model": "LMX-Omni-52B-Halo",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)"
-    },
-    "finish_reason": "stop"
-  }]
-}
-```
 
 <!-- BEGIN GENERATED: openai.completions -->
 ## `POST /v1/completions`
@@ -577,8 +575,6 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     - `delta` - response.output_text.delta: the next text.
 <!-- END GENERATED: openai.responses -->
 
-For streaming responses, the API returns a series of events. Refer to [OpenAI streaming guide](https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses) for details.
-
 <!-- BEGIN GENERATED: openai.embeddings -->
 ## `POST /v1/embeddings`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -848,8 +844,6 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
     `200`, `Content-Type: audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
 <!-- END GENERATED: openai.audio_speech -->
 
-The generated audio file is returned as-is.
-
 ## `WS /realtime`
 <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
 
@@ -1101,6 +1095,25 @@ Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/ed
 | `input_fidelity` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `output_compression` | No | OpenAI API compatibility field. Accepted; silently ignored by the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
+### Edit with the OpenAI Python Client
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.edit(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            prompt="Add a red barn and mountains in the background, photorealistic",
+            size="512x512",
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("edited_image.png", "wb").write(image_data)
+    ```
+
 ### Example request
 
 === "PowerShell"
@@ -1150,27 +1163,6 @@ Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/ed
   - `b64_json` - Base64-encoded PNG.
 <!-- END GENERATED: openai.images_edits -->
 
-### Edit with the OpenAI Python Client
-
-=== "Python (OpenAI client)"
-
-    ```python
-    from openai import OpenAI
-    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
-    with open("source_image.png", "rb") as image_file:
-        response = client.images.edit(
-            model="Flux-2-Klein-4B",
-            image=image_file,
-            prompt="Add a red barn and mountains in the background, photorealistic",
-            size="512x512",
-        )
-    import base64
-    image_data = base64.b64decode(response.data[0].b64_json)
-    open("edited_image.png", "wb").write(image_data)
-    ```
-
----
-
 <!-- BEGIN GENERATED: openai.images_variations -->
 ## `POST /v1/images/variations`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
@@ -1193,6 +1185,25 @@ Also served at `/api/v0/images/variations`, `/api/v1/images/variations` and `/v0
 | `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+### Create Variations with the OpenAI Python Client
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.create_variation(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            size="512x512",
+            n=1,
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("variation.png", "wb").write(image_data)
+    ```
 
 ### Example request
 
@@ -1241,27 +1252,6 @@ Also served at `/api/v0/images/variations`, `/api/v1/images/variations` and `/v0
   - `b64_json` - Base64-encoded PNG.
 <!-- END GENERATED: openai.images_variations -->
 
-### Create Variations with the OpenAI Python Client
-
-=== "Python (OpenAI client)"
-
-    ```python
-    from openai import OpenAI
-    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
-    with open("source_image.png", "rb") as image_file:
-        response = client.images.create_variation(
-            model="Flux-2-Klein-4B",
-            image=image_file,
-            size="512x512",
-            n=1,
-        )
-    import base64
-    image_data = base64.b64decode(response.data[0].b64_json)
-    open("variation.png", "wb").write(image_data)
-    ```
-
----
-
 <!-- BEGIN GENERATED: openai.images_upscale -->
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1281,60 +1271,7 @@ Also served at `/api/v0/images/upscale`, `/api/v1/images/upscale` and `/v0/image
 
 The model must carry the `upscaling` label and is downloaded on first use.
 
-### Example request
-
-=== "PowerShell"
-
-    ```powershell
-    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
-    $body = @"
-    {"image": "$image", "model": "RealESRGAN-x4plus"}
-    "@
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/images/upscale" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body $body
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/v1/images/upscale \
-      -H "Content-Type: application/json" \
-      -d "{\"image\": \"$(base64 -w0 image.png)\", \"model\": \"RealESRGAN-x4plus\"}"
-    ```
-
-### Response format
-
-`200`
-
-```json
-{
-  "created": 1791943191,
-  "data": [
-    {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAADZHRFWHRwYXJhbWV0ZXJzAApTdGVwczog... (1,818,596 characters)"
-    }
-  ]
-}
-```
-
-**Field Descriptions:**
-
-- `created` - Unix timestamp of when the upscaled image was generated
-- `data` - Array containing the upscaled image
-  - `b64_json` - Base64-encoded PNG of the upscaled image
-<!-- END GENERATED: openai.images_upscale -->
-
-### Error responses
-
-| Status Code | Condition | Example |
-|-------------|-----------|---------|
-| 400 | Missing `image` field | `{"error": {"message": "Missing 'image' field (base64 encoded)", "type": "invalid_request_error"}}` |
-| 400 | Missing `model` field | `{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}` |
-| 404 | Unknown model name | `{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}` |
-| 500 | Upscale failed | `{"error": {"message": "Upscale failed", "type": "server_error"}}` |
+A missing `image` or `model` answers `400`, an unknown model `404`, and a failed upscale `500`, each with an `error` object.
 
 ### Upscale a Generated Image
 
@@ -1423,7 +1360,51 @@ A typical workflow is to generate an image first, then upscale it:
         f.write(base64.b64decode(upscaled_b64))
     ```
 
----
+### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
+    $body = @"
+    {"image": "$image", "model": "RealESRGAN-x4plus"}
+    "@
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/images/upscale" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/images/upscale \
+      -H "Content-Type: application/json" \
+      -d "{\"image\": \"$(base64 -w0 image.png)\", \"model\": \"RealESRGAN-x4plus\"}"
+    ```
+
+### Response format
+
+`200`
+
+```json
+{
+  "created": 1791943191,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAADZHRFWHRwYXJhbWV0ZXJzAApTdGVwczog... (1,818,596 characters)"
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `created` - Unix timestamp of when the upscaled image was generated
+- `data` - Array containing the upscaled image
+  - `b64_json` - Base64-encoded PNG of the upscaled image
+<!-- END GENERATED: openai.images_upscale -->
 
 <!-- BEGIN GENERATED: openai.models -->
 ## `GET /v1/models`
@@ -1725,11 +1706,6 @@ Model aliases are listed too, each as a copy of its target model with the alias 
   - `routing` - Router collections only: the routing policy.
 <!-- END GENERATED: openai.models -->
 
-```bash
-# Show all models including not-yet-downloaded (extended usage)
-curl http://localhost:13305/v1/models?show_all=true
-```
-
 ### Model Labels
 
 Labels describe what a model can do. A model may carry multiple labels.
@@ -1864,24 +1840,6 @@ An unknown model answers `404` with an `error` object whose `code` is `model_not
   - `exists` - Whether the resolved path currently exists on disk.
 <!-- END GENERATED: openai.models_id_files -->
 
-### Optional path disclosure
-
-```bash
-curl 'http://localhost:13305/v1/models/Qwen3-4B/files?include_paths=true'
-```
-
-When `include_paths=true` is supplied, each file entry also includes `path`:
-
-```json
-{
-  "name": "model.gguf",
-  "path": "/abs/path/model.gguf",
-  "role": "main",
-  "size_bytes": 123456789,
-  "exists": true
-}
-```
-
 <!-- BEGIN GENERATED: openai.models_id_options_get -->
 ## `GET /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1897,6 +1855,8 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 `effective` is the exact request body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get.
+
+Per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
 ### Example request
 
@@ -1960,8 +1920,6 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 <!-- END GENERATED: openai.models_id_options_get -->
-
-> Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
 <!-- BEGIN GENERATED: openai.models_id_options_post -->
 ## `POST /v1/models/{id}/options`
@@ -2061,26 +2019,6 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 <!-- END GENERATED: openai.models_id_options_post -->
 
-Same as [`GET /v1/models/{id}/options`](#get-v1modelsidoptions), reflecting the state after the write.
-
-### Example requests
-
-Save a context size without loading the model:
-
-```bash
-curl -X POST http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options \
-  -H "Content-Type: application/json" \
-  -d '{"ctx_size": 8192, "llamacpp_backend": "vulkan"}'
-```
-
-Set the context size back to automatic, leaving the backend choice saved:
-
-```bash
-curl -X POST http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options \
-  -H "Content-Type: application/json" \
-  -d '{"ctx_size": -1}'
-```
-
 <!-- BEGIN GENERATED: openai.models_id_options_delete -->
 ## `DELETE /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -2160,8 +2098,6 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 <!-- END GENERATED: openai.models_id_options_delete -->
 
-Same as [`GET /v1/models/{id}/options`](#get-v1modelsidoptions), with `saved` now `{}`.
-
 <!-- BEGIN GENERATED: openai.models_id -->
 ## `GET /v1/models/{id}`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -2175,6 +2111,8 @@ Also served at `/api/v0/models/{id}`, `/api/v1/models/{id}` and `/v0/models/{id}
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](https://lemonade-server.ai/models.html) or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+An unknown model answers `404` with `code` `model_not_found`.
 
 ### Example request
 
@@ -2254,21 +2192,3 @@ Also served at `/api/v0/models/{id}`, `/api/v1/models/{id}` and `/v0/models/{id}
 - `version` - Router collections only: the policy document's version.
 - `routing` - Router collections only: the routing policy.
 <!-- END GENERATED: openai.models_id -->
-
-Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](../guide/configuration/custom-models.md#share-a-collection-between-machines).
-
-### Error responses
-
-If the model is not found, the endpoint returns a 404 error:
-
-```json
-{
-  "error": {
-    "message": "Model 'Qwen3-0.6B-GGUF' was not found. Available models include: ... Use 'lemonade list' or GET /api/v1/models?show_all=true to see all available models.",
-    "type": "model_not_found",
-    "param": "model",
-    "code": "model_not_found",
-    "requested_model": "Qwen3-0.6B-GGUF"
-  }
-}
-```

@@ -34,6 +34,38 @@ public:
             "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
             "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
+            "The MCP specification mandates one endpoint URL per server, so `/mcp` is an exception "
+            "to Lemonade's quad-prefix convention.",
+            "### Supported methods\n"
+            "\n"
+            "| Method | Purpose |\n"
+            "|--------|---------|\n"
+            "| `initialize` | Negotiate protocol version, return server identity and capabilities. |\n"
+            "| `notifications/initialized` | Client acknowledgement; silently accepted. |\n"
+            "| `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |\n"
+            "| `tools/call` | Invoke one of the tools below. |\n"
+            "| `ping` | Liveness probe; returns `{}`. |",
+            "### Error model\n"
+            "\n"
+            "| Code | Meaning |\n"
+            "|------|---------|\n"
+            "| `-32700` | Body was not valid JSON. |\n"
+            "| `-32600` | Request was not a JSON-RPC object (or batch was empty / missing `method`). |\n"
+            "| `-32601` | Unknown JSON-RPC method (e.g. `resources/list`). |\n"
+            "| `-32602` | Invalid `params` for a known method. |\n"
+            "| `-32603` | Internal server error (an exception escaped a handler). |\n"
+            "\n"
+            "Tool-level failures (bad arguments, model load errors, backend exceptions) are "
+            "returned as **successful** JSON-RPC results with `\"isError\": true` and a text content "
+            "block describing the failure, so MCP-aware models can self-correct.",
+            "### Limitations\n"
+            "\n"
+            "- No session resumption (`Mcp-Session-Id` header is not issued).\n"
+            "- `resources/*` and `prompts/*` capabilities are not implemented.\n"
+            "- Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST "
+            "/v1/chat/completions` directly for streamed tokens.\n"
+            "- Embeddings and text-to-speech are not currently exposed as MCP tools; use the "
+            "OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.",
         };
         s.args = {
             {"jsonrpc", ArgIn::JsonBody, {{"const", "2.0"}}, true, Support::Available,

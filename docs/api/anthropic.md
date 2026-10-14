@@ -8,10 +8,6 @@ Lemonade supports an initial Anthropic Messages compatibility endpoint for appli
 | `POST` | [`/v1/messages`](#post-v1messages) | Messages. Supports both streaming and non-streaming. Query params like `?beta=true` are accepted. |
 <!-- END GENERATED: anthropic.summary -->
 
-Current scope focuses on message generation parity for common fields (`model`, `messages`, `system`, `max_tokens`, `temperature`, `stream`, and basic `tools`). Unsupported or unimplemented Anthropic-specific fields are ignored and surfaced via warning logs/headers.
-
-Those limits apply only where Lemonade converts to and from the OpenAI shape. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so no field is dropped — see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
-
 <!-- BEGIN GENERATED: anthropic.messages -->
 ## `POST /v1/messages`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
@@ -45,6 +41,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, in a `warnings` array.
 
 Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. An unknown model answers `404` with a `not_found_error`.
+
+Fields are dropped only where Lemonade converts to and from the OpenAI shape. A cloud provider registered with `--wire-format anthropic` is relayed unconverted; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
 
 ### Example request
 

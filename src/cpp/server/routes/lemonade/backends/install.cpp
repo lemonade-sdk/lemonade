@@ -96,6 +96,32 @@ public:
             "not support, is answered with `400` and an `error` string; an invalid cloud provider "
             "field is answered with `400` and an `error` object. Any other failure, including "
             "invalid JSON, is answered with `500` and an `error` string.",
+            "A backend that is already installed but outdated is updated to the configured version.",
+            "### Install a cloud provider\n"
+            "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
+            "\n"
+            "Registers an OpenAI-compatible chat provider. The base URL is persisted to "
+            "`config.json`; the optional `api_key` lives in `lemond` process memory only and is "
+            "cleared on restart. See the [Cloud Offload guide](../guide/configuration/cloud.md) for "
+            "the full workflow.\n"
+            "\n"
+            "Optional fields are applied only when present in the request body. Re-installing a "
+            "provider without them keeps its stored values, so updating just the `base_url` never "
+            "resets a custom auth header or the `allow_insecure_http` opt-in.\n"
+            "\n"
+            "```bash\n"
+            "curl -X POST http://localhost:13305/v1/install \\\n"
+            "  -H \"Content-Type: application/json\" \\\n"
+            "  -d '{\n"
+            "    \"backend\": \"cloud\",\n"
+            "    \"provider\": \"fireworks\",\n"
+            "    \"base_url\": \"https://api.fireworks.ai/inference/v1\"\n"
+            "  }'\n"
+            "```\n"
+            "\n"
+            "`models_discovered` is `0` when no API key is resolvable. If `api_key` is supplied but "
+            "the provider's env var is also set, the response includes a `warning` string "
+            "explaining the env var took precedence.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

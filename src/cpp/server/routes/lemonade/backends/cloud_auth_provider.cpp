@@ -40,7 +40,7 @@ public:
             "required": ["provider", "cleared_runtime_key", "auth_state"],
             "properties": {
                 "provider": {"type": "string"},
-                "cleared_runtime_key": {"type": "boolean"},
+                "cleared_runtime_key": {"type": "boolean", "description": "`false` when no in-memory key was present, for example when the only key came from the env var."},
                 "auth_state": {
                     "type": "object",
                     "properties": {

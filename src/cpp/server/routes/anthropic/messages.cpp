@@ -797,6 +797,9 @@ public:
             "in a `warnings` array.",
             "Errors use Anthropic's shape, `{\"type\": \"error\", \"error\": {\"type\", "
             "\"message\"}}`. An unknown model answers `404` with a `not_found_error`.",
+            "Fields are dropped only where Lemonade converts to and from the OpenAI shape. A cloud "
+            "provider registered with `--wire-format anthropic` is relayed unconverted; see [Cloud "
+            "Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

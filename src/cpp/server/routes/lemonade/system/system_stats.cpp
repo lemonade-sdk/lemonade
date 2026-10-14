@@ -23,6 +23,17 @@ public:
             "telemetry without scraping Prometheus.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
+            "`primary_gpu_id` and `gpus` describe the individual host GPUs. `gpu_percent` and "
+            "`vram_gb` come from the primary GPU: the one with the largest known GPU-accessible "
+            "memory capacity (ties broken by stable ID), whatever its current utilization. It is "
+            "not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name "
+            "but reports GPU memory usage, which can be shared system memory on AMD APUs. Device "
+            "IDs stay stable across ordinary telemetry failures; an unavailable live measurement is "
+            "`null`.",
+            "GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On "
+            "Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML; on "
+            "macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so "
+            "NVIDIA GPUs report `memory_type` as `unknown`.",
         };
 
         RouteResponse response;

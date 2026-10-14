@@ -56,7 +56,7 @@ public:
             "properties": {
                 "tokens": {
                     "type": "array",
-                    "description": "Array of token IDs",
+                    "description": "Array of token IDs, or of `{\"id\", \"piece\"}` objects when `with_pieces` is `true`",
                     "items": {"type": ["integer", "object"]}
                 }
             }

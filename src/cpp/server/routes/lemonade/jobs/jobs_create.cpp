@@ -28,6 +28,14 @@ public:
             "The step graph is validated at creation; an invalid one is answered with `400`. When "
             "the job store holds 50 jobs that are all still active or resumable, the answer is "
             "`429` until one is deleted or finishes.",
+            "A job is a client-posted sequence of server operations that runs in the background: "
+            "steps pass data forward and branch on results, and the job can be paused, interrupted, "
+            "resumed, deleted and queried, surviving client disconnect and server restart. "
+            "Exclusive ops (`load`/`unload`/`chat`) hold a Router slot, so normal traffic queues "
+            "behind a running job. See [`docs/dev/job-system.md`](../dev/job-system.md) for the "
+            "step schema, op set and lifecycle, and "
+            "[`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) for the "
+            "`when`/`branch` expression grammar.",
         };
         s.args = {
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available, "Display name."},

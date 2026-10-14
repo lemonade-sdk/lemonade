@@ -30,6 +30,26 @@ public:
             ">\n"
             "> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
             "significantly faster.";
+        s.notes = {
+            "### Create Variations with the OpenAI Python Client\n"
+            "\n"
+            "=== \"Python (OpenAI client)\"\n"
+            "\n"
+            "    ```python\n"
+            "    from openai import OpenAI\n"
+            "    client = OpenAI(base_url=\"http://localhost:13305/api/v1\", api_key=\"not-needed\")\n"
+            "    with open(\"source_image.png\", \"rb\") as image_file:\n"
+            "        response = client.images.create_variation(\n"
+            "            model=\"Flux-2-Klein-4B\",\n"
+            "            image=image_file,\n"
+            "            size=\"512x512\",\n"
+            "            n=1,\n"
+            "        )\n"
+            "    import base64\n"
+            "    image_data = base64.b64decode(response.data[0].b64_json)\n"
+            "    open(\"variation.png\", \"wb\").write(image_data)\n"
+            "    ```",
+        };
         const ordered_json text = {{"type", "string"}};
         s.args = {
             {"model", ArgIn::Form, text, true, Support::Available,

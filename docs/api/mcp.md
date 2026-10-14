@@ -11,8 +11,6 @@ The gateway implements the **MCP "Streamable HTTP" transport** (spec version `20
 | `GET` | [`/mcp`](#get-mcp) | Not supported | Server-initiated SSE channel is not supported. Returns `405 Method Not Allowed`. |
 <!-- END GENERATED: mcp.summary -->
 
-> **Why a single path?** The MCP specification mandates one endpoint URL per server, so `/mcp` is an intentional exception to Lemonade's quad-prefix convention.
-
 <!-- BEGIN GENERATED: mcp.rpc -->
 ## `POST /mcp`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -31,6 +29,37 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `params` | No | Method parameters; `tools/call` takes `name` and `arguments`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The body is one JSON-RPC message or a batch array of them. The reply is `200` with the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
+
+The MCP specification mandates one endpoint URL per server, so `/mcp` is an exception to Lemonade's quad-prefix convention.
+
+### Supported methods
+
+| Method | Purpose |
+|--------|---------|
+| `initialize` | Negotiate protocol version, return server identity and capabilities. |
+| `notifications/initialized` | Client acknowledgement; silently accepted. |
+| `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |
+| `tools/call` | Invoke one of the tools below. |
+| `ping` | Liveness probe; returns `{}`. |
+
+### Error model
+
+| Code | Meaning |
+|------|---------|
+| `-32700` | Body was not valid JSON. |
+| `-32600` | Request was not a JSON-RPC object (or batch was empty / missing `method`). |
+| `-32601` | Unknown JSON-RPC method (e.g. `resources/list`). |
+| `-32602` | Invalid `params` for a known method. |
+| `-32603` | Internal server error (an exception escaped a handler). |
+
+Tool-level failures (bad arguments, model load errors, backend exceptions) are returned as **successful** JSON-RPC results with `"isError": true` and a text content block describing the failure, so MCP-aware models can self-correct.
+
+### Limitations
+
+- No session resumption (`Mcp-Session-Id` header is not issued).
+- `resources/*` and `prompts/*` capabilities are not implemented.
+- Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST /v1/chat/completions` directly for streamed tokens.
+- Embeddings and text-to-speech are not currently exposed as MCP tools; use the OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.
 
 ### Example request
 
@@ -118,27 +147,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Answers `405` with `Allow: POST` and a JSON-RPC `-32600` error.
 <!-- END GENERATED: mcp.sse -->
-
-## Authentication
-
-`/mcp` is treated as a regular API route, so it honors `LEMONADE_API_KEY` exactly like `/api/v1/chat/completions`:
-
-```bash
-curl -s http://localhost:13305/mcp \
-    -H "Authorization: Bearer $LEMONADE_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
-```
-
-## Supported methods
-
-| Method | Purpose |
-|--------|---------|
-| `initialize` | Negotiate protocol version, return server identity and capabilities. |
-| `notifications/initialized` | Client acknowledgement; silently accepted. |
-| `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |
-| `tools/call` | Invoke one of the tools below. |
-| `ping` | Liveness probe; returns `{}`. |
 
 ## Tools
 
@@ -274,26 +282,6 @@ With `page`, success returns one `text` block containing the raw bundled Markdow
 | `page` | no | `{"type":"string"}` | Optional. Page id from the listing, e.g. 'api/lemonade'. Omit to list. |
 
 <!-- END GENERATED: mcp-tools -->
-
-## Error model
-
-| Code | Meaning |
-|------|---------|
-| `-32700` | Body was not valid JSON. |
-| `-32600` | Request was not a JSON-RPC object (or batch was empty / missing `method`). |
-| `-32601` | Unknown JSON-RPC method (e.g. `resources/list`). |
-| `-32602` | Invalid `params` for a known method. |
-| `-32603` | Internal server error (an exception escaped a handler). |
-
-Tool-level failures (bad arguments, model load errors, backend exceptions) are returned as **successful** JSON-RPC results with `"isError": true` and a text content block describing the failure, so MCP-aware models can self-correct.
-
-## Limitations (MVP)
-
-- No server-initiated SSE (GET /mcp returns 405). Tools return their full result in the POST response.
-- No session resumption (`Mcp-Session-Id` header is not issued).
-- `resources/*` and `prompts/*` capabilities are not implemented.
-- Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST /v1/chat/completions` directly for streamed tokens.
-- Embeddings and text-to-speech are not currently exposed as MCP tools; use the OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.
 
 ## Quick test with curl
 

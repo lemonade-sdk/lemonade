@@ -51,7 +51,7 @@ public:
             "properties": {
                 "model": {"type": "string", "description": "Model identifier used for reranking"},
                 "object": {"const": "list", "description": "Type of response object, always `\"list\"`"},
-                "results": {"type": "array", "description": "Array of all input documents with relevance scores", "items": {
+                "results": {"type": "array", "description": "Array of all input documents with relevance scores, sorted by `relevance_score`, highest first", "items": {
                     "type": "object",
                     "required": ["index", "relevance_score"],
                     "properties": {

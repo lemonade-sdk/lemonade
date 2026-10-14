@@ -24,6 +24,9 @@ public:
         s.description =
             "Retrieve a specific model by its ID. Returns the same model object format as the "
             "list endpoint above.";
+        s.notes = {
+            "An unknown model answers `404` with `code` `model_not_found`.",
+        };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "The ID of the model to retrieve. Must match one of the model IDs from the "

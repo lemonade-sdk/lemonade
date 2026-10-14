@@ -29,6 +29,11 @@ public:
             "download for repositories whose file listing passes that validation.\n\n"
             "Requires network access: returns 400 with code `lemond_offline` when the server is in "
             "offline mode.";
+        s.notes = {
+            "A `400` answers a `query` shorter than 3 characters or an invalid `source`, `limit` or "
+            "`format`. A `429` means the upstream registry rate-limited the request, and any other "
+            "upstream failure answers `502`, with the upstream status code when available.",
+        };
         s.args = {
             {"query", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
              "Search text, minimum 3 characters after trimming. `q` is accepted as an alias."},

@@ -29,6 +29,9 @@ public:
             "`effective` is the exact request body a [`POST /v1/load`](./lemonade.md#post-v1load) "
             "for this model uses right now, with every option the recipe accepts resolved through "
             "the full priority chain. `defaults` is what a reset model would get.",
+            "Per-architecture defaults come from the model's GGUF metadata. For a model that has "
+            "not been downloaded yet, every key is still present but carries the value it has "
+            "before those defaults apply.",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,

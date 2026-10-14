@@ -35,6 +35,15 @@ public:
             "precedence and this endpoint returns **409 Conflict** without storing the supplied "
             "key. This is the safety guarantee that lets an operator provision a \"house\" key via "
             "env without worrying about a client silently overriding it.";
+        s.notes = {
+            "The `409` carries `error.type` `auth_conflict` and names the `env_var` that took "
+            "precedence.",
+            "A `400` answers a missing or empty `provider` or `api_key`, or a provider whose base "
+            "URL is `http://` when neither this request nor the provider's install set "
+            "`allow_insecure_http` (code `insecure_http_requires_opt_in`). A provider that is not "
+            "installed answers `404`; install it with `POST /v1/install` and `backend: \"cloud\"` "
+            "first.",
+        };
         s.args = {
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Installed provider name."},

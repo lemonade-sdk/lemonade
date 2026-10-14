@@ -39,6 +39,13 @@ public:
             "in its config or ship a `manifest.json`.\n\n"
             "This endpoint provides the classification capability that the router's `classifier` "
             "condition type consumes.";
+        s.notes = {
+            "Label names come from the model's `id2label`, in `config.json` or in a `manifest.json` "
+            "that overrides it. Some upstream models declare only generic `LABEL_<n>` names; their "
+            "model card explains them.",
+            "A malformed request (invalid JSON, a missing `input`/`text`, non-string fields, a "
+            "non-positive `top_k`) answers `400` before any model loads.",
+        };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Classifier model id (a model with the `onnxruntime` recipe). Optional when exactly "

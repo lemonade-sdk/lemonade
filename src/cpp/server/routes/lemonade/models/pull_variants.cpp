@@ -28,6 +28,12 @@ public:
             "install form. The endpoint reads only public Hugging Face metadata; if the `HF_TOKEN` "
             "environment variable is set on the server, it is forwarded as a bearer token to "
             "access gated repositories.";
+        s.notes = {
+            "A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `source` "
+            "that disagrees with the checkpoint URL's registry, or offline mode (`code: "
+            "lemond_offline`). A checkpoint Hugging Face does not have answers `404`, and any other "
+            "transport or parsing failure answers `500` with an `error` message.",
+        };
         s.args = {
             {"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
              "Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. A "

@@ -23,6 +23,22 @@ public:
             "Read one page, served as `Content-Type: text/markdown`. "
             "`{page}` is the `id` from the index,\n"
             "which mirrors the path used on the documentation website; the `.md` suffix is optional.";
+        s.notes = {
+            "An unknown page answers `404`.",
+            "### Reading the files directly\n"
+            "\n"
+            "The same files are installed on disk, so they can be read without a running server:\n"
+            "\n"
+            "| Platform | Path |\n"
+            "|----------|------|\n"
+            "| Windows (per-user) | `%LOCALAPPDATA%\\lemonade_server\\bin\\resources\\docs\\` |\n"
+            "| Windows (all users) | `C:\\Program Files\\Lemonade Server\\bin\\resources\\docs\\` |\n"
+            "| macOS | `/Library/Application Support/Lemonade/resources/docs/` |\n"
+            "| Linux (local) | `/usr/local/share/lemonade-server/resources/docs/` |\n"
+            "| Linux (system) | `/usr/share/lemonade-server/resources/docs/` |\n"
+            "| Linux (optional prefix) | `/opt/share/lemonade-server/resources/docs/` |\n"
+            "| Linux (per-user) | `~/.local/share/lemonade-server/resources/docs/` |",
+        };
         s.args = {
             {"page", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "The `id` from the [`GET /v1/docs`](#get-v1docs) index, which mirrors the page's path "

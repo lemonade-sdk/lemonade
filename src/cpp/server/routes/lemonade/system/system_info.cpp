@@ -254,6 +254,22 @@ public:
             "enumeration.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
+            "### Backend Tiers and Formats\n"
+            "\n"
+            "| Tier | Meaning |\n"
+            "|------|---------|\n"
+            "| `core` | Supported by Lemonade's maintainers for production use. |\n"
+            "| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |\n"
+            "| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from `GET /v1/models?show_all=true` until one of those backends is installed. |\n"
+            "\n"
+            "| Format | Meaning |\n"
+            "|--------|---------|\n"
+            "| `native` | A compiled executable. |\n"
+            "| `python` | Python, packaged with its own interpreter. |\n"
+            "| `container` | An OCI image, run by a pre-installed Podman or Docker. |\n"
+            "\n"
+            "The same backend can carry different labels on different operating systems. Each entry "
+            "in a recipe's `backends` object reports the labels for this system's operating system.",
         };
 
         RouteResponse response;

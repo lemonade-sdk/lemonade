@@ -27,6 +27,10 @@ public:
             "access.\n\n"
             "Fetch this index first, then read the pages it advertises. New pages can be added in\n"
             "future releases without breaking clients, because every entry carries its own URL.";
+        s.notes = {
+            "`url` keeps the prefix the index was requested with, so a client that queries "
+            "`/api/v0/docs` receives `/api/v0/docs/...` URLs.",
+        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

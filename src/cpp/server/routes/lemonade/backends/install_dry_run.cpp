@@ -36,6 +36,19 @@ public:
             "The repository's `test/server_gfx_topology.py` uses the endpoint for this\n"
             "resolution step and separately checks the resulting release URLs or\n"
             "split-archive manifests.";
+        s.notes = {
+            "A device ISA may resolve to a family target name used by the release repository, for "
+            "example `gfx1201` to `gfx120X`. That mapping is defined by `rocm_asset_families` in "
+            "`backend_versions.json`.",
+            "An explicit architecture outside Lemonade's support matrix still produces install "
+            "metadata, with `supported` set to `false`. To verify the release asset itself, check "
+            "the returned URL, or its split-archive manifest, separately.",
+            "A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or "
+            "install-parameter resolution failing (an unknown recipe/backend pair, an unsupported "
+            "platform, unavailable architecture detection, failed version resolution), answers "
+            "`500`. Errors carry an `error` string, plus `arch` when it was parsed before the "
+            "failure.",
+        };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Recipe name, for example `llamacpp`, `whispercpp`, or `vllm`."},

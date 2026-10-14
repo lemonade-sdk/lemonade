@@ -66,6 +66,65 @@ Also served at `/api/v0/routing/validate`, `/api/v1/routing/validate` and `/v0/r
 | `has_tools` | No | Simulate a request carrying tool definitions. Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `metadata` | No | String-valued metadata pairs matched by `metadata` conditions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+`decision` has the same shape as the `x_lemonade_route` object a routed
+completion returns with `route_trace: true`, and the trace is always included
+here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
+and `route_to` is the policy's `default_model`.
+
+`normalized_policy` echoes the policy as it was actually evaluated. The policy
+above uses explicit `routing.rules`, so it comes back unchanged. The field earns
+its place when a policy uses the `routing.router` shorthand: that sugar is
+desugared into an explicit `llm` classifier plus one identity rule per
+candidate, so a `routing` block authored as:
+
+```json
+{
+  "router": {
+    "type": "llm",
+    "model": "Qwen3-8B-GGUF",
+    "prompt": "Pick the best model for this request."
+  },
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF"
+}
+```
+
+is echoed back with `router` removed and synthesized `classifiers`/`rules`:
+
+```json
+{
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF",
+  "classifiers": [
+    {
+      "id": "__router",
+      "type": "llm",
+      "model": "Qwen3-8B-GGUF",
+      "prompt": "Pick the best model for this request.",
+      "labels": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "__route_0",
+      "match": {"classifier": "__router", "label": "Qwen3-8B-GGUF", "min_score": 1.0},
+      "route_to": "Qwen3-8B-GGUF"
+    },
+    {
+      "id": "__route_1",
+      "match": {"classifier": "__router", "label": "vllm.qwen3-32b", "min_score": 1.0},
+      "route_to": "vllm.qwen3-32b"
+    }
+  ]
+}
+```
+
+Match `decision.matched_rule` against this document rather than the one you
+sent — a policy authored with only `routing.router` has no `routing.rules` of
+its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
+
+A `400` answers a body that is not valid JSON, a missing or non-object `policy`, a non-string `prompt`, non-boolean `has_images`/`has_tools`, a `metadata` that is not an object of string values, or a policy document that is invalid or internally inconsistent, whose `error` is prefixed with `Invalid routing policy:`.
+
 ### Example request
 
 === "PowerShell"
@@ -159,67 +218,3 @@ Also served at `/api/v0/routing/validate`, `/api/v1/routing/validate` and `/v0/r
 
 - `decision` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
 <!-- END GENERATED: router.routing_validate -->
-
-`decision` has the same shape as the `x_lemonade_route` object a routed
-completion returns with `route_trace: true`, and the trace is always included
-here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
-and `route_to` is the policy's `default_model`.
-
-`normalized_policy` echoes the policy as it was actually evaluated. The policy
-above uses explicit `routing.rules`, so it comes back unchanged. The field earns
-its place when a policy uses the `routing.router` shorthand: that sugar is
-desugared into an explicit `llm` classifier plus one identity rule per
-candidate, so a `routing` block authored as:
-
-```json
-{
-  "router": {
-    "type": "llm",
-    "model": "Qwen3-8B-GGUF",
-    "prompt": "Pick the best model for this request."
-  },
-  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
-  "default_model": "Qwen3-8B-GGUF"
-}
-```
-
-is echoed back with `router` removed and synthesized `classifiers`/`rules`:
-
-```json
-{
-  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
-  "default_model": "Qwen3-8B-GGUF",
-  "classifiers": [
-    {
-      "id": "__router",
-      "type": "llm",
-      "model": "Qwen3-8B-GGUF",
-      "prompt": "Pick the best model for this request.",
-      "labels": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"]
-    }
-  ],
-  "rules": [
-    {
-      "id": "__route_0",
-      "match": {"classifier": "__router", "label": "Qwen3-8B-GGUF", "min_score": 1.0},
-      "route_to": "Qwen3-8B-GGUF"
-    },
-    {
-      "id": "__route_1",
-      "match": {"classifier": "__router", "label": "vllm.qwen3-32b", "min_score": 1.0},
-      "route_to": "vllm.qwen3-32b"
-    }
-  ]
-}
-```
-
-Match `decision.matched_rule` against this document rather than the one you
-sent — a policy authored with only `routing.router` has no `routing.rules` of
-its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
-
-### Error responses
-
-| Status | Condition |
-|--------|-----------|
-| `400` | Body is not valid JSON, `policy` is missing or not an object, `prompt` is not a string, `has_images`/`has_tools` are not booleans, or `metadata` is not an object of string values. |
-| `400` | The policy document is invalid or internally inconsistent; the `error` field is prefixed with `Invalid routing policy:`. |
