@@ -1,6 +1,7 @@
 #include <lemon/models/registry_id.h>
 
 #include <algorithm>
+#include <deque>
 
 namespace lemon {
 namespace models {
@@ -32,10 +33,11 @@ const RegistryDescriptor& modelscope() {
     return descriptor;
 }
 
-// Static storage, so a descriptor pointer handed out by descriptor_for stays
-// valid for the run.
-const std::vector<RegistryDescriptor>& table() {
-    static const std::vector<RegistryDescriptor> descriptors{huggingface(), modelscope()};
+// Registration is the only writer and it runs during static initialization, so a
+// reader needs no lock. A deque, because push_back must not invalidate a
+// descriptor pointer handed out earlier.
+std::deque<RegistryDescriptor>& table() {
+    static std::deque<RegistryDescriptor> descriptors{huggingface(), modelscope()};
     return descriptors;
 }
 
@@ -68,7 +70,23 @@ const RegistryDescriptor& huggingface_descriptor() { return huggingface(); }
 
 const RegistryDescriptor& modelscope_descriptor() { return modelscope(); }
 
-std::vector<RegistryDescriptor> all_registry_descriptors() { return table(); }
+std::vector<RegistryDescriptor> all_registry_descriptors() {
+    return {table().begin(), table().end()};
+}
+
+namespace detail {
+
+void add_descriptor(const RegistryDescriptor& descriptor) {
+    for (auto& existing : table()) {
+        if (existing.id == descriptor.id) {
+            existing = descriptor;
+            return;
+        }
+    }
+    table().push_back(descriptor);
+}
+
+}  // namespace detail
 
 }  // namespace models
 }  // namespace lemon
