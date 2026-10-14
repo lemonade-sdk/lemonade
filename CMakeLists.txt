@@ -1056,6 +1056,7 @@ set(SOURCES_CORE
     src/cpp/server/log_stream.cpp
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
+    src/cpp/server/utils/audio_mime.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -1121,6 +1122,7 @@ set(LEMON_BACKEND_DESCRIPTOR_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
 set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_load_helpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
 foreach(_backend_entry ${LEMON_BACKENDS})
@@ -2641,6 +2643,18 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_o
     add_executable(test_backend_operation_dispatch test/cpp/test_backend_operation_dispatch.cpp)
     target_link_libraries(test_backend_operation_dispatch PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendOperationDispatchTest CI ON COMMAND test_backend_operation_dispatch)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_load_helpers.cpp")
+    add_executable(test_backend_load_helpers test/cpp/test_backend_load_helpers.cpp)
+    target_link_libraries(test_backend_load_helpers PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendLoadHelpersTest CI ON COMMAND test_backend_load_helpers)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_artifact_helpers.cpp")
+    add_executable(test_backend_artifact_helpers test/cpp/test_backend_artifact_helpers.cpp)
+    target_link_libraries(test_backend_artifact_helpers PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendArtifactHelpersTest CI ON COMMAND test_backend_artifact_helpers)
 endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")

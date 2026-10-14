@@ -325,6 +325,38 @@ void check_whisper_wire(FakeHttpBackend& upstream) {
     }
 }
 
+void check_flm_and_moonshine_wire(FakeHttpBackend& upstream) {
+    LocalServer<backends::FastFlowLMServer> flm(upstream.port(), ModelType::TRANSCRIPTION);
+    LocalServer<backends::MoonshineServer> moonshine(upstream.port(), ModelType::TRANSCRIPTION);
+    const std::string binary_audio("RIFF\0\xff\r\nWAVE", 12);
+    const std::vector<std::pair<std::string, std::string>> formats = {
+        {"fixture.mp3", "audio/mpeg"}, {"fixture.wav", "audio/wav"}, {"fixture.m4a", "audio/mp4"},
+        {"fixture.ogg", "audio/ogg"}, {"fixture.flac", "audio/flac"}, {"fixture.webm", "audio/webm"},
+        {"fixture.unknown", "audio/wav"}, {"fixture.MP3", "audio/wav"}, {"fixture.FlAc", "audio/wav"},
+        {"fixture", "audio/wav"}
+    };
+    for (auto* server : std::vector<WrappedServer*>{&flm, &moonshine}) {
+        auto* adapter = operation_adapter<ITranscriptionServer>(*server, Op::Transcription, Delivery::Buffered, ModelType::TRANSCRIPTION);
+        check(adapter != nullptr, "FLM/Moonshine transcription adapter available on CPU fixture");
+        if (!adapter) continue;
+        const bool is_flm = server == &flm;
+        for (const auto& [filename, mime] : formats) {
+            const auto before = upstream.request_count();
+            const auto response = adapter->audio_transcriptions({{"file_data", binary_audio}, {"filename", "uploads/" + filename}});
+            const json expected = is_flm ? json{{"model", "upstream"}, {"witness", true}} : json{{"text", "fixture transcription"}};
+            check(response == expected && upstream.request_count() == before + 1 &&
+                  upstream.last_path() == (is_flm ? "/v1/audio/transcriptions" : "/inference") &&
+                  upstream.field("file") == binary_audio && upstream.filename() == filename && upstream.content_type() == mime,
+                  std::string(is_flm ? "FLM" : "Moonshine") + " preserves multipart MIME, basename and binary bytes for " + filename);
+            if (is_flm) {
+                check(upstream.field("model") == "upstream-fixture", "FLM retains required upstream model multipart field");
+            } else {
+                check(upstream.field("response_format") == "json", "Moonshine retains default response format multipart field");
+            }
+        }
+    }
+}
+
 void check_cloud_wire(FakeHttpBackend& upstream) {
     CloudProviderRegistry registry;
     registry.install("operation-contract-fixture", "http://127.0.0.1:" + std::to_string(upstream.port()) + "/v1");
@@ -457,6 +489,7 @@ int main() {
         check_llama_dispatch(upstream);
         check_flm_dispatch(upstream);
         check_whisper_wire(upstream);
+        check_flm_and_moonshine_wire(upstream);
         check_cloud_wire(upstream);
         check_tts_delivery_wire(upstream);
         check_router_fallback_dispatch(upstream);

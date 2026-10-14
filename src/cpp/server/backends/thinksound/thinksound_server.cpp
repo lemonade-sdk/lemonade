@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include "lemon/backend_manager.h"
+#include "lemon/backends/backend_load_helpers.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
@@ -43,16 +44,6 @@ ThinkSoundServer::ThinkSoundServer(const std::string& log_level,
     bind_legacy_operations(LegacyOperationProfile::ThinkSound, *this);
 }
 
-std::string ThinkSoundServer::resolve_binary_path(const std::string& backend) {
-    const BackendSpec* spec = thinksound::spec();
-    std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
-    if (!external.empty() && std::filesystem::exists(external)) {
-        return external;
-    }
-    backend_manager_->install_backend(spec->recipe, backend);
-    return BackendUtils::get_backend_binary_path(*spec, backend);
-}
-
 void ThinkSoundServer::load(const std::string& model_name,
                             const ModelInfo& model_info,
                             const RecipeOptions& options,
@@ -67,14 +58,12 @@ void ThinkSoundServer::load(const std::string& model_name,
     std::string backend = options.get_option("thinksound_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("thinksound");
-        if (supported.backends.empty()) {
-            throw UnsupportedOperationException(
-                "ThinkSound audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
-        }
-        backend = supported.backends[0];
+        backend = first_supported_backend(
+            supported.backends, "ThinkSound audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
     }
     RuntimeConfig::validate_backend_choice("thinksound", backend);
-    const std::string exe_path = resolve_binary_path(backend);
+    const std::string exe_path = resolve_external_or_managed_binary(
+        *thinksound::spec(), backend, backend_binary_services(*backend_manager_));
 
     port_ = choose_port();
     if (port_ == 0) {
@@ -97,14 +86,15 @@ void ThinkSoundServer::load(const std::string& model_name,
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
     auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
 #ifdef _WIN32
-        std::string path = extra_dirs.empty() ? exe_dir : (extra_dirs + ";" + exe_dir);
-        if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
-        env_vars.push_back({"PATH", path});
+        const char* inherited = std::getenv("PATH");
+        constexpr bool windows = true;
 #else
-        std::string ld = extra_dirs.empty() ? exe_dir : (extra_dirs + ":" + exe_dir);
-        if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
-        env_vars.push_back({"LD_LIBRARY_PATH", ld});
+        const char* inherited = std::getenv("LD_LIBRARY_PATH");
+        constexpr bool windows = false;
 #endif
+        env_vars.push_back(make_loader_path_override(
+            exe_dir, extra_dirs,
+            inherited ? std::optional<std::string>(inherited) : std::nullopt, windows));
     };
     if (backend == "rocm") {
         const std::string arch = SystemInfo::get_rocm_arch();
@@ -178,12 +168,7 @@ public:
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
         (void)info;
-        std::filesystem::path root = lemon::utils::path_from_utf8(ctx.model_cache_path);
-        std::filesystem::path snap = hf_cache::active_snapshot_path(root);
-        if (!snap.empty() && hf_cache::exists(snap)) {
-            return lemon::utils::path_to_utf8(snap);
-        }
-        return ctx.model_cache_path;
+        return hf_cache::active_snapshot_or_cache_path(ctx.model_cache_path);
     }
 };
 }  // namespace

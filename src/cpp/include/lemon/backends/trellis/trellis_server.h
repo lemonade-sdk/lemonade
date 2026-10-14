@@ -26,8 +26,6 @@ public:
 
     void model_3d_generations(const json& request, httplib::DataSink& sink) override;
 
-private:
-    std::string resolve_binary_path(const std::string& backend);
 };
 
 namespace trellis {

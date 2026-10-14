@@ -16,6 +16,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/audio_mime.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -303,12 +304,7 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
 
         std::filesystem::path filepath(filename);
         std::string ext = filepath.extension().string();
-        std::string content_type = "audio/wav";
-        if (ext == ".mp3") content_type = "audio/mpeg";
-        else if (ext == ".m4a") content_type = "audio/mp4";
-        else if (ext == ".ogg") content_type = "audio/ogg";
-        else if (ext == ".flac") content_type = "audio/flac";
-        else if (ext == ".webm") content_type = "audio/webm";
+        std::string content_type = utils::audio_mime_for_extension(ext);
 
         std::vector<utils::MultipartField> fields;
 

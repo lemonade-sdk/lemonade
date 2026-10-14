@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "lemon/model_registry.h"
+#include "lemon/utils/path_utils.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -59,6 +60,15 @@ fs::path active_snapshot_path(const fs::path& model_cache_path) {
     }
     fs::path snapshot_path = model_cache_path / "snapshots" / ref;
     return lemon::backends::hf_cache::exists(snapshot_path) ? snapshot_path : fs::path();
+}
+
+std::string active_snapshot_or_cache_path(const std::string& model_cache_path) {
+    fs::path root = utils::path_from_utf8(model_cache_path);
+    fs::path snapshot = active_snapshot_path(root);
+    if (!snapshot.empty() && hf_cache::exists(snapshot)) {
+        return utils::path_to_utf8(snapshot);
+    }
+    return model_cache_path;
 }
 
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,

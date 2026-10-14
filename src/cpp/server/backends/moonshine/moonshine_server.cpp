@@ -9,6 +9,7 @@
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/audio_mime.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
@@ -217,14 +218,7 @@ json MoonshineServer::forward_multipart_audio_data(const std::string& audio_data
 
     fs::path filepath(filename);
     std::string ext = filepath.extension().string();
-    std::string content_type = "audio/wav";
-
-    if (ext == ".mp3") content_type = "audio/mpeg";
-    else if (ext == ".wav") content_type = "audio/wav";
-    else if (ext == ".m4a") content_type = "audio/mp4";
-    else if (ext == ".ogg") content_type = "audio/ogg";
-    else if (ext == ".flac") content_type = "audio/flac";
-    else if (ext == ".webm") content_type = "audio/webm";
+    std::string content_type = utils::audio_mime_for_extension(ext);
 
     std::vector<utils::MultipartField> fields;
 
