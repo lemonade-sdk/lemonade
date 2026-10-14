@@ -63,6 +63,8 @@ struct BackendStatus {
     std::string version;
     std::string message;
     std::string action;
+    std::string tier;    // "core", "experimental" or "guest"
+    std::string format;  // "native", "python" or "container"
 };
 
 // Recipe status structure

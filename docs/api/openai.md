@@ -1134,7 +1134,6 @@ can be corrected by hand.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `experimental` | Not yet validated for production use. |
 
 
 ## `GET /v1/models/{model_id}`
