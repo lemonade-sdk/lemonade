@@ -167,7 +167,7 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 2. Resolves the model name.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
 4. Requires a model. With no `model` in the request, it answers 400.
-5. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
+5. Auto-loads the model through `ModelLoader`, unless `validate()` set `req.model_already_loaded` because it picked a model that is already loaded; loading it again would demote a routing helper to a standard model. On failure it writes the `create_model_error` response, the same shape for every model route.
 6. Calls `run()`.
 
 `validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), attach uploaded files in the shape its backend expects (transcription's raw `file`, images/edits' base64 `image` and `mask`), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
