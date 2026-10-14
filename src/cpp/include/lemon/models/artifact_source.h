@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <string>
 
 namespace lemon {
@@ -47,6 +48,10 @@ class ArtifactSource {
     virtual Presence present() const = 0;
     virtual Acquisition acquisition() const = 0;
     virtual Deletion deletion() const = 0;
+
+    // Sent while transferring the URLs acquisition() names. Default empty, so a
+    // caller executes a plan without asking what kind of source built it.
+    virtual std::map<std::string, std::string> auth_headers() const { return {}; }
 
   protected:
     explicit ArtifactSource(ArtifactRef ref) : ref_(std::move(ref)) {}

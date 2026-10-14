@@ -587,7 +587,7 @@ The sources lemond ships, with the behavior each declares:
 
 | Implementation | Roles | `list()` / `file_url()` | Staleness | Layout | Transfer | Deletion |
 | --- | --- | --- | --- | --- | --- | --- |
-| `HuggingFaceRepository` | both | tree API | commit SHA plus LFS content id | HF snapshots and blobs with `refs/main` | HTTP | `CacheDir`; blob GC is decided by [Local Artifact Store](#local-artifact-store) |
+| `HuggingFaceRepository` | both | tree API | commit SHA plus LFS content id | HF snapshots with `refs/main` | HTTP | `CacheDir`; deletion is decided by [Local Artifact Store](#local-artifact-store) |
 | `ModelScopeRepository` | both | files API | tree fingerprint | snapshot per tree, own namespace | HTTP | `CacheDir` in its namespace |
 | `LocalPathArtifactSource` | core | none | never stale | n/a | n/a | `Nothing` or `CacheDir` by origin, see [Deletion](#deletion) |
 | `SelfManagedArtifactSource` | core | none | the backend's concern | the backend's | `Delegated` | `Delegate` |
@@ -763,12 +763,12 @@ Rules:
 2. A repository's `auth_headers()` are sent only while the origin still matches the origin that produced them. `HttpFileTransfer` strips them before following a redirect to a different scheme, host or port, at every hop, and never adds a credential a repository did not supply.
 3. A plan whose files all resolve to `file://` moves no byte over a network, so it succeeds when `offline=true`.
 
-`ArtifactLayout` names the on-disk shape of a repository's cache: snapshot directory, `refs/main`, blob directory, `.partial` and `.download_manifest.json` locations, and the call that makes a staged snapshot current. Two layouts ship:
+`ArtifactLayout` names the on-disk shape of a repository's cache: the directory a placement's files go to, the final path of one repository-relative name, and the call that makes a staged revision current. Staging through `.partial` and writing `.download_manifest.json` belong to [ArtifactTransfer](#transfer-and-layout) inside whatever directory the layout names, so a layout says nothing about transport. Two layouts ship:
 
 | Layout | Placement | Used by |
 | --- | --- | --- |
-| `HfHubLayout` | `refs/main`, `snapshots/<snapshot-id>/`, `blobs/`, staged through `.partial` | every registry checkpoint, per `docs/dev/model-registries.md` |
-| `SiblingLayout` | the file lands next to the model's `main` checkpoint file, after a containment check on the resolved name | the `npu_cache` checkpoint, which `whispercpp` requires beside its `.bin` |
+| `HfHubLayout` | `snapshots/<snapshot-id>/` holding real files, with `refs/main` recording the current snapshot id | every registry checkpoint, per `docs/dev/model-registries.md` |
+| `SiblingLayout` | the file lands in the directory of the checkpoint it belongs to, by its final component only, so no name can escape that directory; there is no revision to make current | the `npu_cache` checkpoint, which `whispercpp` requires beside its `.bin` |
 
 Layout selection rules:
 
@@ -803,7 +803,7 @@ Deleting a checkpoint is polymorphic, because a forgotten branch deletes a user'
 
 | Source | `Deletion` | Effect |
 | --- | --- | --- |
-| `HuggingFaceRepository`, `ModelScopeRepository` | `CacheDir` | remove the repository directory; blob GC only for blobs no other model references |
+| `HuggingFaceRepository`, `ModelScopeRepository` | `CacheDir` | remove the repository directory; when another model shares the repository, only this checkpoint's variant path goes |
 | `LocalPathArtifactSource`, `local_path` or `extra_models_dir` origin | `Nothing` | unregister the model; the bytes the user placed stay |
 | `LocalPathArtifactSource`, `local_upload` origin | `CacheDir` | remove the copy lemond wrote inside its own cache directory |
 | `SelfManagedArtifactSource` | `Delegate("flm remove")` | the backend removes its own weights |
@@ -1262,7 +1262,7 @@ This section states the coverage that protects the design and the tests that pro
 | `test_artifact_resolver` | the seven selection rules, per-checkpoint independence, a model with two sources |
 | `test_download_plan` | manifest JSON to `DownloadPlan`, disk-space accounting, GGUF magic rejection, hash mismatch fails without retry, cancellation throws |
 | `test_file_transfer` | scheme dispatch across `http` and `file`, one mixed-scheme plan reporting one progress total, a `file://` plan that completes with `offline=true`, `auth_headers()` stripped on a cross-origin redirect and still sent on a same-origin one |
-| `test_model_deletion` | every `Deletion` row, the containment check, shared-repo variant delete, blob GC only for unreferenced blobs |
+| `test_model_deletion` | every `Deletion` row, the containment check, shared-repo variant delete |
 | `test_registry_provenance` | v1 read, v2 write, per-checkpoint snapshot keys, `selection` mismatch triggering a fetch |
 | `test_identity_round_trip` | every registered catalog's minted IDs survive `parse_canonical_id()` and `is_reserved_registration_name()` |
 | `test_model_change_notifier` | one subscriber per signal, callbacks run unlocked and after the swap, a reader at generation N never sees generation N+1 |

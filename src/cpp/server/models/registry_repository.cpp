@@ -5,6 +5,7 @@
 #include <lemon/models/registry_descriptors.h>
 #include <lemon/registry_files.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/safe_fs.h>
 
 #include <cctype>
 #include <filesystem>
@@ -47,13 +48,27 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
         by_name.emplace(file.path, &file);
     }
 
+    // A side checkpoint names the one file it needs; a main checkpoint's files
+    // are whatever the recipe's backend picks from the repository.
+    const bool side_checkpoint = !ref.checkpoint_type.empty() && ref.checkpoint_type != "main";
+    std::vector<std::string> wanted;
+    if (side_checkpoint) {
+        if (by_name.find(ref.variant) == by_name.end()) {
+            throw std::runtime_error("Checkpoint file not found in repository " + ref.repo_id +
+                                     ": " + ref.variant);
+        }
+        wanted.push_back(ref.variant);
+    } else {
+        wanted = registry_files::select_main_repo_files(ref.repo_id, ref.recipe, ref.variant,
+                                                        available);
+    }
+
     DownloadPlan plan;
     plan.download_path = layout.directory(placement);
     const Revision revision{listing.download_revision.empty() ? listing.revision.id
                                                               : listing.download_revision,
                             listing.revision.pinned};
-    for (const auto& name :
-         registry_files::select_main_repo_files(ref.repo_id, ref.recipe, ref.variant, available)) {
+    for (const auto& name : wanted) {
         DownloadFile file;
         file.name = name;
         file.url = repository.file_url(RepoRef{ref.repo_id, revision, name});
@@ -76,22 +91,28 @@ class RegistryBackedRepository : public FetchableRepository {
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
 
-    std::string resolve() const override { return utils::path_to_utf8(active_snapshot()); }
+    std::string resolve() const override { return local_target(); }
 
     Presence present() const override {
-        const fs::path snapshot = active_snapshot();
-        if (snapshot.empty()) {
+        const std::string target = local_target();
+        if (target.empty()) {
             return Presence{false, "", "no active snapshot for " + ref_.repo_id};
         }
-        return Presence{true, utils::path_to_utf8(snapshot), ""};
+        if (!utils::safe_exists(utils::path_from_utf8(target))) {
+            return Presence{false, "", "no bytes at " + target};
+        }
+        return Presence{true, target, ""};
     }
 
     Acquisition acquisition() const override {
         const RepoListing listing = list(ref_.repo_id, ref_.revision);
+        Placement where = placement();
+        where.revision =
+            listing.revision.id.empty() ? listing.download_revision : listing.revision.id;
+
         Acquisition acquisition;
         acquisition.kind = Acquisition::Kind::Plan;
-        acquisition.plan = registry_download_plan(*this, ref_, hf_hub_layout(),
-                                                  placement(listing), listing);
+        acquisition.plan = registry_download_plan(*this, ref_, layout(), where, listing);
         return acquisition;
     }
 
@@ -161,13 +182,24 @@ class RegistryBackedRepository : public FetchableRepository {
 
     const ModelRegistry& registry() const { return model_registry(host()); }
 
-    // The checkout acquisition would stage into, and which revision its URLs carry.
-    Placement placement(const RepoListing& listing) const {
+    Placement placement() const {
         Placement placement;
         placement.cache_dir = utils::path_to_utf8(cache_dir(ref_.repo_id));
-        placement.revision = listing.revision.id.empty() ? listing.download_revision
-                                                         : listing.revision.id;
+        placement.sibling = ref_.sibling;
         return placement;
+    }
+
+    const ArtifactLayout& layout() const {
+        return ref_.layout != nullptr ? *ref_.layout : hf_hub_layout();
+    }
+
+    // The file this checkpoint is, where the layout places it; falls back to the
+    // active snapshot directory when the checkpoint names no file of its own.
+    std::string local_target() const {
+        Placement where = placement();
+        where.revision = active_revision(LocalRef{ref_.repo_id}).id;
+        const std::string target = layout().target(where, ref_.variant);
+        return target.empty() ? utils::path_to_utf8(active_snapshot()) : target;
     }
 
     fs::path cache_dir(const std::string& repo_id) const {

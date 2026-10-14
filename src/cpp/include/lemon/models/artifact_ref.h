@@ -1,5 +1,6 @@
 #pragma once
 
+#include "artifact_layout.h"
 #include "locator.h"
 #include "registry_id.h"
 
@@ -14,12 +15,19 @@ namespace models {
 struct ArtifactRef {
     // Set only when the bytes came from a pullable host.
     std::optional<RegistryId> registry;
+    std::string checkpoint_type;
     std::string repo_id;
     std::string variant;
     // Which files a repository provides for this ref depends on it.
     std::string recipe;
     std::string revision;
     bool required = true;
+
+    // Where the owning model keeps these bytes, resolved by the resolver so a
+    // source never re-derives a path. `layout` null means the registry snapshot
+    // layout; `sibling` is the file a sibling-layout checkpoint belongs to.
+    const ArtifactLayout* layout = nullptr;
+    std::string sibling;
 
     // Adds whether absence leaves the model incomplete; bytes from no host are
     // named by where they were found.

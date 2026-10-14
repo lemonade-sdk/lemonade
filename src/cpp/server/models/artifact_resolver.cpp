@@ -30,9 +30,10 @@ std::optional<LocalPathArtifactSource::Origin> origin_of(const std::string& sour
     return std::nullopt;
 }
 
-ArtifactRef ref_for(const ModelInfo& info, bool required) {
+ArtifactRef ref_for(const ModelInfo& info, const std::string& checkpoint_type, bool required) {
     ArtifactRef ref;
     ref.recipe = info.recipe;
+    ref.checkpoint_type = checkpoint_type;
     ref.required = required;
     return ref;
 }
@@ -70,6 +71,14 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::open_repository(
     return repository;
 }
 
+void ArtifactSourceResolver::place(const ModelInfo& info, const std::string& checkpoint_type,
+                                   ArtifactRef& ref) const {
+    ref.layout = &layout_for(info, checkpoint_type);
+    if (ref.layout != &hf_hub_layout()) {
+        ref.sibling = info.resolved_path("main");
+    }
+}
+
 const ArtifactLayout& ArtifactSourceResolver::layout_for(const ModelInfo& info,
                                                          const std::string& checkpoint_type) const {
     if (hooks_.checkpoint_layout != nullptr) {
@@ -95,7 +104,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
 
     if (hooks_.backend_self_manages_downloads != nullptr &&
         hooks_.backend_self_manages_downloads(info.recipe)) {
-        ArtifactRef ref = ref_for(info, required);
+        ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = checkpoint;
         return std::make_unique<SelfManagedArtifactSource>(std::move(ref), info.recipe);
     }
@@ -104,7 +113,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         const std::string path =
             info.resolved_path(checkpoint_type).empty() ? checkpoint
                                                         : info.resolved_path(checkpoint_type);
-        ArtifactRef ref = ref_for(info, required);
+        ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = path;
         return std::make_unique<LocalPathArtifactSource>(std::move(ref), path, *origin,
                                                          validator_for(info.recipe));
@@ -112,7 +121,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
 
     RegistryId scheme_host;
     if (host_of_scheme_prefix(checkpoint, scheme_host) != nullptr) {
-        ArtifactRef ref = ref_for(info, required);
+        ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.registry = scheme_host;
         ref.repo_id = checkpoint.substr(checkpoint.find("://") + 3);
         ref.variant = variant_from_checkpoint(ref.repo_id);
@@ -122,7 +131,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
 
     if (checkpoint.rfind(FILE_SCHEME, 0) == 0) {
         const std::string path = checkpoint.substr(sizeof(FILE_SCHEME) - 1);
-        ArtifactRef ref = ref_for(info, required);
+        ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = path;
         return std::make_unique<LocalPathArtifactSource>(
             std::move(ref), path, LocalPathArtifactSource::Origin::LocalPath,
@@ -132,7 +141,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
     // Before the repo-id heuristic, which tests only for '/' and so cannot tell an
     // absolute path from an org/repo.
     if (exists_on_disk(checkpoint)) {
-        ArtifactRef ref = ref_for(info, required);
+        ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = checkpoint;
         return std::make_unique<LocalPathArtifactSource>(
             std::move(ref), checkpoint, LocalPathArtifactSource::Origin::LocalPath,
@@ -140,7 +149,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
     }
 
     if (checkpoint_looks_like_repo_id(checkpoint)) {
-        ArtifactRef ref = ref_for(info, required);
+        ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = repo_id_from_checkpoint(checkpoint);
         ref.variant = variant_from_checkpoint(checkpoint);
 
@@ -162,6 +171,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         }
         ref.registry = host;
 
+        place(info, checkpoint_type, ref);
         return open_repository(*host, ref);
     }
 
