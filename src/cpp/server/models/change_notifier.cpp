@@ -7,8 +7,7 @@ namespace models {
 
 namespace {
 
-// delete_model fires from a scope-guard destructor, where a propagating
-// exception would terminate.
+// Fires from a destructor scope-guard; a propagating exception would terminate.
 void swallow(const std::function<void()>& fire, const char* what) {
     try {
         fire();

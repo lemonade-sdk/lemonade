@@ -48,8 +48,7 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
         by_name.emplace(file.path, &file);
     }
 
-    // A side checkpoint names the one file it needs; a main checkpoint's files
-    // are whatever the recipe's backend picks from the repository.
+// A side checkpoint names its one file; a main one takes the recipe's selection.
     const bool side_checkpoint = !ref.checkpoint_type.empty() && ref.checkpoint_type != "main";
     std::vector<std::string> wanted;
     if (side_checkpoint) {
@@ -82,9 +81,7 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
     return plan;
 }
 
-// Hosts differ in protocol, and ModelRegistry already holds that difference, so
-// one class serves every host it knows. A host needing divergent behavior
-// subclasses this rather than adding a test on its id.
+// ModelRegistry already holds the protocol difference; a diverging host subclasses.
 class RegistryBackedRepository : public FetchableRepository {
   public:
     explicit RegistryBackedRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
@@ -193,8 +190,7 @@ class RegistryBackedRepository : public FetchableRepository {
         return ref_.layout != nullptr ? *ref_.layout : hf_hub_layout();
     }
 
-    // The file this checkpoint is, where the layout places it; falls back to the
-    // active snapshot directory when the checkpoint names no file of its own.
+// Falls back to the snapshot directory when no file is named.
     std::string local_target() const {
         Placement where = placement();
         where.revision = active_revision(LocalRef{ref_.repo_id}).id;

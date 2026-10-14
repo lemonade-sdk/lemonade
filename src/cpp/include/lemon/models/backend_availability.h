@@ -12,16 +12,11 @@ struct RecipeAvailability {
     std::string unsupported_reason;
     // Empty when a guest backend is installed or none is required.
     std::string guest_backend_missing_reason;
-    // True when the backend reads the model from disk on demand, so only the
-    // resident working set has to fit in a memory pool.
+// The backend reads from disk, so only the resident working set must fit.
     bool streams_model_from_storage = false;
 };
 
-// Machine facts and per-recipe availability for one rebuild.
-//
-// The models layer reads nothing but this: system info, backend descriptors and
-// runtime configuration are resolved by the probe that builds it, so filtering
-// stays a pure function of its inputs.
+// Machine facts for one rebuild; filtering is a pure function of these.
 struct BackendAvailability {
     // An operator can turn visibility filtering off entirely.
     bool filtering_disabled = false;
@@ -37,8 +32,7 @@ struct BackendAvailability {
 
     std::map<std::string, RecipeAvailability> recipes;
 
-    // An unknown recipe is reported as supported, matching a probe that has not
-    // heard of it.
+// An unknown recipe counts as supported.
     const RecipeAvailability& recipe(const std::string& name) const {
         static const RecipeAvailability unknown;
         auto it = recipes.find(name);

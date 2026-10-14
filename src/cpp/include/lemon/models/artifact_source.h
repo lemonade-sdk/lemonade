@@ -27,16 +27,12 @@ struct Acquisition {
 };
 
 struct Deletion {
-    // Deleting a checkpoint is polymorphic because a forgotten branch deletes a
-    // user's own directory.
+    // A wrong branch here deletes a user's own directory.
     enum class Kind { Nothing, CacheDir, Delegate } kind = Kind::Nothing;
     std::string reason;      // Delegate: the command the backend owns
 };
 
-// One checkpoint's answer to where its bytes are and what may be done with them.
-// Constructed for a single checkpoint during a store build, so it lives with the
-// generation that published it and a reader holding a source agrees with the
-// snapshot it read.
+// Built during a store build, so it lives with the generation that published it.
 class ArtifactSource {
   public:
     virtual ~ArtifactSource() = default;
@@ -49,8 +45,7 @@ class ArtifactSource {
     virtual Acquisition acquisition() const = 0;
     virtual Deletion deletion() const = 0;
 
-    // Sent while transferring the URLs acquisition() names. Default empty, so a
-    // caller executes a plan without asking what kind of source built it.
+    // Sent with the plan's URLs; empty when the source needs no credential.
     virtual std::map<std::string, std::string> auth_headers() const { return {}; }
 
   protected:
@@ -70,7 +65,7 @@ inline bool exists_on_disk(const std::string& path) {
     return std::filesystem::exists(utils::path_from_utf8(path), ec);
 }
 
-// Bytes found on disk; the origin decides whether deletion may remove them.
+// Found on disk; the origin decides whether deletion may remove them.
 class LocalPathArtifactSource : public ArtifactSource {
   public:
     enum class Origin { ExtraModelsDir, LocalPath, LocalUpload };
@@ -111,7 +106,7 @@ class LocalPathArtifactSource : public ArtifactSource {
     FileValidator validator_;
 };
 
-// A backend fetches and removes its own weights.
+// The backend fetches and removes its own weights.
 class SelfManagedArtifactSource : public ArtifactSource {
   public:
     using PresenceProbe = std::function<Presence(const ArtifactRef& ref)>;
@@ -141,7 +136,7 @@ class SelfManagedArtifactSource : public ArtifactSource {
     PresenceProbe probe_;
 };
 
-// A route with no bytes, such as a cloud model.
+// No bytes, such as a cloud route.
 class NoArtifactsSource : public ArtifactSource {
   public:
     explicit NoArtifactsSource(ArtifactRef ref) : ArtifactSource(std::move(ref)) {}

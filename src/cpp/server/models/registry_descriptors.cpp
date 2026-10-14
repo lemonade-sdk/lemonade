@@ -31,8 +31,7 @@ RegistryDescriptor modelscope() {
 
 }  // namespace builtin_registries
 
-// Host identity, without any ability to fetch from it: a client that only parses
-// and names checkpoints links this instead of a repository implementation.
+// Identity only, no fetch capability.
 LEMONADE_REGISTER_REGISTRY_DESCRIPTOR(builtin_huggingface, builtin_registries::huggingface());
 LEMONADE_REGISTER_REGISTRY_DESCRIPTOR(builtin_modelscope, builtin_registries::modelscope());
 

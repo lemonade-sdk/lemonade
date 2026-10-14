@@ -13,8 +13,7 @@
 namespace lemon {
 namespace models {
 
-// One immutable view of the model set. A reader's shared_ptr keeps what it read
-// valid across the next publish.
+// Immutable view; a reader's shared_ptr keeps what it read valid.
 struct StoreSnapshot {
     // Canonical id -> info.
     std::map<std::string, ModelInfo> models;

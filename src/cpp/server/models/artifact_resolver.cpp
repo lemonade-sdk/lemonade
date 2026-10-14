@@ -138,8 +138,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
             validator_for(info.recipe));
     }
 
-    // Before the repo-id heuristic, which tests only for '/' and so cannot tell an
-    // absolute path from an org/repo.
+// Before the repo-id heuristic: it cannot tell a path from an org/repo.
     if (exists_on_disk(checkpoint)) {
         ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = checkpoint;
@@ -153,8 +152,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         ref.repo_id = repo_id_from_checkpoint(checkpoint);
         ref.variant = variant_from_checkpoint(checkpoint);
 
-        // An absent spelling means the default host to registry_id_from(), so ask
-        // whether the entry names one before falling through to the config.
+// registry_id_from() reads an absent spelling as the default host, so ask first.
         std::optional<RegistryId> host;
         if (is_remote_registry_source(info.registry_source)) {
             host = registry_id_from(info.registry_source);

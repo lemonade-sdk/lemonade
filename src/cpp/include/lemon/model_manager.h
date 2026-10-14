@@ -170,9 +170,8 @@ class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
 
-    // Joins the watcher thread. Required, not incidental: the watcher callback
-    // locks models_cache_mutex_, which is declared after directory_watcher_ and
-    // so freed first by reverse-order destruction.
+// Joins the watcher thread: its callback locks models_cache_mutex_, declared
+// after directory_watcher_ and so freed first.
     ~ModelManager();
 
     std::map<std::string, ModelInfo> discover_extra_models_for_test() const {
@@ -195,9 +194,7 @@ public:
 
     RegistryId download_source_for(const ModelInfo& info) const;
 
-    // One checkpoint's answer to where its bytes are, whether they are here, and
-    // what fetching them would take. The placement comes from the layout the
-    // backend declares for that checkpoint type.
+    // The ArtifactSource for one checkpoint.
     std::unique_ptr<models::ArtifactSource> source_for(
         const ModelInfo& info, const std::string& checkpoint_type) const;
 
@@ -218,10 +215,8 @@ public:
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
 
-    // The two change signals; see models/change_notifier.h for the contract.
-    // Fires only when a routing policy could have changed, not on every model
-    // registration: registering a collection's helper components must not
-    // trigger a reconcile.
+// The two change signals; see models/change_notifier.h. Fires only when a routing
+// policy could have changed.
     void on_models_changed(std::function<void(std::uint64_t)> subscriber);
     void on_model_updated(std::function<void(const std::string&)> subscriber);
 
@@ -240,11 +235,9 @@ public:
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
 
-    // Filter models by available backends. Set track_recipe_availability only on
-    // the full-cache build: the single-model temp maps used by incremental
-    // updates must not overwrite the whole-registry availability side table.
-    // Callers must hold a StoreWrite: it changes the filter reasons but does not
-    // publish them.
+// Filter models by available backends. Set track_recipe_availability only on the
+// full-cache build. Callers must hold a StoreWrite: filter reasons change but are
+// not published.
     std::map<std::string, ModelInfo> filter_models_by_backend(
         const std::map<std::string, ModelInfo>& models,
         bool track_recipe_availability = false);
@@ -319,9 +312,7 @@ public:
     // Builds the cache if needed.
     std::set<std::string> recipes_with_all_models_filtered();
 
-    // The set difference behind the above: recipes that had a model dropped by
-    // the memory heuristic and kept none visible. Pure and hardware-independent
-    // so it can be unit-tested directly.
+// Recipes that lost every model to the memory heuristic and kept none visible.
 
     // Test-only raw view of the side table without a cache rebuild; prefer
     // recipes_with_all_models_filtered() everywhere else.
@@ -597,9 +588,7 @@ private:
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
-    // Why each model was hidden, and which recipes lost their whole set.
-    // Replaces the two side tables the filter used to keep separately, so a
-    // reason can never be read against a different generation of results.
+// Why each model was hidden, and which recipes lost their whole set.
     std::shared_ptr<const models::FilterReasons> hardware_filter_;
 
     // Immutable view of the fields above. Written under models_cache_mutex_,
@@ -611,9 +600,8 @@ private:
     void publish_store_locked();
 
   public:
-    // Locks the store and publishes on release, so a mutating path cannot forget
-    // to publish and readers never see a half-built set. Use for any scope that
-    // changes the model set, including a lazy invalidation.
+// Locks the store and publishes on release, so a mutating path cannot forget to
+// publish and readers never see a half-built set.
     class StoreWrite {
       public:
         explicit StoreWrite(ModelManager& manager);

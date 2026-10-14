@@ -76,17 +76,15 @@ public:
         return "";
     }
 
-    // Whether this backend's engine can fetch a checkpoint by its registry id for
-    // a host speaking `protocol`. Default false: lemonade downloads and hands the
-    // engine local paths. A backend that answers true must say which protocols its
-    // engine knows, never which hosts it likes.
+// Whether this engine can fetch a checkpoint by registry id for a host speaking
+// `protocol`. Default false: lemonade downloads and hands over local paths.
     virtual bool resolves_download_protocol(const std::string& protocol) const {
         (void)protocol;
         return false;
     }
 
-    // Where one checkpoint type's bytes land on disk. Default: the registry
-    // snapshot layout, chosen by ArtifactSourceResolver::layout_for().
+// The ArtifactLayout for one of this backend's checkpoint types; null means the
+// snapshot layout.
     virtual const models::ArtifactLayout* checkpoint_layout(
         const models::CheckpointRef& checkpoint) const {
         (void)checkpoint;

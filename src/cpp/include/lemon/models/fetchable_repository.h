@@ -15,7 +15,6 @@
 namespace lemon {
 namespace models {
 
-// The file shape a listing reports is already the one registries return.
 using lemon::RegistryFile;
 
 struct Revision {
@@ -26,19 +25,18 @@ struct Revision {
 struct RepoListing {
     std::string repo_id;
     Revision revision;
-    // A host's file endpoint may want a different spelling than refs/main keeps.
-    std::string download_revision;
+    std::string download_revision;  // spelling the host's file endpoint wants
     std::vector<RegistryFile> files;
 };
 
-// A file at a revision on the host: the argument to file_url().
+// Argument to file_url().
 struct RepoRef {
     std::string repo_id;
     Revision revision;
     std::string path;
 };
 
-// A repository's local namespace: the cache directory holding that repo's bytes.
+// The repo's cache directory.
 struct LocalRef {
     std::string repo_id;
 };
@@ -72,25 +70,24 @@ class FetchableRepository : public ArtifactSource {
     virtual bool supports_search() const { return false; }
 
   protected:
-    // A source carries the checkpoint it was built for.
     explicit FetchableRepository(ArtifactRef ref) : ArtifactSource(std::move(ref)) {}
 };
 
-// The files the ref needs, at the listing's revision, placed by the layout.
+// The files the ref needs, placed by the layout.
 DownloadPlan registry_download_plan(const FetchableRepository& repository, const ArtifactRef& ref,
                                     const ArtifactLayout& layout, const Placement& placement,
                                     const RepoListing& listing);
 
-// A source is built for one checkpoint, so a factory takes the ref it will carry.
+// A factory takes the ref its source will carry.
 using RepositoryFactory =
     std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)>;
 
-// Builds the repository a host names, or null when none registered.
+// Null when no registration for the id.
 std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id,
                                                        const ArtifactRef& ref);
 std::vector<RegistryId> registered_repository_ids();
 
-// Ids claimed by more than one registration; the first keeps serving.
+// Ids claimed twice; the first keeps serving.
 std::vector<RegistryId> repository_registration_conflicts();
 
 namespace detail {
@@ -100,8 +97,7 @@ void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
 }  // namespace models
 }  // namespace lemon
 
-// Static initializer. Nothing here may throw: an unrecognized host must not
-// abort startup.
+// Static initializer; must not throw, or an unknown host aborts startup.
 #define LEMONADE_REGISTER_ARTIFACT_REPOSITORY_AT(line, ClassName, descriptor_expr)    \
     static const bool lemonade_repository_registered_##line##_##ClassName = [] {      \
         const ::lemon::models::RegistryDescriptor descriptor = descriptor_expr;   \
@@ -114,8 +110,7 @@ void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
         return true;                                                              \
     }()
 
-// A host's repository and its descriptor are registered together, so two
-// registrations of one class in one translation unit stay distinct.
+// __LINE__ keeps two registrations of one class distinct.
 #define LEMONADE_REGISTER_ARTIFACT_REPOSITORY_IMPL(line, ClassName, descriptor_expr) \
     LEMONADE_REGISTER_ARTIFACT_REPOSITORY_AT(line, ClassName, descriptor_expr)
 #define LEMONADE_REGISTER_ARTIFACT_REPOSITORY(ClassName, descriptor_expr)              \
