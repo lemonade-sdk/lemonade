@@ -1,0 +1,30 @@
+#pragma once
+
+#include "backend_definition_resources.h"
+#include "lemon/backends/configured/backend_definition_store.h"
+#include "lemon/backends/configured/configured_backend_entry.h"
+#include "lemon/backends/configured/launch_planner.h"
+#include "thinksound_oracle.h"
+
+namespace thinksound_oracle {
+
+inline std::shared_ptr<const backends::ConfiguredBackendEntry> entry(const std::string& text = backends::k_thinksound_definition) {
+    const auto result = backends::BackendDefinitionStore().validate({"fixture.json", text, backends::DefinitionOrigin::Builtin});
+    if (!result.definition) {
+        for (const auto& error : result.diagnostics) std::printf("%s %s\n", error.code.c_str(), error.pointer.c_str());
+        throw std::runtime_error("Invalid configured fixture");
+    }
+    return std::make_shared<backends::ConfiguredBackendEntry>(result.definition);
+}
+class FixtureLaunchServices : public backends::EffectLaunchServices {
+public:
+    explicit FixtureLaunchServices(EffectsFixture& fixture) : backends::EffectLaunchServices(fixture.effects()), effects_(fixture.effects()), external_(fixture.external) {}
+    bool exists(const std::string& path) const override {
+        return path == external_ && !external_.empty() ? effects_.binary.exists(path) : effects_.exists(path);
+    }
+private:
+    backends::BackendEffects effects_;
+    std::string external_;
+};
+
+}

@@ -1134,6 +1134,9 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_hook_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/launch_planner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_backend_ops.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_backend_entry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
 foreach(_backend_entry ${LEMON_BACKENDS})
@@ -3593,4 +3596,10 @@ if(BUILD_TESTING)
     add_executable(test_backend_definition test/cpp/test_backend_definition.cpp)
     target_link_libraries(test_backend_definition PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendDefinitionTest CI ON COMMAND test_backend_definition)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_configured_planner test/cpp/test_configured_planner.cpp)
+    target_link_libraries(test_configured_planner PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfiguredPlannerTest CI ON COMMAND test_configured_planner)
 endif()

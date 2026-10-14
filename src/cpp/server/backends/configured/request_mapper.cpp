@@ -63,6 +63,12 @@ std::optional<json> BackendDefinition::evaluate(const std::string& pointer, cons
     return expressions.at(pointer).evaluate(context);
 }
 
+json BackendDefinition::required_value(const std::string& pointer, const json& context) const {
+    auto value = evaluate(pointer, context);
+    if (!value) throw std::invalid_argument("Missing expression value at " + pointer);
+    return *value;
+}
+
 MappedRequest RequestMapper::map(const OperationProgram& operation, const MappingContext& context,
                                 const json& request, std::optional<std::string_view> original_body) const {
     json values = context.values;

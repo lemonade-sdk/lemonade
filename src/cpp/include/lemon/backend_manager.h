@@ -48,6 +48,7 @@ public:
         std::string repo;
         std::string filename;
         std::string version;
+        std::string sha256;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

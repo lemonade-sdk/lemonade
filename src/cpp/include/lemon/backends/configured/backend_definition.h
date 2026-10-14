@@ -48,6 +48,7 @@ struct BackendDefinition {
     std::map<std::string, Expression> expressions;
     std::vector<OperationProgram> operations;
     std::optional<json> evaluate(const std::string& pointer, const json& context) const;
+    json required_value(const std::string& pointer, const json& context) const;
 };
 struct DefinitionValidationResult {
     std::shared_ptr<const BackendDefinition> definition;

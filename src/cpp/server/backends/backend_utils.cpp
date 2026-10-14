@@ -464,7 +464,8 @@ namespace lemon::backends {
                                            const std::string& repo,
                                            const std::string& asset_pattern,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb) {
+                                           DownloadProgressCallback progress_cb,
+                                           const std::string& expected_hash) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -657,8 +658,8 @@ namespace lemon::backends {
                 }
 
                 utils::DownloadOptions archive_download_opts;
-                archive_download_opts.expected_hash = lookup_expected_asset_hash(
-                    spec.recipe, backend, expected_version, repo, filename);
+                archive_download_opts.expected_hash = expected_hash.empty() ? lookup_expected_asset_hash(
+                    spec.recipe, backend, expected_version, repo, filename) : expected_hash;
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(

@@ -191,6 +191,7 @@ public:
         if (install["strategy"] == "github_release" && install["cases"].empty()) error("required", "/install/cases", "Release cases required");
         for (size_t i = 0; i < install["cases"].size(); ++i) {
             const std::string p = "/install/cases/" + std::to_string(i);
+            if (install.value("supports_split_archive", false) && install["cases"][i].contains("sha256")) error("unsupported_feature", p + "/sha256", "Combined split archive digest is not installed");
             expression(definition, p + "/filename");
             if (install["cases"][i].contains("version_override")) expression(definition, p + "/version_override");
             for (size_t j = 0; j < i; ++j) {
