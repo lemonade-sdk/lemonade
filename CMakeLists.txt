@@ -1044,6 +1044,7 @@ set(SOURCES_CORE
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp
     src/cpp/server/models/fetchable_repository.cpp
+    src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
@@ -3034,6 +3035,19 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_CATALOG_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelCatalogTest CI ON COMMAND test_model_catalog)
+endif()
+
+set(_JSON_CATALOG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_json_catalog.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_JSON_CATALOG_TEST_SRC}")
+    add_executable(test_json_catalog
+        test/cpp/test_json_catalog.cpp
+    )
+    target_link_libraries(test_json_catalog PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(JsonCatalogTest CI ON COMMAND test_json_catalog)
 endif()
 
 set(_DOWNLOAD_PLAN_TEST_SRC
