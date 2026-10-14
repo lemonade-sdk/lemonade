@@ -53,8 +53,7 @@ struct RegistryRowRules {
     std::function<void(ModelInfo& info)> populate_components;
     std::function<void(ModelInfo& info)> resolve_paths;
 
-    // The row's authored `recipe_options` layer, reported per model so the
-    // caller can fold it with saved options once the whole set is assembled.
+    // Reports each row's authored `recipe_options` block; the caller folds it.
     std::function<void(const std::string& name, const json& authored)> recipe_options;
 };
 

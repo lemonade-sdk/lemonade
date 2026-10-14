@@ -23,7 +23,6 @@
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/backend_utils.h>
 #include <lemon/backends/cloud/cloud_server.h>
-#include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/backends/hf_cache_util.h>
 #include <lemon/cloud_provider_registry.h>
 #include <lemon/gguf_shard_utils.h>
@@ -257,8 +256,9 @@ static DeviceType device_type_for_recipe(const std::string& recipe) {
     return get_device_type_from_recipe(recipe);
 }
 
-// Fold the model-level precedence layers (lowest → highest). The full ladder
-// is documented in SDServer::build_extra_args().
+// Fold the model-level precedence layers, lowest first: the document's image
+// defaults, the row's authored `recipe_options`, then what the user saved. The
+// full ladder is documented in SDServer::build_extra_args().
 // json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
 // two-phase pattern). Pass a null json if the model JSON should be read directly instead.
 // saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
@@ -1912,15 +1912,13 @@ void ModelManager::build_cache() {
     LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
 
     models_cache_.clear();
-    // The authored `recipe_options` layer of each registry row. The layering pass
-    // at the end of the build folds it with saved options for the whole set, so
-    // it is collected as the rows parse rather than re-read from the documents.
+    // Collected as rows parse so build_recipe_options() never re-reads a document.
     std::map<std::string, json> json_recipe_options;
 
     std::vector<std::unique_ptr<models::ModelCatalog>> catalogs;
 
-    // What a row says about itself is parsed in models/json_catalog.cpp. These
-    // are the facts it cannot answer, plus where its own options layer goes.
+    // What a row says about itself is parsed in models/json_catalog.cpp; these
+    // are the facts it cannot answer.
     models::RegistryRowRules rows;
     rows.device_for_recipe = [](const std::string& recipe) {
         return device_type_for_recipe(recipe);
@@ -4074,6 +4072,30 @@ static bool path_inside(const fs::path& path, const fs::path& root) {
     return !relative.empty() && *relative.begin() != fs::path("..");
 }
 
+// A checkpoint whose source cannot be classified counts as owned, which is the
+// safe direction: removal then has to prove the bytes sit in the managed cache.
+ModelManager::DeletionPlan ModelManager::deletion_plan(const ModelInfo& info) const {
+    DeletionPlan plan;
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        // A lazily fetched side cache retires with the engine's working set.
+        if (type == "npu_cache") {
+            continue;
+        }
+        models::Deletion deletion;
+        try {
+            deletion = source_for(info, type)->deletion();
+        } catch (const std::exception&) {
+            deletion.kind = models::Deletion::Kind::CacheDir;
+        }
+        if (deletion.kind == models::Deletion::Kind::Delegate) {
+            plan.delegated_recipe = deletion.reason;
+        } else if (deletion.kind == models::Deletion::Kind::CacheDir) {
+            plan.owned.push_back(type);
+        }
+    }
+    return plan;
+}
+
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
     std::string canonical_model_name = info.model_name;
@@ -4104,28 +4126,10 @@ void ModelManager::delete_model(const std::string& model_name) {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
     }
+    const DeletionPlan plan = deletion_plan(info);
 
-    const ModelResolver resolve_now = [this](const ModelInfo& candidate) {
-        ModelInfo fresh = candidate;
-        fresh.resolved_paths.clear();
-        resolve_all_model_paths(fresh);
-        return fresh;
-    };
-    const ModelInfo resolved_self = resolve_now(info);
-
-    const ModelResolver resolve_managed = [this](const ModelInfo& candidate) {
-        ModelInfo fresh = candidate;
-        fresh.resolved_paths.clear();
-        for (const auto& [type, checkpoint] : fresh.checkpoints) {
-            fresh.resolved_paths[type] = resolve_model_path(fresh, type, checkpoint);
-        }
-        return fresh;
-    };
-
-    // An adopted external cache is never deleted through its registered catalog
-    // ID.
-    bool resolved_outside_managed_cache = false;
-    if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
+    // Never delete an adopted external cache through its registered catalog ID.
+    if (info.source.empty() && plan.delegated_recipe.empty() &&
         !is_model_collection_recipe(info.recipe)) {
         const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
         const std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
@@ -4148,24 +4152,19 @@ void ModelManager::delete_model(const std::string& model_name) {
                 path_inside(managed_main_repo, managed_root) &&
                 path_inside(resolved_path, managed_main_repo);
             if (!own_repo && !legacy_main_repo) {
-                LOG(INFO, "ModelManager") << "Model resolves outside the managed cache ("
-                            << resolved_self.resolved_path(type)
-                            << "); leaving those files to the user and cleaning the "
-                               "managed cache only" << std::endl;
-                resolved_outside_managed_cache = true;
-                break;
+                if (!is_user_model_name(canonical_model_name)) {
+                    throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
+                                             "External files are user-managed; remove them manually.");
+                }
+                unregister_user_model(canonical_model_name);
+                remove_model_from_cache(canonical_model_name);
+                return;
             }
         }
     }
 
-    if (resolved_outside_managed_cache && !is_user_model_name(canonical_model_name)) {
-        throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
-                                 "External files are user-managed; remove them manually.");
-    }
-
-    // FLM models have no local HF cache; deletion is the backend's `flm remove`.
-    if (info.recipe == "flm") {
-        backends::fastflowlm::flm_remove(info.checkpoint());
+    if (!plan.delegated_recipe.empty()) {
+        backends::ops_for(plan.delegated_recipe)->remove_self_managed_model(info);
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
@@ -4229,9 +4228,27 @@ void ModelManager::delete_model(const std::string& model_name) {
         return;
     }
 
-    // Find the models--* directory from the resolved path
-    // The resolved path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(path_from_utf8(own_main_path));
+    // Every source disclaimed the bytes, so the registration is the whole record
+    // of this model and forgetting it is the entire delete.
+    if (plan.owned.empty()) {
+        if (is_user_model_name(canonical_model_name)) {
+            StoreWrite store_write(*this);
+            registries_.update_user([&](json& user_models) {
+                user_models.erase(strip_user_model_prefix(canonical_model_name));
+                return true;
+            });
+            cache_valid_ = false;
+            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
+        }
+        remove_model_from_cache(canonical_model_name);
+        LOG(INFO, "ModelManager") << "Successfully removed model from registry: "
+                                 << canonical_model_name << std::endl;
+        return;
+    }
+
+    // Find the models--* directory from resolved_path
+    // resolved_path could be a file or directory, we need to find the models-- ancestor
+    fs::path path_obj(path_from_utf8(info.resolved_path()));
     std::string model_cache_path;
 
     // Walk up the directory tree to find models--* directory

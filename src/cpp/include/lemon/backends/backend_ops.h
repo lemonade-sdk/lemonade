@@ -132,6 +132,13 @@ public:
                                 DownloadProgressCallback progress,
                                 const BackendOpsContext& ctx) const;
 
+    // Remove weights this backend fetched for itself, as its descriptor's
+    // self_manages_downloads promises. Default: nothing to do, because lemond
+    // wrote the bytes and its own cache removal reaches them.
+    virtual void remove_self_managed_model(const ModelInfo& info) const {
+        (void)info;
+    }
+
     // Whether the model cache must be rebuilt after this backend downloads a
     // model. Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
