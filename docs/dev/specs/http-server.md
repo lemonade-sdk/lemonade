@@ -517,6 +517,16 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 
 The author fixes it by running the generator locally and committing the result. The weekly backend-bump workflows (`validate_llamacpp.yml`, `validate_sdcpp.yml`, `validate_vllm.yml`) run each new version on self-hosted runners; their runner job also runs the generator for the entries the bump invalidated, and the PR the workflow opens includes the updated cache.
 
+### Claim Review
+
+Drift Check cannot tell whether a sentence is true, so rule 2 of the [Route Documentation Contract](#route-documentation-contract) is enforced by review. When a PR changes a route's text, schemas, examples or handler, the reviewer reads the route's generated section beside its handler and checks:
+
+- each claim in the description, notes, argument descriptions and field descriptions against the code
+- each example's tab label against its request
+- that behavior a client relies on, such as an error status or a side effect, is stated
+
+A claim that cannot be traced to the code or to a recorded response is fixed or removed before the PR merges.
+
 ### Generated Output
 
 The route in [Complete Example](#complete-example) generates this region of openai.md:
