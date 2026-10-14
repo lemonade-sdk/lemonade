@@ -13,7 +13,6 @@
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/model_index.h>
 #include <lemon/routing_policy_parser.h>
-#include <lemon/utils/json_file.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
@@ -135,6 +134,16 @@ static std::string strip_user_model_prefix(const std::string& model_name) {
         return model_name.substr(USER_MODEL_PREFIX_LEN);
     }
     return model_name;
+}
+
+// The registry row a cache key was minted from, null when there is none; the pin
+// must outlive the pointer. Deliberately not parse_canonical_id(): a key like
+// "builtin.X" has no row, which is what every registry lookup has always done.
+static const json* registry_row(const models::RegistryDocuments::Pin& rows,
+                                const std::string& cache_key) {
+    return rows.row(is_user_model_name(cache_key) ? models::RegistryDocument::User
+                                                  : models::RegistryDocument::Builtin,
+                    strip_user_model_prefix(cache_key));
 }
 
 static std::string effective_registry_source(const ModelInfo& info) {
@@ -977,18 +986,19 @@ ModelManager::StoreWrite::~StoreWrite() {
 
 ModelManager::ModelManager(const std::string& extra_models_dir)
     : extra_models_dir_(extra_models_dir),
+      registries_(load_server_models(), get_user_models_file()),
       recipe_options_(get_recipe_options_file()) {
     // Readers must always have a snapshot; an invalid one tells them to build.
     std::atomic_store(&store_snapshot_, std::shared_ptr<const models::StoreSnapshot>(
                                             std::make_shared<models::StoreSnapshot>()));
-    server_models_ = load_server_models();
-    user_models_ = load_optional_json(get_user_models_file());
     architecture_defaults_ = load_architecture_defaults();
 
     // Releases before canonical IDs keyed built-in options by bare name; the
     // builtin. prefix keeps a shadowed built-in addressable.
-    recipe_options_.migrate(
-        [this](const std::string& bare_name) { return server_models_.contains(bare_name); });
+    const models::RegistryDocuments::Pin builtins = registries_.pin();
+    recipe_options_.migrate([&builtins](const std::string& bare_name) {
+        return builtins.contains(models::RegistryDocument::Builtin, bare_name);
+    });
 
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
@@ -1301,10 +1311,6 @@ json ModelManager::get_architecture_defaults(const std::string& architecture) co
     return json::object();
 }
 
-void ModelManager::save_user_models(const json& user_models) {
-    save_json_atomic(get_user_models_file(), user_models);
-}
-
 void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
@@ -1345,28 +1351,10 @@ RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, c
     return build_recipe_options(info, registry_recipe_options(cache_key), id, json{{id, saved}});
 }
 
-// The model's own `recipe_options` block from user_models.json/server_models.json,
-// i.e. the layer between image_defaults and what the user saved.
 json ModelManager::registry_recipe_options(const std::string& cache_key) {
-    // Guards user_models_ / server_models_, which the snapshot does not carry.
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return registry_recipe_options_locked(cache_key);
-}
-
-json ModelManager::registry_recipe_options_locked(const std::string& cache_key) {
-    const bool is_user_model = is_user_model_name(cache_key);
-    const std::string json_key = strip_user_model_prefix(cache_key);
-    const json* model_json = nullptr;
-    if (is_user_model && user_models_.contains(json_key)) {
-        model_json = &user_models_[json_key];
-    } else if (!is_user_model && server_models_.contains(json_key)) {
-        model_json = &server_models_[json_key];
-    }
-    if (model_json && model_json->contains("recipe_options") &&
-        (*model_json)["recipe_options"].is_object()) {
-        return (*model_json)["recipe_options"];
-    }
-    return json(nullptr);
+    const models::RegistryDocuments::Pin rows = registries_.pin();
+    const json* row = registry_row(rows, cache_key);
+    return row ? models::row_recipe_options(*row) : json(nullptr);
 }
 
 json ModelManager::set_saved_model_options(const std::string& model_name, const json& saved) {
@@ -1411,7 +1399,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
         StoreWrite store_write(*this);
         // Same layering as build_cache(), so the two can't drift.
         info.recipe_options = build_recipe_options(
-            info, registry_recipe_options_locked(cache_key), id, json{{id, saved}});
+            info, registry_recipe_options(cache_key), id, json{{id, saved}});
         update_model_options_in_cache_locked(info);
     } else {
         invalidate_models_cache();
@@ -2663,7 +2651,7 @@ void ModelManager::build_cache() {
         return std::string();
     };
     rows.populate_components = [this](ModelInfo& info) {
-        populate_collection_components_from_cache_locked(info);
+        populate_collection_components_from_cache(info);
     };
     rows.resolve_paths = [this](ModelInfo& info) { resolve_all_model_paths(info); };
     rows.recipe_options = [&json_recipe_options](const std::string& name, const json& authored) {
@@ -2673,10 +2661,13 @@ void ModelManager::build_cache() {
     // Every source of models registers here, in the order that decides a claimed
     // name. The two JSON registries author theirs; everything after them keeps an
     // existing entry.
+    const models::RegistryDocuments::Pin documents = registries_.pin();
+
     models::RegistryRowRules builtin_rows = rows;
     builtin_rows.source_label = "built-in model";
     catalogs.push_back(std::make_unique<models::JsonCatalog>(
-        models::CatalogDescriptor{"server_models.json"}, server_models_, std::move(builtin_rows)));
+        models::CatalogDescriptor{"server_models.json"}, documents.builtin,
+        std::move(builtin_rows)));
 
     // Registrations are keyed bare on disk and "user.<name>" in the cache.
     models::RegistryRowRules user_rows = rows;
@@ -2684,7 +2675,8 @@ void ModelManager::build_cache() {
     user_rows.suggested_default = true;
     user_rows.source_label = "user model";
     catalogs.push_back(std::make_unique<models::JsonCatalog>(
-        models::CatalogDescriptor{"user_models.json"}, user_models_, std::move(user_rows)));
+        models::CatalogDescriptor{"user_models.json"}, documents.user,
+        std::move(user_rows)));
 
     // The sources that scan or list rather than read a JSON document. A scanning
     // or listing source keeps what an earlier one claimed.
@@ -2960,20 +2952,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         return; // Will initialize on next access
     }
 
-    // Parse model name to get JSON key
-    std::string json_key = model_name;
-    bool is_user_model = is_user_model_name(model_name);
-    if (is_user_model) {
-        json_key = strip_user_model_prefix(model_name);
-    }
-
-    // Find in JSON
-    json* model_json = nullptr;
-    if (is_user_model && user_models_.contains(json_key)) {
-        model_json = &user_models_[json_key];
-    } else if (!is_user_model && server_models_.contains(json_key)) {
-        model_json = &server_models_[json_key];
-    }
+    const bool is_user_model = is_user_model_name(model_name);
+    const models::RegistryDocuments::Pin rows = registries_.pin();
+    const json* model_json = registry_row(rows, model_name);
 
     if (!model_json) {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in JSON" << std::endl;
@@ -2990,10 +2971,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     models::parse_image_defaults(info, *model_json);
     models::parse_extras(info, *model_json);
-    json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
-        ? (*model_json)["recipe_options"] : json(nullptr);
-    info.recipe_options = build_recipe_options(
-        info, jro, cache_key_to_canonical_id(model_name), recipe_options_.all());
+    info.recipe_options = build_recipe_options(info, models::row_recipe_options(*model_json),
+                                               cache_key_to_canonical_id(model_name),
+                                               recipe_options_.all());
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     models::parse_model_source_fields(info, *model_json);
@@ -3593,23 +3573,18 @@ void ModelManager::register_user_model(const std::string& model_name,
         }
     }
 
-    // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
-    // can otherwise both start from the same registry snapshot and the later
-    // save can drop the first model, producing a hard "Model not found" on the
-    // next auto-load. Read the latest disk copy under the same process mutex so
-    // stale in-memory state cannot overwrite another registration.
+    // update_user re-reads the file, so a concurrent pull's entry survives this
+    // one — a lost registration is a hard "Model not found" on the next
+    // auto-load. The store write keeps save and invalidation one step.
     bool overwrote_router_collection = false;
     {
         StoreWrite store_write(*this);
-        json updated_user_models = load_optional_json(get_user_models_file());
-        if (!updated_user_models.is_object()) {
-            updated_user_models = json::object();
-        }
-        overwrote_router_collection =
-            user_entry_is_router_collection(updated_user_models, clean_name);
-        updated_user_models[clean_name] = model_entry;
-        save_user_models(updated_user_models);
-        user_models_ = std::move(updated_user_models);
+        registries_.update_user([&](json& user_models) {
+            overwrote_router_collection =
+                user_entry_is_router_collection(user_models, clean_name);
+            user_models[clean_name] = model_entry;
+            return true;
+        });
         cache_valid_ = false;
     }
 
@@ -3633,15 +3608,18 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
     bool was_router_collection = false;
     {
         StoreWrite store_write(*this);
-        json updated_user_models = load_optional_json(get_user_models_file());
-        if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
+        const bool wrote = registries_.update_user([&](json& user_models) {
+            if (!user_models.contains(clean_name)) {
+                return false;
+            }
+            was_router_collection =
+                user_entry_is_router_collection(user_models, clean_name);
+            user_models.erase(clean_name);
+            return true;
+        });
+        if (!wrote) {
             return;
         }
-        was_router_collection =
-            user_entry_is_router_collection(updated_user_models, clean_name);
-        updated_user_models.erase(clean_name);
-        save_user_models(updated_user_models);
-        user_models_ = std::move(updated_user_models);
         cache_valid_ = false;
     }
 
@@ -3719,15 +3697,15 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
         auto it = models_cache_.find(canonical_model_name);
         if (it != models_cache_.end())
         {
-            json updated_user_models = load_optional_json(get_user_models_file());
-            if (!updated_user_models.is_object()) {
-                updated_user_models = json::object();
-            }
-            auto model = updated_user_models.find(strip_user_model_prefix(canonical_model_name));
-            if (model != updated_user_models.end()) {
+            const bool wrote = registries_.update_user([&](json& user_models) {
+                auto model = user_models.find(strip_user_model_prefix(canonical_model_name));
+                if (model == user_models.end()) {
+                    return false;
+                }
                 (*model)["size"] = it->second.size;
-                save_user_models(updated_user_models);
-                user_models_ = std::move(updated_user_models);
+                return true;
+            });
+            if (wrote) {
                 cache_valid_ = false;
             }
         }
@@ -4001,7 +3979,7 @@ std::vector<std::string> ModelManager::resolve_collection_components_from_manife
     return register_components(manifest["components"], manifest["models"], registry_source);
 }
 
-void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& info) {
+void ModelManager::populate_collection_components_from_cache(ModelInfo& info) {
     std::string repo_id = info.checkpoint();
     if (repo_id.empty()) return;
 
@@ -4013,16 +3991,15 @@ void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& i
         return;
     }
 
+    const models::RegistryDocuments::Pin registries = registries_.pin();
+
     for (const auto& entry : manifest["components"]) {
         if (!entry.is_string()) continue;
         std::string name = bare_component_name(entry.get<std::string>());
-        // Compute the canonical cache name without registering or taking a lock
-        // (build_cache already holds models_cache_mutex_). A built-in is keyed bare;
-        // a component registered at pull time lives under user.<name>.
         std::string canonical;
-        if (server_models_.contains(name)) {
+        if (registries.contains(models::RegistryDocument::Builtin, name)) {
             canonical = name;
-        } else if (user_models_.contains(name)) {
+        } else if (registries.contains(models::RegistryDocument::User, name)) {
             canonical = "user." + name;
         } else {
             canonical = name;  // not yet registered → resolves as not-downloaded
@@ -5039,13 +5016,10 @@ void ModelManager::delete_model(const std::string& model_name) {
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
             StoreWrite store_write(*this);
-            json updated_user_models = load_optional_json(get_user_models_file());
-            if (!updated_user_models.is_object()) {
-                updated_user_models = json::object();
-            }
-            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
-            save_user_models(updated_user_models);
-            user_models_ = std::move(updated_user_models);
+            registries_.update_user([&](json& user_models) {
+                user_models.erase(strip_user_model_prefix(canonical_model_name));
+                return true;
+            });
             cache_valid_ = false;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
@@ -5088,13 +5062,10 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         if (is_user_model_name(canonical_model_name)) {
             StoreWrite store_write(*this);
-            json updated_user_models = load_optional_json(get_user_models_file());
-            if (!updated_user_models.is_object()) {
-                updated_user_models = json::object();
-            }
-            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
-            save_user_models(updated_user_models);
-            user_models_ = std::move(updated_user_models);
+            registries_.update_user([&](json& user_models) {
+                user_models.erase(strip_user_model_prefix(canonical_model_name));
+                return true;
+            });
             cache_valid_ = false;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
@@ -5227,13 +5198,10 @@ void ModelManager::delete_model(const std::string& model_name) {
     // Remove from user models if it's a user model
     if (is_user_model_name(canonical_model_name)) {
         StoreWrite store_write(*this);
-        json updated_user_models = load_optional_json(get_user_models_file());
-        if (!updated_user_models.is_object()) {
-            updated_user_models = json::object();
-        }
-        updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
-        save_user_models(updated_user_models);
-        user_models_ = std::move(updated_user_models);
+        registries_.update_user([&](json& user_models) {
+            user_models.erase(strip_user_model_prefix(canonical_model_name));
+            return true;
+        });
         cache_valid_ = false;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
@@ -5528,17 +5496,20 @@ std::optional<std::string> ModelManager::validate_collection_request(
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
-    auto exists_in_registries = [this](const std::string& name) -> bool {
-        // Direct match in server_models_ (built-ins are keyed bare).
-        if (server_models_.contains(name)) {
+    const models::RegistryDocuments::Pin registries = registries_.pin();
+    auto exists_in_registries = [&](const std::string& name) -> bool {
+        // Built-ins are keyed bare.
+        if (registries.contains(models::RegistryDocument::Builtin, name)) {
             return true;
         }
         if (auto canon = parse_canonical_id(name)) {
             switch (canon->source) {
                 case ModelSource::Registered:
-                    return user_models_.contains(canon->bare_name);
+                    return registries.contains(models::RegistryDocument::User,
+                                               canon->bare_name);
                 case ModelSource::Builtin:
-                    return server_models_.contains(canon->bare_name);
+                    return registries.contains(models::RegistryDocument::Builtin,
+                                               canon->bare_name);
                 case ModelSource::Imported:
                     // extra.* models are filesystem-discovered; not in either JSON registry.
                     return false;
@@ -5552,7 +5523,7 @@ bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
     }
 
     std::string canonical_name = resolve_model_name(model_name);
-    if (exists_in_registries(canonical_name) || server_models_.contains(canonical_name)) {
+    if (exists_in_registries(canonical_name)) {
         return true;
     }
 
@@ -5564,19 +5535,22 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     std::string registry_name = model_name;
     bool is_user_lookup = false;
 
+    const models::RegistryDocuments::Pin registries = registries_.pin();
     auto try_resolve = [&](const std::string& name) -> bool {
-        if (server_models_.contains(name)) {
+        if (registries.contains(models::RegistryDocument::Builtin, name)) {
             registry_name = name;
             is_user_lookup = false;
             return true;
         }
         if (auto canon = parse_canonical_id(name)) {
-            if (canon->source == ModelSource::Builtin && server_models_.contains(canon->bare_name)) {
+            if (canon->source == ModelSource::Builtin &&
+                registries.contains(models::RegistryDocument::Builtin, canon->bare_name)) {
                 registry_name = canon->bare_name;
                 is_user_lookup = false;
                 return true;
             }
-            if (canon->source == ModelSource::Registered && user_models_.contains(canon->bare_name)) {
+            if (canon->source == ModelSource::Registered &&
+                registries.contains(models::RegistryDocument::User, canon->bare_name)) {
                 registry_name = canon->bare_name;
                 is_user_lookup = true;
                 return true;
@@ -5593,12 +5567,10 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         }
     }
 
-    json* model_json = nullptr;
-    if (is_user_lookup && user_models_.contains(registry_name)) {
-        model_json = &user_models_[registry_name];
-    } else if (!is_user_lookup && server_models_.contains(registry_name)) {
-        model_json = &server_models_[registry_name];
-    }
+    const json* model_json =
+        registries.row(is_user_lookup ? models::RegistryDocument::User
+                                      : models::RegistryDocument::Builtin,
+                       registry_name);
 
     if (!model_json) {
         throw std::runtime_error("Model not found in registry: " + model_name);

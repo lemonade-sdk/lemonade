@@ -1046,6 +1046,7 @@ set(SOURCES_CORE
     src/cpp/server/models/fetchable_repository.cpp
     src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
+    src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
@@ -3048,6 +3049,21 @@ if(BUILD_TESTING AND EXISTS "${_JSON_CATALOG_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(JsonCatalogTest CI ON COMMAND test_json_catalog)
+endif()
+
+set(_REGISTRY_DOCUMENTS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_documents.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_REGISTRY_DOCUMENTS_TEST_SRC}")
+    add_executable(test_registry_documents
+        test/cpp/test_registry_documents.cpp
+    )
+    target_link_libraries(test_registry_documents PRIVATE lemonade-server-core)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_registry_documents PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_cpp_ci_test(RegistryDocumentsTest CI ON COMMAND test_registry_documents)
 endif()
 
 set(_DOWNLOAD_PLAN_TEST_SRC

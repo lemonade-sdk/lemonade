@@ -32,6 +32,9 @@ void parse_image_defaults(ModelInfo& info, const json& row);
 // fields in load(). Keep the known-key set in step with what this file parses.
 void parse_extras(ModelInfo& info, const json& row);
 
+// Null when the row carries no `recipe_options` block.
+nlohmann::json row_recipe_options(const json& row);
+
 // The facts a document cannot answer about its own rows.
 struct RegistryRowRules {
     // Minted onto every row key: "user." for registrations, "" for built-ins.
@@ -60,11 +63,12 @@ struct RegistryRowRules {
 std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& row,
                                             const RegistryRowRules& rules);
 
-// A JSON document whose keys name models. The document is read by whoever owns
-// it and must outlive the catalog, which is why this takes it rather than a path.
+// A JSON document whose keys name models. Its owner hands over a pinned
+// document, so a build enumerates one version however the owner writes meanwhile.
 class JsonCatalog : public ModelCatalog {
   public:
-    JsonCatalog(CatalogDescriptor descriptor, const json& document, RegistryRowRules rules);
+    JsonCatalog(CatalogDescriptor descriptor, std::shared_ptr<const json> document,
+                RegistryRowRules rules);
 
     const CatalogDescriptor& descriptor() const override { return descriptor_; }
 
@@ -72,7 +76,7 @@ class JsonCatalog : public ModelCatalog {
 
   private:
     CatalogDescriptor descriptor_;
-    const json* document_;
+    std::shared_ptr<const json> document_;
     RegistryRowRules rules_;
 };
 
