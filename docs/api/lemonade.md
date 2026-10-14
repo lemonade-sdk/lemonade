@@ -1689,6 +1689,40 @@ curl http://localhost:13305/v1/system-stats
 
 GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
+The `primary_gpu_id` and `gpus` fields describe the individual host GPUs. The legacy
+`gpu_percent` and `vram_gb` values now come from the same primary device: the GPU
+with the largest known GPU-accessible memory capacity (ties broken by stable ID).
+Selection does not depend on current GPU utilization. Device IDs remain stable
+across ordinary telemetry failures; unavailable live measurements become `null`.
+The primary GPU for this display is **not** necessarily the GPU targeted by a
+model recipe. `vram_gb` retains its historical name but represents GPU memory
+usage, which can be shared system memory for AMD APUs.
+
+Example `gpus` entry (all measurement fields can be `null`):
+
+```json
+{
+  "primary_gpu_id": "amd:0000:c1:00.0",
+  "gpus": [
+    {
+      "id": "amd:0000:c1:00.0",
+      "vendor": "amd",
+      "name": "AMD GPU (card0)",
+      "memory_type": "shared",
+      "gpu_percent": 25.0,
+      "memory_total_gb": 120.0,
+      "memory_used_gb": 18.0
+    }
+  ]
+}
+```
+
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows this
+change provides NVIDIA NVML telemetry; other vendors still require their own
+platform implementation. On macOS the new per-GPU list is empty.
+NVML alone does not establish whether memory is dedicated or shared, so
+NVIDIA devices report `memory_type` as `unknown`.
+
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -1823,25 +1857,33 @@ curl "http://localhost:13305/v1/system-info"
           "state": "installed",
           "message": "",
           "action": "",
-          "version": "b7869"
+          "version": "b7869",
+          "tier": "core",
+          "format": "native"
         },
         "rocm": {
           "devices": ["amd_gpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade backends install llamacpp:rocm"
+          "action": "lemonade backends install llamacpp:rocm",
+          "tier": "core",
+          "format": "native"
         },
         "metal": {
           "devices": [],
           "state": "unsupported",
           "message": "Requires macOS",
-          "action": ""
+          "action": "",
+          "tier": "core",
+          "format": "native"
         },
         "cpu": {
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade backends install llamacpp:cpu"
+          "action": "lemonade backends install llamacpp:cpu",
+          "tier": "core",
+          "format": "native"
         }
       }
     },
@@ -1920,6 +1962,7 @@ curl "http://localhost:13305/v1/system-info"
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
     - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
+    - `experimental` - `true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)
@@ -1927,6 +1970,8 @@ curl "http://localhost:13305/v1/system-info"
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
         - `version` - Installed or configured backend version (when available)
+        - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+        - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
 - `cloud` - Cloud OpenAI-compatible providers configured on this server (omitted when no providers are installed). Contains:
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
@@ -1938,6 +1983,22 @@ curl "http://localhost:13305/v1/system-info"
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
     - `models_discovered` - Number of chat-capable models currently in the catalog for this provider.
+
+### Backend Tiers and Formats
+
+| Tier | Meaning |
+|------|---------|
+| `core` | Supported by Lemonade's maintainers for production use. |
+| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |
+| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from `GET /v1/models?show_all=true` until one of those backends is installed. |
+
+| Format | Meaning |
+|--------|---------|
+| `native` | A compiled executable. |
+| `python` | Python, packaged with its own interpreter. |
+| `container` | An OCI image, run by a pre-installed Podman or Docker. |
+
+The same backend can carry different labels on different operating systems. Each entry in a recipe's `backends` object reports the labels for this system's operating system.
 
 ## `POST /v1/install`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
