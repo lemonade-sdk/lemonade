@@ -6,6 +6,8 @@
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/model_manager.h"
 #include "lemon/models/artifact_layout.h"
+#include "lemon/models/artifact_source.h"
+#include "lemon/models/artifact_transfer.h"
 #include "lemon/models/artifact_ref.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
@@ -129,90 +131,40 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
     return params;
 }
 
-static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& model_info) {
-    std::string npu_cache = model_info.checkpoint("npu_cache");
-    std::string npu_cache_repo = "";
-    std::string npu_cache_filename = "";
-
-    if (!npu_cache.empty()) {
-        size_t colon_pos = npu_cache.find(':');
-        if (colon_pos != std::string::npos) {
-            npu_cache_repo = npu_cache.substr(0, colon_pos);
-            npu_cache_filename = npu_cache.substr(colon_pos + 1);
-        }
-    }
-
-    if (!npu_cache_repo.empty() && !npu_cache_filename.empty()) {
-        LOG(INFO, "WhisperServer") << "Using NPU cache from server_models.json: "
-                  << npu_cache_repo << " / " << npu_cache_filename << std::endl;
-        return {npu_cache_repo, npu_cache_filename};
-    }
-
-    LOG(INFO, "WhisperServer") << "No NPU cache configured for model: " << model_info.model_name << std::endl;
-    return {"", ""};
-}
 
 // Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
+// The compiled cache is one file beside the .bin it was built for: the model
+// layer picks the host and the placement, this only asks and then transfers.
 void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
                                                 const ModelInfo& model_info,
                                                 bool do_not_upgrade) {
-    auto [cache_repo, cache_filename] = get_npu_cache_info(model_info);
-
-    if (cache_repo.empty() || cache_filename.empty()) {
+    if (model_manager_ == nullptr || model_info.checkpoint("npu_cache").empty()) {
         LOG(INFO, "WhisperServer") << "No NPU compiled cache available for this model" << std::endl;
         return;
     }
 
-    LOG(INFO, "WhisperServer") << "Downloading NPU compiled cache: " << cache_filename << std::endl;
-    LOG(INFO, "WhisperServer") << "From repository: " << cache_repo << std::endl;
-
-    if (cache_filename.find('/') != std::string::npos ||
-        cache_filename.find('\\') != std::string::npos ||
-        cache_filename.find("..") != std::string::npos) {
-        throw std::runtime_error("Illegal npu_cache filename: contains path traversal characters");
-    }
-
-    if (cache_repo.find("..") != std::string::npos ||
-        cache_repo.find('\\') != std::string::npos) {
-        throw std::runtime_error("Illegal npu_cache repository: contains suspicious characters");
-    }
-
-    // Determine where to place the .rai file (must be in the same directory as .bin file)
-    fs::path model_dir = fs::path(model_path).parent_path();
-    fs::path cache_path = fs::weakly_canonical(model_dir / fs::path(cache_filename).filename());
-
-    if (cache_path.parent_path() != fs::weakly_canonical(model_dir)) {
-        throw std::runtime_error("npu_cache path escapes model directory");
-    }
-
-    if (fs::exists(cache_path) && !do_not_upgrade) {
-        LOG(INFO, "WhisperServer") << "NPU cache already exists: " << cache_path << std::endl;
-        return;
-    }
-
     try {
-        std::string hf_url = "https://huggingface.co/" + cache_repo + "/resolve/main/" + cache_filename;
-
-        LOG(INFO, "WhisperServer") << "Downloading from: " << hf_url << std::endl;
-
-        auto download_result = utils::HttpClient::download_file(
-            hf_url,
-            cache_path.string(),
-            utils::create_throttled_progress_callback()
-        );
-
-        if (!download_result.success) {
-            throw std::runtime_error("Failed to download NPU cache from: " + hf_url + " - " + download_result.error_message);
+        const auto source = model_manager_->source_for(model_info, "npu_cache");
+        const auto presence = source->present();
+        if (presence.complete && !do_not_upgrade) {
+            LOG(INFO, "WhisperServer") << "NPU cache already exists: " << presence.path << std::endl;
+            return;
         }
 
-        LOG(INFO, "WhisperServer") << "NPU cache ready at: " << cache_path << std::endl;
+        const auto acquisition = source->acquisition();
+        if (acquisition.kind != lemon::models::Acquisition::Kind::Plan) {
+            LOG(WARNING, "WhisperServer")
+                << "NPU cache offers nothing to fetch for: " << model_info.checkpoint("npu_cache")
+                << std::endl;
+            return;
+        }
 
+        LOG(INFO, "WhisperServer")
+            << "Downloading NPU cache into: " << acquisition.plan.download_path << std::endl;
+        lemon::models::ArtifactTransfer::with_default_transfers().execute(
+            acquisition.plan, source->auth_headers(), nullptr);
+        LOG(INFO, "WhisperServer") << "NPU cache ready beside: " << model_path << std::endl;
     } catch (const std::exception& e) {
-        if (fs::exists(cache_path)) {
-            fs::remove(cache_path);
-            LOG(INFO, "WhisperServer") << "Cleaned up partial cache file" << std::endl;
-        }
-
         LOG(WARNING, "WhisperServer") << "Failed to download NPU cache: " << e.what() << std::endl;
         LOG(WARNING, "WhisperServer") << "Continuing without NPU cache (may cause runtime errors)" << std::endl;
     }

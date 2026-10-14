@@ -1,4 +1,5 @@
 #include "lemon/model_manager.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/models/artifact_layout.h"
 #include "lemon/models/artifact_resolver.h"
 #include "lemon/models/fetchable_repository.h"
@@ -9,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 
+using lemon::ModelManager;
+using lemon::models::ArtifactKind;
 using lemon::ModelInfo;
 using lemon::models::ArtifactKind;
 using lemon::models::ArtifactRef;
@@ -63,6 +66,7 @@ class ListingRepository : public FetchableRepository {
             {"model-Q4_K_M.gguf", 100, "sha256", "beef", false},
             {"model-Q8_0.gguf", 200, "", "", false},
             {"config.json", 5, "", "", false},
+            {"model.bin.rai", 50, "", "", false},
             {"assets", 0, "", "", true},
         };
         return listing;
@@ -87,6 +91,14 @@ ArtifactRef ref(const std::string& variant) {
     artifact.repo_id = "org/repo";
     artifact.recipe = "llamacpp";
     artifact.variant = variant;
+    return artifact;
+}
+
+ArtifactRef side_ref(const std::string& variant) {
+    ArtifactRef artifact = ref(variant);
+    artifact.checkpoint_type = "npu_cache";
+    artifact.layout = &sibling_layout();
+    artifact.sibling = "/models/whisper.bin";
     return artifact;
 }
 
@@ -217,15 +229,136 @@ static void test_a_variant_matching_no_file_is_an_error() {
     check("a variant matching no file is reported, not planned as nothing", threw);
 }
 
+static void test_a_side_checkpoint_fetches_only_its_own_file() {
+    const ArtifactRef artifact = side_ref("model.bin.rai");
+    const ListingRepository repository(artifact);
+    Placement placement;
+    placement.sibling = "/models/whisper.bin";
+    placement.revision = "snapshot-1";
+
+    const DownloadPlan plan =
+        registry_download_plan(repository, artifact, sibling_layout(), placement,
+                               repository.list("org/repo", ""));
+
+    check("a side checkpoint lands beside the file it belongs to", plan.download_path == "/models");
+    check("a side checkpoint fetches only the file it names",
+          plan.files.size() == 1 && plan.files[0].name == "model.bin.rai");
+    check("a side checkpoint does not collect the repository's other files",
+          !planned(plan, "config.json"));
+}
+
+static void test_a_side_checkpoint_naming_an_absent_file_is_an_error() {
+    const ArtifactRef artifact = side_ref("absent.rai");
+    const ListingRepository repository(artifact);
+    Placement placement;
+    placement.sibling = "/models/whisper.bin";
+    bool threw = false;
+    try {
+        registry_download_plan(repository, artifact, sibling_layout(), placement,
+                               repository.list("org/repo", ""));
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("a side checkpoint naming a file the repository lacks is reported", threw);
+}
+
+static void test_a_sibling_source_resolves_beside_its_model() {
+    const fs::path model_dir = scratch_dir("sibling_source");
+    const fs::path main_file = model_dir / "whisper.bin";
+    std::ofstream(main_file) << "model";
+
+    ArtifactRef artifact = side_ref("whisper.bin.rai");
+    artifact.sibling = main_file.string();
+
+    const auto source = lemon::models::create_repository(RegistryId("huggingface"), artifact);
+    const std::string expected = (model_dir / "whisper.bin.rai").string();
+
+    check("a sibling source resolves beside its model", source->resolve() == expected);
+    check("a missing side cache is absent, with a reason naming where it looked",
+          !source->present().complete && source->present().reason.find(expected) != std::string::npos);
+
+    std::ofstream(expected) << "cache";
+    check("a side cache sitting beside the model is present",
+          source->present().complete && source->present().path == expected);
+
+    fs::remove_all(model_dir);
+}
+
+static void test_the_model_layer_hands_a_source_the_backends_layout() {
+    const fs::path model_dir = scratch_dir("resolver_wiring");
+    const fs::path main_file = model_dir / "whisper.bin";
+    std::ofstream(main_file) << "model";
+
+    ModelManager manager;
+    manager.set_default_model_source_provider([] { return "huggingface"; });
+
+    ModelInfo info;
+    info.model_name = "user.whisper";
+    info.recipe = "whispercpp";
+    info.checkpoints["main"] = main_file.string();
+    info.checkpoints["npu_cache"] = "org/repo:whisper.bin.rai";
+    // A store build fills these; a source built outside one has no anchor to know.
+    info.resolved_paths["main"] = main_file.string();
+
+    const auto source = manager.source_for(info, "npu_cache");
+    check("the side checkpoint binds to the default host's repository",
+          source != nullptr && source->kind() == ArtifactKind::Registry);
+    check("the source carries the layout the backend declared for that checkpoint",
+          source->ref().layout == &sibling_layout());
+    check("the source knows the file it must sit beside",
+          source->ref().sibling == main_file.string());
+    check("the source knows which checkpoint it is",
+          source->ref().checkpoint_type == "npu_cache" && source->ref().variant == "whisper.bin.rai");
+
+    const auto main_source = manager.source_for(info, "main");
+    check("a file on disk needs no repository", main_source->kind() == ArtifactKind::Local);
+
+    fs::remove_all(model_dir);
+}
+
+static void test_a_sibling_plan_moves_bytes_where_the_layout_says() {
+    const fs::path dir = scratch_dir("transfer");
+    const fs::path staged = dir / "whisper.bin.rai";
+    std::ofstream(staged) << "cache-bytes";
+    const fs::path model_dir = dir / "model";
+    fs::create_directories(model_dir);
+
+    DownloadPlan plan;
+    plan.download_path = sibling_layout().directory(Placement{"", "", (model_dir / "whisper.bin").string()});
+    lemon::models::DownloadFile file;
+    file.name = staged.filename().string();
+    file.url = "file://" + staged.string();
+    plan.files.push_back(file);
+
+    lemon::models::ArtifactTransfer::with_default_transfers().execute(plan, {}, nullptr);
+
+    check("a sibling plan writes into the model's own directory",
+          fs::exists(model_dir / "whisper.bin.rai"));
+    check("and the bytes arrive intact", read(model_dir / "whisper.bin.rai") == "cache-bytes");
+    fs::remove_all(dir);
+}
+
 }  // namespace
 
 int main() {
+    // A ModelManager reads config and option files, so the run stays in a scratch
+    // directory.
+    const fs::path fixture = scratch_dir("fixture");
+    lemon::utils::set_cache_dir(fixture.string());
+    lemon::utils::set_config_dir(fixture.string());
+    lemon::utils::set_models_dir((fixture / "hf").string());
+
     test_the_snapshot_directory_names_the_revision();
     test_activating_records_the_revision();
     test_a_sibling_lands_beside_the_file_it_belongs_to();
     test_layout_selection_is_a_backend_fact();
     test_the_plan_names_the_files_the_ref_needs();
     test_a_variant_matching_no_file_is_an_error();
+    test_a_side_checkpoint_fetches_only_its_own_file();
+    test_a_side_checkpoint_naming_an_absent_file_is_an_error();
+    test_a_sibling_source_resolves_beside_its_model();
+    test_the_model_layer_hands_a_source_the_backends_layout();
+    test_a_sibling_plan_moves_bytes_where_the_layout_says();
 
     if (g_failures != 0) {
         std::printf("FAILED: %d\n", g_failures);

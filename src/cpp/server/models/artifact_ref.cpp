@@ -14,7 +14,8 @@ ArtifactRef ArtifactRef::from_locator(const Locator& locator, bool required) {
 }
 
 bool ArtifactRef::operator==(const ArtifactRef& other) const {
-    return registry == other.registry && repo_id == other.repo_id &&
+    return registry == other.registry && checkpoint_type == other.checkpoint_type &&
+           repo_id == other.repo_id &&
            variant == other.variant && revision == other.revision &&
            required == other.required;
 }

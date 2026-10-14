@@ -2,6 +2,7 @@
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
+#include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/locator.h>
@@ -1138,6 +1139,28 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
     const std::set<fs::path>& registered_paths) const {
     return models::ScanCatalog(extra_models_dir_, device_type_for_recipe(extra_model_recipe))
         .enumerate(registered_paths);
+}
+
+std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
+    const ModelInfo& info, const std::string& checkpoint_type) const {
+    models::ArtifactSourceResolver::Hooks hooks;
+    hooks.fetches_no_artifacts = [](const std::string& recipe) { return recipe == "cloud"; };
+    hooks.backend_self_manages_downloads = [this](const std::string& recipe) {
+        return backend_self_manages_downloads(recipe);
+    };
+    hooks.checkpoint_layout = [](const std::string& recipe, const models::CheckpointRef& checkpoint) {
+        const backends::BackendOps* ops = backends::ops_for(recipe);
+        return ops != nullptr ? ops->checkpoint_layout(checkpoint) : nullptr;
+    };
+    hooks.validate_file = [](const std::string& recipe, const std::string& path) {
+        const backends::BackendOps* ops = backends::ops_for(recipe);
+        return ops != nullptr ? ops->validate_checkpoint_file(path) : std::string();
+    };
+    hooks.default_registry_id = [this]() {
+        return default_model_source_provider_ != nullptr ? default_model_source_provider_()
+                                                        : std::string();
+    };
+    return models::ArtifactSourceResolver(hooks).source_for(info, checkpoint_type);
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {

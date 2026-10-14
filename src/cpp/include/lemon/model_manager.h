@@ -64,6 +64,7 @@ public:
 struct RoutePolicy;
 
 namespace models {
+class ArtifactSource;
 struct FilterReasons;
 struct StoreSnapshot;
 }  // namespace models
@@ -193,6 +194,12 @@ public:
     void set_default_model_source_provider(std::function<std::string()> provider);
 
     RegistryId download_source_for(const ModelInfo& info) const;
+
+    // One checkpoint's answer to where its bytes are, whether they are here, and
+    // what fetching them would take. The placement comes from the layout the
+    // backend declares for that checkpoint type.
+    std::unique_ptr<models::ArtifactSource> source_for(
+        const ModelInfo& info, const std::string& checkpoint_type) const;
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the

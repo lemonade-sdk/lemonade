@@ -54,6 +54,7 @@ class ArtifactSourceResolver {
 
   private:
     FileValidator validator_for(const std::string& recipe) const;
+    void place(const ModelInfo& info, const std::string& checkpoint_type, ArtifactRef& ref) const;
     std::unique_ptr<ArtifactSource> open_repository(const RegistryId& host,
                                                     const ArtifactRef& ref) const;
 
