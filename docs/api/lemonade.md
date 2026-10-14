@@ -1636,7 +1636,8 @@ curl http://localhost:13305/v1/stats
   "prompt_tokens_total": 108,
   "cache_tokens_total": 1152,
   "routing_decisions_total": 4,
-  "routing_switches_total": 1
+  "routing_switches_total": 1,
+  "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
 }
 ```
 
@@ -1649,6 +1650,7 @@ curl http://localhost:13305/v1/stats
 - `prompt_tokens` - Total prompt tokens including cached tokens
 - `cache_tokens` - Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` / Responses-API `input_tokens_details.cached_tokens` from OpenAI-compatible cloud providers). `null` when the last request did not report cache usage
 - `*_total` - Cumulative counters since server start
+- `live` - Number of streams with recent generated output and best-effort tokens/s. The rate estimates tokens from SSE text and is **not** an exact token count; use the existing last-request statistics for exact completed-inference numbers. The values become zero after about 3 seconds without generated output or immediately when a request ends. Status and keepalive SSE events are ignored.
 - `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
 - `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
 
@@ -1688,6 +1690,40 @@ curl http://localhost:13305/v1/system-stats
 - `npu_percent` - NPU utilization percentage, or `null` when unavailable
 
 GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
+
+The `primary_gpu_id` and `gpus` fields describe the individual host GPUs. The legacy
+`gpu_percent` and `vram_gb` values now come from the same primary device: the GPU
+with the largest known GPU-accessible memory capacity (ties broken by stable ID).
+Selection does not depend on current GPU utilization. Device IDs remain stable
+across ordinary telemetry failures; unavailable live measurements become `null`.
+The primary GPU for this display is **not** necessarily the GPU targeted by a
+model recipe. `vram_gb` retains its historical name but represents GPU memory
+usage, which can be shared system memory for AMD APUs.
+
+Example `gpus` entry (all measurement fields can be `null`):
+
+```json
+{
+  "primary_gpu_id": "amd:0000:c1:00.0",
+  "gpus": [
+    {
+      "id": "amd:0000:c1:00.0",
+      "vendor": "amd",
+      "name": "AMD GPU (card0)",
+      "memory_type": "shared",
+      "gpu_percent": 25.0,
+      "memory_total_gb": 120.0,
+      "memory_used_gb": 18.0
+    }
+  ]
+}
+```
+
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows this
+change provides NVIDIA NVML telemetry; other vendors still require their own
+platform implementation. On macOS the new per-GPU list is empty.
+NVML alone does not establish whether memory is dedicated or shared, so
+NVIDIA devices report `memory_type` as `unknown`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

@@ -41,6 +41,16 @@ bool looks_like_path(const std::string& v);
 std::string get_environment_variable_utf8(const std::string& name);
 
 /**
+ * Set an environment variable using platform-correct UTF-8 handling.
+ */
+void set_environment_variable_utf8(const std::string& name, const std::string& value);
+
+/**
+ * Remove an environment variable using platform-correct UTF-8 handling.
+ */
+void unset_environment_variable_utf8(const std::string& name);
+
+/**
  * Convert a UTF-8 path string to a std::filesystem::path.
  */
 std::filesystem::path path_from_utf8(const std::string& path);
