@@ -214,7 +214,7 @@ static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
 }
 
 static std::string repo_id_to_cache_dir_name(const std::string& repo_id,
-                                             const std::string& registry_source = "huggingface") {
+                                             const std::string& registry_source) {
     return registry_repo_cache_dir_name(repo_id,
         parse_remote_registry_source(registry_source));
 }

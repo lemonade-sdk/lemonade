@@ -13,7 +13,8 @@ const RegistryDescriptor& huggingface() {
                                                "Hugging Face",
                                                "hf",
                                                "models--",
-                                               "main"};
+                                               "main",
+                                               "https://huggingface.co"};
     return descriptor;
 }
 
@@ -23,7 +24,11 @@ const RegistryDescriptor& modelscope() {
                                                "ModelScope",
                                                "ms",
                                                "modelscope--models--",
-                                               "master"};
+                                               "master",
+                                               // Deliberately empty: this host serves files through its
+                                               // files API, and leaving it unset keeps today's behavior of
+                                               // never fetching from it outside that API.
+                                               ""};
     return descriptor;
 }
 

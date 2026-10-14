@@ -37,6 +37,10 @@ struct RegistryDescriptor {
     std::string scheme_prefix;      // short form in a machine-minted id
     std::string cache_dir_prefix;   // provider-qualified namespace in the models dir
     std::string default_revision;
+    // Empty when the host serves files through an API rather than a plain
+    // `<endpoint>/<repo>/resolve/<rev>/<path>`, so "no direct URL" is a fact
+    // about the host instead of a name a caller has to recognize.
+    std::string endpoint_default;
 };
 
 // Resolves any accepted spelling. Empty means the default host, which is what

@@ -24,7 +24,7 @@ std::filesystem::path active_snapshot_path(const std::filesystem::path& model_ca
 
 // Provider-qualified cache directory name for a repository id.
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
-                                      const std::string& registry_source = "huggingface");
+                                      const std::string& registry_source);
 
 } // namespace hf_cache
 } // namespace backends

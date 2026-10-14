@@ -133,12 +133,12 @@ json VLLMServer::prepare_openai_request(const json& request) {
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
-// Prefer the Lemonade-managed active snapshot. Hugging Face models retain the
-// historical cache/network fallback; ModelScope models are always loaded from
-// their normalized local snapshot and must never fall back to Hugging Face.
-static std::string detect_quant_method(const std::string& model_id,
+// Prefers the active snapshot, then any snapshot of the repository, then the
+// host's resolve URL; a host without one stops at the snapshot.
+static std::string detect_quant_method(const std::string& repo_id,
                                        const fs::path& local_snapshot,
-                                       RegistryId registry_source) {
+                                       RegistryId registry_source,
+                                       const fs::path& cache_root) {
     if (!local_snapshot.empty()) {
         fs::path cfg = local_snapshot / "config.json";
         if (fs::exists(cfg)) {
@@ -150,20 +150,14 @@ static std::string detect_quant_method(const std::string& model_id,
         }
     }
 
-    if (registry_source != models::huggingface_descriptor().id) {
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(registry_source);
+    if (descriptor == nullptr || descriptor->endpoint_default.empty()) {
         return "";
     }
 
-    // Check the historical HF cache location (fast path).
-    std::string hf_dir = "models--";
-    for (char c : model_id) {
-        if (c == '/') hf_dir += "--";
-        else hf_dir += c;
-    }
-
-    const char* home = std::getenv("HOME");
-    if (home) {
-        fs::path snapshots = fs::path(home) / ".cache" / "huggingface" / "hub" / hf_dir / "snapshots";
+    if (!cache_root.empty()) {
+        fs::path snapshots = cache_root /
+            hf_cache::repo_id_to_cache_dir_name(repo_id, registry_source.str()) / "snapshots";
         if (fs::exists(snapshots)) {
             for (const auto& entry : fs::directory_iterator(snapshots)) {
                 if (!entry.is_directory()) continue;
@@ -178,14 +172,14 @@ static std::string detect_quant_method(const std::string& model_id,
         }
     }
 
-    // Fetch directly from HF only for Hugging Face registrations.
-    std::string url = "https://huggingface.co/" + model_id + "/resolve/main/config.json";
+    const std::string url = descriptor->endpoint_default + "/" + repo_id + "/resolve/" +
+                            descriptor->default_revision + "/config.json";
     auto resp = HttpClient::get(url);
     if (resp.status_code == 200) {
         return parse_quant_method(resp.body);
     }
 
-    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << model_id
+    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << repo_id
                        << " (http " << resp.status_code << "); skipping quant detection" << std::endl;
     return "";
 }
@@ -376,6 +370,9 @@ void VLLMServer::load(const std::string& model_name,
         parse_remote_registry_source(model_info.registry_source);
     std::string model_target = model_id;
     fs::path active_snapshot;
+    const fs::path cache_root = model_manager_ != nullptr
+                                    ? path_from_utf8(model_manager_->get_hf_cache_dir())
+                                    : fs::path();
 
     // vLLM can resolve Hugging Face IDs itself, but it has no native knowledge
     // of Lemonade's ModelScope cache namespace. Point it at the normalized
@@ -386,7 +383,7 @@ void VLLMServer::load(const std::string& model_name,
             throw std::runtime_error("Model manager is unavailable while resolving ModelScope cache");
         }
         const std::string repo_id = registry_repo_id_from_checkpoint(model_id);
-        const fs::path repo_cache = path_from_utf8(model_manager_->get_hf_cache_dir()) /
+        const fs::path repo_cache = cache_root /
             hf_cache::repo_id_to_cache_dir_name(repo_id, model_info.registry_source);
         active_snapshot = hf_cache::active_snapshot_path(repo_cache);
         if (active_snapshot.empty() || !fs::exists(active_snapshot)) {
@@ -440,7 +437,7 @@ void VLLMServer::load(const std::string& model_name,
     // For AWQ specifically we force the 'awq' kernel because vLLM's default
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
     std::string quant_method = detect_quant_method(
-        model_id, active_snapshot, registry_source);
+        registry_repo_id_from_checkpoint(model_id), active_snapshot, registry_source, cache_root);
     if (quant_method == "awq" && launch_policy.force_awq_kernel) {
         if (!resolved_vllm_args.has_quantization_arg) {
             LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
