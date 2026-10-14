@@ -248,6 +248,17 @@ The image tool runs during the loop and its output is embedded as a markdown ima
         - `reasoning_content` - Reasoning models only: the model's thinking.
         - `tool_calls` - Calls to the request's tools.
     - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
+      - `route_to` - The selected candidate; also carried by the standard `model` field.
+      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
+      - `default_used` - true when no rule matched and default_model was used (fail-open).
+      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+        - `score` - Present for classifier conditions; the score the band was applied to.
+        - `result` - The leaf's boolean outcome.
+        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 
 === "Streaming responses"
 
@@ -266,6 +277,17 @@ The image tool runs during the loop and its output is embedded as a markdown ima
 
     - `usage` - Final chunk only: token usage.
     - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
+      - `route_to` - The selected candidate; also carried by the standard `model` field.
+      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
+      - `default_used` - true when no rule matched and default_model was used (fail-open).
+      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+        - `score` - Present for classifier conditions; the score the band was applied to.
+        - `result` - The leaf's boolean outcome.
+        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -398,6 +420,17 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     **Field Descriptions:**
 
     - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
+      - `route_to` - The selected candidate; also carried by the standard `model` field.
+      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
+      - `default_used` - true when no rule matched and default_model was used (fail-open).
+      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+        - `score` - Present for classifier conditions; the score the band was applied to.
+        - `result` - The leaf's boolean outcome.
+        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 
 === "Streaming responses"
 
@@ -416,6 +449,17 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
     - `usage` - Final chunk only: token usage.
     - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
+      - `route_to` - The selected candidate; also carried by the standard `model` field.
+      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
+      - `default_used` - true when no rule matched and default_model was used (fail-open).
+      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+        - `score` - Present for classifier conditions; the score the band was applied to.
+        - `result` - The leaf's boolean outcome.
+        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 <!-- END GENERATED: openai.completions -->
 
 <!-- BEGIN GENERATED: openai.embeddings -->
@@ -622,6 +666,17 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
     - `output` - Output items; a message item carries its text in `content[].text`.
     - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
+      - `route_to` - The selected candidate; also carried by the standard `model` field.
+      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
+      - `default_used` - true when no rule matched and default_model was used (fail-open).
+      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+        - `score` - Present for classifier conditions; the score the band was applied to.
+        - `result` - The leaf's boolean outcome.
+        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 
 === "Streaming responses"
 
@@ -1463,160 +1518,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
       "registry_source": "huggingface",
       "recipe_options": {}
     },
-    {
-      "id": "RealESRGAN-x4plus",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
-      "recipe": "sd-cpp",
-      "size": 0.062,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["upscaling", "image"],
-      "components": [],
-      "checkpoints": {"main": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "SD-Turbo",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
-      "recipe": "sd-cpp",
-      "size": 4.86,
-      "context_length": 22691,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["image"],
-      "image_defaults": {"steps": 4, "cfg_scale": 1.0, "width": 512, "height": 512},
-      "components": [],
-      "checkpoints": {"main": "stabilityai/sd-turbo:sd_turbo.safetensors"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {"cfg_scale": 1.0, "height": 512, "steps": 4, "width": 512}
-    },
-    {
-      "id": "TRELLIS-3D",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "ilintar/trellis2-gguf",
-      "recipe": "trellis",
-      "size": 30.7,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["3d"],
-      "components": [],
-      "checkpoints": {"main": "ilintar/trellis2-gguf"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "ThinkSound-SFX",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "ilintar/thinksound-gguf",
-      "recipe": "thinksound",
-      "size": 6.4,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["audio-generation"],
-      "components": [],
-      "checkpoints": {"main": "ilintar/thinksound-gguf"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "Whisper-Tiny",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
-      "recipe": "whispercpp",
-      "size": 0.072,
-      "context_length": 32768,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["transcription", "realtime-transcription"],
-      "components": [],
-      "checkpoints": {
-        "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
-        "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
-      },
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "jina-reranker-v1-tiny-en-GGUF",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
-      "recipe": "llamacpp",
-      "size": 0.034,
-      "max_context_window": 8192,
-      "context_length": 8192,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": false,
-      "labels": ["reranking"],
-      "components": [],
-      "checkpoints": {"main": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "kokoro-v1",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "mikkoph/kokoro-onnx",
-      "recipe": "kokoro",
-      "context_length": 32768,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["tts"],
-      "components": [],
-      "checkpoints": {"main": "mikkoph/kokoro-onnx"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "nomic-embed-text-v1-GGUF",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
-      "recipe": "llamacpp",
-      "size": 0.073,
-      "max_context_window": 2048,
-      "context_length": 8192,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["embeddings"],
-      "components": [],
-      "checkpoints": {"main": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    }
+    ... 8 more
   ]
 }
 ```

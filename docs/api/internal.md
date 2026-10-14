@@ -402,6 +402,10 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
   }
 }
 ```
+
+**Field Descriptions:**
+
+Every `config.json` key with its current value.
 <!-- END GENERATED: internal.config -->
 
 <!-- BEGIN GENERATED: internal.config_defaults -->
@@ -554,6 +558,10 @@ The per-backend sections come from the backend descriptors, so this is the autho
   }
 }
 ```
+
+**Field Descriptions:**
+
+Every `config.json` key with its factory default.
 <!-- END GENERATED: internal.config_defaults -->
 
 <!-- BEGIN GENERATED: internal.cleanup_cache -->

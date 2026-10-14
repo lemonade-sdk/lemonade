@@ -127,6 +127,8 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
     **Field Descriptions:**
 
+    One JSON-RPC 2.0 response, or an array of them for a batch.
+
     - `result` - The method's result.
     - `error` - A JSON-RPC error, such as `-32601` for an unknown method.
 

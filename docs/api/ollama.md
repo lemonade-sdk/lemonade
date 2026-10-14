@@ -154,6 +154,8 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
     **Field Descriptions:**
 
+    Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
+
     - `model` - The model that generated the response.
     - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `message`
@@ -304,6 +306,8 @@ Image generation never streams.
 
     **Field Descriptions:**
 
+    Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
+
     - `model` - The model that generated the response.
     - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `response` - Generated text. Empty for an image model.
@@ -394,126 +398,7 @@ This endpoint does not take any parameters.
         "quantization_level": "Q4_0"
       }
     },
-    {
-      "name": "RealESRGAN-x4plus:latest",
-      "model": "RealESRGAN-x4plus:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 66571993,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "sd-cpp",
-        "families": ["sd-cpp"],
-        "parameter_size": "",
-        "quantization_level": ""
-      }
-    },
-    {
-      "name": "SD-Turbo:latest",
-      "model": "SD-Turbo:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 5218385264,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "sd-cpp",
-        "families": ["sd-cpp"],
-        "parameter_size": "",
-        "quantization_level": ""
-      }
-    },
-    {
-      "name": "TRELLIS-3D:latest",
-      "model": "TRELLIS-3D:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 32963873996,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "trellis",
-        "families": ["trellis"],
-        "parameter_size": "",
-        "quantization_level": ""
-      }
-    },
-    {
-      "name": "ThinkSound-SFX:latest",
-      "model": "ThinkSound-SFX:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 6871947673,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "thinksound",
-        "families": ["thinksound"],
-        "parameter_size": "",
-        "quantization_level": ""
-      }
-    },
-    {
-      "name": "Whisper-Tiny:latest",
-      "model": "Whisper-Tiny:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 77309411,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "whispercpp",
-        "families": ["whispercpp"],
-        "parameter_size": "",
-        "quantization_level": ""
-      }
-    },
-    {
-      "name": "jina-reranker-v1-tiny-en-GGUF:latest",
-      "model": "jina-reranker-v1-tiny-en-GGUF:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 36507222,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llamacpp",
-        "families": ["llamacpp"],
-        "parameter_size": "",
-        "quantization_level": "Q8_0"
-      }
-    },
-    {
-      "name": "kokoro-v1:latest",
-      "model": "kokoro-v1:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 0,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "kokoro",
-        "families": ["kokoro"],
-        "parameter_size": "",
-        "quantization_level": ""
-      }
-    },
-    {
-      "name": "nomic-embed-text-v1-GGUF:latest",
-      "model": "nomic-embed-text-v1-GGUF:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 78383153,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llamacpp",
-        "families": ["llamacpp"],
-        "parameter_size": "",
-        "quantization_level": "Q4_K_S"
-      }
-    }
+    ... 8 more
   ]
 }
 ```
@@ -728,6 +613,8 @@ In offline mode the request answers `400` with code `lemond_offline`.
     ```
 
     **Field Descriptions:**
+
+    The first line is `pulling manifest`, then one line per progress report, then `success`.
 
     - `status` - `pulling manifest`, `downloading <file>`, or `success`.
     - `digest` - Download lines: `sha256:` followed by the file name.

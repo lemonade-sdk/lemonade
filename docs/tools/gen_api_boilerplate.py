@@ -781,7 +781,8 @@ def docs_problems(spec: dict, entries: dict) -> list[str]:
                 problems.append(f"{where}: no example returns the shape {label!r}")
         fields = []
         for payload in payloads:
-            fields += undescribed_fields(payload, schema)
+            if not (description_of(schema) and opaque(schema)):
+                fields += undescribed_fields(payload, schema)
         if fields:
             problems.append(
                 f"{where}: recorded fields without a description: "

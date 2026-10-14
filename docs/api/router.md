@@ -191,5 +191,16 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
 **Field Descriptions:**
 
 - `decision` - The routing decision, shaped like the `x_lemonade_route` object a routed completion returns with `route_trace: true`.
+  - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
+  - `route_to` - The selected candidate; also carried by the standard `model` field.
+  - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
+  - `default_used` - true when no rule matched and default_model was used (fail-open).
+  - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+  - `trace` - Per-condition trace of the evaluation.
+    - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+    - `score` - Present for classifier conditions; the score the band was applied to.
+    - `result` - The leaf's boolean outcome.
+    - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+    - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 - `normalized_policy` - The policy as evaluated, with any `routing.router` shorthand expanded.
 <!-- END GENERATED: router.routing_validate -->
