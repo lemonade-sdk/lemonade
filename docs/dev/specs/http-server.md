@@ -167,7 +167,7 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 2. Resolves the model name.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
 4. Requires a model. With no `model` in the request, it answers 400.
-5. Auto-loads the model through `ModelLoader`. On failure it writes the `create_model_error` response, the same shape for every model route.
+5. Auto-loads the model through `ModelLoader`, unless `validate()` set `req.model_already_loaded` because it picked a model that is already loaded; loading it again would demote a routing helper to a standard model. On failure it writes the `create_model_error` response, the same shape for every model route.
 6. Calls `run()`.
 
 `validate()` runs before any load, so it can reject a bad request without loading a model (speech's model-type check, 3D's image check), attach uploaded files in the shape its backend expects (transcription's raw `file`, images/edits' base64 `image` and `mask`), fill in a missing model (classify picks the single loaded classifier), rewrite the model (router collections), or answer the request itself (Omni collections, which load their own components).
@@ -203,13 +203,15 @@ This section defines where the schemas in `RouteResponse` come from:
 - **Shared shapes.** A shape that more than one route returns has a schema function declared beside the function that builds it, such as `ModelJson::schema()` beside `ModelJson::to_json()`, so the shape and its schema change together.
 - **Pass-through routes.** The schema describes the public contract the route follows, such as OpenAI's chat completion object, limited to the fields Lemonade returns.
 
-`route_decision_schema()`, declared beside `route_decision_to_json()` in `lemon/route_decision_response.h`, returns the schema the routing engine already maintains:
+The routing decision is the exception to shared shapes: the routing engine owns its contract in `decision.schema.json`, and lemond does not read that file. A route that returns the decision describes it with a short inline object whose description links to the router page, and the router page links to `decision.schema.json` for the full shape:
 
 ```cpp
-nlohmann::json route_decision_schema() {
-    std::ifstream file(utils::get_resource_path("resources/schemas/decision.schema.json"));
-    return nlohmann::json::parse(file);
-}
+schema["properties"]["x_lemonade_route"] = {
+    {"type", "object"},
+    {"description",
+     "The routing decision, when `model` names a `collection.router` model. See "
+     "[Routing](./router.md#routing-collectionrouter) for the decision object."},
+};
 ```
 
 ### Complete Example
@@ -254,7 +256,12 @@ nlohmann::json chat_completion_schema() {
         }
     })");
     // Router collections add their routing decision to the response.
-    schema["properties"]["x_lemonade_route"] = route_decision_schema();
+    schema["properties"]["x_lemonade_route"] = {
+        {"type", "object"},
+        {"description",
+         "The routing decision, when `model` names a `collection.router` model. See "
+         "[Routing](./router.md#routing-collectionrouter) for the decision object."},
+    };
     return schema;
 }
 
@@ -605,7 +612,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
     **Field Descriptions:**
 
-    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
 === "Streaming responses"
 
