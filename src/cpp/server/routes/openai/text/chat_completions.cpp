@@ -223,8 +223,8 @@ public:
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Up to 4 sequences where the API will stop generating further tokens. The returned "
              "text will not contain the stop sequence. Can be a string or an array of strings."},
-            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
+            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+             "If true, returns the log probability of each output token. Defaults to false."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,

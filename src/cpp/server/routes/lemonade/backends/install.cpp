@@ -91,7 +91,7 @@ public:
             "does not support and without `force`, answers `400` with an `error` string; an "
             "invalid cloud provider field answers `400` with an `error` object. Any other failure, "
             "including invalid JSON, answers `500` with an `error` string.",
-            "### Install a cloud provider\n"
+            "### Install a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
             "Registers a cloud chat provider. The base URL is persisted to "

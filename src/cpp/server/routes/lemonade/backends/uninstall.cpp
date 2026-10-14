@@ -33,7 +33,7 @@ public:
             "`provider`, is answered with `400`. Any other failure, including invalid JSON, is "
             "answered with `500` and an `error` string.",
             "Models loaded on the backend unload first.",
-            "### Uninstall a cloud provider\n"
+            "### Uninstall a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
             "Removes the provider record from `config.json`, drops its in-memory API key, if any, "

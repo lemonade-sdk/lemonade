@@ -1157,8 +1157,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "array (OpenAI chat format). `model` is OPTIONAL: when omitted, "
                  "the server reuses an already-loaded LLM, else an already-"
                  "downloaded one; if neither exists it asks you to either pass a "
-                 "`model` or `allow_download: true` (which downloads the default, "
-                 "Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you "
+                 "`model` or `allow_download: true`. Call `lemonade_list_models` first if you "
                  "want to choose explicitly, since a wrong name may trigger a multi-GB "
                  "download."},
                 {"inputSchema", {
@@ -1209,8 +1208,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "memory. If both are provided, `audio_path` takes precedence. `model` is "
                  "OPTIONAL: when omitted, the server reuses an already-loaded "
                  "transcription model, else an already-downloaded one; if neither "
-                 "exists it asks you to pass a `model` or `allow_download: true` "
-                 "(which downloads the default, Whisper-Tiny)."},
+                 "exists it asks you to pass a `model` or `allow_download: true`."},
                 {"inputSchema", {
                     {"type", "object"},
                     {"properties", {
@@ -1261,8 +1259,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "`model` is OPTIONAL: when "
                  "omitted, the server reuses an already-loaded image model, else "
                  "an already-downloaded one; if neither exists it asks you to pass "
-                 "a `model` or `allow_download: true` (which downloads the "
-                 "default, SD-Turbo)."},
+                 "a `model` or `allow_download: true`."},
                 {"inputSchema", {
                     {"type", "object"},
                     {"required", json::array({"prompt"})},
@@ -1311,8 +1308,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "`audio` content blocks (one per artifact). `model` is "
                  "OPTIONAL: when omitted, the server reuses an already-downloaded "
                  "Omni collection; if none is downloaded it asks you to pass a "
-                 "`model` or `allow_download: true` (which downloads the default, "
-                 "`LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any "
+                 "`model` or `allow_download: true`. Pass `model='LMX-Omni-52B-Halo'` (or any "
                  "other recipe='collection.omni' model from `lemonade_list_models`) "
                  "to opt into a larger collection; that model may be multi-GB. "
                  "Same-machine deployment: PREFER `output_dir` to write artifacts "
