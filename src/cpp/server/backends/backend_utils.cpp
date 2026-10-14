@@ -1310,7 +1310,9 @@ namespace lemon::backends {
         // Deliberately does not stat each entry: a status query on a path past
         // MAX_PATH fails, which would skip the very entries this exists to find.
         // path() is built from enumeration data and needs no filesystem access.
-        std::optional<size_t> scan_rocblas_tensile_depth(const fs::path& root) {
+        std::optional<size_t> scan_rocblas_tensile_depth(const fs::path& root,
+                                                         std::error_code& out_ec) {
+            out_ec.clear();
             // Prefixed before the existence check as well: an install directory
             // that is itself past MAX_PATH would otherwise look absent, and
             // "absent" reads as a pass.
@@ -1324,6 +1326,7 @@ namespace lemon::backends {
             if (ec) {
                 // Anything else means the root exists but could not be read, and
                 // that must not be reported as a pass.
+                out_ec = ec;
                 LOG(WARNING, "BackendUtils")
                     << "Could not stat " << utils::path_to_utf8(root) << " (" << ec.message()
                     << "); ROCm path lengths could not be verified" << std::endl;
@@ -1343,6 +1346,7 @@ namespace lemon::backends {
                 }
             }
             if (ec) {
+                out_ec = ec;
                 LOG(WARNING, "BackendUtils")
                     << "Could not fully scan " << utils::path_to_utf8(root) << " (" << ec.message()
                     << "); ROCm path lengths could not be verified" << std::endl;
@@ -1388,7 +1392,11 @@ namespace lemon::backends {
 
     std::optional<size_t> BackendUtils::measure_rocblas_max_path(const std::string& arch,
                                                                  const std::string& version,
-                                                                 bool wheel_layout) {
+                                                                 bool wheel_layout,
+                                                                 std::error_code* scan_error) {
+        if (scan_error) {
+            scan_error->clear();
+        }
         const std::string key = rocblas_measure_key(arch, version, wheel_layout);
         {
             std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
@@ -1399,8 +1407,12 @@ namespace lemon::backends {
         }
 
         const fs::path root = therock_root(arch, version, wheel_layout);
-        const std::optional<size_t> depth = scan_rocblas_tensile_depth(root);
+        std::error_code scan_ec;
+        const std::optional<size_t> depth = scan_rocblas_tensile_depth(root, scan_ec);
         if (!depth.has_value()) {
+            if (scan_error) {
+                *scan_error = scan_ec;
+            }
             return std::nullopt;
         }
         if (*depth == 0) {
@@ -1446,18 +1458,18 @@ namespace lemon::backends {
         size_t depth = 0;
         std::ifstream f(long_path(root / kRocblasDepthFile));
         if (!(f >> depth) || depth == 0) {
+            std::error_code scan_ec;
             const std::optional<size_t> measured =
-                measure_rocblas_max_path(arch, version, wheel_layout);
+                measure_rocblas_max_path(arch, version, wheel_layout, &scan_ec);
             if (!measured.has_value()) {
-                // Refusing beats permitting: the one case we cannot read is the
-                // case where a directory is already past MAX_PATH, and letting
-                // it through costs an access violation inside rocBLAS plus the
-                // router evicting every resident model.
+                // Refusing beats permitting: a tree we cannot read is a tree we
+                // cannot vouch for, and letting it through costs an access violation
+                // inside rocBLAS plus the router evicting every resident model.
+                // Report what the OS said rather than guessing at a cause.
                 throw ConfigurationException(
-                    "ROCm's install directory under \"" + resolved_cache_dir("") +
-                    "\" could not be read, so its path lengths could not be verified. This usually"
-                    " means a path there is already past the Windows limit. Point"
-                    " LEMONADE_CACHE_DIR at a shorter path and reinstall the ROCm backend.");
+                    "ROCm's install directory \"" + utils::path_to_utf8(root) +
+                    "\" could not be read, so its rocBLAS path lengths could not be verified: " +
+                    scan_ec.message());
             }
             depth = *measured;
             if (depth > 0) {
@@ -2310,13 +2322,19 @@ namespace lemon::backends {
             if (!is_hip_runtime_dll(utils::path_to_utf8(name))) {
                 continue;
             }
-            if (!fs::exists(system_dir / name, stat_ec) || stat_ec) {
-                continue;
-            }
+            std::error_code system_ec;
+            const bool system_shadows = fs::exists(system_dir / name, system_ec) && !system_ec;
 
             const fs::path target = target_dir / name;
-            if (fs::exists(target, stat_ec) && !stat_ec &&
-                read_dll_version(target) == read_dll_version(entry.path())) {
+            std::error_code target_ec;
+            const bool target_exists = fs::exists(target, target_ec) && !target_ec;
+
+            // A copy an older build left here still outranks TheRock's on PATH,
+            // so it has to be refreshed even when System32 has nothing to shadow it.
+            if (!system_shadows && !target_exists) {
+                continue;
+            }
+            if (target_exists && read_dll_version(target) == read_dll_version(entry.path())) {
                 continue;
             }
 
@@ -2332,6 +2350,14 @@ namespace lemon::backends {
             LOG(INFO, "BackendUtils")
                 << "Staged TheRock " << utils::path_to_utf8(name) << " at "
                 << utils::path_to_utf8(target) << std::endl;
+        }
+
+        if (iter_ec) {
+            LOG(WARNING, "BackendUtils")
+                << "Could not read TheRock runtime directory "
+                << utils::path_to_utf8(therock_bin) << " (" << iter_ec.message()
+                << "); no HIP runtime DLLs were staged and device discovery may fail"
+                << std::endl;
         }
 
         return staged_any;

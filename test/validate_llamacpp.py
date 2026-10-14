@@ -51,9 +51,6 @@ CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
 ]
 
-# Raise llama-server log verbosity to atleast -lv 4 so the device-selection lines are emitted.
-LOAD_VERBOSITY_ARGS = "-lv 4"
-
 # Token that must appear in the llama-server device log when a GPU backend
 # actually runs on the GPU. Absence signals a silent CPU fallback.
 GPU_DEVICE_TOKENS = {
@@ -212,11 +209,7 @@ def test_model(base_url, model_name, backend, max_tokens=50):
             "POST",
             f"{base_url}/load",
             timeout=TIMEOUT_INFERENCE,
-            json={
-                "model_name": model_name,
-                "llamacpp_backend": backend,
-                "llamacpp_args": LOAD_VERBOSITY_ARGS,
-            },
+            json={"model_name": model_name, "llamacpp_backend": backend},
         )
         if load_resp.status_code != 200:
             return (

@@ -4,6 +4,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
@@ -146,10 +147,12 @@ namespace lemon::backends {
         /** Longest absolute path under the installed rocBLAS data directory, or
          *  0 when it cannot be located or read. rocBLAS resolves its Tensile
          *  solutions relative to its own binary, so this anchors on that binary
-         *  rather than on a pre-defined layout. */
+         *  rather than on a pre-defined layout. scan_error, when given, receives
+         *  the filesystem error behind a nullopt result. */
         static std::optional<size_t> measure_rocblas_max_path(const std::string& arch,
                                                               const std::string& version,
-                                                              bool wheel_layout);
+                                                              bool wheel_layout,
+                                                              std::error_code* scan_error = nullptr);
 
         /** Measure and record the longest rocBLAS path next to the install's
          *  version.txt, so later checks are one file read instead of a walk. */

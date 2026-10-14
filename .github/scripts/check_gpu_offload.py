@@ -3,7 +3,9 @@
 
 The sd-cpp and llama.cpp validators write per-backend JSON summaries whose records
 carry a ``gpu`` field of ``PASS`` / ``FAIL`` / ``N/A``.
-This gate reads those summaries and exits non-zero when any record is ``FAIL``.
+This gate reads those summaries and exits non-zero when any record is ``FAIL``,
+or when the summaries carry no ``PASS`` at all: a gate that confirms nothing must
+not report success.
 
 It feeds ``validation-gate`` (which blocks merge) but is intentionally NOT a
 dependency of ``create-pr``, so the weekly auto-bump PR still opens with the
@@ -64,6 +66,12 @@ def main() -> int:
         if not isinstance(data, list):
             print(f"ERROR: {path} is not a JSON array", file=sys.stderr)
             return 1
+        if not data:
+            print(
+                f"ERROR: {path} is empty; expected GPU evidence is missing.",
+                file=sys.stderr,
+            )
+            return 1
         for record in data:
             gpu = str(record.get("gpu", "N/A")).upper()
             label = record.get("label") or record.get("backend") or Path(path).stem
@@ -98,12 +106,16 @@ def main() -> int:
             print(f"  {run_url}")
         return 1
 
+    # Every GPU leg contributes at least one PASS when the check is wired up, so
+    # an all-N/A result means the check stopped running, not that it succeeded.
     if passed == 0:
         print(
-            f"No GPU-enforced records found across {len(paths)} summary file(s); "
-            "nothing to confirm."
+            f"ERROR: no GPU-enforced records across {len(paths)} summary file(s); "
+            f"all {not_applicable} record(s) were N/A, so GPU offload was never "
+            "verified. Check that each validator still recognizes its backend name.",
+            file=sys.stderr,
         )
-        return 0
+        return 1
 
     print(
         f"GPU offload confirmed for every enforced model/backend combination "
