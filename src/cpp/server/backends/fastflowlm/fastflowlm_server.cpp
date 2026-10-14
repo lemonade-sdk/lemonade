@@ -171,9 +171,11 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    RegistryId source = model_manager_
-        ? model_manager_->download_source_for(model_info)
-        : models::huggingface_descriptor().id;
+    if (model_manager_ == nullptr) {
+        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                 model_info.checkpoint());
+    }
+    const RegistryId source = model_manager_->download_source_for(model_info);
 
     download_model(model_info.checkpoint(), do_not_upgrade, source);
 
@@ -430,10 +432,12 @@ public:
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
                         const BackendOpsContext& ctx) const override {
-        RegistryId source = ctx.model_manager
-            ? ctx.model_manager->download_source_for(info)
-            : models::huggingface_descriptor().id;
-        flm_download(info.checkpoint(), do_not_upgrade, progress, source);
+        if (ctx.model_manager == nullptr) {
+            throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                     info.checkpoint());
+        }
+        flm_download(info.checkpoint(), do_not_upgrade, progress,
+                     ctx.model_manager->download_source_for(info));
     }
 
     bool invalidates_cache_after_download() const override { return true; }

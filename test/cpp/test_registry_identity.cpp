@@ -99,6 +99,23 @@ static void test_default_spelling_is_the_default_host() {
           !registry_id_from("huggingfcae").has_value());
 }
 
+// A backend asks whether a host serves plain resolve URLs rather than asking
+// which host it is, so the answer has to be a fact the table carries.
+static void test_only_a_plain_download_host_offers_a_resolve_url() {
+    const RegistryId hf = *registry_id_from("huggingface");
+    const RegistryId ms = *registry_id_from("modelscope");
+
+    const RegistryDescriptor* hf_descriptor = descriptor_for(hf);
+    const RegistryDescriptor* ms_descriptor = descriptor_for(ms);
+
+    check("the plain download host names an endpoint",
+          hf_descriptor != nullptr && !hf_descriptor->endpoint_default.empty());
+    check("an API-only host names no endpoint",
+          ms_descriptor != nullptr && ms_descriptor->endpoint_default.empty());
+    check("a revision comes from the same row as the endpoint",
+          hf_descriptor != nullptr && hf_descriptor->default_revision == "main");
+}
+
 static void test_lookup_by_id() {
     check("a known id has a descriptor", descriptor_for(modelscope_descriptor().id) != nullptr);
     check("an unknown id has none", descriptor_for(RegistryId("gitlfs")) == nullptr);
@@ -156,6 +173,7 @@ int main() {
     test_revision_semantics_are_per_host();
     test_persisted_names_come_from_the_table();
     test_default_spelling_is_the_default_host();
+    test_only_a_plain_download_host_offers_a_resolve_url();
     test_lookup_by_id();
     test_a_persisted_entry_naming_an_unknown_host_is_skipped();
 
