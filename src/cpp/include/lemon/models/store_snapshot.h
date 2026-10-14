@@ -13,8 +13,8 @@
 namespace lemon {
 namespace models {
 
-// One immutable view of the model set. Readers hold a shared_ptr, so anything
-// they read out of a snapshot stays valid across the next publish.
+// One immutable view of the model set. A reader's shared_ptr keeps what it read
+// valid across the next publish.
 struct StoreSnapshot {
     // Canonical id -> info.
     std::map<std::string, ModelInfo> models;
@@ -65,8 +65,7 @@ struct StoreSnapshot {
     }
 };
 
-// Union of the helpers every policy in `models` needs. A model with no policy
-// contributes none, and a helper named by several policies is named once.
+// Union of the helpers every policy in `models` needs.
 std::set<std::string> collect_helper_models(
     const std::map<std::string, ModelInfo>& models);
 

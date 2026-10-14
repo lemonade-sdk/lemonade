@@ -26,16 +26,13 @@ const RegistryDescriptor& modelscope() {
                                                "ms",
                                                "modelscope--models--",
                                                "master",
-                                               // Deliberately empty: this host serves files through its
-                                               // files API, and leaving it unset keeps today's behavior of
-                                               // never fetching from it outside that API.
+                                               // Empty: no plain resolve URL for this host.
                                                ""};
     return descriptor;
 }
 
-// Registration is the only writer and it runs during static initialization, so a
-// reader needs no lock. A deque, because push_back must not invalidate a
-// descriptor pointer handed out earlier.
+// Written only during static initialization, so readers need no lock. A deque
+// keeps a handed-out descriptor pointer valid across a later push_back.
 std::deque<RegistryDescriptor>& table() {
     static std::deque<RegistryDescriptor> descriptors{huggingface(), modelscope()};
     return descriptors;

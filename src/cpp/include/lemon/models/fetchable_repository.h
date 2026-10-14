@@ -51,9 +51,7 @@ struct Staleness {
     std::vector<std::string> changed_files;
 };
 
-// The pullable role, layered on an artifact source. What a host owns is the
-// protocol and its own vocabulary; transfer, layout and blob naming stay shared,
-// because duplicating them per host re-creates a god object.
+// The pullable role, layered on an artifact source.
 class FetchableRepository : public ArtifactSource {
   public:
     virtual RegistryId id() const = 0;
@@ -75,19 +73,20 @@ class FetchableRepository : public ArtifactSource {
     virtual bool supports_search() const { return false; }
 
   protected:
-    // A source is built for one checkpoint, so the ref arrives at construction
-    // and the role methods take no arguments.
+    // A source carries the checkpoint it was built for.
     explicit FetchableRepository(ArtifactRef ref) : ArtifactSource(std::move(ref)) {}
 };
 
-using RepositoryFactory = std::function<std::unique_ptr<FetchableRepository>()>;
+// A source is built for one checkpoint, so a factory takes the ref it will carry.
+using RepositoryFactory =
+    std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)>;
 
 // Builds the repository a host names, or null when none registered.
-std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id);
+std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id,
+                                                       const ArtifactRef& ref);
 std::vector<RegistryId> registered_repository_ids();
 
-// Hosts claiming a factory more than once: a bug in two registrations, reported
-// at startup rather than resolved by whichever static initializer ran last.
+// Ids claimed by more than one registration; the first keeps serving.
 std::vector<RegistryId> repository_registration_conflicts();
 
 namespace detail {
@@ -97,17 +96,16 @@ void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
 }  // namespace models
 }  // namespace lemon
 
-// Static initializer, no dlopen, no plugin boundary. A host the build does not
-// recognize skips its models with a warning rather than aborting startup, so
-// nothing here is allowed to throw.
+// Static initializer. Nothing here may throw: an unrecognized host must not
+// abort startup.
 #define LEMONADE_REGISTER_ARTIFACT_REPOSITORY(ClassName, descriptor_expr)         \
     static const bool lemonade_repository_registered_##ClassName = [] {           \
         const ::lemon::models::RegistryDescriptor descriptor = descriptor_expr;   \
         ::lemon::models::detail::add_descriptor(descriptor);                      \
         ::lemon::models::detail::add_repository_factory(                          \
-            descriptor.id, [] {                                                   \
+            descriptor.id, [](const ::lemon::models::ArtifactRef& ref) {          \
                 return std::unique_ptr<::lemon::models::FetchableRepository>(     \
-                    new ClassName());                                             \
+                    new ClassName(ref));                                          \
             });                                                                   \
         return true;                                                              \
     }()

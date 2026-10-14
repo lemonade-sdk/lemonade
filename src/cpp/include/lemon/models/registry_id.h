@@ -7,10 +7,7 @@
 namespace lemon {
 namespace models {
 
-// A pullable model host, named by string rather than by enum. The string is what
-// user_models.json `registry_source`, .lemonade_registry.json `source`,
-// POST /pull `source` and --source already carry, so a new host is one more
-// accepted value in those places rather than a new enum member.
+// A pullable model host, named by the string every persisted form already carries.
 class RegistryId {
   public:
     RegistryId() = default;
@@ -28,8 +25,7 @@ class RegistryId {
     std::string canonical_;
 };
 
-// Everything about a host that is not protocol: the spellings it answers to and
-// the URL and on-disk shapes it dictates.
+// Per-host facts that are not protocol.
 struct RegistryDescriptor {
     RegistryId id;
     std::vector<std::string> aliases;  // accepted spellings, lower case
@@ -37,25 +33,19 @@ struct RegistryDescriptor {
     std::string scheme_prefix;      // short form in a machine-minted id
     std::string cache_dir_prefix;   // provider-qualified namespace in the models dir
     std::string default_revision;
-    // Empty when the host serves files through an API rather than a plain
-    // `<endpoint>/<repo>/resolve/<rev>/<path>`, so "no direct URL" is a fact
-    // about the host instead of a name a caller has to recognize.
+    // Empty when the host serves files only through its own API.
     std::string endpoint_default;
 };
 
-// Resolves any accepted spelling. Empty means the default host, which is what
-// entries written before a source was recorded look like.
+// Resolves any accepted spelling. Empty means the default host.
 std::optional<RegistryId> registry_id_from(const std::string& spelling);
 
-// Null for an id no registered host claims. A persisted entry naming one warns
-// and contributes nothing; startup does not abort.
+// Null when no registered host claims the id.
 const RegistryDescriptor* descriptor_for(const RegistryId& id);
 
 namespace detail {
-// Registration is the only writer, and the built-in hosts seed the table on
-// first touch, so the order of static initializers across translation units
-// cannot observe an empty table or invalidate a descriptor pointer. A row with
-// the same id is replaced: registration carries the descriptor.
+// Registration is the only writer; the built-ins seed the table on first touch.
+// A row with the same id is replaced.
 void add_descriptor(const RegistryDescriptor& descriptor);
 }  // namespace detail
 

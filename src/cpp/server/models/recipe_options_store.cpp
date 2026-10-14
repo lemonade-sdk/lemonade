@@ -44,8 +44,8 @@ void RecipeOptionsStore::migrate(
             << "migrated " << moved << " legacy recipe_options keys to builtin. prefix"
             << std::endl;
     } catch (const std::exception& e) {
-        // A read-only config dir must not break startup: the in-memory set is
-        // already normalized, so the next write persists it anyway.
+        // A read-only config dir must not break startup; the next write persists
+        // the normalized set.
         LOG(WARNING, "ModelManager")
             << "Could not persist migrated recipe_options.json: " << e.what() << std::endl;
     }
