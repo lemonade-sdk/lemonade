@@ -1037,6 +1037,55 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Pull (streaming): received events: {set(events_received)}")
 
+    def test_008b_inference_pulls_missing_model(self):
+        """Inference on a registered model that is not downloaded pulls it first."""
+        delete_response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(delete_response.status_code, [200, 422])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be deleted before the inference request",
+        )
+
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["choices"])
+
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        model_ids = [m["id"] for m in models_response.json()["data"]]
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            model_ids,
+            "Model should be downloaded after the inference request",
+        )
+
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        print(f"[OK] Inference pulled missing model: {ENDPOINT_TEST_MODEL}")
+
     def test_009_load_model_basic(self):
         """Test loading a model into memory."""
         # Model is already pulled (setUpClass or previous pull tests)
@@ -6452,16 +6501,25 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # kv_count
 
     @contextlib.contextmanager
-    def _extra_models_dir(self, ggufs=(), gguf_sizes=None):
-        """Serve a fresh extra_models_dir holding a stub GGUF at each of `ggufs`,
-        padded to `gguf_sizes` ({path: bytes}) where given, all as '/'-separated
-        paths; then restore the prior setting."""
+    def _extra_models_dir(self, ggufs=(), gguf_sizes=None, refs=None, other_files=()):
+        """Serve a fresh extra_models_dir holding stub GGUFs, optional other
+        files, and refs/main entries. Then restore the previous setting."""
         extra_dir = tempfile.mkdtemp(prefix=f"lemon_{self._testMethodName}_")
         for relative in ggufs:
             self._write_stub_gguf_file(os.path.join(extra_dir, *relative.split("/")))
+        for relative in other_files:
+            path = os.path.join(extra_dir, *relative.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(b"\x00" * 128)
         for relative, size in (gguf_sizes or {}).items():
             with open(os.path.join(extra_dir, *relative.split("/")), "r+b") as f:
                 f.truncate(size)
+        for repo, commit in (refs or {}).items():
+            refs_dir = os.path.join(extra_dir, repo, "refs")
+            os.makedirs(refs_dir, exist_ok=True)
+            with open(os.path.join(refs_dir, "main"), "w") as f:
+                f.write(commit)
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
@@ -6891,6 +6949,561 @@ class EndpointTests(ServerTestBase):
                 )
 
             print("[OK] a later single-model folder is qualified")
+
+    def test_021yb_extra_hf_cache_is_named_after_its_repo(self):
+        """Naming rule: a model in a Hugging Face or ModelScope cache is named
+        after its repo, not after the commit folder it sits in."""
+        hf = "models--lemontest--Hf-7B-GGUF"
+        ms = "modelscope--models--lemontest--Ms-3B-GGUF"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{hf}/snapshots/commit-1-old/Hf-7B-Q4_K_M.gguf",
+                f"{hf}/snapshots/commit-2-live/Hf-7B-Q4_K_M.gguf",
+                f"{ms}/snapshots/commit-live/Ms-3B-Q4_K_M.gguf",
+            ],
+            refs={hf: "commit-2-live", ms: "commit-live"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Hf-7B-GGUF": f"{hf}/snapshots/commit-2-live/",
+                    "Ms-3B-GGUF": f"{ms}/snapshots/commit-live/",
+                    # An older revision left in the cache is prefixed with its commit.
+                    "commit-1-old-Hf-7B-GGUF": f"{hf}/snapshots/commit-1-old/",
+                },
+            )
+
+            legacy = requests.get(
+                f"{self.base_url}/models/commit-2-live", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 404, "commit folder must not resolve")
+
+            print("[OK] cache folders are named after their repo")
+
+    def test_021yc_extra_hf_cache_collision_qualifies_with_the_org(self):
+        """Naming rule: two orgs shipping one repo name both stay readable,
+        because the second is qualified with its org rather than its commit."""
+        first = "alpha-commit"
+        second = "beta-commit"
+        with self._extra_models_dir(
+            ggufs=[
+                f"models--alpha--Collide-7B-GGUF/snapshots/{first}/Collide-7B-Q4_K_M.gguf",
+                f"models--beta--Collide-7B-GGUF/snapshots/{second}/Collide-7B-Q4_K_M.gguf",
+            ],
+            refs={
+                "models--alpha--Collide-7B-GGUF": first,
+                "models--beta--Collide-7B-GGUF": second,
+            },
+        ) as extra_dir:
+            # Caches sort by directory, so alpha claims the bare name and beta
+            # is qualified with its org, not its commit.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Collide-7B-GGUF": f"models--alpha--Collide-7B-GGUF/snapshots/{first}/",
+                    "beta-Collide-7B-GGUF": f"models--beta--Collide-7B-GGUF/snapshots/{second}/",
+                },
+            )
+
+            print("[OK] a cache collision is qualified with the org")
+
+    def test_021yd_extra_hf_cache_subfolder_takes_the_repo_name(self):
+        """Naming rule: a cache whose GGUFs sit in quantization subfolders names
+        them <repo>-<folder>, and the subfolder name is not kept as a name."""
+        commit = "commit-live"
+        snapshot = f"models--lemontest--Subfolder-235B-GGUF/snapshots/{commit}"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshot}/Q4_K_M/Subfolder-235B-Q4_K_M-00001-of-00002.gguf",
+                f"{snapshot}/Q4_K_M/Subfolder-235B-Q4_K_M-00002-of-00002.gguf",
+                f"{snapshot}/Q8_0/Subfolder-235B-Q8_0.gguf",
+            ],
+            refs={"models--lemontest--Subfolder-235B-GGUF": commit},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Subfolder-235B-GGUF-Q4_K_M": f"{snapshot}/Q4_K_M/",
+                    "Subfolder-235B-GGUF-Q8_0": f"{snapshot}/Q8_0/",
+                },
+            )
+
+            # A bare Q8_0 would collide with every other repo shipping that folder.
+            legacy = requests.get(
+                f"{self.base_url}/models/Q8_0", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 404, "Q8_0 must not resolve")
+
+            print("[OK] cache subfolders carry the repo name")
+
+    def test_021ye_extra_hf_cache_live_revision_owns_the_plain_names(self):
+        """Naming rule: names follow the revision refs/main points at, whatever
+        order the revisions are discovered in."""
+        superseded = "commit-1-old"
+        live = "commit-2-live"
+        repo = "models--lemontest--Revision-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Revision-7B-{quant}.gguf"
+                for commit in (superseded, live)
+                for quant in ("Q4_K_M", "Q8_0")
+            ],
+            refs={repo: live},
+        ) as extra_dir:
+            # The superseded revision sorts first, so this fails if discovery
+            # order decides the winner instead of refs/main.
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Revision-7B-Q4_K_M": f"{snapshots}/{live}/Revision-7B-Q4_K_M.gguf",
+                    "Revision-7B-Q8_0": f"{snapshots}/{live}/Revision-7B-Q8_0.gguf",
+                    f"{superseded}-Revision-7B-Q4_K_M": f"{snapshots}/{superseded}/Revision-7B-Q4_K_M.gguf",
+                    f"{superseded}-Revision-7B-Q8_0": f"{snapshots}/{superseded}/Revision-7B-Q8_0.gguf",
+                },
+            )
+
+            print("[OK] the live cache revision owns the plain names")
+
+    def test_021yh_extra_cache_lookalikes_keep_folder_naming(self):
+        """Naming rule: cache naming needs a real cache with a live revision;
+        anything that only resembles one is named like any other folder."""
+        with self._extra_models_dir(
+            ggufs=[
+                # Named like a cache, but has no snapshots/ inside.
+                "models--lemontest--Plain-GGUF/model.gguf",
+                # Has a snapshots/ folder, but is not inside a cache.
+                "projects/snapshots/v1/model.gguf",
+                # A cache whose refs/main names a revision that is not on disk,
+                # so there is no live revision to name the model after.
+                "models--lemontest--Broken-GGUF/snapshots/commit-on-disk/model.gguf",
+            ],
+            refs={"models--lemontest--Broken-GGUF": "commit-not-on-disk"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "models--lemontest--Plain-GGUF": "models--lemontest--Plain-GGUF/",
+                    "v1": "projects/snapshots/v1/",
+                    "commit-on-disk": "models--lemontest--Broken-GGUF/snapshots/commit-on-disk/",
+                },
+            )
+
+            print("[OK] cache lookalikes keep folder naming")
+
+    def test_021yi_extra_hf_cache_follows_a_refs_main_switch(self):
+        """Switching refs/main on a running server moves the repo name to the
+        new revision without resetting extra_models_dir."""
+        repo = "models--lemontest--Switch-7B-GGUF"
+        snapshots = f"{repo}/snapshots"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snapshots}/{commit}/Switch-7B-Q4_K_M.gguf"
+                for commit in ("commit-1", "commit-2")
+            ],
+            refs={repo: "commit-1"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                    "commit-2-Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                },
+            )
+
+            # Written the way llama.cpp updates a ref: a temp file renamed over it.
+            refs_main = os.path.join(extra_dir, repo, "refs", "main")
+            with open(refs_main + ".tmp", "w") as f:
+                f.write("commit-2")
+            os.replace(refs_main + ".tmp", refs_main)
+
+            live = os.path.join(extra_dir, *snapshots.split("/"), "commit-2")
+            deadline = time.time() + 10
+            while (
+                self._get_model("Switch-7B-GGUF")["checkpoint"] != live
+                and time.time() < deadline
+            ):
+                time.sleep(0.25)
+
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Switch-7B-GGUF": f"{snapshots}/commit-2/",
+                    "commit-1-Switch-7B-GGUF": f"{snapshots}/commit-1/",
+                },
+            )
+            self.assertEqual(self._get_model("Switch-7B-GGUF")["checkpoint"], live)
+
+            print("[OK] the repo name follows a refs/main switch")
+
+    def test_021yj_extra_cache_keeps_registered_identity(self):
+        """Relocating a complete registered cache must not turn it into extra.*."""
+        candidates = [
+            (
+                "LFM2.5-8B-A1B",
+                "LiquidAI",
+                "LFM2.5-8B-A1B-GGUF",
+                "LFM2.5-8B-A1B-Q4_K_M.gguf",
+            ),
+            (
+                "MiniCPM5-1B-GGUF",
+                "OpenBMB",
+                "MiniCPM5-1B-GGUF",
+                "MiniCPM5-1B-Q4_K_M.gguf",
+            ),
+            ("Jan-v1-4B-GGUF", "janhq", "Jan-v1-4B-GGUF", "Jan-v1-4B-Q4_K_M.gguf"),
+        ]
+        models = self._listed_models()
+        chosen = next(
+            (
+                entry
+                for entry in candidates
+                if entry[0] in models and not models[entry[0]].get("downloaded")
+            ),
+            None,
+        )
+        if chosen is None:
+            self.skipTest("no uninstalled registered GGUF available")
+
+        name, org, repo_name, filename = chosen
+        repo = f"models--{org}--{repo_name}"
+        rel = f"{repo}/snapshots/test-active/{filename}"
+        checkpoint = self._get_model(name)["checkpoint"]
+        with self._extra_models_dir(
+            ggufs=[rel], refs={repo: "test-active"}
+        ) as extra_dir:
+            info = self._get_model(name)
+            self.assertEqual(info["checkpoint"], checkpoint)
+            self.assertTrue(info["downloaded"], f"registered model missing: {info}")
+            self.assertNotEqual(info.get("source"), "extra_models_dir")
+            self.assertExtraModelsListed(extra_dir, {})
+
+            # A registered alias must not allow deletion of external files.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertNotEqual(response.status_code, 200)
+            self.assertTrue(os.path.exists(os.path.join(extra_dir, *rel.split("/"))))
+
+    def test_021yk_extra_cache_draft_files_are_not_main_models(self):
+        """MTP/DFlash companions do not create duplicate standalone entries."""
+        repo = "models--lemontest--Draft-7B-GGUF"
+        snap = f"{repo}/snapshots/test-active"
+        with self._extra_models_dir(
+            ggufs=[
+                f"{snap}/Draft-7B-Q4_K_M.gguf",
+                f"{snap}/Draft-7B-Q8_0.gguf",
+                f"{snap}/MTP-Draft-7B-Q4_K_M.gguf",
+                f"{snap}/DFlash.gguf",
+                f"{snap}/Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
+                "standalone/MTP-Orphan.gguf",
+            ],
+            refs={repo: "test-active"},
+        ) as extra_dir:
+            self.assertExtraModelsListed(
+                extra_dir,
+                {
+                    "Draft-7B-Q4_K_M": f"{snap}/Draft-7B-Q4_K_M.gguf",
+                    "Draft-7B-Q8_0": f"{snap}/Draft-7B-Q8_0.gguf",
+                },
+            )
+
+    def test_021yl_extra_cache_restores_multifile_image_model(self):
+        """Non-GGUF catalog models keep their recipes after cache relocation."""
+        name = "Krea-2-Turbo"
+        models = self._listed_models()
+        if name not in models or models[name].get("downloaded"):
+            self.skipTest("Krea-2-Turbo unavailable or already in managed cache")
+        repo = "models--Comfy-Org--Krea-2"
+        snap = f"{repo}/snapshots/test-active"
+        files = [
+            f"{snap}/diffusion_models/krea2_turbo_bf16.safetensors",
+            f"{snap}/text_encoders/qwen3vl_4b_bf16.safetensors",
+            f"{snap}/vae/qwen_image_vae.safetensors",
+        ]
+        with self._extra_models_dir(
+            other_files=files, refs={repo: "test-active"}
+        ) as extra_dir:
+            info = self._get_model(name)
+            self.assertEqual(info["recipe"], "thenoise")
+            self.assertTrue(info["downloaded"], f"moved Krea files not found: {info}")
+            self.assertNotEqual(info.get("source"), "extra_models_dir")
+
+    def test_021ym_registered_shards_and_unrelated_quantization(self):
+        """Every registered shard stays out of extra.*, other variants remain."""
+        name = f"user.Shards-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Shards-GGUF"
+        snap = f"{repo}/snapshots/active"
+        first = "Shards-Q4_K_M-00001-of-00002.gguf"
+        second = "Shards-Q4_K_M-00002-of-00002.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/Shards-GGUF:{first}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/{second}",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # Missing shards must not create an extra.* duplicate of the
+            # registered model, while unrelated quantizations remain discoverable.
+            with self._extra_models_dir(
+                ggufs=[
+                    f"{snap}/{first}",
+                    f"{snap}/Shards-Q8_0.gguf",
+                    f"{snap}/Shards-Q5_K_M.gguf",
+                ],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(
+                    extra_dir,
+                    {
+                        "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                        "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                    },
+                )
+
+            # Corrupting either shard must suppress the whole registered family.
+            for damaged in (first, second):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{first}",
+                        f"{snap}/{second}",
+                        f"{snap}/Shards-Q8_0.gguf",
+                        f"{snap}/Shards-Q5_K_M.gguf",
+                    ],
+                    gguf_sizes={f"{snap}/{damaged}": 1},
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            "Shards-Q8_0": f"{snap}/Shards-Q8_0.gguf",
+                            "Shards-Q5_K_M": f"{snap}/Shards-Q5_K_M.gguf",
+                        },
+                    )
+        finally:
+            # Restore the original extra directory before removing registration.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021yn_external_ref_cannot_escape_its_repository(self):
+        """A refs/main redirect into a sibling cache may not adopt its files."""
+        name = f"user.Ref-Escape-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Ref-Escape-GGUF"
+        sibling = "models--other--Sibling-GGUF"
+        filename = "Ref-Escape-Q4_K_M.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/Ref-Escape-GGUF:{filename}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{sibling}/snapshots/live/{filename}"],
+                refs={repo: f"../../{sibling}/snapshots/live"},
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+            with self._extra_models_dir(
+                ggufs=[f"{sibling}/snapshots/live/{filename}"],
+                other_files=[f"{repo}/snapshots/.keep"],
+                refs={repo: f"../../{sibling}/snapshots/live"},
+            ):
+                self.assertFalse(self._get_model(name)["downloaded"])
+        finally:
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021yo_delete_user_registration_with_external_weights(self):
+        """Deleting a user registration must leave its external GGUF untouched."""
+        name = f"user.External-Only-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--External-Only-GGUF"
+        filename = "External-Only-Q4_K_M.gguf"
+        relative = f"{repo}/snapshots/live/{filename}"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "checkpoint": f"lemon-test/External-Only-GGUF:{filename}",
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[relative], refs={repo: "live"}
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                response = requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(
+                    os.path.isfile(os.path.join(extra_dir, *relative.split("/")))
+                )
+                self.assertNotIn(name.removeprefix("user."), self._listed_models())
+        finally:
+            if name.removeprefix("user.") in self._listed_models():
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+
+    def test_021yp_legacy_auxiliary_in_managed_main_repo(self):
+        """Deletion must still work for an old multi-repo cache layout."""
+        # Use an isolated daemon/cache so no developer or CI model files are touched.
+        with tempfile.TemporaryDirectory(prefix="lemond_legacy_aux_") as root:
+            models_root = os.path.join(root, "models")
+            repo = "models--lemon-test--Legacy-Main-GGUF"
+            repo_dir = os.path.join(models_root, repo)
+            snapshot = os.path.join(repo_dir, "snapshots", "active")
+            os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+            with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
+                f.write("active")
+            main_file = "Legacy-Main-Q4_K_M.gguf"
+            mmproj_file = "mmproj-legacy.gguf"
+            self._write_stub_gguf_file(os.path.join(snapshot, main_file))
+            self._write_stub_gguf_file(os.path.join(snapshot, mmproj_file))
+
+            with _running_lemond(
+                config={"models_dir": models_root, "disable_model_filtering": True},
+                cache_prefix="lemond_legacy_layout_",
+            ) as (proc, port, headers, log_path):
+                self.assertTrue(
+                    _wait_until_healthy(proc, port, headers),
+                    f"isolated lemond did not start (log: {log_path})",
+                )
+                url = f"http://127.0.0.1:{port}/api/v1"
+                name = f"user.Legacy-Aux-{uuid.uuid4().hex[:8]}"
+                response = requests.post(
+                    f"{url}/models/register",
+                    headers=headers,
+                    json={
+                        "model_name": name,
+                        "recipe": "llamacpp",
+                        "checkpoints": {
+                            "main": f"lemon-test/Legacy-Main-GGUF:{main_file}",
+                            "mmproj": f"lemon-test/Legacy-Aux-GGUF:{mmproj_file}",
+                        },
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                response = requests.get(
+                    f"{url}/models/{name}", headers=headers, timeout=TIMEOUT_DEFAULT
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()["downloaded"], response.text)
+                response = requests.post(
+                    f"{url}/delete",
+                    headers=headers,
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertFalse(
+                    os.path.exists(repo_dir),
+                    "managed legacy cache must be deleted, not just unregistered",
+                )
+                response = requests.get(
+                    f"{url}/models?show_all=true",
+                    headers=headers,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertNotIn(name, [m["id"] for m in response.json()["data"]])
+
+    def test_021yq_legacy_external_auxiliary_preserves_identity(self):
+        """Relocated legacy auxiliary files keep the registration and remain user-managed."""
+        name = f"user.Legacy-Extra-{uuid.uuid4().hex[:8]}"
+        repo = "models--lemon-test--Legacy-Extra-GGUF"
+        snap = f"{repo}/snapshots/active"
+        main_file = "Legacy-Extra-Q4_K_M.gguf"
+        mmproj_file = "mmproj-legacy-extra.gguf"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "main": f"lemon-test/Legacy-Extra-GGUF:{main_file}",
+                    "mmproj": f"lemon-test/Legacy-Other-GGUF:{mmproj_file}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}", f"{snap}/{mmproj_file}"],
+                refs={repo: "active"},
+            ) as extra_dir:
+                info = self._get_model(name)
+                self.assertTrue(info["downloaded"], info)
+                self.assertNotEqual(info.get("source"), "extra_models_dir")
+                self.assertExtraModelsListed(extra_dir, {})
+                response = requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(
+                    os.path.isfile(os.path.join(extra_dir, *snap.split("/"), main_file))
+                )
+                self.assertTrue(
+                    os.path.isfile(
+                        os.path.join(extra_dir, *snap.split("/"), mmproj_file)
+                    )
+                )
+        finally:
+            if name.removeprefix("user.") in self._listed_models():
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
 
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""

@@ -47,7 +47,8 @@ enum class DraftKind { None, Mtp, Dflash };
 
 DraftKind draft_kind(const std::string& path) {
     const std::string filename = to_lower(filename_only(path));
-    if (filename.rfind("mtp-", 0) == 0) return DraftKind::Mtp;
+    if (filename.rfind("mtp-", 0) == 0 ||
+        filename.find("-mtp-ud-") != std::string::npos) return DraftKind::Mtp;
     if (filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf") {
         return DraftKind::Dflash;
     }
@@ -189,6 +190,11 @@ std::string preferred_draft_companion(
 }
 
 }  // namespace
+
+std::string gguf_quant_token(const std::string& name) {
+    std::string quant;
+    return extract_quant(name, quant) ? quant : std::string();
+}
 
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,

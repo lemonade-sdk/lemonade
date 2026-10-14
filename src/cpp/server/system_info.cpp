@@ -1,5 +1,7 @@
 #include "lemon/system_info.h"
 #include "system_info_utils.h"
+#include "platform/amd_gpu_type.h"
+#include "platform/nvidia_metrics.h"
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/backend_manager.h"
@@ -151,51 +153,7 @@ struct HsaRuntimeApi {
 };
 
 bool query_amdgpu_is_apu(const fs::path& card_path) {
-    const fs::path drm_device_dir = card_path / "device" / "drm";
-    std::error_code ec;
-    if (!fs::is_directory(drm_device_dir, ec)) {
-        return false;
-    }
-
-    bool is_apu = false;
-    for (fs::directory_iterator it(drm_device_dir, ec), end;
-         it != end && !ec;
-         it.increment(ec)) {
-        const std::string name = it->path().filename().string();
-        if (name.rfind("renderD", 0) != 0) {
-            continue;
-        }
-
-        const fs::path node = fs::path("/dev/dri") / name;
-        const int fd = open(node.c_str(), O_RDWR | O_CLOEXEC);
-        if (fd < 0) {
-            continue;
-        }
-
-        uint32_t major_version = 0;
-        uint32_t minor_version = 0;
-        amdgpu_device_handle device = nullptr;
-        const int init_result = amdgpu_device_initialize(
-            fd, &major_version, &minor_version, &device);
-        if (init_result != 0 || device == nullptr) {
-            close(fd);
-            continue;
-        }
-
-        amdgpu_gpu_info info{};
-        const int query_result = amdgpu_query_gpu_info(device, &info);
-        amdgpu_device_deinitialize(device);
-        close(fd);
-
-        if (query_result != 0) {
-            continue;
-        }
-
-        is_apu = (info.ids_flags & AMDGPU_IDS_FLAGS_FUSION) != 0;
-        break;
-    }
-
-    return is_apu;
+    return gpu_metrics_detail::is_amd_apu(card_path);
 }
 
 std::string trim_copy(const std::string& value) {
@@ -489,8 +447,8 @@ static const std::vector<RecipeBackendDef>& recipe_defs() {
         std::vector<RecipeBackendDef> v;
         for (const auto* desc : lemon::backends::all_descriptors()) {
             for (const auto& row : desc->support) {
-                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices,
-                             row.device_summary, row.arch_gates});
+                v.push_back({desc->recipe, row.backend, row.tier, row.format, row.supported_os,
+                             row.devices, row.device_summary, row.arch_gates});
             }
         }
         return v;
@@ -698,6 +656,10 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
 }
 
 // Generic installation check
+static bool is_installed_state(const std::string& state) {
+    return state == "installed" || state == "update_available" || state == "update_required";
+}
+
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
     // CWSR fix is missing (a per-descriptor flag).
@@ -1263,10 +1225,11 @@ json SystemInfo::build_recipes_info(const json& devices) {
     std::set<std::string> default_backend_installed;
 
     auto set_backend_status = [&recipes, &backend_status_priority](
-                                const std::string& recipe,
-                                const std::string& backend_name,
-                                const json& backend_status,
+                                const RecipeBackendDef& def,
+                                json backend_status,
                                 int unsupported_priority) {
+        const std::string& recipe = def.recipe;
+        const std::string& backend_name = def.backend;
         const std::string state = backend_status.value("state", "unsupported");
         const int priority = (state == "unsupported")
             ? unsupported_priority
@@ -1283,6 +1246,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             recipes[recipe] = {{"backends", json::object()}};
         }
 
+        backend_status["tier"] = backend_tier_to_string(def.tier);
+        backend_status["format"] = backend_format_to_string(def.format);
         recipes[recipe]["backends"][backend_name] = backend_status;
         backend_status_priority[key] = priority;
     };
@@ -1330,7 +1295,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"can_uninstall", true},
             };
 
-            set_backend_status(def.recipe, def.backend, backend, kOtherOsUnsupportedPriority);
+            set_backend_status(def, backend, kOtherOsUnsupportedPriority);
             continue;
         }
 
@@ -1600,7 +1565,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
         // using BackendManager as the single source of truth for repo/version mappings.
 
-        set_backend_status(def.recipe, def.backend, backend, kCurrentOsUnsupportedPriority);
+        set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
@@ -1614,9 +1579,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         if (supported && !skip_as_default) {
             const std::string effective_state =
                 recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
-            const bool locally_installed = effective_state == "installed"
-                || effective_state == "update_available"
-                || effective_state == "update_required";
+            const bool locally_installed = is_installed_state(effective_state);
             const bool overrides_uninstalled_default =
                 locally_installed && default_backend_installed.count(def.recipe) == 0;
             if (!recipes[def.recipe].contains("default_backend") || overrides_uninstalled_default) {
@@ -1644,7 +1607,11 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["selectable_backend"] = desc->selectable_backend;
         entry["uses_ctx_size"] = desc->uses_ctx_size;
         entry["modality"] = lemon::backends::modality_display_for(*desc);
-        entry["experimental"] = desc->experimental;
+        const std::string selected_backend = entry.value("default_backend", "");
+        const std::string selected_tier =
+            entry["backends"].value(selected_backend, json::object()).value("tier", "");
+        entry["experimental"] = !selected_backend.empty() &&
+            selected_tier != backend_tier_to_string(BackendTier::Core);
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
         // Machine-independent support matrix (OS + device families + friendly
@@ -1658,6 +1625,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             }
             support.push_back({
                 {"backend", row.backend},
+                {"tier", backend_tier_to_string(row.tier)},
+                {"format", backend_format_to_string(row.format)},
                 {"os", std::vector<std::string>(row.supported_os.begin(), row.supported_os.end())},
                 {"devices", devices},
                 {"device_summary", row.device_summary},
@@ -1749,6 +1718,37 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
+}
+
+std::string SystemInfo::check_guest_backend_installed(const std::string& recipe,
+                                                      const json& system_info) {
+    if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
+        return "";
+    }
+    const json backends = system_info["recipes"][recipe].value("backends", json::object());
+
+    std::string guest_backend;
+    for (const auto& [name, info] : backends.items()) {
+        const std::string state = info.value("state", "unsupported");
+        if (state == "unsupported") {
+            continue;
+        }
+        if (info.value("tier", "") != backend_tier_to_string(BackendTier::Guest)) {
+            return "";
+        }
+        if (is_installed_state(state)) {
+            return "";
+        }
+        if (guest_backend.empty()) {
+            guest_backend = recipe + ":" + name;
+        }
+    }
+    if (guest_backend.empty()) {
+        return "";
+    }
+    return "This model runs only on the guest backend " + guest_backend +
+           ", which is not installed. Install it with `lemonade backends install " +
+           guest_backend + "` to use this model.";
 }
 
 std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
@@ -2504,102 +2504,18 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
 // fails due to AppArmor restrictions in snap strict confinement.
 static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     std::vector<NvidiaSmiGpuInfo> result;
-
-    void* handle = dlopen("libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-        handle = dlopen("/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-        return result;
-
-    // Minimal NVML ABI surface — only what we actually call.
-    using nvmlDevice_t = void*;
-    using nvmlReturn_t = int;
-    constexpr nvmlReturn_t NVML_SUCCESS = 0;
-    constexpr unsigned int NVML_DEVICE_NAME_BUFFER_SIZE = 96;
-    struct NvmlMemory { unsigned long long total, free, used; };
-
-    using fn_Init       = nvmlReturn_t (*)(void);
-    using fn_Shutdown   = nvmlReturn_t (*)(void);
-    using fn_GetCount   = nvmlReturn_t (*)(unsigned int*);
-    using fn_GetHandle  = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
-    using fn_GetName    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
-    using fn_GetUUID    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
-    using fn_GetCC      = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
-    using fn_GetMem     = nvmlReturn_t (*)(nvmlDevice_t, NvmlMemory*);
-    using fn_GetDriver  = nvmlReturn_t (*)(char*, unsigned int);
-
-    auto load = [&](const char* sym) { return dlsym(handle, sym); };
-
-    auto nvmlInit    = (fn_Init)load("nvmlInit_v2");
-    if (!nvmlInit)
-        nvmlInit = (fn_Init)load("nvmlInit");
-    auto nvmlShutdown = (fn_Shutdown)load("nvmlShutdown");
-    auto nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount_v2");
-    if (!nvmlGetCount)
-        nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount");
-    auto nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex_v2");
-    if (!nvmlGetHandle)
-        nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex");
-    auto nvmlGetName   = (fn_GetName)load("nvmlDeviceGetName");
-    auto nvmlGetUUID   = (fn_GetUUID)load("nvmlDeviceGetUUID");
-    auto nvmlGetCC     = (fn_GetCC)load("nvmlDeviceGetCudaComputeCapability");
-    auto nvmlGetMem    = (fn_GetMem)load("nvmlDeviceGetMemoryInfo");
-    auto nvmlGetDriver = (fn_GetDriver)load("nvmlSystemGetDriverVersion");
-
-    if (!nvmlInit || !nvmlShutdown || !nvmlGetCount || !nvmlGetHandle ||
-        !nvmlGetName) {
-        dlclose(handle);
-        return result;
+    for (const auto& device : query_nvidia_nvml_devices(false)) {
+        if (device.name.empty()) continue;
+        NvidiaSmiGpuInfo info;
+        info.index = device.index;
+        info.uuid = device.uuid;
+        info.name = device.name;
+        info.compute_cap = device.compute_cap;
+        info.driver_version = device.driver_version;
+        if (device.vram_total_gb >= 0.0) info.vram_gb = device.vram_total_gb;
+        info.vram_used_gb = device.vram_used_gb;
+        result.push_back(info);
     }
-
-    if (nvmlInit() != NVML_SUCCESS) {
-        dlclose(handle);
-        return result;
-    }
-
-    char driver_buf[64] = {};
-    std::string driver_version;
-    if (nvmlGetDriver && nvmlGetDriver(driver_buf, sizeof(driver_buf)) == NVML_SUCCESS)
-        driver_version = driver_buf;
-
-    unsigned int count = 0;
-    if (nvmlGetCount(&count) == NVML_SUCCESS) {
-        for (unsigned int i = 0; i < count; i++) {
-            nvmlDevice_t dev = nullptr;
-            if (nvmlGetHandle(i, &dev) != NVML_SUCCESS) continue;
-
-            char name_buf[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
-            if (nvmlGetName(dev, name_buf, sizeof(name_buf)) != NVML_SUCCESS) continue;
-
-            NvidiaSmiGpuInfo info;
-            info.index          = static_cast<int>(i);
-            info.name           = name_buf;
-            info.driver_version = driver_version;
-
-            if (nvmlGetUUID) {
-                char uuid_buf[96] = {};
-                if (nvmlGetUUID(dev, uuid_buf, sizeof(uuid_buf)) == NVML_SUCCESS)
-                    info.uuid = uuid_buf;
-            }
-
-            int major = 0, minor = 0;
-            if (nvmlGetCC && nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
-                info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
-
-            if (nvmlGetMem) {
-                NvmlMemory mem{};
-                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS) {
-                    info.vram_gb = static_cast<double>(mem.total) / (1024.0 * 1024.0 * 1024.0);
-                    info.vram_used_gb = static_cast<double>(mem.used) / (1024.0 * 1024.0 * 1024.0);
-                }
-            }
-
-            result.push_back(info);
-        }
-    }
-
-    nvmlShutdown();
-    dlclose(handle);
     return result;
 }
 #endif

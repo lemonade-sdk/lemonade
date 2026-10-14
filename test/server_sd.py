@@ -292,6 +292,7 @@ class StableDiffusionTests(ServerTestBase):
         )
         self.assertEqual(defaults.get("width"), 512, "SD-Turbo width should be 512")
         self.assertEqual(defaults.get("height"), 512, "SD-Turbo height should be 512")
+        self.assertEqual(defaults.get("soft_pixel_cap"), 525625)
 
         print(f"[OK] SD-Turbo image_defaults verified: {defaults}")
 
