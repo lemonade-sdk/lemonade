@@ -1023,12 +1023,16 @@ static bool repo_has_unattributed_file(const fs::path& repo_dir,
     fs::recursive_directory_iterator it(snapshots_dir, safe_dir_options, ec);
     if (ec) return true;
 
+    static const std::string kMarker = ".partial";
+    const bool claims_every_file = variant_claims_whole_repo(variant);
+
     const fs::recursive_directory_iterator end;
     while (it != end) {
         const fs::path entry = it->path();
-        if (!safe_is_directory(entry) && !is_unfinished_download_artifact(entry)) {
-            const std::string rel = normalized_relative_path(entry, snapshots_dir);
-            const bool own = file_matches_variant(rel, variant) ||
+        if (!safe_is_directory(entry) && entry.filename() != ".download_manifest.json") {
+            std::string rel = normalized_relative_path(entry, snapshots_dir);
+            if (entry.extension() == kMarker) rel.resize(rel.size() - kMarker.size());
+            const bool own = claims_every_file || file_matches_variant(rel, variant) ||
                 std::any_of(own_download_files.begin(), own_download_files.end(),
                             [&rel](const std::string& name) {
                                 return file_matches_variant(rel, name);

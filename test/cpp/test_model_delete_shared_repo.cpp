@@ -211,6 +211,16 @@ int main() {
     write_file(coex_repo / "snapshots" / "snap" / ".download_manifest.json",
                R"({"model_name":"user.coex-b","files":[{"name":"b.gguf"}]})");
 
+    // orph-a stopped first and left a partial. orph-b then started in the same
+    // snapshot and wrote over the manifest, so the only name here is orph-b's.
+    // A name proves whose download the manifest describes. It does not make
+    // every unfinished file in the repo that model's to take.
+    fs::path orph_repo = hf_root / "models--org--orph";
+    write_file(orph_repo / "snapshots" / "snap" / "a.gguf.partial", "partial");
+    write_file(orph_repo / "snapshots" / "snap" / "b.gguf.partial", "partial");
+    write_file(orph_repo / "snapshots" / "snap" / ".download_manifest.json",
+               R"({"model_name":"user.orph-b","files":[{"name":"b.gguf"}]})");
+
     // Repos used by the late-arrival cases further down.
     fs::path late_repo = make_repo(hf_root, "models--org--late", {"a.gguf"});
     fs::path arrive_repo = hf_root / "models--org--arrive";
@@ -277,6 +287,8 @@ int main() {
         {"adopt2-b", json{{"checkpoints", json{{"main", "org/adopt2:b.gguf"},
                                                {"vae", "org/adopt2:vae.bin"}}},
                           {"recipe", "llamacpp"}}},
+        {"orph-a", json{{"checkpoint", "org/orph:a.gguf"}, {"recipe", "llamacpp"}}},
+        {"orph-b", json{{"checkpoint", "org/orph:b.gguf"}, {"recipe", "llamacpp"}}},
         {"norefs-a", json{{"checkpoint", "org/norefs:a.gguf"}, {"recipe", "llamacpp"}}},
         {"norefs-b", json{{"checkpoint", "org/norefs:b.gguf"}, {"recipe", "llamacpp"}}},
         {"coex-a", json{{"checkpoint", "org/coex:a.gguf"}, {"recipe", "llamacpp"}}},
@@ -417,6 +429,15 @@ int main() {
               fs::exists(mansh_repo / "snapshots" / "snap" / ".download_manifest.json"));
         check("the occupying model's file survives that cleanup",
               fs::exists(mansh_repo / "snapshots" / "snap" / "occupant.gguf"));
+
+        // The manifest names orph-b, so the repo looks like orph-b's alone. The
+        // partial orph-a left behind is older than that name and is still the
+        // only thing orph-a has to resume from.
+        manager.delete_model("user.orph-b");
+        check("a name on the manifest does not claim an older model's partial",
+              fs::exists(orph_repo / "snapshots" / "snap" / "a.gguf.partial"));
+        check("the named model's own partial is still removed",
+              !fs::exists(orph_repo / "snapshots" / "snap" / "b.gguf.partial"));
 
         // Nothing resolves in this repo, so nothing reports it as occupied. The
         // files are all still here, and a complete file is somebody's.
