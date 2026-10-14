@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/models/artifact_store.h"
 #include "lemon/utils/path_utils.h"
 
 namespace fs = std::filesystem;
@@ -113,6 +114,10 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
 
 bool BackendOps::is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const {
     // Default: the shared registry checkpoint-completeness check.
+    if (ctx.artifacts != nullptr) {
+        return ctx.artifacts->complete(info);
+    }
+    // A context that predates the handover still answers, through the facade.
     return ctx.model_manager != nullptr && ctx.model_manager->checkpoints_complete(info);
 }
 
