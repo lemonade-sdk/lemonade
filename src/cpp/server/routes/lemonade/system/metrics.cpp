@@ -22,28 +22,21 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Prometheus metrics scrape endpoint";
         s.description =
-            "Prometheus scrape endpoint for Lemonade Server. The endpoint returns Prometheus text "
-            "exposition format and is intended to be scraped by Prometheus, not by Grafana "
-            "directly.\n\n"
-            "Unlike most Lemonade API endpoints, `/metrics` is root-level only. It is not mounted "
-            "under `/api/v0/`, `/api/v1/`, `/v0/`, or `/v1/`.\n\n"
-            "`HEAD /metrics` is also supported and returns `200 OK` with an empty body.";
+            "Prometheus scrape endpoint, in the Prometheus text exposition format. Prometheus "
+            "scrapes it; Grafana reads from Prometheus, not from this endpoint.\n\n"
+            "`/metrics` is served only at the root, not under the versioned prefixes. `HEAD "
+            "/metrics` returns `200 OK` with an empty body.";
         s.notes = {
-            "### Authentication\n\n"
-            "If `LEMONADE_API_KEY` is set, `/metrics` requires bearer authentication. Either the "
-            "regular API key or `LEMONADE_ADMIN_API_KEY` is accepted.\n\n"
-            "If only `LEMONADE_ADMIN_API_KEY` is set and `LEMONADE_API_KEY` is unset, `/metrics` "
-            "is accessible without authentication, matching regular API endpoint behavior.",
             "### Polling and Refresh Rate\n\n"
-            "The `/metrics` endpoint has no internal refresh timer. It renders the latest server "
-            "state at the moment it is scraped.\n\n"
-            "Polling frequency is configured in Prometheus via `scrape_interval`, for example:\n\n"
+            "`/metrics` has no refresh timer of its own: each scrape renders the server's state at "
+            "that moment. Prometheus's `scrape_interval` sets how often that happens, for "
+            "example:\n\n"
             "```yaml\n"
             "global:\n"
             "  scrape_interval: 10s\n"
             "```\n\n"
-            "Grafana queries Prometheus. Grafana's dashboard refresh controls how often panels "
-            "query Prometheus, but it does not control how often Prometheus scrapes Lemonade.",
+            "A Grafana dashboard's refresh rate sets how often it queries Prometheus, not how often "
+            "Prometheus scrapes Lemonade.",
             "### Metric families\n"
             "\n"
             "The names, types, labels and help text are defined by the `metrics.describe(...)` "

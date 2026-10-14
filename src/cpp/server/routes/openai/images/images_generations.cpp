@@ -23,9 +23,7 @@ public:
         s.summary = "Image Generation";
         s.modality = "prompt -> image";
         s.description =
-            "Image Generation API. You provide a text prompt and receive a generated image.\n\n"
-            "> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (ROCm) is "
-            "significantly faster.";
+            "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text description of the image to generate."},
@@ -35,7 +33,7 @@ public:
              "The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, "
              "`256x256`). Default: `512x512`."},
             {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Partial,
-             "Number of images to generate. Currently only `1` is supported."},
+             "Number of images to generate. Only `1` is supported."},
             {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
              "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,

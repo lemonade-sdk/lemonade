@@ -584,7 +584,7 @@
       }
     }
   },
-  "a102ff70d842dab7dcc86ef2518830dfb1fbb01e5bc6089b33ebf6969e575184": {
+  "76a3b8c30ef16bc8cf56e5d2373e0a45c3f6c9c91f2ffc27f11832475c479ffe": {
     "route": "internal.pin",
     "format": "Json",
     "request": {
@@ -1133,92 +1133,12 @@
           {
             "backend_alive": true,
             "backend_health": "ready",
-            "backend_url": "http://127.0.0.1:8003/v1",
-            "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
-            "device": "gpu",
-            "is_busy": false,
-            "is_streaming": false,
-            "last_use": 18993468,
-            "launch_command": [
-              "~/.cache/lemonade/bin/llamacpp/vulkan/llama-server",
-              "-m",
-              "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/snapshots/90c80ac5c2a0d13de9a36cf1dec39f34acee54a8/nomic-embed-text-v1.Q4_K_S.gguf",
-              "--ctx-size",
-              "8192",
-              "--port",
-              "8003",
-              "--jinja",
-              "--metrics",
-              "--embeddings",
-              "--parallel",
-              "1"
-            ],
-            "loaded": true,
-            "max_context_window": 2048,
-            "model_name": "nomic-embed-text-v1-GGUF",
-            "pid": 94573,
-            "pinned": false,
-            "recipe": "llamacpp",
-            "recipe_options": {
-              "ctx_size": 8192,
-              "llamacpp_args": "--parallel 1"
-            },
-            "residency_class": "standard",
-            "slot_pool": "standard/embedding",
-            "status": "ready",
-            "type": "embedding",
-            "watchdog_reset": false
-          },
-          {
-            "backend_alive": true,
-            "backend_health": "ready",
-            "backend_url": "http://127.0.0.1:8004/v1",
-            "checkpoint": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
-            "device": "gpu",
-            "is_busy": false,
-            "is_streaming": false,
-            "last_use": 19022316,
-            "launch_command": [
-              "~/.cache/lemonade/bin/sd-cpp/vulkan/sd-server",
-              "--listen-port",
-              "8004",
-              "--diffusion-model",
-              "~/.cache/huggingface/hub/models--black-forest-labs--FLUX.2-klein-4B/snapshots/e7b7dc27f91deacad38e78976d1f2b499d76a294/flux-2-klein-4b.safetensors",
-              "--llm",
-              "~/.cache/huggingface/hub/models--Comfy-Org--vae-text-encorder-for-flux-klein-4b/snapshots/a9e4ca87c16db4c4e1a16406a9ddb300ab0ae246/split_files/text_encoders/qwen_3_4b.safetensors",
-              "--vae",
-              "~/.cache/huggingface/hub/models--Comfy-Org--vae-text-encorder-for-flux-klein-4b/snapshots/a9e4ca87c16db4c4e1a16406a9ddb300ab0ae246/split_files/vae/flux2-vae.safetensors",
-              "--vae-tiling",
-              "--diffusion-fa"
-            ],
-            "loaded": true,
-            "model_name": "Flux-2-Klein-4B",
-            "pid": 94787,
-            "pinned": false,
-            "recipe": "sd-cpp",
-            "recipe_options": {
-              "cfg_scale": 1.0,
-              "ctx_size": 32768,
-              "height": 1024,
-              "sdcpp_args": "",
-              "steps": 4,
-              "width": 1024
-            },
-            "residency_class": "standard",
-            "slot_pool": "standard/image",
-            "status": "ready",
-            "type": "image",
-            "watchdog_reset": false
-          },
-          {
-            "backend_alive": true,
-            "backend_health": "ready",
-            "backend_url": "http://127.0.0.1:8005/v1",
+            "backend_url": "http://127.0.0.1:8001/v1",
             "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
             "device": "gpu",
             "is_busy": false,
             "is_streaming": false,
-            "last_use": 19053963,
+            "last_use": 66265129,
             "launch_command": [
               "~/.cache/lemonade/bin/llamacpp/vulkan/llama-server",
               "-m",
@@ -1226,7 +1146,7 @@
               "--ctx-size",
               "40960",
               "--port",
-              "8005",
+              "8001",
               "--jinja",
               "--metrics",
               "--temp",
@@ -1245,7 +1165,7 @@
             "loaded": true,
             "max_context_window": 40960,
             "model_name": "Qwen3-0.6B-GGUF",
-            "pid": 95898,
+            "pid": 193678,
             "pinned": false,
             "recipe": "llamacpp",
             "recipe_options": {
@@ -1292,7 +1212,7 @@
           "enabled": false
         },
         "update_check_done": true,
-        "version": "2026.43.0~1688.60be9277",
+        "version": "2026.43.0~1689.0292987c",
         "websocket_port": 9001
       }
     }
@@ -1593,7 +1513,7 @@
       }
     }
   },
-  "ec143c847fef92f10b15939908bfa95a7aed927a48cdf46474495575e812df10": {
+  "04cbd80e9425bedeaeee4c225242435f7930069ec4bb3725a91082c9a26bea7a": {
     "route": "lemonade.load",
     "format": "Json",
     "request": {
@@ -1601,8 +1521,7 @@
       "path": "/v1/load",
       "query": {},
       "json": {
-        "model_name": "Qwen3-0.6B-GGUF",
-        "llamacpp_args": "--slot-save-path ."
+        "model_name": "Qwen3-0.6B-GGUF"
       },
       "form": {},
       "files": {}
@@ -2346,18 +2265,18 @@
       "content_type": "application/json",
       "body": {
         "cache_tokens": 14,
-        "cache_tokens_total": 75,
+        "cache_tokens_total": 42,
         "input_tokens": 1,
-        "input_tokens_total": 83,
-        "output_tokens": 264,
-        "output_tokens_total": 1300,
+        "input_tokens_total": 18,
+        "output_tokens": 491,
+        "output_tokens_total": 1480,
         "prompt_tokens": 15,
-        "prompt_tokens_total": 144,
-        "request_count_total": 8,
+        "prompt_tokens_total": 46,
+        "request_count_total": 4,
         "routing_decisions_total": 0,
         "routing_switches_total": 0,
-        "time_to_first_token": 0.003227,
-        "tokens_per_second": 336.57753121020744
+        "time_to_first_token": 0.005152,
+        "tokens_per_second": 329.19930666595
       }
     }
   },
@@ -4313,7 +4232,7 @@
       }
     }
   },
-  "e2afc6cd1a35a50ad574efc049764bebe887bd579e4dedd060891699684a48bd": {
+  "a535df77dcde9d7eebd0848751b4e7392287251e0699672bd3a7f0c5e2e8bb2c": {
     "route": "lemonade.unload",
     "format": "Json",
     "request": {
@@ -4382,7 +4301,7 @@
       }
     }
   },
-  "aeee946ed9cded13b7a5d96032fb0177fd6f95eda391f94f349e67c3c2bfd544": {
+  "d6a5fa6469fdcab115e189bcfcc2c2c1933b95497445ade6638844b252a8d108": {
     "route": "llamacpp.slots",
     "format": "Json",
     "request": {
@@ -4399,14 +4318,80 @@
       "body": [
         {
           "id": 0,
+          "id_task": 212,
           "is_processing": false,
           "n_ctx": 40960,
+          "n_prompt_tokens": 224,
+          "n_prompt_tokens_cache": 0,
+          "n_prompt_tokens_processed": 0,
+          "next_token": [
+            {
+              "has_new_line": false,
+              "has_next_token": false,
+              "n_decoded": 0,
+              "n_remain": -1
+            }
+          ],
+          "params": {
+            "adaptive_decay": 0.8999999761581421,
+            "adaptive_target": -1.0,
+            "backend_sampling": false,
+            "chat_format": "peg-native",
+            "dry_allowed_length": 2,
+            "dry_base": 1.75,
+            "dry_multiplier": 0.0,
+            "dry_penalty_last_n": 64,
+            "dynatemp_exponent": 1.0,
+            "dynatemp_range": 0.0,
+            "frequency_penalty": 0.0,
+            "generation_prompt": "<|im_start|>assistant\n",
+            "ignore_eos": false,
+            "lora": [],
+            "max_tokens": -1,
+            "min_keep": 0,
+            "min_p": 0.0,
+            "mirostat": 0,
+            "mirostat_eta": 0.10000000149011612,
+            "mirostat_tau": 5.0,
+            "n_discard": 0,
+            "n_keep": 0,
+            "n_predict": -1,
+            "n_probs": 0,
+            "post_sampling_probs": false,
+            "presence_penalty": 0.0,
+            "reasoning_format": "deepseek",
+            "reasoning_in_content": false,
+            "repeat_last_n": 64,
+            "repeat_penalty": 1.0,
+            "samplers": [
+              "penalties",
+              "dry",
+              "top_n_sigma",
+              "top_k",
+              "typ_p",
+              "top_p",
+              "min_p",
+              "xtc",
+              "temperature"
+            ],
+            "seed": 4294967295,
+            "speculative.types": "none",
+            "stream": false,
+            "temperature": 0.0,
+            "timings_per_token": false,
+            "top_k": 20,
+            "top_n_sigma": -1.0,
+            "top_p": 0.8500000238418579,
+            "typical_p": 1.0,
+            "xtc_probability": 0.0,
+            "xtc_threshold": 0.10000000149011612
+          },
           "speculative": false
         }
       ]
     }
   },
-  "c7491f988a529a0a35c057c91b48ba6d2ac6c6a7f1198a495f496373a0e30356": {
+  "6c53ba37762de8a090538da3c81f3f3e46eb7573271ed888f7d309a8e74cf7c9": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4424,11 +4409,11 @@
       "content_type": "application/json",
       "body": {
         "id_slot": 0,
-        "n_erased": 0
+        "n_erased": 224
       }
     }
   },
-  "a0137e90d641d4b8dfc4285ad447acb62338b6dd013cbe707b51a0a37d29fac7": {
+  "b0805c49514abe2fc280351b85d7b837f052460c7ffc0e4533a2953000a4ab72": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4449,15 +4434,15 @@
       "body": {
         "filename": "my_conversation_cache.bin",
         "id_slot": 0,
-        "n_read": 26497340,
-        "n_restored": 231,
+        "n_read": 5277100,
+        "n_restored": 46,
         "timings": {
-          "restore_ms": 3.478
+          "restore_ms": 0.814
         }
       }
     }
   },
-  "ef85e8d06d072418279884e70eccc109d7e7117f53eb0e08edfcbced91668b22": {
+  "97b26123567c9e91c1ced97312eee3ce9c4ce75560441ef2c03de254c5dc665a": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4478,15 +4463,15 @@
       "body": {
         "filename": "my_conversation_cache.bin",
         "id_slot": 0,
-        "n_saved": 307,
-        "n_written": 35214844,
+        "n_saved": 46,
+        "n_written": 5277100,
         "timings": {
-          "save_ms": 10.769
+          "save_ms": 4.175
         }
       }
     }
   },
-  "7b8a1b18427baa83bdd11e0082f162f1e19f90e4033bd98968741037e420b37a": {
+  "c4ca686315310e16fa6f39898e23ff43307cca6e26c2160af42ea42c0fec2d30": {
     "route": "llamacpp.tokenize",
     "format": "Json",
     "request": {
@@ -6324,7 +6309,7 @@
       "count": 18
     }
   },
-  "f4fa07f42ae08a8660896820caecae2461ae3f0bc400faa788dc0f757d8079a2": {
+  "139533fcf49a2b14c5a79a546bf76cbfe1f695e2232ddb0de2a0f2dfe1e47492": {
     "route": "ollama.ps",
     "format": "Json",
     "request": {
@@ -6340,60 +6325,6 @@
       "content_type": "application/json",
       "body": {
         "models": [
-          {
-            "details": {
-              "families": [
-                "llamacpp"
-              ],
-              "family": "llamacpp",
-              "format": "gguf",
-              "parameter_size": "",
-              "parent_model": "",
-              "quantization_level": "Q4_K_S"
-            },
-            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            "expires_at": "2099-01-01T00:00:00Z",
-            "model": "nomic-embed-text-v1-GGUF:latest",
-            "name": "nomic-embed-text-v1-GGUF:latest",
-            "size": 0,
-            "size_vram": 0
-          },
-          {
-            "details": {
-              "families": [
-                "sd-cpp"
-              ],
-              "family": "sd-cpp",
-              "format": "gguf",
-              "parameter_size": "4B",
-              "parent_model": "",
-              "quantization_level": ""
-            },
-            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            "expires_at": "2099-01-01T00:00:00Z",
-            "model": "Flux-2-Klein-4B:latest",
-            "name": "Flux-2-Klein-4B:latest",
-            "size": 0,
-            "size_vram": 0
-          },
-          {
-            "details": {
-              "families": [
-                "llamacpp"
-              ],
-              "family": "llamacpp",
-              "format": "gguf",
-              "parameter_size": "",
-              "parent_model": "",
-              "quantization_level": "Q8_0"
-            },
-            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            "expires_at": "2099-01-01T00:00:00Z",
-            "model": "bge-reranker-v2-m3-GGUF:latest",
-            "name": "bge-reranker-v2-m3-GGUF:latest",
-            "size": 0,
-            "size_vram": 0
-          },
           {
             "details": {
               "families": [
@@ -6854,15 +6785,15 @@
       "status": 200,
       "content_type": "text/event-stream",
       "head": [
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1791943133,\"id\":\"chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1791943133,\"id\":\"chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1791943133,\"id\":\"chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}"
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1791990411,\"id\":\"chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1791990411,\"id\":\"chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1791990411,\"id\":\"chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\"}"
       ],
       "tail": [
-        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1791943134,\"id\":\"chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":4.309,\"prompt_per_token_ms\":4.309,\"prompt_per_second\":232.07240659085633,\"predicted_n\":323,\"predicted_ms\":955.598,\"predicted_per_token_ms\":2.967695652173913,\"predicted_per_second\":336.9617768140997}}",
+        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1791990412,\"id\":\"chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b11393-dbe4c3ed4\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":4.081,\"prompt_per_token_ms\":4.081,\"prompt_per_second\":245.03798088703746,\"predicted_n\":392,\"predicted_ms\":1176.378,\"predicted_per_token_ms\":3.008639386189258,\"predicted_per_second\":332.37615800363494}}",
         "data: [DONE]"
       ],
-      "count": 321
+      "count": 390
     }
   },
   "1a1f1cee28e3542a26e8eedccf690a487a185811f89469fa62dbfcf45b135f3f": {
@@ -6894,35 +6825,35 @@
             "finish_reason": "stop",
             "index": 0,
             "message": {
-              "content": "The population of Paris, France, is approximately **10 million**. This number is consistent with other European cities, though specific details may vary slightly depending on the source.",
-              "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me start by recalling what I know. I remember that Paris is a big city in France. I think the population is around 10 million, but wait, I'm not sure. Maybe I should check some sources. Wait, I think I heard something about it being 10 million. But I need to be careful here. Maybe I'm mixing up other cities. For example, in the UK, the population is around 60 million. So Paris, being a European city, should have a population similar to other European cities. But I'm not sure if the number is 10 million. Let me think. Maybe I'm correct. I think the population of Paris is approximately 10 million. But I need to be sure. Alternatively, maybe it's smaller. Wait, I've heard somewhere that the population is 10 million. But I need to verify. Let me think. Oh right, Paris has a population of around 10 million. So that's the answer.\n",
+              "content": "The population of Paris, France, is approximately **2,015,000**. This number reflects the city's size and population, making it one of the most populous cities in the world.",
+              "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. First, I remember that Paris is a big city in France, right? I think it's the capital. But how do I find the exact population?\n\nWait, I think I heard that the population is around 2 million. But I'm not sure. Maybe I should check a reliable source. Oh, right! The official website of Paris might have the population numbers. Let me recall... Oh! Oh, right! The city's population is about 2,015,000. I think that's correct. But I'm a bit fuzzy on the exact number. Maybe I should confirm with another source. Wait, I'm not sure. Hmm. Let me think... Oh, yeah, I think it's 2,015,000. But sometimes people might say 2 million. But 2,015,000 is more accurate. So I'll go with that.\n",
               "role": "assistant"
             }
           }
         ],
-        "created": 1791943133,
-        "id": "chatcmpl-uaGB7ivcmQDudT7hrUZQAZLuOunBDFN4",
+        "created": 1791990411,
+        "id": "chatcmpl-Ur8WXBSFmCy4xSW1gr9J6imPMcSBsmG7",
         "model": "Qwen3-0.6B-GGUF",
         "object": "chat.completion",
         "system_fingerprint": "b11393-dbe4c3ed4",
         "timings": {
           "cache_n": 0,
-          "predicted_ms": 764.562,
-          "predicted_n": 259,
-          "predicted_per_second": 337.4481075439271,
-          "predicted_per_token_ms": 2.963418604651163,
-          "prompt_ms": 11.02,
+          "predicted_ms": 756.876,
+          "predicted_n": 255,
+          "predicted_per_second": 335.5899777506487,
+          "predicted_per_token_ms": 2.9798267716535434,
+          "prompt_ms": 9.652,
           "prompt_n": 15,
-          "prompt_per_second": 1361.1615245009075,
-          "prompt_per_token_ms": 0.7346666666666667
+          "prompt_per_second": 1554.0820555325322,
+          "prompt_per_token_ms": 0.6434666666666666
         },
         "usage": {
-          "completion_tokens": 259,
+          "completion_tokens": 255,
           "prompt_tokens": 15,
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "total_tokens": 274
+          "total_tokens": 270
         }
       }
     }

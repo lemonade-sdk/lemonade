@@ -38,7 +38,7 @@ ordered_json model_options_schema() {
             "model_name": {"type": "string", "description": "The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body."},
             "recipe": {"type": "string", "description": "The recipe the option names belong to."},
             "saved": {"type": "object", "description": "The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`."},
-            "effective": {"type": "object", "description": "The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed."},
+            "effective": {"type": "object", "description": "The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed."},
             "defaults": {"type": "object", "description": "What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically."},
             "resolved_ctx_size": {"type": "integer", "description": "The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`."}
         }

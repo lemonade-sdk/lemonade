@@ -22,11 +22,10 @@ public:
         s.paths = {"audio/generations"};
         s.summary = "Generate audio (music or sound effects) from a text prompt";
         s.description =
-            "Audio Generation API. You provide a text prompt and receive a generated audio clip. "
-            "The loaded model decides the kind of audio: music with ACE-Step models (e.g. "
-            "`ACE-Step-Music`), sound effects with ThinkSound models (e.g. `ThinkSound-SFX`).\n\n"
-            "This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover speech "
-            "and transcription only), so it is a Lemonade-specific extension.\n\n"
+            "Generates an audio clip from a text prompt. The model decides the kind of audio: music "
+            "with ACE-Step models such as `ACE-Step-Music`, sound effects with ThinkSound models "
+            "such as `ThinkSound-SFX`. This is a Lemonade extension; OpenAI's audio endpoints cover "
+            "only speech and transcription.\n\n"
             "> **Performance:** generation runs on the GPU (Vulkan, ROCm, or CUDA) and takes from "
             "seconds (short sound effects) to minutes (full-length music) depending on duration "
             "and hardware.";
@@ -36,7 +35,7 @@ public:
             "turns the style description and lyrics into audio codes, then the diffusion "
             "synthesizer renders those codes into audio. The instrumental path skips the "
             "language-model stage entirely, which also means lyrics embedded in the `prompt` field "
-            "are treated as style text — they are never sung. Vocal generations take noticeably "
+            "are treated as style text and never sung. Vocal generations take noticeably "
             "longer than instrumental ones of the same duration because of the extra "
             "language-model pass.\n\n"
             "Format the `lyrics` value the way the ACE-Step authors recommend:\n\n"
@@ -46,11 +45,9 @@ public:
             "- Describe the voice (\"gentle female vocals\", \"raspy male baritone\") in `prompt`, "
             "not in the lyrics.\n"
             "- Lyrics may be in any supported language; set `vocal_language` to match.",
-            "### Response\n\n"
-            "On success the raw audio bytes are returned with the matching content type "
-            "(`audio/wav`). On failure the response is JSON with an `error` object: `400` for "
-            "invalid requests, `404` for unknown models, `500` when the backend reports an error, "
-            "and `502` when the backend produces no output.",
+            "A failed request answers with a JSON `error` object: `400` for an invalid request, "
+            "`404` for an unknown model, `500` when the backend reports an error, and `502` when "
+            "it produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

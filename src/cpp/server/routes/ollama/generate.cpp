@@ -165,16 +165,13 @@ public:
             "text completion and converts the result. Naming an image model generates an image "
             "instead.";
         s.notes = {
-            "Ollama streams by default: without `\"stream\": false` the response is "
-            "newline-delimited JSON. Image generation never streams.",
+            "Image generation never streams.",
             "An empty `prompt` with `\"keep_alive\": 0` unloads the model instead, answering "
             "with `done_reason: \"unload\"`.",
-            "An unknown model answers `404` with `model '<name>' not found, try pulling it "
-            "first`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to run; loaded on first use. A `:latest` tag is ignored."},
+             "Model to run."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Text to continue, or the image to generate for an image model."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,

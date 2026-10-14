@@ -25,7 +25,7 @@ public:
             "and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` "
             "recipe. Both sequence-classification (one label set) and token-classification "
             "(aggregated span labels) models are supported.\n\n"
-            "**Supported architectures:** single-sequence encoder families — BERT, DistilBERT, "
+            "**Supported architectures:** single-sequence encoder families: BERT, DistilBERT, "
             "RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock "
             "`optimum-cli export onnx` directory of one of these works as-is.\n\n"
             "A servable model directory is `model.onnx` + `tokenizer.json` + `config.json`. The "
@@ -40,9 +40,8 @@ public:
             "This endpoint provides the classification capability that the router's `classifier` "
             "condition type consumes.";
         s.notes = {
-            "Label names come from the model's `id2label`, in `config.json` or in a `manifest.json` "
-            "that overrides it. Some upstream models declare only generic `LABEL_<n>` names; their "
-            "model card explains them.",
+            "Label names come from the model's `id2label`. Some upstream models declare only generic "
+            "`LABEL_<n>` names; their model card explains them.",
             "A malformed request (invalid JSON, a missing `input`/`text`, non-string fields, a "
             "non-positive `top_k`) answers `400` before any model loads.",
         };
@@ -52,7 +51,7 @@ public:
              "one classification model is already loaded; the loaded model is used and echoed in "
              "the response."},
             {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text to classify. `text` is accepted as an alias."},
+             "Text to classify."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
              "Return only the highest-scoring `k` labels."},
             {"text", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

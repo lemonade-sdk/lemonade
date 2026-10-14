@@ -26,17 +26,14 @@ public:
         s.description =
             "Returns the embedding of one text in Ollama's older format, loading the model on "
             "first use.";
-        s.notes = {
-            "Only the first input's embedding is returned. An unknown model answers `404` with "
-            "`model '<name>' not found`.",
-        };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Embedding model to run; loaded on first use. A `:latest` tag is ignored."},
+             "Embedding model to run."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Text to embed."},
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "Accepted in place of `prompt`."},
+             "Accepted in place of `prompt`. For an array, only the first text's embedding is "
+             "returned."},
             {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "`num_ctx` sets the context size when this request loads the model."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,

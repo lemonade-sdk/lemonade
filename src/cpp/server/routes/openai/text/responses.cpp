@@ -53,18 +53,12 @@ public:
         s.summary = "Responses API";
         s.modality = "prompt/messages -> event";
         s.description =
-            "Responses API. You provide an input and receive a response. This API will also load "
-            "the model if it is not already loaded.";
+            "Generates a model response to an input, in OpenAI's Responses format, loading the "
+            "model on first use.";
         s.notes = {
-            "### Streaming Events\n\n"
-            "The Responses API uses semantic events for streaming. Each event is typed with a "
-            "predefined schema, so you can listen for events you care about. Our initial "
-            "implementation offers support to:\n\n"
-            "- `response.created`\n"
-            "- `response.output_text.delta`\n"
-            "- `response.completed`\n\n"
-            "For a full list of event types, see the "
-            "[API reference for streaming](https://platform.openai.com/docs/api-reference/responses-streaming).",
+            "With `stream: true`, the response is the backend's typed server-sent events, such as "
+            "`response.created`, `response.output_text.delta` and `response.completed`; see "
+            "OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).",
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
         };

@@ -16,9 +16,10 @@ public:
         s.id = "lemonade.downloads_control";
         s.methods = {"POST"};
         s.paths = {"downloads/control"};
-        s.summary = "Pause, cancel, or remove server-owned model download jobs";
+        s.summary = "Pause, cancel, or remove server-owned download jobs";
         s.description =
-            "Control a server-owned model download job.";
+            "Pauses, cancels or removes a server-owned download job listed by "
+            "[`GET /v1/downloads`](#get-v1downloads).";
         s.notes = {
             "### Actions\n\n"
             "| Action | Description |\n"
@@ -33,16 +34,16 @@ public:
             "A `pause` or `cancel` for a job that already finished leaves it as it is.",
             "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. A "
             "`pause` or `cancel` for a job that is not listed answers `404`.",
-            "`pause` and `cancel` answer the job's latest snapshot. `remove` answers `{\"status\": "
-            "\"ok\"}`, with `\"missing\": true` when the job was already gone.",
+            "`pause`, `cancel`, and `remove` of a running job answer the job's latest snapshot. "
+            "Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
+            "the job was already gone.",
         };
         s.args = {
             {"id", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example "
-             "`model:Qwen3-0.6B-GGUF`."},
+             "The job's `id`, for example `model:Qwen3-0.6B-GGUF`."},
             {"action", ArgIn::JsonBody, {{"enum", json::array({"pause", "cancel", "remove"})}}, true,
              Support::Available,
-             "One of `pause`, `cancel`, or `remove`."},
+             "What to do with the job; see [Actions](#actions)."},
         };
 
         RouteResponse response;

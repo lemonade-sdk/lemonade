@@ -25,12 +25,12 @@ public:
         s.description =
             "Deletes a downloaded model's files, unloading it first when it is loaded.";
         s.notes = {
-            "Success answers `200` with an empty body, as Ollama does. An unknown or "
-            "unsupported model answers `404`.",
+            "Success answers `200` with an empty body, as Ollama does. A model this system "
+            "does not support also answers `404`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to delete. A `:latest` tag is ignored."},
+             "Model to delete."},
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Older name for `model`; wins when both are given."},
         };

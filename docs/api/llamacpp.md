@@ -19,15 +19,7 @@ This page documents Lemonade's llama.cpp-specific compatibility surface. Lemonad
 ## `POST /v1/rerank`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Reranking API for llama.cpp-compatible reranker models. You provide a query and a list of documents, and receive relevance scores for each document. Lemonade will load the requested model automatically if it is not already loaded.
-
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/v1/rerank` endpoint.
-
-> **Note:** Lemonade also accepts `/reranking` and `/reranker` as aliases — all three route to the same handler and behave identically.
-
-> **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, `/api/v1/`, `/v0/`, and `/v1/`.
-
-> **Note:** This endpoint is only available for reranker-specific models using the `llamacpp` recipe, such as `bge-reranker-v2-m3-GGUF`.
+Scores each document against a query. Only llama.cpp reranker models, such as `bge-reranker-v2-m3-GGUF`, serve this endpoint.
 
 Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/reranking`, `/api/v1/reranking`, `/v0/reranking`, `/v1/reranking`, `/api/v0/reranker`, `/api/v1/reranker`, `/v0/reranker` and `/v1/reranker`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -37,7 +29,7 @@ Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/rerank
 |-----------|----------|-------------|--------|
 | `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `documents` | Yes | Array of document strings to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The reranking model to use. If not already loaded, Lemonade loads it before forwarding the request. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Reranker model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
@@ -109,13 +101,7 @@ Also served at `/api/v0/rerank`, `/api/v1/rerank`, `/v0/rerank`, `/api/v0/rerank
 ## `GET /v1/slots`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the current state of all processing slots in the llama.cpp server. Slots are parallel processing contexts that can handle multiple requests concurrently.
-
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots` endpoint.
-
-> **Note:** This endpoint is only available when a llama.cpp model is loaded.
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots`, `/api/v1/slots`, `/v0/slots`, and `/v1/slots`.
+Returns the state of each processing slot in the llama.cpp server. Slots are the parallel contexts that serve concurrent requests.
 
 Also served at `/api/v0/slots`, `/api/v1/slots` and `/v0/slots`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -123,7 +109,7 @@ Also served at `/api/v0/slots`, `/api/v1/slots` and `/v0/slots`. Requires `LEMON
 
 This endpoint does not take any parameters.
 
-The request names no model: Lemonade forwards it to llama.cpp's `/slots` on the most recently used loaded model, which must be a llama.cpp model. With no model loaded, or when that model is not a llama.cpp model, the answer is `400`.
+With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`.
 
 ### Example request
 
@@ -144,7 +130,75 @@ The request names no model: Lemonade forwards it to llama.cpp's `/slots` on the 
 `200`
 
 ```json
-[{"id": 0, "n_ctx": 40960, "is_processing": false, "speculative": false}]
+[
+  {
+    "id": 0,
+    "next_token": [
+      {"has_next_token": false, "n_remain": -1, "n_decoded": 0, "has_new_line": false}
+    ],
+    "id_task": 212,
+    "n_ctx": 40960,
+    "is_processing": false,
+    "n_prompt_tokens": 224,
+    "params": {
+      "adaptive_decay": 0.8999999761581421,
+      "adaptive_target": -1.0,
+      "backend_sampling": false,
+      "chat_format": "peg-native",
+      "dry_allowed_length": 2,
+      "dry_base": 1.75,
+      "dry_multiplier": 0.0,
+      "dry_penalty_last_n": 64,
+      "dynatemp_exponent": 1.0,
+      "dynatemp_range": 0.0,
+      "frequency_penalty": 0.0,
+      "generation_prompt": "<|im_start|>assistant\n",
+      "ignore_eos": false,
+      "lora": [],
+      "max_tokens": -1,
+      "min_keep": 0,
+      "min_p": 0.0,
+      "mirostat": 0,
+      "mirostat_eta": 0.10000000149011612,
+      "mirostat_tau": 5.0,
+      "n_discard": 0,
+      "n_keep": 0,
+      "n_predict": -1,
+      "n_probs": 0,
+      "post_sampling_probs": false,
+      "presence_penalty": 0.0,
+      "reasoning_format": "deepseek",
+      "reasoning_in_content": false,
+      "repeat_last_n": 64,
+      "repeat_penalty": 1.0,
+      "samplers": [
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature"
+      ],
+      "seed": 4294967295,
+      "speculative.types": "none",
+      "stream": false,
+      "temperature": 0.0,
+      "timings_per_token": false,
+      "top_k": 20,
+      "top_n_sigma": -1.0,
+      "top_p": 0.8500000238418579,
+      "typical_p": 1.0,
+      "xtc_probability": 0.0,
+      "xtc_threshold": 0.10000000149011612
+    },
+    "n_prompt_tokens_cache": 0,
+    "n_prompt_tokens_processed": 0,
+    "speculative": false
+  }
+]
 ```
 
 **Field Descriptions:**
@@ -165,22 +219,7 @@ The request names no model: Lemonade forwards it to llama.cpp's `/slots` on the 
 ## `POST /v1/slots/{id}`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Save the prompt cache of a specific slot to a file. This allows you to persist the current context state for later restoration.
-
-Restore the prompt cache of a specific slot from a previously saved file. This allows you to resume a conversation or context from where you left off.
-
-Erase (clear) the prompt cache of a specific slot. This removes all cached context from the slot, resetting it to an empty state.
-
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=save`, `/slots/{id}?action=restore` or `/slots/{id}?action=erase` endpoint.
-
-> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument for save, restore and erase operations to work. See [Server Configuration](../guide/configuration/README.md) for details on configuring backend arguments.
->
-> Example configuration:
-> ```bash
-> lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"
-> ```
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots/{id}`, `/api/v1/slots/{id}`, `/v0/slots/{id}`, and `/v1/slots/{id}`.
+Saves a slot's prompt cache to a file, restores it from one, or erases it, so a conversation can resume where it left off.
 
 Also served at `/api/v0/slots/{id}`, `/api/v1/slots/{id}` and `/v0/slots/{id}`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -188,13 +227,13 @@ Also served at `/api/v0/slots/{id}`, `/api/v1/slots/{id}` and `/v0/slots/{id}`. 
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | The slot ID to save, restore to or erase (path parameter). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `filename` | No | The filename where the slot cache should be saved, or from which to restore the slot cache (JSON body). Required for `save` and `restore`, relative to llama.cpp's `--slot-save-path`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | The slot to act on. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `filename` | No | File to save to or restore from, relative to `--slot-save-path`. Required for `save` and `restore`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `action` (query) | Yes | `save` writes the slot's prompt cache to `filename`, `restore` reads it back from `filename`, and `erase` clears the slot. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-The request names no model: Lemonade sends it to the most recently used loaded model, which must be a llama.cpp model. With no model loaded, or when that model is not a llama.cpp model, the answer is `400`. An `error` from llama.cpp is returned with its status.
+With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`. An `error` from llama.cpp is returned with its status.
 
-Without `--slot-save-path`, llama.cpp answers `501`. Besides the server configuration, [`POST /v1/load`](./lemonade.md#post-v1load) can set it for one load with `llamacpp_args`.
+Every action needs llama.cpp started with `--slot-save-path`; without it, llama.cpp answers `501`. Set it for every load with `lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"` (see [Server Configuration](../guide/configuration/README.md)), or for one load with `llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).
 
 ### Example request
 
@@ -258,22 +297,11 @@ Without `--slot-save-path`, llama.cpp answers `501`. Besides the server configur
     {
       "id_slot": 0,
       "filename": "my_conversation_cache.bin",
-      "n_saved": 307,
-      "n_written": 35214844,
-      "timings": {"save_ms": 10.769}
+      "n_saved": 46,
+      "n_written": 5277100,
+      "timings": {"save_ms": 4.175}
     }
     ```
-
-    **Field Descriptions:**
-
-    - `id_slot` - The slot ID that was saved, restored or erased
-    - `filename` - The filename where the cache was saved, or from which the cache was restored
-    - `n_saved` - Number of tokens saved to the cache file
-    - `n_restored` - Number of tokens restored from the cache file
-    - `n_written` - save: bytes written.
-    - `n_read` - restore: bytes read.
-    - `n_erased` - erase: tokens cleared.
-    - `timings` - save and restore: how long the file operation took.
 
 === "Restore responses"
 
@@ -283,54 +311,37 @@ Without `--slot-save-path`, llama.cpp answers `501`. Besides the server configur
     {
       "id_slot": 0,
       "filename": "my_conversation_cache.bin",
-      "n_restored": 231,
-      "n_read": 26497340,
-      "timings": {"restore_ms": 3.478}
+      "n_restored": 46,
+      "n_read": 5277100,
+      "timings": {"restore_ms": 0.814}
     }
     ```
-
-    **Field Descriptions:**
-
-    - `id_slot` - The slot ID that was saved, restored or erased
-    - `filename` - The filename where the cache was saved, or from which the cache was restored
-    - `n_saved` - Number of tokens saved to the cache file
-    - `n_restored` - Number of tokens restored from the cache file
-    - `n_written` - save: bytes written.
-    - `n_read` - restore: bytes read.
-    - `n_erased` - erase: tokens cleared.
-    - `timings` - save and restore: how long the file operation took.
 
 === "Erase responses"
 
     `200`
 
     ```json
-    {"id_slot": 0, "n_erased": 0}
+    {"id_slot": 0, "n_erased": 224}
     ```
 
-    **Field Descriptions:**
+**Field Descriptions:**
 
-    - `id_slot` - The slot ID that was saved, restored or erased
-    - `filename` - The filename where the cache was saved, or from which the cache was restored
-    - `n_saved` - Number of tokens saved to the cache file
-    - `n_restored` - Number of tokens restored from the cache file
-    - `n_written` - save: bytes written.
-    - `n_read` - restore: bytes read.
-    - `n_erased` - erase: tokens cleared.
-    - `timings` - save and restore: how long the file operation took.
+- `id_slot` - The slot acted on.
+- `filename` - save and restore: the file written or read.
+- `n_saved` - save: tokens written.
+- `n_restored` - restore: tokens read.
+- `n_written` - save: bytes written.
+- `n_read` - restore: bytes read.
+- `n_erased` - erase: tokens cleared.
+- `timings` - save and restore: how long the file operation took.
 <!-- END GENERATED: llamacpp.slots_action -->
 
 <!-- BEGIN GENERATED: llamacpp.tokenize -->
 ## `POST /v1/tokenize`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Tokenize a given text. Does not count towards the current model's context window.
-
-> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/tokenize` endpoint.
-
-> **Note:** This endpoint supports all four path prefixes: `/api/v0/tokenize`, `/api/v1/tokenize`, `/v0/tokenize`, and `/v1/tokenize`.
-
-> **Note:** Actual response values may vary for the same string across different models if the models do not share the same tokenizer.
+Tokenizes text with the tokenizer of the most recently used model, so after a request to a reranker, for example, the reranker's tokenizer answers. Tokenizing does not use the model's context window.
 
 Also served at `/api/v0/tokenize`, `/api/v1/tokenize` and `/v0/tokenize`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -339,11 +350,11 @@ Also served at `/api/v0/tokenize`, `/api/v1/tokenize` and `/v0/tokenize`. Requir
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `content` | Yes | The text to tokenize. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `add_special` | No | Boolean indicating if special tokens, i.e. `BOS`, should be inserted. Default: `false` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `parse_special` | No | Boolean indicating if special tokens should be tokenized. When `false` special tokens are treated as plaintext. Default: `true` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `with_pieces` | No | Boolean indicating whether to return token pieces along with IDs. Default: `false` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `add_special` | No | Insert special tokens, such as `BOS`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `parse_special` | No | Tokenize special tokens; `false` treats them as plain text. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `with_pieces` | No | Return each token's text piece with its ID. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-The request names no model: Lemonade forwards it to llama.cpp's `/tokenize` on the most recently used loaded model, which must be a llama.cpp model, so after a request to a reranker, for example, the reranker's tokenizer answers. With no model loaded, or when that model is not a llama.cpp model, the answer is `400`.
+With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`.
 
 ### Example request
 

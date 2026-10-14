@@ -24,13 +24,12 @@ public:
         s.summary = "Clear the in-memory API key for a cloud provider";
         s.experimental = true;
         s.description =
-            "Clear the in-memory API key for a provider. Any env-var-based key "
-            "(`LEMONADE_<PROVIDER>_API_KEY`) remains in effect. If no env-var key is set, the "
-            "provider's discovered models are evicted from the catalog since they are no longer "
-            "authenticatable.";
+            "Clears the API key [`POST /v1/cloud/auth`](#post-v1cloudauth) set for a provider. A "
+            "`LEMONADE_<PROVIDER>_API_KEY` in the environment stays in effect; without one, the "
+            "provider's discovered models leave the catalog, since nothing can authenticate them.";
         s.args = {
             {"provider", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Installed provider name."},
+             "The installed provider's name."},
         };
 
         RouteResponse response;
@@ -44,8 +43,8 @@ public:
                 "auth_state": {
                     "type": "object",
                     "properties": {
-                        "env_var_set": {"type": "boolean"},
-                        "runtime_key_set": {"type": "boolean"}
+                        "env_var_set": {"type": "boolean", "description": "Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond."},
+                        "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
                     }
                 }
             }

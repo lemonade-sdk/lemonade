@@ -22,8 +22,7 @@ public:
         s.summary = "Read the progress of a model sync";
         s.description =
             "Returns the status of a model sync started by "
-            "[`POST /internal/models/sync`](#post-internalmodelssync), including download "
-            "progress while it runs.";
+            "[`POST /internal/models/sync`](#post-internalmodelssync).";
         s.notes = {
             "A `sync_id` that is neither running nor recorded answers `200` with "
             "`status: \"not_found\"`.",

@@ -21,16 +21,12 @@ public:
         s.paths = {"models/check-updates"};
         s.summary = "Manually check downloaded models for upstream updates";
         s.description =
-            "Explicitly checks downloaded Hugging Face-backed models for newer upstream\n"
-            "commits. This is the manual counterpart to the startup update check and works\n"
-            "even when `auto_check_model_updates=false`.\n\n"
-            "Full offline mode remains authoritative: when `offline=true`, this endpoint\n"
-            "returns HTTP 409 and does not make network requests.";
+            "Checks downloaded Hugging Face models for newer upstream commits. It is the manual "
+            "counterpart to the startup update check and runs even when "
+            "`auto_check_model_updates` is `false`.";
         s.notes = {
-            "The same action is available from the CLI:\n\n"
-            "```bash\n"
-            "lemonade check-updates\n"
-            "```",
+            "With `offline` set to `true`, it answers `409` without any network request.",
+            "The `lemonade check-updates` command uses this endpoint.",
         };
 
         RouteResponse response;
@@ -39,8 +35,8 @@ public:
             "type": "object",
             "required": ["status", "updates_available", "models", "failed_models"],
             "properties": {
-                "status": {"enum": ["success", "failed"], "description": "failed when any model's check failed."},
-                "updates_available": {"type": "integer"},
+                "status": {"enum": ["success", "failed"], "description": "`failed` when any model's check failed."},
+                "updates_available": {"type": "integer", "description": "How many models have an update."},
                 "models": {"type": "array", "items": {"type": "string"}, "description": "Models with a newer upstream commit."},
                 "failed_models": {"type": "object", "additionalProperties": {"type": "string"},
                                   "description": "Each model whose check failed, with its error."}

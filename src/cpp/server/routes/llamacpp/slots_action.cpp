@@ -22,42 +22,23 @@ public:
         s.summary = "";
         s.modality = "prompt cache";
         s.description =
-            "Save the prompt cache of a specific slot to a file. This allows you to persist the "
-            "current context state for later restoration.\n\n"
-            "Restore the prompt cache of a specific slot from a previously saved file. This allows "
-            "you to resume a conversation or context from where you left off.\n\n"
-            "Erase (clear) the prompt cache of a specific slot. This removes all cached context "
-            "from the slot, resetting it to an empty state.\n\n"
-            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
-            "Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=save`, "
-            "`/slots/{id}?action=restore` or `/slots/{id}?action=erase` endpoint.\n\n"
-            "> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument "
-            "for save, restore and erase operations to work. See "
-            "[Server Configuration](../guide/configuration/README.md) for details on configuring "
-            "backend arguments.\n"
-            ">\n"
-            "> Example configuration:\n"
-            "> ```bash\n"
-            "> lemonade config set llamacpp.args=\"--slot-save-path /path/to/slot/saves\"\n"
-            "> ```\n\n"
-            "> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots/{id}`, "
-            "`/api/v1/slots/{id}`, `/v0/slots/{id}`, and `/v1/slots/{id}`.";
+            "Saves a slot's prompt cache to a file, restores it from one, or erases it, so a "
+            "conversation can resume where it left off.";
         s.notes = {
-            "The request names no model: Lemonade sends it to the most recently used loaded model, "
-            "which must be a llama.cpp model. With no model loaded, or when that model is not a "
-            "llama.cpp model, the answer is `400`. An `error` from llama.cpp is returned with its "
-            "status.",
-            "Without `--slot-save-path`, llama.cpp answers `501`. Besides the server "
-            "configuration, [`POST /v1/load`](./lemonade.md#post-v1load) can set it for one load "
-            "with `llamacpp_args`.",
+            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
+            "the answer is `400`. An `error` from llama.cpp is returned with its status.",
+            "Every action needs llama.cpp started with `--slot-save-path`; without it, llama.cpp "
+            "answers `501`. Set it for every load with `lemonade config set "
+            "llamacpp.args=\"--slot-save-path /path/to/slot/saves\"` (see "
+            "[Server Configuration](../guide/configuration/README.md)), or for one load with "
+            "`llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "integer"}}, true, Support::Available,
-             "The slot ID to save, restore to or erase (path parameter)."},
+             "The slot to act on."},
             {"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The filename where the slot cache should be saved, or from which to restore the "
-             "slot cache (JSON body). Required for `save` and `restore`, relative to llama.cpp's "
-             "`--slot-save-path`."},
+             "File to save to or restore from, relative to `--slot-save-path`. Required for "
+             "`save` and `restore`."},
             {"action", ArgIn::Query, {{"enum", json::array({"save", "restore", "erase"})}}, true, Support::Available,
              "`save` writes the slot's prompt cache to `filename`, `restore` reads it back from "
              "`filename`, and `erase` clears the slot."},
@@ -69,10 +50,10 @@ public:
             "type": "object",
             "required": ["id_slot"],
             "properties": {
-                "id_slot": {"type": "integer", "description": "The slot ID that was saved, restored or erased"},
-                "filename": {"type": "string", "description": "The filename where the cache was saved, or from which the cache was restored"},
-                "n_saved": {"type": "integer", "description": "Number of tokens saved to the cache file"},
-                "n_restored": {"type": "integer", "description": "Number of tokens restored from the cache file"},
+                "id_slot": {"type": "integer", "description": "The slot acted on."},
+                "filename": {"type": "string", "description": "save and restore: the file written or read."},
+                "n_saved": {"type": "integer", "description": "save: tokens written."},
+                "n_restored": {"type": "integer", "description": "restore: tokens read."},
                 "n_written": {"type": "integer", "description": "save: bytes written."},
                 "n_read": {"type": "integer", "description": "restore: bytes read."},
                 "n_erased": {"type": "integer", "description": "erase: tokens cleared."},
@@ -81,15 +62,24 @@ public:
         })");
         s.responses = {response};
 
-        // Saving needs a model loaded with --slot-save-path and a prompt in the slot. The
-        // generator runs lemond in a temporary directory, so "." keeps the file out of the repo.
+        // Every action needs a model loaded with --slot-save-path, and saving needs a prompt in the
+        // slot. The generator runs lemond in a temporary directory, so "." keeps files out of the repo.
+        const ExampleStep load_with_save_path{
+            "lemonade.load", "",
+            {{"model_name", "Qwen3-0.6B-GGUF"}, {"llamacpp_args", "--slot-save-path ."}}};
+
         RouteExample save;
         save.name = "save";
         save.format = ResponseFormat::Json;
+        // A chat capped by max_tokens leaves the same number of tokens in the slot on every run,
+        // so the count the restore example reads back matches the one this example saved.
         save.setup = {
-            {"lemonade.load", "",
-             {{"model_name", "Qwen3-0.6B-GGUF"}, {"llamacpp_args", "--slot-save-path ."}}},
-            {"openai.chat_completions", "non-streaming"},
+            load_with_save_path,
+            {"openai.chat_completions", "", ordered_json::parse(R"({
+                "model": "Qwen3-0.6B-GGUF",
+                "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+                "max_tokens": 32
+            })")},
         };
         save.args = {{"id", 0}, {"action", "save"}, {"filename", "my_conversation_cache.bin"}};
 
@@ -102,7 +92,7 @@ public:
         RouteExample erase;
         erase.name = "erase";
         erase.format = ResponseFormat::Json;
-        erase.setup = {{"lemonade.load", ""}};
+        erase.setup = {load_with_save_path};
         erase.args = {{"id", 0}, {"action", "erase"}};
 
         s.examples = {save, restore, erase};

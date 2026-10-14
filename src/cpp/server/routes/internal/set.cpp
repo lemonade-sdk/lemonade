@@ -35,7 +35,7 @@ public:
         s.summary = "Change config settings at runtime";
         s.description =
             "Changes one or more `config.json` settings without restarting lemond, and saves "
-            "them to `config.json`.";
+            "them.";
         s.notes = {
             "Every key is validated before any is applied, so one invalid value rejects the "
             "whole request with `400` and changes nothing.",

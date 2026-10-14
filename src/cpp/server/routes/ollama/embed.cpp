@@ -25,12 +25,9 @@ public:
         s.summary = "New embeddings format";
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
-        s.notes = {
-            "An unknown model answers `404` with `model '<name>' not found`.",
-        };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Embedding model to run; loaded on first use. A `:latest` tag is ignored."},
+             "Embedding model to run."},
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
              "Text to embed, or an array of texts."},
             {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,

@@ -19,7 +19,7 @@ public:
         s.paths = {"aliases"};
         s.prefixes = Prefixes::Internal;
         s.summary = "List all active model aliases";
-        s.description = "Retrieves a list of all active model alias mappings.";
+        s.description = "Lists every model alias with its target.";
         s.notes = {
             "An alias stands in for its target in any request's `model` field. Aliases live in "
             "`<cache_dir>/aliases.json`; see "

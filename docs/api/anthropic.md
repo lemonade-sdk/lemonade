@@ -5,14 +5,14 @@ Lemonade supports an initial Anthropic Messages compatibility endpoint for appli
 <!-- BEGIN GENERATED: anthropic.summary -->
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | [`/v1/messages`](#post-v1messages) | Messages. Supports both streaming and non-streaming. Query params like `?beta=true` are accepted. |
+| `POST` | [`/v1/messages`](#post-v1messages) | Generate the next assistant message, streaming or not |
 <!-- END GENERATED: anthropic.summary -->
 
 <!-- BEGIN GENERATED: anthropic.messages -->
 ## `POST /v1/messages`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Generates the next assistant message for a conversation in the Anthropic Messages format, loading the model on first use, for applications that call Claude-style APIs.
+Generates the next assistant message for a conversation in the Anthropic Messages format.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -38,11 +38,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `beta` (query) | No | Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; `true` is passed on to providers that are relayed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, in a `warnings` array.
+Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, in a `warnings` array. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so nothing is dropped; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
 
 Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. An unknown model answers `404` with a `not_found_error`.
-
-Fields are dropped only where Lemonade converts to and from the OpenAI shape. A cloud provider registered with `--wire-format anthropic` is relayed unconverted; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
 
 ### Example request
 

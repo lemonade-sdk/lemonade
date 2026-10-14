@@ -21,17 +21,11 @@ public:
         s.summary = "Returns the current slots processing state";
         s.modality = "slots state";
         s.description =
-            "Returns the current state of all processing slots in the llama.cpp server. Slots are "
-            "parallel processing contexts that can handle multiple requests concurrently.\n\n"
-            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
-            "Internally, Lemonade forwards the request to llama.cpp's `/slots` endpoint.\n\n"
-            "> **Note:** This endpoint is only available when a llama.cpp model is loaded.\n\n"
-            "> **Note:** This endpoint supports all four path prefixes: `/api/v0/slots`, "
-            "`/api/v1/slots`, `/v0/slots`, and `/v1/slots`.";
+            "Returns the state of each processing slot in the llama.cpp server. Slots are the "
+            "parallel contexts that serve concurrent requests.";
         s.notes = {
-            "The request names no model: Lemonade forwards it to llama.cpp's `/slots` on the most "
-            "recently used loaded model, which must be a llama.cpp model. With no model loaded, or "
-            "when that model is not a llama.cpp model, the answer is `400`.",
+            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
+            "the answer is `400`.",
         };
 
         RouteResponse response;

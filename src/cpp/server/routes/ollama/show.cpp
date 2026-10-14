@@ -52,11 +52,10 @@ public:
             "`capabilities` follows the model's labels: `completion` for chat models, "
             "`embedding` for embedding models, plus `tools`, `vision` and `thinking` when the "
             "model carries the matching label.",
-            "An unknown model answers `404` with `model '<name>' not found`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to describe. A `:latest` tag is ignored."},
+             "Model to describe."},
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Older name for `model`; wins when both are given."},
         };

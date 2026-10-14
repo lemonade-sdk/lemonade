@@ -177,7 +177,7 @@ ordered_json system_info_schema() {
                 "description": "Software recipes and their backend support status",
                 "additionalProperties": {
                     "type": "object",
-                    "description": "Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:",
+                    "description": "One entry per recipe, such as `llamacpp` or `flm`.",
                     "required": ["experimental", "backends"],
                     "properties": {
                         "default_backend": {"type": "string", "description": "Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)"},
@@ -187,7 +187,7 @@ ordered_json system_info_schema() {
                             "description": "Available backends for this recipe",
                             "additionalProperties": {
                                 "type": "object",
-                                "description": "Each backend contains:",
+                                "description": "One entry per backend.",
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "List of devices **on this system** that support this backend (empty if not supported)"},
@@ -207,12 +207,12 @@ ordered_json system_info_schema() {
             },
             "cloud": {
                 "type": "object",
-                "description": "Cloud OpenAI-compatible providers configured on this server. Contains:",
+                "description": "Cloud providers installed on this server.",
                 "required": ["providers"],
                 "properties": {
                     "providers": {
                         "type": "array",
-                        "description": "Array, one entry per installed provider:",
+                        "description": "One entry per installed provider.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -250,8 +250,8 @@ public:
         s.paths = {"system-info"};
         s.summary = "System information and device enumeration";
         s.description =
-            "System information endpoint that provides complete hardware details and device "
-            "enumeration.";
+            "Reports the host's hardware, the devices Lemonade can use, and which backends each "
+            "recipe supports on this system.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
             "### Backend Tiers and Formats\n"

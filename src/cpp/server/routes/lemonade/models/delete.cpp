@@ -24,11 +24,9 @@ public:
         s.paths = {"delete"};
         s.summary = "Delete a model";
         s.description =
-            "Delete a model by removing it from local storage. If the model is currently loaded, "
-            "it will be unloaded first.\n\n"
-            "> Note: deleting a collection (`recipe: \"collection.omni\"`) removes only the "
-            "collection entry from `user_models.json`; its components stay on disk. Delete the "
-            "components individually if you want to free their disk space.";
+            "Deletes a model's files from local storage, unloading the model first when it is "
+            "loaded. Deleting a collection (`recipe: \"collection.omni\"`) removes only its entry "
+            "from `user_models.json`; delete its components to free their disk space.";
         s.notes = {
             "A file still held open, for example by a download that was just cancelled, is retried "
             "up to 3 times, 5 seconds apart. An unknown model answers `422`; other failures answer "

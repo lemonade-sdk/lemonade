@@ -25,30 +25,27 @@ public:
         s.summary = "Set an in-memory API key for a cloud provider";
         s.experimental = true;
         s.description =
-            "Set an in-memory API key for a previously-installed cloud provider, and trigger a "
-            "refresh of that provider's discovered model list. The key lives in `lemond` process "
-            "memory only — it is never written to disk and is cleared on `lemond` restart. For "
-            "persistence across restarts, set `LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s "
-            "environment instead.\n\n"
-            "### Authentication precedence\n\n"
-            "If `LEMONADE_<PROVIDER>_API_KEY` is set in `lemond`'s environment, the env var takes "
-            "precedence and this endpoint returns **409 Conflict** without storing the supplied "
-            "key. This is the safety guarantee that lets an operator provision a \"house\" key via "
-            "env without worrying about a client silently overriding it.";
+            "Sets an API key for an installed cloud provider and refreshes the provider's "
+            "discovered models. The key is held in `lemond`'s memory only, never written to disk, "
+            "and is gone after a restart; for a key that persists, set "
+            "`LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.";
         s.notes = {
-            "The `409` carries `error.type` `auth_conflict` and names the `env_var` that took "
-            "precedence.",
-            "A `400` answers a missing or empty `provider` or `api_key`, or a provider whose base "
-            "URL is `http://` when neither this request nor the provider's install set "
+            "When `LEMONADE_<PROVIDER>_API_KEY` is set, it takes precedence: the request answers "
+            "`409` without storing the key, with `error.type` `auth_conflict` and the `env_var` "
+            "that took precedence. An operator's key in the environment cannot be overridden by a "
+            "client.",
+            "A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a "
+            "non-boolean `allow_insecure_http`, or a provider whose base URL is `http://` when "
+            "neither this request nor the provider's install set "
             "`allow_insecure_http` (code `insecure_http_requires_opt_in`). A provider that is not "
             "installed answers `404`; install it with `POST /v1/install` and `backend: \"cloud\"` "
             "first.",
         };
         s.args = {
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Installed provider name."},
+             "The installed provider's name."},
             {"api_key", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "API key to store in `lemond` process memory."},
+             "The API key."},
             {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Opt in to sending the key to a provider whose base URL is `http://`."},
         };
@@ -64,12 +61,12 @@ public:
                 "auth_state": {
                     "type": "object",
                     "properties": {
-                        "env_var_set": {"type": "boolean"},
-                        "runtime_key_set": {"type": "boolean"}
+                        "env_var_set": {"type": "boolean", "description": "Whether LEMONADE_<PROVIDER>_API_KEY is set for lemond."},
+                        "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
                     }
                 },
                 "models_discovered": {"type": "integer", "description": "Chat models discovered with the key; 0 when discovery fails."},
-                "warnings": {"type": "array", "items": {"type": "string"}},
+                "warnings": {"type": "array", "items": {"type": "string"}, "description": "Present when the provider's base URL is `http://`."},
                 "warning": {"type": "string", "description": "The warnings joined into one string, for older clients."}
             }
         })");

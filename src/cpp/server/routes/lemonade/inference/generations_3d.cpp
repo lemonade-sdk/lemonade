@@ -23,19 +23,15 @@ public:
         s.summary = "Generate a textured 3D mesh (GLB) from an image";
         s.experimental = true;
         s.description =
-            "3D Generation API. You provide an input image and receive a textured 3D mesh as a "
-            "glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`). The input image "
-            "must be PNG, JPEG, BMP, or GIF.\n\n"
-            "This endpoint is not part of the OpenAI API, so it is a Lemonade-specific "
+            "Generates a textured 3D mesh, as a glTF-binary (`.glb`) file, from a PNG, JPEG, BMP or "
+            "GIF image. Serves TRELLIS models such as `TRELLIS-3D`. This is a Lemonade "
             "extension.\n\n"
             "> **Performance:** 3D reconstruction runs on the GPU (Vulkan, ROCm, or CUDA) and "
             "takes on the order of minutes; higher cascade resolutions take longer.";
         s.notes = {
-            "### Response\n\n"
-            "On success the raw mesh bytes are returned as `model/gltf-binary`. On failure the "
-            "response is JSON with an `error` object: `400` for invalid requests, `404` for "
-            "unknown models, `500` when the backend reports an error, and `502` when the backend "
-            "produces no output.",
+            "A failed request answers with a JSON `error` object: `400` for an invalid request, "
+            "`404` for an unknown model, `500` when the backend reports an error, and `502` when "
+            "it produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -51,7 +47,7 @@ public:
              "real backgrounds."},
             {"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
              "UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving "
-             "every face unique atlas space — best quality, but chart computation is superlinear "
+             "every face unique atlas space: best quality, but chart computation is superlinear "
              "in face count. `box` is a faster 6-plane projection with occlusion-aware bucket "
              "assignment and depth-tested rasterization; small texture artifacts remain possible "
              "in concave regions."},

@@ -22,13 +22,10 @@ public:
         s.summary = "Read a model's saved, effective, and default recipe options";
         s.modality = "n/a";
         s.description =
-            "Read a model's recipe options, separated by layer, without loading it. With `POST` "
+            "Reads a model's recipe options, separated by layer, without loading it. With `POST` "
             "and `DELETE` on the same path, this manages per-model options independently of "
             "[`/v1/load`](./lemonade.md#post-v1load).";
         s.notes = {
-            "`effective` is the exact request body a [`POST /v1/load`](./lemonade.md#post-v1load) "
-            "for this model uses right now, with every option the recipe accepts resolved through "
-            "the full priority chain. `defaults` is what a reset model would get.",
             "Per-architecture defaults come from the model's GGUF metadata. For a model that has "
             "not been downloaded yet, every key is still present but carries the value it has "
             "before those defaults apply.",

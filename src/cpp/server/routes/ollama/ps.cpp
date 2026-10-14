@@ -23,7 +23,6 @@ public:
         s.summary = "Running models";
         s.description = "Lists the loaded models in Ollama's format.";
         s.notes = {
-            "`size` and `size_vram` are always 0 and `expires_at` is a fixed far-future date. "
             "[`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.",
         };
 

@@ -19,9 +19,8 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Force-flush all queued telemetry trace spans";
         s.description =
-            "Forces the in-memory telemetry queue to flush all buffered trace spans immediately to "
-            "the configured OTLP collector. This call blocks until all currently queued spans are "
-            "serialized and sent.";
+            "Sends every queued telemetry trace span to the configured OTLP collector, and "
+            "answers once they are sent.";
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

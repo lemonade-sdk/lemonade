@@ -23,7 +23,7 @@ public:
         s.summary = "Find or remove orphaned model files";
         s.description =
             "Finds model files that a multi-repository model left in another repository's "
-            "Hugging Face cache folder, and removes them unless `dry_run` is `true`.";
+            "Hugging Face cache folder, and removes them when `dry_run` is `false`.";
         s.notes = {
             "An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different "
             "repository, found inside the `main` checkpoint's cache folder.",

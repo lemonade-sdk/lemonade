@@ -27,38 +27,25 @@ public:
         s.summary = "Evaluate an ad-hoc routing policy against a prompt without registering it";
         s.experimental = true;
         s.description =
-            "Evaluate a routing policy document against a prompt and return the decision the\n"
-            "engine would make, without registering the policy or dispatching the user\n"
-            "request to the selected candidate. This is the endpoint behind the Router\n"
-            "Builder's **Test Prompt** tab: it lets a policy be iterated on before it is\n"
-            "attached to a `collection.router` model.\n"
-            "\n"
-            "The endpoint performs parser-level structural policy validation: every\n"
-            "`candidates` entry, `default_model`, rule `route_to`, and classifier model must\n"
-            "be listed in `components`. It does not consult the live model registry:\n"
-            "component names are accepted as-is, so a policy can be tested before its\n"
-            "candidates are downloaded. Because names and component model types are not\n"
-            "resolved through the registry, registration-time registry checks (for example,\n"
-            "whether a `semantic_similarity` model can embed or a `classifier` model can\n"
-            "classify/chat) are not performed by this endpoint.\n"
-            "\n"
-            "Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)\n"
-            "are evaluated locally. Model-backed conditions (`semantic_similarity`,\n"
-            "`classifier`, and `llm`, including `routing.router`) may load and run their\n"
-            "referenced models. A model-evaluation failure is handled by the classifier's\n"
-            "`on_error` policy (`match_false` by default), so routing normally continues to a\n"
-            "later rule or falls through to `default_model` rather than treating the policy\n"
-            "as invalid.";
+            "Returns the decision a routing policy makes for a prompt, without registering the "
+            "policy or sending the request to the chosen candidate. The Router Builder's **Test "
+            "Prompt** tab uses it to iterate on a policy before attaching it to a "
+            "`collection.router` model.";
         s.notes = {
-            "`decision` has the same shape as the `x_lemonade_route` object a routed\n"
-            "completion returns with `route_trace: true`, and the trace is always included\n"
-            "here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,\n"
-            "and `route_to` is the policy's `default_model`.",
-            "`normalized_policy` echoes the policy as it was actually evaluated. The policy\n"
-            "above uses explicit `routing.rules`, so it comes back unchanged. The field earns\n"
-            "its place when a policy uses the `routing.router` shorthand: that sugar is\n"
-            "desugared into an explicit `llm` classifier plus one identity rule per\n"
-            "candidate, so a `routing` block authored as:\n"
+            "Validation is structural: every `candidates` entry, `default_model`, rule `route_to` "
+            "and classifier model must be listed in `components`. Component names are not looked "
+            "up in the model registry, so a policy can be tested before its candidates are "
+            "downloaded, and registration's model-type checks, such as whether a "
+            "`semantic_similarity` model can embed, do not run.",
+            "Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are "
+            "evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier` and "
+            "`llm`, including `routing.router`) may load and run their models. A model failure "
+            "follows the classifier's `on_error` policy (`match_false` by default), so routing "
+            "continues to a later rule or to `default_model`.",
+            "`normalized_policy` is the policy as evaluated. The example below uses explicit "
+            "`routing.rules`, so it comes back unchanged. The `routing.router` shorthand is "
+            "expanded into an `llm` classifier plus one rule per candidate, so a `routing` block "
+            "written as:\n"
             "\n"
             "```json\n"
             "{\n"
@@ -72,7 +59,7 @@ public:
             "}\n"
             "```\n"
             "\n"
-            "is echoed back with `router` removed and synthesized `classifiers`/`rules`:\n"
+            "comes back with `router` replaced by these `classifiers` and `rules`:\n"
             "\n"
             "```json\n"
             "{\n"
@@ -102,9 +89,9 @@ public:
             "}\n"
             "```\n"
             "\n"
-            "Match `decision.matched_rule` against this document rather than the one you\n"
-            "sent — a policy authored with only `routing.router` has no `routing.rules` of\n"
-            "its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.",
+            "Match `decision.matched_rule` against this document: a policy written with only "
+            "`routing.router` has no rules of its own, only the generated `__route_0`, "
+            "`__route_1`, etc.",
             "A `400` answers a body that is not valid JSON, a missing or non-object `policy`, a "
             "non-string `prompt`, non-boolean `has_images`/`has_tools`, a `metadata` that is not an "
             "object of string values, or a policy document that is invalid or internally "
@@ -118,9 +105,9 @@ public:
              "The prompt text to route. Defaults to `\"\"`, which still exercises `min_chars` (0 "
              "chars) and any prompt-independent rules."},
             {"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Simulate a request carrying image input. Default `false`."},
+             "Simulate a request carrying image input. Defaults to `false`."},
             {"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Simulate a request carrying tool definitions. Default `false`."},
+             "Simulate a request carrying tool definitions. Defaults to `false`."},
             {"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "String-valued metadata pairs matched by `metadata` conditions."},
         };
@@ -129,6 +116,9 @@ public:
         // always returns it.
         ordered_json decision = route_decision_schema();
         decision["properties"]["trace"]["description"] = "Per-condition trace of the evaluation.";
+        decision["description"] =
+            "The routing decision, shaped like the `x_lemonade_route` object a routed completion "
+            "returns with `route_trace: true`.";
         decision["required"].push_back("trace");
 
         RouteResponse response;

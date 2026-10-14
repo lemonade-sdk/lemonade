@@ -96,13 +96,8 @@ public:
         s.summary = "Image Editing";
         s.modality = "image + prompt -> edited image";
         s.description =
-            "Image Editing API. Provide one or more reference images and a prompt describing the "
-            "desired change, and receive an edited image.\n\n"
-            "> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use "
-            "editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.\n"
-            ">\n"
-            "> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
-            "significantly faster.";
+            "Edits one or more reference images as a prompt describes. The request is "
+            "`multipart/form-data`. CPU inference takes minutes per image; a GPU backend is much faster.";
         s.notes = {
             "### Edit with the OpenAI Python Client\n"
             "\n"
@@ -143,8 +138,8 @@ public:
              "`image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit "
              "size bypasses this soft cap; backend limits still apply."},
             {"n", ArgIn::Form, integer, false, Support::Partial,
-             "Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside "
-             "this range are rejected with `400 Bad Request`."},
+             "Number of images to generate, from `1` to `10`; other values answer `400`. "
+             "Default: `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
              "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"steps", ArgIn::Form, integer, false, Support::Available,
@@ -153,15 +148,15 @@ public:
              "Classifier-free guidance scale. Default varies by model."},
             {"seed", ArgIn::Form, integer, false, Support::Available, "Random seed for reproducibility."},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
+             "Accepted for OpenAI compatibility and ignored."},
             {"background", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
+             "Accepted for OpenAI compatibility and ignored."},
             {"quality", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
+             "Accepted for OpenAI compatibility and ignored."},
             {"input_fidelity", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
+             "Accepted for OpenAI compatibility and ignored."},
             {"output_compression", ArgIn::Form, integer, false, Support::NotAvailable,
-             "OpenAI API compatibility field. Accepted; silently ignored by the backend."},
+             "Accepted for OpenAI compatibility and ignored."},
         };
 
         RouteResponse response;

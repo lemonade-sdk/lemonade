@@ -54,7 +54,7 @@ ordered_json install_schema() {
             "auth_header_name": {"type": "string"},
             "auth_header_prefix": {"type": "string"},
             "wire_format": {"enum": ["openai", "anthropic"]},
-            "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key."},
+            "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key; 0 when no key resolves."},
             "auth_state": {
                 "type": "object",
                 "properties": {
@@ -62,7 +62,7 @@ ordered_json install_schema() {
                     "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in lemond's memory."}
                 }
             },
-            "warnings": {"type": "array", "items": {"type": "string"}},
+            "warnings": {"type": "array", "items": {"type": "string"}, "description": "Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`."},
             "warning": {"type": "string", "description": "The warnings joined into one string, for older clients."}
         }
     })");
@@ -82,21 +82,15 @@ public:
         s.paths = {"install"};
         s.summary = "Install or update a backend, or register a cloud provider";
         s.description =
-            "Install or update a backend for a specific recipe/backend pair, **or** register a "
-            "cloud OpenAI-compatible provider. The request body is dispatched by the `backend` "
-            "field: any value other than `\"cloud\"` is treated as a local backend install.";
+            "Installs a recipe's backend, updating it when the installed version is outdated, or "
+            "registers a cloud provider when `backend` is `\"cloud\"`.";
         s.notes = {
-            "A backend this system does not support is refused with `400` unless `force` is set, "
-            "and one that needs manual setup answers with the setup guide's URL instead of "
-            "installing.",
-            "`stream: true` sends progress as server-sent events; with `subscribe: false` as well, "
-            "the server owns the download, which [`GET /v1/downloads`](#get-v1downloads) and "
-            "[`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control.",
-            "A local install without both `recipe` and `backend`, or a backend this system does "
-            "not support, is answered with `400` and an `error` string; an invalid cloud provider "
-            "field is answered with `400` and an `error` object. Any other failure, including "
-            "invalid JSON, is answered with `500` and an `error` string.",
-            "A backend that is already installed but outdated is updated to the configured version.",
+            "A backend that needs manual setup on this system answers with the setup guide's URL "
+            "instead of installing.",
+            "A local install without both `recipe` and `backend`, or of a backend this system "
+            "does not support and without `force`, answers `400` with an `error` string; an "
+            "invalid cloud provider field answers `400` with an `error` object. Any other failure, "
+            "including invalid JSON, answers `500` with an `error` string.",
             "### Install a cloud provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
@@ -117,50 +111,46 @@ public:
             "    \"provider\": \"fireworks\",\n"
             "    \"base_url\": \"https://api.fireworks.ai/inference/v1\"\n"
             "  }'\n"
-            "```\n"
-            "\n"
-            "`models_discovered` is `0` when no API key is resolvable. If `api_key` is supplied but "
-            "the provider's env var is also set, the response includes a `warning` string "
-            "explaining the env var took precedence.",
+            "```",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Local backends, required: Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, "
-             "`sd-cpp`, `ryzenai-llm`)"},
+             "Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, "
+             "`sd-cpp` or `ryzenai-llm`."},
             {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Local backends: Backend name within the recipe (for example, `vulkan`, `rocm`, "
-             "`cpu`, `default`). Cloud providers: Must be the literal string `\"cloud\"`."},
+             "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
+             "`default`. Cloud providers: `\"cloud\"`."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends: If `true`, returns Server-Sent Events with progress. Defaults to "
-             "`false`."},
+             "Local backends: if `true`, sends progress as server-sent events. Defaults to `false`."},
             {"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends: If `true`, bypasses hardware filtering for `unsupported` backends "
-             "and attempts installation anyway. Defaults to `false`."},
+             "Local backends: if `true`, installs a backend this system does not support anyway. "
+             "Defaults to `false`."},
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: Short identifier (e.g. `fireworks`). Used as the "
-             "model-name prefix. Must match `[a-z0-9_-]+`."},
+             "Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as "
+             "`fireworks`, used as the provider's model-name prefix."},
             {"base_url", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: OpenAI-compatible base URL ending in `/v1` (or "
-             "equivalent)."},
+             "Cloud providers, required: the provider's base URL, such as one ending in `/v1`."},
             {"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: Optional. If set, stored in process memory; honors env-wins "
-             "precedence (see `/v1/cloud/auth`)."},
+             "Cloud providers: an API key, held in `lemond`'s memory. The provider's environment "
+             "variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth)."},
             {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Cloud providers: Default `false`. Must be `true` to send an API key to an `http://` "
-             "base URL."},
+             "Cloud providers: must be `true` to send an API key to an `http://` base URL. Defaults "
+             "to `false`."},
             {"auth_header_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: Header carrying the API key. Must be a valid HTTP header name. "
-             "Default `\"Authorization\"`."},
+             "Cloud providers: the header that carries the API key. Defaults to "
+             "`\"Authorization\"`."},
             {"auth_header_prefix", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: Value prefix before the key. Default `\"Bearer \"`; pass `\"\"` for "
-             "gateways that expect the bare key."},
+             "Cloud providers: the text before the key in that header. Defaults to `\"Bearer \"`; "
+             "pass `\"\"` for gateways that expect the bare key."},
             {"wire_format", ArgIn::JsonBody, {{"enum", json::array({"openai", "anthropic"})}},
              false, Support::Available,
-             "Cloud providers: `\"openai\"` (default) or `\"anthropic\"`. An `\"anthropic\"` "
-             "provider is served from `POST /v1/messages` only; any other value returns 400."},
+             "Cloud providers: `\"openai\"` (the default) or `\"anthropic\"`. An `\"anthropic\"` "
+             "provider is served only through `POST /v1/messages`."},
             {"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends with `stream: true`: `false` starts a server-owned download and "
-             "answers with its snapshot at once. Defaults to `true`."},
+             "Local backends with `stream: true`: `false` makes the download server-owned and "
+             "answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) "
+             "and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
+             "Defaults to `true`."},
         };
 
         RouteResponse response;

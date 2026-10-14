@@ -26,16 +26,15 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Download updates for downloaded models";
         s.description =
-            "Checks downloaded models for newer upstream commits and downloads the updates, by "
-            "default in the background.";
+            "Checks downloaded models for newer upstream commits and downloads the updates.";
         s.notes = {
-            "With `async` omitted or `true`, the sync starts in the background and the answer is "
-            "`202` with the sync's status; poll [`GET /internal/models/sync/status`]"
-            "(#get-internalmodelssyncstatus) with its `sync_id`. With `async: false`, the answer "
-            "waits for the sync to finish. `dry_run: true` only checks, and answers `200` with "
-            "what a sync would update.",
-            "A sync already running answers with its status instead of starting another. Full "
-            "offline mode (`offline=true`) answers `409` without any network request.",
+            "A background sync answers `202` with its status; poll "
+            "[`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its "
+            "`sync_id`. A `dry_run` finishes before answering, whatever `async` says, and "
+            "answers `200` with what a sync would update.",
+            "While a sync is running, a new request answers `200` with that sync's status "
+            "instead of starting another. Offline mode (`offline=true`) answers `409` without "
+            "any network request.",
             "The `lemonade update-models` command uses this endpoint; see "
             "Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).",
         };

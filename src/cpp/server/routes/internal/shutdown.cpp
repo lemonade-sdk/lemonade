@@ -28,9 +28,8 @@ public:
         s.summary = "Unload every model and stop lemond";
         s.description = "Unloads every model, answers, and then stops lemond.";
         s.notes = {
-            "Models unload before the response is sent, so backend processes such as "
-            "`llama-server` have exited by the time the caller reads it. lemond cancels its "
-            "downloads and exits about 100 ms later.",
+            "Backend processes such as `llama-server` have exited by the time the caller reads "
+            "the answer. lemond then cancels its downloads and exits about 100 ms later.",
         };
 
         RouteResponse response;

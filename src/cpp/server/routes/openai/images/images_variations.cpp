@@ -23,13 +23,8 @@ public:
         s.summary = "Image Variations";
         s.modality = "image -> varied image";
         s.description =
-            "Image Variations API. You provide a source image and receive a variation of it.\n\n"
-            "> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike "
-            "`/images/edits`, a `prompt` parameter is not supported and will be ignored — the "
-            "model generates a variation based solely on the input image.\n"
-            ">\n"
-            "> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is "
-            "significantly faster.";
+            "Generates a variation of a source image. The request is `multipart/form-data`, and "
+            "the variation depends only on the image: a `prompt` is ignored. CPU inference takes minutes per image; a GPU backend is much faster.";
         s.notes = {
             "### Create Variations with the OpenAI Python Client\n"
             "\n"
@@ -53,19 +48,19 @@ public:
         const ordered_json text = {{"type", "string"}};
         s.args = {
             {"model", ArgIn::Form, text, true, Support::Available,
-             "The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
+             "The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
             {"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
-             "The source image file (PNG). Sent as a file in multipart/form-data."},
+             "The source image (PNG)."},
             {"size", ArgIn::Form, text, false, Support::Available,
              "The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: "
              "`512x512`."},
             {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Partial,
-             "Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. "
-             "Values outside this range result in a 400 Bad Request error."},
+             "Number of images to generate, from `1` to `10`; other values answer `400`. "
+             "Default: `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
              "Format of the response. Only `b64_json` (base64-encoded image) is supported."},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
-             "OpenAI API compatibility field. Accepted but not forwarded to the backend."},
+             "Accepted for OpenAI compatibility and ignored."},
         };
 
         RouteResponse response;

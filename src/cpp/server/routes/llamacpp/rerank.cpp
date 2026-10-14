@@ -19,25 +19,15 @@ public:
         s.summary = "Reranking";
         s.modality = "query + documents -> relevance-scored documents";
         s.description =
-            "Reranking API for llama.cpp-compatible reranker models. You provide a query and a "
-            "list of documents, and receive relevance scores for each document. Lemonade will load "
-            "the requested model automatically if it is not already loaded.\n\n"
-            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
-            "Internally, Lemonade forwards the request to llama.cpp's `/v1/rerank` endpoint.\n\n"
-            "> **Note:** Lemonade also accepts `/reranking` and `/reranker` as aliases — all "
-            "three route to the same handler and behave identically.\n\n"
-            "> **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, "
-            "`/api/v1/`, `/v0/`, and `/v1/`.\n\n"
-            "> **Note:** This endpoint is only available for reranker-specific models using the "
-            "`llamacpp` recipe, such as `bge-reranker-v2-m3-GGUF`.";
+            "Scores each document against a query. Only llama.cpp reranker models, such as "
+            "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
         s.args = {
             {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The search query text."},
             {"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
              true, Support::Available, "Array of document strings to score against the query."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The reranking model to use. If not already loaded, Lemonade loads it before "
-             "forwarding the request."},
+             "Reranker model to run; loaded on first use."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},

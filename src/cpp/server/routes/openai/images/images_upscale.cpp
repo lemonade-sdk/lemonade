@@ -30,12 +30,8 @@ public:
         s.summary = "Image Upscaling";
         s.modality = "image + ESRGAN model -> upscaled image";
         s.description =
-            "Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, "
-            "and receive an upscaled image. The upscale factor depends on the selected model, and "
-            "it is usually reflected in its name.\n\n"
-            "> **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a "
-            "JSON body (not multipart/form-data). The image must be provided as a base64-encoded "
-            "string.";
+            "Upscales an image with a Real-ESRGAN model. The request is JSON with the image "
+            "base64-encoded. The model sets the upscale factor, which its name usually states.";
         s.notes = {
             "The model must carry the `upscaling` label and is downloaded on first use.",
             "A missing `image` or `model` answers `400`, an unknown model `404`, and a failed "

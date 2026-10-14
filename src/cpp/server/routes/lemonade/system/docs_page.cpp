@@ -20,9 +20,7 @@ public:
         s.paths = {"docs/{page}"};
         s.summary = "Read one bundled API reference page";
         s.description =
-            "Read one page, served as `Content-Type: text/markdown`. "
-            "`{page}` is the `id` from the index,\n"
-            "which mirrors the path used on the documentation website; the `.md` suffix is optional.";
+            "Reads one page from the [`GET /v1/docs`](#get-v1docs) index, as `text/markdown`.";
         s.notes = {
             "An unknown page answers `404`.",
             "### Reading the files directly\n"

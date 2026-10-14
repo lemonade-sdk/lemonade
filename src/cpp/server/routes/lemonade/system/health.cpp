@@ -26,7 +26,7 @@ ordered_json health_schema() {
             "update_check_done": {"type": "boolean", "description": "Whether the background HuggingFace model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready."},
             "all_models_loaded": {
                 "type": "array",
-                "description": "Array of all currently loaded models with details:",
+                "description": "Every loaded model.",
                 "items": {
                     "type": "object",
                     "required": ["model_name", "checkpoint", "type", "device", "recipe",
@@ -37,9 +37,9 @@ ordered_json health_schema() {
                         "last_use": {"type": "integer", "description": "Monotonic timestamp of last access (load or inference), in milliseconds"},
                         "type": {"type": "string", "description": "Model type: `\"llm\"`, `\"embedding\"`, `\"reranking\"`, `\"transcription\"`, `\"image\"`, `\"tts\"`, `\"audio-generation\"`, `\"classification\"`, or `\"mesh\"`"},
                         "device": {"type": "string", "description": "Space-separated device list: `\"cpu\"`, `\"gpu\"`, `\"npu\"`, or combinations like `\"gpu npu\"`"},
-                        "pinned": {"type": "boolean", "description": "Boolean indicating if the model is currently pinned to prevent auto-eviction"},
-                        "is_busy": {"type": "boolean", "description": "Boolean indicating if the model has active requests or maintenance in progress"},
-                        "is_streaming": {"type": "boolean", "description": "Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)"},
+                        "pinned": {"type": "boolean", "description": "Whether the model is pinned, which exempts it from auto-eviction"},
+                        "is_busy": {"type": "boolean", "description": "Whether the model has active requests or maintenance in progress"},
+                        "is_streaming": {"type": "boolean", "description": "Whether the model is generating output tokens: true from the first chunk until every streaming request completes"},
                         "backend_url": {"type": "string", "description": "URL of the backend server process handling this model (useful for debugging)"},
                         "pid": {"type": "integer", "description": "The Process ID (PID) of the backend engine handling this model"},
                         "launch_command": {"type": "array", "items": {"type": "string"}, "description": "*(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included."},
@@ -62,7 +62,7 @@ ordered_json health_schema() {
             "pinned_models": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)"},
             "max_models": {
                 "type": "object",
-                "description": "Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):",
+                "description": "Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md))",
                 "properties": {
                     "llm": {"type": "integer", "description": "Maximum LLM/chat models"},
                     "embedding": {"type": "integer", "description": "Maximum embedding models"},
@@ -76,10 +76,10 @@ ordered_json health_schema() {
             "websocket_port": {"type": "integer", "description": "*(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`. The main port serves both APIs too."},
             "telemetry": {
                 "type": "object",
-                "description": "Structured telemetry state object:",
+                "description": "Telemetry state.",
                 "required": ["enabled"],
                 "properties": {
-                    "enabled": {"type": "boolean", "description": "Boolean indicating if telemetry collection is active"},
+                    "enabled": {"type": "boolean", "description": "Whether telemetry collection is active"},
                     "captures": {"type": "array", "items": {"enum": ["inputs", "outputs", "thinking"]}, "description": "*(optional)* Array of captured telemetry components (e.g., `[\"inputs\", \"outputs\", \"thinking\"]`), only present when `enabled` is `true`."}
                 }
             },
@@ -99,7 +99,7 @@ public:
         s.paths = {"health"};
         s.summary = "Check server status, such as models loaded";
         s.description =
-            "Check the health of the server. This endpoint returns information about loaded models.";
+            "Reports the server's status, including the models it has loaded.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
         };

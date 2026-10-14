@@ -20,25 +20,23 @@ public:
         s.id = "lemonade.pull_variants";
         s.methods = {"GET"};
         s.paths = {"pull/variants"};
-        s.summary = "Enumerate GGUF variants for a Hugging Face checkpoint";
+        s.summary = "List the installable variants of a model repository";
         s.description =
-            "Inspect a Hugging Face GGUF repository and enumerate the variants (quantizations and "
-            "sharded folder groups) available for installation. Used by the `lemonade pull "
-            "<owner/repo>` CLI flow and by the desktop app's model search to auto-populate the "
-            "install form. The endpoint reads only public Hugging Face metadata; if the `HF_TOKEN` "
-            "environment variable is set on the server, it is forwarded as a bearer token to "
-            "access gated repositories.";
+            "Inspects a Hugging Face or ModelScope repository and lists the variants it offers "
+            "for installation, such as quantizations and sharded folder groups. The `lemonade pull "
+            "<owner/repo>` command and the desktop app's model search use it to fill in the "
+            "install form. Lemonade reads public registry metadata, and sends the server's "
+            "`HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.";
         s.notes = {
             "A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `source` "
             "that disagrees with the checkpoint URL's registry, or offline mode (`code: "
-            "lemond_offline`). A checkpoint Hugging Face does not have answers `404`, and any other "
+            "lemond_offline`). A checkpoint the registry does not have answers `404`, and any other "
             "transport or parsing failure answers `500` with an `error` message.",
         };
         s.args = {
             {"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
-             "Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. A "
-             "Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its "
-             "registry."},
+             "Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is "
+             "normalized to `owner/repo` and selects its registry."},
             {"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
              "Registry: `huggingface` or `modelscope`. Defaults to the server's "
              "`default_model_source`."},
@@ -52,15 +50,15 @@ public:
             "properties": {
                 "checkpoint": {"type": "string", "description": "Echoed input (normalized to `owner/repo` when given as a URL)."},
                 "source": {"type": "string", "description": "Registry the variants came from."},
-                "recipe": {"type": "string", "description": "Suggested recipe (`llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection; future expansion may return other values)."},
+                "recipe": {"type": "string", "description": "Suggested recipe: `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection."},
                 "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection"]},
                 "suggested_name": {"type": "string", "description": "Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name."},
                 "suggested_labels": {"type": "array", "items": {"type": "string"},
-                                     "description": "Inferred labels — `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings`/`reranking` if those substrings appear in the repo id, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
+                                     "description": "Inferred labels: `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings`/`reranking` if those substrings appear in the repo id, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
                 "mmproj_files": {"type": "array", "items": {"type": "string"},
                                  "description": "Bare filenames of `mmproj-*.gguf` files in the repo; the first one should be passed as `mmproj` to `/v1/pull` for vision models."},
                 "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Bare names of draft-model GGUF files."},
-                "variants": {"type": "array", "description": "Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically). The CLI `lemonade pull` menu also accepts a free-text variant name.", "items": {
+                "variants": {"type": "array", "description": "Quantizations for the repo. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically).", "items": {
                     "type": "object",
                     "required": ["name", "primary_file", "files", "sharded", "size_bytes"],
                     "properties": {

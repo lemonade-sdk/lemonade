@@ -304,18 +304,14 @@ public:
             "Generates the next assistant message for a conversation, loading the model on "
             "first use. Lemonade runs it as an OpenAI chat completion and converts the result.";
         s.notes = {
-            "Ollama streams by default: without `\"stream\": false` the response is "
-            "newline-delimited JSON.",
             "A request with tools and streaming runs non-streaming on the backend and answers "
             "with two NDJSON lines: the whole message, then the final line.",
             "An empty `messages` array with `\"keep_alive\": 0` unloads the model instead, "
             "answering with `done_reason: \"unload\"`.",
-            "An unknown model answers `404` with `model '<name>' not found, try pulling it "
-            "first`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to run; loaded on first use. A `:latest` tag is ignored."},
+             "Model to run."},
             {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
              "Conversation so far. Each message has a `role` and `content`, plus optional "
              "`images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or "

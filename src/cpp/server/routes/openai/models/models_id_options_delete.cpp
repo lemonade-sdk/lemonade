@@ -22,9 +22,8 @@ public:
         s.summary = "Reset a model's recipe options to defaults";
         s.modality = "n/a";
         s.description =
-            "Reset a model to its defaults by erasing its `recipe_options.json` entry entirely. "
-            "The model keeps the defaults that come from its registry entry and from the "
-            "server's global configuration; only the user's saved overrides are removed.";
+            "Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults "
+            "from its registry entry and the server's configuration still apply.";
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},

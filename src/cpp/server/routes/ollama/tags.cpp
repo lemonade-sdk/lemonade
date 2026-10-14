@@ -22,10 +22,6 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Lists downloaded models";
         s.description = "Lists the downloaded models in Ollama's format.";
-        s.notes = {
-            "Every name carries a `:latest` tag, `modified_at` and `digest` are fixed "
-            "placeholders, and `size` is the registry's size estimate in bytes.",
-        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

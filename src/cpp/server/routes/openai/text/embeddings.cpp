@@ -19,14 +19,12 @@ public:
         s.summary = "Embeddings";
         s.modality = "text -> vector representations";
         s.description =
-            "Embeddings API. You provide input text and receive vector representations "
-            "(embeddings) that can be used for semantic search, clustering, and similarity "
-            "comparisons. This API will also load the model if it is not already loaded.\n\n"
-            "> **Note:** This endpoint is only available for models using the `llamacpp` or "
-            "`flm` recipes. ONNX models (OGA recipes) do not support embeddings.";
+            "Returns vector representations (embeddings) of the input text for semantic search, "
+            "clustering and similarity comparisons, loading the model on first use. Embedding "
+            "models use the `llamacpp` or `flm` recipe.";
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The input text or array of texts to embed. Can be a string or an array of strings."},
+             "The text to embed, as a string or an array of strings."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The model to use for generating embeddings."},
             {"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,

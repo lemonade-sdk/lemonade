@@ -19,7 +19,9 @@ public:
         s.methods = {"GET"};
         s.paths = {"stats"};
         s.summary = "Performance statistics from the last request";
-        s.description = "Performance statistics from the last request.";
+        s.description =
+            "Reports performance statistics for the most recent request, plus counters since "
+            "server start.";
         s.notes = {
             "`HEAD` returns `200 OK` with an empty body.",
         };
@@ -35,11 +37,11 @@ public:
                 "output_tokens": {"type": ["integer", "null"], "description": "Number of tokens generated"},
                 "prompt_tokens": {"type": ["integer", "null"], "description": "Total prompt tokens including cached tokens"},
                 "cache_tokens": {"type": ["integer", "null"], "description": "Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` / Responses-API `input_tokens_details.cached_tokens` from OpenAI-compatible cloud providers). `null` when the last request did not report cache usage"},
-                "request_count_total": {"type": "integer", "description": "Cumulative counters since server start"},
-                "input_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
-                "output_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
-                "prompt_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
-                "cache_tokens_total": {"type": "integer", "description": "Cumulative counters since server start"},
+                "request_count_total": {"type": "integer", "description": "Requests served since server start"},
+                "input_tokens_total": {"type": "integer", "description": "Input tokens since server start"},
+                "output_tokens_total": {"type": "integer", "description": "Output tokens since server start"},
+                "prompt_tokens_total": {"type": "integer", "description": "Prompt tokens since server start"},
+                "cache_tokens_total": {"type": "integer", "description": "Prompt tokens served from the prefix cache since server start"},
                 "routing_decisions_total": {"type": "integer", "description": "Routing decisions made by `collection.router` dispatch"},
                 "routing_switches_total": {"type": "integer", "description": "Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)"}
             }

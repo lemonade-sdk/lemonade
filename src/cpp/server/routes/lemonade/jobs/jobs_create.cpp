@@ -21,17 +21,14 @@ public:
         s.summary = "Create a job";
         s.experimental = true;
         s.description =
-            "Creates a job: a sequence of server operations that runs in the background, passes "
-            "data between steps and branches on results, surviving client disconnects and "
-            "server restarts. See [Job Engine API](#job-engine-api).";
+            "Creates a job: a sequence of server operations that runs in the background, passing "
+            "data between steps and branching on results. A job survives client disconnects and "
+            "server restarts, and can be paused, interrupted, resumed, read and deleted.";
         s.notes = {
             "The step graph is validated at creation; an invalid one is answered with `400`. When "
             "the job store holds 50 jobs that are all still active or resumable, the answer is "
             "`429` until one is deleted or finishes.",
-            "A job is a client-posted sequence of server operations that runs in the background: "
-            "steps pass data forward and branch on results, and the job can be paused, interrupted, "
-            "resumed, deleted and queried, surviving client disconnect and server restart. "
-            "Exclusive ops (`load`/`unload`/`chat`) hold a Router slot, so normal traffic queues "
+            "Exclusive ops (`load`, `unload`, `chat`) hold a Router slot, so normal traffic queues "
             "behind a running job. See [`docs/dev/job-system.md`](../dev/job-system.md) for the "
             "step schema, op set and lifecycle, and "
             "[`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) for the "

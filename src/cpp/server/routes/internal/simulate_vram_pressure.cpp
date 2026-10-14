@@ -19,8 +19,8 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Run the eviction engine at a simulated VRAM usage";
         s.description =
-            "Runs one eviction-engine evaluation as if global VRAM usage were `pct`, so tests "
-            "can exercise pressure eviction without filling a GPU.";
+            "Hands the eviction engine a simulated global VRAM usage of `pct`, so tests can "
+            "exercise pressure eviction without filling a GPU.";
         s.notes = {
             "Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above "
             "`auto_evict_threshold_pct` runs pressure eviction, `-1` runs only the idle-timeout "

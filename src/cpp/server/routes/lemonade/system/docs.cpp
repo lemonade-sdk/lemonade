@@ -22,11 +22,10 @@ public:
         s.paths = {"docs"};
         s.summary = "List the API reference pages bundled with the running server";
         s.description =
-            "List the API reference pages bundled with the server. The documentation ships with the\n"
-            "server, so it describes the version you are actually running and requires no internet\n"
-            "access.\n\n"
-            "Fetch this index first, then read the pages it advertises. New pages can be added in\n"
-            "future releases without breaking clients, because every entry carries its own URL.";
+            "Lists the API reference pages bundled with the server. They ship with the server, so "
+            "they describe the running version and need no internet access.\n\n"
+            "Fetch this index first, then read the pages it lists. Every entry carries its own "
+            "URL, so a release can add pages without breaking clients.";
         s.notes = {
             "`url` keeps the prefix the index was requested with, so a client that queries "
             "`/api/v0/docs` receives `/api/v0/docs/...` URLs.",

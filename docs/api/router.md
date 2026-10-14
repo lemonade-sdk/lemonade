@@ -19,7 +19,7 @@ model is involved.
 
 The decision is reported on the response:
 
-- Header **`x-lemonade-route`** — the matched rule id, or `default`.
+- Header **`x-lemonade-route`**: the matched rule id, or `default`.
 - Request field **`route_trace: true`** adds an **`x_lemonade_route`** object to the
   response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
   (`route_to` is the candidate that answered). For streaming responses it is
@@ -31,28 +31,7 @@ See [Router Policies](../dev/router-policy.md) for authoring the policy.
 ## `POST /v1/routing/validate`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Evaluate a routing policy document against a prompt and return the decision the
-engine would make, without registering the policy or dispatching the user
-request to the selected candidate. This is the endpoint behind the Router
-Builder's **Test Prompt** tab: it lets a policy be iterated on before it is
-attached to a `collection.router` model.
-
-The endpoint performs parser-level structural policy validation: every
-`candidates` entry, `default_model`, rule `route_to`, and classifier model must
-be listed in `components`. It does not consult the live model registry:
-component names are accepted as-is, so a policy can be tested before its
-candidates are downloaded. Because names and component model types are not
-resolved through the registry, registration-time registry checks (for example,
-whether a `semantic_similarity` model can embed or a `classifier` model can
-classify/chat) are not performed by this endpoint.
-
-Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)
-are evaluated locally. Model-backed conditions (`semantic_similarity`,
-`classifier`, and `llm`, including `routing.router`) may load and run their
-referenced models. A model-evaluation failure is handled by the classifier's
-`on_error` policy (`match_false` by default), so routing normally continues to a
-later rule or falls through to `default_model` rather than treating the policy
-as invalid.
+Returns the decision a routing policy makes for a prompt, without registering the policy or sending the request to the chosen candidate. The Router Builder's **Test Prompt** tab uses it to iterate on a policy before attaching it to a `collection.router` model.
 
 Also served at `/api/v0/routing/validate`, `/api/v1/routing/validate` and `/v0/routing/validate`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -62,20 +41,15 @@ Also served at `/api/v0/routing/validate`, `/api/v1/routing/validate` and `/v0/r
 |-----------|----------|-------------|--------|
 | `policy` | Yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `has_images` | No | Simulate a request carrying image input. Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `has_tools` | No | Simulate a request carrying tool definitions. Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `has_images` | No | Simulate a request carrying image input. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `has_tools` | No | Simulate a request carrying tool definitions. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `metadata` | No | String-valued metadata pairs matched by `metadata` conditions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-`decision` has the same shape as the `x_lemonade_route` object a routed
-completion returns with `route_trace: true`, and the trace is always included
-here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
-and `route_to` is the policy's `default_model`.
+Validation is structural: every `candidates` entry, `default_model`, rule `route_to` and classifier model must be listed in `components`. Component names are not looked up in the model registry, so a policy can be tested before its candidates are downloaded, and registration's model-type checks, such as whether a `semantic_similarity` model can embed, do not run.
 
-`normalized_policy` echoes the policy as it was actually evaluated. The policy
-above uses explicit `routing.rules`, so it comes back unchanged. The field earns
-its place when a policy uses the `routing.router` shorthand: that sugar is
-desugared into an explicit `llm` classifier plus one identity rule per
-candidate, so a `routing` block authored as:
+Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier` and `llm`, including `routing.router`) may load and run their models. A model failure follows the classifier's `on_error` policy (`match_false` by default), so routing continues to a later rule or to `default_model`.
+
+`normalized_policy` is the policy as evaluated. The example below uses explicit `routing.rules`, so it comes back unchanged. The `routing.router` shorthand is expanded into an `llm` classifier plus one rule per candidate, so a `routing` block written as:
 
 ```json
 {
@@ -89,7 +63,7 @@ candidate, so a `routing` block authored as:
 }
 ```
 
-is echoed back with `router` removed and synthesized `classifiers`/`rules`:
+comes back with `router` replaced by these `classifiers` and `rules`:
 
 ```json
 {
@@ -119,9 +93,7 @@ is echoed back with `router` removed and synthesized `classifiers`/`rules`:
 }
 ```
 
-Match `decision.matched_rule` against this document rather than the one you
-sent — a policy authored with only `routing.router` has no `routing.rules` of
-its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
+Match `decision.matched_rule` against this document: a policy written with only `routing.router` has no rules of its own, only the generated `__route_0`, `__route_1`, etc.
 
 A `400` answers a body that is not valid JSON, a missing or non-object `policy`, a non-string `prompt`, non-boolean `has_images`/`has_tools`, a `metadata` that is not an object of string values, or a policy document that is invalid or internally inconsistent, whose `error` is prefixed with `Invalid routing policy:`.
 
@@ -216,5 +188,5 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
 
 **Field Descriptions:**
 
-- `decision` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
+- `decision` - The routing decision, shaped like the `x_lemonade_route` object a routed completion returns with `route_trace: true`.
 <!-- END GENERATED: router.routing_validate -->

@@ -18,13 +18,11 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Check server liveness for load balancers and orchestrators";
         s.description =
-            "Lightweight liveness probe for load balancers and orchestrators. Unlike "
-            "[`/v1/health`](#get-v1health), this endpoint does no work beyond confirming the "
-            "process is up — it does not inspect loaded models or backends — so it is safe to poll "
-            "at high frequency. `HEAD /live` is also supported and returns `200 OK` with an empty "
-            "body.\n\n"
-            "Unlike most other endpoints on this page, `/live` is not versioned and is not mounted "
-            "under the `/api/v0/`, `/api/v1/`, `/v0/`, `/v1/` prefixes.";
+            "Liveness probe for load balancers and orchestrators. Unlike "
+            "[`/v1/health`](#get-v1health), it only confirms the process is up, without inspecting "
+            "models or backends, so it is safe to poll at high frequency. `HEAD /live` returns "
+            "`200 OK` with an empty body.\n\n"
+            "`/live` is served only at the root, not under the versioned prefixes.";
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

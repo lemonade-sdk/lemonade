@@ -34,7 +34,7 @@ public:
         s.paths = {"aliases"};
         s.prefixes = Prefixes::Internal;
         s.summary = "Create or update a model alias";
-        s.description = "Binds a model alias to a target model name.";
+        s.description = "Points an alias at a target model, replacing any target it had.";
         s.notes = {
             "A `400` answers a missing `alias` or `target`, an alias equal to its target, or an "
             "alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an "

@@ -22,31 +22,23 @@ public:
         s.summary = "Audio Transcription";
         s.modality = "audio file -> text";
         s.description =
-            "Audio Transcription API. You provide an audio file and receive a text transcription. "
-            "This API will also load the model if it is not already loaded.\n\n"
-            "> **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) "
-            "as the backend. Whisper models are automatically downloaded when first used.\n"
-            ">\n"
-            "> **Limitations:** Only `wav` audio input is currently supported. The "
-            "`response_format` field supports `json`, `verbose_json`, `text`, `srt`, and `vtt`. "
-            "On the FastFlowLM (FLM) backend, `srt` and `vtt` are rejected with a `400` because "
-            "FLM returns no segment timestamps, and `verbose_json` returns the compact shape "
-            "without a `segments` field.";
+            "Transcribes an audio file to text, loading the model on first use. Whisper "
+            "(whisper.cpp), Moonshine and FastFlowLM models serve this endpoint.";
+        s.notes = {
+            "On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400` and "
+            "`verbose_json` has no `segments`.",
+        };
         s.args = {
             {"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
              "The audio file to transcribe. Supported formats: wav."},
             {"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
-             "The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, "
-             "`Whisper-Small`)."},
+             "The transcription model to use (e.g., `Whisper-Tiny`)."},
             {"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
              "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to "
-             "`auto`, which tells whisper.cpp to detect the source language instead of using "
-             "whisper-server's English default."},
+             "`auto`, which detects the language."},
             {"response_format", ArgIn::Form,
              {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
-             "The response format. Supported values: `json`, `verbose_json`, `text`, `srt`, "
-             "`vtt`. `srt` and `vtt` require a backend that reports segment timestamps "
-             "(whisper.cpp)."},
+             "The response format: `json` (default), `verbose_json`, `text`, `srt` or `vtt`."},
             {"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
              "Text to guide the transcription's style or continue a previous segment."},
             {"temperature", ArgIn::Form, {{"type", "number"}}, false, Support::Available,

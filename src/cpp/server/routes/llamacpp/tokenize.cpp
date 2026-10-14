@@ -21,31 +21,22 @@ public:
         s.summary = "Tokenize a given text";
         s.modality = "tokenization";
         s.description =
-            "Tokenize a given text. Does not count towards the current model's context window.\n\n"
-            "> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. "
-            "Internally, Lemonade forwards the request to llama.cpp's `/tokenize` endpoint.\n\n"
-            "> **Note:** This endpoint supports all four path prefixes: `/api/v0/tokenize`, "
-            "`/api/v1/tokenize`, `/v0/tokenize`, and `/v1/tokenize`.\n\n"
-            "> **Note:** Actual response values may vary for the same string across different "
-            "models if the models do not share the same tokenizer.";
+            "Tokenizes text with the tokenizer of the most recently used model, so after a "
+            "request to a reranker, for example, the reranker's tokenizer answers. Tokenizing "
+            "does not use the model's context window.";
         s.notes = {
-            "The request names no model: Lemonade forwards it to llama.cpp's `/tokenize` on the most "
-            "recently used loaded model, which must be a llama.cpp model, so after a request to a "
-            "reranker, for example, the reranker's tokenizer answers. With no model loaded, or "
-            "when that model is not a llama.cpp model, the answer is `400`.",
+            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
+            "the answer is `400`.",
         };
         s.args = {
             {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text to tokenize."},
             {"add_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Boolean indicating if special tokens, i.e. `BOS`, should be inserted. Default: "
-             "`false`"},
+             "Insert special tokens, such as `BOS`. Defaults to `false`."},
             {"parse_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Boolean indicating if special tokens should be tokenized. When `false` special "
-             "tokens are treated as plaintext. Default: `true`"},
+             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`."},
             {"with_pieces", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Boolean indicating whether to return token pieces along with IDs. Default: "
-             "`false`"},
+             "Return each token's text piece with its ID. Defaults to `false`."},
         };
 
         RouteResponse response;

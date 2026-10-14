@@ -2,20 +2,20 @@
 
 Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
 
-The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only. All traffic flows through a single endpoint:
+The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only, so `resources/*` and `prompts/*` are not implemented. All traffic flows through a single endpoint:
 
 <!-- BEGIN GENERATED: mcp.summary -->
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|
-| `POST` | [`/mcp`](#post-mcp) | Supported | Model Context Protocol endpoint. JSON-RPC 2.0 envelope. Accepts a single message or a batch array. |
-| `GET` | [`/mcp`](#get-mcp) | Not supported | Server-initiated SSE channel is not supported. Returns `405 Method Not Allowed`. |
+| `POST` | [`/mcp`](#post-mcp) | Supported | Model Context Protocol over JSON-RPC 2.0 |
+| `GET` | [`/mcp`](#get-mcp) | Not supported | Server-initiated event stream |
 <!-- END GENERATED: mcp.summary -->
 
 <!-- BEGIN GENERATED: mcp.rpc -->
 ## `POST /mcp`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Serves the Model Context Protocol over JSON-RPC 2.0 (the Streamable HTTP transport, spec `2025-06-18`), so MCP clients can call Lemonade's models as tools.
+Serves every MCP method over JSON-RPC 2.0.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -57,9 +57,8 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 ### Limitations
 
 - No session resumption (`Mcp-Session-Id` header is not issued).
-- `resources/*` and `prompts/*` capabilities are not implemented.
-- Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST /v1/chat/completions` directly for streamed tokens.
-- Embeddings and text-to-speech are not currently exposed as MCP tools; use the OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.
+- Tools return their whole result: `lemonade_chat` ignores `stream`. Use [`POST /v1/chat/completions`](./openai.md#post-v1chatcompletions) for streamed tokens.
+- Embeddings and text-to-speech have no MCP tool; use [`/v1/embeddings`](./openai.md#post-v1embeddings) and [`/v1/audio/speech`](./openai.md#post-v1audiospeech).
 
 ### Example request
 
@@ -129,7 +128,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
     **Field Descriptions:**
 
-    - `result` - The method's result; tool failures arrive here with isError: true.
+    - `result` - The method's result.
     - `error` - A JSON-RPC error, such as -32601 for an unknown method.
 
 === "Empty responses"
@@ -141,7 +140,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 ## `GET /mcp`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported: Lemonade opens no server-initiated event stream, so tools return their full result in the `POST /mcp` reply.
+Lemonade opens no server-initiated event stream, so tools return their full result in the `POST /mcp` reply.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -285,16 +284,12 @@ With `page`, success returns one `text` block containing the raw bundled Markdow
 
 ## Quick test with curl
 
-```bash
-# 1. Initialize
-curl -s http://localhost:13305/mcp -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'
+After the `initialize` request in [`POST /mcp`](#post-mcp), list the tools and call one:
 
-# 2. List tools
+```bash
 curl -s http://localhost:13305/mcp -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
-# 3. Call lemonade_chat
 curl -s http://localhost:13305/mcp -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lemonade_chat","arguments":{"model":"Qwen3-1.7B-GGUF","messages":[{"role":"user","content":"hi"}],"max_tokens":16}}}'
 ```

@@ -1,34 +1,34 @@
 # OpenAI-Compatible API
 
-This spec defines Lemonade's implementation of the [OpenAI API](https://developers.openai.com/api/docs).
+This page documents Lemonade's implementation of the [OpenAI API](https://developers.openai.com/api/docs).
 
 <!-- BEGIN GENERATED: openai.summary -->
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
 | `POST` | [`/v1/chat/completions`](#post-v1chatcompletions) | Chat Completions | messages -> completion |
 | `POST` | [`/v1/completions`](#post-v1completions) | Text Completions | prompt -> completion |
-| `POST` | [`/v1/responses`](#post-v1responses) | Responses API | prompt/messages -> event |
 | `POST` | [`/v1/embeddings`](#post-v1embeddings) | Embeddings | text -> vector representations |
+| `POST` | [`/v1/responses`](#post-v1responses) | Responses API | prompt/messages -> event |
 | `POST` | [`/v1/audio/transcriptions`](#post-v1audiotranscriptions) | Audio Transcription | audio file -> text |
-| `POST` | [`/v1/audio/speech`](#post-v1audiospeech) | Text to speech | text -> audio |
-| `WS` | [`/realtime`](#ws-realtime) | Realtime Audio Transcription, OpenAI SDK compatible | streaming audio -> text |
 | `POST` | [`/v1/images/generations`](#post-v1imagesgenerations) | Image Generation | prompt -> image |
 | `POST` | [`/v1/images/edits`](#post-v1imagesedits) | Image Editing | image + prompt -> edited image |
 | `POST` | [`/v1/images/variations`](#post-v1imagesvariations) | Image Variations | image -> varied image |
 | `POST` | [`/v1/images/upscale`](#post-v1imagesupscale) | Image Upscaling | image + ESRGAN model -> upscaled image |
+| `POST` | [`/v1/audio/speech`](#post-v1audiospeech) | Text to speech | text -> audio |
+| `WS` | [`/realtime`](#ws-realtime) | Realtime Audio Transcription, OpenAI SDK compatible | streaming audio -> text |
 | `GET` | [`/v1/models`](#get-v1models) | List models available locally | n/a |
+| `GET` | [`/v1/models/{id}`](#get-v1modelsid) | Retrieve a specific model by ID | n/a |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model | n/a |
 | `GET` | [`/v1/models/{id}/options`](#get-v1modelsidoptions) | Read a model's saved, effective, and default recipe options | n/a |
 | `POST` | [`/v1/models/{id}/options`](#post-v1modelsidoptions) | Save recipe options for a model without loading it | n/a |
 | `DELETE` | [`/v1/models/{id}/options`](#delete-v1modelsidoptions) | Reset a model's recipe options to defaults | n/a |
-| `GET` | [`/v1/models/{id}`](#get-v1modelsid) | Retrieve a specific model by ID | n/a |
 <!-- END GENERATED: openai.summary -->
 
 <!-- BEGIN GENERATED: openai.chat_completions -->
 ## `POST /v1/chat/completions`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Chat Completions API. You provide a list of messages and receive a completion. This API will also load the model if it is not already loaded.
+Generates the next assistant message for a conversation, loading the model on first use.
 
 Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/chat/completions`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -36,23 +36,23 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `messages` | Yes | Array of messages in the conversation. Each message should have a `role` ("user" or "assistant") and `content` (the message text). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `messages` | Yes | The conversation so far, in OpenAI's message format: each message has a `role` and `content`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `logprobs` | No | If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tools` | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`, which OpenAI recommends instead. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `enable_thinking` | No | Lemonade extension: `false` turns off reasoning on models that think. The OpenAI-compatible `thinking: false` is accepted too. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the routing decision to the response as `x_lemonade_route`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Naming an Omni collection (`recipe: "collection.omni"`) runs a server-side tool-calling loop instead; see [Server-side tools](#server-side-tools). Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
+Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
 ### Image understanding input format (OpenAI-compatible)
 
@@ -99,7 +99,7 @@ curl -X POST http://localhost:13305/v1/chat/completions \
 
 ### Server-side tools
 
-> **Note:** Omni collection orchestration is a Lemonade-specific extension to the Chat Completions API; it is not part of the OpenAI specification. Requests that target ordinary (non-collection) models are unaffected and are fully OpenAI-compatible.
+Omni collection orchestration is a Lemonade extension to the Chat Completions API; requests to other models are unaffected.
 
 When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.g., `LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a plain completion. The server injects the reference system prompt and tools, routes to the collection's chat component, executes the omni tools (image generation/editing, text-to-speech) against the matching components, and returns one OpenAI-compatible response. Generated media is embedded in the assistant `content`:
 
@@ -205,38 +205,38 @@ The image tool runs during the loop and its output is embedded as a markdown ima
 
     ```json
     {
-      "id": "chatcmpl-uaGB7ivcmQDudT7hrUZQAZLuOunBDFN4",
+      "id": "chatcmpl-Ur8WXBSFmCy4xSW1gr9J6imPMcSBsmG7",
       "object": "chat.completion",
-      "created": 1791943133,
+      "created": 1791990411,
       "model": "Qwen3-0.6B-GGUF",
       "choices": [
         {
           "index": 0,
           "message": {
             "role": "assistant",
-            "content": "The population of Paris, France, is approximately **10 million**. This number is consistent with other European cities, though specific details may vary slightly depending on the source.",
-            "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me start by recalling what I know. I remember that Paris is a big city in France. I think the population is around 10 million, but wait, I'm not sure. Maybe I should check some sources. Wait, I think I heard something about it being 10 million. But I need to be careful here. Maybe I'm mixing up other cities. For example, in the UK, the population is around 60 million. So Paris, being a European city, should have a population similar to other European cities. But I'm not sure if the number is 10 million. Let me think. Maybe I'm correct. I think the population of Paris is approximately 10 million. But I need to be sure. Alternatively, maybe it's smaller. Wait, I've heard somewhere that the population is 10 million. But I need to verify. Let me think. Oh right, Paris has a population of around 10 million. So that's the answer.\n"
+            "content": "The population of Paris, France, is approximately **2,015,000**. This number reflects the city's size and population, making it one of the most populous cities in the world.",
+            "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. First, I remember that Paris is a big city in France, right? I think it's the capital. But how do I find the exact population?\n\nWait, I think I heard that the population is around 2 million. But I'm not sure. Maybe I should check a reliable source. Oh, right! The official website of Paris might have the population numbers. Let me recall... Oh! Oh, right! The city's population is about 2,015,000. I think that's correct. But I'm a bit fuzzy on the exact number. Maybe I should confirm with another source. Wait, I'm not sure. Hmm. Let me think... Oh, yeah, I think it's 2,015,000. But sometimes people might say 2 million. But 2,015,000 is more accurate. So I'll go with that.\n"
           },
           "finish_reason": "stop"
         }
       ],
       "usage": {
         "prompt_tokens": 15,
-        "completion_tokens": 259,
-        "total_tokens": 274,
+        "completion_tokens": 255,
+        "total_tokens": 270,
         "prompt_tokens_details": {"cached_tokens": 0}
       },
       "system_fingerprint": "b11393-dbe4c3ed4",
       "timings": {
         "cache_n": 0,
-        "predicted_ms": 764.562,
-        "predicted_n": 259,
-        "predicted_per_second": 337.4481075439271,
-        "predicted_per_token_ms": 2.963418604651163,
-        "prompt_ms": 11.02,
+        "predicted_ms": 756.876,
+        "predicted_n": 255,
+        "predicted_per_second": 335.5899777506487,
+        "predicted_per_token_ms": 2.9798267716535434,
+        "prompt_ms": 9.652,
         "prompt_n": 15,
-        "prompt_per_second": 1361.1615245009075,
-        "prompt_per_token_ms": 0.7346666666666667
+        "prompt_per_second": 1554.0820555325322,
+        "prompt_per_token_ms": 0.6434666666666666
       }
     }
     ```
@@ -254,11 +254,11 @@ The image tool runs during the loop and its output is embedded as a markdown ima
     `200`
 
     ```text
-    data: {"id": "chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd", "object": "chat.completion.chunk", "created": 1791943133, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
-    data: {"id": "chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd", "object": "chat.completion.chunk", "created": 1791943133, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
-    data: {"id": "chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd", "object": "chat.completion.chunk", "created": 1791943133, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
     ...
-    data: {"id": "chatcmpl-nKCifR4mrpaGKh6LqfITk0uzIEousoHd", "object": "chat.completion.chunk", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "system_fingerprint": "b11393-dbe4c3ed4", "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.309, "prompt_per_token_ms": 4.309, "prompt_per_second": 232.07240659085633, "predicted_n": 323, "predicted_ms": 955.598, "predicted_per_token_ms": 2.967695652173913, "predicted_per_second": 336.9617768140997}}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "system_fingerprint": "b11393-dbe4c3ed4", "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
     data: [DONE]
     ```
 
@@ -272,7 +272,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
 ## `POST /v1/completions`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Text Completions API. You provide a prompt and receive a completion. This API will also load the model if it is not already loaded.
+Continues a text prompt, loading the model on first use.
 
 Also served at `/api/v0/completions`, `/api/v1/completions` and `/v0/completions`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -284,8 +284,8 @@ Also served at `/api/v0/completions`, `/api/v1/completions` and `/v0/completions
 | `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `echo` | No | Echo back the prompt in addition to the completion. Available on non-streaming mode. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. Only available when `stream=False`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `echo` | No | Echo back the prompt in addition to the completion. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `logprobs` | No | If true, returns the log probability of each output token. Defaults to false. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -418,11 +418,93 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
 <!-- END GENERATED: openai.completions -->
 
+<!-- BEGIN GENERATED: openai.embeddings -->
+## `POST /v1/embeddings`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Returns vector representations (embeddings) of the input text for semantic search, clustering and similarity comparisons, loading the model on first use. Embedding models use the `llamacpp` or `flm` recipe.
+
+Also served at `/api/v0/embeddings`, `/api/v1/embeddings` and `/v0/embeddings`. Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | The text to embed, as a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use for generating embeddings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `encoding_format` | No | The format to return embeddings in. Supported values: `"float"` (default), `"base64"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/embeddings" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "nomic-embed-text-v1-GGUF",
+          "input": ["Hello, world!", "How are you?"],
+          "encoding_format": "float"
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/embeddings \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "nomic-embed-text-v1-GGUF",
+          "input": ["Hello, world!", "How are you?"],
+          "encoding_format": "float"
+        }'
+    ```
+
+### Response format
+
+`200`
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "embedding",
+      "index": 0,
+      "embedding": [0.03513138368725777, 0.0010724958265200257, 0.0043548960238695145, -0.024502824991941452, -0.02874191850423813, 0.029377534985542297, -0.01320538017898798, 0.01702793687582016, ... 760 more]
+    },
+    {
+      "object": "embedding",
+      "index": 1,
+      "embedding": [-0.024310413748025894, -0.03385873883962631, -0.003393277060240507, 0.0042533064261078835, -0.015559273771941662, 0.026714053004980087, -0.009407692588865757, 0.033160898834466934, ... 760 more]
+    }
+  ],
+  "model": "nomic-embed-text-v1-GGUF",
+  "usage": {"prompt_tokens": 12, "total_tokens": 12}
+}
+```
+
+**Field Descriptions:**
+
+- `object` - Type of response object, always `"list"`
+- `data` - Array of embedding objects
+  - `object` - Type of embedding object, always `"embedding"`
+  - `index` - Index position of the input text in the request
+  - `embedding` - Vector representation as an array of floats
+- `model` - Model identifier used to generate the embeddings
+- `usage` - Token usage statistics
+  - `prompt_tokens` - Number of tokens in the input
+  - `total_tokens` - Total tokens processed
+<!-- END GENERATED: openai.embeddings -->
+
 <!-- BEGIN GENERATED: openai.responses -->
 ## `POST /v1/responses`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Responses API. You provide an input and receive a response. This API will also load the model if it is not already loaded.
+Generates a model response to an input, in OpenAI's Responses format, loading the model on first use.
 
 Also served at `/api/v0/responses`, `/api/v1/responses` and `/v0/responses`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -441,15 +523,7 @@ Also served at `/api/v0/responses`, `/api/v1/responses` and `/v0/responses`. Req
 | `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the routing decision to the response as `x_lemonade_route`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Streaming Events
-
-The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about. Our initial implementation offers support to:
-
-- `response.created`
-- `response.output_text.delta`
-- `response.completed`
-
-For a full list of event types, see the [API reference for streaming](https://platform.openai.com/docs/api-reference/responses-streaming).
+With `stream: true`, the response is the backend's typed server-sent events, such as `response.created`, `response.output_text.delta` and `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
@@ -575,99 +649,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     - `delta` - response.output_text.delta: the next text.
 <!-- END GENERATED: openai.responses -->
 
-<!-- BEGIN GENERATED: openai.embeddings -->
-## `POST /v1/embeddings`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
-
-Embeddings API. You provide input text and receive vector representations (embeddings) that can be used for semantic search, clustering, and similarity comparisons. This API will also load the model if it is not already loaded.
-
-> **Note:** This endpoint is only available for models using the `llamacpp` or `flm` recipes. ONNX models (OGA recipes) do not support embeddings.
-
-Also served at `/api/v0/embeddings`, `/api/v1/embeddings` and `/v0/embeddings`. Requires `LEMONADE_API_KEY` when it is set.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `input` | Yes | The input text or array of texts to embed. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The model to use for generating embeddings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `encoding_format` | No | The format to return embeddings in. Supported values: `"float"` (default), `"base64"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-### Example request
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/embeddings" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "nomic-embed-text-v1-GGUF",
-          "input": ["Hello, world!", "How are you?"],
-          "encoding_format": "float"
-        }'
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/v1/embeddings \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "nomic-embed-text-v1-GGUF",
-          "input": ["Hello, world!", "How are you?"],
-          "encoding_format": "float"
-        }'
-    ```
-
-### Response format
-
-`200`
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "object": "embedding",
-      "index": 0,
-      "embedding": [0.03513138368725777, 0.0010724958265200257, 0.0043548960238695145, -0.024502824991941452, -0.02874191850423813, 0.029377534985542297, -0.01320538017898798, 0.01702793687582016, ... 760 more]
-    },
-    {
-      "object": "embedding",
-      "index": 1,
-      "embedding": [-0.024310413748025894, -0.03385873883962631, -0.003393277060240507, 0.0042533064261078835, -0.015559273771941662, 0.026714053004980087, -0.009407692588865757, 0.033160898834466934, ... 760 more]
-    }
-  ],
-  "model": "nomic-embed-text-v1-GGUF",
-  "usage": {"prompt_tokens": 12, "total_tokens": 12}
-}
-```
-
-**Field Descriptions:**
-
-- `object` - Type of response object, always `"list"`
-- `data` - Array of embedding objects
-  - `object` - Type of embedding object, always `"embedding"`
-  - `index` - Index position of the input text in the request
-  - `embedding` - Vector representation as an array of floats
-- `model` - Model identifier used to generate the embeddings
-- `usage` - Token usage statistics
-  - `prompt_tokens` - Number of tokens in the input
-  - `total_tokens` - Total tokens processed
-<!-- END GENERATED: openai.embeddings -->
-
 <!-- BEGIN GENERATED: openai.audio_transcriptions -->
 ## `POST /v1/audio/transcriptions`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.
-
-> **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
->
-> **Limitations:** Only `wav` audio input is currently supported. The `response_format` field supports `json`, `verbose_json`, `text`, `srt`, and `vtt`. On the FastFlowLM (FLM) backend, `srt` and `vtt` are rejected with a `400` because FLM returns no segment timestamps, and `verbose_json` returns the compact shape without a `segments` field.
+Transcribes an audio file to text, loading the model on first use. Whisper (whisper.cpp), Moonshine and FastFlowLM models serve this endpoint.
 
 Also served at `/api/v0/audio/transcriptions`, `/api/v1/audio/transcriptions` and `/v0/audio/transcriptions`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -676,11 +662,13 @@ Also served at `/api/v0/audio/transcriptions`, `/api/v1/audio/transcriptions` an
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, which tells whisper.cpp to detect the source language instead of using whisper-server's English default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | The response format. Supported values: `json`, `verbose_json`, `text`, `srt`, `vtt`. `srt` and `vtt` require a backend that reports segment timestamps (whisper.cpp). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The transcription model to use (e.g., `Whisper-Tiny`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, which detects the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | The response format: `json` (default), `verbose_json`, `text`, `srt` or `vtt`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400` and `verbose_json` has no `segments`.
 
 ### Example request
 
@@ -742,118 +730,16 @@ Also served at `/api/v0/audio/transcriptions`, `/api/v1/audio/transcriptions` an
     ```
 <!-- END GENERATED: openai.audio_transcriptions -->
 
-<!-- BEGIN GENERATED: openai.audio_speech -->
-## `POST /v1/audio/speech`
-<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
-
-Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.
-
-> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local` support cloning and integrated voice design. `MOSS-VoiceGen` remains available as a legacy compatibility model while existing GUI/settings paths migrate to the integrated design flow.
->
-> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS v0.3 encodes buffered `wav` or `pcm`. Native streaming is narrower for both backends and uses `pcm` only, so an explicit non-PCM `response_format` on a streaming request is rejected rather than mislabeled or silently transcoded. OpenMOSS raw PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels`, because its native format is model-dependent (24 kHz mono for OpenMOSS-TTS and 48 kHz stereo for MOSS-TTS-Local).
-
-Also served at `/api/v0/audio/speech`, `/api/v1/audio/speech` and `/v0/audio/speech`. Requires `LEMONADE_API_KEY` when it is set.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `input` | Yes | The text to speak. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `voice` | No | For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. `a calm, deep male narrator voice`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Design is opt-in through this field only — `voice` never triggers it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | Container for the returned audio. Which values are accepted depends on the model's backend (see Limitations above). Default: `mp3` when buffered and `pcm` when streaming, falling back to the backend's first supported format when it cannot encode that default. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `stream_format` | No | If set, the response is streamed. Only `audio` is supported. This selects the transport only — the container still comes from `response_format`, and an explicit one is honored on both transports. Default: not set | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `stream` | No | `true` streams the response, like `stream_format: audio`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-A request for a model that is not a text-to-speech model answers `400` with `code` `model_not_applicable`, before any model loads.
-
-### Example request
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/audio/speech" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "response_format": "mp3"
-        }' `
-      -OutFile output.mp3
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/v1/audio/speech \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "response_format": "mp3"
-        }' \
-      --output output.mp3
-    ```
-
-=== "PowerShell (streaming)"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/audio/speech" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "stream_format": "audio"
-        }' `
-      -OutFile output.l16
-    ```
-
-=== "Bash (streaming)"
-
-    ```bash
-    curl http://localhost:13305/v1/audio/speech \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "stream_format": "audio"
-        }' \
-      --output output.l16
-    ```
-
-### Response format
-
-=== "Non-streaming responses"
-
-    `200`, `Content-Type: audio/mpeg`, 40,516 bytes
-
-=== "Streaming responses"
-
-    `200`, `Content-Type: audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
-<!-- END GENERATED: openai.audio_speech -->
-
 ## `WS /realtime`
 <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
 
 Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).
 
-> **Limitations:** Only 16kHz mono PCM16 audio format is supported. Uses the same Whisper models as the HTTP transcription endpoint.
+Models with the `realtime-transcription` [label](#model-labels) serve it: the Whisper models and the Moonshine streaming models. Audio must be 16 kHz mono PCM16; downsample higher rates on the client.
 
 ### Connection
 
-WebSocket upgrades are accepted **directly on the main HTTP port** (default 13305) — the same port as all REST endpoints. Connect with the model name:
+Connect on the main HTTP port (default 13305), the same port as the REST endpoints, naming the model:
 
 ```
 ws://localhost:13305/v1/realtime?model=Whisper-Tiny
@@ -861,7 +747,7 @@ ws://localhost:13305/v1/realtime?model=Whisper-Tiny
 
 Accepted paths are `/realtime` and `/logs/stream`, bare or under any of the standard prefixes (`/v1`, `/v0`, `/api/v1`, `/api/v0`), so OpenAI Realtime SDK clients (`/v1/realtime`) connect as-is. When `LEMONADE_API_KEY` is set, pass `?api_key=KEY` as a query parameter.
 
-A dedicated WebSocket port also remains for backward compatibility; it is OS-assigned and reported by the [`/v1/health`](./lemonade.md#get-v1health) endpoint (`websocket_port` field). New clients should prefer the main port:
+A dedicated WebSocket port also remains for backward compatibility. It is OS-assigned and reported as `websocket_port` by [`/v1/health`](./lemonade.md#get-v1health), and it speaks the identical protocol, so moving a client to the main port changes only its URL. The main port also leaves one port to expose remotely and works through reverse proxies that pass `Upgrade: websocket`:
 
 ```
 ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
@@ -912,12 +798,7 @@ Upon connection, the server sends a `session.created` message with a session ID.
 }
 ```
 
-Audio should be:
-- 16kHz sample rate
-- Mono (single channel)
-- 16-bit signed integer (PCM16)
-- Base64 encoded
-- Sent in chunks (~85ms recommended)
+Send base64-encoded PCM16 audio in chunks of about 85 to 256 ms.
 
 ### Example: Transcription Result
 
@@ -952,7 +833,7 @@ VAD settings can be configured via `session.update`:
 | `silence_duration_ms` | 800 | Silence duration to trigger speech end |
 | `prefix_padding_ms` | 250 | Minimum speech duration before triggering |
 
-Set `turn_detection` to `null` to disable server-side VAD and use explicit commits instead:
+Set `turn_detection` to `null` to disable server-side VAD and use explicit commits instead. The server then buffers audio and emits no VAD or interim transcription events until `input_audio_buffer.commit`:
 
 ```json
 {
@@ -975,23 +856,11 @@ A complete, runnable example:
 python examples/realtime_transcription.py --model Whisper-Tiny
 ```
 
-### Integration Notes
-
-- **Audio Format**: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.
-- **Chunk Size**: Send audio in ~85-256ms chunks for optimal latency/efficiency.
-- **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
-- **Manual Commit**: Set `turn_detection` to `null`, then use `input_audio_buffer.commit` to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.
-- **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
-- **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
-- **Migrating off the dedicated port**: Clients that discover `websocket_port` via `/v1/health` and connect there can switch to `ws://HOST:13305/v1/realtime?model=...` — the protocol (events, audio format, auth) is identical on both ports, so it is a URL change only. This also simplifies remote setups (one port to expose) and works through reverse proxies that pass `Upgrade: websocket`. Keep the `websocket_port` fallback only if you must support servers older than this release.
-
 <!-- BEGIN GENERATED: openai.images_generations -->
 ## `POST /v1/images/generations`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Image Generation API. You provide a text prompt and receive a generated image.
-
-> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (ROCm) is significantly faster.
+Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.
 
 Also served at `/api/v0/images/generations`, `/api/v1/images/generations` and `/v0/images/generations`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1002,7 +871,7 @@ Also served at `/api/v0/images/generations`, `/api/v1/images/generations` and `/
 | `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, `256x256`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate. Currently only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of images to generate. Only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. SD-Turbo works well with 4 steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1067,11 +936,7 @@ Also served at `/api/v0/images/generations`, `/api/v1/images/generations` and `/
 ## `POST /v1/images/edits`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Image Editing API. Provide one or more reference images and a prompt describing the desired change, and receive an edited image.
-
-> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
->
-> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+Edits one or more reference images as a prompt describes. The request is `multipart/form-data`. CPU inference takes minutes per image; a GPU backend is much faster.
 
 Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/edits`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1084,16 +949,16 @@ Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/ed
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | Output dimensions as `WIDTHxHEIGHT` (e.g., `512x512`). When omitted, use the first reference image's dimensions, scaling down proportionally to the model's optional `image_defaults.soft_pixel_cap` cap (default: 2048x2048 pixels, ~4 MP). An explicit size bypasses this soft cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside this range are rejected with `400 Bad Request`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `background` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `quality` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `input_fidelity` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `output_compression` | No | OpenAI API compatibility field. Accepted; silently ignored by the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `user` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `background` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `quality` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `input_fidelity` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `output_compression` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 ### Edit with the OpenAI Python Client
 
@@ -1167,11 +1032,7 @@ Also served at `/api/v0/images/edits`, `/api/v1/images/edits` and `/v0/images/ed
 ## `POST /v1/images/variations`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Image Variations API. You provide a source image and receive a variation of it.
-
-> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, a `prompt` parameter is not supported and will be ignored — the model generates a variation based solely on the input image.
->
-> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+Generates a variation of a source image. The request is `multipart/form-data`, and the variation depends only on the image: a `prompt` is ignored. CPU inference takes minutes per image; a GPU backend is much faster.
 
 Also served at `/api/v0/images/variations`, `/api/v1/images/variations` and `/v0/images/variations`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1179,12 +1040,12 @@ Also served at `/api/v0/images/variations`, `/api/v1/images/variations` and `/v0
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` | Yes | The source image file (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image (PNG). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `user` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 ### Create Variations with the OpenAI Python Client
 
@@ -1256,9 +1117,7 @@ Also served at `/api/v0/images/variations`, `/api/v1/images/variations` and `/v0
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive an upscaled image. The upscale factor depends on the selected model, and it is usually reflected in its name.
-
-> **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.
+Upscales an image with a Real-ESRGAN model. The request is JSON with the image base64-encoded. The model sets the upscale factor, which its name usually states.
 
 Also served at `/api/v0/images/upscale`, `/api/v1/images/upscale` and `/v0/images/upscale`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1406,15 +1265,110 @@ A typical workflow is to generate an image first, then upscale it:
   - `b64_json` - Base64-encoded PNG of the upscaled image
 <!-- END GENERATED: openai.images_upscale -->
 
+<!-- BEGIN GENERATED: openai.audio_speech -->
+## `POST /v1/audio/speech`
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
+
+Generates speech audio from text. The model selects the engine: `kokoro-v1` speaks with fixed voices ([Kokoros](https://github.com/lucasjinreal/Kokoros)), while `OpenMOSS-TTS` and `MOSS-TTS-Local` can also clone a voice or design one from a description. `MOSS-VoiceGen` is kept for compatibility.
+
+Also served at `/api/v0/audio/speech`, `/api/v1/audio/speech` and `/v0/audio/speech`. Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | The text to speak. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice` | No | For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own (`af_sky`, `am_echo`, ...). Default: `shimmer`. For OpenMOSS models, a free-text voice or style instruction, e.g. `a calm, deep male narrator voice`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Only this field triggers design; `voice` never does. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | Container for the returned audio. Default: `mp3` when buffered and `pcm` when streaming, or the backend's first supported format when it cannot encode that default. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream_format` | No | `audio` streams the response. It selects the transport only: the container still comes from `response_format`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream` | No | `true` streams the response, like `stream_format: audio`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp3`, `wav`, `opus` and `pcm`, and OpenMOSS encodes `wav` or `pcm`. Streaming produces `pcm` only, so a streaming request with another explicit `response_format` answers `400`. OpenMOSS PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels` headers, since its format depends on the model (24 kHz mono for OpenMOSS-TTS, 48 kHz stereo for MOSS-TTS-Local).
+
+A request for a model that is not a text-to-speech model answers `400` with `code` `model_not_applicable`, before any model loads.
+
+### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/audio/speech" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "kokoro-v1",
+          "input": "Lemonade can speak!",
+          "speed": 1.0,
+          "response_format": "mp3"
+        }' `
+      -OutFile output.mp3
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/audio/speech \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "kokoro-v1",
+          "input": "Lemonade can speak!",
+          "speed": 1.0,
+          "response_format": "mp3"
+        }' \
+      --output output.mp3
+    ```
+
+=== "PowerShell (streaming)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/audio/speech" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "kokoro-v1",
+          "input": "Lemonade can speak!",
+          "speed": 1.0,
+          "stream_format": "audio"
+        }' `
+      -OutFile output.l16
+    ```
+
+=== "Bash (streaming)"
+
+    ```bash
+    curl http://localhost:13305/v1/audio/speech \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "kokoro-v1",
+          "input": "Lemonade can speak!",
+          "speed": 1.0,
+          "stream_format": "audio"
+        }' \
+      --output output.l16
+    ```
+
+### Response format
+
+=== "Non-streaming responses"
+
+    `200`, `Content-Type: audio/mpeg`, 40,516 bytes
+
+=== "Streaming responses"
+
+    `200`, `Content-Type: audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
+<!-- END GENERATED: openai.audio_speech -->
+
 <!-- BEGIN GENERATED: openai.models -->
 ## `GET /v1/models`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, `context_length`, and, when known, `max_context_window`.
-
-By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
-
-When `lemond` is configured with cloud providers, cloud-routed models appear here alongside local ones with `recipe: "cloud"` and a `cloud_provider` field. They are dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard chat-completions / completions requests below — see [Cloud Offload](../guide/configuration/cloud.md).
+Lists the models available on the server, in OpenAI's format extended with the fields described below.
 
 Also served at `/api/v0/models`, `/api/v1/models` and `/v0/models`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1422,9 +1376,11 @@ Also served at `/api/v0/models`, `/api/v1/models` and `/v0/models`. Requires `LE
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `show_all` (query) | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `show_all` (query) | No | `true` also lists catalog models that are not downloaded. Defaults to `false`, which lists downloaded models only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Model aliases are listed too, each as a copy of its target model with the alias as its `id`.
+
+With cloud providers configured, their models are listed too, with `recipe: "cloud"`, a `cloud_provider` field and a provider-prefixed id such as `fireworks.kimi-k2p5`, and they accept chat completions and completions requests; see [Cloud Offload](../guide/configuration/cloud.md).
 
 `HEAD` answers `200` with no body.
 
@@ -1670,29 +1626,29 @@ Model aliases are listed too, each as a copy of its target model with the alias 
 
 - `object` - Type of response object, always `"list"`
 - `data` - Array of model objects with the following fields:
-  - `id` - Model identifier (used for loading and inference requests)
-  - `created` - Unix timestamp of when the model entry was created
-  - `object` - Type of object, always `"model"`
-  - `owned_by` - Owner of the model, always `"lemonade"`
-  - `checkpoint` - Full checkpoint identifier on Hugging Face
-  - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `size` - Model size in GB (omitted for models without size information)
-  - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
+  - `id` - Model identifier for loading and inference requests.
+  - `created` - Unix time the model entry was created.
+  - `object` - Always `"model"`.
+  - `owned_by` - Always `"lemonade"`.
+  - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
+  - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+  - `size` - Size in GB; omitted when unknown.
+  - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
   - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known).
-  - `max_output_tokens` - Optional integer indicating the maximum output tokens the model can generate in a single completion, when reported by cloud providers.
-  - `max_completion_tokens` - Optional integer alias for `max_output_tokens` adhering to OpenAI convention, when reported by cloud providers.
-  - `downloaded` - Boolean indicating if the model is downloaded and available locally
-  - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
-  - `suggested` - Boolean indicating if the model is recommended for general use
+  - `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
+  - `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
+  - `downloaded` - Whether the model is downloaded.
+  - `update_available` - Whether Hugging Face has a newer commit; `false` except for downloaded Hugging Face models.
+  - `suggested` - Whether the model is recommended for general use.
   - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list.
-  - `image_defaults` - (Image models only) Default generation parameters for the model:
+  - `image_defaults` - Image models only: default generation parameters.
     - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
     - `soft_pixel_cap` - Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.
-  - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
-  - `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
+  - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
+  - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.
   - `source` - Where the model came from: a registry name, local_upload, local_path or extra_models_dir.
   - `registry_source` - Remote registry the checkpoint downloads from: huggingface or modelscope.
@@ -1719,7 +1675,7 @@ labels that name different modes:
 | `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`/`chat-transcription`, which are characteristics rather than deployment modes. |
 | `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). An omni LLM that accepts audio in a chat turn is not one of these — it carries `chat` and the `chat-transcription` capability below. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. Also accepted as `embedding`. |
-| `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
+| `reranking` | `/rerank` | Scores and reranks a list of passages given a query. |
 | `image` | `/images/generations`, `/images/edits`, `/images/variations` | Text-to-image generation model. |
 | `tts` | `/audio/speech` | Text-to-speech synthesis model. |
 | `audio-generation` | `/audio/generations` | Text-to-audio generation model (e.g. music, sound effects). |
@@ -1783,13 +1739,106 @@ can be corrected by hand.
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
 
+<!-- BEGIN GENERATED: openai.models_id -->
+## `GET /v1/models/{id}`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Returns one model, as the same model object [`GET /v1/models`](#get-v1models) lists.
+
+Also served at `/api/v0/models/{id}`, `/api/v1/models/{id}` and `/v0/models/{id}`. Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+An unknown model answers `404` with `code` `model_not_found`.
+
+### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF"
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
+    ```
+
+### Response format
+
+`200`
+
+```json
+{
+  "id": "Qwen3-0.6B-GGUF",
+  "created": 1234567890,
+  "object": "model",
+  "owned_by": "lemonade",
+  "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+  "recipe": "llamacpp",
+  "size": 0.356,
+  "max_context_window": 40960,
+  "context_length": 40960,
+  "downloaded": true,
+  "update_available": false,
+  "suggested": true,
+  "labels": ["chat", "reasoning", "tool-calling"],
+  "components": [],
+  "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"},
+  "source": "huggingface",
+  "registry_source": "huggingface",
+  "recipe_options": {}
+}
+```
+
+**Field Descriptions:**
+
+- `id` - Model identifier for loading and inference requests.
+- `created` - Unix time the model entry was created.
+- `object` - Always `"model"`.
+- `owned_by` - Always `"lemonade"`.
+- `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
+- `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+- `size` - Size in GB; omitted when unknown.
+- `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
+- `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known).
+- `max_output_tokens` - Cloud models only: the most tokens one completion can generate, when the provider reports it.
+- `max_completion_tokens` - Cloud models only: `max_output_tokens` under its OpenAI name.
+- `downloaded` - Whether the model is downloaded.
+- `update_available` - Whether Hugging Face has a newer commit; `false` except for downloaded Hugging Face models.
+- `suggested` - Whether the model is recommended for general use.
+- `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list.
+- `image_defaults` - Image models only: default generation parameters.
+  - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
+  - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
+  - `width` - Default image width in pixels
+  - `height` - Default image height in pixels
+  - `soft_pixel_cap` - Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.
+- `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
+- `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
+- `checkpoints` - Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.
+- `source` - Where the model came from: a registry name, local_upload, local_path or extra_models_dir.
+- `registry_source` - Remote registry the checkpoint downloads from: huggingface or modelscope.
+- `recipe_options` - Options saved for this model in recipe_options.json.
+- `cloud_provider` - Cloud models only: the provider that serves the model.
+- `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
+- `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+- `system_prompt` - Omni collections only: the collection's system prompt override.
+- `audio_defaults` - Audio models only: default generation parameters.
+- `version` - Router collections only: the policy document's version.
+- `routing` - Router collections only: the routing policy.
+<!-- END GENERATED: openai.models_id -->
+
 <!-- BEGIN GENERATED: openai.models_id_files -->
 ## `GET /v1/models/{id}/files`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-List resolved local file metadata for a single model. This endpoint is intended for model-detail UIs such as the Files tab. It is per-model inventory, not system or drive storage accounting.
-
-By default, the response does not include absolute filesystem paths. Trusted local clients that need paths for native UI actions can request them explicitly with `?include_paths=true`. Absolute paths may reveal local usernames and cache layout, so clients should only request them when that disclosure is acceptable.
+Lists the resolved local files of one model, for model-detail views such as the app's Files tab. It inventories one model, not drive storage.
 
 Also served at `/api/v0/models/{id}/files`, `/api/v1/models/{id}/files` and `/v0/models/{id}/files`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1798,9 +1847,9 @@ Also served at `/api/v0/models/{id}/files`, `/api/v1/models/{id}/files` and `/v0
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `include_paths` (query) | No | `true` adds each file's absolute `path`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each file's absolute `path`, which can reveal local usernames and the cache layout. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-An unknown model answers `404` with an `error` object whose `code` is `model_not_found`.
+An unknown model answers `404` with `code` `model_not_found`.
 
 ### Example request
 
@@ -1844,7 +1893,7 @@ An unknown model answers `404` with an `error` object whose `code` is `model_not
 ## `GET /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Read a model's recipe options, separated by layer, without loading it. With `POST` and `DELETE` on the same path, this manages per-model options independently of [`/v1/load`](./lemonade.md#post-v1load).
+Reads a model's recipe options, separated by layer, without loading it. With `POST` and `DELETE` on the same path, this manages per-model options independently of [`/v1/load`](./lemonade.md#post-v1load).
 
 Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and `/v0/models/{id}/options`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1853,8 +1902,6 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-`effective` is the exact request body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get.
 
 Per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
@@ -1916,7 +1963,7 @@ Per-architecture defaults come from the model's GGUF metadata. For a model that 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
 - `recipe` - The recipe the option names belong to.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
-- `effective` - The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed.
+- `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 <!-- END GENERATED: openai.models_id_options_get -->
@@ -1925,19 +1972,9 @@ Per-architecture defaults come from the model's GGUF metadata. For a model that 
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Save recipe options for a model without loading it. The request body is a flat object of the same recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. The URL identifies the model; a `model_name` in the body is ignored.
+Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.
 
 The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
-
-`dry_run: true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change before committing it.
-
-`ctx_size` takes a positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number.
-
-A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
-
-Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
-
-> Note: `pinned` is not settable here and is omitted from `effective` and `defaults`. It belongs to [`/v1/load`](./lemonade.md#post-v1load) and `/internal/pin`.
 
 Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and `/v0/models/{id}/options`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1947,8 +1984,14 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | A positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number. Any other option the model's recipe accepts is set the same way. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `dry_run` | No | `true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `dry_run` | No | `true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
+
+Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
+
+`pinned` is not settable here and is omitted from `effective` and `defaults`. It belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
 
 ### Example request
 
@@ -2014,7 +2057,7 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
 - `recipe` - The recipe the option names belong to.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
-- `effective` - The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed.
+- `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 <!-- END GENERATED: openai.models_id_options_post -->
@@ -2023,7 +2066,7 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 ## `DELETE /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Reset a model to its defaults by erasing its `recipe_options.json` entry entirely. The model keeps the defaults that come from its registry entry and from the server's global configuration; only the user's saved overrides are removed.
+Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply.
 
 Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and `/v0/models/{id}/options`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2093,102 +2136,7 @@ Also served at `/api/v0/models/{id}/options`, `/api/v1/models/{id}/options` and 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
 - `recipe` - The recipe the option names belong to.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
-- `effective` - The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed.
+- `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 <!-- END GENERATED: openai.models_id_options_delete -->
-
-<!-- BEGIN GENERATED: openai.models_id -->
-## `GET /v1/models/{id}`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
-
-Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.
-
-Also served at `/api/v0/models/{id}`, `/api/v1/models/{id}` and `/v0/models/{id}`. Requires `LEMONADE_API_KEY` when it is set.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `id` (path) | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](https://lemonade-server.ai/models.html) or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-An unknown model answers `404` with `code` `model_not_found`.
-
-### Example request
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF"
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
-    ```
-
-### Response format
-
-`200`
-
-```json
-{
-  "id": "Qwen3-0.6B-GGUF",
-  "created": 1234567890,
-  "object": "model",
-  "owned_by": "lemonade",
-  "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-  "recipe": "llamacpp",
-  "size": 0.356,
-  "max_context_window": 40960,
-  "context_length": 40960,
-  "downloaded": true,
-  "update_available": false,
-  "suggested": true,
-  "labels": ["chat", "reasoning", "tool-calling"],
-  "components": [],
-  "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"},
-  "source": "huggingface",
-  "registry_source": "huggingface",
-  "recipe_options": {}
-}
-```
-
-**Field Descriptions:**
-
-- `id` - Model identifier (used for loading and inference requests)
-- `created` - Unix timestamp of when the model entry was created
-- `object` - Type of object, always `"model"`
-- `owned_by` - Owner of the model, always `"lemonade"`
-- `checkpoint` - Full checkpoint identifier on Hugging Face
-- `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-- `size` - Model size in GB (omitted for models without size information)
-- `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
-- `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running, the configured `ctx_size`, or the discovered cloud provider context length otherwise (omitted when neither is known).
-- `max_output_tokens` - Optional integer indicating the maximum output tokens the model can generate in a single completion, when reported by cloud providers.
-- `max_completion_tokens` - Optional integer alias for `max_output_tokens` adhering to OpenAI convention, when reported by cloud providers.
-- `downloaded` - Boolean indicating if the model is downloaded and available locally
-- `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
-- `suggested` - Boolean indicating if the model is recommended for general use
-- `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list.
-- `image_defaults` - (Image models only) Default generation parameters for the model:
-  - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
-  - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
-  - `width` - Default image width in pixels
-  - `height` - Default image height in pixels
-  - `soft_pixel_cap` - Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.
-- `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
-- `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
-- `checkpoints` - Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.
-- `source` - Where the model came from: a registry name, local_upload, local_path or extra_models_dir.
-- `registry_source` - Remote registry the checkpoint downloads from: huggingface or modelscope.
-- `recipe_options` - Options saved for this model in recipe_options.json.
-- `cloud_provider` - Cloud models only: the provider that serves the model.
-- `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-- `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
-- `system_prompt` - Omni collections only: the collection's system prompt override.
-- `audio_defaults` - Audio models only: default generation parameters.
-- `version` - Router collections only: the policy document's version.
-- `routing` - Router collections only: the routing policy.
-<!-- END GENERATED: openai.models_id -->

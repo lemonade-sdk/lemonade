@@ -23,26 +23,17 @@ public:
         s.summary = "Resolve backend install metadata without downloading the backend asset";
         s.experimental = true;
         s.description =
-            "Resolve the backend install metadata that [`POST /v1/install`](#post-v1install)\n"
-            "would use for a recipe/backend pair, without downloading or installing the\n"
-            "backend asset. Nothing is installed and no existing installation is modified.\n\n"
-            "Resolution uses the normal backend install-parameter machinery. It may consult\n"
-            "local configuration and, if a backend version is configured as `latest`, query\n"
-            "GitHub release metadata. The endpoint does not download the backend asset and\n"
-            "does not check whether the returned asset URL exists.\n\n"
-            "The `arch` parameter mocks ROCm GPU architecture detection while the install\n"
-            "parameters are resolved. This makes the endpoint useful in CI for checking\n"
-            "architecture-to-asset resolution on hardware that is not present on the runner.\n"
-            "The repository's `test/server_gfx_topology.py` uses the endpoint for this\n"
-            "resolution step and separately checks the resulting release URLs or\n"
-            "split-archive manifests.";
+            "Resolves the release asset that [`POST /v1/install`](#post-v1install) would download "
+            "for a recipe/backend pair, without downloading or installing anything. Resolution "
+            "reads local configuration and, for a backend version set to `latest`, GitHub release "
+            "metadata. With `arch`, CI can check which asset an architecture resolves to on a "
+            "runner without that GPU.";
         s.notes = {
             "A device ISA may resolve to a family target name used by the release repository, for "
             "example `gfx1201` to `gfx120X`. That mapping is defined by `rocm_asset_families` in "
             "`backend_versions.json`.",
-            "An explicit architecture outside Lemonade's support matrix still produces install "
-            "metadata, with `supported` set to `false`. To verify the release asset itself, check "
-            "the returned URL, or its split-archive manifest, separately.",
+            "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
+            "manifest, to verify it.",
             "A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or "
             "install-parameter resolution failing (an unknown recipe/backend pair, an unsupported "
             "platform, unavailable architecture detection, failed version resolution), answers "
@@ -51,14 +42,12 @@ public:
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Recipe name, for example `llamacpp`, `whispercpp`, or `vllm`."},
+             "The recipe, such as `llamacpp`, `whispercpp` or `vllm`."},
             {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Backend name within the recipe, for example `vulkan`, `rocm`, or `rocm-nightly`."},
+             "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."},
             {"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "ROCm GPU architecture to use for this call, for example `gfx1201`. When provided, it "
-             "overrides ROCm architecture detection while install parameters are resolved. When "
-             "omitted, normal host detection is used; if resolution succeeds, `arch` is returned "
-             "as `\"\"` and `supported` is `true`."},
+             "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
+             "detected one."},
         };
 
         RouteResponse response;
@@ -68,14 +57,14 @@ public:
             "required": ["recipe", "backend", "arch", "repo", "version", "filename", "url",
                          "supports_split_archive", "supported"],
             "properties": {
-                "recipe": {"type": "string", "description": "Echo the requested values. If `arch` was omitted, it is returned as an empty string."},
-                "backend": {"type": "string", "description": "Echo the requested values. If `arch` was omitted, it is returned as an empty string."},
-                "arch": {"type": "string", "description": "Echo the requested values. If `arch` was omitted, it is returned as an empty string."},
-                "repo": {"type": "string", "description": "Install parameters produced by the backend-specific resolver. The default version pin comes from `backend_versions.json`; runtime version policy can override it."},
-                "version": {"type": "string", "description": "Install parameters produced by the backend-specific resolver. The default version pin comes from `backend_versions.json`; runtime version policy can override it."},
-                "filename": {"type": "string", "description": "Install parameters produced by the backend-specific resolver. The default version pin comes from `backend_versions.json`; runtime version policy can override it."},
-                "url": {"type": "string", "description": "GitHub release-download URL constructed from `repo`, `version`, and `filename`. The endpoint does not check this URL."},
-                "supported": {"type": "boolean", "description": "Whether Lemonade's local recipe/backend support matrix accepts the requested `arch`. This is not a release-asset existence check. When `arch` is omitted, it is `true` on a successful response."},
+                "recipe": {"type": "string", "description": "The requested recipe."},
+                "backend": {"type": "string", "description": "The requested backend."},
+                "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
+                "repo": {"type": "string", "description": "GitHub repository of the release."},
+                "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
+                "filename": {"type": "string", "description": "Release asset name."},
+                "url": {"type": "string", "description": "Download URL built from `repo`, `version` and `filename`."},
+                "supported": {"type": "boolean", "description": "Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`."},
                 "supports_split_archive": {"type": "boolean", "description": "Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest."}
             }
         })");

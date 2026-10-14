@@ -4,6 +4,8 @@ Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/do
 
 To enable auto-detection by Ollama-integrated apps, configure the server to use the Ollama default port `11434`. See [Server Configuration](../guide/configuration/README.md#settings-reference) for how to change the port.
 
+A model name may carry a `:latest` tag, which Lemonade ignores. Errors answer with a JSON body `{"error": "<message>"}`, and an unknown model answers `404`.
+
 <!-- BEGIN GENERATED: ollama.summary -->
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|
@@ -35,7 +37,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run; loaded on first use. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | Yes | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -45,13 +47,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `keep_alive` | No | `0` with an empty `messages` array unloads the model. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Ollama streams by default: without `"stream": false` the response is newline-delimited JSON.
-
 A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
 
 An empty `messages` array with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
-
-An unknown model answers `404` with `model '<name>' not found, try pulling it first`.
 
 ### Example request
 
@@ -181,7 +179,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run; loaded on first use. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Image models read `width`, `height`, `steps`, `cfg_scale` and `seed` here. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -195,11 +193,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `system` | No | System prompt. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `format` | No | Output format constraint. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
-Ollama streams by default: without `"stream": false` the response is newline-delimited JSON. Image generation never streams.
+Image generation never streams.
 
 An empty `prompt` with `"keep_alive": 0` unloads the model instead, answering with `done_reason: "unload"`.
-
-An unknown model answers `404` with `model '<name>' not found, try pulling it first`.
 
 ### Example request
 
@@ -329,8 +325,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ### Parameters
 
 This endpoint does not take any parameters.
-
-Every name carries a `:latest` tag, `modified_at` and `digest` are fixed placeholders, and `size` is the registry's size estimate in bytes.
 
 ### Example request
 
@@ -550,12 +544,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to describe. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to describe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 `capabilities` follows the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label.
-
-An unknown model answers `404` with `model '<name>' not found`.
 
 ### Example request
 
@@ -631,10 +623,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to delete. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to delete. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Success answers `200` with an empty body, as Ollama does. An unknown or unsupported model answers `404`.
+Success answers `200` with an empty body, as Ollama does. A model this system does not support also answers `404`.
 
 ### Example request
 
@@ -673,13 +665,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to download. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to download. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one. An unknown model answers `404` with `model '<name>' not found`.
+Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.
 
-Ollama streams by default: without `"stream": false` the response is newline-delimited JSON progress. A failed download ends the stream with an `error` line.
+A failed download ends the stream with an `error` line.
 
 In offline mode the request answers `400` with code `lemond_offline`.
 
@@ -765,12 +757,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Embedding model to run; loaded on first use. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` | Yes | Text to embed, or an array of texts. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-An unknown model answers `404` with `model '<name>' not found`.
 
 ### Example request
 
@@ -826,13 +816,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Embedding model to run; loaded on first use. A `:latest` tag is ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | Text to embed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `input` | No | Accepted in place of `prompt`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `input` | No | Accepted in place of `prompt`. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-Only the first input's embedding is returned. An unknown model answers `404` with `model '<name>' not found`.
 
 ### Example request
 
@@ -878,7 +866,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 This endpoint does not take any parameters.
 
-`size` and `size_vram` are always 0 and `expires_at` is a fixed far-future date. [`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.
+[`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.
 
 ### Example request
 
@@ -901,54 +889,6 @@ This endpoint does not take any parameters.
 ```json
 {
   "models": [
-    {
-      "name": "nomic-embed-text-v1-GGUF:latest",
-      "model": "nomic-embed-text-v1-GGUF:latest",
-      "size": 0,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llamacpp",
-        "families": ["llamacpp"],
-        "parameter_size": "",
-        "quantization_level": "Q4_K_S"
-      },
-      "expires_at": "2099-01-01T00:00:00Z",
-      "size_vram": 0
-    },
-    {
-      "name": "Flux-2-Klein-4B:latest",
-      "model": "Flux-2-Klein-4B:latest",
-      "size": 0,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "sd-cpp",
-        "families": ["sd-cpp"],
-        "parameter_size": "4B",
-        "quantization_level": ""
-      },
-      "expires_at": "2099-01-01T00:00:00Z",
-      "size_vram": 0
-    },
-    {
-      "name": "bge-reranker-v2-m3-GGUF:latest",
-      "model": "bge-reranker-v2-m3-GGUF:latest",
-      "size": 0,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llamacpp",
-        "families": ["llamacpp"],
-        "parameter_size": "",
-        "quantization_level": "Q8_0"
-      },
-      "expires_at": "2099-01-01T00:00:00Z",
-      "size_vram": 0
-    },
     {
       "name": "Qwen3-0.6B-GGUF:latest",
       "model": "Qwen3-0.6B-GGUF:latest",
@@ -1052,7 +992,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /api/blobs/{digest}`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Not supported: answers `501`.
+Not supported. Returns 501.
 
 Requires `LEMONADE_API_KEY` when it is set.
 <!-- END GENERATED: ollama.blobs -->

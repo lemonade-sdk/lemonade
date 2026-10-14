@@ -14,7 +14,7 @@ public:
         s.paths = {"/api/blobs/{digest}"};
         s.prefixes = Prefixes::Root;
         s.summary = "Upload a blob. Returns 501";
-        s.description = "Not supported: answers `501`.";
+        s.description = "Not supported. Returns 501.";
         s.args = {
             {"digest", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::NotAvailable,
              "SHA256 digest of the blob."},

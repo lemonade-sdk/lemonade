@@ -21,25 +21,21 @@ public:
         s.summary = "List models available locally";
         s.modality = "n/a";
         s.description =
-            "Returns a list of models available on the server in an OpenAI-compatible format. "
-            "Each model object includes extended fields like `checkpoint`, `recipe`, `size`, "
-            "`downloaded`, `labels`, `context_length`, and, when known, `max_context_window`.\n\n"
-            "By default, only models available locally (downloaded) are shown, matching OpenAI "
-            "API behavior.\n\n"
-            "When `lemond` is configured with cloud providers, cloud-routed models appear here "
-            "alongside local ones with `recipe: \"cloud\"` and a `cloud_provider` field. They are "
-            "dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard "
-            "chat-completions / completions requests below — see "
-            "[Cloud Offload](../guide/configuration/cloud.md).";
+            "Lists the models available on the server, in OpenAI's format extended with the "
+            "fields described below.";
         s.notes = {
             "Model aliases are listed too, each as a copy of its target model with the alias as "
             "its `id`.",
+            "With cloud providers configured, their models are listed too, with "
+            "`recipe: \"cloud\"`, a `cloud_provider` field and a provider-prefixed id such as "
+            "`fireworks.kimi-k2p5`, and they accept chat completions and completions requests; see "
+            "[Cloud Offload](../guide/configuration/cloud.md).",
             "`HEAD` answers `200` with no body.",
         };
         s.args = {
             {"show_all", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
-             "If set to `true`, returns all models from the catalog including those not yet "
-             "downloaded. Defaults to `false`."},
+             "`true` also lists catalog models that are not downloaded. Defaults to `false`, "
+             "which lists downloaded models only."},
         };
 
         RouteResponse response;

@@ -1008,18 +1008,25 @@ def render_example_request(entries: list[dict], labels: list[str]) -> str:
 
 
 def render_response_format(spec: dict, entries: list[dict], labels: list[str]) -> str:
-    bodies = []
+    """Each format's Field Descriptions appear once: after the tabs when every example
+    shares one format, else inside each example's tab."""
+    shared = len({example["format"] for example in spec["examples"]}) == 1
+    bodies, fields = [], ""
     for example, entry in zip(spec["examples"], entries):
         response = find_response(spec, example["format"])
         schema = dereferenced(response["schema"])
         body = render_recorded(response["format"], entry, schema)
         fields = render_fields(schema) if schema else ""
-        bodies.append(body + (f"\n\n{fields}" if fields else ""))
+        bodies.append(body if shared or not fields else f"{body}\n\n{fields}")
     if len(bodies) == 1:
-        return "### Response format\n\n" + bodies[0]
+        return (
+            "### Response format\n\n" + bodies[0] + (f"\n\n{fields}" if fields else "")
+        )
     parts = ["### Response format\n"]
     for label, body in zip(labels, bodies):
         parts.append(render_tab(f"{label[0].upper()}{label[1:]} responses", body))
+    if shared and fields:
+        parts.append(fields)
     return "\n".join(parts).rstrip()
 
 
@@ -1083,8 +1090,9 @@ def render_route(spec: dict, entries: dict) -> str:
 
 
 def render_summary(page_specs: list[dict], current: str, page_text: str) -> str:
-    """Rows linking to a route's section are generated from its summary. Other rows, such
-    as a WebSocket endpoint's, are hand-written and stay after the row they follow."""
+    """Rows linking to a route's section are generated from its summary, in the order the
+    sections appear on the page. Other rows, such as a WebSocket endpoint's, are
+    hand-written and stay after the row they follow."""
     with_status = any(not spec["responses"] for spec in page_specs)
     with_modality = any(spec["modality"] for spec in page_specs)
     columns = (
@@ -1108,11 +1116,13 @@ def render_summary(page_specs: list[dict], current: str, page_text: str) -> str:
             + [md_cell(spec["modality"])] * with_modality
         )
         generated[target] = f"| {' | '.join(cells)} |"
-    sections = {
+    headings = [
         anchor(line.lstrip("#").strip())
         for line in page_text.splitlines()
         if line.startswith("#")
-    }
+    ]
+    sections = set(headings)
+    position = {target: index for index, target in reversed(list(enumerate(headings)))}
     kept: dict[str | None, list[str]] = {}
     previous = None
     for line in current.splitlines()[2:]:
@@ -1130,8 +1140,8 @@ def render_summary(page_specs: list[dict], current: str, page_text: str) -> str:
         f"| {' | '.join(columns)} |",
         f"|{'|'.join('-' * (len(column) + 2) for column in columns)}|",
     ] + kept.get(None, [])
-    for target, row in generated.items():
-        rows.append(row)
+    for target in sorted(generated, key=lambda t: position.get(t, len(position))):
+        rows.append(generated[target])
         rows += kept.get(target, [])
     table = "\n".join(rows)
     for spec in page_specs:

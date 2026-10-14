@@ -28,8 +28,7 @@ public:
             "memory capacity (ties broken by stable ID), whatever its current utilization. It is "
             "not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name "
             "but reports GPU memory usage, which can be shared system memory on AMD APUs. Device "
-            "IDs stay stable across ordinary telemetry failures; an unavailable live measurement is "
-            "`null`.",
+            "IDs stay stable across ordinary telemetry failures.",
             "GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On "
             "Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML; on "
             "macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so "

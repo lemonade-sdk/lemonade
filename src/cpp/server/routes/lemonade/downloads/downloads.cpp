@@ -15,16 +15,15 @@ public:
         s.id = "lemonade.downloads";
         s.methods = {"GET"};
         s.paths = {"downloads"};
-        s.summary = "List server-owned model download jobs";
+        s.summary = "List server-owned download jobs";
         s.description =
-            "List server-owned model download jobs that were started with `POST /v1/pull` or "
-            "`POST /v1/install` using `stream=true` and `subscribe=false`.\n\n"
-            "This endpoint is intended for clients that need to restore download-manager state "
-            "after a reload or reconnect. Active, paused, cancelled, and errored jobs remain "
-            "visible until the client removes them. Completed jobs remain visible briefly so "
-            "clients can observe completion and refresh model state.";
+            "Lists the server-owned download jobs that [`POST /v1/pull`](#post-v1pull) and "
+            "[`POST /v1/install`](#post-v1install) start with `stream: true` and `subscribe: "
+            "false`, so a client can restore its download state after a reload or reconnect.";
         s.notes = {
-            "Completed jobs stay listed for 30 seconds.",
+            "Active, paused, cancelled and failed jobs stay listed until a client removes them "
+            "with [`POST /v1/downloads/control`](#post-v1downloadscontrol). Completed jobs stay "
+            "listed for 30 seconds, long enough for a client to see them finish.",
         };
 
         RouteResponse response;

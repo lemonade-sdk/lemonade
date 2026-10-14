@@ -27,16 +27,13 @@ public:
             "version.";
         s.notes = {
             "Only models already in Lemonade's registry can be pulled; use "
-            "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one. An unknown model answers "
-            "`404` with `model '<name>' not found`.",
-            "Ollama streams by default: without `\"stream\": false` the response is "
-            "newline-delimited JSON progress. A failed download ends the stream with an "
-            "`error` line.",
+            "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
+            "A failed download ends the stream with an `error` line.",
             "In offline mode the request answers `400` with code `lemond_offline`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to download. A `:latest` tag is ignored."},
+             "Model to download."},
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Older name for `model`; wins when both are given."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,

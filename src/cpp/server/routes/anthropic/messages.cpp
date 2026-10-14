@@ -784,22 +784,19 @@ public:
         s.methods = {"POST"};
         s.paths = {"/v1/messages"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Messages. Supports both streaming and non-streaming. Query params like "
-                    "`?beta=true` are accepted.";
+        s.summary = "Generate the next assistant message, streaming or not";
         s.description =
             "Generates the next assistant message for a conversation in the Anthropic Messages "
-            "format, loading the model on first use, for applications that call Claude-style "
-            "APIs.";
+            "format.";
         s.notes = {
-            "Lemonade runs the request as an OpenAI chat completion and converts both ways. "
-            "Fields it cannot convert are ignored, and each one is reported in the "
-            "`X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, "
-            "in a `warnings` array.",
+            "Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields "
+            "it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` "
+            "header (joined with ` | `) and, on a non-streaming response, in a `warnings` array. A "
+            "cloud provider registered with `--wire-format anthropic` is relayed unconverted, so "
+            "nothing is dropped; see [Cloud "
+            "Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
             "Errors use Anthropic's shape, `{\"type\": \"error\", \"error\": {\"type\", "
             "\"message\"}}`. An unknown model answers `404` with a `not_found_error`.",
-            "Fields are dropped only where Lemonade converts to and from the OpenAI shape. A cloud "
-            "provider registered with `--wire-format anthropic` is relayed unconverted; see [Cloud "
-            "Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

@@ -27,8 +27,7 @@ public:
         s.paths = {"uninstall"};
         s.summary = "Remove a backend or cloud provider";
         s.description =
-            "Uninstall a backend for a specific recipe/backend pair, **or** remove a cloud "
-            "provider. Dispatched by the `backend` field, mirroring `/v1/install`.";
+            "Removes a recipe's backend, or a cloud provider when `backend` is `\"cloud\"`.";
         s.notes = {
             "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
             "`provider`, is answered with `400`. Any other failure, including invalid JSON, is "
@@ -52,12 +51,11 @@ public:
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Local backends, required: Recipe name"},
+             "Local backends, required: the recipe."},
             {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Local backends: Backend name. Cloud providers: Must be the literal string "
-             "`\"cloud\"`."},
+             "Local backends: the backend within the recipe. Cloud providers: `\"cloud\"`."},
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: Installed provider name."},
+             "Cloud providers, required: the installed provider's name."},
         };
 
         RouteResponse response;

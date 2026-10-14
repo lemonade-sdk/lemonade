@@ -101,12 +101,10 @@ public:
         s.summary = "Chat Completions";
         s.modality = "messages -> completion";
         s.description =
-            "Chat Completions API. You provide a list of messages and receive a completion. This "
-            "API will also load the model if it is not already loaded.";
+            "Generates the next assistant message for a conversation, loading the model on first "
+            "use.";
         s.notes = {
-            "Naming an Omni collection (`recipe: \"collection.omni\"`) runs a server-side "
-            "tool-calling loop instead; see [Server-side tools](#server-side-tools). Naming a "
-            "`collection.router` model routes the request to one of its candidates; see "
+            "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
             "### Image understanding input format (OpenAI-compatible)\n"
             "\n"
@@ -154,9 +152,8 @@ public:
             "```",
             "### Server-side tools\n"
             "\n"
-            "> **Note:** Omni collection orchestration is a Lemonade-specific extension to the Chat "
-            "Completions API; it is not part of the OpenAI specification. Requests that target "
-            "ordinary (non-collection) models are unaffected and are fully OpenAI-compatible.\n"
+            "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
+            "requests to other models are unaffected.\n"
             "\n"
             "When `model` names an Omni **collection** model (`recipe: \"collection.omni\"`, e.g., "
             "`LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a "
@@ -216,8 +213,8 @@ public:
         };
         s.args = {
             {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
-             "Array of messages in the conversation. Each message should have a `role` (\"user\" "
-             "or \"assistant\") and `content` (the message text)."},
+             "The conversation so far, in OpenAI's message format: each message has a `role` and "
+             "`content`."},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The model to use for the completion."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -227,8 +224,7 @@ public:
              "Up to 4 sequences where the API will stop generating further tokens. The returned "
              "text will not contain the stop sequence. Can be a string or an array of strings."},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
-             "Include log probabilities of the output tokens. If true, returns the log "
-             "probability of each output token. Defaults to false."},
+             "If true, returns the log probability of each output token. Defaults to false."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -243,8 +239,7 @@ public:
              "A list of tools the model may call."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "An upper bound for the number of tokens that can be generated for a completion. "
-             "Mutually exclusive with `max_completion_tokens`. This value is now deprecated by "
-             "OpenAI in favor of `max_completion_tokens`"},
+             "Mutually exclusive with `max_completion_tokens`, which OpenAI recommends instead."},
             {"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "An upper bound for the number of tokens that can be generated for a completion. "
              "Mutually exclusive with `max_tokens`."},

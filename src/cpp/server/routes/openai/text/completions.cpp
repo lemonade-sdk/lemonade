@@ -51,8 +51,7 @@ public:
         s.summary = "Text Completions";
         s.modality = "prompt -> completion";
         s.description =
-            "Text Completions API. You provide a prompt and receive a completion. This API will "
-            "also load the model if it is not already loaded.";
+            "Continues a text prompt, loading the model on first use.";
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
@@ -69,12 +68,9 @@ public:
              "Up to 4 sequences where the API will stop generating further tokens. The returned "
              "text will not contain the stop sequence. Can be a string or an array of strings."},
             {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Echo back the prompt in addition to the completion. Available on non-streaming "
-             "mode."},
+             "Echo back the prompt in addition to the completion. Non-streaming only."},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
-             "Include log probabilities of the output tokens. If true, returns the log "
-             "probability of each output token. Defaults to false. Only available when "
-             "`stream=False`."},
+             "If true, returns the log probability of each output token. Defaults to false. Non-streaming only."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "What sampling temperature to use."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,

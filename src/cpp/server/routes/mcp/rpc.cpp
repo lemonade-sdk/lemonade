@@ -25,11 +25,8 @@ public:
         s.methods = {"POST"};
         s.paths = {"/mcp"};
         s.prefixes = Prefixes::Root;
-        s.summary = "Model Context Protocol endpoint. JSON-RPC 2.0 envelope. Accepts a single "
-                    "message or a batch array.";
-        s.description =
-            "Serves the Model Context Protocol over JSON-RPC 2.0 (the Streamable HTTP "
-            "transport, spec `2025-06-18`), so MCP clients can call Lemonade's models as tools.";
+        s.summary = "Model Context Protocol over JSON-RPC 2.0";
+        s.description = "Serves every MCP method over JSON-RPC 2.0.";
         s.notes = {
             "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
             "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
@@ -61,11 +58,11 @@ public:
             "### Limitations\n"
             "\n"
             "- No session resumption (`Mcp-Session-Id` header is not issued).\n"
-            "- `resources/*` and `prompts/*` capabilities are not implemented.\n"
-            "- Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST "
-            "/v1/chat/completions` directly for streamed tokens.\n"
-            "- Embeddings and text-to-speech are not currently exposed as MCP tools; use the "
-            "OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.",
+            "- Tools return their whole result: `lemonade_chat` ignores `stream`. Use "
+            "[`POST /v1/chat/completions`](./openai.md#post-v1chatcompletions) for streamed tokens.\n"
+            "- Embeddings and text-to-speech have no MCP tool; use "
+            "[`/v1/embeddings`](./openai.md#post-v1embeddings) and "
+            "[`/v1/audio/speech`](./openai.md#post-v1audiospeech).",
         };
         s.args = {
             {"jsonrpc", ArgIn::JsonBody, {{"const", "2.0"}}, true, Support::Available,
@@ -89,7 +86,7 @@ public:
             "properties": {
                 "jsonrpc": {"const": "2.0"},
                 "id": {"type": ["string", "integer", "null"]},
-                "result": {"type": "object", "description": "The method's result; tool failures arrive here with isError: true."},
+                "result": {"type": "object", "description": "The method's result."},
                 "error": {
                     "type": "object",
                     "description": "A JSON-RPC error, such as -32601 for an unknown method.",

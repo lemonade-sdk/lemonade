@@ -21,17 +21,13 @@ public:
         s.paths = {"registry/search"};
         s.summary = "Search Hugging Face or ModelScope for model repositories";
         s.description =
-            "Search a remote model registry (Hugging Face or ModelScope) for repositories "
-            "matching a text query. This endpoint returns **candidate repositories** based on "
-            "registry metadata; it does not verify that a repository contains servable files. "
-            "The desktop app's Model Manager follows up with "
-            "[`/v1/pull/variants`](#get-v1pullvariants) on each candidate and only offers a "
-            "download for repositories whose file listing passes that validation.\n\n"
-            "Requires network access: returns 400 with code `lemond_offline` when the server is in "
-            "offline mode.";
+            "Searches Hugging Face or ModelScope for repositories matching a text query. The "
+            "results are candidates chosen from registry metadata, so the desktop app's Model "
+            "Manager checks each one with [`/v1/pull/variants`](#get-v1pullvariants) and offers a "
+            "download only for repositories whose files pass.";
         s.notes = {
-            "A `400` answers a `query` shorter than 3 characters or an invalid `source`, `limit` or "
-            "`format`. A `429` means the upstream registry rate-limited the request, and any other "
+            "A `400` answers a `query` shorter than 3 characters, an invalid `source`, `limit` or "
+            "`format`, or offline mode (`code: lemond_offline`). A `429` means the upstream registry rate-limited the request, and any other "
             "upstream failure answers `502`, with the upstream status code when available.",
         };
         s.args = {
@@ -53,11 +49,11 @@ public:
             "type": "object",
             "required": ["source", "query", "total", "results"],
             "properties": {
-                "source": {"enum": ["huggingface", "modelscope"], "description": "Echoed input (`source` canonicalized to `huggingface` or `modelscope`)."},
-                "query": {"type": "string", "description": "Echoed input (`source` canonicalized to `huggingface` or `modelscope`)."},
+                "source": {"enum": ["huggingface", "modelscope"], "description": "The registry searched, by its canonical name."},
+                "query": {"type": "string", "description": "The query as sent."},
                 "format": {"const": "gguf", "description": "Present only when `format=gguf` was requested."},
                 "total": {"type": "integer", "description": "Total match count reported by the upstream registry; may exceed the number of returned results."},
-                "results": {"type": "array", "description": "Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation.", "items": {
+                "results": {"type": "array", "description": "Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint from registry metadata; [`/v1/pull/variants`](#get-v1pullvariants) checks the files.", "items": {
                     "type": "object",
                     "required": ["repository_id", "display_name", "source"],
                     "properties": {

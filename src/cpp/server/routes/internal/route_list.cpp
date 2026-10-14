@@ -42,7 +42,7 @@ public:
                              "notes", "experimental", "args", "responses", "examples", "request_format",
                              "validate_args", "quiet_log"],
                 "properties": {
-                    "id": {"type": "string", "description": "<page>.<name>; also the docs anchor."},
+                    "id": {"type": "string", "description": "`<page>.<name>`, also the docs anchor."},
                     "methods": {"type": "array", "items": {"type": "string"}},
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Paths without their prefix; entries after the first are aliases."},
                     "prefixes": {"enum": ["Quad", "Internal", "Root"], "description": "Quad serves /api/v0/, /api/v1/, /v0/ and /v1/; Internal serves /internal/; Root serves each path as written."},
@@ -83,7 +83,7 @@ public:
                                 "required": ["route", "example", "args"],
                                 "properties": {
                                     "route": {"type": "string"},
-                                    "example": {"type": "string", "description": "The named example of route to run."},
+                                    "example": {"type": "string", "description": "The name of the route's example to run."},
                                     "args": {"description": "Set instead of example: a request sent as is and left out of the docs."}
                                 }
                             }, "description": "Requests that run first to put lemond in the state this example needs."}

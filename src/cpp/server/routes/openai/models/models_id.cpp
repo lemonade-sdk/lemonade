@@ -22,15 +22,13 @@ public:
         s.summary = "Retrieve a specific model by ID";
         s.modality = "n/a";
         s.description =
-            "Retrieve a specific model by its ID. Returns the same model object format as the "
-            "list endpoint above.";
+            "Returns one model, as the same model object [`GET /v1/models`](#get-v1models) lists.";
         s.notes = {
             "An unknown model answers `404` with `code` `model_not_found`.",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "The ID of the model to retrieve. Must match one of the model IDs from the "
-             "[models list](https://lemonade-server.ai/models.html) or an alias."},
+             "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
         };
 
         RouteResponse response;

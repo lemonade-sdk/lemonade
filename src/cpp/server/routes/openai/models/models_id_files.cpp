@@ -20,22 +20,17 @@ public:
         s.summary = "List resolved local file metadata for one model";
         s.modality = "n/a";
         s.description =
-            "List resolved local file metadata for a single model. This endpoint is intended for "
-            "model-detail UIs such as the Files tab. It is per-model inventory, not system or "
-            "drive storage accounting.\n\n"
-            "By default, the response does not include absolute filesystem paths. Trusted local "
-            "clients that need paths for native UI actions can request them explicitly with "
-            "`?include_paths=true`. Absolute paths may reveal local usernames and cache layout, "
-            "so clients should only request them when that disclosure is acceptable.";
+            "Lists the resolved local files of one model, for model-detail views such as the "
+            "app's Files tab. It inventories one model, not drive storage.";
         s.notes = {
-            "An unknown model answers `404` with an `error` object whose `code` is "
-            "`model_not_found`.",
+            "An unknown model answers `404` with `code` `model_not_found`.",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models)."},
             {"include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
-             "`true` adds each file's absolute `path`. Defaults to `false`."},
+             "`true` adds each file's absolute `path`, which can reveal local usernames and the "
+             "cache layout. Defaults to `false`."},
         };
 
         RouteResponse response;

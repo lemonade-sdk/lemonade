@@ -22,24 +22,18 @@ public:
         s.paths = {"models/register"};
         s.summary = "Register or update a user model definition without downloading it";
         s.description =
-            "Register or update a `user.*` model definition without downloading model files.\n"
-            "Use this endpoint when registration and installation are separate actions.\n"
-            "`POST /v1/pull` remains the install/download path and performs the same internal\n"
-            "registration step before downloading.";
+            "Registers or updates a `user.*` model definition in `user_models.json` without "
+            "downloading any files, for clients that register and install as separate steps. "
+            "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
         s.notes = {
-            "A checkpoint is intentionally not universally required: registration is a model\n"
-            "metadata operation and some present or future model types may not have local\n"
-            "weights. `/pull` remains the operation that attempts installation/download.",
-            "The endpoint accepts one model definition. An embedded `models` array represents\n"
-            "multiple definitions and remains a collection-import concern; register those\n"
-            "component definitions first when using this endpoint.",
+            "`checkpoint` is optional because registration records only metadata, and some model "
+            "types have no local weights.",
+            "The body holds one model definition. A collection's components must already be "
+            "registered: an embedded `models` array is rejected.",
             "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
             "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
-            "missing `recipe`, and malformed `checkpoint`, `checkpoints`, `source` or "
-            "`components` values.",
-            "`model_name` is the public ID that `/v1/models` lists; `canonical_model_name` is the "
-            "stable `user.*` registration ID. Registration writes `user_models.json` and refreshes "
-            "the model cache.",
+            "missing `recipe`, an embedded `models` array, and malformed `checkpoint`, "
+            "`checkpoints`, `source` or `components` values.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -65,8 +59,8 @@ public:
             {"required", ordered_json::array({"status", "model_name", "canonical_model_name"})},
             {"properties", {
                 {"status", {{"const", "success"}}},
-                {"model_name", {{"type", "string"}}},
-                {"canonical_model_name", {{"type", "string"}}},
+                {"model_name", {{"type", "string"}, {"description", "The ID `/v1/models` lists for the model."}}},
+                {"canonical_model_name", {{"type", "string"}, {"description", "The `user.*` name the request registered."}}},
                 {"model", ModelJson::schema()},
             }},
         };

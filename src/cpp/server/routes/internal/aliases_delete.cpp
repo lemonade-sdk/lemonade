@@ -19,7 +19,7 @@ public:
         s.paths = {"aliases/{alias}"};
         s.prefixes = Prefixes::Internal;
         s.summary = "Remove a model alias";
-        s.description = "Removes an existing model alias binding by name.";
+        s.description = "Removes a model alias.";
         s.notes = {"An alias that does not exist answers `404`."};
         s.args = {
             {"alias", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,

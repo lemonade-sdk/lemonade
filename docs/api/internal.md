@@ -1,8 +1,6 @@
 # Internal API
 
-Internal endpoints are used for server control and configuration. By default, they are secured by `LEMONADE_ADMIN_API_KEY` (if set) to separate control privileges from standard inference operations.
-
-The clients bundled with the server, such as the desktop app, the tray and the `lemonade` CLI, use these endpoints. They are served only under `/internal/`, and when only `LEMONADE_API_KEY` is set, it secures them too. They accept connections from any address, so a client on another machine can manage a shared `lemond`.
+Internal endpoints control and configure `lemond`. The clients bundled with the server, such as the desktop app, the tray and the `lemonade` CLI, use them, and they accept connections from any address, so a client on another machine can manage a shared `lemond`.
 
 Apps that talk to a system-wide Lemonade Server install must not use these endpoints: that server belongs to its bundled clients, and these endpoints may change without notice. An app that embeds its own `lemond` owns that instance and should use them to manage it; see [Embeddable Lemonade: Runtime](../embeddable/runtime.md).
 
@@ -39,7 +37,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-Models unload before the response is sent, so backend processes such as `llama-server` have exited by the time the caller reads it. lemond cancels its downloads and exits about 100 ms later.
+Backend processes such as `llama-server` have exited by the time the caller reads the answer. lemond then cancels its downloads and exits about 100 ms later.
 
 ### Example request
 
@@ -70,7 +68,7 @@ Models unload before the response is sent, so backend processes such as `llama-s
 ## `POST /internal/telemetry/flush`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.
+Sends every queued telemetry trace span to the configured OTLP collector, and answers once they are sent.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -160,7 +158,7 @@ A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pi
 ## `POST /internal/set`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Changes one or more `config.json` settings without restarting lemond, and saves them to `config.json`.
+Changes one or more `config.json` settings without restarting lemond, and saves them.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -562,7 +560,7 @@ The per-backend sections come from the backend descriptors, so this is the autho
 ## `POST /internal/cleanup-cache`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Finds model files that a multi-repository model left in another repository's Hugging Face cache folder, and removes them unless `dry_run` is `true`.
+Finds model files that a multi-repository model left in another repository's Hugging Face cache folder, and removes them when `dry_run` is `false`.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -618,7 +616,7 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 ## `POST /internal/simulate-vram-pressure`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Runs one eviction-engine evaluation as if global VRAM usage were `pct`, so tests can exercise pressure eviction without filling a GPU.
+Hands the eviction engine a simulated global VRAM usage of `pct`, so tests can exercise pressure eviction without filling a GPU.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -667,7 +665,7 @@ A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pc
 ## `POST /internal/models/sync`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Checks downloaded models for newer upstream commits and downloads the updates, by default in the background.
+Checks downloaded models for newer upstream commits and downloads the updates.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -680,9 +678,9 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `async` | No | Run in the background and answer immediately. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `attach_if_running` | No | Add the models to a sync that is already running instead of reporting it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-With `async` omitted or `true`, the sync starts in the background and the answer is `202` with the sync's status; poll [`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its `sync_id`. With `async: false`, the answer waits for the sync to finish. `dry_run: true` only checks, and answers `200` with what a sync would update.
+A background sync answers `202` with its status; poll [`GET /internal/models/sync/status`](#get-internalmodelssyncstatus) with its `sync_id`. A `dry_run` finishes before answering, whatever `async` says, and answers `200` with what a sync would update.
 
-A sync already running answers with its status instead of starting another. Full offline mode (`offline=true`) answers `409` without any network request.
+While a sync is running, a new request answers `200` with that sync's status instead of starting another. Offline mode (`offline=true`) answers `409` without any network request.
 
 The `lemonade update-models` command uses this endpoint; see Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).
 
@@ -743,7 +741,7 @@ The `lemonade update-models` command uses this endpoint; see Model Synchronizati
 ## `GET /internal/models/sync/status`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the status of a model sync started by [`POST /internal/models/sync`](#post-internalmodelssync), including download progress while it runs.
+Returns the status of a model sync started by [`POST /internal/models/sync`](#post-internalmodelssync).
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -810,7 +808,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 ## `GET /internal/aliases`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Retrieves a list of all active model alias mappings.
+Lists every model alias with its target.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -863,7 +861,7 @@ An alias stands in for its target in any request's `model` field. Aliases live i
 ## `POST /internal/aliases`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Binds a model alias to a target model name.
+Points an alias at a target model, replacing any target it had.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -911,7 +909,7 @@ The `lemonade alias add` command uses this endpoint.
 ## `DELETE /internal/aliases/{alias}`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Removes an existing model alias binding by name.
+Removes a model alias.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -1015,7 +1013,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 **Field Descriptions:**
 
-- `id` - <page>.<name>; also the docs anchor.
+- `id` - `<page>.<name>`, also the docs anchor.
 - `paths` - Paths without their prefix; entries after the first are aliases.
 - `prefixes` - Quad serves /api/v0/, /api/v1/, /v0/ and /v1/; Internal serves /internal/; Root serves each path as written.
 - `modality` - Empty on pages whose summary table has no Modality column.
@@ -1029,6 +1027,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `format` - The response format the reply is validated against.
   - `args` - Argument values of the request.
   - `setup` - Requests that run first to put lemond in the state this example needs.
-    - `example` - The named example of route to run.
+    - `example` - The name of the route's example to run.
     - `args` - Set instead of example: a request sent as is and left out of the docs.
 <!-- END GENERATED: internal.routes -->
