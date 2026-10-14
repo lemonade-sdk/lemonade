@@ -111,6 +111,7 @@ struct RouteExample {
     ResponseFormat format;            // the RouteResponse the response is validated against
     nlohmann::json args;              // argument values, e.g. {"id": "$lemonade.jobs_create/id"}
     std::vector<ExampleStep> setup;   // run first, in order
+    bool live = false;                // recorded on every run instead of cached; see Response Cache
 };
 
 struct RouteSpec {
@@ -454,15 +455,15 @@ Page intros and concept sections stay hand-written between the regions, such as 
 
 ### Examples
 
-The Example request section has PowerShell and Bash tabs for each of the route's `examples`, and the Response format section shows what lemond returned to each. When a route has several examples, the first example's request tabs are unlabeled, every other example's are labeled with its `name`, such as "PowerShell (streaming)", and each response gets a tab named after its example, such as "Streaming responses". For a JSON format, a Field Descriptions list follows, built from the `description` of each property in its schema. The generator builds and records examples by these rules:
+The Example request section has PowerShell and Bash tabs for each of the route's `examples`, and the Response format section shows what lemond returned to each. When a route has several examples, the first example's request tabs are unlabeled, every other example's are labeled with its `name`, such as "PowerShell (streaming)", and each response gets a tab named after its example, such as "Streaming responses". For a JSON format, a Field Descriptions list follows. It opens with the schema's own `description`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes lists each shape separately, opening with that shape's `description`. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
 
 - **Arguments.** An example's `args` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
 - **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
 - **Setup.** The steps in `setup` run first, in order. A step that names an example runs it after that example's own setup; a step with `args` sends that request as is and is left out of the docs. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
-- **One lemond.** Every example runs against one lemond started by the `Lemond` harness, which starts it again after an example stops it, as `/internal/shutdown` does. An example that deletes or uninstalls something removes what its own setup added.
+- **Fresh lemond.** Each example, with its setup, runs against a lemond the `Lemond` harness has just started, so its response depends only on its own setup and request, never on an example recorded before it. An example that deletes or uninstalls something removes what its own setup added.
 - **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
-- **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are.
-- **Paths.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, and the recording machine's home directory as `~`.
+- **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are. A JSON array of objects, or an object whose keys are data rather than field names (a schema with `additionalProperties`), such as search results or system-info's recipes, shows its first 3 entries and how many more there are.
+- **Machine values.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, the recording machine's home directory as `~`, and lemond's version as `<version>`.
 
 ### Route Documentation Contract
 
@@ -474,6 +475,7 @@ This section specifies what each route's text says. The generator prints each ro
 | `description` | What the route does, and who uses it when that is not obvious, in at most 3 sentences, third person present ("Loads a model...") | URLs, prefixes, aliases, auth, argument details or defaults, the page intro |
 | `notes` | Behavior no argument or field can carry: error statuses ("A `400` answers ..."), side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description |
 | `RouteArg::description` | What the argument controls, its accepted values, its default ("Defaults to `false`."), and when it is required if that depends on other arguments | Where the argument goes, the Required column, the route's behavior |
+| Schema `description`, on a format or one of its shapes | What the response is as a whole: how a stream's lines or events relate, such as which line ends it, or when this shape is returned | A field's meaning |
 | Schema property `description` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
 
@@ -485,7 +487,7 @@ These rules apply across the fields:
 4. Identifiers, values and placeholders such as `<PROVIDER>` are in backticks.
 5. A mention of another route links to its section.
 
-A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
+A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. Routes state only whether they need an API key, so `docs/api/README.md` states how a client sends `LEMONADE_API_KEY` and `LEMONADE_ADMIN_API_KEY`. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
 
 ### Response Cache
 
@@ -495,7 +497,9 @@ Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per e
 - the canonical JSON of its `args` and of every step in its `setup`
 - for a pass-through route, its backend's pinned version from `backend_versions.json`
 
-A new example, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
+A new example, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so a cached example changes only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
+
+The key covers what a request sends, so a response must not depend on anything else. A route whose response is built from lemond's own docs or route specs, such as `GET /v1/docs` or `GET /internal/routes`, changes whenever they do, which its key cannot see. Its example sets `live`: it has no cache entry, and the generator records it on every run, `--check` included. A `live` example must not load a model.
 
 ### Drift Check
 
@@ -507,6 +511,10 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
+- a JSON format, or one of its shapes, has no example whose response it validates
+- a field in a recorded JSON response has no `description` in its schema, unless an enclosing field is described without listing its properties
+- a recorded JSON body runs over 100 lines in the page
+- a `live` example's setup or request loads a model
 - an example names an argument the route does not have or a format not in `responses`, a route with several examples leaves one unnamed or repeats a name, a `setup` step names a route or example that does not exist, or a `$<route id>` value names a route that did not run during setup
 
 The author fixes it by running the generator locally and committing the result. The weekly backend-bump workflows (`validate_llamacpp.yml`, `validate_sdcpp.yml`, `validate_vllm.yml`) run each new version on self-hosted runners; their runner job also runs the generator for the entries the bump invalidated, and the PR the workflow opens includes the updated cache.
