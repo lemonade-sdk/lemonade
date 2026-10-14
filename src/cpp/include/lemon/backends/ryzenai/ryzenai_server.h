@@ -1,10 +1,10 @@
 #pragma once
 
 #include "lemon/backends/backend_registry.h"
-
-#include "lemon/wrapped_server.h"
-#include "lemon/server_capabilities.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/server_capabilities.h"
+#include "lemon/wrapped_server.h"
+
 #include <string>
 
 namespace lemon {
@@ -18,9 +18,6 @@ public:
 
 
     RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager);
-
-    // Installation and availability
-    static bool is_available();
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,

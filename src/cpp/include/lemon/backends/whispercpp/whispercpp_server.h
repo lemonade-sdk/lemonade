@@ -1,13 +1,12 @@
 #pragma once
 
 #include "lemon/backends/backend_registry.h"
-
-#include "lemon/wrapped_server.h"
-#include "lemon/server_capabilities.h"
 #include "lemon/backends/backend_utils.h"
-#include <string>
-#include <filesystem>
+#include "lemon/server_capabilities.h"
+#include "lemon/wrapped_server.h"
+
 #include <mutex>
+#include <string>
 
 namespace lemon {
 namespace backends {
@@ -41,20 +40,6 @@ private:
                                       const ModelInfo& model_info,
                                       bool do_not_upgrade);
 
-    // Audio file handling
-    std::string save_audio_to_temp(const std::string& audio_data,
-                                    const std::string& filename);
-    void cleanup_temp_file(const std::string& path);
-    void validate_audio_file(const std::string& path);
-
-    // Build request for whisper-server
-    json build_transcription_request(const json& request, bool translate = false);
-
-    // Forward audio file using multipart form-data
-    json forward_multipart_audio_request(const std::string& file_path,
-                                         const json& params,
-                                         bool translate);
-
     // Forward audio data directly (no file I/O) using multipart form-data
     json forward_multipart_audio_data(const std::string& audio_data,
                                       const std::string& filename,
@@ -62,7 +47,6 @@ private:
                                       bool translate);
 
     std::string model_path_;
-    std::filesystem::path temp_dir_;  // Directory for temporary audio files
     std::mutex inference_mutex_;
 };
 

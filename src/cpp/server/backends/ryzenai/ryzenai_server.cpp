@@ -1,19 +1,16 @@
-#include "lemon/backends/ryzenai/ryzenai_server.h"
-#include "lemon/backends/ryzenai/ryzenai.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/model_manager.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/hf_cache_util.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
-#include <iostream>
-#include <filesystem>
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/ryzenai/ryzenai.h"
+#include "lemon/backends/ryzenai/ryzenai_server.h"
+#include "lemon/model_manager.h"
+#include "lemon/utils/path_utils.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
+#include <filesystem>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -26,14 +23,6 @@ InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, 
 
 RyzenAIServer::RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager) {
-}
-
-bool RyzenAIServer::is_available() {
-    try {
-        return !backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu").empty();
-    } catch (...) {
-        return false;
-    }
 }
 
 void RyzenAIServer::load(const std::string& model_name,
