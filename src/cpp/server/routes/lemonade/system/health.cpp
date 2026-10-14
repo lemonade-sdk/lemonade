@@ -59,7 +59,7 @@ ordered_json health_schema() {
                     }
                 }
             },
-            "pinned_models": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)"},
+            "pinned_models": {"type": "object", "additionalProperties": {"type": "integer", "description": "How many pinned models of this type are loaded."}, "description": "Loaded pinned models, counted per model type, such as `llm` or `embedding`."},
             "max_models": {
                 "type": "object",
                 "description": "Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md))",
@@ -84,7 +84,7 @@ ordered_json health_schema() {
                     "captures": {"type": "array", "items": {"enum": ["inputs", "outputs", "thinking"]}, "description": "The parts of each request telemetry captures, present when `enabled` is `true`."}
                 }
             },
-            "pinned_helper_models": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Pinned routing-helper models of each type."}
+            "pinned_helper_models": {"type": "object", "additionalProperties": {"type": "integer", "description": "How many pinned routing-helper models of this type are loaded."}, "description": "Loaded pinned routing-helper models, counted per model type."}
         }
     })json");
 }

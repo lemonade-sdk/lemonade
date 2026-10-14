@@ -34,7 +34,7 @@ public:
             "type": "object",
             "required": ["aliases"],
             "properties": {
-                "aliases": {"type": "array", "items": {
+                "aliases": {"type": "array", "description": "Each alias with its target.", "items": {
                     "type": "object",
                     "required": ["alias", "target", "downloaded", "recipe"],
                     "properties": {

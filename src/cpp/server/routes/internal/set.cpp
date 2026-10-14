@@ -70,7 +70,7 @@ public:
             "type": "object",
             "required": ["status", "updated"],
             "properties": {
-                "status": {"const": "success"},
+                "status": {"const": "success", "description": "Always `success`."},
                 "updated": {"type": "object", "description": "The keys the request set, with their new values."},
                 "message": {"type": "string", "description": "Present when a deprecated value was replaced, such as `rocm_channel=preview`."}
             }

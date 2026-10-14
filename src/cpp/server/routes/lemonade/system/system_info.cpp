@@ -178,6 +178,15 @@ ordered_json system_info_schema() {
                     "properties": {
                         "default_backend": {"type": "string", "description": "Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)"},
                         "experimental": {"type": "boolean", "description": "`true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
+                        "order": {"type": "integer", "description": "The recipe's position in Lemonade's backend registry, from `0`."},
+                        "display_name": {"type": "string", "description": "The recipe's name for people, such as `Llama.cpp GPU`."},
+                        "web_display_name": {"type": "string", "description": "The recipe's name on the Lemonade website."},
+                        "modality": {"type": "string", "description": "The kind of model the recipe mainly serves, such as `Text generation`."},
+                        "selectable_backend": {"type": "boolean", "description": "Whether a `<recipe>_backend` option chooses the recipe's backend."},
+                        "uses_ctx_size": {"type": "boolean", "description": "Whether the recipe accepts the shared `ctx_size` option."},
+                        "slot_policy": {"enum": ["standard", "exclusive_npu", "coexist_by_type", "unmetered"], "description": "How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type) or `unmetered` (never counted or evicted)."},
+                        "support": {"type": "array", "description": "Every backend's operating systems, devices and tier, the same on every host."},
+                        "options": {"type": "array", "description": "The recipe's load options, with each one's CLI flag, default and help text."},
                         "backends": {
                             "type": "object",
                             "description": "Available backends for this recipe",
@@ -187,14 +196,15 @@ ordered_json system_info_schema() {
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
-                                    "state": {"enum": ["unsupported", "installable", "update_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`"},
+                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`."},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
-                                    "download_filename": {"type": "string", "description": "The release asset's filename."}
+                                    "download_filename": {"type": "string", "description": "The release asset's filename."},
+                                    "can_uninstall": {"type": "boolean", "description": "`true`; present only for a backend that does not run on this operating system."}
                                 }
                             }
                         }

@@ -55,9 +55,9 @@ public:
             "type": "object",
             "required": ["status", "alias", "target"],
             "properties": {
-                "status": {"const": "ok"},
-                "alias": {"type": "string"},
-                "target": {"type": "string"}
+                "status": {"const": "ok", "description": "Always `ok`."},
+                "alias": {"type": "string", "description": "The alias name."},
+                "target": {"type": "string", "description": "Model or alias the alias now points to."}
             }
         })");
         s.responses = {response};

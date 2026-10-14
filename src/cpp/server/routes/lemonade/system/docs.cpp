@@ -33,15 +33,15 @@ public:
             "required": ["version", "format", "docs"],
             "properties": {
                 "version": {"type": "string", "description": "Lemonade Server version the pages describe."},
-                "format": {"const": "text/markdown"},
-                "docs": {"type": "array", "items": {
+                "format": {"const": "text/markdown", "description": "The media type of every listed page."},
+                "docs": {"type": "array", "description": "The bundled pages.", "items": {
                     "type": "object",
                     "required": ["id", "title", "url", "bytes"],
                     "properties": {
                         "id": {"type": "string", "description": "Page id, mirroring the page's path on the documentation website."},
-                        "title": {"type": "string"},
+                        "title": {"type": "string", "description": "The page's title."},
                         "url": {"type": "string", "description": "Where to read the page. Clients follow it rather than building URLs, so a release can add pages without breaking them."},
-                        "bytes": {"type": "integer"}
+                        "bytes": {"type": "integer", "description": "The page's size in bytes."}
                     }
                 }}
             }

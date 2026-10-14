@@ -85,16 +85,16 @@ public:
             "description": "One JSON-RPC 2.0 response, or an array of them for a batch.",
             "required": ["jsonrpc", "id"],
             "properties": {
-                "jsonrpc": {"const": "2.0"},
-                "id": {"type": ["string", "integer", "null"]},
+                "jsonrpc": {"const": "2.0", "description": "Always `2.0`."},
+                "id": {"type": ["string", "integer", "null"], "description": "The `id` of the request this answers; `null` when it could not be read."},
                 "result": {"type": "object", "description": "The method's result."},
                 "error": {
                     "type": "object",
                     "description": "A JSON-RPC error, such as `-32601` for an unknown method.",
                     "required": ["code", "message"],
                     "properties": {
-                        "code": {"type": "integer"},
-                        "message": {"type": "string"}
+                        "code": {"type": "integer", "description": "The JSON-RPC error code."},
+                        "message": {"type": "string", "description": "What went wrong."}
                     }
                 }
             }

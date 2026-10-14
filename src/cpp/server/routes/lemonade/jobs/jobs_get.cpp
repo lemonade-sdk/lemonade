@@ -32,30 +32,30 @@ public:
             "type": "object",
             "required": ["id", "name", "status", "inputs", "context", "steps", "cursor", "created_at"],
             "properties": {
-                "id": {"type": "string"},
-                "name": {"type": "string"},
-                "status": {"enum": ["queued", "running", "paused", "interrupted", "completed", "failed"]},
-                "inputs": {"type": "object"},
+                "id": {"type": "string", "description": "The job's id."},
+                "name": {"type": "string", "description": "The display name the job was created with."},
+                "status": {"enum": ["queued", "running", "paused", "interrupted", "completed", "failed"], "description": "The job's state: `queued`, `running`, `paused`, `interrupted`, `completed` or `failed`."},
+                "inputs": {"type": "object", "description": "The `inputs` the job was created with."},
                 "context": {"type": "object", "description": "Each completed step's output under its id, the extracted keys, and inputs."},
-                "steps": {"type": "array", "items": {
+                "steps": {"type": "array", "description": "The job's steps, in order.", "items": {
                     "type": "object",
                     "required": ["id", "op", "params", "status", "duration_ms"],
                     "properties": {
-                        "id": {"type": "string"},
-                        "op": {"type": "string"},
-                        "params": {"type": "object"},
-                        "status": {"enum": ["pending", "running", "completed", "failed", "skipped"]},
-                        "duration_ms": {"type": "integer"},
-                        "error": {"type": "string"},
-                        "output": {}
+                        "id": {"type": "string", "description": "The step's id."},
+                        "op": {"type": "string", "description": "The operation the step runs."},
+                        "params": {"type": "object", "description": "The step's parameters."},
+                        "status": {"enum": ["pending", "running", "completed", "failed", "skipped"], "description": "The step's state: `pending`, `running`, `completed`, `failed` or `skipped`."},
+                        "duration_ms": {"type": "integer", "description": "How long the step ran, in milliseconds."},
+                        "error": {"type": "string", "description": "Why the step failed, present after a failure."},
+                        "output": {"description": "What the step returned, present once it has output."}
                     }
                 }},
                 "cursor": {"type": "string", "description": "Id of the current or next step."},
-                "created_at": {"type": "string"},
-                "started_at": {"type": "string"},
-                "finished_at": {"type": "string"},
-                "summary": {"type": "string"},
-                "error": {"type": "string"}
+                "created_at": {"type": "string", "description": "When the job was created, as an ISO 8601 UTC time."},
+                "started_at": {"type": "string", "description": "When the job first ran, present once it has."},
+                "finished_at": {"type": "string", "description": "When the job finished, present once it has."},
+                "summary": {"type": "string", "description": "The job's summary text, present when one was recorded."},
+                "error": {"type": "string", "description": "Why the job failed or was interrupted, present when known."}
             }
         })");
         s.responses = {response};

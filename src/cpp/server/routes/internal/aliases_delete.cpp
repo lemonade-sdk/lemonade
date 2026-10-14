@@ -32,8 +32,8 @@ public:
             "type": "object",
             "required": ["status", "alias"],
             "properties": {
-                "status": {"const": "deleted"},
-                "alias": {"type": "string"}
+                "status": {"const": "deleted", "description": "Always `deleted`."},
+                "alias": {"type": "string", "description": "The alias that was removed."}
             }
         })");
         s.responses = {response};

@@ -57,9 +57,9 @@ public:
                 "description": "A local backend removed.",
                 "required": ["status", "recipe", "backend"],
                 "properties": {
-                    "status": {"const": "success"},
-                    "recipe": {"type": "string"},
-                    "backend": {"type": "string"}
+                    "status": {"const": "success", "description": "Always `success`."},
+                    "recipe": {"type": "string", "description": "The recipe from the request."},
+                    "backend": {"type": "string", "description": "The backend from the request."}
                 }
             },
             {
@@ -67,23 +67,33 @@ public:
                 "description": "A cloud provider removed.",
                 "required": ["status", "backend", "provider", "models_evicted"],
                 "properties": {
-                    "status": {"const": "success"},
-                    "backend": {"const": "cloud"},
-                    "provider": {"type": "string"},
+                    "status": {"const": "success", "description": "Always `success`."},
+                    "backend": {"const": "cloud", "description": "Always `cloud`."},
+                    "provider": {"type": "string", "description": "The provider that was removed."},
                     "models_evicted": {"type": "integer", "description": "Discovered models removed from the catalog."}
                 }
             }
         ]})");
         s.responses = {response};
 
-        RouteExample example;
-        example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.install", "non-streaming"}};
-        example.args = ordered_json::parse(R"({
+        RouteExample local_example;
+        local_example.name = "local";
+        local_example.format = ResponseFormat::Json;
+        local_example.setup = {{"lemonade.install", "local"}};
+        local_example.args = ordered_json::parse(R"({
+            "recipe": "llamacpp",
+            "backend": "cpu"
+        })");
+
+        RouteExample cloud_example;
+        cloud_example.name = "cloud";
+        cloud_example.format = ResponseFormat::Json;
+        cloud_example.setup = {{"lemonade.install", "cloud"}};
+        cloud_example.args = ordered_json::parse(R"({
             "backend": "cloud",
             "provider": "fireworks"
         })");
-        s.examples = {example};
+        s.examples = {local_example, cloud_example};
         return s;
     }
 

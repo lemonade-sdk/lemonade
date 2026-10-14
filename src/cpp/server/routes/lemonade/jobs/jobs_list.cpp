@@ -26,25 +26,26 @@ public:
             "type": "object",
             "required": ["jobs"],
             "properties": {
-                "jobs": {"type": "array", "items": {
+                "jobs": {"type": "array", "description": "Every job that has not been deleted.", "items": {
                     "type": "object",
                     "required": ["id", "name", "status", "created_at", "progress"],
                     "properties": {
-                        "id": {"type": "string"},
-                        "name": {"type": "string"},
-                        "status": {"enum": ["queued", "running", "paused", "interrupted", "completed", "failed"]},
-                        "created_at": {"type": "string"},
-                        "finished_at": {"type": "string"},
+                        "id": {"type": "string", "description": "The job's id."},
+                        "name": {"type": "string", "description": "The display name the job was created with."},
+                        "status": {"enum": ["queued", "running", "paused", "interrupted", "completed", "failed"], "description": "The job's state: `queued`, `running`, `paused`, `interrupted`, `completed` or `failed`."},
+                        "created_at": {"type": "string", "description": "When the job was created, as an ISO 8601 UTC time."},
+                        "finished_at": {"type": "string", "description": "When the job finished, present once it has."},
                         "progress": {
                             "type": "object",
+                            "description": "How far through its steps the job is.",
                             "properties": {
                                 "cursor": {"type": "string", "description": "Id of the current or next step."},
                                 "completed": {"type": "integer", "description": "Steps that need no more work: completed, skipped, or failed with the failure handled."},
-                                "step_count": {"type": "integer"}
+                                "step_count": {"type": "integer", "description": "How many steps the job has."}
                             }
                         },
-                        "summary": {"type": "string"},
-                        "error": {"type": "string"}
+                        "summary": {"type": "string", "description": "The job's summary text, present when one was recorded."},
+                        "error": {"type": "string", "description": "Why the job failed or was interrupted, present when known."}
                     }
                 }}
             }

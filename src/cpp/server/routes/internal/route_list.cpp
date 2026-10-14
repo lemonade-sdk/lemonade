@@ -43,31 +43,31 @@ public:
                              "validate_args", "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "`<page>.<name>`; names the route's generated region in `docs/api/<page>.md`."},
-                    "methods": {"type": "array", "items": {"type": "string"}},
+                    "methods": {"type": "array", "items": {"type": "string"}, "description": "HTTP methods the route answers, such as `POST`."},
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Paths without their prefix; entries after the first are aliases."},
                     "prefixes": {"enum": ["Quad", "Internal", "Root"], "description": "`Quad` serves each path under `/v1/` and older prefixes kept for existing clients; `Internal` under `/internal/`; `Root` as written."},
-                    "summary": {"type": "string"},
+                    "summary": {"type": "string", "description": "One-line summary for the page's summary table; empty when hand-written rows replace it."},
                     "modality": {"type": "string", "description": "Empty on pages whose summary table has no Modality column."},
-                    "description": {"type": "string"},
-                    "notes": {"type": "array", "items": {"type": "string"}},
+                    "description": {"type": "string", "description": "Reference text for the route's section."},
+                    "notes": {"type": "array", "items": {"type": "string"}, "description": "Sections the docs place after the Parameters table."},
                     "experimental": {"type": "boolean", "description": "The route may still change."},
-                    "args": {"type": "array", "items": {
+                    "args": {"type": "array", "description": "Every argument the route takes.", "items": {
                         "type": "object",
                         "required": ["name", "in", "schema", "required", "supported", "description"],
                         "properties": {
-                            "name": {"type": "string"},
-                            "in": {"enum": ["JsonBody", "Query", "Path", "Form"]},
-                            "schema": {"type": "object"},
-                            "required": {"type": "boolean"},
+                            "name": {"type": "string", "description": "The argument's name."},
+                            "in": {"enum": ["JsonBody", "Query", "Path", "Form"], "description": "Where the argument goes: the JSON body, the query string, the path, or a form field."},
+                            "schema": {"type": "object", "description": "JSON Schema of the argument's value."},
+                            "required": {"type": "boolean", "description": "Whether a request must send the argument."},
                             "supported": {"enum": ["available", "partial", "not_available"], "description": "`available`; `partial`, honored only in part as the argument's description says; or `not_available`, accepted but ignored."},
-                            "description": {"type": "string"}
+                            "description": {"type": "string", "description": "What the argument controls."}
                         }
                     }},
-                    "responses": {"type": "array", "items": {
+                    "responses": {"type": "array", "description": "One entry per response format the route returns.", "items": {
                         "type": "object",
                         "required": ["format", "schema"],
                         "properties": {
-                            "format": {"enum": ["Json", "JsonLines", "EventStream", "Text", "Binary", "BinaryStream", "Empty"]},
+                            "format": {"enum": ["Json", "JsonLines", "EventStream", "Text", "Binary", "BinaryStream", "Empty"], "description": "The response format."},
                             "schema": {"description": "JSON Schema of the body, each NDJSON line, or each event's data; null for other formats."}
                         }
                     }},
@@ -82,16 +82,16 @@ public:
                                 "type": "object",
                                 "required": ["route", "example", "args"],
                                 "properties": {
-                                    "route": {"type": "string"},
+                                    "route": {"type": "string", "description": "The `id` of the route the step requests."},
                                     "example": {"type": "string", "description": "The name of the route's example to run."},
                                     "args": {"description": "Set instead of example: a request sent as is and left out of the docs."}
                                 }
                             }, "description": "Requests that run first to put `lemond` in the state this example needs."}
                         }
                     }, "description": "The first is the route's main example."},
-                    "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"]},
-                    "validate_args": {"type": "boolean"},
-                    "quiet_log": {"type": "boolean"}
+                    "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"], "description": "How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form."},
+                    "validate_args": {"type": "boolean", "description": "Whether `lemond` checks the JSON body arguments against their schemas, answering `400` on a mismatch."},
+                    "quiet_log": {"type": "boolean", "description": "Whether the route is left out of the access log."}
                 }
             }
         })");

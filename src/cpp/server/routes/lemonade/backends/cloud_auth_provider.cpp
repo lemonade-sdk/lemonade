@@ -38,10 +38,11 @@ public:
             "type": "object",
             "required": ["provider", "cleared_runtime_key", "auth_state"],
             "properties": {
-                "provider": {"type": "string"},
+                "provider": {"type": "string", "description": "The provider whose key was cleared."},
                 "cleared_runtime_key": {"type": "boolean", "description": "`false` when no in-memory key was present, for example when the only key came from the environment variable."},
                 "auth_state": {
                     "type": "object",
+                    "description": "Which API keys are set for the provider, after the clear.",
                     "properties": {
                         "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
                         "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in `lemond`'s memory."}

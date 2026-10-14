@@ -41,6 +41,7 @@ public:
                         "type": "object",
                         "properties": {
                             "has_next_token": {"type": "boolean", "description": "Whether more tokens are expected"},
+                            "has_new_line": {"type": "boolean", "description": "Whether the request's generated text contains a newline."},
                             "n_remain": {"type": "integer", "description": "Number of tokens remaining to generate"},
                             "n_decoded": {"type": "integer", "description": "Number of tokens already decoded"}
                         }
@@ -49,7 +50,10 @@ public:
                     "n_ctx": {"type": "integer", "description": "Context size of the slot."},
                     "is_processing": {"type": "boolean", "description": "Whether the slot is serving a request."},
                     "n_prompt_tokens": {"type": "integer", "description": "Tokens in the slot's current prompt."},
-                    "params": {"type": "object", "description": "Sampling parameters of the slot's last request."}
+                    "n_prompt_tokens_cache": {"type": "integer", "description": "Prompt tokens reused from the slot's cache instead of processed again."},
+                    "n_prompt_tokens_processed": {"type": "integer", "description": "Prompt tokens processed for the current request."},
+                    "params": {"type": "object", "description": "Sampling parameters of the slot's last request."},
+                    "speculative": {"type": "boolean", "description": "Whether the slot uses speculative decoding."}
                 }
             }
         })json");
@@ -57,7 +61,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.load", ""}};
+        example.setup = {{"lemonade.load", "model"}};
         example.args = json::object();
         s.examples = {example};
         return s;

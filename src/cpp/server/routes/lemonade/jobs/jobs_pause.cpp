@@ -31,7 +31,7 @@ public:
         response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status"],
-            "properties": {"status": {"const": "pausing"}}
+            "properties": {"status": {"const": "pausing", "description": "Always `pausing`."}}
         })");
         s.responses = {response};
 

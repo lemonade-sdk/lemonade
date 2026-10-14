@@ -262,15 +262,16 @@ ordered_json chat_response_schema(bool line) {
             "created_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
             "message": {
                 "type": "object",
+                "description": "The assistant's message; in a streamed line, the next piece of it.",
                 "required": ["role", "content"],
                 "properties": {
-                    "role": {"type": "string"},
-                    "content": {"type": "string"},
+                    "role": {"type": "string", "description": "Always `assistant`."},
+                    "content": {"type": "string", "description": "The message text."},
                     "thinking": {"type": "string", "description": "Reasoning models only: the model's thinking."},
                     "tool_calls": {"type": "array", "description": "Calls to the request's tools, with arguments as objects."}
                 }
             },
-            "done": {"type": "boolean"},
+            "done": {"type": "boolean", "description": "`false` while the message streams; `true` once it ends, and on a response that is not streamed."},
             "done_reason": {"type": "string", "description": "`stop`, `length`, `tool_calls`, or `unload` after an unload request."},
             "prompt_eval_count": {"type": "integer", "description": "Prompt tokens."},
             "eval_count": {"type": "integer", "description": "Generated tokens."},

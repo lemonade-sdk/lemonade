@@ -53,7 +53,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.load", ""}};
+        example.setup = {{"lemonade.load", "model"}};
         example.args = json::object();
         s.examples = {example};
         return s;

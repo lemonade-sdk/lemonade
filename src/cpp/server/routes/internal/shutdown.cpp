@@ -38,7 +38,7 @@ public:
             "type": "object",
             "required": ["status"],
             "properties": {
-                "status": {"const": "shutting down"}
+                "status": {"const": "shutting down", "description": "Always `shutting down`."}
             }
         })");
         s.responses = {response};

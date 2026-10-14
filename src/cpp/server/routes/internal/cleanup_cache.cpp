@@ -39,7 +39,7 @@ public:
             "type": "object",
             "required": ["orphaned_files", "total_bytes", "dry_run"],
             "properties": {
-                "orphaned_files": {"type": "array", "items": {
+                "orphaned_files": {"type": "array", "description": "Each orphaned file found.", "items": {
                     "type": "object",
                     "required": ["path", "size", "model", "type", "belongs_to"],
                     "properties": {

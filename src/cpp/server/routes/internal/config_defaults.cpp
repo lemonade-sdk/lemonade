@@ -35,11 +35,8 @@ public:
         response.schema = ordered_json::parse(R"({
             "type": "object",
             "description": "Every `config.json` key with its factory default.",
-            "required": ["port", "host", "log_level"],
-            "properties": {
-                "port": {"type": "integer"},
-                "host": {"type": "string"},
-                "log_level": {"type": "string"}
+            "additionalProperties": {
+                "description": "A setting; see the Settings Reference."
             }
         })");
         s.responses = {response};

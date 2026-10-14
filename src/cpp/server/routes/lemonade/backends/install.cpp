@@ -24,19 +24,19 @@ ordered_json install_schema() {
         "description": "A local backend installed or already up to date.",
         "required": ["status", "recipe", "backend"],
         "properties": {
-            "status": {"const": "success", "description": "`success`, or, in a server-owned job snapshot, the job's state."},
-            "recipe": {"type": "string"},
-            "backend": {"type": "string"}
+            "status": {"const": "success", "description": "Always `success`."},
+            "recipe": {"type": "string", "description": "The recipe from the request."},
+            "backend": {"type": "string", "description": "The backend from the request."}
         }
     })");
     auto manual = ordered_json::parse(R"({
         "type": "object",
-        "description": "A backend that needs manual setup on this system, such as FLM on Linux: nothing was installed and action is the setup guide's URL.",
+        "description": "A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.",
         "required": ["action", "recipe", "backend"],
         "properties": {
-            "action": {"type": "string", "description": "Present instead of `status` when the backend needs manual setup on this system, such as FLM on Linux: the setup guide's URL. Nothing was installed."},
-            "recipe": {"type": "string"},
-            "backend": {"type": "string"}
+            "action": {"type": "string", "description": "The setup guide's URL."},
+            "recipe": {"type": "string", "description": "The recipe from the request."},
+            "backend": {"type": "string", "description": "The backend from the request."}
         }
     })");
     auto cloud = ordered_json::parse(R"({
@@ -46,17 +46,18 @@ ordered_json install_schema() {
                      "auth_header_name", "auth_header_prefix", "wire_format", "models_discovered",
                      "auth_state"],
         "properties": {
-            "status": {"const": "success"},
-            "backend": {"const": "cloud"},
-            "provider": {"type": "string"},
-            "base_url": {"type": "string"},
-            "allow_insecure_http": {"type": "boolean"},
-            "auth_header_name": {"type": "string"},
-            "auth_header_prefix": {"type": "string"},
-            "wire_format": {"enum": ["openai", "anthropic"]},
+            "status": {"const": "success", "description": "Always `success`."},
+            "backend": {"const": "cloud", "description": "Always `cloud`."},
+            "provider": {"type": "string", "description": "The provider's name, which prefixes its model names."},
+            "base_url": {"type": "string", "description": "The provider's saved base URL."},
+            "allow_insecure_http": {"type": "boolean", "description": "Whether an API key may be sent to an `http://` base URL."},
+            "auth_header_name": {"type": "string", "description": "The header that carries the API key."},
+            "auth_header_prefix": {"type": "string", "description": "The text before the key in that header."},
+            "wire_format": {"enum": ["openai", "anthropic"], "description": "The API the provider speaks: `openai` or `anthropic`."},
             "models_discovered": {"type": "integer", "description": "Chat models discovered with the resolved API key; `0` when no key resolves."},
             "auth_state": {
                 "type": "object",
+                "description": "Which API keys are set for the provider.",
                 "properties": {
                     "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
                     "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in `lemond`'s memory."}
@@ -150,13 +151,12 @@ public:
 
         s.responses = {response, stream};
 
-        RouteExample response_example;
-        response_example.name = "non-streaming";
-        response_example.format = ResponseFormat::Json;
-        response_example.args = ordered_json::parse(R"({
-            "backend": "cloud",
-            "provider": "fireworks",
-            "base_url": "https://api.fireworks.ai/inference/v1"
+        RouteExample local_example;
+        local_example.name = "local";
+        local_example.format = ResponseFormat::Json;
+        local_example.args = ordered_json::parse(R"({
+            "recipe": "llamacpp",
+            "backend": "cpu"
         })");
 
         RouteExample stream_example;
@@ -168,7 +168,26 @@ public:
             "stream": true
         })");
 
-        s.examples = {response_example, stream_example};
+        RouteExample job_example;
+        job_example.name = "job";
+        job_example.format = ResponseFormat::Json;
+        job_example.args = ordered_json::parse(R"({
+            "recipe": "llamacpp",
+            "backend": "vulkan",
+            "stream": true,
+            "subscribe": false
+        })");
+
+        RouteExample cloud_example;
+        cloud_example.name = "cloud";
+        cloud_example.format = ResponseFormat::Json;
+        cloud_example.args = ordered_json::parse(R"({
+            "backend": "cloud",
+            "provider": "fireworks",
+            "base_url": "https://api.fireworks.ai/inference/v1"
+        })");
+
+        s.examples = {local_example, stream_example, job_example, cloud_example};
         return s;
     }
 

@@ -118,7 +118,7 @@ ordered_json ollama_details_schema() {
             "parent_model": {"type": "string", "description": "Always empty."},
             "format": {"type": "string", "description": "Always `gguf`."},
             "family": {"type": "string", "description": "The model's recipe, e.g. `llamacpp`."},
-            "families": {"type": "array", "items": {"type": "string"}},
+            "families": {"type": "array", "items": {"type": "string"}, "description": "A list holding only `family`."},
             "parameter_size": {"type": "string", "description": "From the model name, e.g. `0.6B`; empty when the name has none."},
             "quantization_level": {"type": "string", "description": "From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none."}
         }

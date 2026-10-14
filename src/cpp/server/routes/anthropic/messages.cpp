@@ -846,28 +846,29 @@ public:
             "type": "object",
             "required": ["id", "type", "role", "model", "content", "stop_reason", "usage"],
             "properties": {
-                "id": {"type": "string"},
-                "type": {"const": "message"},
-                "role": {"const": "assistant"},
-                "model": {"type": "string"},
-                "content": {"type": "array", "items": {
+                "id": {"type": "string", "description": "The message's ID."},
+                "type": {"const": "message", "description": "Always `message`."},
+                "role": {"const": "assistant", "description": "Always `assistant`."},
+                "model": {"type": "string", "description": "The model that generated the message."},
+                "content": {"type": "array", "description": "The message's content blocks.", "items": {
                     "type": "object",
                     "required": ["type"],
                     "properties": {
                         "type": {"type": "string", "description": "`text` or `tool_use`. A relayed provider can add its own block types, such as `thinking`."},
-                        "text": {"type": "string"},
-                        "id": {"type": "string"},
-                        "name": {"type": "string"},
-                        "input": {"type": "object"}
+                        "text": {"type": "string", "description": "In a `text` block: the text."},
+                        "id": {"type": "string", "description": "In a `tool_use` block: the tool call's ID."},
+                        "name": {"type": "string", "description": "In a `tool_use` block: the tool's name."},
+                        "input": {"type": "object", "description": "In a `tool_use` block: the call's arguments."}
                     }
                 }},
                 "stop_reason": {"type": "string", "description": "`end_turn`, `max_tokens` or `tool_use`."},
-                "stop_sequence": {"type": ["string", "null"]},
+                "stop_sequence": {"type": ["string", "null"], "description": "The stop sequence that ended the message; always `null` for local models."},
                 "usage": {
                     "type": "object",
+                    "description": "Token counts.",
                     "properties": {
-                        "input_tokens": {"type": "integer"},
-                        "output_tokens": {"type": "integer"}
+                        "input_tokens": {"type": "integer", "description": "Prompt tokens."},
+                        "output_tokens": {"type": "integer", "description": "Generated tokens."}
                     }
                 },
                 "warnings": {"type": "array", "items": {"type": "string"}, "description": "Fields Lemonade ignored while converting."}
@@ -880,7 +881,12 @@ public:
             "type": "object",
             "required": ["type"],
             "properties": {
-                "type": {"type": "string", "description": "Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`."}
+                "type": {"type": "string", "description": "Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`."},
+                "message": {"type": "object", "description": "In `message_start`: the message, with empty `content` and zero `usage`."},
+                "index": {"type": "integer", "description": "In `content_block_start`, `content_block_delta` and `content_block_stop`: the block's position in the message's `content`."},
+                "content_block": {"type": "object", "description": "In `content_block_start`: the block, with empty `text` or `input`."},
+                "delta": {"type": "object", "description": "In `content_block_delta`: the block's next `text_delta` text or `input_json_delta` partial JSON. In `message_delta`: the `stop_reason` and `stop_sequence`."},
+                "usage": {"type": "object", "description": "In `message_delta`: token counts."}
             }
         })");
 

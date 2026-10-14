@@ -60,6 +60,7 @@ public:
                 "allow_insecure_http": {"type": "boolean", "description": "Whether the provider may receive keys over `http://`, after this request."},
                 "auth_state": {
                     "type": "object",
+                    "description": "Which API keys are set for the provider.",
                     "properties": {
                         "env_var_set": {"type": "boolean", "description": "Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`."},
                         "runtime_key_set": {"type": "boolean", "description": "Whether a key is held in `lemond`'s memory."}
@@ -74,7 +75,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.install", "non-streaming"}};
+        example.setup = {{"lemonade.install", "cloud"}};
         example.args = ordered_json::parse(R"({
             "provider": "fireworks",
             "api_key": "fw-XXXXX"

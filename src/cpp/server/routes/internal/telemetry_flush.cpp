@@ -28,7 +28,7 @@ public:
             "type": "object",
             "required": ["status"],
             "properties": {
-                "status": {"const": "flushed"}
+                "status": {"const": "flushed", "description": "Always `flushed`."}
             }
         })");
         s.responses = {response};

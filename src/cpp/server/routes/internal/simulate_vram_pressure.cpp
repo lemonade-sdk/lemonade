@@ -41,7 +41,7 @@ public:
             "type": "object",
             "required": ["status"],
             "properties": {
-                "status": {"const": "ok"}
+                "status": {"const": "ok", "description": "Always `ok`."}
             }
         })");
         s.responses = {response};

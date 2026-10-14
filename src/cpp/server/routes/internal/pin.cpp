@@ -44,7 +44,7 @@ public:
             "type": "object",
             "required": ["status", "model_name", "pinned"],
             "properties": {
-                "status": {"const": "success"},
+                "status": {"const": "success", "description": "Always `success`."},
                 "model_name": {"type": "string", "description": "The model name as sent."},
                 "pinned": {"type": "boolean", "description": "The model's pinned state now."}
             }
@@ -53,7 +53,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.load", ""}};
+        example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}, {"pinned", true}};
         s.examples = {example};
         return s;
