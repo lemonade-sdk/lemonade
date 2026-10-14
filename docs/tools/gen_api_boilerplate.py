@@ -59,6 +59,10 @@ TEXT_LINES = 20
 LONG_STRING = 1000
 LONG_STRING_KEPT = 80
 LONG_ARRAY = 16
+# Arrays of objects and maps keyed by data show this many entries in the page.
+SHOWN_ENTRIES = 3
+MORE = "\u0000more:"
+MAX_JSON_LINES = 100
 EXAMPLE_TIMEOUT = 1800
 
 PAGE_TITLES = {
@@ -700,6 +704,92 @@ def check_entry(spec: dict, response: dict, entry: dict) -> None:
             raise GenerationError(f"{where}: recorded response is not empty")
 
 
+def recorded_payloads(fmt: str, recorded: dict) -> list:
+    if fmt == "Json":
+        return [recorded["body"]]
+    payloads = []
+    for item in recorded.get("head", []) + recorded.get("tail", []):
+        for payload in [item] if fmt == "JsonLines" else event_payloads(item):
+            if payload != "[DONE]":
+                payloads.append(json.loads(payload))
+    return payloads
+
+
+def opaque(schema) -> bool:
+    """A field described without listing its properties; what it holds is not checked."""
+    return not properties_of(schema) and map_entry_of(schema) is None
+
+
+def undescribed_fields(value, schema, path: str = "") -> list[str]:
+    if isinstance(value, list):
+        items = next((b["items"] for b in schema_branches(schema) if "items" in b), {})
+        found = []
+        for item in value:
+            found += undescribed_fields(item, items, path)
+        return found
+    if not isinstance(value, dict):
+        return []
+    properties = properties_of(schema)
+    entry = map_entry_of(schema)
+    found = []
+    for key, item in value.items():
+        sub = properties.get(key)
+        name = f"{path}.{key}" if path else key
+        if sub is None and entry is not None:
+            sub, name = entry, f"{path}.*" if path else "*"
+        if sub is None or not description_of(sub):
+            found.append(name)
+        elif not opaque(sub):
+            found += undescribed_fields(item, sub, name)
+    return found
+
+
+def docs_problems(spec: dict, entries: dict) -> list[str]:
+    """What Drift Check asks of a route's recorded examples beyond matching their schemas:
+    every format and shape has an example, every recorded field is described, and no
+    JSON body runs too long in the page."""
+    import jsonschema
+
+    problems = []
+    for response in spec["responses"]:
+        fmt = response["format"]
+        if fmt not in JSON_FORMATS:
+            continue
+        where = f"{spec['id']} {fmt}"
+        schema = dereferenced(response["schema"])
+        examples = [e for e in spec["examples"] if e["format"] == fmt]
+        if not examples:
+            problems.append(f"{where}: no example")
+            continue
+        payloads = []
+        for example in examples:
+            entry = entries[example["name"]]
+            payloads += recorded_payloads(fmt, entry["response"])
+            if fmt == "Json":
+                lines = len(json_body_text(entry, schema).splitlines())
+                if lines > MAX_JSON_LINES:
+                    problems.append(
+                        f"{spec['id']} example {example['name']!r}: recorded JSON runs "
+                        f"{lines} lines in the page, over {MAX_JSON_LINES}"
+                    )
+        for index, shape in enumerate(schema.get("oneOf", []), 1):
+            label = shape.get("description") or f"shape {index}"
+            if not shape.get("description"):
+                problems.append(f"{where}: shape {index} has no description")
+            validator = jsonschema.Draft202012Validator(shape)
+            if not any(validator.is_valid(payload) for payload in payloads):
+                problems.append(f"{where}: no example returns the shape {label!r}")
+        fields = []
+        for payload in payloads:
+            fields += undescribed_fields(payload, schema)
+        if fields:
+            problems.append(
+                f"{where}: recorded fields without a description: "
+                + ", ".join(dict.fromkeys(fields))
+            )
+    return problems
+
+
 # --------------------------------------------------------------------------
 # Rendering
 # --------------------------------------------------------------------------
@@ -957,13 +1047,12 @@ def field_rows(schema) -> list[tuple[list[str], str, list]]:
 
     Adjacent fields sharing a description share a row, as in `file`, `file_index`,
     `total_files`. A described map entry gets a row with no names, as in system-info's
-    "Each recipe ... contains:". A nested schema with its own $id, such as the routing
-    decision, is documented on its own page, so only its description is listed.
+    "Each recipe ... contains:".
     """
     rows = []
     for name, sub in properties_of(schema).items():
         description = description_of(sub)
-        children = [] if "$id" in sub else field_rows(sub)
+        children = field_rows(sub)
         if not description and not children:
             continue
         previous = rows[-1] if rows else None
@@ -990,10 +1079,52 @@ def field_lines(rows: list, pad: str = "") -> list[str]:
 
 
 def render_fields(schema: dict) -> str:
-    rows = field_rows(schema)
-    if not rows:
+    """The schema's top-level description, then its fields; a format with several shapes
+    lists each shape's fields under that shape's description."""
+    shapes = schema.get("oneOf", [])
+    blocks = [schema.get("description", "")]
+    blocks.append("\n".join(field_lines(field_rows({**schema, "oneOf": []}))))
+    for shape in shapes:
+        blocks.append(shape.get("description", ""))
+        blocks.append("\n".join(field_lines(field_rows(shape))))
+    blocks = [block for block in blocks if block]
+    if not blocks:
         return ""
-    return "**Field Descriptions:**\n\n" + "\n".join(field_lines(rows))
+    return "**Field Descriptions:**\n\n" + "\n\n".join(blocks)
+
+
+def shorten(value, schema):
+    """value with each array of objects, and each map keyed by data, cut to its first
+    entries, marked with how many more there are."""
+    if isinstance(value, list):
+        items = next((b["items"] for b in schema_branches(schema) if "items" in b), {})
+        shown = [shorten(item, items) for item in value]
+        if len(shown) > SHOWN_ENTRIES and all(isinstance(i, dict) for i in shown):
+            return shown[:SHOWN_ENTRIES] + [f"{MORE}{len(shown) - SHOWN_ENTRIES}"]
+        return shown
+    if not isinstance(value, dict):
+        return value
+    properties = properties_of(schema)
+    entry = map_entry_of(schema)
+    shown = {
+        key: shorten(item, properties.get(key, entry or {}))
+        for key, item in value.items()
+    }
+    data_keys = [key for key in shown if key not in properties]
+    if entry is not None and len(data_keys) > SHOWN_ENTRIES:
+        for key in data_keys[SHOWN_ENTRIES:]:
+            del shown[key]
+        shown[f"{MORE}{len(data_keys) - SHOWN_ENTRIES}"] = None
+    return shown
+
+
+def json_body_text(entry: dict, schema: dict) -> str:
+    body = shorten(in_schema_order(entry["response"]["body"], schema), schema)
+    return re.sub(
+        r'"\\u0000more:(\d+)"(: null)?',
+        lambda match: f"... {match.group(1)} more",
+        json_layout(body),
+    )
 
 
 def in_schema_order(value, schema):
@@ -1034,8 +1165,7 @@ def render_recorded(fmt: str, entry: dict, schema: dict) -> str:
     recorded = entry["response"]
     status = f"`{recorded['status']}`"
     if fmt == "Json":
-        body = in_schema_order(recorded["body"], schema)
-        return status + "\n\n" + fence("json", json_layout(body))
+        return status + "\n\n" + fence("json", json_body_text(entry, schema))
     if fmt in ("JsonLines", "EventStream"):
         render = (
             (lambda line: ordered_payload(line, schema))
@@ -1395,6 +1525,7 @@ def main() -> int:
         if len(entries) == len(spec["examples"]):
             rendered[spec["id"]] = render_route(spec, entries)
             problems += lint_region(spec["id"], rendered[spec["id"]])
+            problems += docs_problems(spec, entries)
 
     pages: dict[str, list[dict]] = {}
     for spec in route_list:

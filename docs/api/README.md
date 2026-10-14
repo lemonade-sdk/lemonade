@@ -22,3 +22,13 @@ This spec details all supported endpoints. It is organized into pages that corre
 | [Internal API](./internal.md) | Control endpoints for clients bundled with the server, secured by `LEMONADE_ADMIN_API_KEY`. |
 
 A running server also serves these pages itself: [`GET /v1/docs`](./lemonade.md#get-v1docs) lists what it has and [`GET /v1/docs/{page}`](./lemonade.md#get-v1docspage) returns one, so the reference always matches the installed version and stays available offline.
+
+## Authentication
+
+When `LEMONADE_API_KEY` is set, clients send it in the `Authorization` header as a Bearer token:
+
+```bash
+curl http://localhost:13305/v1/models -H "Authorization: Bearer $LEMONADE_API_KEY"
+```
+
+Each route says whether it needs a key. The internal routes take `LEMONADE_ADMIN_API_KEY` when it is set, and `LEMONADE_API_KEY` otherwise; the admin key also works on every other route. Lemonade reads no other header, so an Anthropic SDK client passes the key as `auth_token`, not `api_key`. The WebSocket APIs take the key as an `api_key` query parameter instead. See [API Key and Security](../guide/configuration/README.md#api-key-and-security) for every combination of the two keys.
