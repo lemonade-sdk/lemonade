@@ -22,9 +22,9 @@ model is involved.
 The decision is reported on the response:
 
 - Header **`x-lemonade-route`**: the matched rule id, or `default`.
-- Body field **`x_lemonade_route`**: the routing decision, with the fields listed under
-  [`POST /v1/routing/validate`](#post-v1routingvalidate)'s `decision`. For streaming
-  responses it is attached to the first SSE event. Its per-condition `trace` is included
+- Body field **`x_lemonade_route`**: the routing decision, whose full shape is defined by
+  [`decision.schema.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/schemas/decision.schema.json).
+  For streaming responses it is attached to the first SSE event. Its per-condition `trace` is included
   only when the request sets **`route_trace: true`**.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
@@ -162,12 +162,12 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
 ```json
 {
   "decision": {
-    "version": "1",
-    "route_to": "vllm.qwen3-32b",
-    "matched_rule": "code-to-big",
     "default_used": false,
+    "matched_rule": "code-to-big",
     "outputs": {},
-    "trace": [{"condition": "keywords_any", "result": true}]
+    "route_to": "vllm.qwen3-32b",
+    "trace": [{"condition": "keywords_any", "result": true}],
+    "version": "1"
   },
   "normalized_policy": {
     "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
@@ -190,17 +190,6 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
 
 **Field Descriptions:**
 
-- `decision` - The routing decision, shaped like the `x_lemonade_route` object a routed completion returns with `route_trace: true`.
-  - `version` - Version of the decision object's shape, always `"1"`.
-  - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-  - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-  - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-  - `outputs` - The matched rule's `outputs`, passed through unchanged.
-  - `trace` - Per-condition trace of the evaluation.
-    - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-    - `score` - Present for classifier conditions; the score the band was applied to.
-    - `result` - The leaf's boolean outcome.
-    - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-    - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+- `decision` - The routing decision for the prompt, with the per-condition `trace` included. See [Routing](#routing-collectionrouter) for the decision object.
 - `normalized_policy` - The policy as evaluated, with any `routing.router` shorthand expanded.
 <!-- END GENERATED: router.routing_validate -->

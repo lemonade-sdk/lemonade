@@ -1,7 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_types.h"
-#include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 
@@ -44,7 +43,12 @@ ordered_json text_completion_schema(bool chunk) {
             "timings": {"type": "object", "description": "Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
-    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
+    schema["properties"]["x_lemonade_route"] = {
+        {"type", "object"},
+        {"description",
+         "The routing decision, when `model` names a `collection.router` model. See "
+         "[Routing](./router.md#routing-collectionrouter) for the decision object."},
+    };
     if (chunk) {
         auto& properties = schema["properties"];
         properties["id"]["description"] = "Identifier of the completion, the same on every chunk.";

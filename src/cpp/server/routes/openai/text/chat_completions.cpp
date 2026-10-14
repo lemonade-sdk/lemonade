@@ -1,7 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_types.h"
-#include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/omni_collection.h"
@@ -57,7 +56,12 @@ ordered_json chat_completion_schema() {
         }
     })");
     // Router collections add their routing decision to the response.
-    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
+    schema["properties"]["x_lemonade_route"] = {
+        {"type", "object"},
+        {"description",
+         "The routing decision, when `model` names a `collection.router` model. See "
+         "[Routing](./router.md#routing-collectionrouter) for the decision object."},
+    };
     return schema;
 }
 
@@ -93,7 +97,12 @@ ordered_json chat_completion_chunk_schema() {
             "timings": {"type": "object", "description": "Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
-    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
+    schema["properties"]["x_lemonade_route"] = {
+        {"type", "object"},
+        {"description",
+         "The routing decision, when `model` names a `collection.router` model. See "
+         "[Routing](./router.md#routing-collectionrouter) for the decision object."},
+    };
     return schema;
 }
 

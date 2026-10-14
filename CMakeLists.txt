@@ -2275,7 +2275,7 @@ endif()
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${EMBEDDABLE_STAGING_DIR}/resources/schemas"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${EMBEDDABLE_STAGING_DIR}/resources"
 
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
@@ -2303,9 +2303,6 @@ add_custom_target(embeddable
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
-    COMMAND ${CMAKE_COMMAND} -E copy
-        "$<TARGET_FILE_DIR:lemond>/resources/schemas/decision.schema.json"
-        "${EMBEDDABLE_STAGING_DIR}/resources/schemas/"
 
     # Create archive
     COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_BINARY_DIR}" ${EMBEDDABLE_TAR_CMD}
@@ -2911,12 +2908,18 @@ set(_ROUTE_DECISION_RESPONSE_TEST_SRC
 if(BUILD_TESTING AND EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
     add_executable(test_route_decision_response
         test/cpp/test_route_decision_response.cpp
+        src/cpp/server/route_decision_response.cpp
     )
     target_include_directories(test_route_decision_response PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
-    target_link_libraries(test_route_decision_response PRIVATE lemonade-server-core)
+    target_link_libraries(test_route_decision_response PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_route_decision_response PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_route_decision_response PRIVATE httplib::httplib)
+    endif()
 
     include(CTest)
     add_cpp_ci_test(RouteDecisionResponseTest CI OFF COMMAND test_route_decision_response)
@@ -2931,12 +2934,22 @@ set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
 if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     add_executable(test_routing_conformance_corpus
         test/cpp/test_routing_conformance_corpus.cpp
+        src/cpp/server/route_decision_response.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
     )
     target_include_directories(test_routing_conformance_corpus PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
-    target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-server-core)
+    target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_routing_conformance_corpus PRIVATE httplib::httplib)
+    endif()
     target_compile_definitions(test_routing_conformance_corpus PRIVATE
         CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/conformance/routing"
     )

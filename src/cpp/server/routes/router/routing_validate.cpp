@@ -111,16 +111,12 @@ public:
              "String-valued metadata pairs matched by `metadata` conditions."},
         };
 
-        // A routed completion carries the trace only with route_trace: true; this endpoint
-        // always returns it.
-        ordered_json decision = route_decision_field_schema();
-        decision["properties"]["trace"]["description"] = "Per-condition trace of the evaluation.";
-        decision["properties"]["outputs"]["description"] =
-            "The matched rule's `outputs`, passed through unchanged.";
-        decision["description"] =
-            "The routing decision, shaped like the `x_lemonade_route` object a routed completion "
-            "returns with `route_trace: true`.";
-        decision["required"].push_back("trace");
+        const ordered_json decision = {
+            {"type", "object"},
+            {"description",
+             "The routing decision for the prompt, with the per-condition `trace` included. See "
+             "[Routing](#routing-collectionrouter) for the decision object."},
+        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

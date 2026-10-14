@@ -264,18 +264,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
       - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
       - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
     - `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Version of the decision object's shape, always `"1"`.
-      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
-        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-        - `score` - Present for classifier conditions; the score the band was applied to.
-        - `result` - The leaf's boolean outcome.
-        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
 === "Streaming responses"
 
@@ -307,18 +296,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
       - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it.
     - `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
     - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Version of the decision object's shape, always `"1"`.
-      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
-        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-        - `score` - Present for classifier conditions; the score the band was applied to.
-        - `result` - The leaf's boolean outcome.
-        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -468,18 +446,7 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
       - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
       - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
     - `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Version of the decision object's shape, always `"1"`.
-      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
-        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-        - `score` - Present for classifier conditions; the score the band was applied to.
-        - `result` - The leaf's boolean outcome.
-        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
 === "Streaming responses"
 
@@ -512,18 +479,7 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
       - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
       - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
     - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Version of the decision object's shape, always `"1"`.
-      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
-        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-        - `score` - Present for classifier conditions; the score the band was applied to.
-        - `result` - The leaf's boolean outcome.
-        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.completions -->
 
 <!-- BEGIN GENERATED: openai.embeddings -->
@@ -740,18 +696,7 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
       - `output_tokens` - Tokens generated.
       - `total_tokens` - Sum of `input_tokens` and `output_tokens`.
       - `input_tokens_details` - Breakdown of the input tokens, such as `cached_tokens`, when the backend reports it.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Version of the decision object's shape, always `"1"`.
-      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
-        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-        - `score` - Present for classifier conditions; the score the band was applied to.
-        - `result` - The leaf's boolean outcome.
-        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
 === "Streaming responses"
 
@@ -778,18 +723,7 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
     - `item_id` - Delta events only: the `id` of the output item the text belongs to.
     - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
     - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Version of the decision object's shape, always `"1"`.
-      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
-      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
-      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
-      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
-        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
-        - `score` - Present for classifier conditions; the score the band was applied to.
-        - `result` - The leaf's boolean outcome.
-        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
-        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
+    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.responses -->
 
 <!-- BEGIN GENERATED: openai.audio_transcriptions -->
