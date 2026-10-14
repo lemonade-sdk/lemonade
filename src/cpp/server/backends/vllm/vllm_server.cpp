@@ -11,7 +11,6 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
@@ -523,19 +522,22 @@ void VLLMServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
-                       executable, args);
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
 
-    // vLLM can take longer to start (loading model, compiling kernels)
-    if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
+    bool inherit_output = (log_level_ == "info") || is_debug();
+    try {
+        // vLLM can take longer to start (loading model, compiling kernels)
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
+                     HttpClient::get_default_timeout());
+    } catch (const std::runtime_error& e) {
         cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
         max_model_len_ = 0;
-        std::string err = "vllm-server failed to start within timeout";
+        if (load_cancelled()) throw;
+        std::string err = e.what();
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
         if (needs_gfx1151_cwsr_fix()) {
@@ -544,20 +546,11 @@ void VLLMServer::load(const std::string& model_name,
         }
         throw std::runtime_error(err);
     }
-
-    LOG(DEBUG, "vLLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void VLLMServer::unload() {
-    stop_backend_watchdog();
-    LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
+    stop_server();
     cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
-    max_model_len_ = 0;
 }
 
 json VLLMServer::chat_completion(const json& request) {

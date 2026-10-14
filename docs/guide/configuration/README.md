@@ -27,7 +27,7 @@ On startup, Lemonade automatically migrates persistent JSON files from the legac
 When `lemond` starts, effective configuration is resolved by deep-merging settings in increasing precedence:
 
 1. **Built-in Defaults**: Factory defaults baked into the release (`resources/defaults.json` and backend descriptors).
-2. **Distro / System Defaults**: On Linux, `lemond` merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship system-level defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+2. **Distro / System Defaults**: On Linux, `lemond` merges `share/lemonade/defaults.json` under its own install prefix if it exists (`/usr/share/lemonade/defaults.json` for `/usr/bin/lemond`), so distro packages can ship system-level defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
 3. **Environment Defaults**: Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under `/usr/share`).
 4. **User Overrides (`config.json`)**: Values explicitly set in your `config.json` override defaults.
 5. **CLI Flags**: Arguments passed to `lemond` (e.g. `--port`, `--host`).
