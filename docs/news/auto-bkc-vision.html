@@ -318,9 +318,8 @@
       padding: 2rem;
       border-radius: var(--radius-xl);
       background:
-        radial-gradient(circle at 38% 46%, rgba(252, 216, 70, 0.16), transparent 42%),
-        radial-gradient(circle at 12% 50%, rgba(255, 255, 255, 0.06), transparent 24%),
-        linear-gradient(145deg, #26231a, #1b1810);
+        radial-gradient(circle at 38% 46%, rgba(252, 216, 70, 0.22), transparent 44%),
+        linear-gradient(160deg, #fffdf4, #f5f3e8);
       box-shadow: var(--shadow-heavy);
       overflow: hidden;
     }
@@ -333,6 +332,11 @@
       pointer-events: none;
       overflow: visible;
     }
+
+    .anim-wires .hp-router-wire { stroke: rgba(45, 47, 47, 0.12); }
+    .anim-wires .hp-router-flow-halo { stroke: rgba(252, 216, 70, 0.45); }
+    .anim-wires .hp-router-flow-core { stroke: var(--primary-yellow-darker); }
+
 
     .anim-col {
       position: relative;
@@ -349,27 +353,26 @@
       font-weight: 800;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: rgba(248, 243, 218, 0.45);
+      color: var(--text-muted);
     }
 
     .anim-pill {
       padding: 0.45rem 0.9rem;
-      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: var(--radius-btn);
-      background: rgba(26, 25, 20, 0.46);
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-light);
       font-family: var(--font-display);
       font-size: 0.86rem;
       font-weight: 800;
-      color: rgba(248, 243, 218, 0.55);
+      color: var(--text-secondary);
       white-space: nowrap;
-      transition: background var(--transition-slow), border-color var(--transition-slow), color var(--transition-slow), box-shadow var(--transition-slow);
+      transition: background var(--transition-slow), color var(--transition-slow), box-shadow var(--transition-slow);
     }
 
     .anim-pill.lit {
-      border-color: rgba(252, 216, 70, 0.55);
-      background: rgba(255, 228, 150, 0.14);
-      color: #f8f3da;
-      box-shadow: 0 0 28px 6px rgba(255, 228, 150, 0.22);
+      background: var(--primary-yellow);
+      color: var(--on-primary);
+      box-shadow: var(--shadow-yellow);
     }
 
     .anim-hub {
@@ -380,17 +383,16 @@
       gap: 0.15rem;
       width: 108px;
       height: 96px;
-      border: 1px solid rgba(252, 216, 70, 0.3);
       border-radius: 16px;
       text-align: center;
-      background: rgba(40, 36, 24, 0.7);
+      background: var(--surface-container-lowest);
     }
 
     .hub-name {
       font-family: var(--font-display);
       font-size: 1rem;
       font-weight: 800;
-      color: #f8f3da;
+      color: var(--text-primary);
     }
 
     .hub-sub {
@@ -399,7 +401,7 @@
       font-weight: 800;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: rgba(252, 216, 70, 0.82);
+      color: var(--accent-gold);
     }
 
     .anim-status {
@@ -413,7 +415,7 @@
       margin-top: 0.25rem;
       font-size: 0.9rem;
       font-weight: 600;
-      color: rgba(248, 243, 218, 0.7);
+      color: var(--text-secondary);
       transition: color var(--transition-slow);
     }
 
@@ -422,16 +424,16 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: rgba(248, 243, 218, 0.25);
+      background: var(--text-light);
       transition: background var(--transition-slow), box-shadow var(--transition-slow);
     }
 
     .anim-stage.live .status-dot {
-      background: #7ee08a;
-      box-shadow: 0 0 0 4px rgba(126, 224, 138, 0.18);
+      background: var(--tertiary);
+      box-shadow: 0 0 0 4px rgba(60, 101, 49, 0.18);
     }
 
-    .anim-stage.live .anim-status { color: #f8f3da; }
+    .anim-stage.live .anim-status { color: var(--text-primary); }
 
     /* Vision flow */
 
@@ -725,7 +727,7 @@
 
       <header class="bkc-hero">
         <h1 class="bkc-title">Vision: Automatically Selecting the Best Known Configuration (auto-BKC)</h1>
-        <p class="bkc-byline">Lemonade Team: <a href="https://github.com/jeremyfowers">@jeremyfowers</a>, <a href="https://github.com/bitgamma">@bitgamma</a>, <a href="https://github.com/ramkrishna2910">@ramkrishna2910</a>, <a href="https://github.com/iswaryaalex">@iswaryaalex</a>, <a href="https://github.com/sawansri">@sawansri</a>, <a href="https://github.com/sreeram-11">@sreeram-11</a>, <a href="https://github.com/sofiageo">@sofiageo</a> &middot; October 14, 2026</p>
+        <p class="bkc-byline">Lemonade Team: <a href="https://github.com/jeremyfowers">@jeremyfowers</a>, <a href="https://github.com/bitgamma">@bitgamma</a>, <a href="https://github.com/ramkrishna2910">@ramkrishna2910</a>, <a href="https://github.com/iswaryaalex">@iswaryaalex</a>, <a href="https://github.com/sawansri">@sawansri</a>, <a href="https://github.com/sreeram-11">@sreeram-11</a>, <a href="https://github.com/sofiageo">@sofiageo</a>, <a href="https://github.com/meghsat">@meghsat</a> &middot; October 14, 2026</p>
       </header>
 
       <figure class="bkc-anim">
@@ -753,7 +755,7 @@
             <div class="anim-label">Engine</div>
             <div class="anim-pill" data-key="Halogen">Halogen</div>
             <div class="anim-pill" data-key="llama.cpp">llama.cpp</div>
-            <div class="anim-pill" data-key="vLLM">vLLM</div>
+            <div class="anim-pill" data-key="FastFlowLM">FastFlowLM</div>
             <div class="anim-pill" data-key="DwarfStar4">DwarfStar4</div>
           </div>
           <div class="anim-status"><span class="status-dot"></span><span id="anim-status-text">&nbsp;</span></div>
@@ -1033,10 +1035,10 @@
       const combos = [
         { agent: 'Hermes', model: 'Qwen3.8-Flash-Next', engine: 'Halogen' },
         { agent: 'Pi', model: 'Gemma 4', engine: 'llama.cpp' },
-        { agent: 'AnythingLLM', model: 'Qwen3.6', engine: 'vLLM' },
+        { agent: 'AnythingLLM', model: 'Qwen3.6', engine: 'FastFlowLM' },
         { agent: 'DeepSeek Harness', model: 'DeepSeek-V4-Flash', engine: 'DwarfStar4' },
       ];
-      const T = { agentHold: 500, travel: 700, hubHold: 1100, modelHold: 450, liveHold: 2600, fade: 600 };
+      const T = { agentHold: 500, travel: 800, hubHold: 1100, modelHold: 450, liveHold: 2600, fade: 600 };
       T.toHub = T.agentHold;
       T.atHub = T.toHub + T.travel;
       T.toModel = T.atHub + T.hubHold;
@@ -1049,39 +1051,38 @@
       const col = (name) => stage.querySelector(`[data-col="${name}"]`);
       const pill = (name, key) => col(name).querySelector(`[data-key="${key}"]`);
       const pills = (name) => [...col(name).querySelectorAll('.anim-pill')];
-      const el = (tag, attrs) => {
+      const el = (parent, tag, attrs) => {
         const node = document.createElementNS(NS, tag);
         Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
-        return svg.appendChild(node);
+        return parent.appendChild(node);
       };
 
-      el('defs', {}).innerHTML =
+      el(svg, 'defs', {}).innerHTML =
         '<filter id="hpRouterGlow" filterUnits="userSpaceOnUse" x="-40" y="-40" width="2000" height="2000">' +
           '<feGaussianBlur stdDeviation="8" result="blur"></feGaussianBlur>' +
           '<feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>' +
         '</filter>';
-      const baseWires = [...pills('agent'), ...pills('model')].map(() => el('path', { class: 'hp-router-wire' }));
+      const baseWires = [...pills('agent'), ...pills('model')].map(() => el(svg, 'path', { class: 'hp-router-wire' }));
       const legs = [0, 1, 2].map(() => ({
-        halo: el('path', { class: 'hp-router-flow-segment hp-router-flow-halo' }),
-        core: el('path', { class: 'hp-router-flow-segment hp-router-flow-core' }),
+        halo: el(svg, 'path', { class: 'hp-router-flow-segment hp-router-flow-halo' }),
+        core: el(svg, 'path', { class: 'hp-router-flow-segment hp-router-flow-core' }),
       }));
-      const route = el('path', { fill: 'none', stroke: 'none' });
-      const dot = el('circle', { class: 'hp-router-traveler-dot', r: 6, opacity: 0 });
+      const route = el(svg, 'path', { fill: 'none', stroke: 'none' });
 
       const anchors = (a, b) => {
         const s = stage.getBoundingClientRect();
         const ra = a.getBoundingClientRect();
         const rb = b.getBoundingClientRect();
-        const ca = { x: ra.left + ra.width / 2 - s.left, y: ra.top + ra.height / 2 - s.top };
-        const cb = { x: rb.left + rb.width / 2 - s.left, y: rb.top + rb.height / 2 - s.top };
         if (rb.left >= ra.right - 2) {
-          const p1 = { x: ra.right - s.left, y: ca.y }, p2 = { x: rb.left - s.left, y: cb.y };
+          const p1 = { x: ra.right - s.left, y: ra.top + ra.height / 2 - s.top };
+          const p2 = { x: rb.left - s.left, y: rb.top + rb.height / 2 - s.top };
           const d = (p2.x - p1.x) / 2;
-          return { ca, cb, p1, p2, wire: `M${p1.x},${p1.y} C${p1.x + d},${p1.y} ${p2.x - d},${p2.y} ${p2.x},${p2.y}` };
+          return { p1, p2, wire: `M${p1.x},${p1.y} C${p1.x + d},${p1.y} ${p2.x - d},${p2.y} ${p2.x},${p2.y}` };
         }
-        const p1 = { x: ca.x, y: ra.bottom - s.top }, p2 = { x: cb.x, y: rb.top - s.top };
+        const p1 = { x: ra.left + ra.width / 2 - s.left, y: ra.bottom - s.top };
+        const p2 = { x: rb.left + rb.width / 2 - s.left, y: rb.top - s.top };
         const d = (p2.y - p1.y) / 2;
-        return { ca, cb, p1, p2, wire: `M${p1.x},${p1.y} C${p1.x},${p1.y + d} ${p2.x},${p2.y - d} ${p2.x},${p2.y}` };
+        return { p1, p2, wire: `M${p1.x},${p1.y} C${p1.x},${p1.y + d} ${p2.x},${p2.y - d} ${p2.x},${p2.y}` };
       };
 
       let current = 0;
@@ -1095,7 +1096,8 @@
         const c = combos[current];
         const m = pill('model', c.model);
         const hops = [anchors(pill('agent', c.agent), hub), anchors(hub, m), anchors(m, pill('engine', c.engine))];
-        let d = `M${hops[0].ca.x},${hops[0].ca.y}`;
+        let d = `M${hops[0].p1.x},${hops[0].p1.y}`;
+        route.setAttribute('d', d);
         const stops = [0];
         const wires = [];
         hops.forEach((h, i) => {
@@ -1103,12 +1105,14 @@
           legs[i].core.setAttribute('d', h.wire);
           const wireLen = legs[i].core.getTotalLength();
           [legs[i].halo, legs[i].core].forEach((p) => p.setAttribute('stroke-dasharray', `${wireLen} ${wireLen}`));
-          d += ` L${h.p1.x},${h.p1.y}`;
-          route.setAttribute('d', d);
           const wireStart = route.getTotalLength();
-          d += ' ' + h.wire.replace(/^M[^C]*/, '') + ` L${h.cb.x},${h.cb.y}`;
+          d += ' ' + h.wire.replace(/^M[^C]*/, '');
           route.setAttribute('d', d);
-          wires.push({ start: wireStart, len: wireLen });
+          wires.push({ start: wireStart, len: wireLen, end: route.getTotalLength() });
+          if (hops[i + 1]) {
+            d += ` L${hops[i + 1].p1.x},${hops[i + 1].p1.y}`;
+            route.setAttribute('d', d);
+          }
           stops.push(route.getTotalLength());
         });
         geo = { stops, wires };
@@ -1120,10 +1124,9 @@
 
       const distanceAt = (t) => {
         const { stops } = geo;
-        const moves = [[T.toHub, 0], [T.toModel, 1], [T.toEngine, 2]];
+        const moves = [T.toHub, T.toModel, T.toEngine];
         for (let i = moves.length - 1; i >= 0; i--) {
-          const [start, leg] = moves[i];
-          if (t >= start) return stops[leg] + (stops[leg + 1] - stops[leg]) * ease(clamp01((t - start) / T.travel));
+          if (t >= moves[i]) return stops[i] + (stops[i + 1] - stops[i]) * ease(clamp01((t - moves[i]) / T.travel));
         }
         return 0;
       };
@@ -1140,6 +1143,7 @@
         const c = combos[current];
         const fade = 1 - ease(clamp01((t - T.fadeStart) / T.fade));
         const dist = distanceAt(t);
+        const reached = (i) => dist >= geo.wires[i].end - 1;
 
         legs.forEach((leg, i) => {
           const w = geo.wires[i];
@@ -1150,26 +1154,20 @@
           });
         });
 
-        const pt = route.getPointAtLength(dist);
-        dot.setAttribute('cx', pt.x);
-        dot.setAttribute('cy', pt.y);
-        dot.setAttribute('opacity', Math.min(ramp(t, 0, 250), 1 - ramp(t, T.atEngine - 300, 450)));
-
         const lit = fade > 0.5;
         pill('agent', c.agent).classList.toggle('lit', lit);
-        pill('model', c.model).classList.toggle('lit', lit && t >= T.atModel - 150);
-        pill('engine', c.engine).classList.toggle('lit', lit && t >= T.atEngine - 150);
+        pill('model', c.model).classList.toggle('lit', lit && reached(1));
+        pill('engine', c.engine).classList.toggle('lit', lit && reached(2));
         stage.classList.toggle('live', lit && t >= T.atEngine);
 
-        const hubOn = ramp(t, T.atHub - 150) * fade;
+        const hubOn = ramp(t, T.toHub + T.travel * 0.4) * fade;
         const think = t > T.atHub && t < T.toModel ? (1 - Math.cos(Math.PI * 2 * (t - T.atHub) / T.hubHold)) / 2 : 0;
         const glow = hubOn * (1 + 0.5 * think);
-        hub.style.boxShadow = `0 0 ${24 + 16 * glow}px ${4 + 6 * glow}px rgba(255, 228, 150, ${(0.2 * glow).toFixed(3)})`;
-        hub.style.borderColor = `rgba(252, 216, 70, ${(0.3 + 0.3 * hubOn).toFixed(3)})`;
+        hub.style.boxShadow = `0 0 ${24 + 16 * glow}px ${4 + 6 * glow}px rgba(252, 216, 70, ${(0.35 * glow).toFixed(3)})`;
 
         setStatus(
-          t < T.atHub ? `Agent selected: ${c.agent}` :
-          t < T.atModel ? 'Finding the best known configuration…' :
+          !reached(0) ? `Agent selected: ${c.agent}` :
+          !reached(1) ? 'Finding the best known configuration…' :
           t < T.atEngine ? `Model: ${c.model}` :
           `${c.model} on ${c.engine}. ${c.agent} is live.`
         );
@@ -1196,7 +1194,7 @@
         window.addEventListener('resize', layout);
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
           layout();
-          render(T.atEngine + 400);
+          render(T.atEngine + 500);
           return;
         }
         new IntersectionObserver(([entry]) => (entry.isIntersecting ? play() : stop())).observe(stage);
