@@ -280,11 +280,13 @@ void check_production_call_boundaries() {
         const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         const auto guard = source.find("if (backend.empty()) {");
         const auto guard_end = source.find("\n    }", guard);
-        const auto query = source.find("SystemInfo::get_supported_backends(\"" + stem + "\")", guard);
+        const std::string query_name = stem == "thinksound" ? "effects_.supported_backends" : "SystemInfo::get_supported_backends";
+        const auto query = source.find(query_name + "(\"" + stem + "\")", guard);
         const auto selection = source.find("first_supported_backend(", query);
         check(guard < query && query < selection && selection < guard_end && guard_end != std::string::npos,
               stem + " production supported query and selection stay inside empty-option branch");
-        const auto validation = source.find("RuntimeConfig::validate_backend_choice(\"" + stem + "\", backend)", guard_end);
+        const std::string validation_name = stem == "thinksound" ? "effects_.validate_backend" : "RuntimeConfig::validate_backend_choice";
+        const auto validation = source.find(validation_name + "(\"" + stem + "\", backend)", guard_end);
         const auto resolution = source.find("resolve_external_or_managed_binary(", validation);
         check(guard_end < validation && validation < resolution && resolution != std::string::npos &&
               source.find("bool /*do_not_upgrade*/") != std::string::npos,
@@ -292,7 +294,8 @@ void check_production_call_boundaries() {
         const auto loader = source.find("auto prepend_loader_path");
         const auto cuda = source.find("backend == \"cuda\"", loader);
         const auto prepend = source.find("prepend_loader_path(\"\")", cuda);
-        const auto additions = source.find("BackendUtils::apply_cuda_env_vars(env_vars, \"" + stem + "-server\")", prepend);
+        const std::string cuda_name = stem == "thinksound" ? "effects_.append_cuda" : "BackendUtils::apply_cuda_env_vars";
+        const auto additions = source.find(cuda_name + "(env_vars, \"" + stem + "-server\")", prepend);
         check(cuda < prepend && prepend < additions && additions != std::string::npos,
               stem + " production loader precedes CUDA additions with original log tag");
         check((source.find("backend == \"rocm\"", loader) != std::string::npos) == (stem != "openmoss") &&

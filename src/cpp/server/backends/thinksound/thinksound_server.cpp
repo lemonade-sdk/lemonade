@@ -1,7 +1,3 @@
-#include <algorithm>
-#include <cstdlib>
-#include <filesystem>
-#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_load_helpers.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
@@ -10,12 +6,10 @@
 #include "lemon/backends/thinksound/thinksound.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 #include "lemon/error_types.h"
-#include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/system_info.h"
+
+#include <algorithm>
+#include <filesystem>
 #include <lemon/utils/aixlog.hpp>
-#include "lemon/utils/path_utils.h"
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -40,7 +34,13 @@ InstallParams ThinkSoundServer::get_install_params(const std::string& backend, c
 ThinkSoundServer::ThinkSoundServer(const std::string& log_level,
                                    ModelManager* model_manager,
                                    BackendManager* backend_manager)
-    : WrappedServer("thinksound-server", log_level, model_manager, backend_manager) {
+    : ThinkSoundServer(log_level, model_manager, backend_manager,
+                       production_backend_effects(backend_manager, [this] { return choose_port(); })) {}
+
+ThinkSoundServer::ThinkSoundServer(const std::string& log_level, ModelManager* model_manager,
+                                 BackendManager* backend_manager, BackendEffects effects)
+    : WrappedServer("thinksound-server", log_level, model_manager, backend_manager),
+      effects_(std::move(effects)) {
     bind_legacy_operations(LegacyOperationProfile::ThinkSound, *this);
 }
 
@@ -51,21 +51,21 @@ void ThinkSoundServer::load(const std::string& model_name,
     LOG(INFO, "thinksound-server") << "Loading model: " << model_name << std::endl;
 
     const std::string model_path = model_info.resolved_path();
-    if (model_path.empty() || !std::filesystem::exists(model_path)) {
+    if (model_path.empty() || !effects_.exists(model_path)) {
         throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
     }
 
     std::string backend = options.get_option("thinksound_backend");
     if (backend.empty()) {
-        auto supported = SystemInfo::get_supported_backends("thinksound");
+        auto supported = effects_.supported_backends("thinksound");
         backend = first_supported_backend(
-            supported.backends, "ThinkSound audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
+            supported, "ThinkSound audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
     }
-    RuntimeConfig::validate_backend_choice("thinksound", backend);
+    effects_.validate_backend("thinksound", backend);
     const std::string exe_path = resolve_external_or_managed_binary(
-        *thinksound::spec(), backend, backend_binary_services(*backend_manager_));
+        *thinksound::spec(), backend, effects_.binary);
 
-    port_ = choose_port();
+    port_ = effects_.allocate_port();
     if (port_ == 0) {
         throw std::runtime_error("Failed to find an available port");
     }
@@ -84,29 +84,25 @@ void ThinkSoundServer::load(const std::string& model_name,
     // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
-    auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
+    auto prepend_loader_path = [this, &env_vars, &exe_dir](const std::string& extra_dirs) {
 #ifdef _WIN32
-        const char* inherited = std::getenv("PATH");
         constexpr bool windows = true;
 #else
-        const char* inherited = std::getenv("LD_LIBRARY_PATH");
         constexpr bool windows = false;
 #endif
         env_vars.push_back(make_loader_path_override(
-            exe_dir, extra_dirs,
-            inherited ? std::optional<std::string>(inherited) : std::nullopt, windows));
+            exe_dir, extra_dirs, effects_.inherited_loader(), windows));
     };
     if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
+        const std::string arch = effects_.rocm_arch();
         std::string dirs;
         if (!arch.empty()) {
-            dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(arch));
+            dirs = effects_.runtime_directories(arch);
         }
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {
         prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "thinksound-server");
+        effects_.append_cuda(env_vars, "thinksound-server");
     }
 
     LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
@@ -115,7 +111,7 @@ void ThinkSoundServer::load(const std::string& model_name,
     command.args = std::move(args);
     command.env = std::move(env_vars);
     command.port = port_;
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
+    start_server(effects_.make_process(ProcessOutput{is_debug(), false}, ""), command);
 }
 
 void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink& sink) {

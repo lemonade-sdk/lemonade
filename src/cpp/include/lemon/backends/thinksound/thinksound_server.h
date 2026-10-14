@@ -1,10 +1,11 @@
 #pragma once
 
+#include "lemon/backends/backend_effects.h"
 #include "lemon/backends/backend_registry.h"
-
-#include "lemon/wrapped_server.h"
-#include "lemon/server_capabilities.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/server_capabilities.h"
+#include "lemon/wrapped_server.h"
+
 #include <httplib.h>
 #include <string>
 
@@ -21,6 +22,9 @@ public:
                      ModelManager* model_manager,
                      BackendManager* backend_manager);
 
+    ThinkSoundServer(const std::string& log_level, ModelManager* model_manager,
+                     BackendManager* backend_manager, BackendEffects effects);
+
     void load(const std::string& model_name,
               const ModelInfo& model_info,
               const RecipeOptions& options,
@@ -29,6 +33,8 @@ public:
     // IAudioGenerationServer
     void audio_generations(const json& request, httplib::DataSink& sink) override;
 
+private:
+    BackendEffects effects_;
 };
 
 namespace thinksound {

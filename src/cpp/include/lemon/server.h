@@ -79,6 +79,7 @@ public:
     void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
 private:
+    friend struct MediaResponseTestHook;
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
     void setup_static_files(httplib::Server &web_server);
@@ -302,7 +303,7 @@ private:
     // Run a media generation into a buffer and respond: the bytes on success, or an
     // HTTP error if the backend produced nothing (it crashed / OOM'd / failed). This
     // avoids returning a 200 with an empty body that looks like a successful empty file.
-    void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
+    static void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
                               const std::function<void(httplib::DataSink&)>& generate);
 
     // Shared helpers for image multipart handlers
