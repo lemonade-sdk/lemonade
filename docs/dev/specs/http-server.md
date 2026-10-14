@@ -471,9 +471,9 @@ This section specifies what each route's text says. The generator prints each ro
 | Field | States | Never states |
 | --- | --- | --- |
 | `summary` | What the route does, as a verb phrase of at most 10 words, such as "Pause a job" | Support status, formats, the description |
-| `description` | What the route does and who uses it, in at most 3 sentences, third person present ("Loads a model...") | URLs, prefixes, aliases, auth, argument details or defaults, the page intro |
+| `description` | What the route does, and who uses it when that is not obvious, in at most 3 sentences, third person present ("Loads a model...") | URLs, prefixes, aliases, auth, argument details or defaults, the page intro |
 | `notes` | Behavior no argument or field can carry: error statuses ("A `400` answers ..."), side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description |
-| `RouteArg::description` | What the argument controls, its accepted values, and its default ("Defaults to `false`.") | Where the argument goes or whether it is required, the route's behavior |
+| `RouteArg::description` | What the argument controls, its accepted values, its default ("Defaults to `false`."), and when it is required if that depends on other arguments | Where the argument goes, the Required column, the route's behavior |
 | Schema property `description` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
 
