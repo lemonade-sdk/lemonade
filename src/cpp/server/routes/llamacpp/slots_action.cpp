@@ -71,13 +71,14 @@ public:
         RouteExample save;
         save.name = "save";
         save.format = ResponseFormat::Json;
-        // A chat capped by max_tokens leaves the same number of tokens in the slot on every run,
-        // so the count the restore example reads back matches the one this example saved.
+        // A chat with pinned sampling and a max_tokens cap leaves the same number of tokens in the
+        // slot on every run, so the count the restore example reads back matches the one saved.
         save.setup = {
             load_with_save_path,
             {"openai.chat_completions", "", ordered_json::parse(R"({
                 "model": "Qwen3-0.6B-GGUF",
                 "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+                "temperature": 0,
                 "max_tokens": 32
             })")},
         };

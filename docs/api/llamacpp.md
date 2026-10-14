@@ -297,7 +297,7 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       "filename": "my_conversation_cache.bin",
       "n_saved": 46,
       "n_written": 5277100,
-      "timings": {"save_ms": 4.175}
+      "timings": {"save_ms": 3.777}
     }
     ```
 
@@ -311,7 +311,7 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       "filename": "my_conversation_cache.bin",
       "n_restored": 46,
       "n_read": 5277100,
-      "timings": {"restore_ms": 0.814}
+      "timings": {"restore_ms": 0.879}
     }
     ```
 
