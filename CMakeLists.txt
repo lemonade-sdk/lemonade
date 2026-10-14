@@ -1050,6 +1050,7 @@ set(SOURCES_CORE
     src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
+    src/cpp/server/models/update_scan.cpp
     src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/models/scan_catalog.cpp
     src/cpp/server/models/registry_id.cpp
@@ -3064,6 +3065,20 @@ if(BUILD_TESTING AND EXISTS "${_REGISTRY_DOCUMENTS_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RegistryDocumentsTest CI ON COMMAND test_registry_documents)
+endif()
+
+# Update scanning: which models are eligible, and what a pass may settle.
+set(_UPDATE_SCAN_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_update_scan.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_UPDATE_SCAN_TEST_SRC}")
+    add_executable(test_update_scan
+        test/cpp/test_update_scan.cpp
+    )
+    target_link_libraries(test_update_scan PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(UpdateScanTest CI ON COMMAND test_update_scan)
 endif()
 
 set(_DOWNLOAD_PLAN_TEST_SRC

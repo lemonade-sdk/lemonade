@@ -23,6 +23,7 @@
 #include "models/download_progress.h"
 #include "models/registry_documents.h"
 #include "models/recipe_options_store.h"
+#include "models/update_scan.h"
 #include "recipe_options.h"
 
 namespace lemon {
@@ -322,11 +323,7 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-struct UpdateCheckResult {
-    std::vector<std::string> updated_models;
-    std::vector<std::string> up_to_date_models;
-    std::map<std::string, std::string> failed_models;
-};
+    using UpdateCheckResult = models::UpdateScanResult;
 
     // Check downloaded models for updates in their configured remote registry.
     // Fetches the latest commit SHA for each model's repo and compares it
@@ -617,6 +614,8 @@ private:
     mutable bool cache_valid_ = false;
 
     json get_sync_status_locked() const;
+    void publish_update_scan(const models::ScanDetermination& settled,
+                             models::UpdateScanResult& result);
     void rebuild_public_model_aliases_locked();
 };
 

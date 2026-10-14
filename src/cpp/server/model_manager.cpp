@@ -1427,408 +1427,74 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
-// Run-scoped cache of Hugging Face tree pages, keyed by repo/ref/subdir.
-using HfTreePageCache =
-    std::map<std::string, std::map<std::string, registry_files::HfFileMetadata>>;
-
-// Defined next to the Hugging Face snapshot-reuse helpers it wraps.
-static bool hf_selected_artifacts_unchanged(
-    const std::string& repo_id,
-    const std::string& active_ref,
-    const std::string& current_ref,
-    const fs::path& active_snapshot,
-    const std::vector<std::string>& selected_files,
-    const std::map<std::string, std::string>& headers,
-    HfTreePageCache* tree_cache);
-
+// The scan lives in models/update_scan.cpp. What stays here is what the scan may
+// not reach: the store it reads, the provenance file behind its fast path, and
+// the one store write that publishes the flags it settled.
 ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std::vector<std::string>& targets) {
     std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
 
-    if (update_check_override_) {
-        UpdateCheckResult res = update_check_override_(targets);
-        if (sync_phase_callback_) {
-            for (const auto& m : res.up_to_date_models) {
-                sync_phase_callback_("registry_check:" + m);
-            }
-            for (const auto& m : res.updated_models) {
-                sync_phase_callback_("registry_check:" + m);
-            }
-            for (const auto& [m, _] : res.failed_models) {
-                sync_phase_callback_("registry_check:" + m);
-            }
-        }
-        return res;
-    }
-
-    UpdateCheckResult result;
-
-    if (auto* cfg = RuntimeConfig::global(); cfg && cfg->offline()) {
-        LOG(DEBUG, "ModelManager")
-            << "Offline mode enabled, skipping model update check" << std::endl;
-        return result;
-    }
-
-    struct RepoEntry {
-        std::vector<std::string> model_names;
-        std::string repo_id;
-        std::string registry_source;
+    models::UpdateScanDeps deps;
+    deps.ensure_store = [this] { build_cache(); };
+    deps.snapshot = [this] { return std::atomic_load(&store_snapshot_); };
+    deps.hf_cache_dir = [this] { return get_hf_cache_dir(); };
+    deps.registry_source = [](const ModelInfo& info) { return effective_registry_source(info); };
+    deps.processed_snapshot_id = [](const fs::path& model_cache_dir,
+                                    const std::string& model_name,
+                                    const ModelInfo& info) {
+        return read_processed_registry_snapshot_id(model_cache_dir, model_name,
+                                                   registry_model_selection(info));
+    };
+    deps.cancel_requested = [this] {
+        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+        return sync_state_.cancel_requested;
+    };
+    deps.scan_override = update_check_override_;
+    deps.phase = sync_phase_callback_;
+    deps.publish = [this](const models::ScanDetermination& settled,
+                          models::UpdateScanResult& result) {
+        publish_update_scan(settled, result);
     };
 
-    std::unordered_map<std::string, RepoEntry> repos;
-    std::unordered_map<std::string, ModelInfo> candidate_models;
-    registry_files::DeterminationTracker determination_tracker;
-    // Fast path only — never the comparison baseline (see active_local_snapshot).
-    std::unordered_map<std::string, std::string> processed_snapshots;
+    return models::run_update_scan(deps, targets);
+}
 
-    build_cache();
+void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
+                                       models::UpdateScanResult& result) {
+    StoreWrite store_write(*this);
 
-    {
-        auto snapshot = std::atomic_load(&store_snapshot_);
-        std::unordered_set<std::string> target_canonicals;
-        for (const auto& t : targets) {
-            std::string canonical_name = snapshot->canonical_for(t);
-            target_canonicals.insert(canonical_name.empty() ? t : canonical_name);
+    for (auto& [name, info] : models_cache_) {
+        if (settled.verified.count(name) == 0) {
+            continue;
         }
+        auto pub_it = canonical_public_names_.find(name);
+        const std::string pub_name =
+            pub_it != canonical_public_names_.end() ? pub_it->second : name;
+        if (result.failed_models.find(pub_name) != result.failed_models.end()) {
+            continue;
+        }
+        info.update_available = settled.updated.count(name) != 0;
+    }
 
-        for (const auto& [name, info] : snapshot->models) {
-            if (!info.downloaded) {
-                continue;
-            }
-
-            if (!target_canonicals.empty() && target_canonicals.find(name) == target_canonicals.end()) {
-                continue;
-            }
-
-            // FLM and cloud models are managed by their own backends.
-            if (info.recipe == "flm" || info.recipe == "cloud") {
-                continue;
-            }
-
-            // Local-path, local-upload and extra-directory models have no
-            // remote registry to check.
-            if (!info.source.empty()) {
-                continue;
-            }
-
-            const std::string main_cp = info.checkpoint("main");
-            if (main_cp.empty()) {
-                continue;
-            }
-
-            const std::string main_repo_id = repo_id_from_checkpoint(main_cp);
-            if (main_repo_id.empty()) {
-                continue;
-            }
-
-            const std::string source = effective_registry_source(info);
-
-            candidate_models.emplace(name, info);
-
-            auto add_repo_entry = [&](const std::string& repo_id) {
-                auto& entry = repos[source + ":" + repo_id];
-                entry.repo_id = repo_id;
-                entry.registry_source = source;
-                entry.model_names.push_back(name);
-                determination_tracker.add_pending(name);
-            };
-            add_repo_entry(main_repo_id);
-
-            // Auxiliary checkpoints can live in other repositories; those are
-            // verified under their own repository entry.
-            for (const auto& [repo_id, variants] :
-                 registry_files::group_aux_checkpoint_variants(info.checkpoints)) {
-                (void)variants;
-                if (repo_id != main_repo_id) {
-                    add_repo_entry(repo_id);
-                }
-            }
-
-            const fs::path cache_path =
-                path_from_utf8(get_hf_cache_dir()) /
-                repo_id_to_cache_dir_name(main_repo_id, source);
-            processed_snapshots[name] = read_processed_registry_snapshot_id(
-                cache_path, name, registry_model_selection(info));
+    for (const auto& name : settled.updated) {
+        auto pub_it = canonical_public_names_.find(name);
+        const std::string pub_name =
+            pub_it != canonical_public_names_.end() ? pub_it->second : name;
+        if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+            result.updated_models.push_back(pub_name);
         }
     }
 
-    std::unordered_set<std::string> updated_models;
-    HfTreePageCache tree_cache;
-
-    for (auto& [key, entry] : repos) {
-        (void)key;
-
-        {
-            std::lock_guard<std::mutex> lock(sync_state_.mutex);
-            if (sync_state_.cancel_requested) {
-                break;
-            }
+    for (const auto& name : settled.examined) {
+        if (settled.verified.count(name) == 0 || settled.updated.count(name) != 0) {
+            continue;
         }
-
-        try {
-            const auto source =
-                parse_remote_registry_source(entry.registry_source);
-            const auto& registry = model_registry(source);
-
-            LOG(DEBUG, "ModelManager")
-                << "Checking for updates on "
-                << remote_registry_display_name(source)
-                << ": " << entry.repo_id << std::endl;
-
-            for (const auto& model_name : entry.model_names) {
-                if (sync_phase_callback_) {
-                    sync_phase_callback_("registry_check:" + model_name);
-                }
-            }
-
-            const RegistryRepository latest =
-                registry.fetch_repository(entry.repo_id);
-
-            if (latest.snapshot_id.empty()) {
-                for (const auto& model_name : entry.model_names) {
-                    std::string pub_name = get_public_model_name(model_name);
-                    result.failed_models[pub_name] = "Empty snapshot returned from registry";
-                }
-                continue;
-            }
-
-            // Only Hugging Face pins refs/main to a previous snapshot when the
-            // selected artifacts are unchanged, so only it can distinguish a
-            // commit that touches this model from one that does not. ModelScope
-            // snapshots are tree fingerprints with no commit pin, so they keep
-            // the snapshot-id comparison.
-            const bool artifact_aware = source == models::huggingface_descriptor().id;
-            const fs::path cache_path =
-                path_from_utf8(get_hf_cache_dir()) /
-                repo_id_to_cache_dir_name(entry.repo_id, entry.registry_source);
-            const auto headers =
-                artifact_aware ? registry.auth_headers()
-                               : std::map<std::string, std::string>{};
-
-            std::vector<std::string> latest_files;
-            if (artifact_aware) {
-                for (const auto& file : latest.files) {
-                    if (!file.directory) latest_files.push_back(file.path);
-                }
-            }
-
-            // Previous revision's file listing, fetched lazily per distinct
-            // active ref. A ref that failed to fetch stays failed, so every
-            // model sharing it consistently assumes changed too.
-            std::map<std::string, std::vector<std::string>> previous_files_by_ref;
-            std::set<std::string> previous_files_unavailable;
-
-            size_t updated_variants = 0;
-            for (const auto& model_name : entry.model_names) {
-                const ModelInfo& info = candidate_models.at(model_name);
-                const bool is_main_repo =
-                    entry.repo_id == repo_id_from_checkpoint(info.checkpoint("main"));
-
-                // Fast path: pull already processed this exact remote state.
-                if (is_main_repo) {
-                    const auto processed_it = processed_snapshots.find(model_name);
-                    if (processed_it != processed_snapshots.end() &&
-                        !processed_it->second.empty() &&
-                        processed_it->second == latest.snapshot_id) {
-                        determination_tracker.mark_determined(model_name);
-                        continue;
-                    }
-                }
-
-                // The comparison baseline is the snapshot on disk for THIS
-                // repository, never the processed-at-pull sha.
-                std::string resolved;
-                if (is_main_repo) {
-                    resolved = info.resolved_path("main");
-                } else {
-                    for (const auto& [role, checkpoint] : info.checkpoints) {
-                        if (role == "main" || role == "npu_cache") {
-                            continue;
-                        }
-                        if (repo_id_from_checkpoint(checkpoint) == entry.repo_id) {
-                            resolved = info.resolved_path(role);
-                            break;
-                        }
-                    }
-                }
-
-                const std::string active =
-                    registry_files::active_local_snapshot(resolved, cache_path);
-                if (!active.empty() && active == latest.snapshot_id) {
-                    determination_tracker.mark_determined(model_name);
-                    continue;
-                }
-
-                // A new commit on a shared multi-artifact repository doesn't
-                // imply this model changed (could be a README or a sibling
-                // variant) — compare the artifacts pull would actually
-                // download before advertising one. Any indeterminate result,
-                // including a repository with no local baseline, assumes changed.
-                bool changed = true;
-                if (artifact_aware && !active.empty()) {
-                    try {
-                        std::vector<std::string> selected;
-                        if (is_main_repo) {
-                            if (previous_files_unavailable.count(active)) {
-                                throw std::runtime_error(
-                                    "Previous revision listing unavailable for " + entry.repo_id);
-                            }
-                            auto previous_it = previous_files_by_ref.find(active);
-                            if (previous_it == previous_files_by_ref.end()) {
-                                try {
-                                    const RegistryRepository previous_repo =
-                                        registry.fetch_repository(entry.repo_id, active);
-                                    std::vector<std::string> previous_files;
-                                    for (const auto& file : previous_repo.files) {
-                                        if (!file.directory) previous_files.push_back(file.path);
-                                    }
-                                    previous_it = previous_files_by_ref
-                                                      .emplace(active, std::move(previous_files))
-                                                      .first;
-                                } catch (...) {
-                                    previous_files_unavailable.insert(active);
-                                    throw;
-                                }
-                            }
-                            selected = registry_files::select_main_repo_files_union(
-                                entry.repo_id, info.recipe,
-                                variant_from_checkpoint(info.checkpoint("main")),
-                                previous_it->second, latest_files);
-                        }
-                        const auto aux_variants =
-                            registry_files::group_aux_checkpoint_variants(info.checkpoints);
-                        const auto aux_it = aux_variants.find(entry.repo_id);
-                        if (aux_it != aux_variants.end()) {
-                            selected.insert(selected.end(),
-                                            aux_it->second.begin(), aux_it->second.end());
-                        }
-
-                        if (!selected.empty() &&
-                            hf_selected_artifacts_unchanged(
-                                entry.repo_id, active, latest.snapshot_id,
-                                cache_path / "snapshots" / active, selected, headers,
-                                &tree_cache)) {
-                            changed = false;
-                            LOG(DEBUG, "ModelManager")
-                                << "Skipping update for " << model_name
-                                << ": artifacts unchanged in "
-                                << latest.snapshot_id.substr(0, 18) << ", keeping "
-                                << active.substr(0, 18) << std::endl;
-                        }
-                    } catch (const std::exception& e) {
-                        LOG(DEBUG, "ModelManager")
-                            << "Artifact comparison failed for " << model_name
-                            << ", assuming changed: " << e.what() << std::endl;
-                    } catch (...) {
-                        LOG(DEBUG, "ModelManager")
-                            << "Artifact comparison failed for " << model_name
-                            << ", assuming changed" << std::endl;
-                    }
-                } else if (active.empty()) {
-                    LOG(DEBUG, "ModelManager")
-                        << "No local baseline for " << model_name << " in "
-                        << entry.repo_id << ", assuming changed" << std::endl;
-                }
-
-                // Only a completed determination may clear an update flag
-                // discovered earlier.
-                determination_tracker.mark_determined(model_name);
-                if (changed) {
-                    updated_models.insert(model_name);
-                    ++updated_variants;
-                }
-            }
-
-            if (updated_variants > 0) {
-                LOG(INFO, "ModelManager")
-                    << "Update available for " << entry.repo_id
-                    << " on " << remote_registry_display_name(source)
-                    << ": latest=" << latest.snapshot_id.substr(0, 18)
-                    << " (" << updated_variants << " variant(s))" << std::endl;
-            }
-
-        } catch (const RegistryNotFoundError& e) {
-            LOG(DEBUG, "ModelManager")
-                << e.what() << ", skipping update check" << std::endl;
-            auto snapshot = std::atomic_load(&store_snapshot_);
-            for (const auto& model_name : entry.model_names) {
-                std::string pub_name = snapshot->public_name_for(model_name);
-                if (pub_name.empty()) {
-                    pub_name = model_name;
-                }
-                result.failed_models[pub_name] = e.what();
-            }
-
-        } catch (const std::exception& e) {
-            LOG(WARNING, "ModelManager")
-                << "Failed to check updates for "
-                << entry.repo_id
-                << " on " << entry.registry_source
-                << ": " << e.what() << std::endl;
-            auto snapshot = std::atomic_load(&store_snapshot_);
-            for (const auto& model_name : entry.model_names) {
-                std::string pub_name = snapshot->public_name_for(model_name);
-                if (pub_name.empty()) {
-                    pub_name = model_name;
-                }
-                result.failed_models[pub_name] = e.what();
-            }
+        auto pub_it = canonical_public_names_.find(name);
+        const std::string pub_name =
+            pub_it != canonical_public_names_.end() ? pub_it->second : name;
+        if (result.failed_models.find(pub_name) == result.failed_models.end()) {
+            result.up_to_date_models.push_back(pub_name);
         }
     }
-
-    // Writes update_available into the cached entries, so it publishes on release.
-    {
-        StoreWrite store_write(*this);
-
-        for (auto& [name, info] : models_cache_) {
-            if (determination_tracker.is_verified(name)) {
-                auto pub_it = canonical_public_names_.find(name);
-                const std::string pub_name =
-                    pub_it != canonical_public_names_.end()
-                        ? pub_it->second
-                        : name;
-                if (result.failed_models.find(pub_name) == result.failed_models.end()) {
-                    info.update_available =
-                        updated_models.count(name) != 0;
-                }
-            }
-        }
-
-        for (const auto& name : updated_models) {
-            auto pub_it = canonical_public_names_.find(name);
-            const std::string pub_name =
-                pub_it != canonical_public_names_.end()
-                    ? pub_it->second
-                    : name;
-            if (result.failed_models.find(pub_name) == result.failed_models.end()) {
-                result.updated_models.push_back(pub_name);
-            }
-        }
-
-        for (const auto& [name, _] : candidate_models) {
-            if (determination_tracker.is_verified(name) && updated_models.count(name) == 0) {
-                auto pub_it = canonical_public_names_.find(name);
-                const std::string pub_name =
-                    pub_it != canonical_public_names_.end()
-                        ? pub_it->second
-                        : name;
-                if (result.failed_models.find(pub_name) == result.failed_models.end()) {
-                    result.up_to_date_models.push_back(pub_name);
-                }
-            }
-        }
-    }
-
-    std::sort(result.updated_models.begin(), result.updated_models.end());
-    std::sort(result.up_to_date_models.begin(), result.up_to_date_models.end());
-
-    if (!result.updated_models.empty()) {
-        LOG(INFO, "ModelManager")
-            << "Updates available for "
-            << result.updated_models.size()
-            << " model(s)" << std::endl;
-    }
-
-    return result;
 }
 
 bool ModelManager::should_auto_update(const ModelInfo& info) const {
@@ -4462,136 +4128,6 @@ void ModelManager::download_model(const std::string& model_name,
 }
 
 
-static registry_files::HfFileMetadata hf_file_metadata_from_tree_file(const json& file) {
-    registry_files::HfFileMetadata entry;
-    if (file.contains("size") && file["size"].is_number_unsigned()) {
-        entry.size = file["size"].get<size_t>();
-    }
-
-    if (file.contains("lfs") && file["lfs"].is_object()) {
-        const auto& lfs = file["lfs"];
-        if (lfs.contains("size") && lfs["size"].is_number()) {
-            entry.size = lfs["size"].get<size_t>();
-        }
-        if (lfs.contains("oid") && lfs["oid"].is_string()) {
-            entry.hash_algorithm = "sha256";
-            entry.hash_value = lfs["oid"].get<std::string>();
-            entry.content_id = "lfs:" + entry.hash_value;
-        }
-        return entry;
-    }
-
-    if (file.contains("oid") && file["oid"].is_string()) {
-        entry.hash_algorithm = "git-sha1";
-        entry.hash_value = file["oid"].get<std::string>();
-        entry.content_id = "git:" + entry.hash_value;
-    }
-
-    return entry;
-}
-
-static std::map<std::string, registry_files::HfFileMetadata> fetch_hf_file_metadata_for_ref(
-    const std::string& repo_id,
-    const std::string& ref,
-    const std::vector<std::string>& selected_files,
-    const std::map<std::string, std::string>& headers,
-    HfTreePageCache* tree_cache) {
-    if (repo_id.empty() || ref.empty() || selected_files.empty()) {
-        return {};
-    }
-
-    std::set<std::string> subdirs_to_fetch;
-    subdirs_to_fetch.insert("");
-
-    for (const auto& filename : selected_files) {
-        auto last_slash_pos = filename.rfind('/');
-        if (last_slash_pos != std::string::npos) {
-            subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
-        }
-    }
-
-    std::string hf_endpoint = "https://huggingface.co";
-    if (const char* configured = std::getenv("HF_ENDPOINT"); configured && configured[0]) {
-        hf_endpoint = configured;
-        while (!hf_endpoint.empty() && hf_endpoint.back() == '/') hf_endpoint.pop_back();
-    }
-
-    // Full page entries, unfiltered, so a cached page serves every model
-    // selecting from it; selection happens once at the end.
-    std::map<std::string, registry_files::HfFileMetadata> tree_entries;
-    for (const auto& subdir : subdirs_to_fetch) {
-        if (tree_cache) {
-            const auto cached = tree_cache->find(repo_id + '\n' + ref + '\n' + subdir);
-            if (cached != tree_cache->end()) {
-                tree_entries.insert(cached->second.begin(), cached->second.end());
-                continue;
-            }
-        }
-
-        std::string tree_url = hf_endpoint + "/api/models/" + repo_id + "/tree/" + ref;
-        if (!subdir.empty()) {
-            tree_url += "/" + subdir;
-        }
-
-        auto tree_response = HttpClient::get(tree_url, headers);
-        if (tree_response.status_code != 200) {
-            LOG(DEBUG, "ModelManager") << "Could not fetch Hugging Face tree metadata for "
-                                       << repo_id << " at " << ref << std::endl;
-            continue;
-        }
-
-        auto tree_info = JsonUtils::parse(tree_response.body);
-        if (!tree_info.is_array()) {
-            continue;
-        }
-
-        std::map<std::string, registry_files::HfFileMetadata> page;
-        for (const auto& file : tree_info) {
-            if (!file.contains("path") || !file["path"].is_string()) {
-                continue;
-            }
-            page[file["path"].get<std::string>()] = hf_file_metadata_from_tree_file(file);
-        }
-        if (tree_cache) {
-            tree_cache->emplace(repo_id + '\n' + ref + '\n' + subdir, page);
-        }
-        tree_entries.insert(page.begin(), page.end());
-    }
-
-    return registry_files::select_metadata(repo_id, selected_files, tree_entries);
-}
-
-// True when the selected artifacts are byte-identical between the active local
-// snapshot and the new upstream revision. Any failure — network, filesystem,
-// missing metadata — returns false ("assume changed"): an indeterminate check
-// must never hide an update.
-static bool hf_selected_artifacts_unchanged(
-    const std::string& repo_id,
-    const std::string& active_ref,
-    const std::string& current_ref,
-    const fs::path& active_snapshot,
-    const std::vector<std::string>& selected_files,
-    const std::map<std::string, std::string>& headers,
-    HfTreePageCache* tree_cache) {
-    if (repo_id.empty() || active_ref.empty() || current_ref.empty() ||
-        active_ref == current_ref || selected_files.empty()) {
-        return false;
-    }
-
-    try {
-        const auto current_metadata =
-            fetch_hf_file_metadata_for_ref(repo_id, current_ref, selected_files, headers,
-                                           tree_cache);
-        const auto previous_metadata =
-            fetch_hf_file_metadata_for_ref(repo_id, active_ref, selected_files, headers,
-                                           tree_cache);
-        return registry_files::can_reuse_previous_hf_snapshot(
-            repo_id, selected_files, active_snapshot, current_metadata, previous_metadata);
-    } catch (...) {
-        return false;
-    }
-}
-
 static void remove_unused_hf_snapshot(const fs::path& cache_path,
                                       const std::string& snapshot_path,
                                       const std::string& active_ref) {
@@ -4788,9 +4324,9 @@ void ModelManager::download_from_registry(const ModelInfo& info,
                 }
             }
 
-            const auto current_metadata = fetch_hf_file_metadata_for_ref(
+            const auto current_metadata = registry_files::fetch_file_metadata_for_ref(
                 repo_id, current_ref, comparison_files, headers, nullptr);
-            const auto previous_metadata = fetch_hf_file_metadata_for_ref(
+            const auto previous_metadata = registry_files::fetch_file_metadata_for_ref(
                 repo_id, previous_ref, comparison_files, headers, nullptr);
             const fs::path previous_snapshot =
                 repo_cache_paths.at(repo_id) / "snapshots" / previous_ref;

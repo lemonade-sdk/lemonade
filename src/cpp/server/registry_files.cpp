@@ -5,11 +5,17 @@
 #include <lemon/gguf_shard_utils.h>
 #include <lemon/hf_variants.h>
 #include <lemon/models/checkpoint_grammar.h>
+#include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/http_client.h>
+#include <lemon/utils/json_utils.h>
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <set>
+#include <string>
 
 namespace fs = std::filesystem;
 
@@ -402,6 +408,132 @@ bool can_reuse_previous_hf_snapshot(
     }
 
     return true;
+}
+
+static HfFileMetadata hf_file_metadata_from_tree_file(const nlohmann::json& file) {
+    HfFileMetadata entry;
+    if (file.contains("size") && file["size"].is_number_unsigned()) {
+        entry.size = file["size"].get<size_t>();
+    }
+
+    if (file.contains("lfs") && file["lfs"].is_object()) {
+        const auto& lfs = file["lfs"];
+        if (lfs.contains("size") && lfs["size"].is_number()) {
+            entry.size = lfs["size"].get<size_t>();
+        }
+        if (lfs.contains("oid") && lfs["oid"].is_string()) {
+            entry.hash_algorithm = "sha256";
+            entry.hash_value = lfs["oid"].get<std::string>();
+            entry.content_id = "lfs:" + entry.hash_value;
+        }
+        return entry;
+    }
+
+    if (file.contains("oid") && file["oid"].is_string()) {
+        entry.hash_algorithm = "git-sha1";
+        entry.hash_value = file["oid"].get<std::string>();
+        entry.content_id = "git:" + entry.hash_value;
+    }
+
+    return entry;
+}
+
+std::map<std::string, HfFileMetadata> fetch_file_metadata_for_ref(
+    const std::string& repo_id,
+    const std::string& ref,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache) {
+    if (repo_id.empty() || ref.empty() || selected_files.empty()) {
+        return {};
+    }
+
+    std::set<std::string> subdirs_to_fetch;
+    subdirs_to_fetch.insert("");
+
+    for (const auto& filename : selected_files) {
+        auto last_slash_pos = filename.rfind('/');
+        if (last_slash_pos != std::string::npos) {
+            subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
+        }
+    }
+
+    std::string hf_endpoint = "https://huggingface.co";
+    if (const char* configured = std::getenv("HF_ENDPOINT"); configured && configured[0]) {
+        hf_endpoint = configured;
+        while (!hf_endpoint.empty() && hf_endpoint.back() == '/') hf_endpoint.pop_back();
+    }
+
+    // Full page entries, unfiltered, so a cached page serves every model
+    // selecting from it; selection happens once at the end.
+    std::map<std::string, registry_files::HfFileMetadata> tree_entries;
+    for (const auto& subdir : subdirs_to_fetch) {
+        if (tree_cache) {
+            const auto cached = tree_cache->find(repo_id + '\n' + ref + '\n' + subdir);
+            if (cached != tree_cache->end()) {
+                tree_entries.insert(cached->second.begin(), cached->second.end());
+                continue;
+            }
+        }
+
+        std::string tree_url = hf_endpoint + "/api/models/" + repo_id + "/tree/" + ref;
+        if (!subdir.empty()) {
+            tree_url += "/" + subdir;
+        }
+
+        auto tree_response = HttpClient::get(tree_url, headers);
+        if (tree_response.status_code != 200) {
+            LOG(DEBUG, "ModelManager") << "Could not fetch Hugging Face tree metadata for "
+                                       << repo_id << " at " << ref << std::endl;
+            continue;
+        }
+
+        auto tree_info = JsonUtils::parse(tree_response.body);
+        if (!tree_info.is_array()) {
+            continue;
+        }
+
+        std::map<std::string, registry_files::HfFileMetadata> page;
+        for (const auto& file : tree_info) {
+            if (!file.contains("path") || !file["path"].is_string()) {
+                continue;
+            }
+            page[file["path"].get<std::string>()] = hf_file_metadata_from_tree_file(file);
+        }
+        if (tree_cache) {
+            tree_cache->emplace(repo_id + '\n' + ref + '\n' + subdir, page);
+        }
+        tree_entries.insert(page.begin(), page.end());
+    }
+
+    return select_metadata(repo_id, selected_files, tree_entries);
+}
+
+bool selected_artifacts_unchanged(
+    const std::string& repo_id,
+    const std::string& active_ref,
+    const std::string& current_ref,
+    const fs::path& active_snapshot,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache) {
+    if (repo_id.empty() || active_ref.empty() || current_ref.empty() ||
+        active_ref == current_ref || selected_files.empty()) {
+        return false;
+    }
+
+    try {
+        const auto current_metadata =
+            fetch_file_metadata_for_ref(repo_id, current_ref, selected_files, headers,
+                                           tree_cache);
+        const auto previous_metadata =
+            fetch_file_metadata_for_ref(repo_id, active_ref, selected_files, headers,
+                                           tree_cache);
+        return can_reuse_previous_hf_snapshot(
+            repo_id, selected_files, active_snapshot, current_metadata, previous_metadata);
+    } catch (...) {
+        return false;
+    }
 }
 
 }  // namespace registry_files
