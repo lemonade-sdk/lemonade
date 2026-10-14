@@ -447,7 +447,7 @@ This section specifies how `docs/api` is generated from the routes, including re
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page.
-3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, every prefixed path and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Example request and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
+3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, the route's other paths and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Example request and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
 4. Fills the Example request and Response format sections from the response cache, running each example's setup and request against lemond only when its cache entry is invalid.
 
 Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
@@ -463,6 +463,29 @@ The Example request section has PowerShell and Bash tabs for each of the route's
 - **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
 - **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are.
 - **Paths.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, and the recording machine's home directory as `~`.
+
+### Route Documentation Contract
+
+This section specifies what each route's text says. The generator prints each route's heading, status badge, URL, aliases, auth requirement, Parameters table and recorded examples, so no text field restates them. A `Quad` route is documented only at its `/v1/` URL; the other prefixes stay undocumented and serve existing clients.
+
+| Field | States | Never states |
+| --- | --- | --- |
+| `summary` | What the route does, as a verb phrase of at most 10 words, such as "Pause a job" | Support status, formats, the description |
+| `description` | What the route does and who uses it, in at most 3 sentences, third person present ("Loads a model...") | URLs, prefixes, aliases, auth, argument details or defaults, the page intro |
+| `notes` | Behavior no argument or field can carry: error statuses ("A `400` answers ..."), side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description |
+| `RouteArg::description` | What the argument controls, its accepted values, and its default ("Defaults to `false`.") | Where the argument goes or whether it is required, the route's behavior |
+| Schema property `description` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
+| `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
+
+These rules apply across the fields:
+
+1. Each fact appears once in a route's section; other text refers to it.
+2. A behavior claim matches the handler code, or a run of the route, before it is written.
+3. A URL uses the `/v1/` form, and never `/api/v0/`, `/api/v1/` or `/v0/`.
+4. Identifiers, values and placeholders such as `<PROVIDER>` are in backticks.
+5. A mention of another route links to its section.
+
+A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
 
 ### Response Cache
 
@@ -483,6 +506,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
+- a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
 - an example names an argument the route does not have or a format not in `responses`, a route with several examples leaves one unnamed or repeats a name, a `setup` step names a route or example that does not exist, or a `$<route id>` value names a route that did not run during setup
 
 The author fixes it by running the generator locally and committing the result. The weekly backend-bump workflows (`validate_llamacpp.yml`, `validate_sdcpp.yml`, `validate_vllm.yml`) run each new version on self-hosted runners; their runner job also runs the generator for the entries the bump invalidated, and the PR the workflow opens includes the updated cache.
@@ -498,7 +522,7 @@ The route in [Complete Example](#complete-example) generates this region of open
 
 Generates the next assistant message for a conversation.
 
-Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/chat/completions`. Requires `LEMONADE_API_KEY` when it is set.
+Requires `LEMONADE_API_KEY` when it is set.
 
 ### Parameters
 
