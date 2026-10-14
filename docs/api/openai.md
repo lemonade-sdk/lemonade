@@ -97,7 +97,7 @@ curl -X POST http://localhost:13305/v1/chat/completions \
 }
 ```
 
-### Server-side tools
+### Server-Side Tools
 
 Omni collection orchestration is a Lemonade extension to the Chat Completions API; requests to other models are unaffected.
 
@@ -1259,7 +1259,7 @@ A typical workflow is to generate an image first, then upscale it:
 **Field Descriptions:**
 
 - `created` - Unix timestamp of when the upscaled image was generated
-- `data` - Array containing the upscaled image
+- `data` - The upscaled image.
   - `b64_json` - Base64-encoded PNG of the upscaled image
 <!-- END GENERATED: openai.images_upscale -->
 
@@ -1378,9 +1378,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Model aliases are listed too, each as a copy of its target model with the alias as its `id`.
 
-With cloud providers configured, their models are listed too, with `recipe: "cloud"`, a `cloud_provider` field and a provider-prefixed id such as `fireworks.kimi-k2p5`, and they accept chat completions and completions requests; see [Cloud Offload](../guide/configuration/cloud.md).
+With cloud providers configured, their models are listed too, with `recipe: "cloud"`, a `cloud_provider` field and a provider-prefixed id such as `fireworks.kimi-k2p5`. Models of `openai`-wire providers accept chat completions and completions requests; `anthropic`-wire providers are served through [`POST /v1/messages`](./anthropic.md#post-v1messages). See [Cloud Offload](../guide/configuration/cloud.md).
 
-`HEAD` answers `200` with no body.
+`HEAD` returns `200 OK` with an empty body.
 
 ### Example request
 
@@ -1638,19 +1638,19 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `downloaded` - Whether the model is downloaded.
   - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
   - `suggested` - Whether the model is recommended for general use.
-  - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list.
+  - `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
   - `image_defaults` - Image models only: default generation parameters.
-    - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
-    - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
-    - `width` - Default image width in pixels
-    - `height` - Default image height in pixels
-    - `soft_pixel_cap` - Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.
+    - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
+    - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
+    - `width` - Default image width in pixels.
+    - `height` - Default image height in pixels.
+    - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
   - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
-  - `checkpoints` - Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.
-  - `source` - Where the model came from: a registry name, local_upload, local_path or extra_models_dir.
-  - `registry_source` - Remote registry the checkpoint downloads from: huggingface or modelscope.
-  - `recipe_options` - Options saved for this model in recipe_options.json.
+  - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
+  - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
+  - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
+  - `recipe_options` - Options saved for this model in `recipe_options.json`.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
@@ -1809,19 +1809,19 @@ An unknown model answers `404` with `code` `model_not_found`.
 - `downloaded` - Whether the model is downloaded.
 - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
 - `suggested` - Whether the model is recommended for general use.
-- `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list.
+- `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
 - `image_defaults` - Image models only: default generation parameters.
-  - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
-  - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
-  - `width` - Default image width in pixels
-  - `height` - Default image height in pixels
-  - `soft_pixel_cap` - Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.
+  - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
+  - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
+  - `width` - Default image width in pixels.
+  - `height` - Default image height in pixels.
+  - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
 - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
-- `checkpoints` - Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.
-- `source` - Where the model came from: a registry name, local_upload, local_path or extra_models_dir.
-- `registry_source` - Remote registry the checkpoint downloads from: huggingface or modelscope.
-- `recipe_options` - Options saved for this model in recipe_options.json.
+- `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
+- `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
+- `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
+- `recipe_options` - Options saved for this model in `recipe_options.json`.
 - `cloud_provider` - Cloud models only: the provider that serves the model.
 - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
 - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.

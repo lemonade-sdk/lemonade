@@ -259,7 +259,7 @@ ordered_json chat_response_schema(bool line) {
         "required": ["model", "created_at", "done"],
         "properties": {
             "model": {"type": "string"},
-            "created_at": {"type": "string", "description": "Always 2024-01-01T00:00:00Z."},
+            "created_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
             "message": {
                 "type": "object",
                 "required": ["role", "content"],
@@ -271,7 +271,7 @@ ordered_json chat_response_schema(bool line) {
                 }
             },
             "done": {"type": "boolean"},
-            "done_reason": {"type": "string", "description": "stop, length, tool_calls, or unload after an unload request."},
+            "done_reason": {"type": "string", "description": "`stop`, `length`, `tool_calls`, or `unload` after an unload request."},
             "prompt_eval_count": {"type": "integer", "description": "Prompt tokens."},
             "eval_count": {"type": "integer", "description": "Generated tokens."},
             "total_duration": {"type": "integer", "description": "Always 0."},

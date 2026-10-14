@@ -32,7 +32,7 @@ The body is one JSON-RPC message or a batch array of them. The reply is `200` wi
 
 The MCP specification mandates one endpoint URL per server, so `/mcp` is the only one.
 
-### Supported methods
+### Supported Methods
 
 | Method | Purpose |
 |--------|---------|
@@ -42,7 +42,7 @@ The MCP specification mandates one endpoint URL per server, so `/mcp` is the onl
 | `tools/call` | Invoke one of the tools below. |
 | `ping` | Liveness probe; returns `{}`. |
 
-### Error model
+### Error Model
 
 | Code | Meaning |
 |------|---------|
@@ -277,7 +277,7 @@ With `page`, success returns one `text` block containing the raw bundled Markdow
 
 <!-- END GENERATED: mcp-tools -->
 
-## Quick test with curl
+## Quick Test with curl
 
 After the `initialize` request in [`POST /mcp`](#post-mcp), list the tools and call one:
 

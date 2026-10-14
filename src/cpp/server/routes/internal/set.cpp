@@ -34,7 +34,7 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Change config settings at runtime";
         s.description =
-            "Changes one or more `config.json` settings without restarting lemond, and saves "
+            "Changes one or more `config.json` settings without restarting `lemond`, and saves "
             "them.";
         s.notes = {
             "Every key is validated before any is applied, so one invalid value rejects the "
@@ -60,7 +60,7 @@ public:
             }
             std::string description = value.is_object()
                 ? "`" + key + "` settings; send only the keys to change."
-                : "Default `" + value.dump() + "`.";
+                : "Defaults to `" + value.dump() + "`.";
             s.args.push_back({key, ArgIn::JsonBody, {{"type", json_type_name(value)}}, false,
                               Support::Available, description});
         }

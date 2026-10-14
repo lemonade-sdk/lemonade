@@ -25,11 +25,11 @@ public:
         s.methods = {"POST"};
         s.paths = {"shutdown"};
         s.prefixes = Prefixes::Internal;
-        s.summary = "Unload every model and stop lemond";
-        s.description = "Unloads every model, answers, and then stops lemond.";
+        s.summary = "Unload every model and stop `lemond`";
+        s.description = "Unloads every model, answers, and then stops `lemond`.";
         s.notes = {
             "Backend processes such as `llama-server` have exited by the time the caller reads "
-            "the answer. lemond then cancels its downloads and exits about 100 ms later.",
+            "the answer. `lemond` then cancels its downloads and exits about 100 ms later.",
         };
 
         RouteResponse response;

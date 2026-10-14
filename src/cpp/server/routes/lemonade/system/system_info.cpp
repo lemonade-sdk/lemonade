@@ -167,8 +167,8 @@ ordered_json system_info_schema() {
                 "description": "Hardware devices detected on the system (no software/support information)",
                 "properties": {
                     "cpu": {"type": "object", "description": "CPU information (name, cores, threads)"},
-                    "amd_gpu": {"type": "array", "description": "Array of AMD GPUs, both integrated and discrete (if present)"},
-                    "nvidia_gpu": {"type": "array", "description": "Array of NVIDIA GPUs (if present)"},
+                    "amd_gpu": {"type": "array", "description": "AMD GPUs, both integrated and discrete, when present."},
+                    "nvidia_gpu": {"type": "array", "description": "NVIDIA GPUs, when present."},
                     "amd_npu": {"type": "object", "description": "AMD NPU device (if present)"}
                 }
             },
@@ -190,7 +190,7 @@ ordered_json system_info_schema() {
                                 "description": "One entry per backend.",
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
-                                    "devices": {"type": "array", "items": {"type": "string"}, "description": "List of devices **on this system** that support this backend (empty if not supported)"},
+                                    "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
                                     "state": {"enum": ["unsupported", "installable", "update_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`"},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL)."},
@@ -223,7 +223,7 @@ ordered_json system_info_schema() {
                                 "wire_format": {"enum": ["openai", "anthropic"], "description": "Request/response shape this provider speaks: `openai` (default) or `anthropic`."},
                                 "env_var": {"type": "string", "description": "Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value."},
                                 "env_var_set": {"type": "boolean", "description": "`true` if the env var is set in `lemond`'s environment."},
-                                "runtime_key_set": {"type": "boolean", "description": "`true` if an in-memory key has been supplied through [`POST /v1/cloud/auth`](#post-v1cloudauth) since lemond started."},
+                                "runtime_key_set": {"type": "boolean", "description": "`true` if an in-memory key has been supplied through [`POST /v1/cloud/auth`](#post-v1cloudauth) since `lemond` started."},
                                 "models_discovered": {"type": "integer", "description": "Number of chat-capable models currently in the catalog for this provider."},
                                 "allow_insecure_http": {"type": "boolean"},
                                 "warnings": {"type": "array", "items": {"type": "string"}},

@@ -23,7 +23,7 @@ ordered_json health_schema() {
             "status": {"const": "ok", "description": "Always `\"ok\"`."},
             "version": {"type": "string", "description": "Lemonade Server version."},
             "model_loaded": {"type": ["string", "null"], "description": "The most recently used loaded model, or `null` when none is loaded."},
-            "update_check_done": {"type": "boolean", "description": "Whether the startup check for model updates on Hugging Face has finished. Until it has, models' `update_available` can be incomplete."},
+            "update_check_done": {"type": "boolean", "description": "Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete."},
             "all_models_loaded": {
                 "type": "array",
                 "description": "Every loaded model.",

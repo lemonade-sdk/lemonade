@@ -270,19 +270,19 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
   - `downloaded` - Whether the model is downloaded.
   - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
   - `suggested` - Whether the model is recommended for general use.
-  - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](./openai.md#model-labels) for the full list.
+  - `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
   - `image_defaults` - Image models only: default generation parameters.
-    - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
-    - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
-    - `width` - Default image width in pixels
-    - `height` - Default image height in pixels
-    - `soft_pixel_cap` - Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted.
+    - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
+    - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
+    - `width` - Default image width in pixels.
+    - `height` - Default image height in pixels.
+    - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
   - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
-  - `checkpoints` - Every checkpoint by role, such as main, mmproj, draft, text_encoder or vae.
-  - `source` - Where the model came from: a registry name, local_upload, local_path or extra_models_dir.
-  - `registry_source` - Remote registry the checkpoint downloads from: huggingface or modelscope.
-  - `recipe_options` - Options saved for this model in recipe_options.json.
+  - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
+  - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
+  - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
+  - `recipe_options` - Options saved for this model in `recipe_options.json`.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
@@ -425,7 +425,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
     **Field Descriptions:**
 
-    - `message` - Only for local_import.
+    - `message` - Only for `local_import`.
     - `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
     - `type` - Download type.
     - `running` - Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources.
@@ -1821,7 +1821,7 @@ This endpoint does not take any parameters.
 - `status` - Always `"ok"`.
 - `version` - Lemonade Server version.
 - `model_loaded` - The most recently used loaded model, or `null` when none is loaded.
-- `update_check_done` - Whether the startup check for model updates on Hugging Face has finished. Until it has, models' `update_available` can be incomplete.
+- `update_check_done` - Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete.
 - `all_models_loaded` - Every loaded model.
   - `model_name` - Name of the loaded model
   - `checkpoint` - The model's main checkpoint.
@@ -3571,8 +3571,8 @@ The same backend can carry different labels on different operating systems. Each
   - `error` - Only when the drive could not be measured.
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
-  - `amd_gpu` - Array of AMD GPUs, both integrated and discrete (if present)
-  - `nvidia_gpu` - Array of NVIDIA GPUs (if present)
+  - `amd_gpu` - AMD GPUs, both integrated and discrete, when present.
+  - `nvidia_gpu` - NVIDIA GPUs, when present.
   - `amd_npu` - AMD NPU device (if present)
 - `recipes` - Software recipes and their backend support status
   - One entry per recipe, such as `llamacpp` or `flm`.
@@ -3580,7 +3580,7 @@ The same backend can carry different labels on different operating systems. Each
     - `experimental` - `true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
     - `backends` - Available backends for this recipe
       - One entry per backend.
-        - `devices` - List of devices **on this system** that support this backend (empty if not supported)
+        - `devices` - Devices **on this system** that support this backend; empty when none do.
         - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
@@ -3596,7 +3596,7 @@ The same backend can carry different labels on different operating systems. Each
     - `wire_format` - Request/response shape this provider speaks: `openai` (default) or `anthropic`.
     - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
-    - `runtime_key_set` - `true` if an in-memory key has been supplied through [`POST /v1/cloud/auth`](#post-v1cloudauth) since lemond started.
+    - `runtime_key_set` - `true` if an in-memory key has been supplied through [`POST /v1/cloud/auth`](#post-v1cloudauth) since `lemond` started.
     - `models_discovered` - Number of chat-capable models currently in the catalog for this provider.
 - `unavailable_recipes` - Recipes all of whose models are filtered out on this host. Reported separately so recipes stays the same on every host; dynamic-model backends (cloud, flm) are never listed.
 - `no_fetch_executables` - Whether the server is configured not to download backend executables.

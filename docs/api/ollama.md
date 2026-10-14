@@ -127,11 +127,11 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
     **Field Descriptions:**
 
-    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `message`
       - `thinking` - Reasoning models only: the model's thinking.
       - `tool_calls` - Calls to the request's tools, with arguments as objects.
-    - `done_reason` - stop, length, tool_calls, or unload after an unload request.
+    - `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
     - `prompt_eval_count` - Prompt tokens.
     - `eval_count` - Generated tokens.
     - `total_duration`, `load_duration` - Always 0.
@@ -153,11 +153,11 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
     **Field Descriptions:**
 
-    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `message`
       - `thinking` - Reasoning models only: the model's thinking.
       - `tool_calls` - Calls to the request's tools, with arguments as objects.
-    - `done_reason` - stop, length, tool_calls, or unload after an unload request.
+    - `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
     - `prompt_eval_count` - Prompt tokens.
     - `eval_count` - Generated tokens.
     - `total_duration`, `load_duration` - Always 0.
@@ -276,10 +276,10 @@ Image generation never streams.
 
     **Field Descriptions:**
 
-    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `response` - Generated text. Empty for an image model.
     - `image` - Image models only: the generated image, base64-encoded.
-    - `done_reason` - stop, length, or unload after an unload request.
+    - `done_reason` - `stop`, `length`, or `unload` after an unload request.
     - `context` - Always empty.
     - `prompt_eval_count` - Prompt tokens.
     - `eval_count` - Generated tokens.
@@ -300,10 +300,10 @@ Image generation never streams.
 
     **Field Descriptions:**
 
-    - `created_at` - Always 2024-01-01T00:00:00Z.
+    - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `response` - Generated text. Empty for an image model.
     - `image` - Image models only: the generated image, base64-encoded.
-    - `done_reason` - stop, length, or unload after an unload request.
+    - `done_reason` - `stop`, `length`, or `unload` after an unload request.
     - `context` - Always empty.
     - `prompt_eval_count` - Prompt tokens.
     - `eval_count` - Generated tokens.

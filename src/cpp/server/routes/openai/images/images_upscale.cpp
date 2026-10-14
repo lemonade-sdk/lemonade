@@ -135,7 +135,7 @@ public:
         response.schema = image_response_schema();
         response.schema["properties"]["created"]["description"] =
             "Unix timestamp of when the upscaled image was generated";
-        response.schema["properties"]["data"]["description"] = "Array containing the upscaled image";
+        response.schema["properties"]["data"]["description"] = "The upscaled image.";
         response.schema["properties"]["data"]["items"]["properties"]["b64_json"]["description"] =
             "Base64-encoded PNG of the upscaled image";
         s.responses = {response};

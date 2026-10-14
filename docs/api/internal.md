@@ -9,7 +9,7 @@ Apps that talk to a system-wide Lemonade Server install must not use these endpo
 <!-- BEGIN GENERATED: internal.summary -->
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | [`/internal/shutdown`](#post-internalshutdown) | Unload every model and stop lemond |
+| `POST` | [`/internal/shutdown`](#post-internalshutdown) | Unload every model and stop `lemond` |
 | `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
 | `POST` | [`/internal/pin`](#post-internalpin) | Pin or unpin a loaded model |
 | `POST` | [`/internal/set`](#post-internalset) | Change config settings at runtime |
@@ -29,7 +29,7 @@ Apps that talk to a system-wide Lemonade Server install must not use these endpo
 ## `POST /internal/shutdown`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Unloads every model, answers, and then stops lemond.
+Unloads every model, answers, and then stops `lemond`.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -37,7 +37,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-Backend processes such as `llama-server` have exited by the time the caller reads the answer. lemond then cancels its downloads and exits about 100 ms later.
+Backend processes such as `llama-server` have exited by the time the caller reads the answer. `lemond` then cancels its downloads and exits about 100 ms later.
 
 ### Example request
 
@@ -158,7 +158,7 @@ A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pi
 ## `POST /internal/set`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Changes one or more `config.json` settings without restarting lemond, and saves them.
+Changes one or more `config.json` settings without restarting `lemond`, and saves them.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -167,41 +167,41 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `acestep` | No | `acestep` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `allowed_origins` | No | Default `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `auto_check_model_updates` | No | Default `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `auto_evict` | No | Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `auto_evict_threshold_pct` | No | Default `0.9`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `auto_update_models` | No | Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `broadcast` | No | Default `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `config_version` | No | Default `2`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | Default `-1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `default_model_source` | No | Default `"huggingface"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `disable_model_filtering` | No | Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `download_rate_limit` | No | Default `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `allowed_origins` | No | Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `auto_check_model_updates` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `auto_evict` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `auto_evict_threshold_pct` | No | Defaults to `0.9`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `auto_update_models` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `broadcast` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `config_version` | No | Defaults to `2`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Defaults to `-1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `default_model_source` | No | Defaults to `"huggingface"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `disable_model_filtering` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `download_rate_limit` | No | Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ds4` | No | `ds4` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `enable_dgpu_gtt` | No | Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `extra_models_dir` | No | Default `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `enable_dgpu_gtt` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `extra_models_dir` | No | Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `flm` | No | `flm` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `global_timeout` | No | Default `600`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `host` | No | Default `"localhost"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `global_timeout` | No | Defaults to `600`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `host` | No | Defaults to `"localhost"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `hrx` | No | `hrx` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `inhibit_suspend` | No | Default `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `inhibit_suspend` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `kokoro` | No | `kokoro` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `llamacpp` | No | `llamacpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `log_file` | No | Default `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `log_level` | No | Default `"info"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `log_max_file_size_mb` | No | Default `10`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `log_max_files` | No | Default `5`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_loaded_models` | No | Default `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `models_dir` | No | Default `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `log_file` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `log_level` | No | Defaults to `"info"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `log_max_file_size_mb` | No | Defaults to `10`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `log_max_files` | No | Defaults to `5`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_loaded_models` | No | Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `models_dir` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `moonshine` | No | `moonshine` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `no_fetch_executables` | No | Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `offline` | No | Default `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `no_fetch_executables` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `offline` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `onnxruntime` | No | `onnxruntime` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `openmoss` | No | `openmoss` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `port` | No | Default `13305`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `rocm_channel` | No | Default `"stable"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `rocm_install_method` | No | Default `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `port` | No | Defaults to `13305`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `rocm_channel` | No | Defaults to `"stable"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `rocm_install_method` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ryzenai` | No | `ryzenai` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `sdcpp` | No | `sdcpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `telemetry` | No | `telemetry` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -209,7 +209,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `thinksound` | No | `thinksound` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `trellis` | No | `trellis` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `vllm` | No | `vllm` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `websocket_port` | No | Default `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `websocket_port` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp` | No | `whispercpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Every key is validated before any is applied, so one invalid value rejects the whole request with `400` and changes nothing.
@@ -729,7 +729,7 @@ The `lemonade update-models` command uses this endpoint; see Model Synchronizati
 
 **Field Descriptions:**
 
-- `sync_id` - The sync this status describes; 0 before any sync.
+- `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
 - `already_in_progress` - Whether a sync is running.
 - `dry_run` - `true` when the request was a dry run.
@@ -796,7 +796,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 **Field Descriptions:**
 
-- `sync_id` - The sync this status describes; 0 before any sync.
+- `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
 - `already_in_progress` - Whether a sync is running.
 - `dry_run` - `true` when the request was a dry run.
@@ -955,7 +955,7 @@ An alias that does not exist answers `404`.
 ## `GET /internal/routes`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the specification of every HTTP route lemond serves, in registration order: its URLs, arguments, the schema of each response format, and its example requests.
+Returns the specification of every HTTP route `lemond` serves, in registration order: its URLs, arguments, the schema of each response format, and its example requests.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -1031,7 +1031,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `name` - Tab label; empty when the route has one example.
   - `format` - The response format the reply is validated against.
   - `args` - Argument values of the request.
-  - `setup` - Requests that run first to put lemond in the state this example needs.
+  - `setup` - Requests that run first to put `lemond` in the state this example needs.
     - `example` - The name of the route's example to run.
     - `args` - Set instead of example: a request sent as is and left out of the docs.
 <!-- END GENERATED: internal.routes -->

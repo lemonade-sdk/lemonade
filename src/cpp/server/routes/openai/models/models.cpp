@@ -28,9 +28,11 @@ public:
             "its `id`.",
             "With cloud providers configured, their models are listed too, with "
             "`recipe: \"cloud\"`, a `cloud_provider` field and a provider-prefixed id such as "
-            "`fireworks.kimi-k2p5`, and they accept chat completions and completions requests; see "
+            "`fireworks.kimi-k2p5`. Models of `openai`-wire providers accept chat completions and "
+            "completions requests; `anthropic`-wire providers are served through "
+            "[`POST /v1/messages`](./anthropic.md#post-v1messages). See "
             "[Cloud Offload](../guide/configuration/cloud.md).",
-            "`HEAD` answers `200` with no body.",
+            "`HEAD` returns `200 OK` with an empty body.",
         };
         s.args = {
             {"show_all", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,

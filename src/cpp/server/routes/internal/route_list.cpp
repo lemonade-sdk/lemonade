@@ -19,7 +19,7 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "List every route's specification";
         s.description =
-            "Returns the specification of every HTTP route lemond serves, in registration "
+            "Returns the specification of every HTTP route `lemond` serves, in registration "
             "order: its URLs, arguments, the schema of each response format, and its example "
             "requests.";
         s.notes = {
@@ -86,7 +86,7 @@ public:
                                     "example": {"type": "string", "description": "The name of the route's example to run."},
                                     "args": {"description": "Set instead of example: a request sent as is and left out of the docs."}
                                 }
-                            }, "description": "Requests that run first to put lemond in the state this example needs."}
+                            }, "description": "Requests that run first to put `lemond` in the state this example needs."}
                         }
                     }, "description": "The first is the route's main example."},
                     "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"]},

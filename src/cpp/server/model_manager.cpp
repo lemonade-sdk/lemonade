@@ -2506,7 +2506,7 @@ nlohmann::ordered_json ModelManager::sync_status_schema() {
         "required": ["status", "sync_id", "completed_sync_id", "already_in_progress"],
         "properties": {
             "status": {"enum": ["idle", "in_progress", "success", "failed", "not_found"]},
-            "sync_id": {"type": "integer", "description": "The sync this status describes; 0 before any sync."},
+            "sync_id": {"type": "integer", "description": "The sync this status describes; `0` before any sync."},
             "completed_sync_id": {"type": "integer", "description": "The most recent sync that finished."},
             "already_in_progress": {"type": "boolean", "description": "Whether a sync is running."},
             "dry_run": {"type": "boolean", "description": "`true` when the request was a dry run."},

@@ -150,7 +150,7 @@ public:
             "  }]\n"
             "}\n"
             "```",
-            "### Server-side tools\n"
+            "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
             "requests to other models are unaffected.\n"

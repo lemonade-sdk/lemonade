@@ -20,7 +20,7 @@ ordered_json pull_schema() {
         "properties": {
             "status": {"const": "success"},
             "model_name": {"type": "string"},
-            "message": {"type": "string", "description": "Only for local_import."}
+            "message": {"type": "string", "description": "Only for `local_import`."}
         }
     })");
     ordered_json job = DownloadManager::job_schema();

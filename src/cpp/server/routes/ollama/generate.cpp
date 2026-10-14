@@ -126,11 +126,11 @@ ordered_json generate_response_schema(bool line) {
         "required": ["model", "created_at", "done"],
         "properties": {
             "model": {"type": "string"},
-            "created_at": {"type": "string", "description": "Always 2024-01-01T00:00:00Z."},
+            "created_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
             "response": {"type": "string", "description": "Generated text. Empty for an image model."},
             "image": {"type": "string", "description": "Image models only: the generated image, base64-encoded."},
             "done": {"type": "boolean"},
-            "done_reason": {"type": "string", "description": "stop, length, or unload after an unload request."},
+            "done_reason": {"type": "string", "description": "`stop`, `length`, or `unload` after an unload request."},
             "context": {"type": "array", "description": "Always empty."},
             "prompt_eval_count": {"type": "integer", "description": "Prompt tokens."},
             "eval_count": {"type": "integer", "description": "Generated tokens."},

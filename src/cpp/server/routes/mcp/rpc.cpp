@@ -33,7 +33,7 @@ public:
             "A request whose messages are all notifications answers `202` with no body.",
             "The MCP specification mandates one endpoint URL per server, so `/mcp` is the only "
             "one.",
-            "### Supported methods\n"
+            "### Supported Methods\n"
             "\n"
             "| Method | Purpose |\n"
             "|--------|---------|\n"
@@ -42,7 +42,7 @@ public:
             "| `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |\n"
             "| `tools/call` | Invoke one of the tools below. |\n"
             "| `ping` | Liveness probe; returns `{}`. |",
-            "### Error model\n"
+            "### Error Model\n"
             "\n"
             "| Code | Meaning |\n"
             "|------|---------|\n"
