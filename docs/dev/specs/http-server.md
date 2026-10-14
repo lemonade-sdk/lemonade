@@ -94,8 +94,7 @@ struct ExampleRef {
     ResponseFormat format;            // selects which of the route's examples
 };
 
-// Each format a route returns gets its own example request, recorded response and field
-// descriptions in the docs.
+// Each format a route returns gets its own example and field descriptions in the docs.
 struct RouteResponse {
     ResponseFormat format;
 
@@ -121,7 +120,7 @@ struct RouteSpec {
     std::string summary;              // one line in the page's summary table; empty when hand-written rows replace it
     std::string modality;             // the summary table's Modality cell, e.g. "messages -> completion"
     std::string description;          // reference text for the route's docs section
-    std::vector<std::string> notes;   // sections the docs place after Parameters, such as an actions table
+    std::vector<std::string> notes;
     bool experimental = false;        // its contract may still change, so the docs badge it experimental
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
@@ -203,7 +202,6 @@ This section defines where the schemas in `RouteResponse` come from:
 - **In the route class.** Response schemas are JSON Schema, written next to the route's `RouteArg` schemas, so a route's whole contract sits beside its handler. `gen_api_boilerplate.py` reads them from `GET /internal/routes` with the rest of the `RouteSpec`.
 - **Shared shapes.** A shape that more than one route returns has a schema function declared beside the function that builds it, such as `ModelJson::schema()` beside `ModelJson::to_json()`, so the shape and its schema change together.
 - **Pass-through routes.** The schema describes the public contract the route follows, such as OpenAI's chat completion object, limited to the fields Lemonade returns.
-- **Field descriptions.** A property's `description` is its entry in the docs' field descriptions, so the docs describe a field in the schema that validates it. See [Field Descriptions](#field-descriptions).
 
 `route_decision_schema()`, declared beside `route_decision_to_json()` in `lemon/route_decision_response.h`, returns the schema the routing engine already maintains:
 
@@ -238,8 +236,7 @@ nlohmann::ordered_json chat_completion_schema() {
                         "required": ["role", "content"],
                         "properties": {
                             "role": {"const": "assistant"},
-                            "content": {"type": ["string", "null"]},
-                            "reasoning_content": {"type": "string", "description": "Reasoning models only: the model's thinking."}
+                            "content": {"type": ["string", "null"]}
                         }
                     },
                     "finish_reason": {"type": "string"}
@@ -300,22 +297,12 @@ public:
         s.paths = {"chat/completions"};
         s.prefixes = Prefixes::Quad;
         s.summary = "Chat Completions";
-        s.modality = "messages -> completion";
-        s.description =
-            "Chat Completions API. You provide a list of messages and receive a completion. This "
-            "API will also load the model if it is not already loaded.";
+        s.description = "Generates the next assistant message for a conversation.";
         s.args = {
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
-             "Array of messages in the conversation. Each message should have a `role` (\"user\" "
-             "or \"assistant\") and `content` (the message text)."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to use for the completion."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If true, tokens will be sent as they are generated. If false, the response will be "
-             "sent as a single message once complete. Defaults to false."},
-            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
-             "Include log probabilities of the output tokens. If true, returns the log "
-             "probability of each output token. Defaults to false."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available, "Model to run; loaded on first use."},
+            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available, "Conversation in OpenAI format."},
+            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available, "Stream tokens as server-sent events."},
+            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable, "Return the log probability of each output token."},
         };
 
         RouteResponse completion;
@@ -323,8 +310,7 @@ public:
         completion.schema = chat_completion_schema();
         completion.example = nlohmann::ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
-            "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-            "stream": false
+            "messages": [{"role": "user", "content": "What is the capital of France?"}]
         })");
 
         RouteResponse stream;
@@ -332,7 +318,7 @@ public:
         stream.schema = chat_completion_chunk_schema();
         stream.example = nlohmann::ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
-            "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+            "messages": [{"role": "user", "content": "What is the capital of France?"}],
             "stream": true
         })");
 
@@ -455,26 +441,14 @@ This section specifies how `docs/api` is generated from the routes, including re
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page: one row per route from its `summary`, with a Status column (Supported or Not supported) when a route on the page has no responses, and a Modality column when one sets `modality`. Other rows are hand-written, such as a WebSocket endpoint's or one per action of llama.cpp's `POST /v1/slots/{id}`, whose `summary` is empty. The generator keeps each after the row it follows, and fails when a route has no row.
-3. For each route, writes a region in the API reference layout of the documentation guide, in this order:
-    1. The method and path heading and a status badge. The badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
-    2. The description, then every prefixed path and its auth.
-    3. A Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), or "This endpoint does not take any parameters." when the route has none.
-    4. The notes.
-    5. An Example request section and a Response format section, described in [Examples](#examples).
-4. Fills the Example request and Response format sections from the response cache, running a response's setup and example against lemond only when its cache entry is invalid.
+3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, every prefixed path and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Example request and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
+4. Fills the Example request and Response format sections from the response cache, running each response's setup and example against lemond only when its cache entry is invalid.
 
-Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs. So do sections that follow a route's response, such as its error responses: they sit after the route's region.
+Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
 
 ### Examples
 
-The Example request section has PowerShell and Bash tabs with each response's `example`. The Response format section shows what lemond returned to it, followed for a JSON format by its [Field Descriptions](#field-descriptions). A route with several responses labels them by the first row that applies:
-
-| Route's formats | Example request tabs | Response format tabs |
-|-----------------|----------------------|----------------------|
-| Streaming and non-streaming, such as chat completions' `Json` and `EventStream` | "PowerShell", "Bash", "PowerShell (streaming)", "Bash (streaming)" | "Non-streaming responses", "Streaming responses" |
-| Any other mix, such as transcriptions' `Json` and `Text` | "PowerShell", "Bash", "PowerShell (text)", "Bash (text)" | "JSON responses", "Text responses" |
-
-The generator builds and records examples by these rules:
+The Example request section has PowerShell and Bash tabs with each response's `example`, and the Response format section shows what lemond returned to it. For a JSON format, a Field Descriptions list follows, built from the `description` of each property in its schema. The generator builds and records examples by these rules:
 
 - **Arguments.** An `example` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
 - **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
@@ -483,18 +457,6 @@ The generator builds and records examples by these rules:
 - **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
 - **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are.
 - **Paths.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, and the recording machine's home directory as `~`.
-- **Key order.** A request shows its body, query and form in the `example`'s key order. lemond answers with sorted keys, so a recorded JSON body, NDJSON line or SSE event lists each object's fields in its schema's property order, followed by fields the schema does not list.
-
-### Field Descriptions
-
-A JSON format's Response format section ends with a **Field Descriptions:** list built from its schema's `description` strings, by these rules:
-
-- **One bullet per described property**, written ``- `name` - description``, in the schema's property order. A property without a description is left out, unless it has described properties of its own, as `choices` does in chat completions.
-- **Nesting.** The properties of an object property, or of an array property's items, are nested bullets under it, as `all_models_loaded` is in `/v1/health`. A top-level array's item properties are listed at the top level, as `/v1/downloads`' job fields are.
-- **Maps.** A described `additionalProperties` schema gets an unnamed bullet with its description, and its properties nest under it, as in `/v1/system-info`'s "Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:".
-- **Shared descriptions.** Adjacent properties with the same description and no nested properties share a bullet, such as ``- `file`, `file_index`, `total_files` - Current file progress within the download.``
-- **Alternatives.** Properties of every `oneOf`, `anyOf` and `allOf` alternative are listed together, and each `$ref` is resolved within its schema's `$id` resource.
-- **Separate schemas.** A nested schema with its own `$id`, such as the routing decision in `x_lemonade_route`, lists only its description, because its own page documents its fields.
 
 ### Response Cache
 
@@ -528,7 +490,7 @@ The route in [Complete Example](#complete-example) generates this region of open
 ## `POST /v1/chat/completions`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Chat Completions API. You provide a list of messages and receive a completion. This API will also load the model if it is not already loaded.
+Generates the next assistant message for a conversation.
 
 Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/chat/completions`. Requires `LEMONADE_API_KEY` when it is set.
 
@@ -536,10 +498,10 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `messages` | Yes | Array of messages in the conversation. Each message should have a `role` ("user" or "assistant") and `content` (the message text). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `messages` | Yes | Conversation in OpenAI format. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | Stream tokens as server-sent events. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `logprobs` | No | Return the log probability of each output token. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 ### Example request
 
@@ -552,8 +514,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-          "stream": false
+          "messages": [{"role": "user", "content": "What is the capital of France?"}]
         }'
     ```
 
@@ -564,8 +525,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -H "Content-Type: application/json" \
       -d '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-          "stream": false
+          "messages": [{"role": "user", "content": "What is the capital of France?"}]
         }'
     ```
 
@@ -578,7 +538,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+          "messages": [{"role": "user", "content": "What is the capital of France?"}],
           "stream": true
         }'
     ```
@@ -590,7 +550,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -H "Content-Type: application/json" \
       -d '{
           "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+          "messages": [{"role": "user", "content": "What is the capital of France?"}],
           "stream": true
         }'
     ```
@@ -610,32 +570,26 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       "choices": [
         {
           "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": "Paris has a population of about 2.1 million people.",
-            "reasoning_content": "The user asks for the population of Paris."
-          },
+          "message": {"role": "assistant", "content": "The capital of France is Paris."},
           "finish_reason": "stop"
         }
       ],
-      "usage": {"prompt_tokens": 15, "completion_tokens": 30, "total_tokens": 45}
+      "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23}
     }
     ```
 
     **Field Descriptions:**
 
-    - `choices`
-      - `message`
-        - `reasoning_content` - Reasoning models only: the model's thinking.
+    - `x_lemonade_route` - The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.
 
 === "Streaming responses"
 
     `200`
 
     ```text
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"reasoning_content": "The"}, "finish_reason": null}]}
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"reasoning_content": " user"}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": "The"}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": " capital"}, "finish_reason": null}]}
     ...
     data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
     data: [DONE]
