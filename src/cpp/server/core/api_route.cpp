@@ -344,7 +344,7 @@ bool ModelRoute::build_form_body(RouteRequest& req, httplib::Response& res) {
                 if (pos != value.size()) throw std::invalid_argument("trailing characters");
                 req.body[arg.name] = parsed;
             } else if (type == "number") {
-                const float parsed = std::stof(value, &pos);
+                const double parsed = std::stod(value, &pos);
                 if (pos != value.size()) throw std::invalid_argument("trailing characters");
                 if (std::isnan(parsed) || std::isinf(parsed)) {
                     throw std::invalid_argument("nan/inf not allowed");
