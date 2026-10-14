@@ -94,22 +94,21 @@ struct ExampleRef {
     ResponseFormat format;            // selects which of the route's examples
 };
 
-// Each format a route returns gets its own example and field descriptions in the docs.
+// Each format a route returns gets its own schema and example in the docs.
 struct RouteResponse {
     ResponseFormat format;
 
     // JSON formats only. JSON Schema for the body, each NDJSON line, or each SSE event's data;
     // --check validates against it. A format with several shapes, such as /load's three, uses oneOf.
-    // Ordered, so the docs list the fields as written rather than alphabetically.
-    nlohmann::ordered_json schema;
+    nlohmann::json schema;
 
     // Examples to run first, in order, when generating the documentation. Examples can reference
     // their dependences' responses, for example {"id": "$lemonade.jobs_create/id"}.
     std::vector<ExampleRef> setup;
 
     // A request producing this format; gen_api_boilerplate.py records its response into the docs
-    // and --check validates it. Ordered, so the docs show the body as written.
-    nlohmann::ordered_json example;
+    // and --check validates it.
+    nlohmann::json example;
 };
 
 struct RouteSpec {
@@ -117,8 +116,7 @@ struct RouteSpec {
     std::vector<std::string> methods; // e.g. {"POST"}
     std::vector<std::string> paths;   // without prefix; extra entries are aliases, e.g. rerank, reranking
     Prefixes prefixes = Prefixes::Quad;
-    std::string summary;              // one line in the page's summary table; empty when hand-written rows replace it
-    std::string modality;             // the summary table's Modality cell, e.g. "messages -> completion"
+    std::string summary;              // one line in the page's summary table
     std::string description;          // reference text for the route's docs section
     std::vector<std::string> notes;
     bool experimental = false;        // its contract may still change, so the docs badge it experimental
@@ -206,9 +204,9 @@ This section defines where the schemas in `RouteResponse` come from:
 `route_decision_schema()`, declared beside `route_decision_to_json()` in `lemon/route_decision_response.h`, returns the schema the routing engine already maintains:
 
 ```cpp
-nlohmann::ordered_json route_decision_schema() {
+nlohmann::json route_decision_schema() {
     std::ifstream file(utils::get_resource_path("resources/schemas/decision.schema.json"));
-    return nlohmann::ordered_json::parse(file);
+    return nlohmann::json::parse(file);
 }
 ```
 
@@ -217,8 +215,8 @@ nlohmann::ordered_json route_decision_schema() {
 `routes/openai/text/chat_completions.cpp`:
 
 ```cpp
-nlohmann::ordered_json chat_completion_schema() {
-    auto schema = nlohmann::ordered_json::parse(R"({
+nlohmann::json chat_completion_schema() {
+    auto schema = nlohmann::json::parse(R"({
         "type": "object",
         "required": ["id", "object", "created", "model", "choices", "usage"],
         "properties": {
@@ -258,8 +256,8 @@ nlohmann::ordered_json chat_completion_schema() {
     return schema;
 }
 
-nlohmann::ordered_json chat_completion_chunk_schema() {
-    return nlohmann::ordered_json::parse(R"({
+nlohmann::json chat_completion_chunk_schema() {
+    return nlohmann::json::parse(R"({
         "type": "object",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
@@ -308,7 +306,7 @@ public:
         RouteResponse completion;
         completion.format = ResponseFormat::Json;
         completion.schema = chat_completion_schema();
-        completion.example = nlohmann::ordered_json::parse(R"({
+        completion.example = nlohmann::json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France?"}]
         })");
@@ -316,7 +314,7 @@ public:
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
         stream.schema = chat_completion_chunk_schema();
-        stream.example = nlohmann::ordered_json::parse(R"({
+        stream.example = nlohmann::json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France?"}],
             "stream": true
@@ -440,7 +438,7 @@ This section specifies how `docs/api` is generated from the routes, including re
 `docs/tools/gen_api_boilerplate.py` follows `gen_mcp_boilerplate.py`: it starts lemond through the `Lemond` harness in `gen_backend_boilerplate.py` and rewrites only BEGIN/END GENERATED regions. It runs these steps:
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
-2. For each page (a top-level folder), writes the summary table at the top of the page: one row per route from its `summary`, with a Status column (Supported or Not supported) when a route on the page has no responses, and a Modality column when one sets `modality`. Other rows are hand-written, such as a WebSocket endpoint's or one per action of llama.cpp's `POST /v1/slots/{id}`, whose `summary` is empty. The generator keeps each after the row it follows, and fails when a route has no row.
+2. For each page (a top-level folder), writes the summary table at the top of the page.
 3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, every prefixed path and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Example request and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
 4. Fills the Example request and Response format sections from the response cache, running each response's setup and example against lemond only when its cache entry is invalid.
 
@@ -512,10 +510,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -Uri "http://localhost:13305/v1/chat/completions" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France?"}]
-        }'
+      -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
     ```
 
 === "Bash"
@@ -523,10 +518,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
     ```bash
     curl http://localhost:13305/v1/chat/completions \
       -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France?"}]
-        }'
+      -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
     ```
 
 === "PowerShell (streaming)"
@@ -536,11 +528,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       -Uri "http://localhost:13305/v1/chat/completions" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France?"}],
-          "stream": true
-        }'
+      -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
     ```
 
 === "Bash (streaming)"
@@ -548,11 +536,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
     ```bash
     curl http://localhost:13305/v1/chat/completions \
       -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France?"}],
-          "stream": true
-        }'
+      -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
     ```
 
 ### Response format
@@ -567,13 +551,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
       "object": "chat.completion",
       "created": 1759766400,
       "model": "Qwen3-0.6B-GGUF",
-      "choices": [
-        {
-          "index": 0,
-          "message": {"role": "assistant", "content": "The capital of France is Paris."},
-          "finish_reason": "stop"
-        }
-      ],
+      "choices": [{"index": 0, "message": {"role": "assistant", "content": "The capital of France is Paris."}, "finish_reason": "stop"}],
       "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23}
     }
     ```
