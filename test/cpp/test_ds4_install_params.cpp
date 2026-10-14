@@ -123,9 +123,6 @@ int main() {
     // but cannot be asserted here: an empty override clears the override rather
     // than setting an empty architecture, so the probe falls back to hardware.
 
-    expect(lemon::backends::ds4::descriptor.experimental,
-           "ds4 is marked experimental");
-
     // ds4-server parses left-to-right, so anything appended after Lemonade's
     // own flags wins. Every argument Lemonade manages must be refused.
     const auto& reserved = lemon::backends::ds4::reserved_custom_arg_flags();

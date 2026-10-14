@@ -28,7 +28,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-
 namespace {
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
@@ -178,10 +177,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
-}
-
-SDServer::~SDServer() {
-    unload();
 }
 
 void SDServer::load(const std::string& model_name,
@@ -370,37 +365,14 @@ void SDServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        process_exe_path,
-        args,
-        working_dir,
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, process_exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start sd-server process");
-    }
-
-    LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/")) {
-        unload();
-        throw std::runtime_error("sd-server failed to start or become ready");
-    }
-
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
-}
-
-void SDServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = process_exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    command.ready_endpoint = "/";
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}, working_dir),
+                 command);
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
@@ -571,10 +543,25 @@ json SDServer::image_edits(const json& request) {
         fields.push_back({"size", size, "", ""});
     }
 
-    if (request.contains("image_data")) {
+    if (request.contains("image_files") && request["image_files"].is_array()
+        && !request["image_files"].empty()) {
+        // A repeated multipart image[] is one reference, in its upload order.
+        for (const auto& image : request["image_files"]) {
+            std::string image_binary = JsonUtils::base64_decode(
+                image.at("data").get<std::string>());
+            std::string filename = image.value("filename", std::string("image.png"));
+            std::string mime = image.value("content_type", std::string("application/octet-stream"));
+            fields.push_back({"image[]", image_binary,
+                              filename.empty() ? "image.png" : filename,
+                              mime.empty() ? "application/octet-stream" : mime});
+        }
+    } else if (request.contains("image_data")) {
+        // Backward compatibility for direct single-image requests.
         std::string image_binary = JsonUtils::base64_decode(
             request["image_data"].get<std::string>());
-        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+        fields.push_back({"image[]", image_binary,
+                          request.value("image_filename", std::string("image.png")),
+                          request.value("image_content_type", std::string("image/png"))});
     }
     if (request.contains("mask_data")) {
         std::string mask_binary = JsonUtils::base64_decode(
@@ -802,7 +789,6 @@ namespace sdcpp {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<SDServer>(ctx);
 }
-
 
 const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
 const BackendOps* ops() { return default_backend_ops(); }
