@@ -291,20 +291,23 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
             return;
         }
 
-        const LoadSpan load_span_name = load_span();
-        auto span = load_span_name.kind.empty()
-            ? nullptr
-            : telemetry::TelemetryTracker::start_span(load_span_name.kind, load_span_name.name,
-                                                      req.model, req.body);
-        try {
-            ctx_.model_loader->ensure_loaded(req.model, ModelLoader::load_options(req.body));
-        } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
-            ctx_.model_loader->write_load_error(res, req.model, e.what());
-            if (span) span->end_with_error(e.what());
-            return;
+        if (!req.model_already_loaded) {
+            const LoadSpan load_span_name = load_span();
+            auto span = load_span_name.kind.empty()
+                ? nullptr
+                : telemetry::TelemetryTracker::start_span(load_span_name.kind,
+                                                          load_span_name.name, req.model,
+                                                          req.body);
+            try {
+                ctx_.model_loader->ensure_loaded(req.model, ModelLoader::load_options(req.body));
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
+                ctx_.model_loader->write_load_error(res, req.model, e.what());
+                if (span) span->end_with_error(e.what());
+                return;
+            }
+            if (span) span->cancel();
         }
-        if (span) span->cancel();
 
         run(req, res);
     } catch (const std::exception& e) {

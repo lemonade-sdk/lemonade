@@ -94,6 +94,9 @@ struct RouteRequest {
     const RouteSpec& spec;
     nlohmann::json body;              // parsed unless spec.request_format is Raw
     std::string model;                // ModelRoute: the resolved model name
+    // Set by validate() when it picked an already-loaded model: loading it again with the
+    // default purpose would demote a routing helper to a standard model.
+    bool model_already_loaded = false;
     std::optional<RouterDispatchResult> route_decision;
 };
 

@@ -127,6 +127,7 @@ protected:
                 return false;
             }
             req.body["model"] = req.model;
+            req.model_already_loaded = true;
         }
         return true;
     }

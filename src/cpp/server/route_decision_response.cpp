@@ -1,9 +1,6 @@
 #include "lemon/route_decision_response.h"
 
-#include <fstream>
 #include <utility>
-
-#include "lemon/utils/path_utils.h"
 
 namespace lemon {
 namespace {
@@ -50,38 +47,6 @@ std::optional<EventBoundary> find_sse_event_boundary(const std::string& buffer) 
 }
 
 } // namespace
-
-nlohmann::ordered_json route_decision_schema() {
-    std::ifstream file(utils::get_resource_path("resources/schemas/decision.schema.json"));
-    return nlohmann::ordered_json::parse(file);
-}
-
-nlohmann::ordered_json route_decision_field_schema() {
-    nlohmann::ordered_json schema = route_decision_schema();
-    schema["description"] =
-        "The routing decision for a request that named a `collection.router` model. A streaming "
-        "response carries it on its first event. The `x-lemonade-route` response header carries "
-        "the matched rule id, or `default` when the request routed to `default_model`.";
-    schema["properties"]["version"]["description"] =
-        "Version of the decision object's shape, always `\"1\"`.";
-    schema["properties"]["route_to"]["description"] =
-        "The selected candidate, which a non-streaming response also carries in `model`.";
-    schema["properties"]["matched_rule"]["description"] =
-        "Id of the rule that matched; empty when the request routed to `default_model`.";
-    schema["properties"]["default_used"]["description"] =
-        "`true` when no rule matched and the request routed to `default_model`.";
-    schema["$defs"]["trace_entry"]["properties"]["label"]["description"] =
-        "The label the classifier band tested, which names the candidate the score belongs to. "
-        "Present for label-scoped bands, such as the rules `routing.router` expands to.";
-    schema["properties"]["trace"]["description"] =
-        "Per-condition trace of the evaluation, present when the request sets `route_trace`.";
-    schema["properties"]["outputs"]["description"] =
-        "The matched rule's `outputs`, passed through unchanged. When cost data is known for the "
-        "chosen candidate, an `estimated_cost` object is added with `cost_tier`, "
-        "`cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as "
-        "available; it is an estimate, not a billing figure.";
-    return schema;
-}
 
 json route_decision_to_json(const Decision& decision) {
     json out = {
