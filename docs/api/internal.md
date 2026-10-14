@@ -337,12 +337,7 @@ The `lemonade config` command reads this endpoint. See the [Settings Reference](
   "no_fetch_executables": false,
   "offline": false,
   "onnxruntime": {"args": "", "cpu_args": "", "cpu_bin": "builtin"},
-  "openmoss": {
-    "backend": "auto",
-    "cuda_bin": "builtin",
-    "rocm_bin": "builtin",
-    "vulkan_bin": "builtin"
-  },
+  "openmoss": {"backend": "auto", "cuda_bin": "builtin", "vulkan_bin": "builtin"},
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
   "ryzenai": {"server_bin": "builtin"},
