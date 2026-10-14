@@ -6,6 +6,38 @@
 
 namespace lemon {
 
+// Who stands behind a backend.
+enum class BackendTier {
+    Core,
+    Experimental,
+    Guest,
+};
+
+// How a backend's server is packaged.
+enum class BackendFormat {
+    Native,
+    Python,
+    Container,
+};
+
+inline const char* backend_tier_to_string(BackendTier tier) {
+    switch (tier) {
+        case BackendTier::Core:         return "core";
+        case BackendTier::Experimental: return "experimental";
+        case BackendTier::Guest:        return "guest";
+    }
+    return "guest";
+}
+
+inline const char* backend_format_to_string(BackendFormat format) {
+    switch (format) {
+        case BackendFormat::Native:    return "native";
+        case BackendFormat::Python:    return "python";
+        case BackendFormat::Container: return "container";
+    }
+    return "native";
+}
+
 // Device constraints: device_type -> set of allowed families (empty = all families)
 using DeviceConstraints = std::map<std::string, std::set<std::string>>;
 
@@ -32,6 +64,8 @@ using ArchInstallGates = std::map<std::string, ArchInstallGate>;
 struct RecipeBackendDef {
     std::string recipe;
     std::string backend;
+    BackendTier tier;
+    BackendFormat format;
     std::set<std::string> supported_os;
     DeviceConstraints devices;
     // Human-friendly device description for the generated support matrix (README).
@@ -45,6 +79,8 @@ struct RecipeBackendDef {
 // the descriptor literals from repeating their own recipe on every row.
 struct BackendSupport {
     std::string backend;
+    BackendTier tier;
+    BackendFormat format;
     std::set<std::string> supported_os;
     DeviceConstraints devices;
     std::string device_summary = "";
