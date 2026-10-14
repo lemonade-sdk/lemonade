@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vision: Automatically selecting the best known configuration - Lemonade Server</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
+  <meta name="description" content="Lemonade's vision for auto-BKC: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
+  <meta property="og:title" content="Vision: Automatically selecting the best known configuration (auto-BKC)">
+  <meta property="og:description" content="Lemonade's vision for auto-BKC: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-10-14">
+  <meta property="article:author" content="Lemonade Team">
+  <style>
+    .bkc {
+      --bkc-ink: #14161A;
+      --bkc-on-ink: #E8EAEE;
+      --bkc-on-ink-muted: #8A93A2;
+
+      --bkc-paper: #FFFDF6;
+      --bkc-text: #23262B;
+      --bkc-muted: #6A7280;
+      --bkc-line: rgba(20, 22, 26, 0.12);
+      --bkc-line-soft: rgba(20, 22, 26, 0.07);
+
+      --bkc-zest: #FCD846;
+      --bkc-moss: #3C6531;
+
+      --bkc-display: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+      --bkc-body: 'Manrope', 'Segoe UI', sans-serif;
+      --bkc-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+      width: 100%;
+      max-width: 940px;
+      margin: 0 auto 4rem;
+      padding: 0 1.5rem;
+      font-family: var(--bkc-body);
+      color: var(--bkc-text);
+      box-sizing: border-box;
+    }
+
+    .bkc *,
+    .bkc *::before,
+    .bkc *::after { box-sizing: border-box; }
+
+    .bkc p,
+    .bkc li { line-height: 1.66; }
+
+    .bkc code {
+      font-family: var(--bkc-mono);
+      font-size: 0.86em;
+      background: rgba(20, 22, 26, 0.06);
+      border: 1px solid var(--bkc-line-soft);
+      padding: 0.08em 0.34em;
+      border-radius: 0.25rem;
+    }
+
+    .bkc a:not(.bkc-btn) {
+      color: var(--bkc-text);
+      text-decoration: underline;
+      text-decoration-color: var(--bkc-zest);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 0.2em;
+      transition: text-decoration-color 0.15s ease;
+    }
+
+    .bkc a:not(.bkc-btn):hover { text-decoration-color: var(--bkc-text); }
+
+    .bkc a:not(.bkc-btn):focus-visible {
+      outline: 2px solid var(--bkc-text);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    /* ---------- Header ---------- */
+
+    .bkc-hero { padding: 3.5rem 0 2.8rem; }
+
+    .bkc-eyebrow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.7rem;
+      font-family: var(--bkc-mono);
+      font-size: 0.78rem;
+      color: var(--bkc-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .bkc-eyebrow span { white-space: nowrap; }
+
+    .bkc-eyebrow i {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--bkc-zest);
+      flex: none;
+    }
+
+    .bkc-title {
+      font-family: var(--bkc-display);
+      font-weight: 700;
+      font-size: clamp(2.1rem, 5vw, 3.3rem);
+      line-height: 1.06;
+      letter-spacing: -0.032em;
+      margin: 0 0 1.7rem;
+      max-width: 22ch;
+    }
+
+    .bkc-title em {
+      font-style: normal;
+      background: linear-gradient(transparent 62%, var(--bkc-zest) 62%);
+    }
+
+    .bkc-hero-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      gap: 2.5rem;
+      align-items: start;
+    }
+
+    .bkc-lede {
+      font-size: 1.1rem;
+      line-height: 1.62;
+      margin: 0 0 1rem;
+    }
+
+    .bkc-lede:last-child { margin-bottom: 0; }
+
+    .bkc-specs {
+      margin: 0;
+      border-top: 2px solid var(--bkc-text);
+    }
+
+    .bkc-specs div {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      padding: 0.62rem 0;
+      border-bottom: 1px solid var(--bkc-line-soft);
+    }
+
+    .bkc-specs dt {
+      font-family: var(--bkc-mono);
+      font-size: 0.78rem;
+      color: var(--bkc-muted);
+    }
+
+    .bkc-specs dd {
+      margin: 0;
+      font-family: var(--bkc-display);
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-align: right;
+    }
+
+    /* ---------- Sections ---------- */
+
+    .bkc-section {
+      padding: 2.6rem 0;
+      border-top: 1px solid var(--bkc-line);
+    }
+
+    .bkc-kicker {
+      display: block;
+      font-family: var(--bkc-mono);
+      font-size: 0.76rem;
+      font-weight: 500;
+      color: var(--bkc-muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .bkc-kicker b {
+      color: var(--bkc-text);
+      background: var(--bkc-zest);
+      font-weight: 700;
+      padding: 0.1em 0.42em;
+      border-radius: 0.25rem;
+      margin-right: 0.45rem;
+    }
+
+    .bkc-section h2 {
+      font-family: var(--bkc-display);
+      font-weight: 700;
+      font-size: clamp(1.5rem, 3vw, 1.95rem);
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      margin: 0 0 1rem;
+    }
+
+    .bkc-section h3 {
+      font-family: var(--bkc-display);
+      font-weight: 600;
+      font-size: 1.25rem;
+      letter-spacing: -0.015em;
+      margin: 2.2rem 0 0.6rem;
+    }
+
+    .bkc-section h4 {
+      font-family: var(--bkc-display);
+      font-weight: 600;
+      font-size: 1.05rem;
+      letter-spacing: -0.012em;
+      margin: 0 0 0.4rem;
+    }
+
+    .bkc-section > p,
+    .bkc-block > p {
+      margin: 0 0 1rem;
+      max-width: 68ch;
+    }
+
+    .bkc-section ul,
+    .bkc-section ol {
+      margin: 0 0 1.1rem;
+      padding-left: 1.3rem;
+      max-width: 68ch;
+    }
+
+    .bkc-section li + li { margin-top: 0.35rem; }
+
+    .bkc-section li::marker { color: var(--bkc-muted); }
+
+    .bkc-note {
+      margin: 1.2rem 0;
+      padding: 0.1rem 0 0.1rem 0.9rem;
+      border-left: 2px solid var(--bkc-zest);
+      font-size: 0.94rem;
+      color: var(--bkc-muted);
+      max-width: 68ch;
+    }
+
+    .bkc-note strong {
+      font-weight: 600;
+      color: var(--bkc-text);
+    }
+
+    /* ---------- Flow (the 1-click journey) ---------- */
+
+    .bkc-section .bkc-flow {
+      list-style: none;
+      padding: 0;
+      margin: 1.6rem 0 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      max-width: none;
+      counter-reset: flow;
+    }
+
+    .bkc-section .bkc-flow li { margin: 0; }
+
+    .bkc-flow li {
+      counter-increment: flow;
+      background: var(--bkc-ink);
+      color: var(--bkc-on-ink);
+      border-radius: 0.75rem;
+      padding: 1.2rem 1.2rem 1.3rem;
+    }
+
+    .bkc-flow li::before {
+      content: counter(flow);
+      font-family: var(--bkc-mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--bkc-text);
+      background: var(--bkc-zest);
+      width: 2rem;
+      height: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.4rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .bkc-flow h4 { color: var(--bkc-on-ink); }
+
+    .bkc-flow p {
+      margin: 0;
+      font-size: 0.93rem;
+      color: var(--bkc-on-ink-muted);
+    }
+
+    /* ---------- Theory split ---------- */
+
+    .bkc-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 1rem;
+      margin: 1.4rem 0 0;
+    }
+
+    .bkc-panel {
+      border: 1px solid var(--bkc-line);
+      border-radius: 0.75rem;
+      padding: 1.2rem 1.25rem 1.3rem;
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    .bkc-panel--solid {
+      border-color: var(--bkc-text);
+      border-top-width: 3px;
+    }
+
+    .bkc-panel-label {
+      font-family: var(--bkc-mono);
+      font-size: 0.74rem;
+      color: var(--bkc-muted);
+      margin: 0 0 0.35rem;
+    }
+
+    .bkc-panel ol {
+      margin: 0.7rem 0 0;
+      font-size: 0.95rem;
+    }
+
+    /* ---------- Cards ---------- */
+
+    .bkc-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin: 1rem 0 1.2rem;
+    }
+
+    .bkc-card {
+      border: 1px solid var(--bkc-line);
+      border-radius: 0.75rem;
+      padding: 1.1rem 1.15rem 1.2rem;
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    .bkc-card p {
+      margin: 0;
+      font-size: 0.93rem;
+      color: var(--bkc-muted);
+    }
+
+    .bkc-tier {
+      display: inline-block;
+      font-family: var(--bkc-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.15em 0.5em;
+      border-radius: 0.25rem;
+      margin-bottom: 0.6rem;
+      background: rgba(20, 22, 26, 0.07);
+      color: var(--bkc-text);
+    }
+
+    .bkc-tier--core { background: var(--bkc-zest); }
+    .bkc-tier--exp { background: rgba(60, 101, 49, 0.16); color: var(--bkc-moss); }
+
+    /* ---------- Spec list (database dimensions) ---------- */
+
+    .bkc-defs {
+      margin: 1rem 0 1.2rem;
+      border-top: 2px solid var(--bkc-text);
+      max-width: 68ch;
+    }
+
+    .bkc-defs div {
+      display: grid;
+      grid-template-columns: 9rem minmax(0, 1fr);
+      gap: 1rem;
+      padding: 0.7rem 0;
+      border-bottom: 1px solid var(--bkc-line-soft);
+    }
+
+    .bkc-defs dt {
+      font-family: var(--bkc-mono);
+      font-size: 0.8rem;
+      color: var(--bkc-muted);
+      padding-top: 0.15rem;
+    }
+
+    .bkc-defs dd {
+      margin: 0;
+      font-size: 0.97rem;
+      line-height: 1.6;
+    }
+
+    .bkc-section .bkc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin: 0.8rem 0 1.2rem;
+      padding: 0;
+      list-style: none;
+    }
+
+    .bkc-section .bkc-chips li { margin: 0; }
+
+    .bkc-chips li {
+      font-family: var(--bkc-mono);
+      font-size: 0.8rem;
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid var(--bkc-line);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    /* ---------- Refactor table ---------- */
+
+    .bkc-table-wrap { overflow-x: auto; margin: 1rem 0 0.4rem; }
+
+    .bkc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    .bkc-table th {
+      text-align: left;
+      font-family: var(--bkc-mono);
+      font-size: 0.76rem;
+      font-weight: 500;
+      color: var(--bkc-muted);
+      padding: 0 0.9rem 0.6rem 0;
+      border-bottom: 2px solid var(--bkc-text);
+    }
+
+    .bkc-table td {
+      vertical-align: top;
+      padding: 0.85rem 0.9rem 0.85rem 0;
+      border-bottom: 1px solid var(--bkc-line-soft);
+      line-height: 1.6;
+    }
+
+    .bkc-table td:first-child {
+      font-family: var(--bkc-display);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .bkc-loc {
+      font-family: var(--bkc-mono);
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+
+    /* ---------- Close ---------- */
+
+    .bkc-close {
+      margin-top: 1rem;
+      padding-top: 2.4rem;
+      border-top: 1px solid var(--bkc-line);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.4rem;
+    }
+
+    .bkc-close p {
+      margin: 0;
+      font-family: var(--bkc-display);
+      font-weight: 600;
+      font-size: 1.12rem;
+      letter-spacing: -0.015em;
+      max-width: 38ch;
+    }
+
+    .bkc-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+    }
+
+    .bkc-btn {
+      font-family: var(--bkc-display);
+      font-weight: 600;
+      font-size: 0.98rem;
+      background: var(--bkc-zest);
+      color: var(--bkc-text);
+      text-decoration: none;
+      padding: 0.85rem 1.7rem;
+      border-radius: 0.55rem;
+      white-space: nowrap;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .bkc-btn--ghost {
+      background: transparent;
+      border: 1px solid var(--bkc-text);
+    }
+
+    .bkc-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(252, 216, 70, 0.42);
+    }
+
+    .bkc-btn:focus-visible {
+      outline: 2px solid var(--bkc-text);
+      outline-offset: 3px;
+    }
+
+    /* ---------- Responsive ---------- */
+
+    @media (max-width: 860px) {
+      .bkc-hero-body {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2rem;
+      }
+
+      .bkc-flow,
+      .bkc-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+
+    @media (max-width: 620px) {
+      .bkc { padding: 0 1.1rem; }
+      .bkc-hero { padding: 2.5rem 0 2rem; }
+      .bkc-split { grid-template-columns: minmax(0, 1fr); }
+      .bkc-defs div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+      .bkc-close { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bkc-btn:hover { transform: none; }
+      .bkc-btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main blog-main">
+    <article class="bkc">
+
+      <header class="bkc-hero">
+        <div class="bkc-eyebrow">
+          <span>Vision</span>
+          <i aria-hidden="true"></i>
+          <span>Roadmap</span>
+          <i aria-hidden="true"></i>
+          <span>October 14, 2026</span>
+        </div>
+
+        <h1 class="bkc-title">Automatically selecting the <em>best known configuration</em></h1>
+
+        <div class="bkc-hero-body">
+          <div>
+            <p class="bkc-lede">Agentic coding has upended local AI software development in 2026. The number of important engines upstream of Lemonade is growing fast, and so is the number of important agents and apps downstream of it.</p>
+            <p class="bkc-lede">That gives Lemonade an exciting opportunity to serve as a central hub, similar to an "app store", where a curated selection of agents, engines, and models are distributed and "just work" with each other in a single click.</p>
+          </div>
+
+          <dl class="bkc-specs">
+            <div><dt>Concept</dt><dd>auto-BKC</dd></div>
+            <div><dt>You choose</dt><dd>Agent and model</dd></div>
+            <div><dt>Lemonade chooses</dt><dd>Engine and setup</dd></div>
+            <div><dt>First system</dt><dd>Strix Halo</dd></div>
+            <div><dt>Time to live</dt><dd>Minutes, 1 click</dd></div>
+          </dl>
+        </div>
+      </header>
+
+      <section class="bkc-section" aria-labelledby="bkc-why">
+        <span class="bkc-kicker"><b>01</b>Introduction</span>
+        <h2 id="bkc-why">Why this matters</h2>
+        <p>This work will improve adoption of local AI in both enthusiast and enterprise use cases by:</p>
+        <ul>
+          <li><strong>Improving purchaser confidence</strong> that systems will provide strong return on investment, based on upfront availability of data.</li>
+          <li><strong>Lowering evaluation and deployment friction</strong> by automating the end-to-end journey for common out-of-box use cases.</li>
+        </ul>
+      </section>
+
+      <section class="bkc-section" aria-labelledby="bkc-vision">
+        <span class="bkc-kicker"><b>02</b>Vision</span>
+        <h2 id="bkc-vision">Pick an agent. Lemonade handles the rest.</h2>
+        <p>The fragmented ecosystem of engines should be abstracted away from users and developers. They should be automatically presented with a "best known configuration" (BKC) for their use case, which we refer to as <strong>auto-BKC</strong>.</p>
+
+        <ol class="bkc-flow">
+          <li>
+            <h4>Choose an agent</h4>
+            <p>The user selects an agent from a menu of options, such as Hermes, Pi, AnythingLLM, DeepSeek Harness, and more.</p>
+          </li>
+          <li>
+            <h4>Get a recommendation</h4>
+            <p>Lemonade recommends a default model and engine known to work well with that agent on that system. Users can select something different if they choose.</p>
+          </li>
+          <li>
+            <h4>Go live</h4>
+            <p>The entire stack of agent, model, and engine is automatically installed and configured. Live in minutes from 1 click.</p>
+          </li>
+        </ol>
+
+        <h3>Theory</h3>
+        <p>Auto-BKC is possible because there are two subjective aspects to setting up a local AI agent, and everything else has an objective answer.</p>
+
+        <div class="bkc-split">
+          <div class="bkc-panel">
+            <p class="bkc-panel-label">Subjective</p>
+            <h4>What the user decides</h4>
+            <ol>
+              <li>The <strong>agent</strong> itself, which must meet the user's unique use case.</li>
+              <li>The <strong>model</strong>, since the results of every agent for every use case vary with model.</li>
+            </ol>
+          </div>
+          <div class="bkc-panel bkc-panel--solid">
+            <p class="bkc-panel-label">Deterministic</p>
+            <h4>What Lemonade decides</h4>
+            <ol>
+              <li>The best <strong>engine</strong> for the model, objectively selected from performance data for that system.</li>
+              <li><strong>Installing and configuring the engine</strong> to run the model on the target system.</li>
+              <li><strong>Installing and configuring the agent</strong> to talk to the engine and the user.</li>
+            </ol>
+          </div>
+        </div>
+
+        <p class="bkc-note"><strong>Note:</strong> we can recommend a default model for each agent and system combination based on benchmark data.</p>
+        <p class="bkc-note"><strong>Note:</strong> future work may take this a step further by auto-optimizing the engine code itself for the specific hardware, model, and use case.</p>
+      </section>
+
+      <section class="bkc-section" aria-labelledby="bkc-tech">
+        <span class="bkc-kicker"><b>03</b>Enabling technology</span>
+        <h2 id="bkc-tech">What we need to build</h2>
+        <p>Four pieces of technology turn auto-BKC from an idea into a click: an engine database, a steady pipeline of engine integrations, an agent manager, and a smart router.</p>
+
+        <h3>Engine database</h3>
+        <p>Deterministically selecting an engine for a target system is possible when we have a comprehensive database of performance for all relevant model and engine combinations on that system.</p>
+
+        <dl class="bkc-defs">
+          <div><dt>Performance</dt><dd>Prompt processing (PP), token generation (TG), memory, and power, for both the single-user and batched cases.</dd></div>
+          <div><dt>Models</dt><dd>The latest releases from Qwen, Meta, Liquid, Google, and others.</dd></div>
+          <div><dt>Systems</dt><dd>Strix Halo first. Radeon 9700, Gorgon Halo, and non-AMD systems to follow based on availability.</dd></div>
+          <div><dt>Engines</dt><dd>Anything that has demonstrated significant community traction. At the time of writing that includes DwarfStar4, Halogen, Gufo, and strix-llama.cpp.</dd></div>
+        </dl>
+
+        <div class="bkc-grid">
+          <div class="bkc-card">
+            <h4>Correctness</h4>
+            <p>Performance data for an incorrect implementation should be disregarded, so we'll adopt a way to assess whether an engine correctly implements a model. Donato's Terminal Bench Mini is a good candidate.</p>
+          </div>
+          <div class="bkc-card">
+            <h4>Official submissions</h4>
+            <p>A baseline of data will be collected using AMD's DevLab cloud.</p>
+          </div>
+          <div class="bkc-card">
+            <h4>User submissions</h4>
+            <p>User-submitted data extends coverage to more devices than DevLab has, emergent engines not already on our list, and engine parameterizations that are not part of our sweeps.</p>
+          </div>
+        </div>
+
+        <h3>Engine integrations</h3>
+        <p>New engines should be integrated into Lemonade as soon as they meet the following criteria:</p>
+        <ul>
+          <li>Significant community traction.</li>
+          <li>Leadership in the performance database.</li>
+          <li>Clear differentiation from other engines, including non-performance differentiators such as software license, portability, and platform support.</li>
+        </ul>
+        <p>Engines will be classified into three support tiers:</p>
+
+        <div class="bkc-grid">
+          <div class="bkc-card">
+            <span class="bkc-tier bkc-tier--core">Core</span>
+            <p>Recommended for production use, with guaranteed support from industry.</p>
+          </div>
+          <div class="bkc-card">
+            <span class="bkc-tier bkc-tier--exp">Experimental</span>
+            <p>Supported long term by at least one trusted Lemonade maintainer.</p>
+          </div>
+          <div class="bkc-card">
+            <span class="bkc-tier">Guest</span>
+            <p>Provided by an external party and deployed into a sandbox (e.g., containers, nono.sh). May be removed at any time.</p>
+          </div>
+        </div>
+
+        <h3>Agent manager</h3>
+        <p>The agent manager assists users with the installation, configuration, and launch of agents that work with local AI. It contains enough metadata about each agent's use case to enable auto-BKC, along with benchmark data, to recommend engines and models.</p>
+        <p>Candidate agents:</p>
+        <ul class="bkc-chips">
+          <li>Pi</li>
+          <li>AnythingLLM</li>
+          <li>Hermes</li>
+          <li>DeepSeek Harness</li>
+          <li>Claude Code</li>
+          <li>Codex</li>
+          <li>GitHub CLI</li>
+        </ul>
+        <p>We will also investigate deep integration of Pi into Lemonade, which could be used for:</p>
+        <ul>
+          <li>Running agent skills, such as agentically optimizing the user's system.</li>
+          <li>Built-in quality benchmarking, by asking Pi to use an agent and model combination to complete a task and grading the result.</li>
+          <li>Serving the agent to downstream applications via an endpoint.</li>
+        </ul>
+        <p class="bkc-note"><strong>Note:</strong> we are still working to define this capability in more detail. It will have a phased rollout, first enabling easy-to-deploy, developer-first agents (e.g., Pi) before moving on to more complex cases. Model recommendations will be performed by humans until benchmark data is available.</p>
+
+        <h3>Smart router</h3>
+        <p>The smart router lets agents easily take advantage of on-prem token servers (e.g., Instinct Coder, Threadripper Halo) and cloud APIs when available. Our work will make these resources easier to configure, for example by integrating Lemonade Nexus.</p>
+      </section>
+
+      <section class="bkc-section" aria-labelledby="bkc-maint">
+        <span class="bkc-kicker"><b>04</b>Maintainability</span>
+        <h2 id="bkc-maint">Scaling code velocity and quality together</h2>
+        <p>As Lemonade grows, certain measures are needed to ensure that we can sustain both high code velocity and high quality.</p>
+
+        <h3>Container strategy</h3>
+        <p>Historically, Lemonade has preferred to distribute native engines. We're adopting containers as a distribution mechanism for two reasons:</p>
+        <ol>
+          <li>Enabling sandboxed deployment, which keeps users' systems and data safer than running native binaries as the <code>lemonade</code> user.</li>
+          <li>Minimizing the amount of glue logic needed to integrate new engines and agents.</li>
+        </ol>
+        <p>Once containerized backends are available, we will also investigate sandboxing native backends using nono.sh, and enabling container-based agents in the agent manager.</p>
+
+        <h3>API contract</h3>
+        <p>The Lemonade Contract is a set of CI tests that assert certain APIs never receive breaking changes. It solves two maintainability problems:</p>
+        <ol>
+          <li>PR reviewers need certainty that a PR they're approving won't have unintended downstream consequences.</li>
+          <li>Downstream apps need certainty that they can take a dependency on these APIs.</li>
+        </ol>
+
+        <h3>Extensibility</h3>
+        <p>Users should be able to try new agents, engines, models, and parameterizations without waiting for Lemonade to add in-tree support. Two extensibility interfaces make that possible:</p>
+        <ul>
+          <li>Already-installed engines that meet a supported interface specification can connect to Lemonade's router.</li>
+          <li>Users can develop and distribute custom model catalogs, including model definitions that come with specialized parameterizations.</li>
+        </ul>
+
+        <h3>Planned refactors</h3>
+        <p>A few major Lemonade code modules recently hit their maintainability limit: PRs became too difficult to review correctly, so we stopped accepting contributions to them. These refactors add specs, tests, and other guardrails that let agents autonomously write correct code, which will greatly increase code velocity.</p>
+
+        <div class="bkc-table-wrap">
+          <table class="bkc-table">
+            <thead>
+              <tr>
+                <th>Module</th>
+                <th>Today</th>
+                <th>Plan</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Model Manager</td>
+                <td class="bkc-loc">model_manager.cpp<br>~7,000 LoC</td>
+                <td>Refactor into subclasses with crisp interfaces, enabling future work such as custom user-provided model catalogs.</td>
+              </tr>
+              <tr>
+                <td>API Server</td>
+                <td class="bkc-loc">server.cpp<br>~8,000 LoC</td>
+                <td>Move onto an endpoint base class, split into API-specific modules (OpenAI API, Lemonade API, etc.), and auto-generate the API docs. Endpoint changes become much easier to review, and this enables the API contract work.</td>
+              </tr>
+              <tr>
+                <td>Smart Router</td>
+                <td class="bkc-loc">router.cpp<br>~3,000 LoC</td>
+                <td>Needs a clear architecture, to be determined.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="bkc-close">
+        <p>Have thoughts on auto-BKC? We'd love to hear them.</p>
+        <div class="bkc-actions">
+          <a class="bkc-btn" href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">Join the Discord</a>
+          <a class="bkc-btn bkc-btn--ghost" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">Follow on GitHub</a>
+        </div>
+      </div>
+
+    </article>
+  </main>
+
+  <div class="footer-placeholder"></div>
+
+  <script src="../assets/footer.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
+      initializeFooter('../');
+    });
+  </script>
+</body>
+</html>
