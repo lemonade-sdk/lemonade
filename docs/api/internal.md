@@ -892,6 +892,5 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     - `example` - The name of the route's example to run.
     - `args` - Set instead of example: a request sent as is and left out of the docs.
 - `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form.
-- `validate_args` - Whether `lemond` checks the JSON body arguments against their schemas, answering `400` on a mismatch.
 - `quiet_log` - Whether the route is left out of the access log.
 <!-- END GENERATED: internal.routes -->
