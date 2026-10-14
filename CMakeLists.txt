@@ -3113,6 +3113,32 @@ if(BUILD_TESTING AND EXISTS "${_ARTIFACT_SOURCE_TEST_SRC}")
     add_cpp_ci_test(ArtifactSourceTest CI ON COMMAND test_artifact_source)
 endif()
 
+set(_ENGINE_PROTOCOLS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_engine_protocols.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ENGINE_PROTOCOLS_TEST_SRC}")
+    add_executable(test_engine_protocols
+        test/cpp/test_engine_protocols.cpp
+    )
+    target_link_libraries(test_engine_protocols PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(EngineProtocolsTest CI ON COMMAND test_engine_protocols)
+endif()
+
+set(_FLM_PULL_ARGS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_pull_args.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_FLM_PULL_ARGS_TEST_SRC}")
+    add_executable(test_flm_pull_args
+        test/cpp/test_flm_pull_args.cpp
+    )
+    target_link_libraries(test_flm_pull_args PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(FlmPullArgsTest CI ON COMMAND test_flm_pull_args)
+endif()
+
 set(_ARTIFACT_LAYOUT_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_layout.cpp"
 )
