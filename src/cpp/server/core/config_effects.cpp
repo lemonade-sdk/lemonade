@@ -38,7 +38,7 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
         reconfigure_application_logging(config.log_level(), rot_cfg);
     } else if (key == "global_timeout") {
         long timeout = config.global_timeout();
-        LOG(INFO, "Server") << "Global timeout set to: " << timeout << "s" << std::endl;
+        LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
         utils::HttpClient::set_default_timeout(timeout);
     } else if (key == "download_rate_limit") {
         const int64_t bps = config.download_rate_limit_bytes_per_second();
