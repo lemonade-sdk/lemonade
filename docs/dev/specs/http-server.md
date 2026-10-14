@@ -509,7 +509,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
-- a JSON format, or one of its shapes, has no example whose response it validates
+- a JSON format, or one of its shapes, has no example whose response it validates, unless the shape sets `x-no-example` to the reason no recording machine can return it
 - a field in a recorded JSON response has no `description` in its schema, unless an enclosing field is described without listing its properties
 - a recorded JSON body runs over 100 lines in the page
 - an example names an argument the route does not have or a format not in `responses`, a route with several examples leaves one unnamed or repeats a name, a `setup` step names a route or example that does not exist, or a `$<route id>` value names a route that did not run during setup
