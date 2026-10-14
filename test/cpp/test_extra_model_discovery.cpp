@@ -439,6 +439,27 @@ static void test_discovery_is_independent_of_creation_order() {
     check("discovery result is independent of file creation order", forward == reversed);
 }
 
+static void test_qualified_id_skips_kept_folder_name() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "a" / "Shared" / "Llama-Q4_K_M.gguf");
+    touch(dir / "a" / "Shared" / "Llama-Q8_0.gguf");
+    touch(dir / "a" / "beta-Shared" / "Mistral-Q4_K_M.gguf");
+    touch(dir / "a" / "beta-Shared" / "Mistral-Q8_0.gguf");
+    touch(dir / "beta" / "Shared" / "Phi.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* owner = find_model(models, "extra.Mistral-Q4_K_M");
+    check("earlier folder keeps its folder name",
+          owner != nullptr && has_alias(*owner, "beta-Shared"));
+    check("qualified id does not shadow a kept folder name",
+          find_model(models, "extra.beta-Shared") == nullptr &&
+          find_model(models, "extra.beta-Shared-2") != nullptr);
+
+    fs::remove_all(dir);
+}
+
 int main() {
     // The constructor loads the registry JSON files unconditionally, so point it
     // at a scratch dir to keep the test off the real user cache.
@@ -464,6 +485,7 @@ int main() {
     test_root_beats_category_for_short_id();
     test_non_normalized_search_path();
     test_discovery_is_independent_of_creation_order();
+    test_qualified_id_skips_kept_folder_name();
 
     fs::remove_all(cache_dir);
 

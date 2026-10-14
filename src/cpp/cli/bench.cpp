@@ -367,6 +367,16 @@ static bool model_has_embeddings_label(const json& model_info) {
     return false;
 }
 
+static bool is_usable_backend_state(const std::string& state) {
+    return state == "installed" || state == "update_required" || state == "update_available";
+}
+
+static std::string model_recipe_of(const json& model_info) {
+    if (model_info.contains("recipe") && model_info["recipe"].is_string())
+        return model_info["recipe"].get<std::string>();
+    return "";
+}
+
 std::vector<BackendDiscovery> discover_backends(const json& sys_info,
                                                 const std::vector<std::string>& requested,
                                                 const json& model_info) {
@@ -376,16 +386,14 @@ std::vector<BackendDiscovery> discover_backends(const json& sys_info,
         return result;
     }
 
-    std::string model_recipe;
-    if (model_info.contains("recipe") && model_info["recipe"].is_string())
-        model_recipe = model_info["recipe"].get<std::string>();
+    std::string model_recipe = model_recipe_of(model_info);
 
     for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
         if (!model_recipe.empty() && recipe_name != model_recipe) continue;
         if (!recipe_data.contains("backends") || !recipe_data["backends"].is_object()) continue;
         for (const auto& [backend_name, backend_data] : recipe_data["backends"].items()) {
             std::string state = backend_data.value("state", "unknown");
-            if (state != "installed" && state != "update_required" && state != "update_available") continue;
+            if (!is_usable_backend_state(state)) continue;
             if (!requested.empty()) {
                 bool found = false;
                 for (const auto& req : requested)
@@ -396,6 +404,158 @@ std::vector<BackendDiscovery> discover_backends(const json& sys_info,
         }
     }
     return result;
+}
+
+struct BenchBackendCandidate {
+    std::string recipe;
+    std::string backend;
+    std::string state;
+    std::string message;
+    std::string action;
+};
+
+static std::vector<BenchBackendCandidate> collect_backend_candidates(
+        const json& sys_info, const json& model_info, const std::vector<std::string>& requested) {
+    std::vector<BenchBackendCandidate> candidates;
+    if (!sys_info.contains("recipes") || !sys_info["recipes"].is_object()) return candidates;
+
+    const std::string model_recipe = model_recipe_of(model_info);
+    for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
+        if (!model_recipe.empty() && recipe_name != model_recipe) continue;
+        if (!recipe_data.is_object()) continue;
+        if (!recipe_data.contains("backends") || !recipe_data["backends"].is_object()) continue;
+
+        std::vector<BenchBackendCandidate> per_recipe;
+        for (const auto& [backend_name, backend_data] : recipe_data["backends"].items()) {
+            if (!backend_data.is_object()) continue;
+            if (!requested.empty() &&
+                std::find(requested.begin(), requested.end(), backend_name) == requested.end())
+                continue;
+            per_recipe.push_back({recipe_name, backend_name,
+                                  backend_data.value("state", ""),
+                                  backend_data.value("message", ""),
+                                  backend_data.value("action", "")});
+        }
+
+        const std::string default_backend = recipe_data.value("default_backend", "");
+        std::stable_sort(per_recipe.begin(), per_recipe.end(),
+                         [&default_backend](const BenchBackendCandidate& a, const BenchBackendCandidate& b) {
+                             return !default_backend.empty() && a.backend == default_backend &&
+                                    b.backend != default_backend;
+                         });
+        candidates.insert(candidates.end(), per_recipe.begin(), per_recipe.end());
+    }
+    return candidates;
+}
+
+static std::string install_command_for(const BenchBackendCandidate& candidate) {
+    if (!candidate.action.empty()) return candidate.action;
+    return "lemonade backends install " + candidate.recipe + ":" + candidate.backend;
+}
+
+static bool starts_with(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+}
+
+static void point_at_backends(std::ostream& out) {
+    out << "Run 'lemonade backends --all' to see which backends this machine supports." << std::endl;
+}
+
+static void suggest_install(std::ostream& out, const BenchBackendCandidate& candidate, const char* preamble) {
+    const std::string cmd = install_command_for(candidate);
+    if (starts_with(cmd, "lemonade")) out << preamble << " " << cmd << std::endl;
+    else point_at_backends(out);  // the server named remediation docs instead of an install
+}
+
+static void report_no_usable_backends(const std::string& model,
+                                      const std::vector<BenchBackendCandidate>& candidates) {
+    std::cerr << "Error: No installed backends found for model '" << model << "'." << std::endl;
+
+    bool suggested = false;
+    for (const auto& c : candidates) {
+        if (is_usable_backend_state(c.state) || c.state == "unsupported") continue;
+        if (!suggested) {
+            std::cerr << "Install one first:" << std::endl;
+            suggested = true;
+        }
+        std::cerr << "  " << install_command_for(c) << std::endl;
+    }
+
+    if (!suggested) {
+        point_at_backends(std::cerr);
+    } else {
+        std::cerr << "\nOr rerun the lemonade bench command with the --backend <name> flag to automatically install the backend(s)." << std::endl;
+    }
+}
+
+static bool install_requested_backends(lemonade::LemonadeClient& client, json& sys_info,
+                                      const std::vector<std::string>& models,
+                                      const std::map<std::string, json>& model_info_by_name,
+                                      const std::vector<std::string>& requested) {
+    std::vector<BenchBackendCandidate> queue;
+    std::unordered_set<std::string> queued;
+
+    for (const auto& model : models) {
+        const auto it = model_info_by_name.find(model);
+        const json& model_info = (it != model_info_by_name.end()) ? it->second : json::object();
+        const auto candidates = collect_backend_candidates(sys_info, model_info, requested);
+
+        std::unordered_set<std::string> listed;
+        for (const auto& c : candidates) {
+            listed.insert(c.backend);
+            if (is_usable_backend_state(c.state)) continue;
+            if (c.state == "unsupported") {
+                std::cerr << "Error: Backend '" << c.recipe << ":" << c.backend << "' cannot be installed here";
+                if (!c.message.empty()) std::cerr << ": " << c.message;
+                std::cerr << std::endl;
+                point_at_backends(std::cerr);
+                return false;
+            }
+            if (queued.insert(c.recipe + ":" + c.backend).second) queue.push_back(c);
+        }
+
+        for (const auto& req : requested) {
+            if (listed.count(req)) continue;
+            std::cerr << "Error: Backend '" << req << "' is not available for model '" << model << "'." << std::endl;
+            const auto all = collect_backend_candidates(sys_info, model_info, {});
+            std::vector<std::string> known;
+            for (const auto& c : all) known.push_back(c.backend);
+            if (known.empty()) {
+                point_at_backends(std::cerr);
+                return false;
+            }
+            std::cerr << "Available backends: " << join_list(known) << std::endl;
+            for (const auto& c : all) {
+                if (is_usable_backend_state(c.state) || c.state == "unsupported") continue;
+                suggest_install(std::cerr, c, "Install one with:");
+                break;
+            }
+            return false;
+        }
+    }
+
+    if (queue.empty()) return true;
+
+    for (const auto& c : queue) {
+        std::cout << "Preflight: backend '" << c.recipe << ":" << c.backend
+                  << "' is not installed. Installing..." << std::endl;
+        if (client.install_backend(c.recipe, c.backend) != 0) {
+            std::cerr << "Error: Failed to install backend '" << c.recipe << ":" << c.backend << "'."
+                      << std::endl;
+            suggest_install(std::cerr, c, "Install it manually with:");
+            return false;
+        }
+    }
+
+    try {
+        std::string resp = client.make_request("/api/v1/system-info", "GET", "", "", 10000, 10000);
+        sys_info = json::parse(resp);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to refresh system-info after installing backends: " << e.what()
+                  << std::endl;
+        return false;
+    }
+    return true;
 }
 
 static const std::map<std::string, std::string> RECIPE_ARGS_KEY = {
@@ -986,12 +1146,20 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         std::cerr << "Warning: Failed to fetch lemonade version from /health: " << e.what() << std::endl;
     }
 
+    if (!config.backends.empty() &&
+        !install_requested_backends(client, sys_info, unique_models, model_info_by_name, config.backends))
+        return 1;
+
     std::unordered_set<std::string> test_recipes, test_backends;
     std::map<std::string, std::vector<BackendDiscovery>> backends_by_model;
     for (const auto& model : unique_models) {
         const auto it = model_info_by_name.find(model);
         const json& model_info = (it != model_info_by_name.end()) ? it->second : json::object();
         auto backends = discover_backends(sys_info, config.backends, model_info);
+        if (backends.empty()) {
+            report_no_usable_backends(model, collect_backend_candidates(sys_info, model_info, config.backends));
+            return 1;
+        }
         backends_by_model[model] = backends;
         for (const auto& [recipe, backend] : backends) {
             test_recipes.insert(recipe);
@@ -1023,10 +1191,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         const std::string model_timestamp = get_timestamp_iso();
 
         auto backends = backends_by_model[model];
-        if (backends.empty()) {
-            std::cerr << "Error: No suitable backends found for model '" << model << "'." << std::endl;
-            return 1;
-        }
 
         // Determine context sizes
         std::vector<int> ctx_sizes = config.ctx_sizes;

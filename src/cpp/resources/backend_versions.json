@@ -47,22 +47,22 @@
         }
       },
       "ROCm/ggml-staging-automation": {
-        "hrx-b69": {
-          "llama-hrx-b69-bin-manylinux-hrx-x64.tar.gz": "sha256:e82b6bc6ec896afcf32dfa99e75ecaffa9b0470ac35c3ae8939f05c5cfb8a87c"
+        "hrx-b99": {
+          "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
         }
       }
     }
   },
   "llamacpp": {
-    "vulkan": "b10825",
-    "rocm-stable": "b10820",
-    "rocm-nightly": "b1324",
-    "cuda": "b10820",
-    "metal": "b10825",
-    "cpu": "b10825"
+    "vulkan": "b11393",
+    "rocm-stable": "b11395",
+    "rocm-nightly": "b1338",
+    "cuda": "b11395",
+    "metal": "b11393",
+    "cpu": "b11393"
   },
   "llamacpp-hrx": {
-    "hrx": "hrx-b69"
+    "hrx": "hrx-b99"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -144,7 +144,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.6"
+    "npu": "v1.0.7"
   },
   "kokoro": {
     "cpu": "b21",
@@ -160,7 +160,7 @@
   },
   "thenoise": {
     "comment": "TheNoise release tag. The portable bundle publishes per-GPU-target archives (<tag>-gfxNNNN-x64.tar.gz) under this tag; the host arch picks the matching archive.",
-    "rocm": "thenoise-0.7.1-rocm7.14.0"
+    "rocm": "thenoise-0.10.0-rocm10.1.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

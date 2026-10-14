@@ -65,20 +65,18 @@
 
    **Secondary: Extra Models Directory (GGUF)**
 
-   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
+   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, so a library you already have works without downloading anything again. Suggested paths:
 
-   - **Windows:**
-       - LM Studio: `C:\Users\You\.lmstudio\models`
-       - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
-   - **Linux:** `~/.cache/llama.cpp`
+   - **LM Studio:** `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` on Windows
+   - **A Hugging Face cache:** `~/.cache/huggingface/hub`
 
    Set `extra_models_dir` (see [Server Configuration](./configuration/README.md)):
 
    ```bash
-   lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
+   lemonade config set extra_models_dir="/home/you/.lmstudio/models"
    ```
 
-   Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
+   Any `.gguf` files in this directory, including its subdirectories, appear in Lemonade's model list in the `custom` category. For how they are named and how the folder layout selects the way they run, see [Imported models](./configuration/custom-models.md#imported-models-extra_models_dir).
 
    **FastFlowLM**
 

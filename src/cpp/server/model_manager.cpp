@@ -20,6 +20,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -146,6 +147,10 @@ static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
+
+static bool are_required_checkpoints_complete(const ModelInfo& info);
+static bool is_checkpoint_path_complete(const std::string& path);
+static bool path_inside(const fs::path& path, const fs::path& root);
 
 // Select the deployment mode from the top-level directory within extra_models_dir.
 static std::string extra_model_deployment_label(
@@ -1163,25 +1168,87 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
+// A model kept in a Hugging Face or ModelScope cache lives under
+// <models--org--repo>/snapshots/<commit>/, so its folder is an opaque commit
+// hash. An empty name means the folder is not in a cache with a live revision.
+struct CacheRepoNaming {
+    std::string name;
+    std::string qualifier;
+    std::string variant_prefix;
+};
+
+static CacheRepoNaming cache_repo_naming(const fs::path& dir_path,
+                                         const fs::path& search_path) {
+    fs::path snapshot_dir;
+    for (fs::path cur = dir_path; cur.has_filename(); cur = cur.parent_path()) {
+        if (cur.parent_path().filename() == "snapshots") {
+            snapshot_dir = cur;
+            break;
+        }
+        if (cur == search_path) break;
+    }
+    if (snapshot_dir.empty()) return {};
+
+    const fs::path cache_root = snapshot_dir.parent_path().parent_path();
+    const std::string cache_dir_name = cache_root.filename().string();
+    std::string encoded;
+    for (const std::string prefix : {"modelscope--models--", "models--"}) {
+        if (cache_dir_name.rfind(prefix, 0) == 0) {
+            encoded = cache_dir_name.substr(prefix.size());
+            break;
+        }
+    }
+
+    // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo". Only the
+    // first separator is the org boundary; the rest belongs to the repo name.
+    const size_t sep = encoded.find("--");
+    const std::string org = sep == std::string::npos ? "" : encoded.substr(0, sep);
+    const std::string repo = sep == std::string::npos ? encoded : encoded.substr(sep + 2);
+    if (repo.empty()) return {};
+
+    const fs::path live = active_hf_snapshot_path(cache_root);
+    if (live.empty()) return {};
+
+    CacheRepoNaming out;
+    out.name = dir_path == snapshot_dir ? repo : repo + "-" + dir_path.filename().string();
+    if (live != snapshot_dir) {
+        // Names the live revision uses stay with it, whatever order the
+        // revisions are discovered in.
+        out.variant_prefix = snapshot_dir.filename().string() + "-";
+        out.name = out.variant_prefix + out.name;
+    }
+    // Qualifying a collision with the folder would bring back the commit hash.
+    out.qualifier = org.empty() ? out.name : org;
+    return out;
+}
+
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
-// newcomer with its folder keeps both and leaves the first model's id alone.
+// newcomer keeps both and leaves the first model's id alone. Ids and kept
+// folder names share one namespace, so a qualified id can never shadow a
+// folder name another model already owns.
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
+                            std::set<std::string>& claimed_names,
                             const std::string& base_name,
-                            const fs::path& folder,
+                            const std::string& qualifier,
                             ModelInfo info,
                             const std::set<std::string>* reserved_ids = nullptr) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
-    std::string id = prefix + base_name;
-    if (discovered.count(id) || (reserved_ids && reserved_ids->count(id))) {
-        const std::string qualified = folder.filename().string() + "-" + base_name;
-        id = prefix + qualified;
-        for (int n = 2; discovered.count(id); ++n) {
-            id = prefix + qualified + "-" + std::to_string(n);
+    auto taken = [&](const std::string& name) {
+        return claimed_names.count(name) ||
+               (reserved_ids && reserved_ids->count(prefix + name));
+    };
+    std::string name = base_name;
+    if (taken(name)) {
+        const std::string qualified = qualifier + "-" + base_name;
+        name = qualified;
+        for (int n = 2; taken(name); ++n) {
+            name = qualified + "-" + std::to_string(n);
         }
     }
-    info.model_name = id;
-    discovered.emplace(id, std::move(info));
+    claimed_names.insert(name);
+    info.model_name = prefix + name;
+    discovered.emplace(info.model_name, std::move(info));
 }
 
 static const std::set<std::string>& reserved_extra_model_ids() {
@@ -1193,7 +1260,16 @@ static const std::set<std::string>& reserved_extra_model_ids() {
     return ids;
 }
 
-std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
+static bool is_draft_gguf_filename(std::string filename) {
+    std::transform(filename.begin(), filename.end(), filename.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return filename.rfind("mtp-", 0) == 0 ||
+           filename.find("-mtp-ud-") != std::string::npos ||
+           filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
+}
+
+std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
+    const std::set<fs::path>& registered_paths) const {
     std::map<std::string, ModelInfo> discovered;
 
     // If no extra models directory configured, return empty
@@ -1239,7 +1315,22 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
             std::string filename = entry.path().filename().string();
 
-            if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf")) continue;
+            if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") ||
+                is_draft_gguf_filename(filename)) continue;
+
+            // Registry-owned files were already attached to their original
+            // model IDs. Do not surface them again as extra.* models. A
+            // directory checkpoint also owns any GGUFs below that directory.
+            bool registered = false;
+            for (fs::path path = entry.path().lexically_normal(); !path.empty();
+                 path = path.parent_path()) {
+                if (registered_paths.count(path)) {
+                    registered = true;
+                    break;
+                }
+                if (path == search_path) break;
+            }
+            if (registered) continue;
 
             fs::path parent_dir = entry.path().parent_path();
             const std::string deployment_label =
@@ -1261,16 +1352,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    // Root files claim their short id first, so adding a reserved directory
-    // never renames an extra model that already exists.
-    std::sort(standalone_files.begin(), standalone_files.end(),
-              [](const fs::path& lhs, const fs::path& rhs) {
-                  return lhs.generic_string() < rhs.generic_string();
-              });
-
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
-    std::set<std::string> folder_ids_kept;
+    // The first model to keep a folder name owns it in both its bare and
+    // extra. forms; resolving each form separately could split them.
+    std::set<std::string> claimed_names;
     auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
                                     const std::string& deployment_label,
                                     const fs::path& mmproj_file = fs::path()) {
@@ -1304,29 +1390,26 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.labels.push_back("vision");
         }
 
-        if (!deployment_label.empty() && folder_ids_kept.insert(deployment_label).second) {
+        if (!deployment_label.empty() && claimed_names.insert(deployment_label).second) {
             info.input_aliases.push_back(deployment_label);
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
-        add_extra_model(discovered, base_name, gguf_path.parent_path(),
+        add_extra_model(discovered, claimed_names, base_name,
+                        gguf_path.parent_path().filename().string(),
                         std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
     };
 
-    for (const auto& gguf_path : standalone_files) {
-        if (gguf_reader_detail::contains_ignore_case(
-                gguf_path.filename().string(), "mmproj")) continue;
-        add_standalone_model({gguf_path}, "");
-    }
-
-    for (auto& [category_path, files] : category_files) {
+    // Files sitting directly in a directory are separate models, except where
+    // numbered shard names declare that they belong together.
+    auto group_logical_models = [](std::vector<fs::path> files,
+                                   std::vector<fs::path>& mmproj_files) {
         std::sort(files.begin(), files.end(),
                   [](const fs::path& lhs, const fs::path& rhs) {
                       return lhs.generic_string() < rhs.generic_string();
                   });
-        std::vector<fs::path> mmproj_files;
         std::vector<std::vector<fs::path>> logical_models;
         std::map<std::pair<std::string, int>, size_t> shard_groups;
 
@@ -1353,6 +1436,19 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
                   [](const auto& lhs, const auto& rhs) {
                       return lhs.front().generic_string() < rhs.front().generic_string();
                   });
+        return logical_models;
+    };
+
+    // Root files claim their short id first, so adding a reserved directory
+    // never renames an extra model that already exists.
+    std::vector<fs::path> root_mmproj_files;
+    for (const auto& model_files : group_logical_models(standalone_files, root_mmproj_files)) {
+        add_standalone_model(model_files, "");
+    }
+
+    for (const auto& [category_path, files] : category_files) {
+        std::vector<fs::path> mmproj_files;
+        const auto logical_models = group_logical_models(files, mmproj_files);
 
         const std::string deployment_label = category_path.filename().string();
         const fs::path direct_mmproj = logical_models.size() == 1 && !mmproj_files.empty()
@@ -1370,7 +1466,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
                   [](const fs::path& lhs, const fs::path& rhs) {
                       return lhs.generic_string() < rhs.generic_string();
                   });
-        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path);
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path,
+                                           claimed_names);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -1382,9 +1479,17 @@ void ModelManager::discover_extra_models_in_directory(
     const fs::path& dir_path,
     const std::vector<fs::path>& gguf_files,
     std::map<std::string, ModelInfo>& discovered,
-    const fs::path& search_path) const {
+    const fs::path& search_path,
+    std::set<std::string>& claimed_names) const {
 
     std::string dir_name = dir_path.filename().string();
+    std::string qualifier = dir_name;
+    std::string folder_qualifier = dir_path.parent_path().filename().string();
+    const CacheRepoNaming cache = cache_repo_naming(dir_path, search_path);
+    if (!cache.name.empty()) {
+        dir_name = cache.name;
+        qualifier = folder_qualifier = cache.qualifier;
+    }
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
@@ -1452,7 +1557,9 @@ void ModelManager::discover_extra_models_in_directory(
             if (it == model_file_by_name.end()) continue;
 
             const fs::path& path = it->second;
-            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + visible_extra_variant_name(v);
+            const std::string variant_name =
+                cache.variant_prefix + visible_extra_variant_name(v);
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + variant_name;
 
             ModelInfo info = init_extra_model_info(variant_id);
             info.checkpoints["main"] = path.string();
@@ -1472,12 +1579,13 @@ void ModelManager::discover_extra_models_in_directory(
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
-            if (path == main_model_path) {
+            if (path == main_model_path && cache.name.empty() &&
+                claimed_names.insert(dir_name).second) {
                 info.input_aliases.push_back(dir_name);
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), dir_path,
+            add_extra_model(discovered, claimed_names, variant_name, qualifier,
                             std::move(info), deployment_label.empty()
                                 ? nullptr
                                 : &reserved_extra_model_ids());
@@ -1501,8 +1609,8 @@ void ModelManager::discover_extra_models_in_directory(
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, dir_name, dir_path, std::move(info),
-                        deployment_label.empty()
+        add_extra_model(discovered, claimed_names, dir_name, folder_qualifier,
+                        std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
     }
@@ -1544,9 +1652,128 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
 }
 
+// Reuse the backend-specific registry resolver against an alternative cache
+// root, without changing how the managed cache is resolved by default.
+static std::string resolve_registered_extra_checkpoint(
+    const ModelInfo& info, const std::string& type,
+    const std::string& checkpoint, const std::string& extra_dir) {
+    backends::CheckpointResolveContext ctx;
+    ctx.hf_cache = extra_dir;
+    ctx.repo_id = checkpoint_to_repo_id(checkpoint);
+    ctx.main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    ctx.variant = checkpoint_to_variant(checkpoint);
+    ctx.registry_source = effective_registry_source(info);
+    ctx.model_cache_path = extra_dir + "/" +
+        repo_id_to_cache_dir_name(ctx.repo_id, ctx.registry_source);
+    ctx.type = type;
+    ctx.checkpoint = checkpoint;
+    return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
+}
+
+// Resolve the complete family of a registered sharded GGUF. A first shard
+// alone is not a usable model, and its remaining shards must not be discovered
+// as an unrelated extra.* model. Other quantizations remain independent.
+static bool collect_registered_shards(const fs::path& resolved, const fs::path& repo_root,
+                                      std::set<fs::path>& owned_paths) {
+    const fs::path file = resolved.lexically_normal();
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(file.filename().string(), &base, &total)) {
+        owned_paths.insert(file);
+        return true;
+    }
+
+    std::set<int> indices;
+    std::set<fs::path> family;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
+        if (ec) return false;
+        const std::string filename = entry.path().filename().string();
+        if (!same_shard_family(filename, base, total)) continue;
+
+        int index = 0;
+        is_gguf_shard_filename(filename, nullptr, nullptr, &index);
+        const std::string path = path_to_utf8(entry.path());
+        if (!entry.is_regular_file(ec) || ec ||
+            !path_inside(entry.path(), repo_root) ||
+            !is_checkpoint_path_complete(path) ||
+            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
+            return false;
+        }
+        indices.insert(index);
+        family.insert(entry.path().lexically_normal());
+    }
+    if (ec || indices.size() != static_cast<size_t>(total)) return false;
+    owned_paths.insert(family.begin(), family.end());
+    return true;
+}
+
+// Only complete repository caches can reclaim registered model identities;
+// loose GGUFs remain independent extra.* entries.
+static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::string& extra_dir,
+                                               std::set<fs::path>* registered_paths = nullptr) {
+    if (extra_dir.empty() || !info.source.empty() ||
+        info.recipe == "flm" || info.recipe == "cloud" ||
+        is_model_collection_recipe(info.recipe)) return false;
+
+    const fs::path root = path_from_utf8(extra_dir);
+    const std::string repo = checkpoint_to_repo_id(info.checkpoint("main"));
+    if (repo.empty()) return false;
+    const fs::path main_repo = root /
+        repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+    if (!safe_is_directory(main_repo) || !path_inside(main_repo, root)) {
+        return false;
+    }
+
+    ModelInfo candidate = info;
+    std::set<fs::path> owned_paths;
+    try {
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
+            const std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
+            if (checkpoint_repo.empty()) return false;
+            const fs::path expected_repo = root /
+                repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
+            candidate.resolved_paths[type] =
+                resolve_registered_extra_checkpoint(info, type, checkpoint, extra_dir);
+            const std::string& resolved = candidate.resolved_paths[type];
+            if (info.recipe == "llamacpp" && type == "main" &&
+                (safe_is_directory(path_from_utf8(resolved)) ||
+                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
+                return false;
+            }
+            // Reject escaped refs/main entries and symlinks, including redirects
+            // into a *different* repository under the same extra models root.
+            const fs::path resolved_path = path_from_utf8(resolved);
+            const bool own_repo = path_inside(expected_repo, root) &&
+                path_inside(resolved_path, expected_repo);
+            const bool legacy_main_repo = type != "main" &&
+                path_inside(resolved_path, main_repo);
+            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
+                !collect_registered_shards(resolved_path,
+                    own_repo ? expected_repo : main_repo, owned_paths)) {
+                return false;
+            }
+        }
+        if (!are_required_checkpoints_complete(candidate)) return false;
+    } catch (const std::exception&) {
+        return false;  // An optional directory must never break catalog discovery.
+    }
+    info.resolved_paths = std::move(candidate.resolved_paths);
+    if (registered_paths) registered_paths->insert(owned_paths.begin(), owned_paths.end());
+    return true;
+}
+
 void ModelManager::resolve_all_model_paths(ModelInfo& info) {
     for (auto const& [type, checkpoint] : info.checkpoints) {
         info.resolved_paths[type] = resolve_model_path(info, type, checkpoint);
+    }
+    // Prefer the managed cache, falling back only when incomplete.
+    if (!extra_models_dir_.empty() && info.source.empty() &&
+        info.recipe != "flm" && info.recipe != "cloud" &&
+        !is_model_collection_recipe(info.recipe) &&
+        !are_required_checkpoints_complete(info)) {
+        try_resolve_registered_extra_cache(info, extra_models_dir_);
     }
 }
 
@@ -3199,14 +3426,21 @@ void ModelManager::build_cache() {
         all_models[info.model_name] = info;
     }
 
-    // Step 1.5: Discover models from extra_models_dir
-    // All discovered models are prefixed with "extra." so they have distinct
-    // canonical IDs from any user. or builtin. records that may share a bare
-    // name. Bare-name collisions are surfaced via the friendly-name layer in
-    // rebuild_public_model_aliases_locked, not by dropping records here.
+    // Step 1.5: Keep registered models attached to their catalog IDs when a
+    // complete HF/ModelScope repository cache also lives in extra_models_dir.
+    // This also suppresses duplicates if both cache roots have the same model;
+    // unrelated GGUFs in extra_models_dir are still discovered normally.
+    std::set<fs::path> registered_extra_paths;
+    if (!extra_models_dir_.empty()) {
+        for (const auto& [name, info] : all_models) {
+            ModelInfo candidate = info;
+            try_resolve_registered_extra_cache(candidate, extra_models_dir_, &registered_extra_paths);
+        }
+    }
+
     std::map<std::string, ModelInfo> discovered_models;
     try {
-        discovered_models = discover_extra_models();
+        discovered_models = discover_extra_models(registered_extra_paths);
     } catch (const std::exception& e) {
         // External discovery is additive. A filesystem failure in that optional
         // source must never make built-in or user-registered models disappear.
@@ -5566,7 +5800,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.max_retry_delay_ms = 120000;
         download_opts.resume_partial = true;
         download_opts.low_speed_limit = 1000;
-        download_opts.low_speed_time = 60;
+        download_opts.low_speed_time = static_cast<int>(utils::HttpClient::get_default_timeout());
         download_opts.connect_timeout = 60;
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
@@ -6008,6 +6242,18 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         << repo_download_paths.at(main_repo_id) << std::endl;
 }
 
+// Files in a separate extra_models_dir remain user-managed even when their
+// complete repository cache is recognized under a catalog model's ID.
+static bool path_inside(const fs::path& path, const fs::path& root) {
+    if (path.empty() || root.empty()) return false;
+    std::error_code ec;
+    const fs::path actual = fs::weakly_canonical(path, ec);
+    if (ec) return false;
+    const fs::path base = fs::weakly_canonical(root, ec);
+    if (ec) return false;
+    const fs::path relative = actual.lexically_relative(base);
+    return !relative.empty() && *relative.begin() != fs::path("..");
+}
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
@@ -6038,6 +6284,40 @@ void ModelManager::delete_model(const std::string& model_name) {
     if (canonical_model_name.substr(0, 6) == "extra.") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
+    }
+    // Never delete an adopted external cache through its registered catalog ID.
+    if (info.source.empty() && info.recipe != "flm" && info.recipe != "cloud" &&
+        !is_model_collection_recipe(info.recipe)) {
+        const fs::path managed_root = path_from_utf8(get_hf_cache_dir());
+        const std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+        const fs::path managed_main_repo = main_repo.empty() ? fs::path() :
+            managed_root / repo_id_to_cache_dir_name(main_repo, effective_registry_source(info));
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache" || info.resolved_path(type).empty()) continue;
+            const std::string repo = checkpoint_to_repo_id(checkpoint);
+            if (repo.empty()) {
+                throw std::runtime_error("Cannot delete a registered model with an invalid checkpoint.");
+            }
+            const fs::path managed_repo = managed_root /
+                repo_id_to_cache_dir_name(repo, effective_registry_source(info));
+            const fs::path resolved_path = path_from_utf8(info.resolved_path(type));
+            const bool own_repo = path_inside(managed_repo, managed_root) &&
+                path_inside(resolved_path, managed_repo);
+            // Legacy downloads placed auxiliary files in the main repo cache.
+            // Never extend that exception to main files or external paths.
+            const bool legacy_main_repo = type != "main" && !main_repo.empty() &&
+                path_inside(managed_main_repo, managed_root) &&
+                path_inside(resolved_path, managed_main_repo);
+            if (!own_repo && !legacy_main_repo) {
+                if (!is_user_model_name(canonical_model_name)) {
+                    throw std::runtime_error("Cannot delete a registered model outside its managed cache. "
+                                             "External files are user-managed; remove them manually.");
+                }
+                unregister_user_model(canonical_model_name);
+                remove_model_from_cache(canonical_model_name);
+                return;
+            }
+        }
     }
 
     // FLM models have no local HF cache; deletion is the backend's `flm remove`.

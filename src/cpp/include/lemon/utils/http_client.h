@@ -111,7 +111,7 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
-    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    int no_progress_timeout = 0;       // Seconds without byte progress before aborting; 0 uses the default timeout
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
 
