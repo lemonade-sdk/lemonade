@@ -55,6 +55,9 @@ int main() {
     malformed([](auto& doc) { doc["operations"][0]["request"]["set"]["/caption"] = {{"ref", "/request/~invalid"}}; }, "invalid_pointer", "/operations/0/request/set/~1caption/ref");
     malformed([](auto& doc) { doc["operations"][0]["request"]["set"]["/caption"] = {{"ref", "/request/value"}, {"type", "string"}, {"default", nullptr}}; }, "invalid_type", "/operations/0/request/set/~1caption/default");
     malformed([](auto& doc) { doc["metadata"]["options"].push_back(doc["metadata"]["options"][0]); }, "option_collision", "/metadata/options/1/name");
+    malformed([](auto& doc) { doc["metadata"]["config_extra"]["backend"] = false; }, "invalid_type", "/metadata/config_extra/backend");
+    malformed([](auto& doc) { doc["metadata"]["supported_modes"] = {"unknown-mode"}; }, "invalid_value", "/metadata/supported_modes");
+    malformed([](auto& doc) { auto& option = doc["metadata"]["options"][0]; option["value_type"] = "integer"; option["default_value"] = 2; option["enum"] = {1,2,3}; option["minimum"] = 1; option["maximum"] = 2; option.erase("ui"); }, "invalid_value", "/metadata/options/0/enum");
     auto duplicate = source.text;
     duplicate.insert(duplicate.find('{') + 1, "\"id\":\"duplicate\",");
     check(!store.validate({"duplicate.json", duplicate, DefinitionOrigin::Builtin}).definition, "duplicate keys fail");

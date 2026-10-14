@@ -1,5 +1,6 @@
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/launch_planner.h"
+#include "lemon/backends/configured/configured_server.h"
 
 namespace lemon::backends {
 namespace {
@@ -51,12 +52,29 @@ BackendDescriptor descriptor_from(const BackendDefinition& definition) {
 }
 }
 
-ConfiguredBackendEntry::ConfiguredBackendEntry(std::shared_ptr<const BackendDefinition> input)
-    : definition(std::move(input)), descriptor(descriptor_from(*definition)),
+struct ConfiguredBackendEntry::FactoryState {
+    std::weak_ptr<const ConfiguredBackendEntry> owner;
+};
+std::shared_ptr<const ConfiguredBackendEntry> ConfiguredBackendEntry::make(std::shared_ptr<const BackendDefinition> definition, TrustedCompatibility compatibility) {
+    auto entry = std::make_shared<ConfiguredBackendEntry>(std::move(definition), compatibility);
+    entry->factory_state_->owner = entry;
+    return entry;
+}
+
+ConfiguredBackendEntry::ConfiguredBackendEntry(std::shared_ptr<const BackendDefinition> input, TrustedCompatibility trusted)
+    : factory_state_(std::make_shared<FactoryState>()), definition(std::move(input)), descriptor(descriptor_from(*definition)),
       ops(std::make_shared<ConfiguredBackendOps>(definition)),
       spec(definition->records["install"].value("install_recipe", definition->recipe), descriptor.binary,
            definition->records["install"].value("supports_split_archive", false), definition->recipe,
            definition->records["install"].value("pin_recipe", definition->recipe), definition,
-           [owned_ops = ops](const InstallContext& context) { return owned_ops->install_params(context); }) {}
+           [owned_ops = ops](const InstallContext& context) { return owned_ops->install_params(context); }),
+      compatibility(trusted),
+      factory([state = factory_state_](const BackendContext& context) -> std::unique_ptr<WrappedServer> {
+          auto owner = state->owner.lock();
+          if (!owner) throw std::logic_error("Configured factory entry has expired");
+          return std::make_unique<ConfiguredServer>(std::move(owner), context);
+      }) {
+    if (trusted != TrustedCompatibility::None && definition->origin != DefinitionOrigin::Builtin) throw std::invalid_argument("External definitions cannot attach compiled compatibility");
+}
 
 }

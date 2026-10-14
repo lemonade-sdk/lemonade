@@ -6,6 +6,7 @@
 #include "lemon/wrapped_server.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdio>
 #include <memory>
 #include <mutex>
@@ -18,6 +19,9 @@ struct MediaResponseTestHook {
     static void serve(httplib::Response& response, const std::function<void(httplib::DataSink&)>& generate) {
         Server::serve_media_or_error(response, "audio/wav", generate);
     }
+    static Router& router(Server& server) { return *server.router_; }
+    static ModelManager& models(Server& server) { return *server.model_manager_; }
+    static void generate(Server& server, const httplib::Request& request, httplib::Response& response) { server.handle_audio_generations(request, response); }
 };
 }
 
@@ -46,15 +50,31 @@ struct Capture {
 class HttpFixture {
 public:
     HttpFixture() {
-        http.Get("/health", [](const auto&, auto& response) { response.set_content("{}", "application/json"); });
+        http.Get("/health", [this](const auto&, auto& response) { response.status = health_status.load(); response.set_content("{}", "application/json"); });
         http.Post("/generate", [this](const auto& request, auto& response) {
-            std::lock_guard<std::mutex> lock(mutex);
-            path = request.path;
-            method = request.method;
-            body = request.body;
-            ++requests;
+            std::unique_lock<std::mutex> lock(mutex);
+            path = request.path; method = request.method; body = request.body; ++requests;
+            if (hold) {
+                entered = true; condition.notify_all();
+                condition.wait(lock, [this] { return released; });
+                hold = false;
+            }
             response.status = status;
-            response.set_content(reply, "audio/wav");
+            if (disconnect >= 0) {
+                const int mode = disconnect;
+                const auto callback = on_disconnect;
+                response.set_content_provider(100, "audio/wav", [mode, callback](size_t offset, size_t, auto& sink) {
+                    if (mode == 1 && offset == 0) { sink.write("PART", 4); return true; }
+                    if (callback) callback();
+                    return false;
+                });
+            } else response.set_content(reply, "audio/wav");
+        });
+        http.Post("/json", [this](const auto& request, auto& response) {
+            std::unique_lock<std::mutex> lock(mutex);
+            path = request.path; body = request.body; method = request.method; ++requests;
+            if (hold) { entered = true; condition.notify_all(); condition.wait(lock, [this] { return released; }); hold = false; }
+            response.set_content(R"({"witness":true})", "application/json");
         });
         for (const auto* endpoint : {"/v1/chat/completions", "/v1/completions", "/v1/responses"}) {
             http.Post(endpoint, [this](const auto& request, auto& response) {
@@ -75,11 +95,26 @@ public:
         std::lock_guard<std::mutex> lock(mutex);
         status = code;
         reply = std::move(bytes);
+        disconnect = -1;
+        on_disconnect = {};
     }
+    std::string last_path() { std::lock_guard<std::mutex> lock(mutex); return path; }
+    std::string last_body() { std::lock_guard<std::mutex> lock(mutex); return body; }
+    std::string last_method() { std::lock_guard<std::mutex> lock(mutex); return method; }
+    size_t request_count() { std::lock_guard<std::mutex> lock(mutex); return requests; }
+    void delay() { std::lock_guard<std::mutex> lock(mutex); hold = true; entered = false; released = false; }
+    bool wait_for_request() { std::unique_lock<std::mutex> lock(mutex); return condition.wait_for(lock, std::chrono::seconds(3), [this] { return entered; }); }
+    void unblock() { std::lock_guard<std::mutex> lock(mutex); released = true; condition.notify_all(); }
+    void break_transfer(int mode, std::function<void()> callback) { std::lock_guard<std::mutex> lock(mutex); status = 200; disconnect = mode; on_disconnect = std::move(callback); }
     int port;
+    std::atomic<int> health_status{200};
+private:
     std::string path, method, body;
     size_t requests = 0;
-private:
+    bool hold = false, entered = false, released = false;
+    int disconnect = -1;
+    std::function<void()> on_disconnect;
+    std::condition_variable condition;
     httplib::Server http;
     std::thread thread;
     std::mutex mutex;
@@ -98,9 +133,11 @@ struct EffectsFixture {
     std::vector<std::string> supported = {"vulkan", "cuda"};
     bool model_exists = true;
     bool binary_exists = true;
-    bool child_running = true;
+    std::atomic<bool> child_running{true};
+    std::mutex stop_mutex;
+    std::condition_variable stopped;
     int port;
-    int stops = 0;
+    std::atomic<int> stops{0};
     explicit EffectsFixture(int value) : port(value) {}
 
     class Process final : public ServerProcess {
@@ -115,7 +152,7 @@ struct EffectsFixture {
             handle_.pid = 4242;
             return "127.0.0.1";
         }
-        void stop() override { ++fixture_.stops; handle_ = {nullptr, 0}; }
+        void stop() override { ++fixture_.stops; handle_ = {nullptr, 0}; fixture_.stopped.notify_all(); }
         bool running() const override { return handle_.pid && fixture_.child_running; }
     private:
         EffectsFixture& fixture_;
@@ -179,7 +216,7 @@ inline void wire_oracle(WrappedServer& server, HttpFixture& http) {
     for (const auto& [input, expected] : mapping_cases) {
         Capture output;
         audio->audio_generations(input, output.sink);
-        check(http.method == "POST" && http.path == "/generate" && http.body == expected, "independent wire body");
+        check(http.last_method() == "POST" && http.last_path() == "/generate" && http.last_body() == expected, "independent wire body");
         check(output.bytes == std::string("RIFF\0\xff\r\nWAVE", 12) && output.done == 1, "binary bytes and completion");
         check(!server.is_busy(), "request accounting released");
     }
@@ -224,7 +261,7 @@ inline void wire_oracle(WrappedServer& server, HttpFixture& http) {
         const std::string input = "{ \"stream\" : true, \"model\" : \"fixture\" }";
         Capture output;
         server.forward_streaming_request(endpoint, input, output.sink);
-        check(http.path == endpoint && http.body == input, "legacy original request bytes");
+        check(http.last_path() == endpoint && http.last_body() == input, "legacy original request bytes");
         check(output.bytes == "data: {\"fixture\":true}\n\ndata: [DONE]\n\n", "legacy complete SSE frames");
     }
     for (size_t op = 0; op < k_backend_operation_count; ++op) {

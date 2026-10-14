@@ -30,12 +30,16 @@ struct Expression {
     std::vector<Expression> children;
     std::optional<json> evaluate(const json& context) const;
 };
+struct FormatMetadata {
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+};
 struct OperationProgram {
     OperationDescription description;
     std::string kind, path, port, codec;
     long timeout_seconds = 0;
     std::vector<std::string> formats;
-    json format_metadata = json::object();
+    std::map<std::string, FormatMetadata> format_metadata;
     bool identity = false;
     bool omit_missing = false;
     std::vector<std::string> remove;

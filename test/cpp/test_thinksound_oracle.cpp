@@ -106,7 +106,7 @@ int main() {
         }
         check(fixture.stops == 1, "destructor stops child");
     }
-    const auto* ops = backends::thinksound::ops();
+    const auto* ops = backends::thinksound::legacy_ops();
     check(ops->select_checkpoint_files("ignored", {"clip-tokenizer.gguf", "dit-q8.gguf", "t5-bf16.gguf", "dit-bf16.gguf", "vae-f32.gguf", "metaclip-text-f32.gguf", "t5-tokenizer.gguf"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf", "t5-bf16.gguf", "metaclip-text-f32.gguf", "vae-f32.gguf", "t5-tokenizer.gguf", "clip-tokenizer.gguf"}}, "six companion files ordered");
     check(ops->select_checkpoint_files("ignored", {"t5-bf16.gguf", "dit-bf16.gguf"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf", "t5-bf16.gguf"}}, "missing companions skipped");
     check(ops->select_checkpoint_files("ignored", {}) == std::optional<std::vector<std::string>>{std::vector<std::string>{}}, "engaged empty selection");

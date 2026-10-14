@@ -130,6 +130,18 @@ public:
         metadata["log_category"] = metadata.value("log_category", metadata.value("server_name", ""));
         metadata["log_level_policy"] = metadata.value("log_level_policy", "passthrough");
         metadata["options"] = metadata.value("options", json::array());
+        std::set<std::string> generated_keys;
+        if (metadata.value("selectable_backend", false)) generated_keys.insert("backend");
+        if (metadata.value("takes_args", false)) generated_keys.insert("args");
+        for (const auto& variant : metadata.value("arg_variants", json::array())) generated_keys.insert(variant.get<std::string>() + "_args");
+        for (const auto& variant : metadata.value("bin_variants", json::array())) generated_keys.insert(variant.get<std::string>() + "_bin");
+        const auto extra = metadata.value("config_extra", json::object());
+        for (const auto& [key, value] : extra.items()) if (generated_keys.count(key) && !value.is_string()) error("invalid_type", "/metadata/config_extra/" + escape(key), "Generated config field type mismatch");
+        const auto declared_modes = metadata.value("supported_modes", json::array({"chat"}));
+        for (const auto& mode : declared_modes) {
+            ModelType type;
+            if (!deployment_mode_of(mode.get<std::string>(), type)) error("invalid_value", "/metadata/supported_modes", "Unknown deployment mode");
+        }
         std::set<std::string> option_names;
         for (size_t i = 0; i < metadata["options"].size(); ++i) {
             auto& option = metadata["options"][i];
@@ -143,6 +155,11 @@ public:
             auto valid = [&](const json& value) { return type_matches(value, option["value_type"]) || std::find(sentinels.begin(), sentinels.end(), value) != sentinels.end(); };
             if (!valid(option["default_value"])) error("invalid_type", p + "/default_value", "Option default type mismatch");
             for (const auto& value : option.value("enum", json::array())) if (!valid(value)) error("invalid_type", p + "/enum", "Option enum type mismatch");
+            for (const auto& value : option.value("enum", json::array())) {
+                if (std::find(sentinels.begin(), sentinels.end(), value) != sentinels.end()) continue;
+                if ((option.contains("minimum") && (!value.is_number() || value < option["minimum"])) ||
+                    (option.contains("maximum") && (!value.is_number() || value > option["maximum"]))) error("invalid_value", p + "/enum", "Enum value outside option bounds");
+            }
             const auto default_value = option["default_value"];
             const bool sentinel = std::find(sentinels.begin(), sentinels.end(), default_value) != sentinels.end();
             if (!sentinel) {
@@ -241,6 +258,7 @@ public:
             if (record.contains("transport")) {
                 const auto& transport = record["transport"];
                 program.kind = transport["kind"]; program.path = transport["path"]; program.port = transport["port"];
+                if (program.port != launch["readiness"]["port"].get<std::string>()) error("unsupported_feature", p + "/transport/port", "Multiple HTTP service ports are not installed");
                 if (!ports.count(program.port)) error("invalid_reference", p + "/transport/port", "Undeclared transport port");
                 if (program.path.empty() || program.path[0] != '/' || program.path.find("://") != std::string::npos) error("invalid_value", p + "/transport/path", "Relative endpoint path required");
                 program.timeout_seconds = transport["timeout"] == "global" ? 0 : transport["timeout"].get<long>();
@@ -266,7 +284,8 @@ public:
                 program.set.emplace_back(destination, compile(value, path));
             }
             program.formats = record.value("formats", std::vector<std::string>{});
-            program.format_metadata = record.value("format_metadata", json::object());
+            const auto formats = record.value("format_metadata", json::object());
+            for (const auto& [format, metadata] : formats.items()) program.format_metadata.emplace(format, FormatMetadata{metadata.value("content_type", ""), metadata.value("headers", std::map<std::string, std::string>{})});
             if (operation == BackendOperation::AudioGeneration && program.formats.empty()) error("required", p + "/formats", "Media formats required");
             definition.operations.push_back(std::move(program));
         }

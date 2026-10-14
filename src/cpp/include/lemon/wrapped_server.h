@@ -577,6 +577,11 @@ public:
     }
 
 protected:
+    void bind_operations(OperationBindings bindings) {
+        if (operation_bindings_) throw std::logic_error("Operation bindings are already installed");
+        operation_bindings_ = std::make_unique<const OperationBindings>(std::move(bindings));
+    }
+
     template<class Server>
     void bind_legacy_operations(LegacyOperationProfile profile, Server& server) {
         OperationAdapters adapters;

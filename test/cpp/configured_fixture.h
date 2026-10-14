@@ -8,13 +8,13 @@
 
 namespace thinksound_oracle {
 
-inline std::shared_ptr<const backends::ConfiguredBackendEntry> entry(const std::string& text = backends::k_thinksound_definition) {
+inline std::shared_ptr<const backends::ConfiguredBackendEntry> entry(const std::string& text = backends::k_thinksound_definition, backends::TrustedCompatibility compatibility = backends::TrustedCompatibility::None) {
     const auto result = backends::BackendDefinitionStore().validate({"fixture.json", text, backends::DefinitionOrigin::Builtin});
     if (!result.definition) {
         for (const auto& error : result.diagnostics) std::printf("%s %s\n", error.code.c_str(), error.pointer.c_str());
         throw std::runtime_error("Invalid configured fixture");
     }
-    return std::make_shared<backends::ConfiguredBackendEntry>(result.definition);
+    return backends::ConfiguredBackendEntry::make(result.definition, compatibility);
 }
 class FixtureLaunchServices : public backends::EffectLaunchServices {
 public:

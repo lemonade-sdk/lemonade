@@ -7,7 +7,12 @@
 #include "lemon/backends/thinksound/thinksound_server.h"
 #include "lemon/error_types.h"
 
+#include "backend_definition_resources.h"
+#include "lemon/backends/configured/backend_definition_store.h"
+#include "lemon/backends/configured/configured_server.h"
+
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <lemon/utils/aixlog.hpp>
 #include <stdexcept>
@@ -63,7 +68,7 @@ void ThinkSoundServer::load(const std::string& model_name,
     }
     effects_.validate_backend("thinksound", backend);
     const std::string exe_path = resolve_external_or_managed_binary(
-        *thinksound::spec(), backend, effects_.binary);
+        *thinksound::legacy_spec(), backend, effects_.binary);
 
     port_ = effects_.allocate_port();
     if (port_ == 0) {
@@ -171,12 +176,31 @@ public:
 
 namespace thinksound {
 
+namespace {
+bool configured_enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("LEMONADE_THINKSOUND_CONFIGURED");
+        return value && std::string(value) == "1";
+    }();
+    return enabled;
+}
+std::shared_ptr<const ConfiguredBackendEntry> configured_entry() {
+    static const auto entry = [] {
+        auto result = BackendDefinitionStore().validate({"embedded:thinksound.json", k_thinksound_definition, DefinitionOrigin::Builtin});
+        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
+        return ConfiguredBackendEntry::make(result.definition, TrustedCompatibility::LegacyNonChatSse);
+    }();
+    return entry;
+}
+}
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
+    if (configured_enabled()) return configured_entry()->factory(ctx);
     return make_server<ThinkSoundServer>(ctx);
 }
-
-const BackendSpec* spec() { return make_spec<ThinkSoundServer>(descriptor); }
-const BackendOps* ops() { return single_ops<ThinkSoundOps>(); }
+const BackendSpec* legacy_spec() { return make_spec<ThinkSoundServer>(descriptor); }
+const BackendOps* legacy_ops() { return single_ops<ThinkSoundOps>(); }
+const BackendSpec* spec() { return configured_enabled() ? &configured_entry()->spec : legacy_spec(); }
+const BackendOps* ops() { return configured_enabled() ? configured_entry()->ops.get() : legacy_ops(); }
 
 }  // namespace thinksound
 }  // namespace backends
