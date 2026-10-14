@@ -33,9 +33,13 @@ public:
             "required": ["status"],
             "properties": {"status": {"const": "pausing"}}
         })");
-        response.setup = {{"lemonade.jobs_create", ResponseFormat::Json}};
-        response.example = {{"id", "$lemonade.jobs_create/id"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.jobs_create", ""}};
+        example.args = {{"id", "$lemonade.jobs_create/id"}};
+        s.examples = {example};
         return s;
     }
 

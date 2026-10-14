@@ -44,9 +44,13 @@ public:
                 "model_name": {"type": "string", "description": "Only when one model was unloaded."}
             }
         })");
-        response.setup = {{"lemonade.load", ResponseFormat::Json}};
-        response.example = {{"model_name", "Qwen3-0.6B-GGUF"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.load", ""}};
+        example.args = {{"model_name", "Qwen3-0.6B-GGUF"}};
+        s.examples = {example};
         return s;
     }
 

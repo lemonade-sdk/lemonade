@@ -30,9 +30,13 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = {{"type", "array"}, {"items", DownloadManager::job_schema()}};
-        response.setup = {{"lemonade.pull", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.pull", "non-streaming"}};
+        example.args = json::object();
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

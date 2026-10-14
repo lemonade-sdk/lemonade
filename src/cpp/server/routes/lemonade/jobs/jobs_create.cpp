@@ -54,11 +54,15 @@ public:
             "required": ["id"],
             "properties": {"id": {"type": "string", "description": "The job's id."}}
         })");
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "name": "example",
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
-        s.responses = {response};
+        s.examples = {example};
         return s;
     }
 

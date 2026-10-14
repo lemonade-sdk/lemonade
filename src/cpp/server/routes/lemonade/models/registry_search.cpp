@@ -75,8 +75,12 @@ public:
                 }}
             }
         })");
-        response.example = {{"source", "modelscope"}, {"query", "qwen"}, {"format", "gguf"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"source", "modelscope"}, {"query", "qwen"}, {"format", "gguf"}};
+        s.examples = {example};
         return s;
     }
 

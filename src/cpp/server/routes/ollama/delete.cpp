@@ -39,9 +39,13 @@ public:
         // one its own setup pulls.
         RouteResponse response;
         response.format = ResponseFormat::Empty;
-        response.setup = {{"ollama.pull", ResponseFormat::Json}};
-        response.example = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Empty;
+        example.setup = {{"ollama.pull", "non-streaming"}};
+        example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
+        s.examples = {example};
         return s;
     }
 

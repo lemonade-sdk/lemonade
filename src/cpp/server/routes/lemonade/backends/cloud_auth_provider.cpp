@@ -50,9 +50,13 @@ public:
                 }
             }
         })");
-        response.setup = {{"lemonade.cloud_auth", ResponseFormat::Json}};
-        response.example = {{"provider", "fireworks"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.cloud_auth", ""}};
+        example.args = {{"provider", "fireworks"}};
+        s.examples = {example};
         return s;
     }
 

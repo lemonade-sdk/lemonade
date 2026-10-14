@@ -171,15 +171,19 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
     }
     ordered_json responses = ordered_json::array();
     for (const auto& response : spec.responses) {
+        responses.push_back({{"format", to_string(response.format)}, {"schema", response.schema}});
+    }
+    ordered_json examples = ordered_json::array();
+    for (const auto& example : spec.examples) {
         ordered_json setup = ordered_json::array();
-        for (const auto& ref : response.setup) {
-            setup.push_back({{"route", ref.route}, {"format", to_string(ref.format)}});
+        for (const auto& step : example.setup) {
+            setup.push_back({{"route", step.route}, {"example", step.example}, {"args", step.args}});
         }
-        responses.push_back({
-            {"format", to_string(response.format)},
-            {"schema", response.schema},
+        examples.push_back({
+            {"name", example.name},
+            {"format", to_string(example.format)},
+            {"args", example.args},
             {"setup", setup},
-            {"example", response.example},
         });
     }
     return {
@@ -194,6 +198,7 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
         {"experimental", spec.experimental},
         {"args", args},
         {"responses", responses},
+        {"examples", examples},
         {"request_format", to_string(spec.request_format)},
         {"validate_args", spec.validate_args},
         {"quiet_log", spec.quiet_log},

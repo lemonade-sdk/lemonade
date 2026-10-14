@@ -202,52 +202,16 @@ Without `--slot-save-path`, llama.cpp answers `501`. Besides the server configur
 
     ```powershell
     Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/slots/0?action=erase" `
-      -Method POST
+      -Uri "http://localhost:13305/v1/slots/0?action=save" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"filename": "my_conversation_cache.bin"}'
     ```
 
 === "Bash"
 
     ```bash
-    curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
-    ```
-
-### Response format
-
-`200`
-
-```json
-{"id_slot": 0, "n_erased": 0}
-```
-
-**Field Descriptions:**
-
-- `id_slot` - The slot ID that was saved, restored or erased
-- `filename` - The filename where the cache was saved, or from which the cache was restored
-- `n_saved` - Number of tokens saved to the cache file
-- `n_restored` - Number of tokens restored from the cache file
-- `n_written` - save: bytes written.
-- `n_read` - restore: bytes read.
-- `n_erased` - erase: tokens cleared.
-- `timings` - save and restore: how long the file operation took.
-<!-- END GENERATED: llamacpp.slots_action -->
-
-### Save and restore example requests
-
-=== "PowerShell (save)"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/slots/0?action=save" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}' -UseBasicParsing
-    ```
-
-=== "Bash (save)"
-
-    ```bash
-    curl -X POST "http://localhost:13305/v1/slots/0?action=save" \
+    curl "http://localhost:13305/v1/slots/0?action=save" \
       -H "Content-Type: application/json" \
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
@@ -259,46 +223,102 @@ Without `--slot-save-path`, llama.cpp answers `501`. Besides the server configur
       -Uri "http://localhost:13305/v1/slots/0?action=restore" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}' -UseBasicParsing
+      -Body '{"filename": "my_conversation_cache.bin"}'
     ```
 
 === "Bash (restore)"
 
     ```bash
-    curl -X POST "http://localhost:13305/v1/slots/0?action=restore" \
+    curl "http://localhost:13305/v1/slots/0?action=restore" \
       -H "Content-Type: application/json" \
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-### Save and restore response format
+=== "PowerShell (erase)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/slots/0?action=erase" `
+      -Method POST
+    ```
+
+=== "Bash (erase)"
+
+    ```bash
+    curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
+    ```
+
+### Response format
 
 === "Save responses"
 
+    `200`
+
     ```json
     {
       "id_slot": 0,
       "filename": "my_conversation_cache.bin",
-      "n_saved": 30,
-      "n_written": 3441836,
-      "timings": {
-        "save_ms": 2.857
-      }
+      "n_saved": 307,
+      "n_written": 35214844,
+      "timings": {"save_ms": 10.769}
     }
     ```
+
+    **Field Descriptions:**
+
+    - `id_slot` - The slot ID that was saved, restored or erased
+    - `filename` - The filename where the cache was saved, or from which the cache was restored
+    - `n_saved` - Number of tokens saved to the cache file
+    - `n_restored` - Number of tokens restored from the cache file
+    - `n_written` - save: bytes written.
+    - `n_read` - restore: bytes read.
+    - `n_erased` - erase: tokens cleared.
+    - `timings` - save and restore: how long the file operation took.
 
 === "Restore responses"
 
+    `200`
+
     ```json
     {
       "id_slot": 0,
       "filename": "my_conversation_cache.bin",
-      "n_restored": 30,
-      "n_read": 3441836,
-      "timings": {
-        "restore_ms": 0.584
-      }
+      "n_restored": 231,
+      "n_read": 26497340,
+      "timings": {"restore_ms": 3.478}
     }
     ```
+
+    **Field Descriptions:**
+
+    - `id_slot` - The slot ID that was saved, restored or erased
+    - `filename` - The filename where the cache was saved, or from which the cache was restored
+    - `n_saved` - Number of tokens saved to the cache file
+    - `n_restored` - Number of tokens restored from the cache file
+    - `n_written` - save: bytes written.
+    - `n_read` - restore: bytes read.
+    - `n_erased` - erase: tokens cleared.
+    - `timings` - save and restore: how long the file operation took.
+
+=== "Erase responses"
+
+    `200`
+
+    ```json
+    {"id_slot": 0, "n_erased": 0}
+    ```
+
+    **Field Descriptions:**
+
+    - `id_slot` - The slot ID that was saved, restored or erased
+    - `filename` - The filename where the cache was saved, or from which the cache was restored
+    - `n_saved` - Number of tokens saved to the cache file
+    - `n_restored` - Number of tokens restored from the cache file
+    - `n_written` - save: bytes written.
+    - `n_read` - restore: bytes read.
+    - `n_erased` - erase: tokens cleared.
+    - `timings` - save and restore: how long the file operation took.
+<!-- END GENERATED: llamacpp.slots_action -->
 
 <!-- BEGIN GENERATED: llamacpp.tokenize -->
 ## `POST /v1/tokenize`

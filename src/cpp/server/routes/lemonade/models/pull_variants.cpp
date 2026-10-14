@@ -76,8 +76,12 @@ public:
                 "component_count": {"type": "integer", "description": "collection only: how many models the collection bundles."}
             }
         })");
-        response.example = {{"checkpoint", "unsloth/Qwen3-8B-GGUF"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"checkpoint", "unsloth/Qwen3-8B-GGUF"}};
+        s.examples = {example};
         return s;
     }
 

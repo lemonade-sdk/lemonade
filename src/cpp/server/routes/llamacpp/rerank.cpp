@@ -69,7 +69,11 @@ public:
                 }
             }
         })");
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "model": "bge-reranker-v2-m3-GGUF",
             "query": "What is the capital of France?",
             "documents": [
@@ -78,7 +82,7 @@ public:
                 "Madrid is the capital of Spain."
             ]
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

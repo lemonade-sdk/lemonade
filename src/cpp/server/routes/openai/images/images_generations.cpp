@@ -51,14 +51,18 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "model": "SD-Turbo",
             "prompt": "A serene mountain landscape at sunset",
             "size": "512x512",
             "steps": 4,
             "response_format": "b64_json"
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

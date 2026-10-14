@@ -59,9 +59,13 @@ public:
                 }
             }
         })json");
-        response.setup = {{"lemonade.load", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.load", ""}};
+        example.args = json::object();
+        s.examples = {example};
         return s;
     }
 

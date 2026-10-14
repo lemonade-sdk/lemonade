@@ -20,8 +20,8 @@ public:
         s.summary = "List every route's specification";
         s.description =
             "Returns the specification of every HTTP route lemond serves, in registration "
-            "order: its URLs, arguments, and the schema and example request of each response "
-            "format.";
+            "order: its URLs, arguments, the schema of each response format, and its example "
+            "requests.";
         s.notes = {
             "`docs/tools/gen_api_boilerplate.py` reads this endpoint to generate the API "
             "reference, including this page. See the "
@@ -39,7 +39,7 @@ public:
             "items": {
                 "type": "object",
                 "required": ["id", "methods", "paths", "prefixes", "summary", "modality", "description",
-                             "notes", "experimental", "args", "responses", "request_format",
+                             "notes", "experimental", "args", "responses", "examples", "request_format",
                              "validate_args", "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "<page>.<name>; also the docs anchor."},
@@ -65,29 +65,42 @@ public:
                     }},
                     "responses": {"type": "array", "items": {
                         "type": "object",
-                        "required": ["format", "schema", "setup", "example"],
+                        "required": ["format", "schema"],
                         "properties": {
                             "format": {"enum": ["Json", "JsonLines", "EventStream", "Text", "Binary", "BinaryStream", "Empty"]},
-                            "schema": {"description": "JSON Schema of the body, each NDJSON line, or each event's data; null for other formats."},
-                            "setup": {"type": "array", "items": {
-                                "type": "object",
-                                "required": ["route", "format"],
-                                "properties": {
-                                    "route": {"type": "string"},
-                                    "format": {"type": "string"}
-                                }
-                            }, "description": "Examples that run first to put lemond in the state this one needs."},
-                            "example": {"description": "Argument values of a request producing this format."}
+                            "schema": {"description": "JSON Schema of the body, each NDJSON line, or each event's data; null for other formats."}
                         }
                     }},
+                    "examples": {"type": "array", "items": {
+                        "type": "object",
+                        "required": ["name", "format", "args", "setup"],
+                        "properties": {
+                            "name": {"type": "string", "description": "Tab label; empty when the route has one example."},
+                            "format": {"type": "string", "description": "The response format the reply is validated against."},
+                            "args": {"description": "Argument values of the request."},
+                            "setup": {"type": "array", "items": {
+                                "type": "object",
+                                "required": ["route", "example", "args"],
+                                "properties": {
+                                    "route": {"type": "string"},
+                                    "example": {"type": "string", "description": "The named example of route to run."},
+                                    "args": {"description": "Set instead of example: a request sent as is and left out of the docs."}
+                                }
+                            }, "description": "Requests that run first to put lemond in the state this example needs."}
+                        }
+                    }, "description": "The first is the route's main example."},
                     "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"]},
                     "validate_args": {"type": "boolean"},
                     "quiet_log": {"type": "boolean"}
                 }
             }
         })");
-        response.example = {{"id", "internal.telemetry_flush"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"id", "internal.telemetry_flush"}};
+        s.examples = {example};
         return s;
     }
 

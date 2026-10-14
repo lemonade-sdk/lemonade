@@ -344,22 +344,32 @@ public:
         RouteResponse full;
         full.format = ResponseFormat::Json;
         full.schema = chat_response_schema(false);
-        full.example = ordered_json::parse(R"({
+
+        RouteResponse stream;
+        stream.format = ResponseFormat::JsonLines;
+        stream.schema = chat_response_schema(true);
+
+        s.responses = {full, stream};
+
+        RouteExample full_example;
+        full_example.name = "non-streaming";
+        full_example.format = ResponseFormat::Json;
+        full_example.args = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
             "stream": false
         })");
 
-        RouteResponse stream;
-        stream.format = ResponseFormat::JsonLines;
-        stream.schema = chat_response_schema(true);
-        stream.example = ordered_json::parse(R"({
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::JsonLines;
+        stream_example.args = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
             "stream": true
         })");
 
-        s.responses = {full, stream};
+        s.examples = {full_example, stream_example};
         return s;
     }
 

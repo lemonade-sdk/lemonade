@@ -36,9 +36,13 @@ public:
                 "alias": {"type": "string"}
             }
         })");
-        response.setup = {{"internal.aliases_create", ResponseFormat::Json}};
-        response.example = {{"alias", "$internal.aliases_create/alias"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"internal.aliases_create", ""}};
+        example.args = {{"alias", "$internal.aliases_create/alias"}};
+        s.examples = {example};
         return s;
     }
 

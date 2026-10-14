@@ -166,22 +166,32 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = install_schema();
-        response.example = ordered_json::parse(R"({
+
+        RouteResponse stream;
+        stream.format = ResponseFormat::EventStream;
+        stream.schema = DownloadManager::event_schema();
+
+        s.responses = {response, stream};
+
+        RouteExample response_example;
+        response_example.name = "non-streaming";
+        response_example.format = ResponseFormat::Json;
+        response_example.args = ordered_json::parse(R"({
             "backend": "cloud",
             "provider": "fireworks",
             "base_url": "https://api.fireworks.ai/inference/v1"
         })");
 
-        RouteResponse stream;
-        stream.format = ResponseFormat::EventStream;
-        stream.schema = DownloadManager::event_schema();
-        stream.example = ordered_json::parse(R"({
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::EventStream;
+        stream_example.args = ordered_json::parse(R"({
             "recipe": "llamacpp",
             "backend": "vulkan",
             "stream": true
         })");
 
-        s.responses = {response, stream};
+        s.examples = {response_example, stream_example};
         return s;
     }
 

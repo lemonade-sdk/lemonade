@@ -257,21 +257,31 @@ public:
         RouteResponse job;
         job.format = ResponseFormat::Json;
         job.schema = pull_schema();
-        job.example = ordered_json::parse(R"({
+
+        RouteResponse events;
+        events.format = ResponseFormat::EventStream;
+        events.schema = DownloadManager::event_schema();
+
+        s.responses = {job, events};
+
+        RouteExample job_example;
+        job_example.name = "non-streaming";
+        job_example.format = ResponseFormat::Json;
+        job_example.args = ordered_json::parse(R"({
             "model_name": "Qwen3-0.6B-GGUF",
             "stream": true,
             "subscribe": false
         })");
 
-        RouteResponse events;
-        events.format = ResponseFormat::EventStream;
-        events.schema = DownloadManager::event_schema();
-        events.example = ordered_json::parse(R"({
+        RouteExample events_example;
+        events_example.name = "streaming";
+        events_example.format = ResponseFormat::EventStream;
+        events_example.args = ordered_json::parse(R"({
             "model_name": "Qwen3-0.6B-GGUF",
             "stream": true
         })");
 
-        s.responses = {job, events};
+        s.examples = {job_example, events_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

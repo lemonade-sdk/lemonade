@@ -50,9 +50,13 @@ public:
         })");
         response.schema["properties"]["models"]["items"]["properties"]["details"] = ollama_details_schema();
         // A loaded model makes the listing worth reading.
-        response.setup = {{"lemonade.load", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.load", ""}};
+        example.args = json::object();
+        s.examples = {example};
         return s;
     }
 

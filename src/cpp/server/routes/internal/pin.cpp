@@ -48,9 +48,13 @@ public:
                 "pinned": {"type": "boolean", "description": "The model's pinned state now."}
             }
         })");
-        response.setup = {{"lemonade.load", ResponseFormat::Json}};
-        response.example = {{"model_name", "Qwen3-0.6B-GGUF"}, {"pinned", true}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.load", ""}};
+        example.args = {{"model_name", "Qwen3-0.6B-GGUF"}, {"pinned", true}};
+        s.examples = {example};
         return s;
     }
 

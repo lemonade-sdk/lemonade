@@ -59,8 +59,12 @@ public:
                 "target": {"type": "string"}
             }
         })");
-        response.example = {{"alias", "my-alias-1"}, {"target", "user.custom-llama"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"alias", "my-alias-1"}, {"target", "user.custom-llama"}};
+        s.examples = {example};
         return s;
     }
 

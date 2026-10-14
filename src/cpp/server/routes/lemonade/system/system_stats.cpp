@@ -67,8 +67,12 @@ public:
                 "npu_percent": {"type": ["number", "null"], "description": "NPU utilization percentage, or `null` when unavailable"}
             }
         })");
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = json::object();
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

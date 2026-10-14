@@ -67,7 +67,7 @@ class Lemond:
     """Boots a throwaway lemond on a free port with an isolated cache dir."""
 
     def __init__(self, binary: Path, bin_dir: str | None = None):
-        self.binary = binary
+        self.binary = Path(binary).resolve()
         self.port = free_port()
         self._cache = tempfile.TemporaryDirectory(prefix="lemond-docs-")
         self._proc: subprocess.Popen | None = None
@@ -81,8 +81,11 @@ class Lemond:
             )
 
     def __enter__(self):
+        # Backends that inherit lemond's working directory write relative paths there,
+        # such as llama.cpp's --slot-save-path, so it is the throwaway cache dir.
         self._proc = subprocess.Popen(
             [str(self.binary), self._cache.name, "--port", str(self.port)],
+            cwd=self._cache.name,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

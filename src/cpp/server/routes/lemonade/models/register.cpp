@@ -70,12 +70,16 @@ public:
                 {"model", ModelJson::schema()},
             }},
         };
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "model_name": "user.Phi-4-Mini-GGUF",
             "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
             "recipe": "llamacpp"
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

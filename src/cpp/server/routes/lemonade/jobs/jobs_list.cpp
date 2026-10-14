@@ -49,9 +49,13 @@ public:
                 }}
             }
         })");
-        response.setup = {{"lemonade.jobs_create", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.jobs_create", ""}};
+        example.args = json::object();
+        s.examples = {example};
         return s;
     }
 

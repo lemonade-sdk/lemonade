@@ -44,9 +44,13 @@ public:
                 "routing_switches_total": {"type": "integer", "description": "Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)"}
             }
         })json");
-        response.setup = {{"openai.chat_completions", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"openai.chat_completions", "non-streaming"}};
+        example.args = json::object();
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

@@ -56,7 +56,6 @@ public:
                 "error": {"type": "string", "description": "Only on a failed download's last line."}
             }
         })");
-        stream.example = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF", "stream": true})");
 
         RouteResponse full;
         full.format = ResponseFormat::Json;
@@ -65,9 +64,20 @@ public:
             "required": ["status"],
             "properties": {"status": {"const": "success"}}
         })");
-        full.example = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime", "stream": false})");
 
         s.responses = {stream, full};
+
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::JsonLines;
+        stream_example.args = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF", "stream": true})");
+
+        RouteExample full_example;
+        full_example.name = "non-streaming";
+        full_example.format = ResponseFormat::Json;
+        full_example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime", "stream": false})");
+
+        s.examples = {stream_example, full_example};
         return s;
     }
 

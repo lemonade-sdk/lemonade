@@ -275,8 +275,12 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = system_info_schema();
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = json::object();
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

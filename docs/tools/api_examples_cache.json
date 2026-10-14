@@ -653,9 +653,15 @@
                     "const": "flushed"
                   }
                 }
-              },
-              "setup": [],
-              "example": {}
+              }
+            }
+          ],
+          "examples": [
+            {
+              "name": "",
+              "format": "Json",
+              "args": {},
+              "setup": []
             }
           ],
           "request_format": "Raw",
@@ -768,6 +774,29 @@
       "status": 200,
       "content_type": "model/gltf-binary",
       "bytes": 4534160
+    }
+  },
+  "a7eb2ef91d1879f736b0085b6daad61a3959869d1280b61314ea1aa8f2b126e9": {
+    "route": "lemonade.audio_generations",
+    "format": "Binary",
+    "request": {
+      "method": "POST",
+      "path": "/v1/audio/generations",
+      "query": {},
+      "json": {
+        "model": "ACE-Step-Music",
+        "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+        "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+        "duration": 30,
+        "seed": 42
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "audio/wav",
+      "bytes": 8640044
     }
   },
   "ef7b8e39b1288cd3c45f4d0b0ffd5cde6efbe02c2d42c04b1cae4a795d2432cb": {
@@ -4396,6 +4425,64 @@
       "body": {
         "id_slot": 0,
         "n_erased": 0
+      }
+    }
+  },
+  "a0137e90d641d4b8dfc4285ad447acb62338b6dd013cbe707b51a0a37d29fac7": {
+    "route": "llamacpp.slots_action",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/slots/0",
+      "query": {
+        "action": "restore"
+      },
+      "json": {
+        "filename": "my_conversation_cache.bin"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "filename": "my_conversation_cache.bin",
+        "id_slot": 0,
+        "n_read": 26497340,
+        "n_restored": 231,
+        "timings": {
+          "restore_ms": 3.478
+        }
+      }
+    }
+  },
+  "ef85e8d06d072418279884e70eccc109d7e7117f53eb0e08edfcbced91668b22": {
+    "route": "llamacpp.slots_action",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/slots/0",
+      "query": {
+        "action": "save"
+      },
+      "json": {
+        "filename": "my_conversation_cache.bin"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "filename": "my_conversation_cache.bin",
+        "id_slot": 0,
+        "n_saved": 307,
+        "n_written": 35214844,
+        "timings": {
+          "save_ms": 10.769
+        }
       }
     }
   },

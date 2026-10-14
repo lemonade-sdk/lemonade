@@ -36,8 +36,12 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = ModelJson::schema();
-        response.example = {{"id", "Qwen3-0.6B-GGUF"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"id", "Qwen3-0.6B-GGUF"}};
+        s.examples = {example};
         return s;
     }
 

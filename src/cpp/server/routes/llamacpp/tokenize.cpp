@@ -61,9 +61,13 @@ public:
                 }
             }
         })");
-        response.setup = {{"lemonade.load", ResponseFormat::Json}};
-        response.example = {{"content", "This is a string to tokenize"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.load", ""}};
+        example.args = {{"content", "This is a string to tokenize"}};
+        s.examples = {example};
         return s;
     }
 

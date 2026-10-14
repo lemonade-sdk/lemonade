@@ -81,13 +81,30 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Binary;
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample sound;
+        sound.name = "sound effect";
+        sound.format = ResponseFormat::Binary;
+        sound.args = ordered_json::parse(R"({
             "model": "ThinkSound-SFX",
             "prompt": "glass shattering on a stone floor",
             "duration": 5,
             "seed": 42
         })");
-        s.responses = {response};
+
+        RouteExample song;
+        song.name = "music with vocals";
+        song.format = ResponseFormat::Binary;
+        song.args = ordered_json::parse(R"({
+            "model": "ACE-Step-Music",
+            "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+            "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+            "duration": 30,
+            "seed": 42
+        })");
+
+        s.examples = {sound, song};
         s.request_format = RequestFormat::Json;
         return s;
     }

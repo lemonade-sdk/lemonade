@@ -121,26 +121,49 @@ def auth_sentence(url: str) -> str:
 
 
 def setup_chain(specs: dict, ref: dict, seen: tuple = ()) -> list[dict]:
-    """Every example ref must run before ref, in order, each after its own setup."""
-    response = find_response(specs, ref)
+    """Every step that must run before example ref, in order, each named example after
+    its own setup."""
+    example = find_example(specs, ref)
     chain = []
-    for setup_ref in response["setup"]:
-        key = (setup_ref["route"], setup_ref["format"])
+    for step in example["setup"]:
+        if step["args"] is not None:
+            chain.append(step)
+            continue
+        key = (step["route"], step["example"])
         if key in seen:
             raise GenerationError(f"{ref['route']}: setup cycle through {key}")
-        chain += setup_chain(specs, setup_ref, seen + (key,))
-        chain.append(setup_ref)
+        chain += setup_chain(specs, step, seen + (key,))
+        chain.append(step)
     return chain
 
 
-def find_response(specs: dict, ref: dict) -> dict:
+def find_example(specs: dict, ref: dict) -> dict:
     spec = specs.get(ref["route"])
     if spec is None:
         raise GenerationError(f"setup names unknown route {ref['route']}")
+    for example in spec["examples"]:
+        if example["name"] == ref["example"]:
+            return example
+    raise GenerationError(f"{ref['route']} has no example named {ref['example']!r}")
+
+
+def find_response(spec: dict, fmt: str) -> dict:
     for response in spec["responses"]:
-        if response["format"] == ref["format"]:
+        if response["format"] == fmt:
             return response
-    raise GenerationError(f"{ref['route']} has no {ref['format']} response")
+    raise GenerationError(f"{spec['id']} has no {fmt} response")
+
+
+def step_payload(specs: dict, step: dict) -> dict:
+    """A named step hashes as the example it runs, an inline step as its request."""
+    if step["args"] is not None:
+        return {"route": step["route"], "args": step["args"]}
+    example = find_example(specs, step)
+    return {
+        "route": step["route"],
+        "format": example["format"],
+        "example": example["args"],
+    }
 
 
 def pinned_backend(examples: list[dict], backend_versions: dict, server_models: dict):
@@ -157,22 +180,21 @@ def pinned_backend(examples: list[dict], backend_versions: dict, server_models: 
 def cache_key(
     specs: dict,
     route_id: str,
-    response: dict,
+    example: dict,
     backend_versions: dict,
     server_models: dict,
 ) -> str:
-    ref = {"route": route_id, "format": response["format"]}
-    setup = [
-        {**setup_ref, "example": find_response(specs, setup_ref)["example"]}
-        for setup_ref in setup_chain(specs, ref)
+    ref = {"route": route_id, "example": example["name"]}
+    setup = [step_payload(specs, step) for step in setup_chain(specs, ref)]
+    requests = [example["args"]] + [
+        entry.get("example", entry.get("args")) for entry in reversed(setup)
     ]
-    examples = [response["example"]] + [entry["example"] for entry in reversed(setup)]
     payload = {
         "route": route_id,
-        "format": response["format"],
-        "example": response["example"],
+        "format": example["format"],
+        "example": example["args"],
         "setup": setup,
-        "backend": pinned_backend(examples, backend_versions, server_models),
+        "backend": pinned_backend(requests, backend_versions, server_models),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -184,7 +206,6 @@ def validate_specs(specs: dict) -> None:
             raise GenerationError(
                 f"route id {route_id} collides with the summary region"
             )
-        args = {arg["name"]: arg for arg in spec["args"]}
         for response in spec["responses"]:
             where = f"{route_id} {response['format']}"
             has_schema = bool(response["schema"])
@@ -192,34 +213,46 @@ def validate_specs(specs: dict) -> None:
                 raise GenerationError(f"{where}: a JSON format needs a schema")
             if response["format"] not in JSON_FORMATS and has_schema:
                 raise GenerationError(f"{where}: only JSON formats have a schema")
-            example = response["example"]
-            if not isinstance(example, dict):
-                raise GenerationError(
-                    f"{where}: example must be an object of arguments"
-                )
-            for name in example:
-                if name not in args:
-                    raise GenerationError(
-                        f"{where}: example names unknown argument {name}"
-                    )
+        names = [example["name"] for example in spec["examples"]]
+        if len(names) > 1 and (not all(names) or len(set(names)) != len(names)):
+            raise GenerationError(
+                f"{route_id}: several examples need distinct names, got {names}"
+            )
+        for example in spec["examples"]:
+            where = f"{route_id} example {example['name']!r}"
+            find_response(spec, example["format"])
+            check_args(specs, route_id, example["args"], where)
+            for step in example["setup"]:
+                if step["args"] is not None:
+                    check_args(specs, step["route"], step["args"], where)
             chain_routes = {
-                ref["route"]
-                for ref in setup_chain(
-                    specs, {"route": route_id, "format": response["format"]}
+                step["route"]
+                for step in setup_chain(
+                    specs, {"route": route_id, "example": example["name"]}
                 )
             }
-            for value in iter_strings(example):
+            for value in iter_strings(example["args"]):
                 if value.startswith("$"):
                     target = value[1:].split("/", 1)[0]
                     if target not in chain_routes:
                         raise GenerationError(
                             f"{where}: {value} names a route that does not run in its setup"
                         )
-                if (
-                    value.startswith("@fixtures/")
-                    and not (FIXTURES / value[10:]).exists()
-                ):
-                    raise GenerationError(f"{where}: missing fixture {value}")
+
+
+def check_args(specs: dict, route_id: str, values, where: str) -> None:
+    spec = specs.get(route_id)
+    if spec is None:
+        raise GenerationError(f"{where}: setup names unknown route {route_id}")
+    if not isinstance(values, dict):
+        raise GenerationError(f"{where}: args must be an object of arguments")
+    args = {arg["name"] for arg in spec["args"]}
+    for name in values:
+        if name not in args:
+            raise GenerationError(f"{where}: names unknown argument {route_id} {name}")
+    for value in iter_strings(values):
+        if value.startswith("@fixtures/") and not (FIXTURES / value[10:]).exists():
+            raise GenerationError(f"{where}: missing fixture {value}")
 
 
 def iter_strings(value):
@@ -356,26 +389,31 @@ class ExampleRunner:
             status, content_type, raw, response_format, self.server._cache.name
         )
 
-    def run(self, route_id: str, response_format: str) -> dict:
+    def run(self, route_id: str, name: str) -> dict:
         """Runs one example after its setup, returning its cache entry."""
-        spec = self.specs[route_id]
-        ref = {"route": route_id, "format": response_format}
-        for setup_ref in setup_chain(self.specs, ref):
-            self.run_one(setup_ref["route"], setup_ref["format"])
-        return self.run_one(route_id, response_format)
+        ref = {"route": route_id, "example": name}
+        for step in setup_chain(self.specs, ref):
+            if step["args"] is not None:
+                self.run_one(step["route"], step["args"], None, "setup")
+            else:
+                example = find_example(self.specs, step)
+                self.run_one(
+                    step["route"], example["args"], example["format"], step["example"]
+                )
+        example = find_example(self.specs, ref)
+        return self.run_one(route_id, example["args"], example["format"], name)
 
-    def run_one(self, route_id: str, response_format: str) -> dict:
+    def run_one(
+        self, route_id: str, values: dict, response_format: str | None, name: str
+    ) -> dict:
         spec = self.specs[route_id]
-        response = find_response(
-            self.specs, {"route": route_id, "format": response_format}
-        )
         self.ensure_running()
-        request = self.build_request(spec, response["example"])
-        print(f"  running {route_id} {response_format} ...", flush=True)
-        recorded = self.send(request, response_format)
+        request = self.build_request(spec, values)
+        print(f"  running {route_id} {name or response_format} ...", flush=True)
+        recorded = self.send(request, response_format or "Json")
         if recorded["status"] >= 300:
             raise GenerationError(
-                f"{route_id} {response_format} example answered {recorded['status']}: "
+                f"{route_id} {name or response_format} example answered {recorded['status']}: "
                 f"{json.dumps(recorded)[:500]}"
             )
         if "body" in recorded:
@@ -763,18 +801,6 @@ def powershell_command(entry: dict) -> str:
     return "\n".join(prelude + [" `\n  ".join(lines)])
 
 
-STREAMING_FORMATS = {"JsonLines", "EventStream", "BinaryStream"}
-FORMAT_LABELS = {
-    "Json": "JSON",
-    "JsonLines": "NDJSON",
-    "EventStream": "event stream",
-    "Text": "text",
-    "Binary": "binary",
-    "BinaryStream": "binary stream",
-    "Empty": "empty",
-}
-
-
 def dereferenced(schema, root=None):
     """The schema with each $ref inlined, resolved within its enclosing $id resource."""
     if isinstance(schema, list):
@@ -968,13 +994,6 @@ def in_example_order(example: dict, entry: dict) -> dict:
     return {**entry, "request": {**request, **reordered}}
 
 
-def response_labels(spec: dict) -> list[str]:
-    streaming = [r["format"] in STREAMING_FORMATS for r in spec["responses"]]
-    if any(streaming) and not all(streaming):
-        return ["streaming" if s else "non-streaming" for s in streaming]
-    return [FORMAT_LABELS[r["format"]] for r in spec["responses"]]
-
-
 def render_example_request(entries: list[dict], labels: list[str]) -> str:
     parts = ["### Example request\n"]
     for index, (entry, label) in enumerate(zip(entries, labels)):
@@ -990,7 +1009,8 @@ def render_example_request(entries: list[dict], labels: list[str]) -> str:
 
 def render_response_format(spec: dict, entries: list[dict], labels: list[str]) -> str:
     bodies = []
-    for response, entry in zip(spec["responses"], entries):
+    for example, entry in zip(spec["examples"], entries):
+        response = find_response(spec, example["format"])
         schema = dereferenced(response["schema"])
         body = render_recorded(response["format"], entry, schema)
         fields = render_fields(schema) if schema else ""
@@ -1049,10 +1069,10 @@ def render_route(spec: dict, entries: dict) -> str:
         parts += ["", note]
     if spec["responses"]:
         ordered = [
-            in_example_order(response["example"], entries[response["format"]])
-            for response in spec["responses"]
+            in_example_order(example["args"], entries[example["name"]])
+            for example in spec["examples"]
         ]
-        labels = response_labels(spec)
+        labels = [example["name"] for example in spec["examples"]]
         parts += [
             "",
             render_example_request(ordered, labels),
@@ -1190,7 +1210,14 @@ def load_cache() -> dict:
 
 def write_cache(cache: dict) -> None:
     ordered = dict(
-        sorted(cache.items(), key=lambda kv: (kv[1]["route"], kv[1]["format"]))
+        sorted(
+            cache.items(),
+            key=lambda kv: (
+                kv[1]["route"],
+                kv[1]["format"],
+                json.dumps(kv[1]["request"], sort_keys=True),
+            ),
+        )
     )
     CACHE_FILE.write_text(
         json.dumps(ordered, indent=2, ensure_ascii=False) + "\n",
@@ -1226,23 +1253,23 @@ def main() -> int:
 
     keys = {}
     for spec in route_list:
-        for response in spec["responses"]:
-            keys[(spec["id"], response["format"])] = cache_key(
-                specs, spec["id"], response, backend_versions, server_models
+        for example in spec["examples"]:
+            keys[(spec["id"], example["name"])] = cache_key(
+                specs, spec["id"], example, backend_versions, server_models
             )
 
     problems = []
     missing = [ref for ref, key in keys.items() if key not in cache]
     if missing and args.check:
         problems += [
-            f"no recorded example for {route_id} {fmt}" for route_id, fmt in missing
+            f"no recorded example for {route_id} {name!r}" for route_id, name in missing
         ]
     elif missing:
         print(f"Recording {len(missing)} example(s)...")
         with ExampleRunner(binary, args.bin_dir, specs) as runner:
-            for route_id, fmt in missing:
-                entry = runner.run(route_id, fmt)
-                cache[keys[(route_id, fmt)]] = entry
+            for route_id, name in missing:
+                entry = runner.run(route_id, name)
+                cache[keys[(route_id, name)]] = entry
                 write_cache(cache)
 
     stale_keys = set(cache) - set(keys.values())
@@ -1257,13 +1284,13 @@ def main() -> int:
     rendered = {}
     for spec in route_list:
         entries = {}
-        for response in spec["responses"]:
-            entry = cache.get(keys[(spec["id"], response["format"])])
+        for example in spec["examples"]:
+            entry = cache.get(keys[(spec["id"], example["name"])])
             if entry is None:
                 continue
-            check_entry(spec, response, entry)
-            entries[response["format"]] = entry
-        if len(entries) == len(spec["responses"]):
+            check_entry(spec, find_response(spec, example["format"]), entry)
+            entries[example["name"]] = entry
+        if len(entries) == len(spec["examples"]):
             rendered[spec["id"]] = render_route(spec, entries)
 
     pages: dict[str, list[dict]] = {}

@@ -63,14 +63,24 @@ public:
                 "segments": {"type": "array", "description": "verbose_json only: timestamped segments."}
             }
         })");
-        transcript.example = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"}};
 
         RouteResponse text;
         text.format = ResponseFormat::Text;
-        text.example = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"},
-                        {"response_format", "text"}};
 
         s.responses = {transcript, text};
+
+        RouteExample transcript_example;
+        transcript_example.name = "JSON";
+        transcript_example.format = ResponseFormat::Json;
+        transcript_example.args = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"}};
+
+        RouteExample text_example;
+        text_example.name = "text";
+        text_example.format = ResponseFormat::Text;
+        text_example.args = {{"file", "@fixtures/speech.wav"}, {"model", "Whisper-Tiny"},
+                        {"response_format", "text"}};
+
+        s.examples = {transcript_example, text_example};
         s.request_format = RequestFormat::Form;
         return s;
     }

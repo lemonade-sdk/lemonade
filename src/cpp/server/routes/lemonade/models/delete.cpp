@@ -50,9 +50,13 @@ public:
                 "message": {"type": "string"}
             }
         })");
-        response.setup = {{"lemonade.models_register", ResponseFormat::Json}};
-        response.example = {{"model_name", "$lemonade.models_register/canonical_model_name"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.models_register", ""}};
+        example.args = {{"model_name", "$lemonade.models_register/canonical_model_name"}};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

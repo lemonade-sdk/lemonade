@@ -76,8 +76,12 @@ public:
             }
         })");
         response.schema["properties"]["details"] = ollama_details_schema();
-        response.example = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
+        s.examples = {example};
         return s;
     }
 

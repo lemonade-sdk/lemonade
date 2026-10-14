@@ -76,8 +76,12 @@ public:
                 "message": {"type": "string", "description": "Present when a legacy key was translated to its current form."}
             }
         })");
-        response.example = {{"log_level", "info"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"log_level", "info"}};
+        s.examples = {example};
         return s;
     }
 

@@ -54,11 +54,15 @@ public:
                 "prompt_eval_count": {"type": "integer", "description": "Always 0."}
             }
         })");
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "model": "nomic-embed-text-v1-GGUF",
             "input": "Why is the sky blue?"
         })");
-        s.responses = {response};
+        s.examples = {example};
         return s;
     }
 

@@ -58,9 +58,13 @@ public:
         ordered_json snapshot = DownloadManager::job_schema();
         snapshot["description"] = "pause, cancel, and remove of a running job: the job's snapshot.";
         response.schema = {{"oneOf", ordered_json::array({removed, snapshot})}};
-        response.setup = {{"lemonade.pull", ResponseFormat::Json}};
-        response.example = {{"id", "$lemonade.pull/id"}, {"action", "pause"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.pull", "non-streaming"}};
+        example.args = {{"id", "$lemonade.pull/id"}, {"action", "pause"}};
+        s.examples = {example};
         return s;
     }
 

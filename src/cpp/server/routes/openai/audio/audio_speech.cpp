@@ -81,15 +81,25 @@ public:
 
         RouteResponse audio;
         audio.format = ResponseFormat::Binary;
-        audio.example = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"}, {"speed", 1.0},
-                         {"response_format", "mp3"}};
 
         RouteResponse stream;
         stream.format = ResponseFormat::BinaryStream;
-        stream.example = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"}, {"speed", 1.0},
-                          {"stream_format", "audio"}};
 
         s.responses = {audio, stream};
+
+        RouteExample audio_example;
+        audio_example.name = "non-streaming";
+        audio_example.format = ResponseFormat::Binary;
+        audio_example.args = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"}, {"speed", 1.0},
+                         {"response_format", "mp3"}};
+
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::BinaryStream;
+        stream_example.args = {{"model", "kokoro-v1"}, {"input", "Lemonade can speak!"}, {"speed", 1.0},
+                          {"stream_format", "audio"}};
+
+        s.examples = {audio_example, stream_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

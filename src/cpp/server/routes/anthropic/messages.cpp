@@ -876,12 +876,6 @@ public:
                 "warnings": {"type": "array", "items": {"type": "string"}, "description": "Fields Lemonade ignored while converting."}
             }
         })");
-        message.example = ordered_json::parse(R"({
-            "model": "Qwen3-0.6B-GGUF",
-            "max_tokens": 64,
-            "temperature": 0,
-            "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
-        })");
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
@@ -892,7 +886,23 @@ public:
                 "type": {"type": "string", "description": "Matches the event's name: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, or error. A relayed provider can also send ping."}
             }
         })");
-        stream.example = ordered_json::parse(R"({
+
+        s.responses = {message, stream};
+
+        RouteExample message_example;
+        message_example.name = "non-streaming";
+        message_example.format = ResponseFormat::Json;
+        message_example.args = ordered_json::parse(R"({
+            "model": "Qwen3-0.6B-GGUF",
+            "max_tokens": 64,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
+        })");
+
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::EventStream;
+        stream_example.args = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "max_tokens": 64,
             "temperature": 0,
@@ -900,7 +910,7 @@ public:
             "stream": true
         })");
 
-        s.responses = {message, stream};
+        s.examples = {message_example, stream_example};
         return s;
     }
 

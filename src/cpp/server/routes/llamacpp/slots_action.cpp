@@ -79,9 +79,33 @@ public:
                 "timings": {"type": "object", "description": "save and restore: how long the file operation took."}
             }
         })");
-        response.setup = {{"lemonade.load", ResponseFormat::Json}};
-        response.example = {{"id", 0}, {"action", "erase"}};
         s.responses = {response};
+
+        // Saving needs a model loaded with --slot-save-path and a prompt in the slot. The
+        // generator runs lemond in a temporary directory, so "." keeps the file out of the repo.
+        RouteExample save;
+        save.name = "save";
+        save.format = ResponseFormat::Json;
+        save.setup = {
+            {"lemonade.load", "",
+             {{"model_name", "Qwen3-0.6B-GGUF"}, {"llamacpp_args", "--slot-save-path ."}}},
+            {"openai.chat_completions", "non-streaming"},
+        };
+        save.args = {{"id", 0}, {"action", "save"}, {"filename", "my_conversation_cache.bin"}};
+
+        RouteExample restore;
+        restore.name = "restore";
+        restore.format = ResponseFormat::Json;
+        restore.setup = {{"llamacpp.slots_action", "save"}};
+        restore.args = {{"id", 0}, {"action", "restore"}, {"filename", "my_conversation_cache.bin"}};
+
+        RouteExample erase;
+        erase.name = "erase";
+        erase.format = ResponseFormat::Json;
+        erase.setup = {{"lemonade.load", ""}};
+        erase.args = {{"id", 0}, {"action", "erase"}};
+
+        s.examples = {save, restore, erase};
         return s;
     }
 

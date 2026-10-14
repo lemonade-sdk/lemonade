@@ -141,7 +141,11 @@ public:
                 {"normalized_policy", {{"type", "object"}}},
             }},
         };
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "policy": {
                 "version": "1",
                 "recipe": "collection.router",
@@ -160,7 +164,7 @@ public:
             },
             "prompt": "please write a def to reverse a list"
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

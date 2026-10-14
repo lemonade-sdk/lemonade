@@ -952,7 +952,7 @@ An alias that does not exist answers `404`.
 ## `GET /internal/routes`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns the specification of every HTTP route lemond serves, in registration order: its URLs, arguments, and the schema and example request of each response format.
+Returns the specification of every HTTP route lemond serves, in registration order: its URLs, arguments, the schema of each response format, and its example requests.
 
 Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` when that is set.
 
@@ -1002,11 +1002,10 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
           "type": "object",
           "required": ["status"],
           "properties": {"status": {"const": "flushed"}}
-        },
-        "setup": [],
-        "example": {}
+        }
       }
     ],
+    "examples": [{"name": "", "format": "Json", "args": {}, "setup": []}],
     "request_format": "Raw",
     "validate_args": false,
     "quiet_log": false
@@ -1025,6 +1024,11 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `supported` - not_available documents an argument Lemonade accepts but ignores; partial, one it honors only in part, as its description says.
 - `responses`
   - `schema` - JSON Schema of the body, each NDJSON line, or each event's data; null for other formats.
-  - `setup` - Examples that run first to put lemond in the state this one needs.
-  - `example` - Argument values of a request producing this format.
+- `examples` - The first is the route's main example.
+  - `name` - Tab label; empty when the route has one example.
+  - `format` - The response format the reply is validated against.
+  - `args` - Argument values of the request.
+  - `setup` - Requests that run first to put lemond in the state this example needs.
+    - `example` - The named example of route to run.
+    - `args` - Set instead of example: a request sent as is and left out of the docs.
 <!-- END GENERATED: internal.routes -->

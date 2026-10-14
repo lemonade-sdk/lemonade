@@ -79,12 +79,16 @@ public:
                 "supports_split_archive": {"type": "boolean", "description": "Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest."}
             }
         })");
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "recipe": "whispercpp",
             "backend": "rocm",
             "arch": "gfx1201"
         })");
-        s.responses = {response};
+        s.examples = {example};
         return s;
     }
 

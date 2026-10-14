@@ -85,12 +85,16 @@ public:
                 }
             }
         ]})");
-        response.setup = {{"lemonade.install", ResponseFormat::Json}};
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"lemonade.install", "non-streaming"}};
+        example.args = ordered_json::parse(R"({
             "backend": "cloud",
             "provider": "fireworks"
         })");
-        s.responses = {response};
+        s.examples = {example};
         return s;
     }
 

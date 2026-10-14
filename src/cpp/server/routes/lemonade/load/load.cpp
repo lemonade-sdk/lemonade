@@ -154,9 +154,13 @@ public:
         response.schema = load_schema();
         // The llama.cpp slot examples use this load as their setup, and llama-server
         // answers slot actions only when started with a slot save path.
-        response.example = {{"model_name", "Qwen3-0.6B-GGUF"},
-                            {"llamacpp_args", "--slot-save-path ."}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"model_name", "Qwen3-0.6B-GGUF"},
+                            {"llamacpp_args", "--slot-save-path ."}};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

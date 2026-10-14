@@ -74,11 +74,15 @@ public:
                 }
             }
         })");
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "model": "Phishing-Email-Detection-ONNX",
             "input": "Please verify your account at http://secure-login.example now."
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

@@ -101,18 +101,28 @@ public:
                 }
             }
         })");
-        reply.example = ordered_json::parse(R"({
+
+        RouteResponse notification;
+        notification.format = ResponseFormat::Empty;
+
+        s.responses = {reply, notification};
+
+        RouteExample reply_example;
+        reply_example.name = "JSON";
+        reply_example.format = ResponseFormat::Json;
+        reply_example.args = ordered_json::parse(R"({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
         })");
 
-        RouteResponse notification;
-        notification.format = ResponseFormat::Empty;
-        notification.example = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
+        RouteExample notification_example;
+        notification_example.name = "empty";
+        notification_example.format = ResponseFormat::Empty;
+        notification_example.args = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
 
-        s.responses = {reply, notification};
+        s.examples = {reply_example, notification_example};
         return s;
     }
 

@@ -167,7 +167,11 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = image_response_schema();
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::parse(R"({
             "model": "Flux-2-Klein-4B",
             "prompt": "Add a red barn and mountains in the background, photorealistic",
             "size": "512x512",
@@ -175,7 +179,7 @@ public:
             "response_format": "b64_json",
             "image": "@fixtures/image.png"
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Form;
         return s;
     }

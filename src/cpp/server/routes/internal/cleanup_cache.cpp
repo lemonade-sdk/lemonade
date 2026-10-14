@@ -54,8 +54,12 @@ public:
                 "dry_run": {"type": "boolean", "description": "Whether the files were left in place."}
             }
         })");
-        response.example = {{"dry_run", true}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"dry_run", true}};
+        s.examples = {example};
         return s;
     }
 

@@ -98,24 +98,34 @@ public:
         RouteResponse completion;
         completion.format = ResponseFormat::Json;
         completion.schema = text_completion_schema(false);
-        completion.example = ordered_json::parse(R"({
+
+        RouteResponse stream;
+        stream.format = ResponseFormat::EventStream;
+        stream.schema = text_completion_schema(true);
+
+        s.responses = {completion, stream};
+
+        RouteExample completion_example;
+        completion_example.name = "non-streaming";
+        completion_example.format = ResponseFormat::Json;
+        completion_example.args = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "prompt": "What is the population of Paris?",
             "stream": false,
             "max_tokens": 64
         })");
 
-        RouteResponse stream;
-        stream.format = ResponseFormat::EventStream;
-        stream.schema = text_completion_schema(true);
-        stream.example = ordered_json::parse(R"({
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::EventStream;
+        stream_example.args = ordered_json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "prompt": "What is the population of Paris?",
             "stream": true,
             "max_tokens": 64
         })");
 
-        s.responses = {completion, stream};
+        s.examples = {completion_example, stream_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

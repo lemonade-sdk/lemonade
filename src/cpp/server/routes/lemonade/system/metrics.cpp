@@ -62,8 +62,12 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Text;
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Text;
+        example.args = json::object();
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

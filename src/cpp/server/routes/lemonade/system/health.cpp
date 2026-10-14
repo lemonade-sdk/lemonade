@@ -107,9 +107,13 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = health_schema();
-        response.setup = {{"openai.chat_completions", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"openai.chat_completions", "non-streaming"}};
+        example.args = json::object();
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

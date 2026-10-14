@@ -54,8 +54,12 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = ModelManager::sync_status_schema();
-        response.example = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
+        s.examples = {example};
         s.quiet_log = true;
         return s;
     }

@@ -142,8 +142,12 @@ public:
         response.schema["properties"]["data"]["description"] = "Array containing the upscaled image";
         response.schema["properties"]["data"]["items"]["properties"]["b64_json"]["description"] =
             "Base64-encoded PNG of the upscaled image";
-        response.example = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
+        s.examples = {example};
         return s;
     }
 

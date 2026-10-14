@@ -33,9 +33,13 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = model_options_schema();
-        response.setup = {{"openai.models_id_options_post", ResponseFormat::Json}};
-        response.example = {{"id", "Qwen3-4B-GGUF"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"openai.models_id_options_post", ""}};
+        example.args = {{"id", "Qwen3-4B-GGUF"}};
+        s.examples = {example};
         return s;
     }
 

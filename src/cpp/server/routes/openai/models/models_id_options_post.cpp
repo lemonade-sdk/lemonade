@@ -107,8 +107,12 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = model_options_schema();
-        response.example = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
+        s.examples = {example};
         return s;
     }
 

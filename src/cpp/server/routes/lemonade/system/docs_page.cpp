@@ -47,8 +47,12 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Text;
-        response.example = {{"page", "api/lemonade"}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Text;
+        example.args = {{"page", "api/lemonade"}};
+        s.examples = {example};
         return s;
     }
 

@@ -42,8 +42,12 @@ public:
                 "status": {"const": "shutting down"}
             }
         })");
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = json::object();
+        s.examples = {example};
         return s;
     }
 

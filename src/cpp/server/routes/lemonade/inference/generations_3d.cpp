@@ -64,13 +64,17 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Binary;
-        response.example = ordered_json::parse(R"({
+        s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Binary;
+        example.args = ordered_json::parse(R"({
             "model": "TRELLIS-3D",
             "image": "@fixtures/image.png",
             "resolution": 512,
             "seed": 42
         })");
-        s.responses = {response};
+        s.examples = {example};
         s.request_format = RequestFormat::Json;
         return s;
     }

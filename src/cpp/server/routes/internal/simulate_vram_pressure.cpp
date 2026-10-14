@@ -44,8 +44,12 @@ public:
                 "status": {"const": "ok"}
             }
         })");
-        response.example = {{"pct", 0.5}};
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"pct", 0.5}};
+        s.examples = {example};
         return s;
     }
 

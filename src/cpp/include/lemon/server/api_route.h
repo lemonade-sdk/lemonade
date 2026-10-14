@@ -42,14 +42,7 @@ struct RouteArg {
     std::string description;
 };
 
-// Some examples require lemond to be in a certain state, for example unload requires a loaded
-// model. ExampleRef allows one example to take a dependence on another to achieve that state.
-struct ExampleRef {
-    std::string route;                // RouteSpec::id
-    ResponseFormat format;            // selects which of the route's examples
-};
-
-// Each format a route returns gets its own schema and example in the docs.
+// Each format a route returns gets its own schema in the docs.
 struct RouteResponse {
     ResponseFormat format;
 
@@ -57,14 +50,23 @@ struct RouteResponse {
     // --check validates against it. A format with several shapes, such as /load's three, uses oneOf.
     // Ordered, so the docs list the fields as written rather than alphabetically.
     nlohmann::ordered_json schema;
+};
 
-    // Examples to run first, in order, when generating the documentation. Examples can reference
-    // their dependences' responses, for example {"id": "$lemonade.jobs_create/id"}.
-    std::vector<ExampleRef> setup;
+// Some examples require lemond to be in a certain state, for example unload requires a loaded
+// model. A step sends a request that puts lemond in that state before the example runs.
+struct ExampleStep {
+    std::string route;                // RouteSpec::id
+    std::string example;              // that route's RouteExample::name; runs after its own setup
+    nlohmann::ordered_json args;      // set instead of example: a request sent as is and left out of the docs
+};
 
-    // A request producing this format; gen_api_boilerplate.py records its response into the docs
-    // and --check validates it. Ordered, so the docs show the body as written.
-    nlohmann::ordered_json example;
+// gen_api_boilerplate.py sends each example to lemond and records the response into the docs, and
+// --check validates the response against the schema of the example's format.
+struct RouteExample {
+    std::string name;                 // tab label, e.g. "streaming" or "save"; required when a route has several
+    ResponseFormat format;            // the RouteResponse the response is validated against
+    nlohmann::ordered_json args;      // argument values, e.g. {"id": "$lemonade.jobs_create/id"}; ordered so the docs show them as written
+    std::vector<ExampleStep> setup;   // run first, in order
 };
 
 struct RouteSpec {
@@ -79,6 +81,7 @@ struct RouteSpec {
     bool experimental = false;        // badged as experimental in the docs
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
+    std::vector<RouteExample> examples;    // the first is the route's main example
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log

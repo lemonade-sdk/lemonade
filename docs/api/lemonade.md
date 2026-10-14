@@ -1596,24 +1596,48 @@ On success the raw audio bytes are returned with the matching content type (`aud
       --output output.wav
     ```
 
+=== "PowerShell (music with vocals)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/audio/generations" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "ACE-Step-Music",
+          "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+          "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+          "duration": 30,
+          "seed": 42
+        }' `
+      -OutFile output.wav
+    ```
+
+=== "Bash (music with vocals)"
+
+    ```bash
+    curl http://localhost:13305/v1/audio/generations \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "ACE-Step-Music",
+          "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+          "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+          "duration": 30,
+          "seed": 42
+        }' \
+      --output output.wav
+    ```
+
 ### Response format
 
-`200`, `Content-Type: audio/wav`, 884,780 bytes
+=== "Sound effect responses"
+
+    `200`, `Content-Type: audio/wav`, 884,780 bytes
+
+=== "Music with vocals responses"
+
+    `200`, `Content-Type: audio/wav`, 8,640,044 bytes
 <!-- END GENERATED: lemonade.audio_generations -->
-
-### Example request (music with vocals)
-
-```bash
-curl -X POST http://localhost:13305/v1/audio/generations \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "ACE-Step-Music",
-        "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
-        "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
-        "duration": 60
-      }' \
-  --output song.wav
-```
 
 <!-- BEGIN GENERATED: lemonade.3d_generations -->
 ## `POST /v1/3d/generations`

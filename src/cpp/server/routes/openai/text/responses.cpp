@@ -99,22 +99,32 @@ public:
         RouteResponse response;
         response.format = ResponseFormat::Json;
         response.schema = response_schema();
-        response.example = ordered_json::parse(R"({
+
+        RouteResponse stream;
+        stream.format = ResponseFormat::EventStream;
+        stream.schema = response_event_schema();
+
+        s.responses = {response, stream};
+
+        RouteExample response_example;
+        response_example.name = "non-streaming";
+        response_example.format = ResponseFormat::Json;
+        response_example.args = ordered_json::parse(R"({
             "model": "Llama-3.2-1B-Instruct-GGUF",
             "input": "What is the population of Paris?",
             "stream": false
         })");
 
-        RouteResponse stream;
-        stream.format = ResponseFormat::EventStream;
-        stream.schema = response_event_schema();
-        stream.example = ordered_json::parse(R"({
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::EventStream;
+        stream_example.args = ordered_json::parse(R"({
             "model": "Llama-3.2-1B-Instruct-GGUF",
             "input": "What is the population of Paris?",
             "stream": true
         })");
 
-        s.responses = {response, stream};
+        s.examples = {response_example, stream_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

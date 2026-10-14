@@ -44,9 +44,13 @@ public:
                 }}
             }
         })");
-        response.setup = {{"internal.aliases_create", ResponseFormat::Json}};
-        response.example = json::object();
         s.responses = {response};
+
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.setup = {{"internal.aliases_create", ""}};
+        example.args = json::object();
+        s.examples = {example};
         return s;
     }
 
