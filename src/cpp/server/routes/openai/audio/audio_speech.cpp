@@ -139,9 +139,8 @@ protected:
         for (const auto& [name, value] : format.headers) {
             res.set_header(name, value);
         }
-        // The backend has to encode what the Content-Type promises. Without this it
-        // would receive whatever the client sent (nothing, when the format came from a
-        // default) and fall back to its own choice.
+        // The backend must encode what the Content-Type promises, including a default
+        // format the client never sent.
         request_json["response_format"] = format.format;
 
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;

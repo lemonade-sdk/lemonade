@@ -110,9 +110,8 @@ void respond_with_model_options(ServerContext& ctx, const httplib::Request& http
             ctx.model_loader->write_load_error(res, model_key, e.what());
             return;
         }
-        // Anything else is a server-side failure, most often the options file
-        // being unwritable. Reporting it as a model error would call it a load
-        // failure, which this endpoint never performs.
+        // Anything else is server-side, most often an unwritable options file, so it
+        // must not be reported as a model load error.
         write_openai_error(res, 500,
                            "Failed to read or update options for '" + model_id + "': " + e.what(),
                            "server_error", "internal_error");

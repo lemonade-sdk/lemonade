@@ -397,7 +397,7 @@ struct UpdateCheckResult {
 
     // Query model sync status (running state, active/pending targets, completed count, or specific sync_id outcome)
     json get_sync_status(uint64_t sync_id = 0) const;
-    // JSON Schema of get_sync_status()'s result, which both sync routes return.
+    // JSON Schema of get_sync_status()'s result.
     static nlohmann::ordered_json sync_status_schema();
 
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
@@ -406,8 +406,8 @@ struct UpdateCheckResult {
     // Execute background queue processing until empty.
     json execute_sync();
 
-    // Runs execute_sync() on a thread of its own. Shutdown calls cancel_sync() and then
-    // join_background_syncs(), so a sync never outlives the subsystems it uses.
+    // Shutdown must call cancel_sync() and then join_background_syncs(), so a background
+    // sync never outlives the subsystems it uses.
     void execute_sync_in_background();
     void join_background_syncs();
 

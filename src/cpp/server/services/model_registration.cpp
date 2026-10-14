@@ -146,7 +146,6 @@ void resolve_and_register_local_model(ModelManager& model_manager,
                 std::string filename_lower = filename;
                 std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
-                // Match either the provided mmproj name or any mmproj file
                 if (!mmproj.empty() && filename == mmproj) {
                     resolved_mmproj = filename;
                     vision = true;

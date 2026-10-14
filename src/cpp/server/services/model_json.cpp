@@ -108,8 +108,6 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         model_json["max_completion_tokens"] = info.max_output_tokens;
     }
 
-    // Per-million-token pricing in USD, when the provider reported it (cloud
-    // models from OpenRouter/Together). Display only.
     if (info.cost_input_per_million >= 0) {
         model_json["cost_input_per_million"] = info.cost_input_per_million;
     }
@@ -117,7 +115,6 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         model_json["cost_output_per_million"] = info.cost_output_per_million;
     }
 
-    // Per-collection system prompt override (collection.omni only).
     if (!info.system_prompt.empty()) {
         model_json["system_prompt"] = info.system_prompt;
     }

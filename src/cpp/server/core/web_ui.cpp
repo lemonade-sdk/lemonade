@@ -40,7 +40,6 @@ void replace_all(std::string& text, const std::string& from, const std::string& 
     }
 }
 
-// Serves one file from web_app_dir, refusing any path that resolves outside it.
 void serve_web_app_asset(const std::string& web_app_dir, const std::string& file_path,
                          httplib::Response& res) {
     std::error_code ec;
@@ -114,7 +113,6 @@ void serve_web_app_asset(const std::string& web_app_dir, const std::string& file
 void WebUi::register_routes(httplib::Server& server) {
     std::string static_dir = utils::get_resource_path("resources/static");
 
-    // The legacy status page, with the port, models and platform filled in.
     auto serve_status_page = [this, static_dir](const httplib::Request&, httplib::Response& res) {
         std::string index_path = static_dir + "/index.html";
         std::string html_template;
@@ -151,10 +149,8 @@ void WebUi::register_routes(httplib::Server& server) {
         res.set_content(html_template, "text/html");
     };
 
-    // Serve index.html at /api/v1 for compatibility
     server.Get("/api/v1", serve_status_page);
 
-    // Mount static files directory for status page assets (CSS, JS, images)
     if (!server.set_mount_point("/static", static_dir)) {
         LOG(WARNING, "Server") << "Could not mount static files from: " << static_dir << std::endl;
         LOG(WARNING, "Server") << "Status page assets will not be available" << std::endl;
@@ -174,7 +170,6 @@ void WebUi::register_routes(httplib::Server& server) {
             res.set_content(html, "text/html");
         };
 
-        // Serve the web app's index.html at root and for SPA routes
         server.Get("/", serve_web_app_html);
 
         // Also serve at /web-app for backwards compatibility
@@ -184,7 +179,6 @@ void WebUi::register_routes(httplib::Server& server) {
             serve_web_app_asset(web_app_dir, "favicon.ico", res);
         });
 
-        // Serve web app assets from root (for files like renderer.bundle.js, fonts, etc.)
         server.Get(R"(/([^/]+\.(js|css|woff|woff2|ttf|svg|png|jpg|jpeg|json|ico)))",
                    [web_app_dir](const httplib::Request& req, httplib::Response& res) {
             serve_web_app_asset(web_app_dir, req.matches[1].str(), res);

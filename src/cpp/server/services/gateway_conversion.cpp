@@ -25,9 +25,8 @@ static std::string extract_parameter_size(const std::string& model_name) {
         size_t seg_start = i;
         while (i < model_name.size() && model_name[i] != '-') i++;
         std::string segment = model_name.substr(seg_start, i - seg_start);
-        if (i < model_name.size()) i++;  // skip hyphen
+        if (i < model_name.size()) i++;
 
-        // Match pattern: [0-9.]+[BbMm]
         if (segment.size() >= 2) {
             char last = segment.back();
             if (last == 'B' || last == 'b' || last == 'M' || last == 'm') {
@@ -39,7 +38,6 @@ static std::string extract_parameter_size(const std::string& model_name) {
                     }
                 }
                 if (valid) {
-                    // Normalize suffix to uppercase (e.g. "4b" → "4B")
                     result = segment.substr(0, segment.size() - 1) +
                              static_cast<char>(std::toupper(last));
                 }
@@ -52,27 +50,22 @@ static std::string extract_parameter_size(const std::string& model_name) {
 // e.g. "unsloth/Qwen3-0.6B-GGUF:Q4_0" -> "Q4_0",
 //      "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf" -> "IQ2_M"
 static std::string extract_quantization_level(const std::string& checkpoint) {
-    // Search in the filename part (after colon) first, fallback to full string
     std::string search_str = checkpoint;
     size_t colon_pos = checkpoint.find(':');
     if (colon_pos != std::string::npos) {
         search_str = checkpoint.substr(colon_pos + 1);
     }
 
-    // Look for [I]?Q[0-9][A-Za-z0-9_]* at a word boundary
     for (size_t i = 0; i < search_str.size(); i++) {
         size_t start = i;
-        // Optional 'I' prefix (for IQ patterns)
         if (search_str[i] == 'I' && i + 1 < search_str.size() && search_str[i + 1] == 'Q') {
             i++;
         }
         if (search_str[i] == 'Q' && i + 1 < search_str.size() && std::isdigit(search_str[i + 1])) {
-            // Check word boundary before start
             if (start > 0 && std::isalnum(search_str[start - 1])) {
-                i = start;  // not a boundary, skip
+                i = start;
                 continue;
             }
-            // Scan to end of quant token
             size_t end = i + 1;
             while (end < search_str.size() &&
                    (std::isdigit(search_str[end]) || std::isalpha(search_str[end]) ||
@@ -134,7 +127,6 @@ ordered_json ollama_details_schema() {
 
 namespace {
 
-// Ollama -> OpenAI option names; options with the same name map to themselves.
 struct OptionMapping { const char* ollama_key; const char* openai_key; };
 
 const OptionMapping OPTION_MAPPINGS[] = {
@@ -148,10 +140,8 @@ const OptionMapping OPTION_MAPPINGS[] = {
 
 } // namespace
 
-// Apply the option mappings from an Ollama request to an OpenAI request.
-// Checks the "options" sub-object first, then top-level keys (top-level wins).
+// Ollama accepts these both inside "options" and at the top level; top-level wins.
 void map_ollama_options(const json& ollama_request, json& openai_req) {
-    // From options sub-object
     if (ollama_request.contains("options") && ollama_request["options"].is_object()) {
         const auto& opts = ollama_request["options"];
         for (const auto& m : OPTION_MAPPINGS) {
@@ -161,7 +151,6 @@ void map_ollama_options(const json& ollama_request, json& openai_req) {
         }
     }
 
-    // Top-level overrides (Ollama also accepts these at the top level)
     for (const auto& m : OPTION_MAPPINGS) {
         if (ollama_request.contains(m.ollama_key)) {
             openai_req[m.openai_key] = ollama_request[m.ollama_key];
@@ -242,7 +231,6 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
             try {
                 auto openai_chunk = json::parse(json_str);
 
-                // Track token counts from usage in final chunk
                 if (openai_chunk.contains("usage")) {
                     const auto& usage = openai_chunk["usage"];
                     if (usage.contains("prompt_tokens"))

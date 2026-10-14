@@ -94,7 +94,7 @@ public:
 
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        // A missing model is reported before a missing prompt.
+        // ModelRoute reports a missing model, and that error wins over a missing prompt.
         if (!req.body.contains("model")) {
             return true;
         }

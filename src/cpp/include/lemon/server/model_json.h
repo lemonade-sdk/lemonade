@@ -18,8 +18,8 @@ class ModelJson {
 public:
     ModelJson(ModelManager* model_manager, Router* router, AliasManager* alias_manager);
 
-    // The model object served by GET /v1/models and GET /v1/models/{id}. depth bounds how
-    // deeply collection components embed one another, since registrations can be cyclic.
+    // depth bounds how deeply collection components embed one another, since
+    // registrations can be cyclic.
     nlohmann::json to_json(const std::string& model_id, const ModelInfo& info,
                            int depth = 0) const;
 

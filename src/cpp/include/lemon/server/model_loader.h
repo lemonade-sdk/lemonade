@@ -18,10 +18,9 @@ class ModelLoader {
 public:
     ModelLoader(Router* router, ModelManager* model_manager);
 
-    // Loads the model unless it is already live. Downloads it first when needed, but never
-    // checks its registry for updates; only /pull does. load_options apply only to a first
-    // load, so options set by an explicit /v1/load win; pass load_options(request), never a
-    // raw request body, so request-scoped fields stay out of persistent recipe options.
+    // load_options apply only to a first load, so options set by an explicit /v1/load win.
+    // Pass load_options(request), never a raw request body, so request-scoped fields stay
+    // out of persistent recipe options.
     void ensure_loaded(const std::string& model,
                        const nlohmann::json& load_options = nlohmann::json::object(),
                        LoadPurpose purpose = LoadPurpose::UserInference);
@@ -36,7 +35,6 @@ public:
     // registry, or failed to load.
     nlohmann::json model_error(const std::string& model, const std::string& message) const;
 
-    // Writes model_error() with the status its code maps to.
     void write_load_error(httplib::Response& res, const std::string& model,
                           const std::string& message) const;
 

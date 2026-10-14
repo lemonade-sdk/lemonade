@@ -24,7 +24,7 @@ public:
     // a route folder adds a specific path before a pattern that also matches it.
     void apply(httplib::Server& server) const;
 
-    // Every RouteSpec, in registration order, for GET /internal/routes.
+    // Every RouteSpec, in registration order.
     nlohmann::ordered_json list() const;
 
     // RequestMiddleware leaves these exact paths out of the access log.

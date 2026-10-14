@@ -64,7 +64,6 @@ std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string
     return std::nullopt;
 }
 
-// Default soft cap for inferred image-edit dimensions.
 constexpr std::uint64_t kDefaultMaxEditPixels = 2048ULL * 2048ULL;
 
 std::pair<int, int> cap_image_area(int width, int height, std::uint64_t max_pixels) {

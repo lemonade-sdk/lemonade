@@ -873,8 +873,8 @@ jobs:
 
       - name: Record the API examples these pins invalidate
         # The update PR carries examples recorded with the new backend, so the API
-        # reference keeps showing what lemond returns. One leg records them; when it
-        # fails, the PR's API docs check reports the stale examples instead.
+        # reference keeps showing what lemond returns. When this fails, the PR's API
+        # docs check reports the stale examples instead.
         if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         shell: PowerShell

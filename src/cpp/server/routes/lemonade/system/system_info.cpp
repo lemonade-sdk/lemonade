@@ -114,7 +114,6 @@ json get_model_storage_stats(const std::string& model_storage_path) {
     };
 }
 
-// Adds release_url, download_filename and version from BackendManager to each backend.
 void enrich_recipes(BackendManager* backend_manager, json& recipes) {
     if (!backend_manager) return;
 
@@ -272,8 +271,6 @@ public:
             return;
         }
 
-        // SystemInfoCache is the single source of truth for hardware + recipes.
-        // Recipes are cached until invalidated by install/uninstall.
         json system_info = SystemInfoCache::get_system_info_with_cache();
 
         if (system_info.contains("recipes")) {
@@ -294,7 +291,6 @@ public:
         }
         system_info["unavailable_recipes"] = std::move(unavailable);
 
-        // Surface runtime config flags that affect client-side install/download UX.
         system_info["no_fetch_executables"] = ctx_.config->no_fetch_executables();
 
         system_info["model_storage"] = get_model_storage_stats(utils::get_hf_cache_dir());

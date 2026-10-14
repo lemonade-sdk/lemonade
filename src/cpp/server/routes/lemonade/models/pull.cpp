@@ -291,12 +291,8 @@ public:
             bool subscribe = request_json.value("subscribe", true);
             bool local_import = request_json.value("local_import", false);
 
-            // Resolve the pull's registry provenance once, up front, so download,
-            // cache layout, and later refresh stay consistent. A registry-backed
-            // checkpoint that names no source inherits the configured default; a
-            // provider URL is normalized to owner/repo and its registry adopted.
-            // Self-managed backends (flm/cloud), non-registry checkpoints, explicit
-            // sources, and bare `pull <registered-name>` refreshes are left as-is.
+            // The registry is resolved once, up front, so download, cache layout and
+            // later refresh agree on it.
             try {
                 lemon::apply_default_pull_source(request_json, ctx_.config->default_model_source());
             } catch (const std::invalid_argument& e) {

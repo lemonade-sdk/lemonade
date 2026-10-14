@@ -1002,8 +1002,7 @@ include_directories(
 # ============================================================
 # Server core sources (everything except entry points)
 # ============================================================
-# lemond's HTTP server: core components, shared services, and one file per route. The
-# globs pick up a new route or service without a CMake edit.
+# Globbed so a new route or service needs no CMake edit.
 file(GLOB_RECURSE HTTP_SERVER_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/core/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/services/*.cpp

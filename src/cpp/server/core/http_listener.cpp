@@ -66,8 +66,7 @@ void HttpListener::create_servers() {
 
     // Front listeners for the main port: WebSocket upgrades for /realtime and
     // /logs/stream are adopted by the libwebsockets server; everything else is
-    // processed by the routed servers above. The dedicated websocket_port
-    // listener keeps running unchanged.
+    // processed by the routed servers above.
     auto upgrade_handler = [this](socket_t sock) -> bool {
         std::lock_guard<std::mutex> lock(websocket_mutex_);
         if (websocket_server_ && websocket_server_->is_running()) {
@@ -218,8 +217,7 @@ void HttpListener::warn_if_unsecured(const std::string& bound_host, const std::s
 }
 
 void HttpListener::start_beacon() {
-    // Enumerate all RFC1918 interfaces to determine if we can broadcast.
-    // The beacon will send per-interface with the correct IP in the payload.
+    // The beacon sends on each interface with that interface's IP in the payload.
     auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
     bool bcast = config_->broadcast();
     if (!rfc1918Interfaces.empty() && bcast) {
@@ -266,7 +264,7 @@ void HttpListener::start() {
             std::string msg = "Port " + std::to_string(port_) + " on " + in_use_ip +
                 " is already in use. Another Lemonade server (lemond) is likely "
                 "already running on this port. This instance will now exit.";
-            std::cerr << "[Server] ERROR: " << msg << std::endl;  // terminal visibility
+            std::cerr << "[Server] ERROR: " << msg << std::endl;
             LOG(ERROR, "Server") << msg << std::endl;
             startup_failed_ = true;
             return;
@@ -380,15 +378,12 @@ void HttpListener::start() {
             break;
         }
 
-        // A rebind has already stopped the listeners; otherwise they exited because
-        // stop() was called. Either way the threads are done.
         join_threads();
 
         if (!rebind_requested_) {
             break;
         }
 
-        // Rebind requested: re-resolve host, recreate HTTP servers, loop back to bind+listen
         host = config_->host();
         ipv4 = resolve_host_to_ip(AF_INET, host);
         ipv6 = resolve_host_to_ip(AF_INET6, host);
@@ -407,7 +402,7 @@ bool HttpListener::stop() {
     LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
     udp_beacon_.stopBroadcasting();
     stop_servers();
-    shutdown_requested_ = false;  // Reset for potential future use
+    shutdown_requested_ = false;
 
     std::lock_guard<std::mutex> lock(websocket_mutex_);
     if (websocket_server_) {

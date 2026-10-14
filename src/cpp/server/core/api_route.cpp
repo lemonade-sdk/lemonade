@@ -54,9 +54,8 @@ bool is_file_arg(const RouteArg& arg) {
     return arg.schema.value("format", std::string()) == "binary";
 }
 
-// The error extract for a buffered generation: the streaming plumbing reports backend
-// failures as a payload in the sink, either an SSE-style "data: {\"error\":...}" event
-// or the backend's own JSON error body, rather than throwing.
+// The streaming plumbing reports a backend failure as a payload in the sink rather than
+// throwing: an SSE-style "data: {\"error\":...}" event or the backend's own JSON error body.
 json extract_error_payload(const std::string& buf) {
     std::string body = buf;
     if (body.rfind("data: ", 0) == 0) {

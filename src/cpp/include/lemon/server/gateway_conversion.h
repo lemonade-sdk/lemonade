@@ -19,12 +19,10 @@ namespace lemon {
 using NdjsonChunkConverter = std::function<nlohmann::json(const nlohmann::json& openai_chunk)>;
 using NdjsonDoneBuilder = std::function<nlohmann::json(int prompt_eval_count, int eval_count)>;
 
-// Converts each OpenAI SSE chunk to one NDJSON line, then writes build_done's line.
 void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& client_sink,
                           NdjsonChunkConverter convert_chunk, NdjsonDoneBuilder build_done,
                           ApiRoute::StreamFn call_router);
 
-// Converts an OpenAI chat completion stream to Anthropic Messages events.
 void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                         httplib::DataSink& client_sink,
                                         const std::string& model,

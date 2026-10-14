@@ -83,8 +83,6 @@ public:
                 write_plain_error(res, 400, "Missing required query parameter 'checkpoint'");
                 return;
             }
-            // Detect the URL provider upfront so we can reject mismatches with
-            // an explicit `--source` param (just like /pull and the CLI do).
             lemon::RemoteRegistrySource url_source;
             std::string url_repo_id;
             bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
@@ -105,9 +103,6 @@ public:
                 }
             }
 
-            // A provider URL is authoritative: normalize it to owner/repo and adopt
-            // its registry. Otherwise honor an explicit source param, falling back
-            // to the server's configured default when none is given.
             if (has_url) {
                 checkpoint = url_repo_id;
             }

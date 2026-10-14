@@ -58,9 +58,7 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
         return;
     }
 
-    // Never check the registry for updates here (do_not_upgrade=true): a model that is
-    // not downloaded yet is fetched from its recorded registry, and a downloaded one is
-    // used as cached. Only /pull checks for updates.
+    // Passes do_not_upgrade: only /pull checks the registry for a newer revision.
     if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
         !model_manager_->is_model_downloaded(requested_model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from "
@@ -102,10 +100,7 @@ void ModelLoader::ensure_collection_loaded(const ModelInfo& info) {
             comp_info = model_manager_->get_model_info(component);
         }
         LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-        // The collection load request does not become the component request
-        // layer. Router already reads the component's saved options from comp_info,
-        // so an empty request preserves normal model/architecture/backend scope
-        // semantics.
+        // An empty request lets Router apply each component's own saved options.
         router_->load_model(
             component, comp_info, RecipeOptions(comp_info.recipe, json::object()), true,
             /*allow_reload_on_option_change=*/true);
@@ -116,8 +111,6 @@ json ModelLoader::model_error(const std::string& requested_model,
                               const std::string& exception_msg) const {
     json error_response;
 
-    // Case 1: the model exists but is filtered out on this system (e.g. an NPU model
-    // without an NPU).
     std::string filter_reason = model_manager_->get_model_filter_reason(requested_model);
     if (!filter_reason.empty()) {
         std::string message = "Model '" + requested_model + "' is not available on this system. " + filter_reason;
@@ -131,7 +124,6 @@ json ModelLoader::model_error(const std::string& requested_model,
         return error_response;
     }
 
-    // Case 2: the model is not in the registry at all.
     if (!model_manager_->model_exists(requested_model)) {
         std::string message = "Model '" + requested_model + "' was not found. ";
 
@@ -183,7 +175,7 @@ json ModelLoader::model_error(const std::string& requested_model,
         return error_response;
     }
 
-    // Case 3: the model exists and is available, but failed to load.
+    // The model exists and is available here, so loading it is what failed.
     if (exception_msg.rfind("Routing residency conflict:", 0) == 0) {
         error_response["error"] = {
             {"message", exception_msg},

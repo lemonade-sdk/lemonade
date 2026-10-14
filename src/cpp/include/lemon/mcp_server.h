@@ -17,7 +17,6 @@ namespace lemon {
 using json = nlohmann::json;
 
 // MCP gateway: JSON-RPC 2.0 over HTTP (Streamable HTTP transport, spec 2025-06-18).
-// The POST /mcp route in routes/mcp/ hands each request body to this class.
 class McpServer {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
@@ -29,7 +28,6 @@ public:
     // notification.
     std::string handle_request_body(const std::string& body);
 
-    // The JSON-RPC internal-error reply for an exception the HTTP route catches.
     static json internal_error_response(const std::string& message);
 
 private:

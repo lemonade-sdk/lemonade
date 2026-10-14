@@ -109,7 +109,7 @@ def primary_url(spec: dict) -> str:
 
 
 def auth_sentence(url: str) -> str:
-    # Mirrors RequestMiddleware::authenticate(), which decides auth by path.
+    # Mirrors RequestMiddleware::pre_route(), which decides auth by path.
     if url.startswith("/internal/"):
         return (
             "Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise "

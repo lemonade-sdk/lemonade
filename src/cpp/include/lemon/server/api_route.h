@@ -119,7 +119,6 @@ protected:
     virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
                                     httplib::Response& res) const;
 
-    // Records token usage and timings for telemetry.
     void record_usage(const nlohmann::json& response, const RouteRequest& req) const;
 
     ServerContext& ctx_;

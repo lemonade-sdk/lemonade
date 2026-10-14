@@ -83,8 +83,6 @@ public:
             auto request_json = json::parse(req.http.body);
             Router& router = *ctx_.router;
 
-            // Unknown providers answer 404, matching the install error shape, so a
-            // script can tell the two cases apart.
             if (request_json.value("backend", "") == "cloud") {
                 const std::string provider = request_json.value("provider", "");
                 if (provider.empty()) {

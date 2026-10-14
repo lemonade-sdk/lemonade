@@ -34,8 +34,7 @@ jobs:
 
   backend-docs-drift:
     # Server reference docs are generated from live self-describing endpoints.
-    # Build lemond, regenerate, and fail if committed docs are stale. The API
-    # reference check runs no examples, so this hosted runner loads no model.
+    # Build lemond, regenerate, and fail if committed docs are stale.
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}

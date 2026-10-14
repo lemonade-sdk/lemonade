@@ -23,8 +23,7 @@ namespace {
 // (https://www.w3.org/TR/trace-context/): version "-" trace-id "-" parent-id
 // "-" trace-flags, where version is 2 lowercase hex chars, trace-id is 32,
 // parent-id is 16, and trace-flags is 2. The all-zero trace-id and parent-id
-// are invalid. On success, out_trace_id/out_parent_id receive the lowercase
-// hex ids and the function returns true; otherwise returns false.
+// are invalid.
 bool parse_traceparent(const std::string& header, std::string& out_trace_id, std::string& out_parent_id) {
     // A version-00 traceparent is exactly 55 chars. Reject anything shorter and
     // cap the length so a header packed with dashes can't drive an unbounded
@@ -98,7 +97,6 @@ void RequestMiddleware::install(httplib::Server& server) {
         {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version, traceparent, Mcp-Session-Id"}
     });
 
-    // CORS preflight
     server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.status = 204;
     });
@@ -235,12 +233,9 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
     bool is_metrics_route = (req.path == "/metrics");
 
-    // api_key_ gates the regular API endpoints (/api, /v0, /v1); admin_api_key_
-    // gates /internal/* and defaults to api_key_ when LEMONADE_ADMIN_API_KEY is
-    // unset. The admin key also authenticates the regular endpoints. An empty
-    // key leaves its endpoints open.
+    // The admin key also authenticates the regular endpoints. An empty key leaves its
+    // endpoints open.
 
-    // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
     try {
         if (req.has_header("Authorization")) {
@@ -249,7 +244,6 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
             if (auth_value.size() >= 7) {
                 auth_token = httplib::get_bearer_token_auth(req);
             }
-            // Silently ignore malformed/short Authorization headers
         }
     } catch (const std::exception& e) {
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;

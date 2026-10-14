@@ -93,7 +93,6 @@ public:
                 } catch (const std::exception& e) {
                     last_error = e.what();
 
-                    // Only retry on "file in use" type errors (Windows and POSIX patterns)
                     bool is_file_locked =
                         last_error.find("being used by another process") != std::string::npos ||
                         last_error.find("Permission denied") != std::string::npos ||

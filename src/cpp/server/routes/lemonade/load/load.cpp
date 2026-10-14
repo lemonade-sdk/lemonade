@@ -175,11 +175,8 @@ public:
         try {
             model_name = request_json["model_name"];
 
-            // Cloud models are registered automatically at cache build / cloud-auth
-            // / install time, so a cloud model reaching /load is already in the
-            // cache. /load carries no creds payload; CloudServer reads the
-            // resolved key (env var or runtime POST) from CloudProviderRegistry
-            // when a request is actually forwarded.
+            // Cloud models are registered at cache build, cloud auth and install, so an
+            // unknown cloud model here is as missing as any other.
             if (!model_manager.model_exists(model_name)) {
                 LOG(ERROR, "Server") << "Model not found: " << model_name << std::endl;
                 ctx_.model_loader->write_load_error(res, model_name, "Model not found");
@@ -188,9 +185,8 @@ public:
 
             auto info = model_manager.get_model_info(model_name);
 
-            // Omitted options keep saved values; null masks only its saved key for this
-            // load. Concrete *_args scope is resolved later by Router. ctx_size=-1
-            // remains an explicit auto value.
+            // Omitted options keep saved values; a null masks its saved key for this
+            // load only.
             RecipeOptions options = RecipeOptions(info.recipe, request_json);
             std::set<std::string> transient_saved_option_tombstones;
             for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
@@ -209,8 +205,7 @@ public:
             LOG(INFO, "Server") << " " << options.to_log_string(false);
             LOG(INFO, "Server") << std::endl;
 
-            // A null tombstone is load-scoped, so saving keeps the existing saved
-            // value for that key.
+            // Saving keeps the stored value of a nulled key.
             if (save_options) {
                 json saved_for_write = options.to_json();
                 if (!transient_saved_option_tombstones.empty()) {
@@ -232,8 +227,7 @@ public:
                 info = model_manager.get_model_info(model_name);
             }
 
-            // Null tombstones are load-local: remove only those saved keys from the
-            // local model layer without changing recipe_options.json.
+            // The nulled keys leave this load's options, not recipe_options.json.
             if (!transient_saved_option_tombstones.empty()) {
                 json per_model_options = model_manager.get_model_default_options(info).to_json();
                 const json saved = model_manager.get_saved_model_options(model_name);

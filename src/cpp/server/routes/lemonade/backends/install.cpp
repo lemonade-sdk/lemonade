@@ -181,7 +181,6 @@ public:
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
-            // Get fresh state before any checks
             SystemInfoCache::invalidate_recipes();
 
             // A backend that needs manual setup (e.g. FLM on Linux) answers with the

@@ -23,8 +23,6 @@ namespace lemon {
 class RequestMiddleware;
 class WebUi;
 
-// lemond's HTTP server. It builds the subsystems and the ServerContext routes use,
-// registers every route folder, and starts and stops the core components in order.
 class Server {
 public:
     Server(std::shared_ptr<RuntimeConfig> config,
@@ -36,11 +34,9 @@ public:
     // Serves until stop() or a shutdown request.
     void run();
 
-    // Stops the listeners, unloads every model and flushes telemetry. Safe to call from
-    // any thread, more than once.
+    // Safe to call from any thread, more than once.
     void stop();
 
-    // Main's loop and signal handler use these to request and observe a shutdown.
     bool should_shutdown() const;
     void set_shutdown_requested(bool requested);
 
@@ -50,11 +46,11 @@ public:
     // main() can report failure and exit non-zero.
     bool startup_failed() const;
 
-    // The directory lemond was started with. Tests start lemond in a temporary one, so
-    // routes persist config.json here rather than in utils::get_config_dir().
+    // Tests start lemond in a temporary config dir, so routes persist config.json here
+    // rather than in utils::get_config_dir().
     const std::string& config_dir() const { return config_dir_; }
 
-    // Set once the startup model update check completes; /health reports it.
+    // Set once the startup model update check completes.
     bool update_check_done() const { return update_check_done_.load(); }
 
     // Serves one request in-process, as the route that would match it on the socket.

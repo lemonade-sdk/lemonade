@@ -17,8 +17,6 @@ class RequestMiddleware {
 public:
     RequestMiddleware(RuntimeConfig* config, const RouteRegistry* registry);
 
-    // Installs the pre-routing function, CORS headers and preflight answer, the error
-    // handler, and the access log on one server.
     void install(httplib::Server& server);
 
     bool api_key_set() const { return !api_key_.empty(); }
