@@ -12,7 +12,7 @@ Lemonade runs as a [lightweight local service](./concepts.md) on your computer a
 
 ### GUI
 
-The simplest way to experience Lemonade is to explore the built-in GUI, which helps you manage models and try them out.
+The simplest way to experience Lemonade is to explore the built-in GUI, which helps you manage models and try them out. See the [GUI3 app guide](./gui3.md) for Chat, Models, Backends, and Settings.
 
 === "Windows"
 
