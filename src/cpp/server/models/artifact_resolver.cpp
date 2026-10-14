@@ -2,8 +2,8 @@
 
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
+#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/fetchable_repository.h>
-#include <lemon/models/locator.h>
 
 #include <optional>
 

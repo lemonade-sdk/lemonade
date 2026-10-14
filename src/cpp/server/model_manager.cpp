@@ -5,9 +5,9 @@
 #include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_transfer.h>
 #include <lemon/models/catalog.h>
+#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/listed_catalog.h>
-#include <lemon/models/locator.h>
 #include <lemon/models/scan_catalog.h>
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>

@@ -1,6 +1,6 @@
 #include "lemon/models/catalog.h"
+#include "lemon/models/checkpoint_grammar.h"
 #include "lemon/models/listed_catalog.h"
-#include "lemon/models/locator.h"
 #include "lemon/models/model_index.h"
 
 #include <cstdio>
@@ -11,8 +11,6 @@
 #include <vector>
 
 using lemon::RegistryId;
-using lemon::models::Locator;
-using lemon::models::LocatorScheme;
 using lemon::models::ModelIndex;
 
 static int g_failures = 0;
@@ -49,103 +47,6 @@ static void test_checkpoint_grammar() {
              lemon::models::repo_id_from_checkpoint("org/repo:a:b"), "org/repo");
     check_eq("the remainder keeps later colons",
              lemon::models::variant_from_checkpoint("org/repo:a:b"), "a:b");
-}
-
-static void test_registry_locator() {
-    const Locator locator = Locator::from_checkpoint("org/repo:weight.gguf", "");
-    check("an empty source is a registry model", locator.is_registry());
-    check_eq("repo id", locator.repo_id(), "org/repo");
-    check_eq("variant", locator.variant, "weight.gguf");
-    check("the registry resolves to the default provider",
-          locator.registry && *locator.registry == lemon::models::huggingface_descriptor().id);
-    check_eq("renders as hf://repo:variant", locator.to_string(), "hf://org/repo:weight.gguf");
-
-    const Locator bare = Locator::from_checkpoint("org/repo", "");
-    check_eq("a repo without a variant renders without a colon", bare.to_string(),
-             "hf://org/repo");
-}
-
-static void test_local_schemes_come_from_source() {
-    // A Windows absolute path contains a colon. Deriving the scheme from the
-    // path's shape would read this as a repo named "C" plus a variant.
-    const std::string windows_path = "C:\\models\\foo.gguf";
-    const Locator imported = Locator::from_checkpoint(windows_path, "local_path");
-    check("local_path is an import", imported.is_import());
-    check_eq("the path survives intact", imported.path, windows_path);
-    check_eq("an import has no variant", imported.variant, "");
-    check_eq("import renders with its scheme", imported.to_string(), "import://" + windows_path);
-
-    const Locator uploaded = Locator::from_checkpoint("models--org--repo/x.gguf", "local_upload");
-    check("local_upload is cache relative", uploaded.is_cache());
-    check_eq("the cache relative path survives intact", uploaded.path, "models--org--repo/x.gguf");
-    check_eq("cache renders with its scheme", uploaded.to_string(),
-             "local://models--org--repo/x.gguf");
-
-    // A POSIX absolute path looks like a repo to a shape-based parser too.
-    const Locator posix = Locator::from_checkpoint("/home/u/models/foo.gguf", "local_path");
-    check("a posix absolute path is an import", posix.is_import());
-    check_eq("a posix absolute path survives intact", posix.path, "/home/u/models/foo.gguf");
-
-    check("a registry locator reports no import path",
-          Locator::from_checkpoint("org/repo", "").repo_id() == "org/repo");
-}
-
-static void test_registry_is_named() {
-    const Locator other = Locator::from_checkpoint("org/repo:model.gguf", "modelscope");
-    check("a non-default source is still a registry model", other.is_registry());
-    check("the registry is remembered", other.registry &&
-          *other.registry == lemon::models::modelscope_descriptor().id);
-    check_eq("the registry keeps its own prefix", other.to_string(),
-             "ms://org/repo:model.gguf");
-
-    const Locator url = Locator::from_checkpoint("https://example.com/model.gguf", "url");
-    check("url is its own scheme", url.is_url());
-    check_eq("an absolute url is not double prefixed", url.to_string(),
-             "https://example.com/model.gguf");
-}
-
-static void test_source_aliases_are_normalized() {
-    // The server already accepts these spellings; a locator that carried the
-    // raw string through would render them as their own registry.
-    const char* aliases[] = {"hf", "HF", "huggingface", "HuggingFace"};
-    for (const char* alias : aliases) {
-        const Locator locator = Locator::from_checkpoint("org/repo", alias);
-        check(std::string(alias) + " normalizes to the default provider",
-              locator.registry && *locator.registry == lemon::models::huggingface_descriptor().id);
-        check_eq(std::string(alias) + " renders the canonical prefix", locator.to_string(),
-                 "hf://org/repo");
-    }
-
-    const Locator short_other = Locator::from_checkpoint("org/repo", "MS");
-    check("the short alias for the other registry normalizes",
-          short_other.registry && *short_other.registry == lemon::models::modelscope_descriptor().id);
-}
-
-static void test_unknown_source_is_rejected() {
-    bool threw = false;
-    try {
-        Locator::from_checkpoint("org/repo", "not-a-registry");
-    } catch (const std::invalid_argument&) {
-        threw = true;
-    }
-    check("an unknown registry is refused rather than defaulted", threw);
-}
-
-static void test_path_locators_carry_no_registry() {
-    const Locator imported = Locator::from_checkpoint("/srv/models/foo.gguf", "local_path");
-    check("an import names no registry", !imported.registry.has_value());
-    const Locator uploaded = Locator::from_checkpoint("models--org--repo/x.gguf", "local_upload");
-    check("a cache model names no registry", !uploaded.registry.has_value());
-    const Locator url = Locator::from_checkpoint("https://example.com/x.gguf", "url");
-    check("a url names no registry", !url.registry.has_value());
-}
-
-static void test_revision_is_additive() {
-    Locator locator = Locator::from_checkpoint("org/repo", "");
-    check_eq("no revision is parsed today", locator.revision, "");
-    check_eq("without a revision nothing is appended", locator.to_string(), "hf://org/repo");
-    locator.revision = "deadbeef";
-    check_eq("a revision is carried through", locator.to_string(), "hf://org/repo@deadbeef");
 }
 
 static void test_name_reserving() {
@@ -357,13 +258,6 @@ static void test_a_provider_that_will_not_answer_costs_only_its_own_models() {
 
 int main() {
     test_checkpoint_grammar();
-    test_registry_locator();
-    test_local_schemes_come_from_source();
-    test_registry_is_named();
-    test_source_aliases_are_normalized();
-    test_unknown_source_is_rejected();
-    test_path_locators_carry_no_registry();
-    test_revision_is_additive();
     test_name_reserving();
     test_reserved_ids_are_prefixed();
     test_model_index_ownership();

@@ -4,7 +4,7 @@
 #include <lemon/backends/hf_cache_util.h>
 #include <lemon/gguf_shard_utils.h>
 #include <lemon/hf_variants.h>
-#include <lemon/models/locator.h>
+#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>

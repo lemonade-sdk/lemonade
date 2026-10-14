@@ -3,16 +3,6 @@
 namespace lemon {
 namespace models {
 
-ArtifactRef ArtifactRef::from_locator(const Locator& locator, bool required) {
-    ArtifactRef ref;
-    ref.registry = locator.registry;
-    ref.repo_id = locator.path;
-    ref.variant = locator.variant;
-    ref.revision = locator.revision;
-    ref.required = required;
-    return ref;
-}
-
 bool ArtifactRef::operator==(const ArtifactRef& other) const {
     return registry == other.registry && checkpoint_type == other.checkpoint_type &&
            repo_id == other.repo_id &&

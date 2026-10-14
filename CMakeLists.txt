@@ -1043,11 +1043,11 @@ set(SOURCES_CORE
     src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp
+    src/cpp/server/models/checkpoint_grammar.cpp
     src/cpp/server/models/fetchable_repository.cpp
     src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
     src/cpp/server/models/registry_documents.cpp
-    src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/recipe_options_store.cpp
