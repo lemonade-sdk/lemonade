@@ -1733,6 +1733,53 @@
   
   
   
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../dev/specs/spec-writing-guide/" class="md-nav__link">
         
@@ -1741,7 +1788,7 @@
   <span class="md-ellipsis">
     
   
-    Spec Writing Guide
+    Writing Guide
   
 
     
@@ -1750,6 +1797,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/specs/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -3601,19 +3684,15 @@
 <p>You can change this location by setting the <code>HF_HOME</code> env var, which will store your models in <code>$HF_HOME/hub</code> (e.g., <code>$HF_HOME/hub/models--Qwen--Qwen2.5-0.5B</code>). Alternatively, you can set <code>HF_HUB_CACHE</code> and your models will be in <code>$HF_HUB_CACHE</code> (e.g., <code>$HF_HUB_CACHE/models--Qwen--Qwen2.5-0.5B</code>).</p>
 <p>You can use the official Hugging Face Hub utility (<code>pip install huggingface-hub</code>) to manage models outside of Lemonade, e.g., <code>hf cache ls</code> will print all models and their sizes.</p>
 <p><strong>Secondary: Extra Models Directory (GGUF)</strong></p>
-<p>Lemonade Server can discover GGUF models from a secondary directory using the <code>extra_models_dir</code> option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:</p>
+<p>Lemonade Server can discover GGUF models from a secondary directory using the <code>extra_models_dir</code> option, so a library you already have works without downloading anything again. Suggested paths:</p>
 <ul>
-<li><strong>Windows:</strong><ul>
-<li>LM Studio: <code>C:\Users\You\.lmstudio\models</code></li>
-<li>llamacpp: <code>%LOCALAPPDATA%\llama.cpp</code> (e.g., <code>C:\Users\You\AppData\Local\llama.cpp</code>)</li>
-</ul>
-</li>
-<li><strong>Linux:</strong> <code>~/.cache/llama.cpp</code></li>
+<li><strong>LM Studio:</strong> <code>~/.lmstudio/models</code>, or <code>C:\Users\You\.lmstudio\models</code> on Windows</li>
+<li><strong>A Hugging Face cache:</strong> <code>~/.cache/huggingface/hub</code></li>
 </ul>
 <p>Set <code>extra_models_dir</code> (see <a href=".././configuration/">Server Configuration</a>):</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">"/home/you/.cache/llama.cpp"</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">"/home/you/.lmstudio/models"</span>
 </code></pre></div>
-<p>Any <code>.gguf</code> files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the <code>custom</code> category.</p>
+<p>Any <code>.gguf</code> files in this directory, including its subdirectories, appear in Lemonade's model list in the <code>custom</code> category. For how they are named and how the folder layout selects the way they run, see <a href=".././configuration/custom-models/#imported-models-extra_models_dir">Imported models</a>.</p>
 <p><strong>FastFlowLM</strong></p>
 <p>FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the <code>FLM_MODEL_PATH</code> environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.</p>
 <h3 id="2-what-models-are-supported">2. <strong>What models are supported?</strong></h3>

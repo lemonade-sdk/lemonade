@@ -1,0 +1,4342 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.">
+      
+      
+      
+        <link rel="canonical" href="https://lemonade-server.ai/docs/dev/specs/container-backends/">
+      
+      
+        <link rel="prev" href="../spec-writing-guide/">
+      
+      
+        <link rel="next" href="../../working-groups/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/favicon.ico">
+      <meta name="generator" content="zensical-0.0.39">
+    
+    
+      
+        <title>Container Backends Spec - Lemonade Server Documentation</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.1e981d71.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+
+    
+      <link rel="stylesheet" href="../../../assets/website-styles.css">
+    
+      <link rel="stylesheet" href="../../../assets/zest-theme.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="zest-light" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#container-backends-spec" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Lemonade Server Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Container Backends Spec
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="zest-light" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="zest-dark" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+
+    </a>
+    Lemonade Server Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Welcome
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Install
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/ubuntu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ubuntu
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/arch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/fedora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fedora
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/debian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/install/macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macOS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Server Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/cli-chat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chat in your terminal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/custom-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/multi-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Many Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/llamacpp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llama.cpp
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/vllm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    vLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/moonshine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Moonshine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/cloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cloud Offload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spec-writing-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Summary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Design Philosophy
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Scope
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-backend-descriptor-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        New Backend Descriptor Labels
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#class-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Class Architecture
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Class Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Container Backends
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Container Backends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#containers-descriptor-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>containers</code> Descriptor Field
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-pins" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Version Pins
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverprocess" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>ServerProcess</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#containermanager" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>ContainerManager</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Command Contract
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Command Contract">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Run Options
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Image
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#program" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Program
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Complete Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-by-install-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup by Install Type
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup by Install Type">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup Assistant
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tool-choice-and-install-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tool Choice and Install Commands
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemond-started-by-the-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemond</code> Started by the User
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemond-as-a-system-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemond</code> as a System Service
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="lemond as a System Service">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lemondservice-and-rootless-podman" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemond.service</code> and rootless Podman
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selinux-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        SELinux Check
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halogen-kernel-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Halogen Kernel Check
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Image Updates
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-b-halogen-launch-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Appendix B: Halogen Launch Commands
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../working-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working Groups
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../documentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Desktop App
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../lemonade-omni/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade Omni Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../self-hosted-runners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Infrastructure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    App Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    App Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/ai-toolkit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Toolkit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/anythingLLM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AnythingLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/codeGPT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/junie/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junie
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/langchain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LangChain
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/lemon-zest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemon Zest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/mindcraft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindcraft
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/open-hands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Hands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/open-webui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open WebUI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/wut/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wut
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Spec
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Spec
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/openai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAI Compatible
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/ollama/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ollama Compatible
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/anthropic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Anthropic Compatible
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/llamacpp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llama.cpp Specific
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/lemonade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade Specific
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddable Lemonade
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Embeddable Lemonade
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../embeddable/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../embeddable/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../embeddable/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../embeddable/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../embeddable/building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building from Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Summary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Design Philosophy
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Scope
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-backend-descriptor-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        New Backend Descriptor Labels
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#class-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Class Architecture
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Class Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Container Backends
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Container Backends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#containers-descriptor-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>containers</code> Descriptor Field
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-pins" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Version Pins
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverprocess" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>ServerProcess</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#containermanager" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>ContainerManager</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Command Contract
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Command Contract">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Run Options
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Image
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#program" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Program
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Complete Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-by-install-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup by Install Type
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup by Install Type">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup Assistant
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tool-choice-and-install-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tool Choice and Install Commands
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemond-started-by-the-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemond</code> Started by the User
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemond-as-a-system-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemond</code> as a System Service
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="lemond as a System Service">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lemondservice-and-rootless-podman" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemond.service</code> and rootless Podman
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selinux-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        SELinux Check
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halogen-kernel-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Halogen Kernel Check
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Image Updates
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-b-halogen-launch-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Appendix B: Halogen Launch Commands
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+  
+
+
+<h1 id="container-backends-spec">Container Backends Spec</h1>
+<ul>
+<li><a href="#summary">Summary</a></li>
+<li><a href="#design-philosophy">Design Philosophy</a></li>
+<li><a href="#scope">Scope</a></li>
+<li><a href="#new-backend-descriptor-labels">New Backend Descriptor Labels</a></li>
+<li><a href="#class-architecture">Class Architecture</a></li>
+<li><a href="#command-contract">Command Contract</a></li>
+<li><a href="#setup-by-install-type">Setup by Install Type</a></li>
+<li><a href="#image-updates">Image Updates</a></li>
+<li><a href="#appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs">Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs</a></li>
+<li><a href="#appendix-b-halogen-launch-commands">Appendix B: Halogen Launch Commands</a></li>
+</ul>
+<h2 id="summary">Summary</h2>
+<p>This spec describes how we will add new container backends to Lemonade.</p>
+<p>A <strong>container backend</strong> is a Lemonade backend whose executable is a digest-pinned OCI image instead of a downloaded binary.</p>
+<ul>
+<li>Install, load, unload, <code>/system-info</code>, benchmarking and the backend manager work unchanged.</li>
+<li>The one new host requirement is a container tool on Linux: Podman first, then Docker, each verified by a socket probe. Users will be guided to install Podman if needed.</li>
+</ul>
+<h2 id="design-philosophy">Design Philosophy</h2>
+<p>Lemonade follows <a href="https://github.com/containers/ramalama">Ramalama</a>'s container conventions wherever they apply, and <a href="https://github.com/kyuz0/ai-toolbox-cockpit">AI Cockpit</a>'s wherever the choice belongs to this hardware. A dagger (†) marks an item taken from Ramalama, a double dagger (‡) one taken from AI Cockpit, and a section mark (§) one both already share, on the item or at the end of a table cell for the whole cell. <strong><a href="#appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs">Appendix A</a></strong> sources each against Ramalama v0.24.0 and AI Cockpit v2026.9.19.1535.</p>
+<h2 id="scope">Scope</h2>
+<ul>
+<li><strong>Platform.</strong> Linux-only, GPU-only. Single GPU.</li>
+<li><strong>Image sources.</strong></li>
+<li>Donato's <a href="https://hub.docker.com/u/kyuz0">Docker Hub account</a> for rocmfpx, nathanw, and ds4.</li>
+<li>Peonist's <a href="https://github.com/orgs/peonist-ai/packages">ghcr.io account</a> for Halogen.</li>
+<li><strong>Models.</strong> Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.</li>
+<li><strong>Packaging.</strong></li>
+<li>The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.</li>
+</ul>
+<h2 id="new-backend-descriptor-labels">New Backend Descriptor Labels</h2>
+<p>Users and clients will be able to assess critical information about each backend at a glance using these two new labels.</p>
+<p>Its <strong>tier</strong> is one of:</p>
+<ol>
+<li><code>core</code>: supported by Lemonade's maintainers for production use.</li>
+<li><code>community</code>: provided by Lemonade's maintainers, but not supported for production use.</li>
+<li><code>experimental</code>: developed in the community and listed in Lemonade. Use at your own risk.</li>
+</ol>
+<p>Its <strong>format</strong> is one of:</p>
+<ol>
+<li><code>native</code>: backend is a compiled executable binary.</li>
+<li><code>python</code>: backend is implemented in Python and packaged for portability with a Python interpreter inside.</li>
+<li><code>container</code>: backend is implemented as an OCI container, deploys as a sandboxed image, and requires a pre-installed container tool (Podman or Docker).</li>
+</ol>
+<p>Tier and format are set per backend. Examples:
+- <code>llamacpp:rocm</code>: core, native
+- <code>vllm:rocm</code>: community, python
+- <code>halogen:rocm</code>: experimental, container</p>
+<p>Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install an experimental backend. Models specific to an experimental backend should not be displayed in <code>/v1/models?show_all=true</code> until the backend has been installed.</p>
+<blockquote>
+<p>Note: we can keep the experimental boolean label in the descriptor to avoid a breaking change.</p>
+</blockquote>
+<h2 id="class-architecture">Class Architecture</h2>
+<p><code>WrappedServer</code> is Lemonade's main primitive: a subclass per inference engine, each spawning a server subprocess and proxying HTTP to it. This spec adds the concept of a <strong>container backend</strong> to the existing concept of a <strong>native backend</strong>. This section describes the class architecture that enables native and container backends to share as many concepts as possible, while diverging where necessary.</p>
+<div class="highlight"><pre><span></span><code>flowchart TD
+  R["Router"]
+  W["WrappedServer subclass&lt;br/&gt;(one per inference engine)"]
+  NP["NativeProcess"]
+  CP["ContainerProcess"]
+  PM["ProcessManager"]
+  CM["ContainerManager&lt;br/&gt;(global for lemond)"]
+  HP(["server process&lt;br/&gt;on the host"])
+  CL(["podman run or docker run&lt;br/&gt;(child of lemond)"])
+  SV(["supervisor&lt;br/&gt;conmon or containerd-shim"])
+  KP(["server process&lt;br/&gt;in a container"])
+  R ==&gt;|"load(model, options)"| W
+  W ==&gt;|"ServerCommand + binary path"| NP
+  W ==&gt;|"ServerCommand + pinned image"| CP
+  NP ==&gt; PM
+  PM ==&gt;|"start_process()"| HP
+  CP ==&gt;|"ContainerRunSpec"| CM
+  CM ==&gt;|"start_process()"| CL
+  CL ==&gt;|"run request"| SV
+  SV ==&gt;|"starts"| KP
+  W -.-&gt;|"HTTP over loopback"| HP
+  W -.-&gt;|"HTTP to the published port&lt;br/&gt;or container address"| KP
+</code></pre></div>
+<p><em>Rectangles are classes, rounded boxes are OS processes. Thick edges carry the command down the stack; dotted edges are the steady-state request path.</em></p>
+<h3 id="container-backends">Container Backends</h3>
+<p>A container backend runs its server from an OCI image pinned by digest. Three pieces define it:</p>
+<ul>
+<li>Its <code>BackendDescriptor</code> names the image and the container's permissions (see <a href="#containers-descriptor-field"><code>containers</code> Descriptor Field</a>).</li>
+<li>Its <code>WrappedServer</code> subclass passes engine settings as environment variables (see <a href="#engine-settings">Engine Settings</a>).</li>
+<li><code>backend_versions.json</code> pins the image's digest (see <a href="#version-pins">Version Pins</a>).</li>
+</ul>
+<h4 id="containers-descriptor-field"><code>containers</code> Descriptor Field</h4>
+<p>Each <code>BackendDescriptor</code> contains the information needed to install and launch that backend, organized in a standardized format. <code>BackendDescriptor</code> gets a new struct, <code>ContainerPolicy</code>, that holds a container backend's image, and the device nodes and Linux permissions its container gets:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Meaning</th>
+<th>Adds to the run command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>image</code></td>
+<td>Yes</td>
+<td>Where the image is published. Only <code>docker.io/kyuz0/*</code> and <code>ghcr.io/peonist-ai/*</code> are allowed.</td>
+<td>The image reference (see <a href="#image">Image</a>)</td>
+</tr>
+<tr>
+<td><code>devices</code></td>
+<td>Yes</td>
+<td>Device nodes the container can open, such as <code>{"/dev/dri"}</code>.</td>
+<td>One <code>--device</code> per node, and <code>--group-add</code> (see <a href="#run-options">Run Options</a>)</td>
+</tr>
+<tr>
+<td><code>cap_add</code></td>
+<td>No</td>
+<td>Linux capabilities to give back after <code>--cap-drop=all</code>, such as <code>{"SYS_PTRACE"}</code>.</td>
+<td>One <code>--cap-add</code> per capability</td>
+</tr>
+</tbody>
+</table>
+<p>Halogen's <code>BackendDescriptor</code> declares one container backend, <code>rocm</code>, for Strix Halo (<code>gfx1151</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="cm">/*support*/</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="s">"rocm"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"linux"</span><span class="p">},</span><span class="w"> </span><span class="p">{{</span><span class="s">"amd_gpu"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"gfx1151"</span><span class="p">}}},</span><span class="w"> </span><span class="cm">/*device_summary*/</span><span class="w"> </span><span class="s">"AMD Strix Halo"</span><span class="p">},</span>
+<span class="p">},</span>
+<span class="cm">/*containers*/</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="s">"rocm"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="cm">/*image*/</span><span class="w">   </span><span class="s">"ghcr.io/peonist-ai/halogen-flash-server"</span><span class="p">,</span>
+<span class="w">        </span><span class="cm">/*devices*/</span><span class="w"> </span><span class="p">{</span><span class="s">"/dev/dri"</span><span class="p">,</span><span class="w"> </span><span class="s">"/dev/kfd"</span><span class="p">},</span>
+<span class="w">        </span><span class="cm">/*cap_add*/</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">    </span><span class="p">}},</span>
+<span class="p">},</span>
+</code></pre></div>
+<h4 id="engine-settings">Engine Settings</h4>
+<p>A container backend's <code>WrappedServer</code> subclass puts engine settings in the <code>env</code> field of its <code>ServerCommand</code>, the struct that holds the program a backend runs, its flags, environment variables, model files, port and ready endpoint. Halogen's <code>WrappedServer</code> sets these variables:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HALOGEN_CTX</code></td>
+<td><code>ctx_size</code> when the user sets it, otherwise <code>262144</code> ‡</td>
+</tr>
+<tr>
+<td><code>HALOGEN_KV_POOL_POSITIONS</code></td>
+<td><code>524288</code> ‡</td>
+</tr>
+<tr>
+<td><code>HALOGEN_KV_SLOTS</code></td>
+<td><code>4</code> ‡</td>
+</tr>
+<tr>
+<td><code>HALOGEN_PROMPT_CACHE</code></td>
+<td><code>2</code> ‡</td>
+</tr>
+</tbody>
+</table>
+<h4 id="version-pins">Version Pins</h4>
+<p>A container backend's entry in <code>backend_versions.json</code> is one string, <code>&lt;tag&gt;@&lt;digest&gt;</code>. Lemonade pulls the digest, and the tag records where the digest came from.</p>
+<p>For example, the <code>llamacpp</code> entry holds a native pin and a container pin side by side:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">"vulkan"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;release tag&gt;"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"nathanw"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vulkan-radv-performance@sha256:&lt;digest&gt;"</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="serverprocess"><code>ServerProcess</code></h3>
+<p><code>ServerProcess</code> is a base class that holds one running backend server. <code>WrappedServer</code> owns one while a model is loaded, under its process mutex. Unload, the watchdog and a load timeout all end it with <code>stop()</code>. After <code>start</code>, <code>WrappedServer</code> polls the command's ready endpoint at the address the process reports. Native backends use the child class <code>NativeProcess</code>, and container backends use <code>ContainerProcess</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th><code>NativeProcess</code></th>
+<th><code>ContainerProcess</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>start</code></td>
+<td>Starts the binary through <code>ProcessManager::start_process()</code> and connects to it at <code>127.0.0.1</code></td>
+<td><ol><li>Removes any leftover container with the same name</li><li>Builds a <code>ContainerRunSpec</code>:<ol><li>Mounts the command's model files</li><li>Rewrites their paths to <code>/mnt/models</code></li><li>Adds the <code>ContainerPolicy</code>'s <code>devices</code> and <code>cap_add</code></li><li>Sets the container's network (see <a href="#run-options">Run Options</a>)</li></ol></li><li>Has <code>ContainerManager</code> build the <code>podman run</code> or <code>docker run</code> command</li><li>Starts that command as a child of <code>lemond</code> with <code>ProcessManager::start_process()</code></li><li>Connects to the server at the address given in <a href="#run-options">Run Options</a></li></ol></td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td>Terminates the process</td>
+<td><ol><li>Runs <code>stop --time 10</code> on the container by name †: SIGTERM, then SIGKILL after 10 seconds. Stopping by name reaches the container, because the client forwards SIGTERM and SIGKILL ends only the client</li><li>Removes the container and its network</li><li>Terminates the <code>run</code> client</li></ol></td>
+</tr>
+<tr>
+<td><code>handle</code></td>
+<td>The server process</td>
+<td>The <code>podman run</code> or <code>docker run</code> client process. When <code>lemond</code> dies, the client gets SIGTERM, as a native server does, and forwards it to the container</td>
+</tr>
+</tbody>
+</table>
+<h3 id="containermanager"><code>ContainerManager</code></h3>
+<p><code>ContainerManager</code> is the single object in <code>lemond</code> that runs podman or docker. It is the container counterpart of <code>ProcessManager</code>. It:</p>
+<ul>
+<li>picks the container tool (see <a href="#tool-choice-and-install-commands">Tool Choice and Install Commands</a>)</li>
+<li>builds the <code>podman run</code> or <code>docker run</code> command in one function, which holds every Podman and Docker difference § (see <a href="#command-contract">Command Contract</a>)</li>
+<li>runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup and includes stopped containers</li>
+<li>checks prerequisites before a load and gives each failure its fix (see <a href="#setup-assistant">Setup Assistant</a>)</li>
+<li>pulls and removes images for install and uninstall</li>
+</ul>
+<h2 id="command-contract">Command Contract</h2>
+<p>Lemonade starts each container backend with one <code>podman run</code> or <code>docker run</code> command, built by <code>ContainerManager::run_command()</code>. The command has three parts, in order: run options, the image, and the program to run inside the container. Every load logs the full command.</p>
+<h3 id="run-options">Run Options</h3>
+<p>Run options are the flags between <code>run</code> and the image.</p>
+<p>These options are the same for Podman and Docker:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Value</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--rm</code>, <code>--init</code>, <code>--cap-drop=all</code>, <code>--security-opt=no-new-privileges</code></td>
+<td>Same for every container †</td>
+<td>Fixed</td>
+</tr>
+<tr>
+<td><code>--pull=never</code></td>
+<td>Same for every container</td>
+<td>Fixed</td>
+</tr>
+<tr>
+<td>seccomp</td>
+<td>The tool's default profile: the command passes no <code>seccomp</code> option †</td>
+<td>Fixed</td>
+</tr>
+<tr>
+<td><code>--name</code></td>
+<td><code>lemonade-&lt;recipe&gt;-&lt;backend&gt;-&lt;model&gt;</code></td>
+<td>The loaded model</td>
+</tr>
+<tr>
+<td><code>--label</code></td>
+<td><code>ai.lemonade</code>, <code>ai.lemonade.recipe</code>, <code>.backend</code>, <code>.model</code>, <code>.port</code> †</td>
+<td>The loaded model</td>
+</tr>
+<tr>
+<td><code>--network</code></td>
+<td>A private <code>--internal</code> network named after the container</td>
+<td>Fixed</td>
+</tr>
+<tr>
+<td><code>-v</code></td>
+<td><code>&lt;host path&gt;:/mnt/models/&lt;name&gt;:ro,z</code>, one per model file the command names †. A directory the command names, such as Halogen's tokenizer directory, gets one mount per file inside it at the same relative path, such as <code>/mnt/models/tokenizer/vocab.json</code> ‡. Each host path is resolved through symlinks first, so files in a Hugging Face cache, which link into the cache's <code>blobs/</code> folder, mount as the files themselves. <code>z</code> gives the files a shared SELinux label that every container can read, so the same model can be mounted by several containers, whether Lemonade started them or not. It does nothing on hosts without SELinux</td>
+<td>The model's files</td>
+</tr>
+<tr>
+<td><code>--device</code></td>
+<td>One per node, such as <code>/dev/dri</code> §</td>
+<td><code>ContainerPolicy.devices</code> (see <a href="#containers-descriptor-field"><code>containers</code> Descriptor Field</a>)</td>
+</tr>
+<tr>
+<td><code>--env HOME=/tmp</code></td>
+<td>Same for every container †</td>
+<td>Fixed</td>
+</tr>
+<tr>
+<td><code>--env HIP_VISIBLE_DEVICES</code></td>
+<td>Index of the GPU whose arch is <code>SystemInfo::get_rocm_arch()</code>, only when <code>devices</code> includes <code>/dev/kfd</code></td>
+<td><code>lemond</code> reads each node's <code>gfx_target_version</code> under <code>/sys/devices/virtual/kfd/kfd/topology/nodes</code> and picks the one equal to <code>SystemInfo::get_rocm_arch()</code> †</td>
+</tr>
+<tr>
+<td><code>--env</code></td>
+<td>Any other variables the engine needs, such as <code>ROCBLAS_USE_HIPBLASLT=1</code> or Halogen's <code>HALOGEN_CTX</code></td>
+<td><code>ServerCommand.env</code>, set by the <code>WrappedServer</code> subclass</td>
+</tr>
+<tr>
+<td><code>--cap-add</code></td>
+<td>One per capability, only when <code>ContainerPolicy</code> sets <code>cap_add</code> ‡</td>
+<td><code>ContainerPolicy.cap_add</code></td>
+</tr>
+</tbody>
+</table>
+<p>When the container tool is Podman, <code>lemond</code> connects to the server at <code>127.0.0.1:&lt;port&gt;</code>, and the command adds:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Value</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--group-add</code></td>
+<td><code>keep-groups</code> ‡, which carries the account's own <code>video</code> and <code>render</code> membership into the container</td>
+<td><code>ContainerPolicy.devices</code> (see <a href="#containers-descriptor-field"><code>containers</code> Descriptor Field</a>)</td>
+</tr>
+<tr>
+<td><code>-p</code></td>
+<td><code>127.0.0.1:&lt;port&gt;:&lt;port&gt;</code></td>
+<td>A free port <code>lemond</code> picks</td>
+</tr>
+</tbody>
+</table>
+<p>When the container tool is Docker, <code>lemond</code> connects to the server at the container's address on its private network, and the command adds:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Value</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--group-add</code></td>
+<td>The host's <code>video</code> and <code>render</code> group IDs, resolved at launch ‡</td>
+<td><code>ContainerPolicy.devices</code> (see <a href="#containers-descriptor-field"><code>containers</code> Descriptor Field</a>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="image">Image</h3>
+<p>The image reference is <code>&lt;image&gt;@&lt;digest&gt;</code>, from <code>ContainerPolicy.image</code> and the digest in the backend's pin (see <a href="#version-pins">Version Pins</a>). Install pulls it, so a load never downloads anything.</p>
+<h3 id="program">Program</h3>
+<p>The program is the server the container runs, with its arguments, such as <code>llama-server -m /mnt/models/Qwen3-4B-Q4_K_M.gguf --ctx-size 8192 --port 8001 --host 0.0.0.0</code>. The <code>WrappedServer</code> subclass builds it in <code>ServerCommand</code> the same way as for a native launch, with two differences:</p>
+<ul>
+<li>Model paths point to the mounted files under <code>/mnt/models</code>.</li>
+<li><code>--host</code> is <code>0.0.0.0</code> instead of <code>127.0.0.1</code>, so <code>lemond</code> can reach the server from outside the container.</li>
+</ul>
+<h3 id="complete-example">Complete Example</h3>
+<p>Suppose <code>lemond</code> runs under the user's own account on a native host with rootless Podman, and loads the model <code>Qwen3-4B-GGUF</code> on <code>llamacpp:nathanw</code> with <code>ctx_size</code> set to 8192. <code>ContainerProcess</code> runs two commands. The first creates the container's private network, and the second starts the server:</p>
+<div class="highlight"><pre><span></span><code>podman network create --internal \
+  --label ai.lemonade \
+  lemonade-llamacpp-nathanw-Qwen3-4B-GGUF
+
+podman run \
+  --rm \
+  --init \
+  --name lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
+  --label ai.lemonade \
+  --label ai.lemonade.recipe=llamacpp \
+  --label ai.lemonade.backend=nathanw \
+  --label ai.lemonade.model=Qwen3-4B-GGUF \
+  --label ai.lemonade.port=8001 \
+  --cap-drop=all \
+  --security-opt=no-new-privileges \
+  --pull=never \
+  --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
+  --device /dev/dri \
+  --group-add keep-groups \
+  -v /home/alice/.cache/huggingface/hub/models--unsloth--Qwen3-4B-GGUF/snapshots/a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4/Qwen3-4B-Q4_K_M.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z \
+  --env HOME=/tmp \
+  -p 127.0.0.1:8001:8001 \
+  docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:&lt;digest&gt; \
+  llama-server \
+    -m /mnt/models/Qwen3-4B-Q4_K_M.gguf \
+    --ctx-size 8192 \
+    --port 8001 \
+    --host 0.0.0.0 \
+    --jinja \
+    --metrics \
+    --parallel 1
+</code></pre></div>
+<h2 id="setup-by-install-type">Setup by Install Type</h2>
+<p>A container backend loads only when <code>lemond</code> can reach Podman or Docker, and that tool can open the GPU's device nodes. This section specifies, for each install type, what starts the containers, what the installer sets up, and what the setup assistant checks. The install types are:</p>
+<ul>
+<li><a href="#lemond-started-by-the-user"><code>lemond</code> Started by the User</a></li>
+<li><a href="#lemond-as-a-system-service"><code>lemond</code> as a System Service</a></li>
+</ul>
+<p>Container backends are hidden on Windows and macOS.</p>
+<h3 id="setup-assistant">Setup Assistant</h3>
+<p>The setup assistant tells the user which setup step is missing and how to fix it. While one of its checks fails, the container backend's state is <code>action_required</code>, with two fields:</p>
+<ul>
+<li><code>message</code>: the check's "Fails when" text.</li>
+<li><code>action</code>: the commands that fix it.</li>
+</ul>
+<p><code>/system-info</code> reports both fields. The Backend Manager panel in the desktop and web apps shows <code>message</code>, with a help button that copies <code>action</code>, and <code>lemonade backends</code> prints both. Checks rerun on each <code>/system-info</code> request, so the backend changes to <code>installable</code> as soon as a fix takes effect.</p>
+<p>Each install type below lists its checks in the order they run, in one table per container tool. The <code>action</code> cells are the user's setup steps.</p>
+<h3 id="tool-choice-and-install-commands">Tool Choice and Install Commands</h3>
+<p>Lemonade uses Podman when it is installed, and Docker otherwise §. When neither tool is installed, the setup assistant tells the user to install Podman. The install command it gives comes from the host's <code>/etc/os-release</code>: Lemonade matches <code>ID</code>, then each word of <code>ID_LIKE</code>, against this table:</p>
+<table>
+<thead>
+<tr>
+<th>Match</th>
+<th>Install command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>debian</code>, which also matches Ubuntu, Linux Mint and Pop!_OS</td>
+<td><code>sudo apt install podman</code></td>
+</tr>
+<tr>
+<td><code>fedora</code>, which also matches RHEL, CentOS Stream, Rocky Linux and AlmaLinux</td>
+<td><code>sudo dnf install podman</code></td>
+</tr>
+<tr>
+<td><code>arch</code>, which also matches Manjaro, EndeavourOS and CachyOS</td>
+<td><code>sudo pacman -S podman</code></td>
+</tr>
+<tr>
+<td>No match</td>
+<td>"Install Podman with the host's package manager"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lemond-started-by-the-user"><code>lemond</code> Started by the User</h3>
+<p>The user starts <code>lemond</code> as their own account, through any of:</p>
+<ul>
+<li>a <code>systemctl --user</code> unit, <code>lemond-user.service</code>, which runs with the user's own rights, as a shell does. Rootless Podman needs the setuid <code>newuidmap</code>/<code>newgidmap</code> helpers and the user's full subordinate ID range, and in a user manager each of systemd's sandboxing options takes one away: the seccomp-based ones (<code>NoNewPrivileges</code>, <code>RestrictNamespaces</code>, <code>LockPersonality</code>, <code>RestrictRealtime</code>) set the no-new-privileges flag, and the mount-based ones (<code>PrivateTmp</code>, <code>ProtectSystem</code>) confine the service to a user namespace that maps only the user's own UID.</li>
+<li>a shell, including a <code>lemond</code> built from source and run from its build directory</li>
+<li>an app that embeds <code>lemond</code></li>
+</ul>
+<p>What the user does:</p>
+<ul>
+<li><strong>With Podman:</strong></li>
+<li>Installs Podman.</li>
+<li>Adds their account to <code>video</code> and <code>render</code>, if it is not in both.</li>
+<li>Logs out and back in.</li>
+<li><strong>With Docker:</strong></li>
+<li>Adds their account to the <code>docker</code> group.</li>
+<li>Logs out and back in.</li>
+</ul>
+<p>Containers are started by:</p>
+<table>
+<thead>
+<tr>
+<th>Container tool</th>
+<th>Containers started by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Podman</td>
+<td>Podman, as the account that runs <code>lemond</code>: rootless by default, or rootful when <code>CONTAINER_HOST</code> points at root's Podman socket</td>
+</tr>
+<tr>
+<td>Docker</td>
+<td>The Docker daemon, through <code>/var/run/docker.sock</code></td>
+</tr>
+</tbody>
+</table>
+<p>When the container tool is Podman, the checks are:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Fails when</th>
+<th><code>action</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Podman installed</td>
+<td><code>podman</code> is not on <code>PATH</code></td>
+<td>The install command for the host's <code>ID</code></td>
+</tr>
+<tr>
+<td>Device nodes accessible</td>
+<td>The user's account is not in both <code>video</code> and <code>render</code></td>
+<td>1. <code>sudo usermod -aG video,render $USER</code><br>2. Log out and back in</td>
+</tr>
+</tbody>
+</table>
+<p>When the container tool is Docker, the checks are:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Fails when</th>
+<th><code>action</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker reachable</td>
+<td>The Docker daemon refuses the user's account</td>
+<td>1. <code>sudo usermod -aG docker $USER</code><br>2. Log out and back in</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lemond-as-a-system-service"><code>lemond</code> as a System Service</h3>
+<p>The Debian (<code>.deb</code>/PPA) and Fedora (<code>.rpm</code>) packages install <code>lemond</code> as <code>lemond.service</code>, a systemd system service under the <code>lemonade</code> account. The Debian packages build from <code>contrib/debian</code>, the Fedora <code>.rpm</code>s for Fedora 43 and 44 from <code>src/cpp/CPackRPM.cmake</code>.</p>
+<p>What the user does:</p>
+<ul>
+<li><strong>With Podman:</strong> nothing; <code>podman</code> installs with the package.</li>
+<li><strong>With Docker:</strong></li>
+<li>Runs <code>sudo usermod -aG docker lemonade</code>.</li>
+<li>Runs <code>sudo systemctl restart lemond</code>.</li>
+</ul>
+<p>What the package does:</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Debian (<code>.deb</code>/PPA)</th>
+<th>Fedora (<code>.rpm</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Adds <code>lemonade</code> to <code>video</code> and <code>render</code> with <code>usermod</code></td>
+<td><code>lemonade-server.postinst</code></td>
+<td><code>postinst-rpm</code></td>
+</tr>
+<tr>
+<td>Allocates <code>lemonade</code> a subordinate UID/GID range (see <a href="#lemondservice-and-rootless-podman"><code>lemond.service</code> and rootless Podman</a>)</td>
+<td><code>lemonade-server.postinst</code></td>
+<td><code>postinst-rpm</code></td>
+</tr>
+<tr>
+<td>Pulls in Podman by default</td>
+<td><code>debian/control</code> declares <code>Recommends: podman</code></td>
+<td><code>CPackRPM.cmake</code> sets <code>CPACK_RPM_PACKAGE_RECOMMENDS</code> to <code>podman</code></td>
+</tr>
+</tbody>
+</table>
+<p>Containers are started by:</p>
+<table>
+<thead>
+<tr>
+<th>Container tool</th>
+<th>Containers started by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Podman</td>
+<td><code>lemond.service</code> itself, rootless, as the <code>lemonade</code> account</td>
+</tr>
+<tr>
+<td>Docker</td>
+<td>The Docker daemon, through <code>/var/run/docker.sock</code></td>
+</tr>
+</tbody>
+</table>
+<p>When the container tool is Podman, the checks are:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Fails when</th>
+<th><code>action</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Podman installed</td>
+<td><code>podman</code> is not on <code>PATH</code></td>
+<td>The install command for the host's <code>ID</code></td>
+</tr>
+<tr>
+<td>Device nodes accessible</td>
+<td><code>lemonade</code> is not in both <code>video</code> and <code>render</code></td>
+<td>1. <code>sudo usermod -aG video,render lemonade</code><br>2. <code>sudo systemctl restart lemond</code></td>
+</tr>
+<tr>
+<td>Subordinate IDs allocated</td>
+<td><code>getsubids lemonade</code> or <code>getsubids -g lemonade</code> prints no range</td>
+<td>Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to <code>lemonade</code>, then <code>sudo systemctl restart lemond</code></td>
+</tr>
+</tbody>
+</table>
+<p>When the container tool is Docker, the checks are:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Fails when</th>
+<th><code>action</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker reachable</td>
+<td>The Docker daemon refuses <code>lemonade</code></td>
+<td>1. <code>sudo usermod -aG docker lemonade</code><br>2. <code>sudo systemctl restart lemond</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="lemondservice-and-rootless-podman"><code>lemond.service</code> and rootless Podman</h4>
+<p><code>lemond</code> runs <code>podman</code> as a child process, the same way it runs every native backend. The unit is configured to give rootless Podman what it needs:</p>
+<ul>
+<li>It lets <code>lemond</code> create user namespaces and run the setuid <code>newuidmap</code>/<code>newgidmap</code> helpers that rootless Podman relies on, by running without <code>NoNewPrivileges</code> and <code>RestrictNamespaces</code>. The unit keeps <code>LockPersonality</code>, <code>RestrictRealtime</code>, <code>ProtectSystem</code>, <code>ProtectHome</code> and <code>PrivateTmp</code>: systemd applies them while it still runs as root, before it switches to the <code>lemonade</code> account, so they leave the no-new-privileges flag unset and the account's user namespace unchanged.</li>
+<li>It points <code>XDG_RUNTIME_DIR</code> at the unit's existing <code>RuntimeDirectory</code> (<code>Environment=XDG_RUNTIME_DIR=%t/lemonade</code>), giving Podman a runtime directory without a login session.</li>
+</ul>
+<p>Rootless Podman also needs the <code>lemonade</code> account to own a subordinate UID/GID range: a block of host IDs that the container's own users map onto. <code>useradd</code> allocates one only for regular accounts, and the packages create <code>lemonade</code> as a system account (<code>useradd -r</code>), so each package's install script allocates the range right after its <code>useradd</code>:</p>
+<ul>
+<li>When <code>/etc/subuid</code> and <code>/etc/subgid</code> both already have a <code>lemonade</code> entry, the script leaves them as they are, so upgrades and reinstalls keep the existing range.</li>
+<li>Otherwise it reads both files, takes the highest end (start plus count) of every range in them, with a minimum of 100000, and allocates the 65,536 IDs from there to whichever file lacks a <code>lemonade</code> entry, with <code>usermod --add-subuids &lt;start&gt;-&lt;start+65535&gt; lemonade</code> and <code>usermod --add-subgids &lt;start&gt;-&lt;start+65535&gt; lemonade</code>. The range sits past every account's existing block, and <code>useradd</code> allocates later accounts past it in turn.</li>
+<li>When <code>/etc/nsswitch.conf</code> has a <code>subid:</code> line, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.</li>
+</ul>
+<p><code>lemond</code> starts, stops and sweeps the containers as children in its own cgroup, so stopping <code>lemond.service</code> tears down its containers with it.</p>
+<h3 id="selinux-check">SELinux Check</h3>
+<p>A container backend whose <code>devices</code> include <code>/dev/kfd</code> runs one more check before the checks for its install type. The SELinux policy on some Fedora releases lets a container read and write <code>/dev/kfd</code> but not map it, so ROCm fails at its first GPU operation. Hosts without SELinux, such as Ubuntu, have no <code>/sys/fs/selinux</code> and pass the check:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Fails when</th>
+<th><code>action</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SELinux allows GPU mapping</td>
+<td>SELinux is enforcing (<code>/sys/fs/selinux/enforce</code> is <code>1</code>) and the <code>container_use_devices</code> boolean is off (the first value in <code>/sys/fs/selinux/booleans/container_use_devices</code> is <code>0</code>)</td>
+<td><code>sudo setsebool -P container_use_devices 1</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="halogen-kernel-check">Halogen Kernel Check</h3>
+<p><code>halogen:rocm</code> runs two more checks before the checks for its install type. Halogen needs Linux 6.18.4 or newer, built with <code>CONFIG_HSA_AMD_SVM</code>. <code>lemond</code> checks for both on the KFD node whose <code>gfx_target_version</code> is <code>110501</code>, reading its <code>properties</code> under <code>/sys/devices/virtual/kfd/kfd/topology/nodes</code>. A kernel too old to report <code>cwsr_size</code> or <code>ctl_stack_size</code> fails the second check:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Fails when</th>
+<th><code>action</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kernel built with SVM</td>
+<td><code>capability &amp; 0x08000000</code> is <code>0</code></td>
+<td>Install Linux 6.18.4 or newer, built with <code>CONFIG_HSA_AMD_SVM</code></td>
+</tr>
+<tr>
+<td>Kernel has the <code>gfx1151</code> fixes</td>
+<td><code>cwsr_size</code> is not <code>ctl_stack_size + (simd_count / 2) * 479232</code></td>
+<td>Install Linux 6.18.4 or newer</td>
+</tr>
+</tbody>
+</table>
+<h2 id="image-updates">Image Updates</h2>
+<p>A new workflow, <code>.github/workflows/validate_containers.yml</code>, keeps every container backend on the newest build of its tag. It follows the pattern of <code>validate_llamacpp.yml</code>: it runs weekly, every Sunday at 18:00 UTC, and opens its pull request only after the new pins pass validation on the self-hosted runners.</p>
+<p>The workflow changes only the digest in each pin. A maintainer sets the tag by hand to the tag AI Toolbox Cockpit runs for the same engine on the same GPU, such as <code>vulkan-radv-performance</code> for <code>llamacpp:nathanw</code> and <code>latest</code> for Halogen. This will be one of the first jobs to take advantage of Devlab Dispatch, which provides Strix Halo 128 GB Linux runners that can handle Halogen and DS4 models.</p>
+<h2 id="appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs">Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs</h2>
+<p><a href="https://github.com/containers/ramalama">Ramalama</a> (Red Hat) has run llama.cpp in Podman and Docker containers across Fedora, RHEL, Ubuntu, macOS and WSL for two years. <a href="https://github.com/kyuz0/ai-toolbox-cockpit">AI Toolbox Cockpit</a> (Donato Capitella) is the terminal app that launches these same images, Halogen included, and is where each engine's device access comes from. Ramalama answers how to run a model in a container at all; AI Cockpit answers what this hardware in particular needs. Every row is read from source (Ramalama at v0.24.0, AI Cockpit at v2026.9.19.1535), not from either README, one of which overstates its defaults (last row). Each †, ‡ or § in the body points at a row here. The last column says whether Lemonade is the same as, stricter than or looser than each, and why.</p>
+<table>
+<thead>
+<tr>
+<th>Convention</th>
+<th>Ramalama (code, v0.24.0)</th>
+<th>AI Cockpit (code, v2026.9.19.1535)</th>
+<th>Lemonade compared with both</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Container tool choice</td>
+<td><code>get_default_engine()</code>: podman then docker on PATH; <code>RAMALAMA_CONTAINER_ENGINE</code> and a config key override; <code>/run/.toolboxenv</code> means no container tool inside the sandbox</td>
+<td><code>detect_container_engines()</code> returns podman then docker from PATH; <code>DBX_CONTAINER_MANAGER</code> pins the container tool for Distrobox only</td>
+<td><strong>Same as both</strong> §: Podman, then Docker. Lemonade reads no override setting until a user needs one.</td>
+</tr>
+<tr>
+<td>Ownership</td>
+<td>Every container carries <code>--label ai.ramalama</code> plus <code>.model</code>, <code>.engine</code>, <code>.runtime</code>, <code>.port</code>, <code>.command</code>; <code>ps -a --filter label=</code> finds them; <code>stop_container</code> works on that set</td>
+<td>No labels. One fixed container name per backend, such as <code>ai-toolbox-cockpit-halogen-server</code>; <code>ps -a</code> output is parsed and matched by name</td>
+<td><strong>Same as Ramalama</strong> †, with the <code>ai.lemonade</code> labels in the <a href="#command-contract">Command Contract</a>. <strong>More robust than AI Cockpit:</strong> the labels find every container <code>lemond</code> started, including ones a crash left behind, and a name per model lets several models run at once.</td>
+</tr>
+<tr>
+<td>Hardening</td>
+<td><code>--cap-drop=all --security-opt=no-new-privileges --init --env=HOME=/tmp --rm</code></td>
+<td><code>--rm -it</code> everywhere; <code>--cap-drop</code> and <code>no-new-privileges</code> on Halogen alone, and there only <code>NET_ADMIN</code> and <code>NET_RAW</code>; no <code>--init</code>, no <code>HOME=/tmp</code></td>
+<td><strong>Same as Ramalama</strong> †: the identical set, on every container. <strong>Stricter than AI Cockpit</strong>, which drops two capabilities, on Halogen alone.</td>
+</tr>
+<tr>
+<td>SELinux</td>
+<td><code>--security-opt=label=disable</code> unless <code>--selinux</code>, which relabels mounts with <code>z</code></td>
+<td><code>label=disable</code> plus <code>--userns=keep-id</code> on Podman for every backend except Halogen</td>
+<td><strong>Same as Ramalama's <code>--selinux</code> mode</strong> †: SELinux stays on, and each model mount is relabeled with <code>z</code>, the shared label, so several containers can read the same Hugging Face cache files and the user's own programs still can. <strong>Stricter than AI Cockpit</strong> for every backend but Halogen, where both keep SELinux on.</td>
+</tr>
+<tr>
+<td>Seccomp</td>
+<td>Never passed; podman or docker's default profile applies</td>
+<td><code>seccomp=unconfined</code> in every GPU runtime profile, <code>halogen-strix-halo</code> included</td>
+<td><strong>Same as Ramalama</strong> †: the tool's default profile. <strong>Stricter than AI Cockpit</strong>, which turns the filter off. DS4 and Halogen both load and answer under the default on <code>gfx1151</code>.</td>
+</tr>
+<tr>
+<td>Device access</td>
+<td>No such concept; one code path per accelerator family</td>
+<td><code>runtime_profiles</code> in <code>toolboxes.json</code>: <code>amd-rocm</code>, <code>amd-rocm-hipblaslt</code>, <code>amd-rocm-keep-groups</code>, <code>vulkan</code>, <code>intel-level-zero</code>, <code>nvidia-gb10</code>, <code>halogen-strix-halo</code></td>
+<td><strong>Same as AI Cockpit</strong> ‡: each <code>ContainerPolicy</code> grants the devices and permissions AI Cockpit's profile grants that engine, including what its DS4 runner adds inline, except <code>--ipc=host</code> for DS4 and Halogen and <code>--ulimit memlock=-1:-1</code> for Halogen, which they run without. Ramalama has no per-engine equivalent.</td>
+</tr>
+<tr>
+<td>Groups</td>
+<td><code>--group-add keep-groups</code> on Podman only when <code>--keep-groups</code> is passed; no group flags otherwise</td>
+<td><code>--group-add video --group-add render</code> in every GPU profile, rewritten to <code>--group-add keep-groups</code> on Podman by <code>upgrade_groups_for_podman()</code></td>
+<td><strong>Same as AI Cockpit</strong> ‡ on Podman: <code>keep-groups</code>. <strong>More robust than AI Cockpit</strong> on Docker: Lemonade passes the host's numeric <code>video</code> and <code>render</code> group IDs, which always match the device nodes, where a group name resolves in the image's <code>/etc/group</code> and may be missing or numbered differently.</td>
+</tr>
+<tr>
+<td>Model mount</td>
+<td><code>--mount=type=bind,src=&lt;blob&gt;,destination=&lt;MNT_DIR&gt;/&lt;file&gt;,ro</code> with <code>MNT_DIR = "/mnt/models"</code>, one per file the model needs</td>
+<td>The whole models directory as <code>-v &lt;dir&gt;:/models:ro</code> for llama.cpp, DS4, vLLM and R9V; per file for Halogen only</td>
+<td><strong>Same as Ramalama</strong> †: one read-only mount per file under <code>/mnt/models</code>, resolved through symlinks the way Ramalama mounts the blob, written as <code>-v</code> because Docker's <code>--mount</code> cannot relabel. <strong>Same as AI Cockpit</strong> ‡ for a directory such as Halogen's tokenizer: one mount per file inside it. <strong>Stricter than AI Cockpit</strong> for llama.cpp and DS4, where the whole models directory is mounted and every model in it is readable.</td>
+</tr>
+<tr>
+<td>Port</td>
+<td><code>-p &lt;host&gt;&lt;port&gt;:&lt;port&gt;</code>, where <code>host</code> comes from <code>--host</code> and defaults to <code>::</code>, so the published address is every interface</td>
+<td><code>-p 127.0.0.1:&lt;port&gt;:&lt;port&gt;</code> while the host field stays at localhost, <code>-p &lt;port&gt;:&lt;port&gt;</code> once it is set to <code>0.0.0.0</code>; Halogen publishes nothing</td>
+<td><strong>Stricter than both:</strong> always <code>127.0.0.1:&lt;port&gt;:&lt;port&gt;</code>, so only the local machine reaches the API. Ramalama publishes on every interface by default, and AI Cockpit does once the user sets the host field to <code>0.0.0.0</code>.</td>
+</tr>
+<tr>
+<td>Devices</td>
+<td>Whole <code>/dev/dri</code> and <code>/dev/kfd</code>, never individual render nodes; <code>check_rocm_amd()</code> picks the AMD GPU from the KFD topology by largest VRAM and exports <code>HIP_VISIBLE_DEVICES</code></td>
+<td>The same whole device nodes, from the profile; <code>HIP_VISIBLE_DEVICES</code> is a text field the user fills in, with no detection at all</td>
+<td><strong>Same as both</strong> § for the device nodes. <strong>More robust than both</strong> for GPU choice: <code>lemond</code> picks the GPU whose <code>gfx_target_version</code> matches <code>SystemInfo::get_rocm_arch()</code> †, where Ramalama picks the GPU with the most VRAM, and AI Cockpit uses whatever the user types.</td>
+</tr>
+<tr>
+<td>Pull policy</td>
+<td>Explicit <code>--pull</code> on every run, default <code>newer</code>; Docker gets a pre-pull</td>
+<td>Tags, never digests, in all 27 toolbox records; Halogen follows <code>:latest</code> and re-pulls with <code>--pull=always</code> before every launch</td>
+<td><strong>Stricter than both:</strong> <code>--pull=never</code> with digest pins, so every load runs the exact image that passed validation, and install is the only step that downloads. Ramalama pulls newer images by default, and AI Cockpit re-pulls Halogen's <code>:latest</code> before every launch.</td>
+</tr>
+<tr>
+<td>Readiness</td>
+<td>TCP connect to <code>127.0.0.1:&lt;port&gt;</code>, then <code>wait_for_healthy</code> polls <code>/health</code> and requires the model alias in <code>/models</code>; container logs attached on timeout</td>
+<td>None. The server runs in the foreground and the operator reads its output</td>
+<td><strong>Looser than Ramalama</strong> by one check: Lemonade polls the ready endpoint in <code>ServerCommand</code> (<code>/health</code>, or <code>/v1/models</code> for DS4, which has no <code>/health</code>) and skips Ramalama's check that <code>/models</code> lists the model, because one readiness path for native and container backends outweighs it. <strong>Stricter than AI Cockpit</strong>, which checks nothing.</td>
+</tr>
+<tr>
+<td>Stop and sweep</td>
+<td><code>stop -t=0</code>, then <code>rm</code>; <code>containers()</code> lists by label</td>
+<td><code>rm -f &lt;fixed name&gt;</code> before the run and again after it; no sweep, since nothing is meant to outlive the foreground process</td>
+<td><strong>More robust than both:</strong> Lemonade stops by name and sweeps by label †, and gives the engine 10 seconds to exit cleanly before SIGKILL, where Ramalama kills it at once. AI Cockpit sweeps nothing.</td>
+</tr>
+<tr>
+<td>Dry run</td>
+<td><code>--dryrun</code> / <code>--dry-run</code>: "show container runtime command without executing it"</td>
+<td>Not a flag but the only path: every launch prints the exact command and waits for confirmation, with <code>--api-key</code> and <code>HF_TOKEN</code> redacted</td>
+<td><strong>Same as both:</strong> every load logs the full command, which shows the same information. Confirming a launch before it runs is left to clients, because <code>lemond</code> is a server.</td>
+</tr>
+<tr>
+<td>Docker vs Podman</td>
+<td>One <code>run</code> builder with per-tool branches (<code>keep-groups</code>, <code>--add-host host.docker.internal=host-gateway</code>, <code>ps</code> format instead of <code>--noheading</code>)</td>
+<td>Per-tool helpers around one builder: <code>upgrade_groups_for_podman</code>, <code>adapt_nvidia_runtime_args</code> turning <code>--runtime</code> into <code>--gpus all</code>, per-node <code>--device</code> for Docker's RDMA</td>
+<td><strong>Same as both</strong> §: one function builds the run command and holds every Podman and Docker difference.</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>No <code>--network</code> unless asked; Docker gets <code>--add-host host.docker.internal=host-gateway</code>; <code>--network=none</code> is used only for builds</td>
+<td><code>--network=none</code> for Halogen and for R9V's extraction step, nothing for the rest. The Halogen API is reached by a host listener that pipes each accepted socket through <code>podman/docker exec -i</code> to container loopback</td>
+<td><strong>Stricter than Ramalama</strong>, which gives each container full network access: each Lemonade container gets its own <code>--internal</code> network with no route out. <strong>Same as AI Cockpit</strong> in effect: in both, only the local machine reaches the API and the engine cannot reach the internet. Lemonade connects over HTTP, as it does to every backend, where AI Cockpit relays each connection through <code>exec</code>.</td>
+</tr>
+<tr>
+<td>Not adopted</td>
+<td>README claims <code>--network=none</code>, <code>run</code> with <code>--rm</code>, <code>selinux=true</code> and <code>pull=missing</code>; the code does none of these by default</td>
+<td>The README matches the code on every flag checked here</td>
+<td><strong>Stricter than Ramalama:</strong> <code>test/cpp/test_container_manager.cpp</code> asserts the Run Options in CI, so the documented defaults and the code stay in step. <strong>Same as AI Cockpit</strong>, whose README matches its code.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What AI Cockpit gives an operator that Lemonade, with this spec implemented, still would not:</strong></p>
+<ul>
+<li><strong>Three engines Lemonade has no recipe for at all:</strong> vLLM on Strix Halo and GB10, carrying the image's own per-model launch recipe; ComfyUI image workflows; and R9V for the R9700.</li>
+<li><strong>Non-AMD images:</strong> NVIDIA GB10 (llama.cpp CUDA 13, DS4 CUDA 13, vLLM nightly) and Intel Arc B70 (SYCL and Vulkan). This spec is one AMD GPU on Linux.</li>
+<li><strong>More than one GPU, and more than one host:</strong> DS4 coordinator and worker roles with tensor parallelism over TCP or RoCE, InfiniBand passed through automatically wherever <code>/dev/infiniband</code> exists, and R9V across two R9700s.</li>
+<li><strong>A shell inside the toolbox:</strong> create, update, enter and delete Toolbx and Distrobox containers. Lemonade only ever starts a server, so the image's compilers, profilers and CLI tools stay out of reach.</li>
+<li><strong>Launch settings someone has already tested:</strong> <code>recommended_use</code> profiles naming the platform and model they were validated on, benchmark-derived batch and ubatch values keyed to the job that produced them, and a warning before launch when you deviate from them.</li>
+<li><strong>Integrity and licensing at download time:</strong> SHA256 per file, the model's license shown in the download confirmation, and multi-step preparation such as R9V's PLE extraction.</li>
+</ul>
+<p>Out of scope but not precluded: Ramalama emits Quadlet, Kubernetes and Compose files from the same run spec. <code>ContainerRunSpec</code> is plain data, so a later emitter needs no backend changes, which is the property Mario asked the design to keep.</p>
+<h2 id="appendix-b-halogen-launch-commands">Appendix B: Halogen Launch Commands</h2>
+<p>This appendix shows the exact commands Lemonade and AI Toolbox Cockpit run to launch Halogen, the most scrutinized engine, so that reviewers can compare them flag by flag. Both launch the same model: Qwen3.8-Flash-Next W4B with the quality overlay, which is Lemonade's <code>Qwen3.8-Flash-Next-Halogen</code> and AI Cockpit's <code>qwen38-flash-next-w4b-quality</code> bundle. Both use rootless Podman, each tool's default settings, and a user named <code>alice</code>.</p>
+<p>Lemonade's command is the one this spec defines: <a href="#command-contract">Command Contract</a> applied to Halogen's <code>ContainerPolicy</code> and version pin in <a href="#container-backends">Container Backends</a>, with the model files and variables that Halogen's <code>ServerCommand</code> names. AI Cockpit's command is the output of its <code>build_server_cmd()</code> at commit <code>57346d8</code> with its Server Mode defaults.</p>
+<p>Each row holds the options that serve one purpose. Where the options differ, the last column says whether Lemonade's are stricter, looser or the same as AI Cockpit's, and why. <code>&lt;snapshot&gt;</code> stands for <code>/home/alice/.cache/huggingface/hub/models--peonist-ai--halogen-qwen3.8-flash-next/snapshots/ac23b1b223b4e9192d27c22367d4dbacf2b595ef</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Lemonade</th>
+<th>AI Toolbox Cockpit</th>
+<th>Lemonade compared with AI Cockpit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lifecycle</td>
+<td><code>podman run --rm</code></td>
+<td><code>podman run --rm -it</code></td>
+<td><strong>Same.</strong> <code>-it</code> only connects the server to a terminal, and <code>lemond</code> runs in the background without one.</td>
+</tr>
+<tr>
+<td>Init</td>
+<td><code>--init</code></td>
+<td>Not passed</td>
+<td><strong>More robust.</strong> Unloading a model always stops Halogen within 10 seconds. Without <code>--init</code>, Halogen may ignore the stop request, and Podman then kills it after the 10 seconds.</td>
+</tr>
+<tr>
+<td>Home directory</td>
+<td><code>--env HOME=<wbr>/<wbr>tmp</code></td>
+<td>Not passed</td>
+<td><strong>Same.</strong> Nothing shows that Halogen writes to its home directory.</td>
+</tr>
+<tr>
+<td>Identity</td>
+<td><code>--name lemonade-halogen-rocm-Qwen3.8-Flash-Next-Halogen</code><br><code>--label ai.lemonade</code><br><code>--label ai.lemonade.recipe=<wbr>halogen</code><br><code>--label ai.lemonade.backend=<wbr>rocm</code><br><code>--label ai.lemonade.model=<wbr>Qwen3.8-Flash-Next-Halogen</code><br><code>--label ai.lemonade.port=<wbr>8001</code></td>
+<td><code>--name ai-toolbox-cockpit-halogen-server</code></td>
+<td><strong>Same.</strong> Names and labels grant no access. Lemonade needs a name per model because it runs several models at once.</td>
+</tr>
+<tr>
+<td>Privileges</td>
+<td><code>--cap-drop=<wbr>all</code><br><code>--security-opt=<wbr>no-new-privileges</code></td>
+<td><code>--cap-drop=<wbr>NET_ADMIN</code><br><code>--cap-drop=<wbr>NET_RAW</code><br><code>--security-opt no-new-privileges</code></td>
+<td><strong>Stricter.</strong> Halogen loses every special permission, where AI Cockpit leaves it most of Podman's defaults, such as changing file owners. Halogen runs without them.</td>
+</tr>
+<tr>
+<td>SELinux</td>
+<td><code>z</code> on each model mount (see Model files)</td>
+<td>Not passed</td>
+<td><strong>Same.</strong> SELinux confines both containers.</td>
+</tr>
+<tr>
+<td>Seccomp</td>
+<td>Not passed</td>
+<td><code>--security-opt seccomp=<wbr>unconfined</code></td>
+<td><strong>Stricter.</strong> Podman's default filter blocks the rarely needed system calls that kernel attacks rely on, and Halogen runs under it. AI Cockpit turns the filter off.</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>1. Before the run: <code>podman network create --internal --label ai.lemonade lemonade-halogen-rocm-Qwen3.8-Flash-Next-Halogen</code><br>2. On the run: <code>--network=lemonade-halogen-rocm-Qwen3.8-Flash-Next-Halogen</code> <code>-p 127.0.0.1:8001:8001</code></td>
+<td>1. On the run: <code>--network=none</code><br>2. For each API connection, a listener on the host at <code>127.0.0.1:8731</code> runs <code>podman exec -i ai-toolbox-cockpit-halogen-server python3 -I -u -c '&lt;relay script&gt;' 8731</code> and relays the connection through it</td>
+<td><strong>Same.</strong> In both, only the local machine can reach the API, and Halogen cannot reach the internet.</td>
+</tr>
+<tr>
+<td>GPU access</td>
+<td><code>--device /<wbr>dev/<wbr>dri</code><br><code>--device /<wbr>dev/<wbr>kfd</code><br><code>--group-add keep-groups</code></td>
+<td><code>--device /<wbr>dev/<wbr>kfd</code><br><code>--device /<wbr>dev/<wbr>dri</code><br><code>--group-add keep-groups</code></td>
+<td></td>
+</tr>
+<tr>
+<td>GPU selection</td>
+<td><code>--env HIP_VISIBLE_DEVICES=<wbr>0</code></td>
+<td>Not passed</td>
+<td><strong>More robust.</strong> Halogen always runs on the Strix Halo. On a machine with a second AMD GPU, AI Cockpit can put it on the other GPU, where the image cannot run.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Not passed</td>
+<td><code>--ipc=<wbr>host</code><br><code>--ulimit memlock=<wbr>-1:<wbr>-1</code></td>
+<td><strong>Stricter.</strong> Halogen keeps its own IPC namespace, so it cannot reach the host's shared memory. It only locks memory when <code>HALOGEN_WEIGHTS_LOCK=1</code> is set, a troubleshooting flag that Lemonade doesn't set.</td>
+</tr>
+<tr>
+<td>Model files</td>
+<td><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-w4b.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro,z</code><br><code>--env HALOGEN_CHECKPOINT=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn</code><br><code>--env HALOGEN_CK_OVERLAY=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn</code><br><code>--env HALOGEN_TOKENIZER=<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer</code></td>
+<td><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro</code><br><code>-e HALOGEN_CHECKPOINT=<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn</code><br><code>-e HALOGEN_CK_OVERLAY=<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn</code><br><code>-e HALOGEN_TOKENIZER=<wbr>/<wbr>models/<wbr>tokenizer</code></td>
+<td><strong>Same.</strong> Both mount only Halogen's files, read-only, one mount per file. Lemonade also relabels them with <code>z</code> so SELinux lets the container read them.</td>
+</tr>
+<tr>
+<td>Engine settings</td>
+<td><code>--env HALOGEN_API_PORT=<wbr>8001</code><br><code>--env HALOGEN_CTX=<wbr>262144</code><br><code>--env HALOGEN_KV_POOL_POSITIONS=<wbr>524288</code><br><code>--env HALOGEN_KV_SLOTS=<wbr>4</code><br><code>--env HALOGEN_PROMPT_CACHE=<wbr>2</code></td>
+<td><code>-e HALOGEN_API_PORT=<wbr>8731</code><br><code>-e HALOGEN_CTX=<wbr>262144</code><br><code>-e HALOGEN_KV_POOL_POSITIONS=<wbr>524288</code><br><code>-e HALOGEN_KV_SLOTS=<wbr>4</code><br><code>-e HALOGEN_PROMPT_CACHE=<wbr>2</code></td>
+<td><strong>Same.</strong> The settings match, and only the port differs: <code>lemond</code> picks a free port for each load because it runs several servers at once.</td>
+</tr>
+<tr>
+<td>Image</td>
+<td><code>--pull=<wbr>never</code><br><code>ghcr.io/<wbr>peonist-ai/<wbr>halogen-flash-server@<wbr>sha256:<wbr>&lt;digest&gt;</code></td>
+<td><code>--pull=<wbr>always</code><br><code>ghcr.io/<wbr>peonist-ai/<wbr>halogen-flash-server:<wbr>latest</code></td>
+<td><strong>Stricter.</strong> Lemonade runs the exact image that passed validation, and it changes only through a reviewed pull request. AI Cockpit runs whatever <code>latest</code> is at launch.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../spec-writing-guide/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Writing Guide">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Writing Guide
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../working-groups/" class="md-footer__link md-footer__link--next" aria-label="Next: Working Groups">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Working Groups
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      © 2026 AMD. Licensed under Apache 2.0.
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/@AMDDevCentral" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.498 6.186a3.02 3.02 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.02 3.02 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.02 3.02 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.02 3.02 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814M9.545 15.568V8.432L15.818 12z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.7 19.7 0 0 0 3.677 4.37a.1.1 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10 10 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03M8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      
+        <script src="../../../assets/carousel.js"></script>
+      
+    
+  </body>
+</html>
