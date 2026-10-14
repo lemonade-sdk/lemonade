@@ -2,39 +2,17 @@
 
 #include <algorithm>
 #include <deque>
+#include <stdexcept>
 
 namespace lemon {
 namespace models {
 
 namespace {
 
-const RegistryDescriptor& huggingface() {
-    static const RegistryDescriptor descriptor{RegistryId("huggingface"),
-                                               {"huggingface", "hf", ""},
-                                               "Hugging Face",
-                                               "hf",
-                                               "models--",
-                                               "main",
-                                               "https://huggingface.co"};
-    return descriptor;
-}
-
-const RegistryDescriptor& modelscope() {
-    static const RegistryDescriptor descriptor{RegistryId("modelscope"),
-                                               {"modelscope", "ms"},
-                                               "ModelScope",
-                                               "ms",
-                                               "modelscope--models--",
-                                               "master",
-                                               // Empty: no plain resolve URL for this host.
-                                               ""};
-    return descriptor;
-}
-
-// Written only during static initialization, so readers need no lock. A deque
-// keeps a handed-out descriptor pointer valid across a later push_back.
+// A deque keeps a handed-out descriptor pointer valid across a later push_back,
+// and writes happen only during static initialization, so readers need no lock.
 std::deque<RegistryDescriptor>& table() {
-    static std::deque<RegistryDescriptor> descriptors{huggingface(), modelscope()};
+    static std::deque<RegistryDescriptor> descriptors;
     return descriptors;
 }
 
@@ -63,9 +41,25 @@ const RegistryDescriptor* descriptor_for(const RegistryId& id) {
     return nullptr;
 }
 
-const RegistryDescriptor& huggingface_descriptor() { return huggingface(); }
+namespace {
+// An absent row here means the repository translation unit was not linked into
+// this binary, which no call site can recover from.
+const RegistryDescriptor& require_builtin(const RegistryId& id) {
+    const RegistryDescriptor* descriptor = descriptor_for(id);
+    if (descriptor == nullptr) {
+        throw std::runtime_error("No repository registered for '" + id.str() + "'");
+    }
+    return *descriptor;
+}
+}  // namespace
 
-const RegistryDescriptor& modelscope_descriptor() { return modelscope(); }
+const RegistryDescriptor& huggingface_descriptor() {
+    return require_builtin(RegistryId("huggingface"));
+}
+
+const RegistryDescriptor& modelscope_descriptor() {
+    return require_builtin(RegistryId("modelscope"));
+}
 
 std::vector<RegistryDescriptor> all_registry_descriptors() {
     return {table().begin(), table().end()};

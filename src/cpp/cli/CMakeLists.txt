@@ -37,6 +37,12 @@ set(COMMON_SOURCES
     # CLI does not link lemonade-server-core, where this source is otherwise built.
     ../server/model_registry.cpp
     ../server/models/registry_id.cpp
+    # The CLI resolves --source through the same registry table, which the
+    # repositories fill; without them it would know no hosts.
+    ../server/models/registry_repository.cpp
+    ../server/models/fetchable_repository.cpp
+    ../server/backends/hf_cache_util.cpp
+    ../server/utils/safe_fs.cpp
     agent_launcher.cpp
     agent_config_file.cpp
     junie_profile.cpp

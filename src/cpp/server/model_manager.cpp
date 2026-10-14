@@ -21,6 +21,7 @@
 #include <lemon/backends/backend_utils.h>
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
+#include <lemon/backends/hf_cache_util.h>
 #include <lemon/cloud_provider_registry.h>
 #include <lemon/gguf_shard_utils.h>
 #include <lemon/registry_files.h>
@@ -220,21 +221,7 @@ static std::string repo_id_to_cache_dir_name(const std::string& repo_id,
 }
 
 static std::string read_hf_ref_main(const fs::path& model_cache_path) {
-    fs::path refs_main_path = model_cache_path / "refs" / "main";
-    std::ifstream refs_file(refs_main_path);
-    if (!refs_file.is_open()) {
-        return "";
-    }
-
-    std::string ref;
-    std::getline(refs_file, ref);
-    ref.erase(0, ref.find_first_not_of(" \t\r\n"));
-    size_t last = ref.find_last_not_of(" \t\r\n");
-    if (last == std::string::npos) {
-        return "";
-    }
-    ref.erase(last + 1);
-    return ref;
+    return backends::hf_cache::read_ref_main(model_cache_path);
 }
 
 static std::string registry_model_selection(const ModelInfo& info) {
@@ -288,16 +275,7 @@ static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
 }
 
 static void write_hf_ref_main(const fs::path& model_cache_path, const std::string& commit_hash) {
-    if (commit_hash.empty()) {
-        return;
-    }
-
-    fs::path refs_dir = model_cache_path / "refs";
-    ensure_create_directories(refs_dir);
-    std::ofstream refs_file(refs_dir / "main");
-    if (refs_file.is_open()) {
-        refs_file << commit_hash;
-    }
+    backends::hf_cache::write_ref_main(model_cache_path, commit_hash);
 }
 
 // Check if any model other than exclude_model references the given repo_id

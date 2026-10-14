@@ -1047,6 +1047,7 @@ set(SOURCES_CORE
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/models/registry_id.cpp
+    src/cpp/server/models/registry_repository.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/server_process.cpp

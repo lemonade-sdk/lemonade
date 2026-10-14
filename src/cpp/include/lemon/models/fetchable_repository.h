@@ -1,6 +1,7 @@
 #pragma once
 
 #include "artifact_source.h"
+#include "lemon/model_registry.h"
 #include "registry_id.h"
 
 #include <cstdint>
@@ -13,17 +14,12 @@
 namespace lemon {
 namespace models {
 
+// The file shape a listing reports is already the one registries return.
+using lemon::RegistryFile;
+
 struct Revision {
     std::string id;
     bool pinned = false;    // an immutable commit SHA, not a mutable branch
-};
-
-struct RegistryFile {
-    std::string path;
-    std::int64_t size = 0;
-    std::string hash_algorithm;
-    std::string hash;
-    bool directory = false;
 };
 
 struct RepoListing {
@@ -98,8 +94,8 @@ void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
 
 // Static initializer. Nothing here may throw: an unrecognized host must not
 // abort startup.
-#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY(ClassName, descriptor_expr)         \
-    static const bool lemonade_repository_registered_##ClassName = [] {           \
+#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY_AT(line, ClassName, descriptor_expr)    \
+    static const bool lemonade_repository_registered_##line##_##ClassName = [] {      \
         const ::lemon::models::RegistryDescriptor descriptor = descriptor_expr;   \
         ::lemon::models::detail::add_descriptor(descriptor);                      \
         ::lemon::models::detail::add_repository_factory(                          \
@@ -109,3 +105,10 @@ void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
             });                                                                   \
         return true;                                                              \
     }()
+
+// A host's repository and its descriptor are registered together, so two
+// registrations of one class in one translation unit stay distinct.
+#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY_IMPL(line, ClassName, descriptor_expr) \
+    LEMONADE_REGISTER_ARTIFACT_REPOSITORY_AT(line, ClassName, descriptor_expr)
+#define LEMONADE_REGISTER_ARTIFACT_REPOSITORY(ClassName, descriptor_expr)              \
+    LEMONADE_REGISTER_ARTIFACT_REPOSITORY_IMPL(__LINE__, ClassName, descriptor_expr)
