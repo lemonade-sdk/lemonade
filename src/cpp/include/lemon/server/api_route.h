@@ -79,11 +79,10 @@ struct RouteSpec {
     std::string description;          // reference text for the route's docs section
     std::vector<std::string> notes;   // sections the docs place after Parameters, such as an actions table
     bool experimental = false;        // badged as experimental in the docs
-    std::vector<RouteArg> args;       // every argument, documented whether or not validated
+    std::vector<RouteArg> args;       // every argument
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
     std::vector<RouteExample> examples;    // the first is the route's main example
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
-    bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
 };
 

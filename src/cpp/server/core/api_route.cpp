@@ -9,7 +9,6 @@
 #include "../telemetry.h"
 #include "lemon/alias_manager.h"
 #include "lemon/error_types.h"
-#include "lemon/mcp_tool.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/model_loader.h"
@@ -200,7 +199,6 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
         {"responses", responses},
         {"examples", examples},
         {"request_format", to_string(spec.request_format)},
-        {"validate_args", spec.validate_args},
         {"quiet_log", spec.quiet_log},
     };
 }
@@ -222,22 +220,6 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
                 write_invalid_body(req, e, res);
                 return;
             }
-        }
-    }
-
-    if (spec.validate_args && req.body.is_object()) {
-        json schema = {{"type", "object"}, {"properties", json::object()},
-                       {"required", json::array()}};
-        for (const auto& arg : spec.args) {
-            if (arg.in != ArgIn::JsonBody) continue;
-            schema["properties"][arg.name] = arg.schema;
-            if (arg.required) schema["required"].push_back(arg.name);
-        }
-        try {
-            McpTool::validate(req.body, schema);
-        } catch (const std::invalid_argument& e) {
-            write_openai_error(res, 400, e.what());
-            return;
         }
     }
 
