@@ -1,7 +1,6 @@
 #pragma once
 
 #include "artifact_layout.h"
-#include "locator.h"
 #include "registry_id.h"
 
 #include <optional>
@@ -23,8 +22,6 @@ struct ArtifactRef {
     // see ArtifactLayout; null means the snapshot layout
     const ArtifactLayout* layout = nullptr;
     std::string sibling;
-
-    static ArtifactRef from_locator(const Locator& locator, bool required);
 
     bool operator==(const ArtifactRef& other) const;
     bool operator!=(const ArtifactRef& other) const { return !(*this == other); }

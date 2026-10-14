@@ -1,7 +1,7 @@
 #include <lemon/models/json_catalog.h>
 
 #include <lemon/model_registry.h>
-#include <lemon/models/locator.h>
+#include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/json_utils.h>
 

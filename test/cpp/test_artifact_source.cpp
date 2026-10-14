@@ -4,9 +4,9 @@
 
 #include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_source.h"
+#include "lemon/models/checkpoint_grammar.h"
 #include "lemon/models/fetchable_repository.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/models/locator.h"
 
 #include <algorithm>
 #include <chrono>
@@ -22,7 +22,6 @@ using lemon::models::Acquisition;
 using lemon::models::Deletion;
 using lemon::models::FetchableRepository;
 using lemon::models::LocalRef;
-using lemon::models::Locator;
 using lemon::models::Presence;
 using lemon::models::RegistryDescriptor;
 using lemon::models::RegistryId;
@@ -95,27 +94,21 @@ class DuplicateRepository : public FakeRepository {
 
 LEMONADE_REGISTER_ARTIFACT_REPOSITORY(DuplicateRepository, fake_descriptor());
 
-static void test_a_ref_names_the_checkpoint_a_locator_points_at() {
-    const Locator registry_locator = Locator::from_checkpoint("someone/somewhere:fp16", "hf");
-    const ArtifactRef ref = ArtifactRef::from_locator(registry_locator, true);
+static void test_two_refs_are_the_same_checkpoint_only_when_their_provenance_is() {
+    ArtifactRef ref;
+    ref.registry = RegistryId("huggingface");
+    ref.repo_id = "someone/somewhere";
+    ref.variant = "fp16";
 
-    check("a registry ref keeps its host", ref.registry.has_value() &&
-          ref.registry->str() == "huggingface");
-    check("a ref keeps the repository", ref.repo_id == "someone/somewhere");
-    check("a ref keeps the variant", ref.variant == "fp16");
-    check("a required checkpoint says so", ref.required);
+    check("a checkpoint is the same ref when nothing moved", ref == ArtifactRef(ref));
 
-    ArtifactRef optional_ref = ArtifactRef::from_locator(registry_locator, false);
-    check("required distinguishes two otherwise equal refs", !(optional_ref == ref));
+    ArtifactRef other_variant = ref;
+    other_variant.variant = "q4";
+    check("a different variant is a different checkpoint", !(ref == other_variant));
 
-    // An absent source means the default host, so a file the user placed names
-    // its origin rather than relying on the path's shape.
-    const Locator file_locator =
-        Locator::from_checkpoint("/tmp/somewhere/thing.gguf", "local_path");
-    const ArtifactRef file_ref = ArtifactRef::from_locator(file_locator, true);
-    check("bytes that never came from a host name no host", !file_ref.registry.has_value());
-    check("and are named by where they were found",
-          file_ref.repo_id == "/tmp/somewhere/thing.gguf");
+    ArtifactRef optional = ref;
+    optional.required = false;
+    check("a checkpoint that need not be fetched is not the same ref", !(ref == optional));
 }
 
 static void test_registration_builds_the_host_it_names() {
@@ -261,7 +254,7 @@ static void test_the_recorded_revision_round_trips() {
 }
 
 int main() {
-    test_a_ref_names_the_checkpoint_a_locator_points_at();
+    test_two_refs_are_the_same_checkpoint_only_when_their_provenance_is();
     test_registration_builds_the_host_it_names();
     test_registration_carries_the_descriptor();
     test_a_host_claimed_twice_is_reported();

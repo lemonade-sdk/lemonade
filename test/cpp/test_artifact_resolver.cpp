@@ -145,6 +145,14 @@ static void test_the_origin_decides_whose_bytes_they_are() {
     check("but a copy lemond wrote is lemond's to remove",
           uploaded->deletion().kind == Deletion::Kind::CacheDir);
     check("and it resolves to the recorded copy", uploaded->resolve() == "/cache/upload.gguf");
+
+    // A Windows absolute path holds a colon; only the source keeps it from being
+    // read as a repository named "C" with a variant.
+    const std::unique_ptr<ArtifactSource> windows =
+        resolver.source_for(model("llamacpp", "C:\\models\\thing.gguf", "local_path"), "main");
+    check("a windows path stays one file", windows->kind() == ArtifactKind::Local);
+    check("and its colon is not read as a variant",
+          windows->resolve() == "C:\\models\\thing.gguf");
 }
 
 static void test_an_explicit_scheme_outranks_the_default_host() {
