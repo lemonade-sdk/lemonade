@@ -111,7 +111,6 @@ struct RouteExample {
     ResponseFormat format;            // the RouteResponse the response is validated against
     nlohmann::json args;              // argument values, e.g. {"id": "$lemonade.jobs_create/id"}
     std::vector<ExampleStep> setup;   // run first, in order
-    bool live = false;                // recorded on every run instead of cached; see Response Cache
 };
 
 struct RouteSpec {
@@ -460,10 +459,10 @@ The Example request section has PowerShell and Bash tabs for each of the route's
 - **Arguments.** An example's `args` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
 - **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
 - **Setup.** The steps in `setup` run first, in order. A step that names an example runs it after that example's own setup; a step with `args` sends that request as is and is left out of the docs. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
-- **Fresh lemond.** Each example, with its setup, runs against a lemond the `Lemond` harness has just started, so its response depends only on its own setup and request, never on an example recorded before it. An example that deletes or uninstalls something removes what its own setup added.
+- **One lemond.** Every example runs against one lemond started by the `Lemond` harness, which starts it again after an example stops it, as `/internal/shutdown` does. An example that deletes or uninstalls something removes what its own setup added.
 - **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
 - **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are. A JSON array of objects, or an object whose keys are data rather than field names (a schema with `additionalProperties`), such as search results or system-info's recipes, shows its first 3 entries and how many more there are.
-- **Machine values.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, the recording machine's home directory as `~`, and lemond's version as `<version>`.
+- **Paths.** Recorded responses show the harness's temporary cache directory as lemond's default, `~/.cache/lemonade`, and the recording machine's home directory as `~`.
 
 ### Route Documentation Contract
 
@@ -497,9 +496,9 @@ Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per e
 - the canonical JSON of its `args` and of every step in its `setup`
 - for a pass-through route, its backend's pinned version from `backend_versions.json`
 
-A new example, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so a cached example changes only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
+A new example, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
 
-The key covers what a request sends, so a response must not depend on anything else. A route whose response is built from lemond's own docs or route specs, such as `GET /v1/docs` or `GET /internal/routes`, changes whenever they do, which its key cannot see. Its example sets `live`: it has no cache entry, and the generator records it on every run, `--check` included. A `live` example must not load a model.
+A recorded response shows the shape of the route's response. Its values can fall behind what lemond returns today, for example after a model's weights change, and that is fine: Drift Check holds the shape, not the values.
 
 ### Drift Check
 
@@ -514,7 +513,6 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a JSON format, or one of its shapes, has no example whose response it validates
 - a field in a recorded JSON response has no `description` in its schema, unless an enclosing field is described without listing its properties
 - a recorded JSON body runs over 100 lines in the page
-- a `live` example's setup or request loads a model
 - an example names an argument the route does not have or a format not in `responses`, a route with several examples leaves one unnamed or repeats a name, a `setup` step names a route or example that does not exist, or a `$<route id>` value names a route that did not run during setup
 
 The author fixes it by running the generator locally and committing the result. The weekly backend-bump workflows (`validate_llamacpp.yml`, `validate_sdcpp.yml`, `validate_vllm.yml`) run each new version on self-hosted runners; their runner job also runs the generator for the entries the bump invalidated, and the PR the workflow opens includes the updated cache.
