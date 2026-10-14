@@ -1016,7 +1016,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     ],
     "examples": [{"name": "", "format": "Json", "args": {}, "setup": []}],
     "request_format": "Raw",
-    "validate_args": false,
     "quiet_log": false
   }
 ]

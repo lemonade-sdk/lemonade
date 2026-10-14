@@ -40,7 +40,7 @@ public:
                 "type": "object",
                 "required": ["id", "methods", "paths", "prefixes", "summary", "modality", "description",
                              "notes", "experimental", "args", "responses", "examples", "request_format",
-                             "validate_args", "quiet_log"],
+                             "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "`<page>.<name>`; names the route's generated region in `docs/api/<page>.md`."},
                     "methods": {"type": "array", "items": {"type": "string"}, "description": "HTTP methods the route answers, such as `POST`."},
@@ -90,7 +90,6 @@ public:
                         }
                     }, "description": "The first is the route's main example."},
                     "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"], "description": "How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form."},
-                    "validate_args": {"type": "boolean", "description": "Whether `lemond` checks the JSON body arguments against their schemas, answering `400` on a mismatch."},
                     "quiet_log": {"type": "boolean", "description": "Whether the route is left out of the access log."}
                 }
             }

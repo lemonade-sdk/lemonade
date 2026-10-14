@@ -665,7 +665,6 @@
             }
           ],
           "request_format": "Raw",
-          "validate_args": false,
           "quiet_log": false
         }
       ]
