@@ -201,6 +201,15 @@ public:
     std::unique_ptr<models::ArtifactSource> source_for(
         const ModelInfo& info, const std::string& checkpoint_type) const;
 
+    // What removal may touch, decided per checkpoint by its source rather than by
+    // the recipe name. `owned` holds the types whose bytes lemond wrote;
+    // `delegated_recipe` names a backend that removes its own weights.
+    struct DeletionPlan {
+        std::vector<std::string> owned;
+        std::string delegated_recipe;
+    };
+    DeletionPlan deletion_plan(const ModelInfo& info) const;
+
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
     // provider's entries (drop-then-add semantics). No-op + warning if the
@@ -494,9 +503,8 @@ private:
     // its components across restarts. No-op if the manifest is not cached.
     void populate_collection_components_from_cache(ModelInfo& info);
 
-    // The model's own `recipe_options` block from user_models.json /
-    // server_models.json, i.e. the layer between image_defaults and what the user
-    // saved. Takes no store lock.
+    // The authored layer of build_recipe_options()'s ladder, read from the
+    // registry row. Takes no store lock.
     json registry_recipe_options(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
 

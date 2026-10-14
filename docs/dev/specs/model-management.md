@@ -798,7 +798,8 @@ Deleting a checkpoint is polymorphic, because a forgotten branch deletes a user'
 | Source | `Deletion` | Effect |
 | --- | --- | --- |
 | `HuggingFaceRepository`, `ModelScopeRepository` | `CacheDir` | remove the repository directory; when another model shares the repository, only this checkpoint's variant path goes |
-| `LocalPathArtifactSource`, `local_path` or `extra_models_dir` origin | `Nothing` | unregister the model; the bytes the user placed stay |
+| `LocalPathArtifactSource`, `local_path` origin | `Nothing` | unregister the model; the bytes the user placed stay |
+| `LocalPathArtifactSource`, `extra_models_dir` origin | `Nothing` | the bytes are the user's, and rule 5 refuses the request before any of it applies |
 | `LocalPathArtifactSource`, `local_upload` origin | `CacheDir` | remove the copy lemond wrote inside its own cache directory |
 | `SelfManagedArtifactSource` | `Delegate("flm remove")` | the backend removes its own weights |
 | `NoArtifactsSource` | `Nothing` | unregister only |
@@ -809,6 +810,7 @@ Rules:
 2. Blob reachability and shared-repository scope are computed here, not by the source: both need the whole model map, which a per-checkpoint source never sees. A source answers only `CacheDir` or `Nothing`. A shared repository referenced by several models loses only the variant being removed.
 3. `delete_artifacts()` completes for every source, including bytes that sit outside any cache directory: the answer there is `Nothing`, not a failure.
 4. A collection removes components by the same per-checkpoint rules, and a model still referenced by a loaded collection is refused.
+5. `Deletion` answers what may happen to bytes. Whether the model may be forgotten at all is a separate question, settled by who authors the definition: a row a catalog re-creates — an `--extra-models-dir` scan, a provider listing, a backend's `discover_models()` — has no registration to remove. The request is refused with the path or provider named, because reporting a success the next scan contradicts is worse than refusing. A `local_path` registration is the opposite case: the registration is the whole record of the model, so refusing it would strand an entry nobody else can see.
 
 ### Provenance File
 

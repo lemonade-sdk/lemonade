@@ -440,6 +440,10 @@ public:
                      ctx.model_manager->download_source_for(info));
     }
 
+    void remove_self_managed_model(const ModelInfo& info) const override {
+        flm_remove(info.checkpoint());
+    }
+
     bool invalidates_cache_after_download() const override { return true; }
 
     std::string resolve_version(const std::string&, const std::string& file_version) const override {
