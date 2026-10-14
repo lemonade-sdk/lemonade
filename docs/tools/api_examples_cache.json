@@ -2249,6 +2249,41 @@
       }
     }
   },
+  "5ab63ecbd8e309c7ed69a9939fd5ed788598aad4d7b357e90a1121c0306a6ace": {
+    "route": "lemonade.stats",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/v1/stats",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "cache_tokens": 0,
+        "cache_tokens_total": 0,
+        "input_tokens": 15,
+        "input_tokens_total": 15,
+        "live": {
+          "active_requests": 0,
+          "estimated_tokens_per_second": 0.0
+        },
+        "output_tokens": 327,
+        "output_tokens_total": 327,
+        "prompt_tokens": 15,
+        "prompt_tokens_total": 15,
+        "request_count_total": 1,
+        "routing_decisions_total": 0,
+        "routing_switches_total": 0,
+        "time_to_first_token": 0.010258,
+        "tokens_per_second": 330.7515771574438
+      }
+    }
+  },
   "f835fa8d17640b9e0685d6ebb926114aea23b6a1593e4f8dff8a33b0a4e300cd": {
     "route": "lemonade.system_info",
     "format": "Json",

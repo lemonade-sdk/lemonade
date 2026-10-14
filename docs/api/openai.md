@@ -26,7 +26,7 @@ This page documents Lemonade's implementation of the [OpenAI API](https://develo
 
 <!-- BEGIN GENERATED: openai.chat_completions -->
 ## `POST /v1/chat/completions`
-<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Generates the next assistant message for a conversation, loading the model on first use.
 
@@ -40,7 +40,7 @@ Also served at `/api/v0/chat/completions`, `/api/v1/chat/completions` and `/v0/c
 | `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `logprobs` | No | If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

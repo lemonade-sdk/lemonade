@@ -1892,19 +1892,20 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.005152,
-  "tokens_per_second": 329.19930666595,
-  "input_tokens": 1,
-  "output_tokens": 491,
+  "time_to_first_token": 0.010258,
+  "tokens_per_second": 330.7515771574438,
+  "input_tokens": 15,
+  "output_tokens": 327,
   "prompt_tokens": 15,
-  "cache_tokens": 14,
-  "request_count_total": 4,
-  "input_tokens_total": 18,
-  "output_tokens_total": 1480,
-  "prompt_tokens_total": 46,
-  "cache_tokens_total": 42,
+  "cache_tokens": 0,
+  "request_count_total": 1,
+  "input_tokens_total": 15,
+  "output_tokens_total": 327,
+  "prompt_tokens_total": 15,
+  "cache_tokens_total": 0,
   "routing_decisions_total": 0,
-  "routing_switches_total": 0
+  "routing_switches_total": 0,
+  "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
 }
 ```
 
@@ -1923,6 +1924,9 @@ This endpoint does not take any parameters.
 - `cache_tokens_total` - Prompt tokens served from the prefix cache since server start
 - `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
 - `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
+- `live` - Streams generating output right now. The rate is estimated from streamed text, not counted, so use the last-request fields above for exact numbers. Status and keepalive events are ignored, and both values drop to zero about 3 seconds after output stops or as soon as a request ends.
+  - `active_requests` - Streams that produced output in the last few seconds.
+  - `estimated_tokens_per_second` - Their combined generation rate, estimated.
 <!-- END GENERATED: lemonade.stats -->
 
 <!-- BEGIN GENERATED: lemonade.system_stats -->
@@ -3630,7 +3634,7 @@ A backend that needs manual setup on this system answers with the setup guide's 
 
 A local install without both `recipe` and `backend`, or of a backend this system does not support and without `force`, answers `400` with an `error` string; an invalid cloud provider field answers `400` with an `error` object. Any other failure, including invalid JSON, answers `500` with an `error` string.
 
-### Install a cloud provider
+### Install a Cloud Provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
 Registers a cloud chat provider. The base URL is persisted to `config.json`; the optional `api_key` lives in `lemond` process memory only and is cleared on restart. See the [Cloud Offload guide](../guide/configuration/cloud.md) for the full workflow.
@@ -3850,7 +3854,7 @@ A local uninstall without both `recipe` and `backend`, or a cloud uninstall with
 
 Models loaded on the backend unload first.
 
-### Uninstall a cloud provider
+### Uninstall a Cloud Provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
 Removes the provider record from `config.json`, drops its in-memory API key, if any, and evicts every discovered model for that provider from the cache. A provider that was never installed answers `404`.

@@ -726,7 +726,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
 
     **Field Descriptions:**
 
-    - `status` - pulling manifest, downloading <file>, or success.
+    - `status` - `pulling manifest`, `downloading <file>`, or `success`.
     - `digest` - Download lines: sha256: followed by the file name.
     - `completed` - Download lines: bytes of the file downloaded so far.
     - `total` - Download lines: the file's size in bytes.
