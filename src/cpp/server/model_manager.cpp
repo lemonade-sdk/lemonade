@@ -984,10 +984,32 @@ ModelManager::StoreWrite::~StoreWrite() {
     lock_.unlock();
 }
 
+// Scanning and syncing are the parts that read the store and write bytes, so
+// every dependency reaches back into the manager; the queue holds no model
+// state of its own.
+models::SyncService::Deps ModelManager::make_sync_deps() {
+    models::SyncService::Deps deps;
+    deps.scan = [this](const std::vector<std::string>& targets) { return run_update_scan(targets); };
+    deps.download = [this](const std::string& name, const json& options, bool do_not_upgrade,
+                           DownloadProgressCallback progress) {
+        download_model(name, options, do_not_upgrade, progress);
+    };
+    deps.model_info = [this](const std::string& canonical) { return get_model_info(canonical); };
+    deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
+    deps.public_name = [this](const std::string& canonical) { return get_public_model_name(canonical); };
+    deps.phase = [this](const std::string& phase) {
+        if (sync_phase_callback_) {
+            sync_phase_callback_(phase);
+        }
+    };
+    return deps;
+}
+
 ModelManager::ModelManager(const std::string& extra_models_dir)
     : extra_models_dir_(extra_models_dir),
       registries_(load_server_models(), get_user_models_file()),
-      recipe_options_(get_recipe_options_file()) {
+      recipe_options_(get_recipe_options_file()),
+      sync_(make_sync_deps()) {
     // Readers must always have a snapshot; an invalid one tells them to build.
     std::atomic_store(&store_snapshot_, std::shared_ptr<const models::StoreSnapshot>(
                                             std::make_shared<models::StoreSnapshot>()));
@@ -1427,12 +1449,14 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
+ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std::vector<std::string>& targets) {
+    return sync_.scan_for_updates(targets);
+}
+
 // The scan lives in models/update_scan.cpp. What stays here is what the scan may
 // not reach: the store it reads, the provenance file behind its fast path, and
 // the one store write that publishes the flags it settled.
-ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std::vector<std::string>& targets) {
-    std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
-
+ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<std::string>& targets) {
     models::UpdateScanDeps deps;
     deps.ensure_store = [this] { build_cache(); };
     deps.snapshot = [this] { return std::atomic_load(&store_snapshot_); };
@@ -1444,10 +1468,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
         return read_processed_registry_snapshot_id(model_cache_dir, model_name,
                                                    registry_model_selection(info));
     };
-    deps.cancel_requested = [this] {
-        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-        return sync_state_.cancel_requested;
-    };
+    deps.cancel_requested = [this] { return sync_.cancel_requested(); };
     deps.scan_override = update_check_override_;
     deps.phase = sync_phase_callback_;
     deps.publish = [this](const models::ScanDetermination& settled,
@@ -1498,416 +1519,27 @@ void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
 }
 
 bool ModelManager::should_auto_update(const ModelInfo& info) const {
-    if (info.auto_update.has_value()) {
-        return *info.auto_update;
-    }
-    auto* cfg = RuntimeConfig::global();
-    return cfg ? cfg->auto_update_models() : false;
-}
-
-json ModelManager::get_sync_status_locked() const {
-    std::string status = "idle";
-    if (sync_state_.is_sync_running) {
-        status = "in_progress";
-    } else if (!sync_state_.terminal_error.empty() || !sync_state_.failed_models.empty()) {
-        status = "failed";
-    } else if (sync_state_.checked_count > 0) {
-        status = "success";
-    }
-
-    json j = json{
-        {"status", status},
-        {"sync_id", sync_state_.current_generation},
-        {"completed_sync_id", sync_state_.completed_generation},
-        {"already_in_progress", sync_state_.is_sync_running},
-        {"is_full_sync", sync_state_.is_full_sync},
-        {"active_targets", sync_state_.active_targets},
-        {"pending_targets", sync_state_.pending_targets},
-        {"completed_targets", sync_state_.completed_targets},
-        {"models_updated", sync_state_.completed_targets},
-        {"models_up_to_date", sync_state_.models_up_to_date},
-        {"failed_models", sync_state_.failed_models},
-        {"terminal_error", sync_state_.terminal_error},
-        {"checked_count", sync_state_.checked_count},
-        {"updated_count", sync_state_.completed_targets.size()}
-    };
-    if (sync_state_.is_sync_running) {
-        j["progress"] = json{
-            {"current_model", sync_state_.current_model},
-            {"file", sync_state_.current_file},
-            {"file_index", sync_state_.file_index},
-            {"total_files", sync_state_.total_files},
-            {"bytes_downloaded", sync_state_.bytes_downloaded},
-            {"bytes_total", sync_state_.bytes_total},
-            {"percent", sync_state_.percent}
-        };
-    }
-    return j;
+    return sync_.should_auto_update(info);
 }
 
 json ModelManager::get_sync_status(uint64_t sync_id) const {
-    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-    if (sync_id > 0) {
-        if (sync_state_.is_sync_running && sync_state_.current_generation == sync_id) {
-            return get_sync_status_locked();
-        }
-        auto it = sync_state_.completed_generation_results.find(sync_id);
-        if (it != sync_state_.completed_generation_results.end()) {
-            return it->second;
-        }
-        return json{
-            {"status", "not_found"},
-            {"sync_id", sync_id},
-            {"completed_sync_id", sync_state_.completed_generation},
-            {"already_in_progress", false}
-        };
-    }
-    return get_sync_status_locked();
+    return sync_.status(sync_id);
 }
 
 void ModelManager::cancel_sync() {
+    sync_.cancel();
+}
 
-    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-    sync_state_.cancel_requested = true;
+void ModelManager::wait_until_sync_idle() {
+    sync_.wait_until_idle();
 }
 
 ModelManager::SyncEnqueueResult ModelManager::enqueue_sync(const std::vector<std::string>& target_models, bool attach_if_running) {
-    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-
-    auto is_already_known = [this](const std::string& target) -> bool {
-        std::string canonical = resolve_model_name(target);
-        std::string pub = get_public_model_name(canonical);
-        if (sync_state_.active_targets.count(target) || sync_state_.active_targets.count(pub) || sync_state_.active_targets.count(canonical)) {
-            return true;
-        }
-        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), target) != sync_state_.completed_targets.end() ||
-            std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), pub) != sync_state_.completed_targets.end() ||
-            std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), canonical) != sync_state_.completed_targets.end()) {
-            return true;
-        }
-        if (std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), target) != sync_state_.models_up_to_date.end() ||
-            std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), pub) != sync_state_.models_up_to_date.end() ||
-            std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), canonical) != sync_state_.models_up_to_date.end()) {
-            return true;
-        }
-        return false;
-    };
-
-    if (sync_state_.is_sync_running) {
-        LOG(INFO, "ModelManager") << "Sync requested while a model synchronization is already in progress. Enqueueing targets." << std::endl;
-        if (!attach_if_running) {
-            if (target_models.empty()) {
-                sync_state_.is_full_sync = true;
-            } else {
-                for (const auto& t : target_models) {
-                    std::string canonical = resolve_model_name(t);
-                    std::string pub = get_public_model_name(canonical);
-                    if (!is_already_known(t)) {
-                        sync_state_.pending_targets.insert(pub);
-                    }
-                }
-            }
-        }
-        return SyncEnqueueResult{/*already_running=*/true, /*sync_id=*/sync_state_.current_generation};
-    }
-
-    sync_state_.current_generation++;
-    sync_state_.is_sync_running = true;
-    sync_state_.is_full_sync = target_models.empty();
-    sync_state_.cancel_requested = false;
-    sync_state_.active_targets.clear();
-    sync_state_.pending_targets.clear();
-    sync_state_.completed_targets.clear();
-    sync_state_.models_up_to_date.clear();
-    sync_state_.failed_models.clear();
-    sync_state_.terminal_error.clear();
-    sync_state_.checked_count = 0;
-    for (const auto& t : target_models) {
-        std::string canonical = resolve_model_name(t);
-        std::string pub = get_public_model_name(canonical);
-        sync_state_.pending_targets.insert(pub);
-    }
-    return SyncEnqueueResult{/*already_running=*/false, /*sync_id=*/sync_state_.current_generation};
+    return sync_.enqueue(target_models, attach_if_running);
 }
 
-json ModelManager::execute_sync() {
-    struct SyncStateGuard {
-        ModelSyncState& state;
-        bool active = true;
-        ~SyncStateGuard() {
-            if (active) {
-                std::lock_guard<std::mutex> lock(state.mutex);
-                state.is_sync_running = false;
-                state.active_targets.clear();
-                state.current_model.clear();
-                state.current_file.clear();
-                state.file_index = 0;
-                state.total_files = 0;
-                state.bytes_downloaded = 0;
-                state.bytes_total = 0;
-                state.percent = 0;
-                state.completed_generation = state.current_generation;
-                state.completed_generation_results[state.current_generation] = json{
-                    {"status", "failed"},
-                    {"sync_id", state.current_generation},
-                    {"completed_sync_id", state.current_generation},
-                    {"already_in_progress", false},
-                    {"terminal_error", "Sync worker terminated unexpectedly"}
-                };
-                state.cv.notify_all();
-            }
-        }
-    } guard{sync_state_};
-
-    enum class ModelCheckOutcome {
-        UpToDate,
-        UpdateAvailable,
-        Failed
-    };
-    std::unordered_map<std::string, ModelCheckOutcome> checked_canonicals_in_job;
-
-    try {
-        while (true) {
-            std::vector<std::string> current_batch;
-            bool run_full_sync = false;
-
-            {
-                std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                if (sync_state_.is_full_sync) {
-                    run_full_sync = true;
-                    sync_state_.is_full_sync = false;
-                }
-            }
-
-            if (run_full_sync) {
-                LOG(INFO, "ModelManager") << "Checking all models for sync/update..." << std::endl;
-                UpdateCheckResult full_check = check_for_model_updates();
-
-                std::vector<std::string> canonicals_to_notify;
-                {
-                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                    for (const auto& [m, err] : full_check.failed_models) {
-                        std::string canonical = resolve_model_name(m);
-                        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), m) == sync_state_.completed_targets.end()) {
-                            checked_canonicals_in_job[canonical] = ModelCheckOutcome::Failed;
-                            canonicals_to_notify.push_back(canonical);
-                            sync_state_.failed_models[m] = err;
-                            auto up_it = std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), m);
-                            if (up_it != sync_state_.models_up_to_date.end()) {
-                                sync_state_.models_up_to_date.erase(up_it);
-                            }
-                        }
-                    }
-                    for (const auto& m : full_check.updated_models) {
-                        std::string canonical = resolve_model_name(m);
-                        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), m) == sync_state_.completed_targets.end()) {
-                            checked_canonicals_in_job[canonical] = ModelCheckOutcome::UpdateAvailable;
-                            canonicals_to_notify.push_back(canonical);
-                            auto up_it = std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), m);
-                            if (up_it != sync_state_.models_up_to_date.end()) {
-                                sync_state_.models_up_to_date.erase(up_it);
-                            }
-                            sync_state_.failed_models.erase(m);
-                            if (sync_state_.active_targets.find(m) == sync_state_.active_targets.end()) {
-                                sync_state_.pending_targets.insert(m);
-                            }
-                        }
-                    }
-                    for (const auto& m : full_check.up_to_date_models) {
-                        std::string canonical = resolve_model_name(m);
-                        if (std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), m) == sync_state_.completed_targets.end()) {
-                            checked_canonicals_in_job[canonical] = ModelCheckOutcome::UpToDate;
-                            canonicals_to_notify.push_back(canonical);
-                            sync_state_.failed_models.erase(m);
-                            if (std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), m) == sync_state_.models_up_to_date.end()) {
-                                sync_state_.models_up_to_date.push_back(m);
-                            }
-                        }
-                    }
-                    sync_state_.checked_count = static_cast<int>(checked_canonicals_in_job.size());
-                }
-
-                if (sync_phase_callback_) {
-                    for (const auto& canonical : canonicals_to_notify) {
-                        sync_phase_callback_("check_model:" + canonical);
-                    }
-                    sync_phase_callback_("full_check_done");
-                }
-            }
-
-            std::vector<std::string> pending;
-            {
-                std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                if (!sync_state_.pending_targets.empty()) {
-                    pending.assign(sync_state_.pending_targets.begin(), sync_state_.pending_targets.end());
-                    sync_state_.pending_targets.clear();
-                }
-            }
-
-            for (const auto& t : pending) {
-                try {
-                    std::string canonical_name = resolve_model_name(t);
-                    std::string public_name = get_public_model_name(canonical_name);
-
-                    bool skip = false;
-                    {
-                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                        if (sync_state_.active_targets.count(public_name) ||
-                            std::find(sync_state_.completed_targets.begin(), sync_state_.completed_targets.end(), public_name) != sync_state_.completed_targets.end() ||
-                            std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), public_name) != sync_state_.models_up_to_date.end()) {
-                            skip = true;
-                        }
-                    }
-                    if (skip) {
-                        continue;
-                    }
-
-                    if (sync_phase_callback_) {
-                        sync_phase_callback_("check_model:" + canonical_name);
-                    }
-
-                    ModelInfo info = get_model_info(canonical_name);
-                    if (!info.downloaded) {
-                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                        sync_state_.failed_models[public_name] = "Model is not downloaded";
-                        checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::Failed;
-                        continue;
-                    }
-
-                    auto it = checked_canonicals_in_job.find(canonical_name);
-                    if (it != checked_canonicals_in_job.end()) {
-                        if (it->second == ModelCheckOutcome::UpdateAvailable) {
-                            current_batch.push_back(public_name);
-                        }
-                        continue;
-                    }
-
-                    UpdateCheckResult target_check = check_for_model_updates({public_name});
-
-                    {
-                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                        if (!target_check.failed_models.empty() && target_check.failed_models.count(public_name)) {
-                            sync_state_.failed_models[public_name] = target_check.failed_models[public_name];
-                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::Failed;
-                        } else if (!target_check.updated_models.empty()) {
-                            current_batch.push_back(public_name);
-                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::UpdateAvailable;
-                            sync_state_.checked_count++;
-                        } else if (!target_check.up_to_date_models.empty() &&
-                                   std::find(target_check.up_to_date_models.begin(), target_check.up_to_date_models.end(), public_name) != target_check.up_to_date_models.end()) {
-                            if (std::find(sync_state_.models_up_to_date.begin(), sync_state_.models_up_to_date.end(), public_name) == sync_state_.models_up_to_date.end()) {
-                                sync_state_.models_up_to_date.push_back(public_name);
-                            }
-                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::UpToDate;
-                            sync_state_.checked_count++;
-                        } else {
-                            sync_state_.failed_models[public_name] = "Model is not eligible for remote registry update checks";
-                            checked_canonicals_in_job[canonical_name] = ModelCheckOutcome::Failed;
-                        }
-                    }
-                    if (sync_phase_callback_) {
-                        sync_phase_callback_("target_check_done:" + canonical_name);
-                    }
-                } catch (const std::exception& e) {
-                    {
-                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                        sync_state_.failed_models[t] = e.what();
-                        checked_canonicals_in_job[resolve_model_name(t)] = ModelCheckOutcome::Failed;
-                    }
-                    if (sync_phase_callback_) {
-                        sync_phase_callback_("target_check_done:" + resolve_model_name(t));
-                    }
-                }
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                if (current_batch.empty()) {
-                    if (sync_state_.is_full_sync || !sync_state_.pending_targets.empty()) {
-                        continue;
-                    }
-                    sync_state_.is_sync_running = false;
-                    sync_state_.active_targets.clear();
-                    sync_state_.current_model.clear();
-                    sync_state_.current_file.clear();
-                    sync_state_.file_index = 0;
-                    sync_state_.total_files = 0;
-                    sync_state_.bytes_downloaded = 0;
-                    sync_state_.bytes_total = 0;
-                    sync_state_.percent = 0;
-                    sync_state_.completed_generation = sync_state_.current_generation;
-                    json res = get_sync_status_locked();
-                    sync_state_.completed_generation_results[sync_state_.current_generation] = res;
-                    if (sync_state_.completed_generation_results.size() > 32) {
-                        sync_state_.completed_generation_results.erase(sync_state_.completed_generation_results.begin());
-                    }
-                    guard.active = false;
-                    sync_state_.cv.notify_all();
-                    return res;
-                }
-            }
-
-            for (const auto& model_name : current_batch) {
-                {
-                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                    sync_state_.active_targets.insert(model_name);
-                }
-
-                LOG(INFO, "ModelManager") << "Syncing model: " << model_name << std::endl;
-                try {
-                    auto progress_cb = [this, model_name](const DownloadProgress& prog) -> bool {
-                        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                        if (sync_state_.cancel_requested) {
-                            return false;
-                        }
-                        sync_state_.current_model = model_name;
-                        sync_state_.current_file = prog.file;
-                        sync_state_.file_index = prog.file_index;
-                        sync_state_.total_files = prog.total_files;
-                        sync_state_.bytes_downloaded = prog.bytes_downloaded;
-                        sync_state_.bytes_total = prog.bytes_total;
-                        sync_state_.percent = prog.percent;
-                        return true;
-                    };
-
-                    download_model(model_name, json::object(), /*do_not_upgrade=*/false, progress_cb);
-
-                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                    sync_state_.active_targets.erase(model_name);
-                    sync_state_.completed_targets.push_back(model_name);
-                } catch (const std::exception& e) {
-                    LOG(ERROR, "ModelManager") << "Failed to sync model " << model_name << ": " << e.what() << std::endl;
-                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
-                    sync_state_.active_targets.erase(model_name);
-                    sync_state_.failed_models[model_name] = e.what();
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG(ERROR, "ModelManager") << "Terminal error in model synchronization: " << e.what() << std::endl;
-        std::lock_guard<std::mutex> lock(sync_state_.mutex);
-        sync_state_.terminal_error = e.what();
-        sync_state_.is_sync_running = false;
-        sync_state_.active_targets.clear();
-        sync_state_.current_model.clear();
-        sync_state_.current_file.clear();
-        sync_state_.file_index = 0;
-        sync_state_.total_files = 0;
-        sync_state_.bytes_downloaded = 0;
-        sync_state_.bytes_total = 0;
-        sync_state_.percent = 0;
-        sync_state_.completed_generation = sync_state_.current_generation;
-        json res = get_sync_status_locked();
-        sync_state_.completed_generation_results[sync_state_.current_generation] = res;
-        if (sync_state_.completed_generation_results.size() > 32) {
-            sync_state_.completed_generation_results.erase(sync_state_.completed_generation_results.begin());
-        }
-        guard.active = false;
-        sync_state_.cv.notify_all();
-        return res;
-    }
-
-    return get_sync_status();
+json ModelManager::wait_for_sync() {
+    return sync_.wait_for(sync_.status().value("sync_id", 0));
 }
 
 json ModelManager::sync_models(const std::vector<std::string>& target_models, bool dry_run, bool attach_if_running) {
@@ -1965,22 +1597,8 @@ json ModelManager::sync_models(const std::vector<std::string>& target_models, bo
         };
     }
 
-    SyncEnqueueResult enqueue_res = enqueue_sync(target_models, attach_if_running);
-    uint64_t target_gen = enqueue_res.sync_id;
-
-    if (enqueue_res.already_running) {
-        std::unique_lock<std::mutex> lock(sync_state_.mutex);
-        sync_state_.cv.wait(lock, [this, target_gen]() {
-            return sync_state_.completed_generation >= target_gen && (!sync_state_.is_sync_running || sync_state_.current_generation > target_gen);
-        });
-        auto it = sync_state_.completed_generation_results.find(target_gen);
-        if (it != sync_state_.completed_generation_results.end()) {
-            return it->second;
-        }
-        return get_sync_status_locked();
-    }
-
-    return execute_sync();
+    SyncEnqueueResult enqueue_res = sync_.enqueue(target_models, attach_if_running);
+    return sync_.wait_for(enqueue_res.sync_id);
 }
 
 static std::string join_conflict_parts(const std::vector<std::string>& parts) {
