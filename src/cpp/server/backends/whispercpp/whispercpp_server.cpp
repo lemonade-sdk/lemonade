@@ -133,8 +133,8 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 
 
 // Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
-// The compiled cache is one file beside the .bin it was built for: the model
-// layer picks the host and the placement, this only asks and then transfers.
+// The compiled cache is one file beside the .bin it was built for. The model
+// layer picks the host and the placement; this asks and transfers.
 void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
                                                 const ModelInfo& model_info,
                                                 bool do_not_upgrade) {

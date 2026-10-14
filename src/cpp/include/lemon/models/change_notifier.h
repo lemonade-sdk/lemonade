@@ -8,8 +8,7 @@
 namespace lemon {
 namespace models {
 
-// Two signals, one subscriber each, registered at startup. A subscriber runs
-// outside every store lock, after the snapshot for its generation is published.
+// Two signals, one subscriber each; subscribers run outside every store lock.
 class ModelChangeNotifier {
   public:
     // Recomputes which helper models the policies in force still need.

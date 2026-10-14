@@ -5,8 +5,7 @@
 namespace lemon {
 namespace models {
 
-// The hosts that ship with lemonade. A row reaches the descriptor table only
-// through registration, so nothing reads these literals without the row.
+// The hosts that ship with lemonade; registration is the table's only writer.
 namespace builtin_registries {
 
 RegistryDescriptor huggingface();

@@ -16,7 +16,7 @@ struct ModelInfo;
 
 namespace models {
 
-// A checkpoint that binds to no source is broken, not merely absent.
+// A checkpoint binding to no source is broken, not merely absent.
 class RegistrationError : public std::runtime_error {
   public:
     explicit RegistrationError(const std::string& message) : std::runtime_error(message) {}
@@ -30,14 +30,13 @@ class ArtifactSourceResolver {
         std::function<bool(const std::string& recipe)> backend_self_manages_downloads;
         std::function<std::unique_ptr<FetchableRepository>(const RegistryId& id,
                                                            const ArtifactRef& ref)> repository_for;
-        // The default_model_source config key. Empty is an error, not a default.
+        // default_model_source; empty is an error, not a default
         std::function<std::string()> default_registry_id;
-        // Acquired on first use; absent bytes here leave the model downloaded.
+        // fetched on first use, so absence does not make the model incomplete
         std::function<bool(const std::string& checkpoint_type)> acquired_lazily;
         std::function<std::string(const std::string& recipe, const std::string& path)>
             validate_file;
-        // Null falls back to the registered repositories, so a resolver built with
-        // no hooks still binds a checkpoint to a host.
+        // null falls back to the registered repositories
         std::function<const ArtifactLayout*(const std::string& recipe, const CheckpointRef&)>
             checkpoint_layout;
     };
@@ -47,8 +46,7 @@ class ArtifactSourceResolver {
     std::unique_ptr<ArtifactSource> source_for(const ModelInfo& info,
                                                const std::string& checkpoint_type) const;
 
-    // The layout a checkpoint's bytes use, which is a backend fact about that
-    // checkpoint type rather than a fact about the host serving it.
+// Which layout applies is the backend's fact, not the host's.
     const ArtifactLayout& layout_for(const ModelInfo& info,
                                      const std::string& checkpoint_type) const;
 

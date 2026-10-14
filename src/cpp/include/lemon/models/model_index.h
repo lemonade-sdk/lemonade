@@ -8,22 +8,14 @@
 namespace lemon {
 namespace models {
 
-// Mints a bare id that is unique within `claimed`, following the rule extra
-// model discovery has always used: the bare name first, then
-// `<qualifier>-<base>`, then `-2`, `-3`. `prefix` builds the full id when
-// consulting `reserved`, which is why reserved ids are matched prefixed while
-// claimed names are matched bare. The loser of a collision is renamed and
-// kept, never dropped.
+// Bare name, then `<qualifier>-<base>`, then -2, -3; the loser is renamed.
 std::string reserve_unique_name(std::set<std::string>& claimed,
                                 const std::set<std::string>& reserved,
                                 const std::string& prefix,
                                 const std::string& base,
                                 const std::string& qualifier);
 
-// Bare listing name to canonical model id. Catalog precedence decides who owns
-// a name: the first insertion wins and a later one is reported as Shadowed,
-// which is the behavior the current cache relied on for extra models whose ids
-// were already made unique.
+// First insertion wins; a later one is Shadowed.
 class ModelIndex {
 public:
     enum class InsertResult {
@@ -40,9 +32,7 @@ public:
     size_t size() const { return by_bare_name_.size(); }
     std::vector<std::string> bare_names() const;
 
-    // Storage is case-sensitive, matching discovery. Case-insensitive lookup
-    // exists only so the one-time legacy ref migration can find what a stale
-    // reference meant; resolution must not use it.
+// Case-insensitive lookup exists only for the one-time legacy ref migration.
     std::vector<std::string> names_ignoring_case(const std::string& bare_name) const;
 
 private:

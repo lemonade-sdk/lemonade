@@ -27,8 +27,6 @@ std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id,
     if (it == factories().end()) {
         return nullptr;
     }
-    // A source answers for one checkpoint, so the host it belongs to is never
-    // left to the caller to remember.
     ArtifactRef stamped = ref;
     stamped.registry = id;
     return it->second(stamped);

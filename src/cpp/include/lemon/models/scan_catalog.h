@@ -16,8 +16,7 @@ inline constexpr const char extra_model_prefix[] = "extra.";
 inline constexpr const char extra_model_recipe[] = "llamacpp";
 inline constexpr const char extra_model_source[] = "extra_models_dir";
 
-// The models an operator placed in the extra models directory: loose GGUF files
-// identified by header, and folders holding a complete repository cache.
+// Models an operator placed in the extra models directory.
 class ScanCatalog {
   public:
     ScanCatalog(std::string extra_models_dir, DeviceType device)

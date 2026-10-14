@@ -29,13 +29,10 @@ struct DownloadPlan {
     std::vector<DownloadFile> files;
 };
 
-// Reads the manifest written by the registry download path: a per-file
-// download_path is optional and falls back to the plan target, and a digest is
-// either a {"algorithm","value"} object or a bare `sha256` string.
+// Reads the manifest written by the registry download path.
 DownloadPlan download_plan_from_manifest(const nlohmann::json& manifest);
 
-// Raised by a FileTransfer. `cancelled` keeps a client cancel distinguishable
-// from a transfer failure without adding a second exception type to the loop.
+// `cancelled` distinguishes a client cancel from a transfer failure.
 class TransferError : public std::runtime_error {
 public:
     explicit TransferError(const std::string& message, bool cancelled = false)
@@ -44,13 +41,10 @@ public:
     bool cancelled;
 };
 
-// Bytes moved so far and the total for the current file. Returns false to
-// cancel.
+// Returns false to cancel.
 using ByteProgress = std::function<bool(std::size_t downloaded, std::size_t total)>;
 
-// One URL scheme, one implementation. Disk-space accounting, the plan-wide
-// progress total and cancellation belong to ArtifactTransfer so that every
-// scheme inherits them, and a plan may mix schemes.
+// One scheme per implementation; space, progress and cancel live in ArtifactTransfer.
 class FileTransfer {
 public:
     virtual ~FileTransfer() = default;
@@ -73,9 +67,7 @@ public:
                            const ByteProgress& progress) const override;
 };
 
-// Stages a copy into .partial then renames. The source is opened read-only and
-// is never moved, truncated or deleted. No retries: a short read is a disk
-// error, and retrying would hide it.
+// No retries: a short read is a disk error. The source is never modified.
 class LocalCopyFileTransfer : public FileTransfer {
 public:
     bool handles(const std::string& url) const override;
@@ -92,9 +84,7 @@ struct FilesystemRequirement {
     std::uint64_t bytes_available = 0;
 };
 
-// Bytes still to be written, crediting what is already on disk including
-// .partial files, with target directories that share a filesystem folded into
-// one entry so their combined size is checked once.
+// Still to write, crediting bytes on disk; same-filesystem targets fold.
 std::vector<FilesystemRequirement> plan_filesystem_requirements(const DownloadPlan& plan);
 
 // The one place a plan is executed: space, dispatch, progress, cancel, verify.
@@ -104,9 +94,7 @@ public:
 
     static ArtifactTransfer with_default_transfers();
 
-    // `headers` are the caller's transport headers, forwarded to every file.
-    // They are passed per call rather than stored on the plan so credentials
-    // never live in a value that might be logged or serialized.
+// Per call, never on the plan, so credentials cannot be logged with it.
     void execute(const DownloadPlan& plan,
                  const std::map<std::string, std::string>& headers,
                  DownloadProgressCallback progress) const;

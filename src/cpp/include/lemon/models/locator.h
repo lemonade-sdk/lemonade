@@ -8,8 +8,7 @@
 namespace lemon {
 namespace models {
 
-// A checkpoint is stored as `repo_id[:variant]` and that grammar is read in
-// several places, so it lives here rather than being re-parsed per call site.
+// The `repo_id[:variant]` grammar, read in several places.
 std::string repo_id_from_checkpoint(const std::string& checkpoint);
 std::string variant_from_checkpoint(const std::string& checkpoint);
 
@@ -20,13 +19,7 @@ enum class LocatorScheme {
     Url,
 };
 
-// Where a model's bytes come from. It deliberately does not answer where they
-// are on disk: resolving an artifact needs backend ops, which a value type
-// cannot own.
-//
-// There is no default constructor on purpose. A default registry would have to
-// name one concrete provider inside a generic type, which turns a convenience
-// initializer into a dependency every future registry inherits.
+// Where a model's bytes come from, not where they sit on disk; no defaulted host.
 struct Locator {
     Locator() = delete;
 
@@ -46,8 +39,7 @@ struct Locator {
     std::string path;
     std::string variant;
 
-    // Set exactly when the scheme is Registry, and unset for every other
-    // scheme rather than defaulted to whichever provider shipped first.
+// Set only for the Registry scheme; never defaulted to a provider.
     std::optional<RegistryId> registry;
     std::string revision;
 

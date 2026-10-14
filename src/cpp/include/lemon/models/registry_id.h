@@ -25,8 +25,7 @@ class RegistryId {
     std::string canonical_;
 };
 
-// How a host serves files. A backend maps a protocol to its own command line and
-// must refuse one it has no mapping for, rather than fall back to some other host.
+// How a host serves files; a backend refuses a protocol it cannot express.
 namespace download_protocols {
 inline constexpr const char hf_hub[] = "hf-hub";
 inline constexpr const char modelscope_api[] = "modelscope-api";

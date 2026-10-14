@@ -22,9 +22,8 @@ Locator::Locator(LocatorScheme scheme, std::string path, std::string variant,
       revision(std::move(revision)) {}
 
 Locator Locator::from_checkpoint(const std::string& checkpoint, const std::string& source) {
-    // The scheme is decided by `source` before anything looks at the path: a
-    // Windows absolute path contains a colon, so reading the shape would split
-    // `C:\models\foo.gguf` into a repo and a variant.
+// `source` decides the scheme before the path is read: a Windows absolute path
+// contains a colon.
     if (source == "local_path") {
         return Locator(LocatorScheme::Import, checkpoint, std::string(), std::nullopt,
                        std::string());
