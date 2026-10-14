@@ -87,28 +87,30 @@ struct RouteArg {
     std::string description;
 };
 
-// Some examples require lemond to be in a certain state, for example unload requires a loaded
-// model. ExampleRef allows one example to take a dependence on another to achieve that state.
-struct ExampleRef {
-    std::string route;                // RouteSpec::id
-    ResponseFormat format;            // selects which of the route's examples
-};
-
-// Each format a route returns gets its own schema and example in the docs.
+// Each format a route returns gets its own schema in the docs.
 struct RouteResponse {
     ResponseFormat format;
 
     // JSON formats only. JSON Schema for the body, each NDJSON line, or each SSE event's data;
     // --check validates against it. A format with several shapes, such as /load's three, uses oneOf.
     nlohmann::json schema;
+};
 
-    // Examples to run first, in order, when generating the documentation. Examples can reference
-    // their dependences' responses, for example {"id": "$lemonade.jobs_create/id"}.
-    std::vector<ExampleRef> setup;
+// Some examples require lemond to be in a certain state, for example unload requires a loaded
+// model. A step sends a request that puts lemond in that state before the example runs.
+struct ExampleStep {
+    std::string route;                // RouteSpec::id
+    std::string example;              // that route's RouteExample::name; runs after its own setup
+    nlohmann::json args;              // set instead of example: a request sent as is and left out of the docs
+};
 
-    // A request producing this format; gen_api_boilerplate.py records its response into the docs
-    // and --check validates it.
-    nlohmann::json example;
+// gen_api_boilerplate.py sends each example to lemond and records the response into the docs, and
+// --check validates the response against the schema of the example's format.
+struct RouteExample {
+    std::string name;                 // tab label, e.g. "streaming" or "save"; required when a route has several
+    ResponseFormat format;            // the RouteResponse the response is validated against
+    nlohmann::json args;              // argument values, e.g. {"id": "$lemonade.jobs_create/id"}
+    std::vector<ExampleStep> setup;   // run first, in order
 };
 
 struct RouteSpec {
@@ -122,6 +124,7 @@ struct RouteSpec {
     bool experimental = false;        // its contract may still change, so the docs badge it experimental
     std::vector<RouteArg> args;       // every argument, documented whether or not validated
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
+    std::vector<RouteExample> examples;    // the first is the route's main example
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
     bool validate_args = false;       // check args with McpTool's validator; off for pass-through routes
     bool quiet_log = false;           // leave out of the access log
@@ -303,24 +306,29 @@ public:
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable, "Return the log probability of each output token."},
         };
 
-        RouteResponse completion;
+        s.responses = {
+            {ResponseFormat::Json, chat_completion_schema()},
+            {ResponseFormat::EventStream, chat_completion_chunk_schema()},
+        };
+
+        RouteExample completion;
+        completion.name = "non-streaming";
         completion.format = ResponseFormat::Json;
-        completion.schema = chat_completion_schema();
-        completion.example = nlohmann::json::parse(R"({
+        completion.args = nlohmann::json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France?"}]
         })");
 
-        RouteResponse stream;
+        RouteExample stream;
+        stream.name = "streaming";
         stream.format = ResponseFormat::EventStream;
-        stream.schema = chat_completion_chunk_schema();
-        stream.example = nlohmann::json::parse(R"({
+        stream.args = nlohmann::json::parse(R"({
             "model": "Qwen3-0.6B-GGUF",
             "messages": [{"role": "user", "content": "What is the capital of France?"}],
             "stream": true
         })");
 
-        s.responses = {completion, stream};
+        s.examples = {completion, stream};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -440,17 +448,17 @@ This section specifies how `docs/api` is generated from the routes, including re
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page.
 3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, every prefixed path and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Example request and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
-4. Fills the Example request and Response format sections from the response cache, running each response's setup and example against lemond only when its cache entry is invalid.
+4. Fills the Example request and Response format sections from the response cache, running each example's setup and request against lemond only when its cache entry is invalid.
 
 Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
 
 ### Examples
 
-The Example request section has PowerShell and Bash tabs with each response's `example`, and the Response format section shows what lemond returned to it. For a JSON format, a Field Descriptions list follows, built from the `description` of each property in its schema. The generator builds and records examples by these rules:
+The Example request section has PowerShell and Bash tabs for each of the route's `examples`, and the Response format section shows what lemond returned to each. When a route has several examples, the first example's request tabs are unlabeled, every other example's are labeled with its `name`, such as "PowerShell (streaming)", and each response gets a tab named after its example, such as "Streaming responses". For a JSON format, a Field Descriptions list follows, built from the `description` of each property in its schema. The generator builds and records examples by these rules:
 
-- **Arguments.** An `example` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
+- **Arguments.** An example's `args` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
 - **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
-- **Setup.** The examples in `setup` run first, in order, each after its own setup. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
+- **Setup.** The steps in `setup` run first, in order. A step that names an example runs it after that example's own setup; a step with `args` sends that request as is and is left out of the docs. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
 - **One lemond.** Every example runs against one lemond started by the `Lemond` harness, which starts it again after an example stops it, as `/internal/shutdown` does. An example that deletes or uninstalls something removes what its own setup added.
 - **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
 - **Long values.** A string longer than 1,000 characters in a JSON body, NDJSON line or SSE event, such as a base64 image, is recorded as its first 80 characters and its length. In the page, a JSON array of more than 16 numbers or strings that does not fit on one line, such as an embedding, shows its first 8 items and how many more there are.
@@ -458,13 +466,13 @@ The Example request section has PowerShell and Bash tabs with each response's `e
 
 ### Response Cache
 
-Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per entry in a route's `responses`. An entry's key is the SHA-256 of:
+Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per example. An entry's key is the SHA-256 of:
 
-- the route `id` and the response's `format`
-- the canonical JSON of its `example` and of every example in its `setup`
+- the route `id` and the example's `format`
+- the canonical JSON of its `args` and of every step in its `setup`
 - for a pass-through route, its backend's pinned version from `backend_versions.json`
 
-A new response, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
+A new example, a changed request, or a backend version bump changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
 
 ### Drift Check
 
@@ -475,7 +483,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
-- an `example` names an argument the route does not have, a `setup` entry names a route or response that does not exist, or a `$<route id>` value names a route that did not run during setup
+- an example names an argument the route does not have or a format not in `responses`, a route with several examples leaves one unnamed or repeats a name, a `setup` step names a route or example that does not exist, or a `$<route id>` value names a route that did not run during setup
 
 The author fixes it by running the generator locally and committing the result. The weekly backend-bump workflows (`validate_llamacpp.yml`, `validate_sdcpp.yml`, `validate_vllm.yml`) run each new version on self-hosted runners; their runner job also runs the generator for the entries the bump invalidated, and the PR the workflow opens includes the updated cache.
 
