@@ -222,4 +222,21 @@ assert.match(stylesSource, /\.capability-icon-pair[\s\S]*gap: var\(--space-0-5\)
 assert.doesNotMatch(capabilitiesSource, /Gemma-4-E2B-it-FLM/i,
   'the fix must be capability-driven rather than model-name-specific');
 
+const { selectDictationModel, updateDraftWithDictation } = loadTypeScriptModule(
+  path.join(root, 'src/features/audio/dictationModels.ts'),
+);
+const whisperAsr = { name: 'Whisper-Tiny', labels: ['transcription', 'realtime-transcription'], size: 0.1, downloaded: false };
+const moonshineAsr = { name: 'Moonshine-Tiny', labels: ['transcription', 'realtime-transcription'], size: 0.2, downloaded: true };
+const plainChat = { name: 'Qwen3.5-4B-GGUF', labels: ['chat', 'audio-input', 'realtime-transcription'], downloaded: true };
+assert.equal(selectDictationModel([plainChat, whisperAsr, moonshineAsr], [])?.name, 'Moonshine-Tiny');
+assert.equal(selectDictationModel([plainChat, whisperAsr, moonshineAsr], [{ model_name: 'Whisper-Tiny', type: 'transcription', recipe: 'whispercpp' }])?.name, 'Whisper-Tiny');
+assert.equal(selectDictationModel([plainChat], []), null, 'a chat model cannot act as a dictation engine');
+assert.equal(selectDictationModel([], [{ model_name: 'Whisper-Tiny', type: 'transcription', recipe: 'whispercpp' }])?.name, 'Whisper-Tiny');
+assert.equal(updateDraftWithDictation('Draft', '', 'speaking'), 'Draft speaking');
+assert.equal(updateDraftWithDictation('Draft speaking', 'speaking', 'spoken words'), 'Draft spoken words');
+assert.equal(updateDraftWithDictation('Draft spoken words !', 'spoken words', 'final words'), 'Draft final words !');
+assert.match(chatViewSource, /const supportsDictation = currentCapability === 'chat' && canUseMicrophone\(\)/);
+assert.match(chatViewSource, /selectDictationModel\(/);
+assert.match(chatViewSource, /Icon name=\{currentCapability === 'chat' \? 'mic' : 'audio'\}/);
+
 console.log('Chat + audio capability contract checks passed.');
