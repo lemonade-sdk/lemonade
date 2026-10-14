@@ -921,13 +921,9 @@ Server::~Server() {
         model_cache_warmup_thread_.join();
     }
 
-    std::lock_guard<std::mutex> lock(background_sync_mutex_);
-    for (auto& entry : background_sync_threads_) {
-        if (entry.thread.joinable()) {
-            entry.thread.join();
-        }
+    if (model_manager_) {
+        model_manager_->wait_until_sync_idle();
     }
-    background_sync_threads_.clear();
 }
 
 
@@ -2349,14 +2345,8 @@ void Server::stop() {
         model_cache_warmup_thread_.join();
     }
 
-    {
-        std::lock_guard<std::mutex> lock(background_sync_mutex_);
-        for (auto& task : background_sync_threads_) {
-            if (task.thread.joinable()) {
-                task.thread.join();
-            }
-        }
-        background_sync_threads_.clear();
+    if (model_manager_) {
+        model_manager_->wait_until_sync_idle();
     }
 }
 
@@ -2869,31 +2859,7 @@ void Server::handle_models_sync(const httplib::Request& req, httplib::Response& 
             return;
         }
 
-        std::lock_guard<std::mutex> lock(background_sync_mutex_);
-
-        for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end(); ) {
-            if (it->finished->load() && it->thread.joinable()) {
-                it->thread.join();
-                it = background_sync_threads_.erase(it);
-            } else {
-                ++it;
-            }
-        }
-
-        auto finished_flag = std::make_shared<std::atomic<bool>>(false);
-        std::thread worker([this, finished_flag]() {
-            try {
-                LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
-                model_manager_->execute_sync();
-                LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
-            } catch (const std::exception& e) {
-                LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
-            }
-            finished_flag->store(true);
-        });
-
-        background_sync_threads_.push_back({std::move(worker), finished_flag});
-
+        // Enqueueing is dispatching: the sync service's own worker drains it.
         nlohmann::json dispatched_result = model_manager_->get_sync_status(enqueue_res.sync_id);
         dispatched_result["message"] = "Model synchronization dispatched in background";
         dispatched_result["async"] = true;

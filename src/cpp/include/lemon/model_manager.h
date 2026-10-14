@@ -23,6 +23,7 @@
 #include "models/download_progress.h"
 #include "models/registry_documents.h"
 #include "models/recipe_options_store.h"
+#include "models/sync_service.h"
 #include "models/update_scan.h"
 #include "recipe_options.h"
 
@@ -366,10 +367,7 @@ public:
     void cancel_sync();
 
 
-    struct SyncEnqueueResult {
-        bool already_running = false;
-        uint64_t sync_id = 0;
-    };
+    using SyncEnqueueResult = models::SyncService::Enqueued;
 
     // Query model sync status (running state, active/pending targets, completed count, or specific sync_id outcome)
     json get_sync_status(uint64_t sync_id = 0) const;
@@ -377,8 +375,11 @@ public:
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
     SyncEnqueueResult enqueue_sync(const std::vector<std::string>& target_models = {}, bool attach_if_running = false);
 
-    // Execute background queue processing until empty.
-    json execute_sync();
+    // Blocks until the generation in flight (or the last one queued) is done.
+    json wait_for_sync();
+
+    // Shutdown waits here, so a download cannot outlive the store it wrote.
+    void wait_until_sync_idle();
 
     // Trigger sync/update of specified or all outdated models.
     // When target_models is empty, targets all downloaded outdated models.
@@ -545,38 +546,6 @@ private:
     std::mutex download_locks_mutex_;
     std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
 
-    // Prevent startup and manual update checks from running concurrently.
-    std::mutex update_check_mutex_;
-
-    // Server sync state and queue management
-    struct ModelSyncState {
-        mutable std::mutex mutex;
-        mutable std::condition_variable cv;
-        bool is_sync_running = false;
-        bool is_full_sync = false;
-        bool cancel_requested = false;
-        uint64_t current_generation = 0;
-        uint64_t completed_generation = 0;
-        std::map<uint64_t, json> completed_generation_results;
-        std::set<std::string> active_targets;
-        std::set<std::string> pending_targets;
-        std::vector<std::string> completed_targets;
-        std::vector<std::string> models_up_to_date;
-        std::map<std::string, std::string> failed_models;
-        int checked_count = 0;
-        std::string terminal_error;
-
-        // Progress metrics for active model download
-        std::string current_model;
-        std::string current_file;
-        int file_index = 0;
-        int total_files = 0;
-        size_t bytes_downloaded = 0;
-        size_t bytes_total = 0;
-        int percent = 0;
-    };
-    mutable ModelSyncState sync_state_;
-
     std::function<void(const std::string&)> sync_phase_callback_;
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
@@ -613,10 +582,16 @@ private:
   private:
     mutable bool cache_valid_ = false;
 
-    json get_sync_status_locked() const;
+    UpdateCheckResult run_update_scan(const std::vector<std::string>& targets);
+    models::SyncService::Deps make_sync_deps();
+
     void publish_update_scan(const models::ScanDetermination& settled,
                              models::UpdateScanResult& result);
     void rebuild_public_model_aliases_locked();
+
+    // Declared last so it dies first: the worker joins before the store it
+    // publishes to does.
+    models::SyncService sync_;
 };
 
 } // namespace lemon

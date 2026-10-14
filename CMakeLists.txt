@@ -1050,6 +1050,7 @@ set(SOURCES_CORE
     src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
+    src/cpp/server/models/sync_service.cpp
     src/cpp/server/models/update_scan.cpp
     src/cpp/server/models/recipe_options_store.cpp
     src/cpp/server/models/scan_catalog.cpp
