@@ -22,7 +22,7 @@ void EnumeratedCatalog::enumerate(CatalogAccumulator& accumulator) const {
     try {
         discovered = discover_(accumulator);
     } catch (...) {
-        if (required_) {
+        if (descriptor_.required) {
             throw;
         }
         return;
@@ -30,7 +30,7 @@ void EnumeratedCatalog::enumerate(CatalogAccumulator& accumulator) const {
 
     for (auto& info : discovered) {
         const std::string name = info.model_name;
-        if (accumulator.add(CatalogEntry{id_, std::move(info)}) ==
+        if (accumulator.add(CatalogEntry{descriptor_.id, std::move(info)}) ==
                 CatalogAccumulator::Outcome::KeptExisting &&
             on_conflict_) {
             on_conflict_(name);

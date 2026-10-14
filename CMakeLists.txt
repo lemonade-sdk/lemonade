@@ -1044,6 +1044,7 @@ set(SOURCES_CORE
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp
     src/cpp/server/models/fetchable_repository.cpp
+    src/cpp/server/models/listed_catalog.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp

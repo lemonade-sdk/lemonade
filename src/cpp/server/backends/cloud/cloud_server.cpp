@@ -997,6 +997,39 @@ utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_
                : utils::HttpSecurityPolicy::ExternalHttpsOnly;
 }
 
+std::vector<ModelInfo> CloudServer::discover_provider_models(
+    const CloudProviderRegistry& registry, const std::string& provider) {
+    const std::string api_key = registry.resolve_key(provider);
+    const std::string base_url = registry.base_url_for(provider);
+    if (api_key.empty() || base_url.empty()) {
+        LOG(INFO, "CloudServer") << "Skipping cloud listing for '" << provider
+                                 << "': no API key resolvable (set "
+                                 << CloudProviderRegistry::env_var_name(provider)
+                                 << " or POST /v1/cloud/auth)" << std::endl;
+        return {};
+    }
+
+    // An API key never goes to a plaintext endpoint unless that provider opted
+    // in (AGENTS.md invariant #11).
+    const bool insecure_allowed = registry.allow_insecure_http_for(provider);
+    if (CloudProviderRegistry::is_http_base_url(base_url) && !insecure_allowed) {
+        LOG(WARNING, "CloudServer") << "Skipping cloud listing for '" << provider
+                                    << "': http:// with API key requires allow_insecure_http=true"
+                                    << std::endl;
+        return {};
+    }
+
+    try {
+        return discover_models(provider, api_key, base_url, insecure_allowed,
+                               registry.auth_header_for(provider),
+                               registry.wire_format_for(provider));
+    } catch (const std::exception& e) {
+        LOG(WARNING, "CloudServer") << "Cloud listing threw for '" << provider << "': "
+                                    << e.what() << std::endl;
+        return {};
+    }
+}
+
 std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
@@ -1133,48 +1166,6 @@ public:
 
     void download_model(const ModelInfo&, bool, DownloadProgressCallback,
                         const BackendOpsContext&) const override {}
-
-    // Discover models from each installed cloud provider with a resolvable
-    // credential. Failures are logged, never propagated, so one offline
-    // provider can't block discovery.
-    std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const override {
-        std::vector<ModelInfo> out;
-        if (ctx.cloud_registry == nullptr) {
-            return out;
-        }
-        for (const auto& rec : ctx.cloud_registry->list_installed()) {
-            const std::string api_key = ctx.cloud_registry->resolve_key(rec.name);
-            if (api_key.empty() || rec.base_url.empty()) {
-                LOG(INFO, "CloudOps") << "Skipping cloud discovery for '" << rec.name
-                                      << "': no API key resolvable (set "
-                                      << CloudProviderRegistry::env_var_name(rec.name)
-                                      << " or POST /v1/cloud/auth)" << std::endl;
-                continue;
-            }
-            // Don't send the API key to a plaintext http:// endpoint unless the
-            // provider explicitly opted in (AGENTS.md invariant #11).
-            if (CloudProviderRegistry::is_http_base_url(rec.base_url) && !rec.allow_insecure_http) {
-                LOG(WARNING, "CloudOps") << "Skipping cloud discovery for '" << rec.name
-                                         << "': http:// with API key requires allow_insecure_http=true"
-                                         << std::endl;
-                continue;
-            }
-            try {
-                for (auto& m : CloudServer::discover_models(
-                         rec.name, api_key, rec.base_url, rec.allow_insecure_http,
-                         {rec.auth_header_name, rec.auth_header_prefix},
-                         rec.wire_format)) {
-                    if (m.recipe == "cloud" && !m.model_name.empty()) {
-                        out.push_back(std::move(m));
-                    }
-                }
-            } catch (const std::exception& e) {
-                LOG(WARNING, "CloudOps") << "Cloud discovery threw for '" << rec.name
-                                         << "': " << e.what() << std::endl;
-            }
-        }
-        return out;
-    }
 };
 }  // namespace
 

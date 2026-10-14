@@ -32,9 +32,9 @@ namespace backends {
  * Provider selection: recipe="cloud" + the per-model "cloud_provider" field.
  * The Router constructs CloudServer for cloud recipes, with the provider name
  * fixed by the model's registration. Discovery is server-driven now: at cache
- * build time, ModelManager calls discover_models for every installed provider
- * with a resolvable key, and again whenever a new key is supplied or a
- * provider is installed.
+ * build time ModelManager enumerates one listing catalog per installed
+ * provider, and again whenever a new key is supplied or a provider is
+ * installed.
  *
  * Scope: chat-only (chat/completions and completions on OpenAI v1). Other
  * modalities — embeddings, audio, reranking, image — are intentionally not
@@ -94,6 +94,14 @@ public:
         bool allow_insecure_http = false,
         const CloudProviderRegistry::AuthHeader& auth_header = {},
         const std::string& wire_format = "openai");
+
+    /// One installed provider's listing: resolves its key and applies the
+    /// credential and plaintext-endpoint policy first, so every caller of a
+    /// listing enforces the same rules. Empty when the provider is ruled out or
+    /// the upstream failed; never throws.
+    static std::vector<ModelInfo> discover_provider_models(
+        const CloudProviderRegistry& registry,
+        const std::string& provider);
 
     /// Strict gateways reject any call that omits this, discovery included, so
     /// relay and discovery must send the same value.
