@@ -618,8 +618,8 @@ For each entry of `ModelInfo::checkpoints`, the resolver picks the first matchin
 2. `BackendOps::plan_download()` returns `SelfManaged`: `SelfManagedArtifactSource`.
 3. The catalog entry's origin is `local_path`, `local_upload` or `extra_models_dir`: `LocalPathArtifactSource`.
 4. The entry names an explicit scheme (`hf://`, `ms://`, `file://`): the repository registered for that scheme.
-5. `checkpoint_looks_like_repo_id()` matches: the registry in `ArtifactRef::registry`, defaulting to the `default_model_source` config key.
-6. The checkpoint path exists on disk: `LocalPathArtifactSource`.
+5. The checkpoint path exists on disk: `LocalPathArtifactSource`.
+6. `checkpoint_looks_like_repo_id()` matches: the registry in `ArtifactRef::registry`, defaulting to the `default_model_source` config key.
 7. Otherwise: a registration error.
 
 Rules:

@@ -24,7 +24,14 @@ std::vector<RegistryId>& conflicts() {
 std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id,
                                                       const ArtifactRef& ref) {
     const auto it = factories().find(id);
-    return it == factories().end() ? nullptr : it->second(ref);
+    if (it == factories().end()) {
+        return nullptr;
+    }
+    // A source answers for one checkpoint, so the host it belongs to is never
+    // left to the caller to remember.
+    ArtifactRef stamped = ref;
+    stamped.registry = id;
+    return it->second(stamped);
 }
 
 std::vector<RegistryId> registered_repository_ids() {

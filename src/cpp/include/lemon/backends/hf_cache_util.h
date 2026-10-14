@@ -22,6 +22,13 @@ std::filesystem::directory_options dir_options();
 // dir, or an empty path if there is no recorded ref / it doesn't exist.
 std::filesystem::path active_snapshot_path(const std::filesystem::path& model_cache_path);
 
+// The revision recorded in <model_cache>/refs/main, or "" when none is recorded.
+std::string read_ref_main(const std::filesystem::path& model_cache_path);
+
+// Records the revision. An empty revision writes nothing.
+void write_ref_main(const std::filesystem::path& model_cache_path,
+                    const std::string& revision);
+
 // Provider-qualified cache directory name for a repository id.
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
                                       const std::string& registry_source);

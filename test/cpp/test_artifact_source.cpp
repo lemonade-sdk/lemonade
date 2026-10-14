@@ -5,9 +5,11 @@
 #include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_source.h"
 #include "lemon/models/fetchable_repository.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/models/locator.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <utility>
@@ -170,12 +172,103 @@ static void test_the_builtin_hosts_are_untouched() {
     }
 }
 
+
+// The built-in hosts are reached the same way as any registered one, so these
+// assert the port's answers without a network.
+static void test_the_built_in_hosts_answer_through_the_port() {
+    const std::unique_ptr<FetchableRepository> huggingface =
+        lemon::models::create_repository(RegistryId("huggingface"), ArtifactRef{});
+    const std::unique_ptr<FetchableRepository> modelscope =
+        lemon::models::create_repository(RegistryId("modelscope"), ArtifactRef{});
+
+    check("both hosts build from registration alone",
+          huggingface != nullptr && modelscope != nullptr);
+    if (huggingface == nullptr || modelscope == nullptr) {
+        return;
+    }
+
+    check("each reports the host it was built for",
+          huggingface->id().str() == "huggingface" && modelscope->id().str() == "modelscope");
+    check("each keeps its own cache namespace",
+          huggingface->cache_dir_name("org/repo") == "models--org--repo" &&
+          modelscope->cache_dir_name("org/repo") == "modelscope--models--org--repo");
+    check("each keeps its own default revision",
+          huggingface->default_revision().id == "main" &&
+          modelscope->default_revision().id == "master");
+    check("a branch default is not pinned", !huggingface->default_revision().pinned);
+    check("both can go stale", huggingface->can_go_stale() && modelscope->can_go_stale());
+    check("deleting a registry model removes its cache directory",
+          huggingface->deletion().kind == lemon::models::Deletion::Kind::CacheDir);
+}
+
+static void test_the_host_is_stamped_into_the_source() {
+    ArtifactRef without_host;
+    without_host.repo_id = "org/repo";
+    const std::unique_ptr<FetchableRepository> repository =
+        lemon::models::create_repository(RegistryId("modelscope"), without_host);
+    check("a caller that names no host still gets one",
+          repository != nullptr && repository->id().str() == "modelscope");
+}
+
+static void test_the_recorded_revision_round_trips() {
+    namespace fs = std::filesystem;
+    const fs::path temp = fs::temp_directory_path() /
+                          ("registry_repo_" + std::to_string(
+                                                 std::chrono::steady_clock::now()
+                                                     .time_since_epoch()
+                                                     .count()));
+    fs::create_directories(temp);
+    // The repository resolves a local ref against the models dir, not the cache
+    // dir: get_hf_cache_dir() is what it asks.
+    lemon::utils::set_models_dir(lemon::utils::path_to_utf8(temp));
+
+    const std::unique_ptr<FetchableRepository> repository =
+        lemon::models::create_repository(RegistryId("huggingface"), ArtifactRef{});
+    if (repository == nullptr) {
+        check("the port builds a source to record a revision on", false);
+        return;
+    }
+    const LocalRef local{"org/repo"};
+
+    check("nothing is recorded before a download",
+          repository->active_revision(local).id.empty());
+    check("and a source says why it is not present",
+          !repository->present().complete && !repository->present().reason.empty());
+
+    const std::string commit(40, 'a');
+    repository->set_active_revision(local, Revision{commit, false});
+    const Revision recorded = repository->active_revision(local);
+    check("the revision a download committed is read back", recorded.id == commit);
+    check("a full commit SHA is pinned", recorded.pinned);
+
+    const lemon::models::Staleness newer =
+        repository->compare(local, RepoListing{"org/repo", Revision{"b", false}, {}});
+    check("a different remote snapshot is an update", newer.update_available);
+    check("both snapshot ids are reported",
+          newer.local_snapshot_id == commit && newer.remote_snapshot_id == "b");
+    check("the same snapshot is not an update",
+          !repository->compare(local, RepoListing{"org/repo", Revision{commit, true}, {}})
+               .update_available);
+
+    // Never-downloaded, not overwritten: an empty revision writes nothing, which
+    // is how a partial download keeps its recorded ref.
+    check("an unrecorded model reports no update rather than a false one",
+          !repository->compare(LocalRef{"org/never-downloaded"},
+                               RepoListing{"org/never-downloaded", Revision{"c", false}, {}})
+               .update_available);
+
+    fs::remove_all(temp);
+}
+
 int main() {
     test_a_ref_names_the_checkpoint_a_locator_points_at();
     test_registration_builds_the_host_it_names();
     test_registration_carries_the_descriptor();
     test_a_host_claimed_twice_is_reported();
     test_the_builtin_hosts_are_untouched();
+    test_the_built_in_hosts_answer_through_the_port();
+    test_the_host_is_stamped_into_the_source();
+    test_the_recorded_revision_round_trips();
 
     if (g_failures == 0) {
         std::printf("All artifact source tests passed.\n");
