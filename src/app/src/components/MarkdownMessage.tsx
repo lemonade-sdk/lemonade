@@ -3,6 +3,7 @@ import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import texmath from 'markdown-it-texmath';
 import katex from 'katex';
+import '../styles/hljs-styles.css';
 import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
