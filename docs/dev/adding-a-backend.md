@@ -43,7 +43,7 @@ inline const BackendDescriptor descriptor = {
         {"myrecipe_args", "--myrecipe-args", "", "ARGS", "Custom args to pass", "My Options"},
     },
     /*support*/ {                           // OS / device families ({} = no local gating)
-        {"myrecipe", "cpu", {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
+        {"cpu", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
     },
     /*supported_modes*/ {"chat"},           // every mode you serve, most-default first
     /*required_checkpoints*/ {"main"},      // unconditional files; conditional ones checked in load()
@@ -54,6 +54,8 @@ inline const BackendDescriptor descriptor = {
 ```
 
 `SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
+
+Each `support` row names its backend's tier (`BackendTier::Core`, `BackendTier::Experimental` or `BackendTier::Guest`) and format (`BackendFormat::Native`, `BackendFormat::Python` or `BackendFormat::Container`) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; `/system-info` reports the labels of the row for the current OS. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
 
 `supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 
