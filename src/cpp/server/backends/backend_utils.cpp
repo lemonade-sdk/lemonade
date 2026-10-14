@@ -1236,9 +1236,9 @@ namespace lemon::backends {
         // terminator, so 259 usable characters.
         constexpr size_t kMaxPathChars = 259;
 
-        // Records the measured longest rocBLAS path, written next to version.txt
-        // so a model load costs one file read instead of a tree walk.
-        constexpr const char* kRocblasMaxPathFile = "rocblas_max_path.txt";
+        // Depth of the longest rocBLAS path below the ROCm install directory.
+        // Stored relative, not absolute.
+        constexpr const char* kRocblasDepthFile = "rocblas_path_depth.txt";
 
         std::string resolved_cache_dir(const std::string& cache_dir) {
             const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
@@ -1257,8 +1257,36 @@ namespace lemon::backends {
                                              : BackendUtils::get_therock_install_dir(arch, version));
         }
 
-        // A rocBLAS Tensile solution file: a TensileLibrary* file under a directory named "rocblas".
+        // MSVC's std::filesystem never applies the Win32 long-path prefix, so
+        // both walking and deleting stop at MAX_PATH.
+        // The prefix requires an absolute, backslashed path.
+        fs::path long_path(const fs::path& p) {
+#ifdef _WIN32
+            static const std::wstring kPrefix = L"\\\\?\\";
+            std::error_code ec;
+            fs::path absolute = fs::absolute(p, ec);
+            if (ec) {
+                absolute = p;
+            }
+            absolute.make_preferred();
+            const std::wstring native = absolute.native();
+            if (native.rfind(kPrefix, 0) == 0) {
+                return absolute;
+            }
+            return fs::path(kPrefix + native);
+#else
+            return p;
+#endif
+        }
+
+        void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
+            ec.clear();
+            fs::remove_all(long_path(dir), ec);
+        }
+
+        // A rocBLAS Tensile solution file is a TensileLibrary* file under a directory named "rocblas".
         // Locating them by shape rather than by a fixed path keeps the check working if upstream moves them.
+        // This also keeps hipBLASLt out, which also ships TensileLibrary* files, but under "hipblaslt".
         bool is_rocblas_tensile_file(const fs::path& p) {
             if (utils::path_to_utf8(p.filename()).rfind("TensileLibrary", 0) != 0) {
                 return false;
@@ -1271,58 +1299,45 @@ namespace lemon::backends {
             return false;
         }
 
-        // Longest absolute path among the rocBLAS Tensile files under root, or 0
-        // when there are none or the tree cannot be read.
+        // Longest rocBLAS Tensile path below root, measured relative to root.
+        // nullopt means the tree could not be read, which callers must not treat
+        // as a pass: a directory past MAX_PATH aborts the walk, and that is
+        // exactly when the answer would have been "too long".
+        //
         // Deliberately does not stat each entry: a status query on a path past
         // MAX_PATH fails, which would skip the very entries this exists to find.
         // path() is built from enumeration data and needs no filesystem access.
-        size_t scan_rocblas_tensile_paths(const fs::path& root) {
+        std::optional<size_t> scan_rocblas_tensile_depth(const fs::path& root) {
+            // Prefixed before the existence check as well: an install directory
+            // that is itself past MAX_PATH would otherwise look absent, and
+            // "absent" reads as a pass.
+            const fs::path scan_root = long_path(root);
             std::error_code ec;
-            if (!fs::is_directory(root, ec)) {
-                return 0;
+            if (!fs::is_directory(scan_root, ec)) {
+                return size_t{0};
             }
-            size_t longest = 0;
-            for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec;
+
+            const size_t base = scan_root.native().size();
+            size_t deepest = 0;
+            for (fs::recursive_directory_iterator it(scan_root, ec), end; it != end && !ec;
                  it.increment(ec)) {
                 if (is_rocblas_tensile_file(it->path())) {
-                    longest = std::max(longest, it->path().native().size());
+                    const size_t len = it->path().native().size();
+                    deepest = std::max(deepest, len > base ? len - base : size_t{0});
                 }
             }
             if (ec) {
                 LOG(WARNING, "BackendUtils")
                     << "Could not fully scan " << utils::path_to_utf8(root) << " (" << ec.message()
-                    << "); ROCm path length not verified" << std::endl;
-                return 0;
+                    << "); ROCm path lengths could not be verified" << std::endl;
+                return std::nullopt;
             }
-            return longest;
-        }
-
-        // MSVC's std::filesystem never applies the \\?\ prefix, so remove_all()
-        // cannot delete a tree containing paths past MAX_PATH -- precisely the
-        // tree this is called on. Without the prefix the deep files survive and
-        // the half-deleted install stays on disk.
-        void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
-            ec.clear();
-#ifdef _WIN32
-            fs::path target = fs::absolute(dir, ec);
-            if (ec) {
-                target = dir;
-                ec.clear();
-            }
-            const std::wstring native = target.make_preferred().native();
-            if (native.rfind(L"\\\\?\\", 0) != 0) {
-                target = fs::path(L"\\\\?\\" + native);
-            }
-            fs::remove_all(target, ec);
-#else
-            fs::remove_all(dir, ec);
-#endif
+            return deepest;
         }
 
         std::mutex g_rocblas_measure_mutex;
-        // Verdict per arch|version|layout, including 0 for "could not measure".
-        // Without caching the zero, a tree whose rocBLAS files cannot be found
-        // would be re-walked on every model load and every upscale request.
+        // Depth per arch|version|layout. Only successful scans are cached, so a
+        // transient read failure is retried rather than remembered.
         std::map<std::string, size_t> g_rocblas_measure_cache;
 
         std::string rocblas_measure_key(const std::string& arch, const std::string& version,
@@ -1350,9 +1365,9 @@ namespace lemon::backends {
         return msg;
     }
 
-    size_t BackendUtils::measure_rocblas_max_path(const std::string& arch,
-                                                  const std::string& version,
-                                                  bool wheel_layout) {
+    std::optional<size_t> BackendUtils::measure_rocblas_max_path(const std::string& arch,
+                                                                 const std::string& version,
+                                                                 bool wheel_layout) {
         const std::string key = rocblas_measure_key(arch, version, wheel_layout);
         {
             std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
@@ -1363,12 +1378,16 @@ namespace lemon::backends {
         }
 
         const fs::path root = therock_root(arch, version, wheel_layout);
-        const size_t longest = scan_rocblas_tensile_paths(root);
-        if (longest == 0) {
+        const std::optional<size_t> depth = scan_rocblas_tensile_depth(root);
+        if (!depth.has_value()) {
+            return std::nullopt;
+        }
+        if (*depth == 0) {
             std::error_code ec;
-            if (fs::is_directory(root, ec)) {
-                // Not fatal: rocBLAS finds its own files relative to its module, so inference may well work.
-                // We just cannot vouch for the lengths. CI fails on this condition so the layout gets fixed.
+            if (fs::is_directory(long_path(root), ec)) {
+                // Not fatal: rocBLAS finds its own files relative to its module,
+                // so inference may well work. We just cannot vouch for the
+                // lengths. CI fails on this condition so the layout gets fixed.
                 LOG(WARNING, "BackendUtils")
                     << "ROCm is installed for " << arch << "/" << version
                     << " but no rocBLAS Tensile files were found inside it; its path lengths "
@@ -1377,49 +1396,74 @@ namespace lemon::backends {
         }
 
         std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
-        g_rocblas_measure_cache[key] = longest;
-        return longest;
+        g_rocblas_measure_cache[key] = *depth;
+        return depth;
     }
 
     void BackendUtils::record_rocblas_max_path(const std::string& arch, const std::string& version,
                                                bool wheel_layout) {
-        const size_t longest = measure_rocblas_max_path(arch, version, wheel_layout);
-        if (longest == 0) {
+        const std::optional<size_t> depth = measure_rocblas_max_path(arch, version, wheel_layout);
+        if (!depth.has_value() || *depth == 0) {
             return;
         }
-        std::ofstream f(therock_root(arch, version, wheel_layout) / kRocblasMaxPathFile);
-        f << longest;
+        std::ofstream f(long_path(therock_root(arch, version, wheel_layout) / kRocblasDepthFile));
+        f << *depth;
     }
 
     void BackendUtils::ensure_rocm_tensile_reachable(const std::string& arch,
                                                      const std::string& version,
                                                      bool wheel_layout) {
+#ifdef _WIN32
+        const fs::path root = therock_root(arch, version, wheel_layout);
+
         // Unsynchronised on purpose: measure_rocblas_max_path() holds the lock
         // for the scan, and two threads racing here just write the same value.
-        const fs::path marker = therock_root(arch, version, wheel_layout) / kRocblasMaxPathFile;
-        size_t longest = 0;
-        std::ifstream f(marker);
-        if (!(f >> longest) || longest == 0) {
-            // No marker: an install that predates this check, so measure once and record it rather than walking on every load.
-            longest = measure_rocblas_max_path(arch, version, wheel_layout);
-            if (longest > 0) {
-                std::ofstream out(marker);
-                out << longest;
+        size_t depth = 0;
+        std::ifstream f(long_path(root / kRocblasDepthFile));
+        if (!(f >> depth) || depth == 0) {
+            const std::optional<size_t> measured =
+                measure_rocblas_max_path(arch, version, wheel_layout);
+            if (!measured.has_value()) {
+                // Refusing beats permitting: the one case we cannot read is the
+                // case where a directory is already past MAX_PATH, and letting
+                // it through costs an access violation inside rocBLAS plus the
+                // router evicting every resident model.
+                throw ConfigurationException(
+                    "ROCm's install directory under \"" + resolved_cache_dir("") +
+                    "\" could not be read, so its path lengths could not be verified. This usually"
+                    " means a path there is already past the Windows limit. Point"
+                    " LEMONADE_CACHE_DIR at a shorter path and reinstall the ROCm backend.");
+            }
+            depth = *measured;
+            if (depth > 0) {
+                std::ofstream out(long_path(root / kRocblasDepthFile));
+                out << depth;
             }
         }
 
-        if (longest == 0 || longest <= kMaxPathChars) {
+        if (depth == 0) {
+            return;  // Nothing installed, or rocBLAS is not where we look.
+        }
+
+        // Recomposed from the install directory as it stands now, so moving the
+        // cache re-derives the answer instead of trusting a stale absolute.
+        const size_t longest = root.native().size() + depth;
+        if (longest <= kMaxPathChars) {
             return;
         }
 
-        // Everything below is derived from the install in front of us, so an
-        // upstream layout change reports the real number rather than a stale one.
-        const fs::path root = utils::path_from_utf8(resolved_cache_dir(""));
-        const size_t root_len = root.native().size();
-        const size_t depth = longest > root_len ? longest - root_len : longest;
-        const size_t budget = kMaxPathChars > depth ? kMaxPathChars - depth : 0;
-        throw ConfigurationException(rocm_path_budget_message(utils::path_to_utf8(root), root_len,
-                                                              budget, wheel_layout));
+        const fs::path cache_root = utils::path_from_utf8(resolved_cache_dir(""));
+        const size_t cache_len = cache_root.native().size();
+        const size_t below_cache = longest > cache_len ? longest - cache_len : longest;
+        const size_t budget = kMaxPathChars > below_cache ? kMaxPathChars - below_cache : 0;
+        throw ConfigurationException(rocm_path_budget_message(utils::path_to_utf8(cache_root),
+                                                              cache_len, budget, wheel_layout));
+#else
+        // MAX_PATH is a Windows limit; Linux allows far longer paths.
+        (void)arch;
+        (void)version;
+        (void)wheel_layout;
+#endif
     }
 
     void BackendUtils::install_rocm_runtime(const std::string& arch, const std::string& version,

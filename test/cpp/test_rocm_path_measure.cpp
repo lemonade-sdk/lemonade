@@ -1,21 +1,24 @@
-// Unit tests for the ROCm path-length measurement.
-//
-// rocBLAS access-violates rather than reporting a failed open when one of its
-// Tensile solution files sits past Windows' 259-character limit, so the whole
-// guard rests on the measurement seeing those files. The regression that
-// matters is a status query on an over-long path failing and the entry being
-// skipped, which would under-report exactly when it must not.
+// Tests for the ROCm path-length guard, exercised through the BackendUtils entry points.
 
-#include <algorithm>
+// rocBLAS access-violates rather than reporting a failed open when one of its Tensile solution
+// files sits past Windows' 259-character limit, so the guard has to be right about three things:
+// (a) it must see files whose paths exceed the limit,
+// (b) it must not report a pass when it could not read the tree, and
+// (c) the figure it records must survive the cache directory moving.
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <system_error>
 
 #include <lemon/backends/backend_utils.h>
+#include <lemon/error_types.h>
+#include <lemon/utils/path_utils.h>
 
 namespace fs = std::filesystem;
+using lemon::backends::BackendUtils;
 
 namespace {
 
@@ -30,70 +33,34 @@ void expect(bool cond, const std::string& what) {
     }
 }
 
-// Mirrors scan_rocblas_tensile_paths() in backend_utils.cpp: select by shape
-// (TensileLibrary* under a "rocblas" directory) and walk without stat'ing,
-// because a status query on a path past MAX_PATH fails.
-bool is_rocblas_tensile_file(const fs::path& p) {
-    if (p.filename().string().rfind("TensileLibrary", 0) != 0) {
-        return false;
-    }
-    for (const fs::path& part : p.parent_path()) {
-        if (part == "rocblas") {
-            return true;
-        }
-    }
-    return false;
-}
-
-size_t measure(const fs::path& dir) {
-    std::error_code ec;
-    if (!fs::is_directory(dir, ec)) {
-        return 0;
-    }
-    size_t longest = 0;
-    for (fs::recursive_directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
-        if (is_rocblas_tensile_file(it->path())) {
-            longest = std::max(longest, it->path().native().size());
-        }
-    }
-    return ec ? 0 : longest;
-}
-
-// Mirrors remove_rocm_tree() in backend_utils.cpp. MSVC's std::filesystem does not apply the
-// long-path prefix, so plain remove_all() cannot delete the very trees this code exists to clean up.
-bool remove_tree(const fs::path& dir, bool prefixed, std::error_code& ec) {
-    ec.clear();
+// Fixture scaffolding only -- the product code under test is not reimplemented.
+// Long paths need the Win32 prefix just to be created.
+fs::path with_long_prefix(const fs::path& p) {
 #ifdef _WIN32
-    if (prefixed) {
-        fs::path target = fs::absolute(dir, ec);
-        if (ec) {
-            target = dir;
-            ec.clear();
-        }
-        const std::wstring native = target.make_preferred().native();
-        if (native.rfind(L"\\\\?\\", 0) != 0) {
-            target = fs::path(L"\\\\?\\" + native);
-        }
-        fs::remove_all(target, ec);
-        return !ec;
+    std::error_code ec;
+    fs::path absolute = fs::absolute(p, ec);
+    if (ec) {
+        absolute = p;
     }
+    absolute.make_preferred();
+    const std::wstring native = absolute.native();
+    if (native.rfind(L"\\\\?\\", 0) == 0) {
+        return absolute;
+    }
+    return fs::path(L"\\\\?\\" + native);
 #else
-    (void)prefixed;
+    return p;
 #endif
-    fs::remove_all(dir, ec);
-    return !ec;
 }
 
-bool write_file(const fs::path& p, std::error_code& ec) {
-    fs::create_directories(p.parent_path(), ec);
+bool write_file(const fs::path& p) {
+    std::error_code ec;
+    fs::create_directories(with_long_prefix(p.parent_path()), ec);
     if (ec) {
         return false;
     }
 #ifdef _WIN32
-    // Long paths need the \\?\ prefix to be created at all; the point of the
-    // test is that measurement still sees them afterwards.
-    const std::wstring w = L"\\\\?\\" + p.native();
-    std::ofstream f(w);
+    std::ofstream f(with_long_prefix(p).native());
 #else
     std::ofstream f(p);
 #endif
@@ -104,78 +71,123 @@ bool write_file(const fs::path& p, std::error_code& ec) {
     return true;
 }
 
+// <cache>/bin/therock/<arch>-<version>/bin/rocblas/library/gfx1151/
+fs::path rocblas_dir(const fs::path& cache, const std::string& arch, const std::string& version) {
+    return cache / "bin" / "therock" / (arch + "-" + version) / "bin" / "rocblas" / "library" /
+           "gfx1151";
+}
+
+bool refuses(const std::string& arch, const std::string& version, std::string& msg) {
+    try {
+        BackendUtils::ensure_rocm_tensile_reachable(arch, version, /*wheel_layout=*/false);
+    } catch (const lemon::ConfigurationException& e) {
+        msg = e.what();
+        return true;
+    }
+    msg.clear();
+    return false;
+}
+
 }  // namespace
 
 int main() {
     std::error_code ec;
-    const fs::path base = fs::temp_directory_path(ec) / "lemon_rocm_path_measure";
-    fs::remove_all(base, ec);
+    const fs::path base = fs::temp_directory_path(ec) / "lemon_rocm_guard";
+    fs::remove_all(with_long_prefix(base), ec);
 
-    // Missing directory measures as 0 rather than throwing.
-    expect(measure(base / "does-not-exist") == 0, "missing directory measures 0");
+    const std::string arch = "gfx1151";
+    const std::string tensile = "TensileLibrary_Type_fallback_gfx1151.dat";
 
-    // Only rocBLAS Tensile files count.
-    const fs::path roc = base / "tree" / "bin" / "rocblas" / "library" / "gfx1151";
-    const fs::path hip = base / "tree" / "bin" / "hipblaslt" / "library" / "gfx1151";
-    const fs::path roc_file = roc / "TensileLibrary_Type_fallback_gfx1151.dat";
-    const fs::path hip_file = hip / "TensileLibrary_much_much_longer_name_gfx1151.dat";
-    const fs::path other = roc / "README.txt";
-    if (!write_file(roc_file, ec) || !write_file(hip_file, ec) || !write_file(other, ec)) {
-        std::cerr << "[SKIP] could not create fixture tree: " << ec.message() << std::endl;
-        fs::remove_all(base, ec);
-        return 0;
+    // Nothing installed: nothing to measure, and nothing to refuse.
+    {
+        const fs::path cache = base / "empty";
+        fs::create_directories(cache, ec);
+        lemon::utils::set_cache_dir(cache.string());
+        const auto depth = BackendUtils::measure_rocblas_max_path(arch, "0.0.1", false);
+        expect(depth.has_value() && *depth == 0, "no ROCm install measures as 0");
+        std::string msg;
+        expect(!refuses(arch, "0.0.1", msg), "no ROCm install does not refuse a load");
     }
-    expect(hip_file.native().size() > roc_file.native().size(),
-           "fixture: the hipBLASLt path is the longer of the two");
-    expect(measure(base / "tree") == roc_file.native().size(),
-           "measures the rocBLAS file and ignores hipBLASLt and non-Tensile files");
+
+    // A short cache dir with a normal tree: measured, and well under the limit.
+    size_t short_depth = 0;
+    {
+        const fs::path cache = base / "s";
+        // hipBLASLt ships TensileLibrary* files too, deeper, and tolerates an
+        // unopenable one. Including it would refuse cache dirs rocBLAS is fine
+        // with, so it must not drive the measurement.
+        const fs::path hip = cache / "bin" / "therock" / (arch + "-1.0.0") / "bin" / "hipblaslt" /
+                             "library" / "gfx1151" / "TensileLibrary_a_much_much_longer_name.dat";
+        if (!write_file(rocblas_dir(cache, arch, "1.0.0") / tensile) || !write_file(hip)) {
+            std::cerr << "[SKIP] could not build fixture" << std::endl;
+            return 0;
+        }
+        lemon::utils::set_cache_dir(cache.string());
+        const auto depth = BackendUtils::measure_rocblas_max_path(arch, "1.0.0", false);
+        expect(depth.has_value() && *depth > 0, "a normal tree is measured");
+        short_depth = depth.value_or(0);
+
+        std::string msg;
+        expect(!refuses(arch, "1.0.0", msg), "a short cache dir is accepted");
+    }
+
+    // The same tree under a deliberately long cache dir. The depth must be
+    // identical -- that is what makes the recorded figure survive the cache
+    // directory moving -- and the load must now be refused.
+    {
+        const fs::path cache = base / std::string(180, 'd');
+        if (!write_file(rocblas_dir(cache, arch, "2.0.0") / tensile)) {
+            std::cerr << "[SKIP] could not build long fixture" << std::endl;
+        } else {
+            lemon::utils::set_cache_dir(cache.string());
+            const auto depth = BackendUtils::measure_rocblas_max_path(arch, "2.0.0", false);
+            expect(depth.has_value() && *depth == short_depth,
+                   "depth is relative to the install dir, so it is unchanged under a long "
+                   "cache dir");
+
+            std::string msg;
+            const bool refused = refuses(arch, "2.0.0", msg);
+#ifdef _WIN32
+            expect(refused, "an over-long cache dir is refused");
+            expect(msg.find("0 or fewer") == std::string::npos,
+                   "the refusal quotes a real limit, not a clamped zero");
+#else
+            expect(!refused, "MAX_PATH is not enforced off Windows");
+#endif
+        }
+    }
 
 #ifdef _WIN32
-    // The regression this test exists for: an entry whose full path exceeds MAX_PATH must still be measured.
-    // Build one by padding the filename, which is how the real failure looks.
-    // The directory stays well under the limit, only the Tensile filenames push the total past 259.
-    const fs::path long_dir = base / "overlong" / "rocblas" / "library";
-    fs::create_directories(long_dir, ec);
-    const size_t want = 275;
-    const std::string stem = "TensileLibrary_";
-    const size_t pad = want - (long_dir.native().size() + 1 + stem.size() + 4);
-    const fs::path overlong = long_dir / (stem + std::string(pad, 'n') + ".dat");
-    if (write_file(overlong, ec) && overlong.native().size() == want) {
-        const size_t got = measure(base / "overlong");
-        expect(got == want,
-               "path past MAX_PATH is measured, not skipped (got " + std::to_string(got) +
-                   ", wanted " + std::to_string(want) + ")");
-        expect(got > 259, "the over-long path is correctly seen as a violation");
+    // A directory inside the tree is itself past MAX_PATH. Without the Win32
+    // long-path prefix the walk aborts here, and reporting that as 0 would be
+    // read as a pass -- this case must never be permitted.
+    {
+        const fs::path cache = base / "deep";
+        fs::path dir = rocblas_dir(cache, arch, "3.0.0");
+        while (dir.native().size() < 300) {
+            dir /= std::string(40, 'n');
+        }
+        if (!write_file(dir / tensile)) {
+            std::cerr << "[SKIP] filesystem refused a >260 char directory" << std::endl;
+        } else {
+            lemon::utils::set_cache_dir(cache.string());
+            const auto depth = BackendUtils::measure_rocblas_max_path(arch, "3.0.0", false);
+            expect(depth.has_value(), "a tree containing a directory past MAX_PATH is still read");
+            expect(depth.value_or(0) > 219, "the over-long entry is measured, not skipped");
 
-        // Why the walk must not stat: a status query on this path fails, so a
-        // stat-gated loop would skip the entry and under-report.
-        std::error_code stat_ec;
-        const bool is_file = fs::is_regular_file(overlong, stat_ec);
-        std::cout << "       [diag] is_regular_file -> " << is_file << " ec=" << stat_ec.value()
-                  << " (" << stat_ec.message() << ")" << std::endl;
-
-        // Deleting the tree needs the long-path prefix for the same reason.
-        std::error_code plain_ec;
-        remove_tree(long_dir, /*prefixed=*/false, plain_ec);
-        const bool survived = fs::exists(long_dir, plain_ec);
-        expect(survived, "plain remove_all cannot delete a tree with a path past MAX_PATH");
-
-        std::error_code pfx_ec;
-        remove_tree(long_dir, /*prefixed=*/true, pfx_ec);
-        expect(!fs::exists(long_dir, pfx_ec),
-               "prefixed remove_all deletes it");
-    } else {
-        std::cout << "[SKIP] filesystem refused a >259 char path; cannot test the regression"
-                  << std::endl;
+            std::string msg;
+            expect(refuses(arch, "3.0.0", msg),
+                   "a tree past MAX_PATH is refused, never silently passed");
+        }
     }
 #endif
 
-    fs::remove_all(base, ec);
+    fs::remove_all(with_long_prefix(base), ec);
 
     if (g_failures > 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;
     }
-    std::cout << "All ROCm path measurement tests passed" << std::endl;
+    std::cout << "All ROCm path guard tests passed" << std::endl;
     return 0;
 }

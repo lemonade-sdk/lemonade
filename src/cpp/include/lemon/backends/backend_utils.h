@@ -147,9 +147,9 @@ namespace lemon::backends {
          *  0 when it cannot be located or read. rocBLAS resolves its Tensile
          *  solutions relative to its own binary, so this anchors on that binary
          *  rather than on a pre-defined layout. */
-        static size_t measure_rocblas_max_path(const std::string& arch,
-                                               const std::string& version,
-                                               bool wheel_layout);
+        static std::optional<size_t> measure_rocblas_max_path(const std::string& arch,
+                                                              const std::string& version,
+                                                              bool wheel_layout);
 
         /** Measure and record the longest rocBLAS path next to the install's
          *  version.txt, so later checks are one file read instead of a walk. */
