@@ -124,8 +124,8 @@ An unknown model answers `404` with `model '<name>' not found, try pulling it fi
       "eval_count": 14,
       "total_duration": 0,
       "load_duration": 0,
-      "prompt_eval_duration": 9895000,
-      "eval_duration": 39445000
+      "prompt_eval_duration": 10670000,
+      "eval_duration": 40000000
     }
     ```
 
@@ -269,7 +269,7 @@ An unknown model answers `404` with `model '<name>' not found, try pulling it fi
     {
       "model": "Qwen3-0.6B-GGUF",
       "created_at": "2024-01-01T00:00:00Z",
-      "response": " Paris, and the capital of France is also the capital of the United States,",
+      "response": " Paris, right? Yes, that's correct. But there are other countries with",
       "done": true,
       "done_reason": "stop",
       "context": [],
@@ -299,8 +299,8 @@ An unknown model answers `404` with `model '<name>' not found, try pulling it fi
 
     ```text
     {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ".", "done": false}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Which", "done": false}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ",", "done": false}
+    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " which", "done": false}
     ...
     {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
     {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
@@ -901,6 +901,54 @@ This endpoint does not take any parameters.
 ```json
 {
   "models": [
+    {
+      "name": "nomic-embed-text-v1-GGUF:latest",
+      "model": "nomic-embed-text-v1-GGUF:latest",
+      "size": 0,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp",
+        "families": ["llamacpp"],
+        "parameter_size": "",
+        "quantization_level": "Q4_K_S"
+      },
+      "expires_at": "2099-01-01T00:00:00Z",
+      "size_vram": 0
+    },
+    {
+      "name": "Flux-2-Klein-4B:latest",
+      "model": "Flux-2-Klein-4B:latest",
+      "size": 0,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "sd-cpp",
+        "families": ["sd-cpp"],
+        "parameter_size": "4B",
+        "quantization_level": ""
+      },
+      "expires_at": "2099-01-01T00:00:00Z",
+      "size_vram": 0
+    },
+    {
+      "name": "bge-reranker-v2-m3-GGUF:latest",
+      "model": "bge-reranker-v2-m3-GGUF:latest",
+      "size": 0,
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llamacpp",
+        "families": ["llamacpp"],
+        "parameter_size": "",
+        "quantization_level": "Q8_0"
+      },
+      "expires_at": "2099-01-01T00:00:00Z",
+      "size_vram": 0
+    },
     {
       "name": "Qwen3-0.6B-GGUF:latest",
       "model": "Qwen3-0.6B-GGUF:latest",

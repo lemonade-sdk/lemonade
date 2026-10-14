@@ -63,8 +63,9 @@ public:
         try {
             SystemMetrics system_metrics;
             system_metrics.cpu_percent = ctx_.metrics->get_cpu_usage();
-            system_metrics.gpu_percent = ctx_.metrics->get_gpu_usage();
-            system_metrics.vram_gb = ctx_.metrics->get_vram_usage_gb();
+            const SystemGpuMetrics gpu_metrics = ctx_.metrics->get_system_gpu_metrics();
+            system_metrics.gpu_percent = gpu_metrics.gpu_percent;
+            system_metrics.vram_gb = gpu_metrics.vram_used_gb;
             system_metrics.npu_percent = ctx_.metrics->get_npu_utilization();
 
             res.set_content(build_prometheus_metrics(*ctx_.router, system_metrics),

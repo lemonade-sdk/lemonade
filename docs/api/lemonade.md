@@ -515,8 +515,16 @@ see [Share a collection](../guide/configuration/custom-models.md#share-a-collect
     `200`
 
     ```text
-    event: error
-    data: {"error": "Hugging Face API returned status 500 for unsloth/Qwen3-0.6B-GGUF"}
+    event: progress
+    data: {"file": "Qwen3-0.6B-Q4_0.gguf", "file_index": 1, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 382156480, "total_download_size": 382157232, "bytes_previously_downloaded": 0, "percent": 0}
+    event: progress
+    data: {"file": "Qwen3-0.6B-Q4_0.gguf", "file_index": 1, "total_files": 2, "bytes_downloaded": 382156480, "bytes_total": 382156480, "total_download_size": 382157232, "bytes_previously_downloaded": 382156480, "percent": 100}
+    event: progress
+    data: {"file": "config.json", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 752, "total_download_size": 382157232, "bytes_previously_downloaded": 0, "percent": 0}
+    event: progress
+    data: {"file": "config.json", "file_index": 2, "total_files": 2, "bytes_downloaded": 752, "bytes_total": 752, "total_download_size": 382157232, "bytes_previously_downloaded": 752, "percent": 100}
+    event: complete
+    data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
     ```
 
     **Field Descriptions:**
@@ -2573,34 +2581,81 @@ This endpoint does not take any parameters.
 ```json
 {
   "status": "ok",
-  "version": "2026.43.0~1683.e377af06",
+  "version": "2026.43.0~1688.60be9277",
   "model_loaded": "Qwen3-0.6B-GGUF",
   "update_check_done": true,
   "all_models_loaded": [
     {
-      "model_name": "ThinkSound-SFX",
-      "checkpoint": "ilintar/thinksound-gguf",
-      "last_use": 2578826,
-      "type": "audio-generation",
+      "model_name": "nomic-embed-text-v1-GGUF",
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "last_use": 18993468,
+      "type": "embedding",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
-      "backend_url": "http://127.0.0.1:8001/v1",
-      "pid": 41641,
+      "backend_url": "http://127.0.0.1:8003/v1",
+      "pid": 94573,
       "launch_command": [
-        "~/.cache/lemonade/bin/thinksound/vulkan/ts-server",
-        "--dir",
-        "~/.cache/huggingface/hub/models--ilintar--thinksound-gguf/snapshots/312db8bebb99aec28fb02022c8cdb635d94a4a42",
-        "--host",
-        "127.0.0.1",
+        "~/.cache/lemonade/bin/llamacpp/vulkan/llama-server",
+        "-m",
+        "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/snapshots/90c80ac5c2a0d13de9a36cf1dec39f34acee54a8/nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size",
+        "8192",
         "--port",
-        "8001"
+        "8003",
+        "--jinja",
+        "--metrics",
+        "--embeddings",
+        "--parallel",
+        "1"
       ],
-      "recipe": "thinksound",
-      "recipe_options": {"ctx_size": 32768},
+      "recipe": "llamacpp",
+      "recipe_options": {"ctx_size": 8192, "llamacpp_args": "--parallel 1"},
       "residency_class": "standard",
-      "slot_pool": "standard/audio-generation",
+      "slot_pool": "standard/embedding",
+      "status": "ready",
+      "backend_alive": true,
+      "backend_health": "ready",
+      "loaded": true,
+      "watchdog_reset": false,
+      "max_context_window": 2048
+    },
+    {
+      "model_name": "Flux-2-Klein-4B",
+      "checkpoint": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
+      "last_use": 19022316,
+      "type": "image",
+      "device": "gpu",
+      "pinned": false,
+      "is_busy": false,
+      "is_streaming": false,
+      "backend_url": "http://127.0.0.1:8004/v1",
+      "pid": 94787,
+      "launch_command": [
+        "~/.cache/lemonade/bin/sd-cpp/vulkan/sd-server",
+        "--listen-port",
+        "8004",
+        "--diffusion-model",
+        "~/.cache/huggingface/hub/models--black-forest-labs--FLUX.2-klein-4B/snapshots/e7b7dc27f91deacad38e78976d1f2b499d76a294/flux-2-klein-4b.safetensors",
+        "--llm",
+        "~/.cache/huggingface/hub/models--Comfy-Org--vae-text-encorder-for-flux-klein-4b/snapshots/a9e4ca87c16db4c4e1a16406a9ddb300ab0ae246/split_files/text_encoders/qwen_3_4b.safetensors",
+        "--vae",
+        "~/.cache/huggingface/hub/models--Comfy-Org--vae-text-encorder-for-flux-klein-4b/snapshots/a9e4ca87c16db4c4e1a16406a9ddb300ab0ae246/split_files/vae/flux2-vae.safetensors",
+        "--vae-tiling",
+        "--diffusion-fa"
+      ],
+      "recipe": "sd-cpp",
+      "recipe_options": {
+        "cfg_scale": 1.0,
+        "ctx_size": 32768,
+        "height": 1024,
+        "sdcpp_args": "",
+        "steps": 4,
+        "width": 1024
+      },
+      "residency_class": "standard",
+      "slot_pool": "standard/image",
       "status": "ready",
       "backend_alive": true,
       "backend_health": "ready",
@@ -2610,15 +2665,15 @@ This endpoint does not take any parameters.
     {
       "model_name": "Qwen3-0.6B-GGUF",
       "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "last_use": 2597470,
+      "last_use": 19053963,
       "type": "llm",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
-      "backend_url": "http://127.0.0.1:8002/v1",
-      "pid": 41942,
-      "launch_command": ["~/.cache/lemonade/bin/llamacpp/vulkan/llama-server", "-m", "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "--ctx-size", "40960", "--port", "8002", "--jinja", ... 13 more],
+      "backend_url": "http://127.0.0.1:8005/v1",
+      "pid": 95898,
+      "launch_command": ["~/.cache/lemonade/bin/llamacpp/vulkan/llama-server", "-m", "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "--ctx-size", "40960", "--port", "8005", "--jinja", ... 13 more],
       "recipe": "llamacpp",
       "recipe_options": {
         "ctx_size": 40960,
@@ -2911,17 +2966,17 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.0032930000000000004,
-  "tokens_per_second": 339.58377791592056,
+  "time_to_first_token": 0.003227,
+  "tokens_per_second": 336.57753121020744,
   "input_tokens": 1,
-  "output_tokens": 184,
+  "output_tokens": 264,
   "prompt_tokens": 15,
   "cache_tokens": 14,
-  "request_count_total": 2,
-  "input_tokens_total": 16,
-  "output_tokens_total": 363,
-  "prompt_tokens_total": 30,
-  "cache_tokens_total": 14,
+  "request_count_total": 8,
+  "input_tokens_total": 83,
+  "output_tokens_total": 1300,
+  "prompt_tokens_total": 144,
+  "cache_tokens_total": 75,
   "routing_decisions_total": 0,
   "routing_switches_total": 0
 }
@@ -2974,10 +3029,22 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "cpu_percent": 7.5416776925112465,
-  "memory_gb": 56.4,
-  "gpu_percent": 10.0,
-  "vram_gb": 33.63154220581055,
+  "cpu_percent": 0.0,
+  "memory_gb": 33.0,
+  "gpu_percent": 71.0,
+  "vram_gb": 21.594070434570312,
+  "primary_gpu_id": "amd:0000:c5:00.0",
+  "gpus": [
+    {
+      "id": "amd:0000:c5:00.0",
+      "vendor": "amd",
+      "name": "Radeon 8060S Graphics",
+      "memory_type": "shared",
+      "gpu_percent": 71.0,
+      "memory_total_gb": 61.845550537109375,
+      "memory_used_gb": 21.594070434570312
+    }
+  ],
   "npu_percent": 0.0
 }
 ```
@@ -2988,10 +3055,53 @@ This endpoint does not take any parameters.
 - `memory_gb` - System RAM currently in use, in GiB
 - `gpu_percent` - GPU utilization percentage, or `null` when unavailable
 - `vram_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
+- `primary_gpu_id` - `id` of the GPU that `gpu_percent` and `vram_gb` describe, or `null` when no GPU is enumerated
+- `gpus` - Every enumerated host GPU, primary first
+  - `id` - Stable device ID, e.g. `amd:0000:c1:00.0`
+  - `vendor` - `amd` or `nvidia`
+  - `name` - Device name
+  - `memory_type` - `dedicated`, `shared`, or `unknown`
+  - `gpu_percent` - GPU utilization percentage, or `null` when unavailable
+  - `memory_total_gb` - GPU-accessible memory capacity, in GiB, or `null` when unavailable
+  - `memory_used_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
 - `npu_percent` - NPU utilization percentage, or `null` when unavailable
 <!-- END GENERATED: lemonade.system_stats -->
 
 GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
+
+The `primary_gpu_id` and `gpus` fields describe the individual host GPUs. The legacy
+`gpu_percent` and `vram_gb` values now come from the same primary device: the GPU
+with the largest known GPU-accessible memory capacity (ties broken by stable ID).
+Selection does not depend on current GPU utilization. Device IDs remain stable
+across ordinary telemetry failures; unavailable live measurements become `null`.
+The primary GPU for this display is **not** necessarily the GPU targeted by a
+model recipe. `vram_gb` retains its historical name but represents GPU memory
+usage, which can be shared system memory for AMD APUs.
+
+Example `gpus` entry (all measurement fields can be `null`):
+
+```json
+{
+  "primary_gpu_id": "amd:0000:c1:00.0",
+  "gpus": [
+    {
+      "id": "amd:0000:c1:00.0",
+      "vendor": "amd",
+      "name": "AMD GPU (card0)",
+      "memory_type": "shared",
+      "gpu_percent": 25.0,
+      "memory_total_gb": 120.0,
+      "memory_used_gb": 18.0
+    }
+  ]
+}
+```
+
+On Linux, AMD and NVIDIA devices are enumerated separately. On Windows this
+change provides NVIDIA NVML telemetry; other vendors still require their own
+platform implementation. On macOS the new per-GPU list is empty.
+NVML alone does not establish whether memory is dedicated or shared, so
+NVIDIA devices report `memory_type` as `unknown`.
 
 <!-- BEGIN GENERATED: lemonade.system_info -->
 ## `GET /v1/system-info`

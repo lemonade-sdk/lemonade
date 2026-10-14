@@ -1,5 +1,5 @@
 #include "lemon/server/api_route.h"
-#include "lemon/system_metrics_platform.h"
+#include "lemon/server/system_stats.h"
 
 namespace lemon {
 namespace {
@@ -29,12 +29,30 @@ public:
         response.format = ResponseFormat::Json;
         response.schema = ordered_json::parse(R"({
             "type": "object",
-            "required": ["cpu_percent", "memory_gb", "gpu_percent", "vram_gb", "npu_percent"],
+            "required": ["cpu_percent", "memory_gb", "gpu_percent", "vram_gb", "primary_gpu_id", "gpus", "npu_percent"],
             "properties": {
                 "cpu_percent": {"type": ["number", "null"], "description": "System CPU utilization percentage, or `null` when unavailable"},
                 "memory_gb": {"type": "number", "description": "System RAM currently in use, in GiB"},
                 "gpu_percent": {"type": ["number", "null"], "description": "GPU utilization percentage, or `null` when unavailable"},
                 "vram_gb": {"type": ["number", "null"], "description": "GPU memory currently in use, in GiB, or `null` when unavailable"},
+                "primary_gpu_id": {"type": ["string", "null"], "description": "`id` of the GPU that `gpu_percent` and `vram_gb` describe, or `null` when no GPU is enumerated"},
+                "gpus": {
+                    "type": "array",
+                    "description": "Every enumerated host GPU, primary first",
+                    "items": {
+                        "type": "object",
+                        "required": ["id", "vendor", "name", "memory_type", "gpu_percent", "memory_total_gb", "memory_used_gb"],
+                        "properties": {
+                            "id": {"type": "string", "description": "Stable device ID, e.g. `amd:0000:c1:00.0`"},
+                            "vendor": {"type": "string", "description": "`amd` or `nvidia`"},
+                            "name": {"type": "string", "description": "Device name"},
+                            "memory_type": {"enum": ["dedicated", "shared", "unknown"], "description": "`dedicated`, `shared`, or `unknown`"},
+                            "gpu_percent": {"type": ["number", "null"], "description": "GPU utilization percentage, or `null` when unavailable"},
+                            "memory_total_gb": {"type": ["number", "null"], "description": "GPU-accessible memory capacity, in GiB, or `null` when unavailable"},
+                            "memory_used_gb": {"type": ["number", "null"], "description": "GPU memory currently in use, in GiB, or `null` when unavailable"}
+                        }
+                    }
+                },
                 "npu_percent": {"type": ["number", "null"], "description": "NPU utilization percentage, or `null` when unavailable"}
             }
         })");
@@ -50,19 +68,7 @@ public:
             return;
         }
 
-        SystemMetricsPlatform& metrics = *ctx_.metrics;
-        json stats;
-        double cpu_percent = metrics.get_cpu_usage();
-        stats["cpu_percent"] = (cpu_percent >= 0) ? json(cpu_percent) : json();
-        stats["memory_gb"] = metrics.get_memory_usage_gb();
-        double gpu_percent = metrics.get_gpu_usage();
-        stats["gpu_percent"] = (gpu_percent >= 0) ? json(gpu_percent) : json();
-        double vram_gb = metrics.get_vram_usage_gb();
-        stats["vram_gb"] = (vram_gb >= 0) ? json(vram_gb) : json();
-        double npu_percent = metrics.get_npu_utilization();
-        stats["npu_percent"] = (npu_percent >= 0) ? json(npu_percent) : json();
-
-        res.set_content(stats.dump(), "application/json");
+        res.set_content(system_stats_json(*ctx_.metrics).dump(), "application/json");
     }
 };
 

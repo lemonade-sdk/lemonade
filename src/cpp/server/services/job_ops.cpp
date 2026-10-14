@@ -12,6 +12,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/model_json.h"
+#include "lemon/server/system_stats.h"
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
 
@@ -39,20 +40,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         return lemon::jobs::json::parse(SystemInfoCache::get_system_info_with_cache().dump());
     };
     providers.system_stats = [metrics] {
-        lemon::jobs::json stats;
-        const double cpu_percent = metrics->get_cpu_usage();
-        stats["cpu_percent"] =
-            cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
-        stats["memory_gb"] = metrics->get_memory_usage_gb();
-        const double gpu_percent = metrics->get_gpu_usage();
-        stats["gpu_percent"] =
-            gpu_percent >= 0 ? lemon::jobs::json(gpu_percent) : lemon::jobs::json();
-        const double vram_gb = metrics->get_vram_usage_gb();
-        stats["vram_gb"] = vram_gb >= 0 ? lemon::jobs::json(vram_gb) : lemon::jobs::json();
-        const double npu_percent = metrics->get_npu_utilization();
-        stats["npu_percent"] =
-            npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
-        return stats;
+        return lemon::jobs::json::parse(system_stats_json(*metrics).dump());
     };
     providers.models_list = [model_manager, model_json] {
         nlohmann::json data = nlohmann::json::array();
