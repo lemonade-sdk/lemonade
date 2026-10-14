@@ -32,8 +32,8 @@ public:
             "running, the server keeps the job visible and treats the request as a cancel request "
             "until the worker stops. |",
             "A `pause` or `cancel` for a job that already finished leaves it as it is.",
-            "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. A "
-            "`pause` or `cancel` for a job that is not listed answers `404`.",
+            "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action for "
+            "an existing job. Any action but `remove` for an `id` with no job answers `404`.",
             "`pause` and `cancel` answer the job's latest snapshot, as does `remove` for a running "
             "job. Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
             "the job was already gone.",

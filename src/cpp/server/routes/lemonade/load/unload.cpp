@@ -22,7 +22,8 @@ public:
         s.description =
             "Unloads a model from memory, freeing it while `lemond` keeps running.";
         s.notes = {
-            "An unparsable body also unloads every model. A model that is not loaded answers `404`.",
+            "An unparsable body also unloads every model. A model that is not loaded answers `404`, and so does an omni collection, whose "
+            "components are unloaded by their own names.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

@@ -62,11 +62,11 @@ public:
             "required": ["modelfile", "parameters", "template", "details", "capabilities", "model_info"],
             "properties": {
                 "modelfile": {"type": "string", "description": "A `FROM` line naming the checkpoint."},
-                "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size."},
+                "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time."},
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
-                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label."},
-                "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always `0`."}
+                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels."},
+                "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`."}
             }
         })");
         response.schema["properties"]["details"] = ollama_details_schema();

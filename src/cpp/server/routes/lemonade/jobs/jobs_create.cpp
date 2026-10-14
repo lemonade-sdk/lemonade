@@ -23,23 +23,28 @@ public:
         s.description =
             "Creates a job: a sequence of server operations that runs in the background, passing "
             "data between steps and branching on results. A job survives client disconnects and "
-            "server restarts, and can be paused, interrupted, resumed, read and deleted.";
+            "server restarts (a restart leaves an active job interrupted), and can be paused, "
+            "interrupted, resumed, read and deleted.";
         s.notes = {
-            "An invalid step graph answers `400` at creation. While the job store holds 50 jobs "
-            "that are all still active or resumable, a new job answers `429` until one is deleted "
-            "or finishes.",
-            "Exclusive ops (`load`, `unload`, `chat`) hold a Router slot, so normal traffic queues "
-            "behind a running job.",
+            "An invalid step graph answers `400` at creation. The job store holds 50 jobs: a new "
+            "job evicts the oldest finished one, and while all 50 are still active or resumable, "
+            "a new job answers `429` until one is deleted or finishes.",
+            "A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot "
+            "for as long as it runs, so normal traffic queues behind it.",
             "[`docs/dev/job-system.md`](../dev/job-system.md) specifies the step schema, op set and "
             "lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) "
             "the `when`/`branch` expression grammar.",
         };
         s.args = {
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available, "Display name."},
+            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Display name. Defaults to `\"\"`."},
             {"steps", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "The steps, in order; see [Recipe: steps](../dev/job-system.md#recipe-steps)."},
+             "The steps, in order, at least one; see "
+             "[Recipe: steps](../dev/job-system.md#recipe-steps). Required unless `definition` "
+             "holds them."},
             {"definition", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "Alternative to `steps`: an object whose `steps` holds the steps."},
+             "Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over "
+             "`steps`."},
             {"inputs", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "Values the steps read as `context.inputs`."},
         };

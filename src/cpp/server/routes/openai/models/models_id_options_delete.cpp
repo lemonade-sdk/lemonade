@@ -28,6 +28,9 @@ public:
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
         };
+        s.notes = {
+            "An unknown model answers `404` with `code` `model_not_found`.",
+        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

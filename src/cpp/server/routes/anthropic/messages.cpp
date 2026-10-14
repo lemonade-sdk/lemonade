@@ -789,14 +789,18 @@ public:
             "Generates the next assistant message for a conversation in the Anthropic Messages "
             "format.";
         s.notes = {
-            "Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields "
-            "it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` "
-            "header (joined with ` | `) and, on a non-streaming response, in a `warnings` array. A "
+            "Lemonade runs the request as an OpenAI chat completion and converts both ways. Some "
+            "values it cannot convert, such as an unsupported content block type or `metadata`, "
+            "are ignored and reported in the `X-Lemonade-Warning` header (joined with ` | `) and "
+            "in a `warnings` array. Unknown fields are ignored "
+            "without a warning. A "
             "cloud provider registered with `--wire-format anthropic` is relayed unconverted, so "
             "nothing is dropped; see [Cloud "
             "Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
             "Errors use Anthropic's shape, `{\"type\": \"error\", \"error\": {\"type\", "
-            "\"message\"}}`. An unknown model answers `404` with a `not_found_error`.",
+            "\"message\"}}`. A model that fails to load, whether unknown or not, answers `404` "
+            "with a `not_found_error`, except a load blocked by a `collection.router` residency "
+            "constraint, which answers `409`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -871,7 +875,7 @@ public:
                         "output_tokens": {"type": "integer", "description": "Generated tokens."}
                     }
                 },
-                "warnings": {"type": "array", "items": {"type": "string"}, "description": "Fields Lemonade ignored while converting."}
+                "warnings": {"type": "array", "items": {"type": "string"}, "description": "What Lemonade ignored or changed while converting; present only when there is something to report."}
             }
         })");
 
@@ -886,7 +890,8 @@ public:
                 "index": {"type": "integer", "description": "In `content_block_start`, `content_block_delta` and `content_block_stop`: the block's position in the message's `content`."},
                 "content_block": {"type": "object", "description": "In `content_block_start`: the block, with empty `text` or `input`."},
                 "delta": {"type": "object", "description": "In `content_block_delta`: the block's next `text_delta` text or `input_json_delta` partial JSON. In `message_delta`: the `stop_reason` and `stop_sequence`."},
-                "usage": {"type": "object", "description": "In `message_delta`: token counts."}
+                "usage": {"type": "object", "description": "In `message_delta`: token counts. Both are `0` when the backend's stream carries no usage, as with llama.cpp."},
+                "warnings": {"type": "array", "items": {"type": "string"}, "description": "In `message_delta`: what Lemonade ignored while converting; present only when there is something to report."}
             }
         })");
 

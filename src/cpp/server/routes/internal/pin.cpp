@@ -33,7 +33,7 @@ public:
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Loaded model to pin or unpin. `model` is accepted as an alias."},
+             "Loaded model to pin or unpin. `model` is accepted in its place and wins when both are sent."},
             {"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, true, Support::Available,
              "`true` pins the model; `false` unpins it."},
         };

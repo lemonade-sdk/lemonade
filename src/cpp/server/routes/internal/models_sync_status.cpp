@@ -25,7 +25,7 @@ public:
             "[`POST /internal/models/sync`](#post-internalmodelssync).";
         s.notes = {
             "A `sync_id` that is neither running nor recorded answers `200` with "
-            "`status: \"not_found\"`.",
+            "`status: \"not_found\"`. A `sync_id` that is not a number answers `400`.",
         };
         s.args = {
             {"sync_id", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,

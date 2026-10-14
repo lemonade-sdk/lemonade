@@ -426,7 +426,7 @@ nlohmann::ordered_json DownloadManager::job_schema() {
 nlohmann::ordered_json DownloadManager::event_schema() {
     return nlohmann::ordered_json::parse(R"({
         "type": "object",
-        "description": "progress events report one file; the complete event follows the last one, and an error event replaces it on failure.",
+        "description": "A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.",
         "properties": {
             "file": {"type": "string", "description": "The file downloading now."},
             "file_index": {"type": "integer", "description": "Its position among the download's files, from `1`."},

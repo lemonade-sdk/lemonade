@@ -23,8 +23,9 @@ public:
             "pressure eviction without filling a GPU.";
         s.notes = {
             "Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above "
-            "`auto_evict_threshold_pct` runs pressure eviction, `-1` runs only the idle-timeout "
-            "checks, and any other value does nothing.",
+            "`auto_evict_threshold_pct` runs the idle-timeout checks and then unloads at most one "
+            "model for pressure, `-1` runs only the idle-timeout checks, and any other value does "
+            "nothing.",
             "The answer comes after the evaluation finishes, so a test can check the outcome "
             "right away. While an exclusive job session is active no evaluation runs, and the "
             "answer is still `200`.",

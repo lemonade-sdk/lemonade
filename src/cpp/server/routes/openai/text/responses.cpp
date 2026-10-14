@@ -40,17 +40,20 @@ ordered_json response_schema() {
 }
 
 ordered_json response_event_schema() {
-    return ordered_json::parse(R"({
+    auto schema = ordered_json::parse(R"({
         "type": "object",
         "required": ["type"],
         "properties": {
             "type": {"type": "string", "description": "Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)."},
-            "response": {"type": "object", "description": "`response.created` and `response.completed` only: the response so far."},
+            "response": {"type": "object", "description": "Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far."},
             "item": {"type": "object", "description": "Output item events, such as `response.output_item.added`, only: the output item."},
-            "delta": {"type": "string", "description": "`response.output_text.delta` only: the next text."},
+            "item_id": {"type": "string", "description": "Delta events only: the `id` of the output item the text belongs to."},
+            "delta": {"type": "string", "description": "Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text."},
             "timings": {"type": "object", "description": "`response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
+    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
+    return schema;
 }
 
 class ResponsesRoute : public ModelRoute {
@@ -65,11 +68,17 @@ public:
         s.summary = "Generate a response in OpenAI's Responses format";
         s.modality = "prompt/messages -> event";
         s.description =
-            "Generates a model response to an input, in OpenAI's Responses format, loading the "
-            "model on first use.";
+            "Generates a model response to an input, in OpenAI's Responses format, downloading and "
+            "loading the model if it is not loaded.";
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
+            "A `400` answers a missing `model`, or a model whose backend has no Responses API, "
+            "such as a FastFlowLM, cloud or non-LLM model. An unknown model, or one not available "
+            "on this system, answers `404`; a load blocked by pinned models or a routing residency "
+            "conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A "
+            "backend error answers with the backend's status, except that once a stream has "
+            "started it arrives as a `data: {\"error\": ...}` event in the `200` stream.",
         };
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
@@ -92,8 +101,8 @@ public:
              "`true` sends tokens as server-sent events as they are generated; `false` sends one "
              "response once complete. Defaults to `false`."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Lemonade extension for `collection.router` models: `true` adds the routing "
-             "decision to the response as `x_lemonade_route`."},
+             "Lemonade extension for `collection.router` models: `true` adds the per-condition "
+             "`trace` to `x_lemonade_route`. Defaults to `false`."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},

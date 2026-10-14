@@ -72,12 +72,15 @@ public:
             "the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.";
         s.notes = {
             "The request merges into the model's saved entry, so keys it leaves out keep their "
-            "values. `null` removes an option, and the model falls back to the next layer of the "
+            "values. `null` removes an option, as do `-1`, `\"\"` and `\"auto\"` for any option "
+            "but `ctx_size`, and the model falls back to the next layer of the "
             "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
             "removes every saved option at once.",
             "A `400` answers an empty or invalid body, an unrecognized option or one from another "
             "recipe, a value of the wrong type or an invalid `ctx_size`, a non-boolean "
             "`dry_run`, and nothing from that request is saved.",
+            "An unknown model answers `404` with `code` `model_not_found`, even when the body is "
+            "also invalid.",
             "A running model keeps its current options until it is next loaded.",
             "`pinned` answers `400` here and is omitted from `effective` and `defaults`; it "
             "belongs to [`/v1/load`](./lemonade.md#post-v1load) and "

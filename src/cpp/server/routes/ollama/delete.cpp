@@ -26,7 +26,7 @@ public:
             "Deletes a downloaded model's files, unloading it first when it is loaded.";
         s.notes = {
             "Success answers `200` with an empty body, as Ollama does. A model this system "
-            "does not support also answers `404`.",
+            "does not support also answers `404`, and other failures answer `500`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,

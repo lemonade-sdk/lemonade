@@ -37,7 +37,7 @@ public:
             "\n"
             "| Method | Purpose |\n"
             "|--------|---------|\n"
-            "| `initialize` | Negotiate protocol version, return server identity and capabilities. |\n"
+            "| `initialize` | Return the server's protocol version, identity and capabilities. |\n"
             "| `notifications/initialized` | Client acknowledgement; silently accepted. |\n"
             "| `notifications/cancelled` | Client cancellation; silently accepted. |\n"
             "| `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |\n"

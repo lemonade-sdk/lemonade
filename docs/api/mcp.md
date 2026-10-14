@@ -34,7 +34,7 @@ The body is one JSON-RPC message or a batch array of them. The reply is `200` wi
 
 | Method | Purpose |
 |--------|---------|
-| `initialize` | Negotiate protocol version, return server identity and capabilities. |
+| `initialize` | Return the server's protocol version, identity and capabilities. |
 | `notifications/initialized` | Client acknowledgement; silently accepted. |
 | `notifications/cancelled` | Client cancellation; silently accepted. |
 | `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |
@@ -129,8 +129,12 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
     One JSON-RPC 2.0 response, or an array of them for a batch.
 
+    - `jsonrpc` - Always `2.0`.
+    - `id` - The `id` of the request this answers; `null` when it could not be read.
     - `result` - The method's result.
     - `error` - A JSON-RPC error, such as `-32601` for an unknown method.
+      - `code` - The JSON-RPC error code.
+      - `message` - What went wrong.
 
 === "Notification responses"
 

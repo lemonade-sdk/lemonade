@@ -230,7 +230,7 @@ nlohmann::ordered_json ModelJson::schema() {
                     "soft_pixel_cap": {"type": "integer", "description": "Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted."}
                 }
             },
-            "components": {"type": "array", "items": {"type": "string"}, "description": "Omni collections only (`recipe: \"collection.omni\"`): the names of its component models, in order."},
+            "components": {"type": "array", "items": {"type": "string"}, "description": "The names of a collection's component models, in order; empty for other models."},
             "models": {"type": "array", "items": {"type": "object"},
                        "description": "Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull)."},
             "checkpoints": {"type": "object", "description": "Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.",

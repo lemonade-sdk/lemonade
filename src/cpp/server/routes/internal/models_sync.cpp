@@ -37,6 +37,7 @@ public:
             "While a sync is running, a new request answers `200` with that sync's status "
             "instead of starting another.",
             "Offline mode (`offline=true`) answers `409` without any network request.",
+            "A `400` answers a body that is not a JSON object, or an argument of the wrong type.",
             "See Model Synchronization & Auto-Updates in "
             "[Server Configuration](../guide/configuration/README.md).",
         };

@@ -69,7 +69,7 @@ ordered_json chat_completion_chunk_schema() {
             "id": {"type": "string", "description": "Identifier of the completion, the same on every chunk."},
             "object": {"const": "chat.completion.chunk", "description": "Always `\"chat.completion.chunk\"`."},
             "created": {"type": "integer", "description": "Unix timestamp of when the completion was created."},
-            "model": {"type": "string", "description": "The model that generated the response."},
+            "model": {"type": "string", "description": "The backend's name for the model, such as the GGUF file path for llama.cpp models."},
             "system_fingerprint": {"type": "string", "description": "Build identifier of the backend, when it reports one."},
             "choices": {"type": "array", "description": "The next part of each choice's message.", "items": {
                 "type": "object",
@@ -83,13 +83,13 @@ ordered_json chat_completion_chunk_schema() {
                             "role": {"const": "assistant", "description": "First chunk only: always `\"assistant\"`."},
                             "content": {"type": ["string", "null"], "description": "The next message text."},
                             "reasoning_content": {"type": ["string", "null"], "description": "Reasoning models only: the next part of the model's thinking."},
-                            "tool_calls": {"type": "array", "description": "Parts of calls to the request's tools."}
+                            "tool_calls": {"type": "array", "description": "Parts of calls to the request's tools, matched by `index`: a call's first part carries its `id` and `function.name`, and later parts carry the next piece of `function.arguments`."}
                         }
                     },
-                    "finish_reason": {"type": ["string", "null"], "description": "Why generation stopped, such as `stop` or `length`, on the choice's last chunk; `null` before it."}
+                    "finish_reason": {"type": ["string", "null"], "description": "Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it."}
                 }
             }},
-            "usage": {"type": "object", "description": "Final chunk only: token usage."},
+            "usage": {"type": "object", "description": "Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`."},
             "timings": {"type": "object", "description": "Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
@@ -110,11 +110,17 @@ public:
         s.summary = "Generate the next message in a conversation";
         s.modality = "messages -> completion";
         s.description =
-            "Generates the next assistant message for a conversation, loading the model on first "
-            "use.";
+            "Generates the next assistant message for a conversation, downloading and loading the "
+            "model if it is not loaded.";
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
+            "A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, "
+            "which is loaded before the check. An unknown model, or one not available on this "
+            "system, answers `404`; a load blocked by pinned models or a routing residency "
+            "conflict answers `409`; any other load failure answers `500`. A backend error answers "
+            "with the backend's status, except that once a stream has started it arrives as a "
+            "`data: {\"error\": ...}` event in the `200` stream.",
             "### Image Input\n"
             "\n"
             "To send images to `chat/completions`, pass a `messages[*].content` array that mixes "
@@ -175,8 +181,9 @@ public:
             "- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`\n"
             "\n"
             "Both non-streaming and `stream: true` are supported. In streaming mode the media "
-            "arrives as a content delta on a `chat.completion.chunk` frame the moment its tool "
-            "finishes.\n"
+            "arrives in `content` deltas of at most 16,000 characters each, the moment its tool "
+            "finishes, and an error arrives as `Error: <message>` text in `content` followed by "
+            "`finish_reason: \"stop\"`.\n"
             "\n"
             "**Merge semantics.** The built-in omni system prompt goes before a client-provided "
             "one. Client-provided `tools` are merged with the built-in omni tools. The "
@@ -255,8 +262,8 @@ public:
              "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
              "false` does the same, and `enable_thinking` wins when both are sent."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Lemonade extension for `collection.router` models: `true` adds the routing "
-             "decision to the response as `x_lemonade_route`."},
+             "Lemonade extension for `collection.router` models: `true` adds the per-condition "
+             "`trace` to `x_lemonade_route`. Defaults to `false`."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},

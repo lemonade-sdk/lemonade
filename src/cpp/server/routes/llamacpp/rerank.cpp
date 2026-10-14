@@ -21,6 +21,10 @@ public:
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
+        s.notes = {
+            "A model that is not a reranker answers `400`, or `501` from llama.cpp when it is a "
+            "llama.cpp model. A body that is not valid JSON answers `500`.",
+        };
         s.args = {
             {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The search query text."},

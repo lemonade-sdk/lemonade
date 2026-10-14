@@ -37,8 +37,9 @@ public:
             "Changes one or more `config.json` settings without restarting `lemond`, and saves "
             "them. The `lemonade config set` command uses it.";
         s.notes = {
-            "Every key is validated before any is applied, so one invalid value rejects the "
-            "whole request with `400` and changes nothing.",
+            "Every key is validated before any is applied, so an unknown key or one invalid value "
+            "rejects the whole request with `400` and changes nothing. A body that is not a "
+            "non-empty JSON object also answers `400`.",
             "Settings with a runtime effect apply immediately, such as `port` and `host`, which "
             "rebind the listeners, the logging settings, and a backend section's `*_bin`, which "
             "reinstalls that backend and reloads its models. Other settings are read the next "
@@ -71,7 +72,7 @@ public:
             "required": ["status", "updated"],
             "properties": {
                 "status": {"const": "success", "description": "Always `success`."},
-                "updated": {"type": "object", "description": "The keys the request set, with their new values."},
+                "updated": {"type": "object", "description": "The keys the request set, with their new values, in `config.json`'s nested form: a flat key such as `llamacpp_backend` appears under `llamacpp`."},
                 "message": {"type": "string", "description": "Present when a deprecated value was replaced, such as `rocm_channel=preview`."}
             }
         })");

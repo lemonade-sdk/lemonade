@@ -19,8 +19,9 @@ public:
         s.summary = "Delete a job";
         s.experimental = true;
         s.description =
-            "Removes a job. An active job is interrupted first, and the models it loaded are "
-            "unloaded before it disappears.";
+            "Removes a job at once, even a running one, which is interrupted. The models a "
+            "running or paused job loaded are unloaded in the background; a finished job's "
+            "models stay loaded.";
         s.notes = {"An unknown job answers `404`."};
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},

@@ -47,7 +47,7 @@ public:
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Paths without their prefix; entries after the first are aliases."},
                     "prefixes": {"enum": ["Quad", "Internal", "Root"], "description": "`Quad` serves each path under `/v1/` and older prefixes kept for existing clients; `Internal` under `/internal/`; `Root` as written."},
                     "summary": {"type": "string", "description": "One-line summary for the page's summary table; empty when hand-written rows replace it."},
-                    "modality": {"type": "string", "description": "Empty on pages whose summary table has no Modality column."},
+                    "modality": {"type": "string", "description": "The route's input and output for the summary table's Modality column, such as `messages -> completion`; empty on pages without that column."},
                     "description": {"type": "string", "description": "Reference text for the route's section."},
                     "notes": {"type": "array", "items": {"type": "string"}, "description": "Sections the docs place after the Parameters table."},
                     "experimental": {"type": "boolean", "description": "The route may still change."},

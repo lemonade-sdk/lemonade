@@ -38,15 +38,17 @@ public:
             "Points an alias at a target model, replacing any target it had. The "
             "`lemonade alias add` command uses it.";
         s.notes = {
-            "A `400` answers a missing `alias` or `target`, an alias equal to its target, or an "
-            "alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an "
-            "alias that is already a model's canonical name, or one that would form a cycle.",
+            "A `400` answers invalid JSON, a missing `alias` or `target`, an alias equal to its "
+            "target, or an alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` "
+            "answers an alias that is already a registered model's name, or one that would form a "
+            "cycle or an alias chain too long to resolve.",
         };
         s.args = {
             {"alias", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The alias name to create or update."},
             {"target", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The target model name or canonical ID (also accepted as `model`)."},
+             "The model name, canonical ID or other alias to point at, which is not checked to "
+             "exist (also accepted as `model`)."},
         };
 
         RouteResponse response;

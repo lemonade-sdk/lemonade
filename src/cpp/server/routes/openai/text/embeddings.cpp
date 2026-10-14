@@ -20,8 +20,15 @@ public:
         s.modality = "text -> vector representations";
         s.description =
             "Returns vector representations (embeddings) of the input text for semantic search, "
-            "clustering and similarity comparisons, loading the model on first use. Embedding "
-            "models use the `llamacpp` or `flm` recipe.";
+            "clustering and similarity comparisons, downloading and loading the model if it is not "
+            "loaded. Embedding models use the `llamacpp` or `flm` recipe.";
+        s.notes = {
+            "A `400` answers a missing `model`, or a model whose backend cannot embed, such as a "
+            "text-to-speech model. An unknown model, or one not available on this system, answers "
+            "`404`; a load blocked by pinned models or a routing residency conflict answers `409`; "
+            "any other load failure, or invalid JSON, answers `500`. A backend error, such as llama.cpp's "
+            "`501` for a model that is not an embedding model, answers with the backend's status.",
+        };
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
              "The text to embed, as a string or an array of strings."},

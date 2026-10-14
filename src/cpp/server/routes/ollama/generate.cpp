@@ -129,7 +129,7 @@ ordered_json generate_response_schema(bool line) {
             "created_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
             "response": {"type": "string", "description": "Generated text. Empty for an image model."},
             "image": {"type": "string", "description": "Image models only: the generated image, base64-encoded."},
-            "done": {"type": "boolean", "description": "`true` on the last line, or on the whole response when not streaming."},
+            "done": {"type": "boolean", "description": "`true` on a response that is not streamed, and on the last two lines of a stream."},
             "done_reason": {"type": "string", "description": "`stop`, or `unload` after an unload request."},
             "context": {"type": "array", "description": "Always empty."},
             "prompt_eval_count": {"type": "integer", "description": "Prompt tokens."},
@@ -176,11 +176,12 @@ public:
              "Text to continue, or the image to generate for an image model."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
              "Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum "
-             "generated tokens), `repeat_penalty`, and the `seed`, `width`, `height`, `steps` and "
-             "`cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets "
-             "the context size when this request loads the model."},
+             "generated tokens), `repeat_penalty`, which is sent as OpenAI's "
+             "`frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` "
+             "documented below. A key given at the top level wins. `num_ctx` sets the context "
+             "size when this request loads the model. Other keys are ignored."},
             {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Image models only: image width in pixels. Defaults to `512`."},
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,

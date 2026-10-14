@@ -34,8 +34,9 @@ public:
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Accepted in place of `prompt`. For an array, only the first text's embedding is "
              "returned."},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "`num_ctx` sets the context size when this request loads the model."},
+            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
+             "`num_ctx` sets the context size when this request loads the model. Other keys are "
+             "ignored."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request loads "
              "it. Wins over `options.num_ctx`."},

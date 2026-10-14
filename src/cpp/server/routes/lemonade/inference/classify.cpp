@@ -40,19 +40,20 @@ public:
             "`manifest.json`.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
-            "A malformed request (invalid JSON, a missing `input`/`text`, non-string fields, a "
-            "non-positive `top_k`) answers `400` before any model loads.",
+            "A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string "
+            "fields, a non-positive `top_k`) answers `400` before any model loads, as does an "
+            "omitted `model` while no single classification model is loaded.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "The classifier model. Optional when exactly one classification model is loaded; that "
              "model is used."},
-            {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text to classify."},
+            {"input", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+             "Text to classify. Required unless `text` is given."},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
              "Return only the highest-scoring `k` labels. Defaults to every label."},
             {"text", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Alias for `input`."},
+             "Alias for `input`, used instead of it when both are given."},
         };
 
         RouteResponse response;

@@ -28,10 +28,12 @@ public:
             "install form. Lemonade reads public registry metadata, and sends the server's "
             "`HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.";
         s.notes = {
-            "A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `source` "
-            "that disagrees with the checkpoint URL's registry, or offline mode (`code: "
+            "A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an "
+            "unsupported `source` or one that disagrees with the checkpoint URL's registry, a "
+            "Hugging Face GGUF repository that llama.cpp cannot run, or offline mode (`code: "
             "lemond_offline`). A checkpoint the registry does not have answers `404`, and any other "
-            "transport or parsing failure answers `500` with an `error` message.",
+            "failure, such as a repository with no GGUF, ONNX RyzenAI or collection files, answers "
+            "`500` with an `error` message.",
         };
         s.args = {
             {"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
@@ -54,9 +56,9 @@ public:
                 "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection"], "description": "Kind of repository: `gguf`, `onnx-ryzenai` or `collection`."},
                 "suggested_name": {"type": "string", "description": "Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name."},
                 "suggested_labels": {"type": "array", "items": {"type": "string"},
-                                     "description": "Inferred labels: `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
+                                     "description": "Inferred labels: `vision` if any GGUF file name contains `mmproj`, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
                 "mmproj_files": {"type": "array", "items": {"type": "string"},
-                                 "description": "Bare filenames of `mmproj-*.gguf` files in the repo; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model."},
+                                 "description": "Bare filenames of the repo's GGUF files whose name contains `mmproj`; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model."},
                 "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Bare names of draft-model GGUF files."},
                 "variants": {"type": "array", "description": "Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order.", "items": {
                     "type": "object",

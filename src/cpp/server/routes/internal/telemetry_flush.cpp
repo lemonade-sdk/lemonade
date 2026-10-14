@@ -20,7 +20,11 @@ public:
         s.summary = "Force-flush all queued telemetry trace spans";
         s.description =
             "Sends every queued telemetry trace span to the configured OTLP collector, and "
-            "answers once they are sent.";
+            "answers once the queue is empty.";
+        s.notes = {
+            "A batch the collector rejects or does not receive is dropped without further "
+            "retries, and the answer is still `flushed`.",
+        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

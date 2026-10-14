@@ -43,14 +43,19 @@ public:
             "Installs a model from the built-in registry, or registers a new `user.*` model from "
             "a Hugging Face or ModelScope checkpoint and installs it.";
         s.notes = {
-            "Only this route checks a downloaded model's registry for updates; loading a model on "
-            "first use never does.",
-            "A `400` answers an invalid definition, including labels or `embedding`/`reranking` "
-            "flags that name a deployment mode the recipe cannot serve or name two, or an unknown "
-            "model (with `code: "
-            "\"unknown_model\"`), and nothing is registered. In offline mode the request still "
-            "registers a new definition, then answers `400` with `code: \"lemond_offline\"` "
-            "without downloading.",
+            "Pulling an already-downloaded model downloads any newer commit from its registry. "
+            "Loading a model never checks for updates, and "
+            "[`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.",
+            "A `400` answers an invalid `source`, a reserved or non-`user.*` name for a new "
+            "definition, malformed `checkpoints` or `components`, or labels or "
+            "`embedding`/`reranking` flags that name a deployment mode the recipe cannot serve or "
+            "name two, and nothing is registered. Without `stream`, an unknown model also answers "
+            "`400` with `code: \"unknown_model\"`; with `stream`, the error event or the job "
+            "reports it instead. Other failures answer `500`, such as a new `user.*` model "
+            "without `recipe` or `checkpoint`, a GGUF `checkpoint` without a variant, or a failed "
+            "download, which leaves a new definition registered.",
+            "In offline mode the request still registers a new definition, then answers `400` "
+            "with `code: \"lemond_offline\"` without downloading.",
             "### Register and Install a Model\n\n"
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
             "(`~/.config/lemonade` by default), after which [`GET /v1/models`](./openai.md#get-v1models) lists it beside the "
@@ -68,7 +73,7 @@ public:
             "### Register an Omni Collection\n\n"
             "An omni collection bundles several models into one entry that is loaded and pulled as "
             "a unit. Register it with `recipe: \"collection.omni\"` and `components` "
-            "instead of a checkpoint. Components not yet downloaded are pulled by the same call.\n\n"
+            "instead of a checkpoint. The same call pulls each component.\n\n"
             "```bash\n"
             "curl -X POST http://localhost:13305/v1/pull \\\n"
             "  -H \"Content-Type: application/json\" \\\n"
@@ -92,7 +97,7 @@ public:
              "Only applies when `stream=true`. If `false`, the server owns the download and answers "
              "at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and "
              "[`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
-             "Defaults to `true`."},
+             "With `true`, closing the stream cancels the download. Defaults to `true`."},
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "A [registered model](https://lemonade-server.ai/models.html) to install, or a new "
              "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
@@ -120,8 +125,8 @@ public:
              "Multimodal projector file for a vision model, in the `checkpoint` repository. The "
              "same as `checkpoints.mmproj`."},
             {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Required for omni collections: the component model names, in order; each must be a "
-             "regular model."},
+             "Required for an omni collection registered without a `checkpoint`: the component "
+             "model names, in order; each must be a regular model, not a collection."},
             {"models", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Full model definitions, one per `components` entry, with the same fields as a single "
              "registration. Components not yet registered are registered from them; registered "

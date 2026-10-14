@@ -151,7 +151,7 @@ ordered_json system_info_schema() {
                 "description": "Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.",
                 "required": ["path", "used_bytes", "total_bytes", "free_bytes"],
                 "properties": {
-                    "path": {"type": "string", "description": "Active model storage path from server configuration"},
+                    "path": {"type": "string", "description": "Active model storage path: the `models_dir` setting, or the Hugging Face cache directory when it is `auto`."},
                     "used_bytes": {"type": ["integer", "null"], "description": "Used bytes on the model-storage drive"},
                     "total_bytes": {"type": ["integer", "null"], "description": "Total capacity of the model-storage drive"},
                     "free_bytes": {"type": ["integer", "null"], "description": "Free bytes available to the Lemonade Server process on the model-storage drive"},
@@ -163,9 +163,9 @@ ordered_json system_info_schema() {
                 "description": "Hardware devices detected on the system (no software/support information)",
                 "properties": {
                     "cpu": {"type": "object", "description": "CPU information (name, cores, threads)"},
-                    "amd_gpu": {"type": "array", "description": "AMD GPUs, both integrated and discrete, when present."},
-                    "nvidia_gpu": {"type": "array", "description": "NVIDIA GPUs, when present."},
-                    "amd_npu": {"type": "object", "description": "AMD NPU device (if present)"}
+                    "amd_gpu": {"type": "array", "description": "Usable AMD GPUs, both integrated and discrete; empty when there are none."},
+                    "nvidia_gpu": {"type": "array", "description": "NVIDIA GPUs. When none is found, it holds one entry whose `available` is `false` and whose `error` says why."},
+                    "amd_npu": {"type": "object", "description": "The AMD NPU. Always present; `available` is `false` when none is found, and `error` says why."}
                 }
             },
             "recipes": {
@@ -176,7 +176,7 @@ ordered_json system_info_schema() {
                     "description": "One entry per recipe, such as `llamacpp` or `flm`.",
                     "required": ["experimental", "backends"],
                     "properties": {
-                        "default_backend": {"type": "string", "description": "Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)"},
+                        "default_backend": {"type": "string", "description": "Preferred backend for this system: the one set in `config.json`, else the first in preference order that this system's devices can run, favoring an installed one. Absent when none is set and none can run here."},
                         "experimental": {"type": "boolean", "description": "`true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                         "order": {"type": "integer", "description": "The recipe's position in Lemonade's backend registry, from `0`."},
                         "display_name": {"type": "string", "description": "The recipe's name for people, such as `Llama.cpp GPU`."},
@@ -204,7 +204,7 @@ ordered_json system_info_schema() {
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
                                     "download_filename": {"type": "string", "description": "The release asset's filename."},
-                                    "can_uninstall": {"type": "boolean", "description": "`true`; present only for a backend that does not run on this operating system."}
+                                    "can_uninstall": {"type": "boolean", "description": "Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`."}
                                 }
                             }
                         }

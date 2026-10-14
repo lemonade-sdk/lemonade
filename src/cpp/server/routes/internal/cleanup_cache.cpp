@@ -22,11 +22,12 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Find or remove orphaned model files";
         s.description =
-            "Finds model files that a multi-repository model left in another repository's "
-            "Hugging Face cache folder, and removes them.";
+            "Finds, and optionally removes, model files that a multi-repository model left in "
+            "another repository's Hugging Face cache folder.";
         s.notes = {
             "An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different "
             "repository, found inside the `main` checkpoint's cache folder.",
+            "Invalid JSON, including an empty body, answers `500`.",
         };
         s.args = {
             {"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,

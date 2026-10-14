@@ -324,11 +324,12 @@ public:
              "`tool_call_id`."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
              "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
              "generated tokens) and `repeat_penalty`, which is sent as OpenAI's "
              "`frequency_penalty`. These keys are also accepted at the top level, where they win. "
-             "`num_ctx` sets the context size when this request loads the model."},
+             "`num_ctx` sets the context size when this request loads the model. Other keys are "
+             "ignored."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Tools the model may call."},
             {"format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,

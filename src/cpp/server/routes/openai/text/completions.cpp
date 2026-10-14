@@ -48,6 +48,8 @@ ordered_json text_completion_schema(bool chunk) {
     if (chunk) {
         auto& properties = schema["properties"];
         properties["id"]["description"] = "Identifier of the completion, the same on every chunk.";
+        properties["model"]["description"] =
+            "The backend's name for the model, such as the GGUF file path for llama.cpp models.";
         properties["choices"]["description"] = "The next part of each choice's text.";
         properties["choices"]["items"]["properties"]["text"]["description"] =
             "The text generated since the previous chunk.";
@@ -74,10 +76,16 @@ public:
         s.summary = "Continue a text prompt";
         s.modality = "prompt -> completion";
         s.description =
-            "Continues a text prompt, loading the model on first use.";
+            "Continues a text prompt, downloading and loading the model if it is not loaded.";
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
+            "A `400` answers a missing `model`, or a model that is not an LLM, which is loaded "
+            "before the check. An unknown model, or one not available on this system, answers "
+            "`404`; a load blocked by pinned models or a routing residency conflict answers `409`; "
+            "any other load failure, or invalid JSON, answers `500`. A backend error answers with "
+            "the backend's status, except that once a stream has started it arrives as a "
+            "`data: {\"error\": ...}` event in the `200` stream.",
         };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
@@ -90,11 +98,12 @@ public:
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Sequences that stop generation, as a string or an array of strings. The returned "
              "text leaves them out."},
-            {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` returns the prompt before the completion. Non-streaming only."},
+            {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Partial,
+             "`true` asks the backend to return the prompt before the completion. llama.cpp "
+             "models ignore it."},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
              "`true`, or a number of top alternatives per token, returns the log probability of each "
-             "output token. Defaults to `false`. Non-streaming only."},
+             "output token. Defaults to `false`."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Sampling temperature."},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -108,8 +117,8 @@ public:
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Upper bound on generated tokens."},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Lemonade extension for `collection.router` models: `true` adds the routing "
-             "decision to the response as `x_lemonade_route`."},
+             "Lemonade extension for `collection.router` models: `true` adds the per-condition "
+             "`trace` to `x_lemonade_route`. Defaults to `false`."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},

@@ -24,6 +24,10 @@ public:
         s.modality = "prompt -> image";
         s.description =
             "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
+        s.notes = {
+            "A model that cannot do this answers `500` with `type` `unsupported_operation`, after "
+            "it loads.",
+        };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text description of the image to generate."},

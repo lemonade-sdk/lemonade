@@ -50,11 +50,11 @@ public:
                         "output": {"description": "What the step returned, present once it has output."}
                     }
                 }},
-                "cursor": {"type": "string", "description": "Id of the current or next step."},
+                "cursor": {"type": "string", "description": "Id of the current or next step; empty once the job has run its last step."},
                 "created_at": {"type": "string", "description": "When the job was created, as an ISO 8601 UTC time."},
                 "started_at": {"type": "string", "description": "When the job first ran, present once it has."},
                 "finished_at": {"type": "string", "description": "When the job finished, present once it has."},
-                "summary": {"type": "string", "description": "The job's summary text, present when one was recorded."},
+                "summary": {"type": "string", "description": "Summary text that Lemonade never writes itself: present only when the job's entry in `jobs.json`, in the Lemonade config directory, has one."},
                 "error": {"type": "string", "description": "Why the job failed or was interrupted, present when known."}
             }
         })");

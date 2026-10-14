@@ -45,8 +45,8 @@ public:
             "not in the lyrics.\n"
             "- Lyrics may be in any supported language; set `vocal_language` to match.",
             "A failed request answers with a JSON `error` object: `400` for an invalid request, "
-            "`404` for an unknown model, `500` when the backend reports an error, and `502` when "
-            "it produces no output.",
+            "`404` for an unknown model, `500` for a body that is not valid JSON or when the "
+            "backend reports an error, and `502` when it produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

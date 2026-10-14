@@ -29,7 +29,9 @@ public:
             "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
             "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
             "missing `recipe`, an embedded `models` array, and malformed `checkpoint`, "
-            "`checkpoints`, `source` or `components` values.",
+            "`checkpoints`, `source` or `components` values. Other invalid definitions answer "
+            "`500` and register nothing, such as a GGUF `checkpoint` without a variant, a recipe "
+            "this system cannot run, or labels that name two deployment modes.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

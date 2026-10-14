@@ -99,6 +99,8 @@ public:
             "Edits one or more reference images as a prompt describes. The request is "
             "`multipart/form-data`. CPU inference takes minutes per image; a GPU backend is much faster.";
         s.notes = {
+            "A model that cannot do this answers `500` with `type` `unsupported_operation`, after "
+            "it loads.",
             "### Edit with the OpenAI Python Client\n"
             "\n"
             "=== \"Python (OpenAI client)\"\n"

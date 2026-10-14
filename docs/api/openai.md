@@ -28,7 +28,7 @@ This page documents Lemonade's implementation of the [OpenAI API](https://develo
 ## `POST /v1/chat/completions`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Generates the next assistant message for a conversation, loading the model on first use.
+Generates the next assistant message for a conversation, downloading and loading the model if it is not loaded.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -49,10 +49,12 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `max_tokens` | No | Upper bound on generated tokens. Wins over `max_completion_tokens` when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | OpenAI's name for `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `enable_thinking` | No | Lemonade extension: `false` turns off reasoning on models that think. `thinking: false` does the same, and `enable_thinking` wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the routing decision to the response as `x_lemonade_route`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the per-condition `trace` to `x_lemonade_route`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
+
+A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, which is loaded before the check. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Image Input
 
@@ -106,7 +108,7 @@ When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.
 - **images** → markdown `![generated image](data:image/png;base64,…)`
 - **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
 
-Both non-streaming and `stream: true` are supported. In streaming mode the media arrives as a content delta on a `chat.completion.chunk` frame the moment its tool finishes.
+Both non-streaming and `stream: true` are supported. In streaming mode the media arrives in `content` deltas of at most 16,000 characters each, the moment its tool finishes, and an error arrives as `Error: <message>` text in `content` followed by `finish_reason: "stop"`.
 
 **Merge semantics.** The built-in omni system prompt goes before a client-provided one. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
 
@@ -209,6 +211,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
       "object": "chat.completion",
       "created": 1791990411,
       "model": "Qwen3-0.6B-GGUF",
+      "system_fingerprint": "b11393-dbe4c3ed4",
       "choices": [
         {
           "index": 0,
@@ -226,7 +229,6 @@ The image tool runs during the loop and its output is embedded as a markdown ima
         "total_tokens": 270,
         "prompt_tokens_details": {"cached_tokens": 0}
       },
-      "system_fingerprint": "b11393-dbe4c3ed4",
       "timings": {
         "cache_n": 0,
         "predicted_ms": 756.876,
@@ -243,21 +245,36 @@ The image tool runs during the loop and its output is embedded as a markdown ima
 
     **Field Descriptions:**
 
-    - `choices`
-      - `message`
+    - `id` - Identifier of the completion.
+    - `object` - Always `"chat.completion"`.
+    - `created` - Unix timestamp of when the completion was created.
+    - `model` - The model that generated the response.
+    - `system_fingerprint` - Build identifier of the backend, when it reports one.
+    - `choices` - The generated messages, one per choice.
+      - `index` - Position of the choice in `choices`.
+      - `message` - The generated assistant message.
+        - `role` - Always `"assistant"`.
+        - `content` - The message text.
         - `reasoning_content` - Reasoning models only: the model's thinking.
         - `tool_calls` - Calls to the request's tools.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
-      - `route_to` - The selected candidate; also carried by the standard `model` field.
-      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
-      - `default_used` - true when no rule matched and default_model was used (fail-open).
+      - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`.
+    - `usage` - Token counts for the request.
+      - `prompt_tokens` - Tokens in the prompt.
+      - `completion_tokens` - Tokens generated.
+      - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
+      - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
+    - `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Version of the decision object's shape, always `"1"`.
+      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
+      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
+      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
       - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
         - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
         - `score` - Present for classifier conditions; the score the band was applied to.
         - `result` - The leaf's boolean outcome.
-        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
         - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 
 === "Streaming responses"
@@ -265,36 +282,50 @@ The image tool runs during the loop and its output is embedded as a markdown ima
     `200`
 
     ```text
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
     ...
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "system_fingerprint": "b11393-dbe4c3ed4", "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
+    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
     data: [DONE]
     ```
 
     **Field Descriptions:**
 
-    - `usage` - Final chunk only: token usage.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
-      - `route_to` - The selected candidate; also carried by the standard `model` field.
-      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
-      - `default_used` - true when no rule matched and default_model was used (fail-open).
+    - `id` - Identifier of the completion, the same on every chunk.
+    - `object` - Always `"chat.completion.chunk"`.
+    - `created` - Unix timestamp of when the completion was created.
+    - `model` - The backend's name for the model, such as the GGUF file path for llama.cpp models.
+    - `system_fingerprint` - Build identifier of the backend, when it reports one.
+    - `choices` - The next part of each choice's message.
+      - `index` - Position of the choice in `choices`.
+      - `delta` - The part of the assistant message generated since the previous chunk.
+        - `role` - First chunk only: always `"assistant"`.
+        - `content` - The next message text.
+        - `reasoning_content` - Reasoning models only: the next part of the model's thinking.
+        - `tool_calls` - Parts of calls to the request's tools, matched by `index`: a call's first part carries its `id` and `function.name`, and later parts carry the next piece of `function.arguments`.
+      - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it.
+    - `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
+    - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Version of the decision object's shape, always `"1"`.
+      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
+      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
+      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
       - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
         - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
         - `score` - Present for classifier conditions; the score the band was applied to.
         - `result` - The leaf's boolean outcome.
-        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
         - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
 ## `POST /v1/completions`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
-Continues a text prompt, loading the model on first use.
+Continues a text prompt, downloading and loading the model if it is not loaded.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -306,17 +337,19 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | The model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` sends tokens as server-sent events as they are generated; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Sequences that stop generation, as a string or an array of strings. The returned text leaves them out. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `echo` | No | `true` returns the prompt before the completion. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | `true`, or a number of top alternatives per token, returns the log probability of each output token. Defaults to `false`. Non-streaming only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `echo` | No | `true` asks the backend to return the prompt before the completion. llama.cpp models ignore it. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `logprobs` | No | `true`, or a number of top alternatives per token, returns the log probability of each output token. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Cumulative probability of the top tokens to consider during nucleus sampling, from `0.0` to `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the routing decision to the response as `x_lemonade_route`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the per-condition `trace` to `x_lemonade_route`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
+
+A `400` answers a missing `model`, or a model that is not an LLM, which is loaded before the check. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Example request
 
@@ -388,21 +421,21 @@ Naming a `collection.router` model routes the request to one of its candidates; 
       "object": "text_completion",
       "created": 1791943134,
       "model": "Qwen3-0.6B-GGUF",
+      "system_fingerprint": "b11393-dbe4c3ed4",
       "choices": [
         {
           "index": 0,
           "text": " And what does the Parisian metro system include?\n\nThe population of Paris is approximately 2 million people. The Parisian metro system includes the Paris Métro, the Paris Underground, and the Paris TGV, which is a train system.\n\nNow, the question is: What is the population of the city of Paris?\n\n",
-          "finish_reason": "length",
-          "logprobs": null
+          "logprobs": null,
+          "finish_reason": "length"
         }
       ],
       "usage": {
-        "completion_tokens": 64,
         "prompt_tokens": 7,
-        "prompt_tokens_details": {"cached_tokens": 0},
-        "total_tokens": 71
+        "completion_tokens": 64,
+        "total_tokens": 71,
+        "prompt_tokens_details": {"cached_tokens": 0}
       },
-      "system_fingerprint": "b11393-dbe4c3ed4",
       "timings": {
         "cache_n": 0,
         "predicted_ms": 184.8,
@@ -419,17 +452,33 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
     **Field Descriptions:**
 
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
-      - `route_to` - The selected candidate; also carried by the standard `model` field.
-      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
-      - `default_used` - true when no rule matched and default_model was used (fail-open).
+    - `id` - Identifier of the completion.
+    - `object` - Always `"text_completion"`.
+    - `created` - Unix timestamp of when the completion was created.
+    - `model` - The model that generated the response.
+    - `system_fingerprint` - Build identifier of the backend, when it reports one.
+    - `choices` - The generated text, one entry per choice.
+      - `index` - Position of the choice in `choices`.
+      - `text` - The generated text.
+      - `logprobs` - Log probabilities of the output tokens when the request sets `logprobs`, else `null`.
+      - `finish_reason` - Why generation stopped, such as `stop` or `length`.
+    - `usage` - Token counts for the request.
+      - `prompt_tokens` - Tokens in the prompt.
+      - `completion_tokens` - Tokens generated.
+      - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
+      - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
+    - `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Version of the decision object's shape, always `"1"`.
+      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
+      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
+      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
       - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
         - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
         - `score` - Present for classifier conditions; the score the band was applied to.
         - `result` - The leaf's boolean outcome.
-        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
         - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 
 === "Streaming responses"
@@ -437,28 +486,43 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     `200`
 
     ```text
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "text": " What", "finish_reason": null, "logprobs": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "text": " is", "finish_reason": null, "logprobs": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "text": " the", "finish_reason": null, "logprobs": null}], "system_fingerprint": "b11393-dbe4c3ed4"}
+    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
+    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
+    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " the", "logprobs": null, "finish_reason": null}]}
     ...
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "choices": [{"index": 0, "text": "", "finish_reason": "length", "logprobs": null}], "usage": {"completion_tokens": 64, "prompt_tokens": 7, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "system_fingerprint": "b11393-dbe4c3ed4", "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.04, "prompt_per_token_ms": 3.04, "prompt_per_second": 328.9473684210526, "predicted_n": 64, "predicted_ms": 184.45, "predicted_per_token_ms": 2.9277777777777776, "predicted_per_second": 341.5559772296015}}
+    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.04, "prompt_per_token_ms": 3.04, "prompt_per_second": 328.9473684210526, "predicted_n": 64, "predicted_ms": 184.45, "predicted_per_token_ms": 2.9277777777777776, "predicted_per_second": 341.5559772296015}}
     data: [DONE]
     ```
 
     **Field Descriptions:**
 
-    - `usage` - Final chunk only: token usage.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
-      - `route_to` - The selected candidate; also carried by the standard `model` field.
-      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
-      - `default_used` - true when no rule matched and default_model was used (fail-open).
+    - `id` - Identifier of the completion, the same on every chunk.
+    - `object` - Always `"text_completion"`.
+    - `created` - Unix timestamp of when the completion was created.
+    - `model` - The backend's name for the model, such as the GGUF file path for llama.cpp models.
+    - `system_fingerprint` - Build identifier of the backend, when it reports one.
+    - `choices` - The next part of each choice's text.
+      - `index` - Position of the choice in `choices`.
+      - `text` - The text generated since the previous chunk.
+      - `logprobs` - Log probabilities of the output tokens when the request sets `logprobs`, else `null`.
+      - `finish_reason` - Why generation stopped, such as `stop` or `length`, on the choice's last chunk; `null` before it.
+    - `usage` - Final chunk only: token counts for the request.
+      - `prompt_tokens` - Tokens in the prompt.
+      - `completion_tokens` - Tokens generated.
+      - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
+      - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
+    - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Version of the decision object's shape, always `"1"`.
+      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
+      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
+      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
       - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
         - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
         - `score` - Present for classifier conditions; the score the band was applied to.
         - `result` - The leaf's boolean outcome.
-        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
         - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 <!-- END GENERATED: openai.completions -->
 
@@ -466,7 +530,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 ## `POST /v1/embeddings`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns vector representations (embeddings) of the input text for semantic search, clustering and similarity comparisons, loading the model on first use. Embedding models use the `llamacpp` or `flm` recipe.
+Returns vector representations (embeddings) of the input text for semantic search, clustering and similarity comparisons, downloading and loading the model if it is not loaded. Embedding models use the `llamacpp` or `flm` recipe.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -478,6 +542,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | The embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `encoding_format` | No | `float` or `base64`. Defaults to `float`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A `400` answers a missing `model`, or a model whose backend cannot embed, such as a text-to-speech model. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error, such as llama.cpp's `501` for a model that is not an embedding model, answers with the backend's status.
 
 ### Example request
 
@@ -520,11 +586,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       "index": 0,
       "embedding": [0.03513138368725777, 0.0010724958265200257, 0.0043548960238695145, -0.024502824991941452, -0.02874191850423813, 0.029377534985542297, -0.01320538017898798, 0.01702793687582016, ... 760 more]
     },
-    {
-      "object": "embedding",
-      "index": 1,
-      "embedding": [-0.024310413748025894, -0.03385873883962631, -0.003393277060240507, 0.0042533064261078835, -0.015559273771941662, 0.026714053004980087, -0.009407692588865757, 0.033160898834466934, ... 760 more]
-    }
+    ... 1 more
   ],
   "model": "nomic-embed-text-v1-GGUF",
   "usage": {"prompt_tokens": 12, "total_tokens": 12}
@@ -548,7 +610,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/responses`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Generates a model response to an input, in OpenAI's Responses format, loading the model on first use.
+Generates a model response to an input, in OpenAI's Responses format, downloading and loading the model if it is not loaded.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -564,10 +626,12 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Cumulative probability of the top tokens to consider during nucleus sampling, from `0.0` to `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` sends tokens as server-sent events as they are generated; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the routing decision to the response as `x_lemonade_route`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the per-condition `trace` to `x_lemonade_route`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
+
+A `400` answers a missing `model`, or a model whose backend has no Responses API, such as a FastFlowLM, cloud or non-LLM model. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Example request
 
@@ -634,6 +698,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
       "id": "resp_UMCsVMSLV0H1cGKewMgTRY02v5PgKvr3",
       "object": "response",
       "created_at": 1791943139,
+      "completed_at": 1791943139,
       "model": "Llama-3.2-1B-Instruct-GGUF",
       "status": "completed",
       "output": [
@@ -654,28 +719,38 @@ Naming a `collection.router` model routes the request to one of its candidates; 
       ],
       "usage": {
         "input_tokens": 42,
-        "input_tokens_details": {"cached_tokens": 0},
         "output_tokens": 49,
-        "total_tokens": 91
-      },
-      "completed_at": 1791943139
+        "total_tokens": 91,
+        "input_tokens_details": {"cached_tokens": 0}
+      }
     }
     ```
 
     **Field Descriptions:**
 
+    - `id` - Identifier of the response.
+    - `object` - Always `"response"`.
+    - `created_at` - Unix timestamp of when the response was created.
+    - `completed_at` - Unix timestamp of when the response completed, when the backend reports it.
+    - `model` - The model that generated the response.
+    - `status` - State of the response, such as `completed`.
     - `output` - Output items; a message item carries its text in `content[].text`.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
-      - `version` - Schema major version of this decision object. This file defines version "1"; the engine always emits it so clients and audit sinks can branch on shape.
-      - `route_to` - The selected candidate; also carried by the standard `model` field.
-      - `matched_rule` - Id of the rule that matched; empty when the request fell through to default_model.
-      - `default_used` - true when no rule matched and default_model was used (fail-open).
+    - `usage` - Token counts for the request.
+      - `input_tokens` - Tokens in the input.
+      - `output_tokens` - Tokens generated.
+      - `total_tokens` - Sum of `input_tokens` and `output_tokens`.
+      - `input_tokens_details` - Breakdown of the input tokens, such as `cached_tokens`, when the backend reports it.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Version of the decision object's shape, always `"1"`.
+      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
+      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
+      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
       - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
-      - `trace` - Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.
+      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
         - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
         - `score` - Present for classifier conditions; the score the band was applied to.
         - `result` - The leaf's boolean outcome.
-        - `label` - Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.
+        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
         - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 
 === "Streaming responses"
@@ -698,8 +773,23 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     **Field Descriptions:**
 
     - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
-    - `response` - `response.created` and `response.completed` only: the response so far.
-    - `delta` - `response.output_text.delta` only: the next text.
+    - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
+    - `item` - Output item events, such as `response.output_item.added`, only: the output item.
+    - `item_id` - Delta events only: the `id` of the output item the text belongs to.
+    - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
+    - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model. A streaming response carries it on its first event. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+      - `version` - Version of the decision object's shape, always `"1"`.
+      - `route_to` - The selected candidate, which a non-streaming response also carries in `model`.
+      - `matched_rule` - Id of the rule that matched; empty when the request routed to `default_model`.
+      - `default_used` - `true` when no rule matched and the request routed to `default_model`.
+      - `outputs` - The matched rule's `outputs`, passed through unchanged. When cost data is known for the chosen candidate, an `estimated_cost` object is added with `cost_tier`, `cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` as available; it is an estimate, not a billing figure.
+      - `trace` - Per-condition trace of the evaluation, present when the request sets `route_trace`.
+        - `condition` - Identifies the leaf, e.g. "classifier:pii" or "keywords_any".
+        - `score` - Present for classifier conditions; the score the band was applied to.
+        - `result` - The leaf's boolean outcome.
+        - `label` - The label the classifier band tested, which names the candidate the score belongs to. Present for label-scoped bands, such as the rules `routing.router` expands to.
+        - `rationale` - Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.
 <!-- END GENERATED: openai.responses -->
 
 <!-- BEGIN GENERATED: openai.audio_transcriptions -->
@@ -716,12 +806,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `file` | Yes | The audio file to transcribe, as WAV. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `model` | Yes | The transcription model to use (e.g., `Whisper-Tiny`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, which detects it, for whisper.cpp models, and to the backend's own for the others. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | `json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `temperature` | No | Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own for FastFlowLM models. Moonshine models ignore it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400` and `verbose_json` has no `segments`.
+
+A model that cannot transcribe answers `400` with `type` `unsupported_operation`, after it loads.
 
 ### Example request
 
@@ -930,6 +1022,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own, else `7.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducible output; a negative value picks a random seed. Defaults to the backend's fixed seed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
+
 ### Example request
 
 === "PowerShell"
@@ -981,8 +1075,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 **Field Descriptions:**
 
 - `created` - Unix timestamp of when the image was generated.
-- `data`
+- `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+- `output_format` - File format of the images, such as `png`, when the backend reports it.
 <!-- END GENERATED: openai.images_generations -->
 
 <!-- BEGIN GENERATED: openai.images_edits -->
@@ -1012,6 +1107,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `quality` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `input_fidelity` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `output_compression` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
 
 ### Edit with the OpenAI Python Client
 
@@ -1077,8 +1174,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 **Field Descriptions:**
 
 - `created` - Unix timestamp of when the image was generated.
-- `data`
+- `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+- `output_format` - File format of the images, such as `png`, when the backend reports it.
 <!-- END GENERATED: openai.images_edits -->
 
 <!-- BEGIN GENERATED: openai.images_variations -->
@@ -1100,6 +1198,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `user` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
 
 ### Create Variations with the OpenAI Python Client
 
@@ -1163,8 +1263,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 **Field Descriptions:**
 
 - `created` - Unix timestamp of when the image was generated.
-- `data`
+- `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+- `output_format` - File format of the images, such as `png`, when the backend reports it.
 <!-- END GENERATED: openai.images_variations -->
 
 <!-- BEGIN GENERATED: openai.images_upscale -->
@@ -1317,6 +1418,7 @@ A typical workflow is to generate an image first, then upscale it:
 - `created` - Unix timestamp of when the upscaled image was generated.
 - `data` - The upscaled image.
   - `b64_json` - Base64-encoded PNG of the upscaled image.
+- `output_format` - File format of the images, such as `png`, when the backend reports it.
 <!-- END GENERATED: openai.images_upscale -->
 
 <!-- BEGIN GENERATED: openai.audio_speech -->
@@ -1478,47 +1580,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
       "registry_source": "huggingface",
       "recipe_options": {}
     },
-    {
-      "id": "Qwen3-0.6B-GGUF",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "recipe": "llamacpp",
-      "size": 0.356,
-      "max_context_window": 40960,
-      "context_length": 40960,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["chat", "reasoning", "tool-calling"],
-      "components": [],
-      "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    {
-      "id": "Qwen3-0.6B-HRX",
-      "created": 1234567890,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf",
-      "recipe": "llamacpp-hrx",
-      "size": 0.356,
-      "max_context_window": 40960,
-      "context_length": 40960,
-      "downloaded": true,
-      "update_available": false,
-      "suggested": true,
-      "labels": ["chat", "reasoning", "tool-calling"],
-      "components": [],
-      "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf"},
-      "source": "huggingface",
-      "registry_source": "huggingface",
-      "recipe_options": {}
-    },
-    ... 8 more
+    ... 10 more
   ]
 }
 ```
@@ -1550,9 +1612,10 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
     - `sampling_method` - Default sampler, when the model sets one.
     - `flow_shift` - Default flow shift, when the model sets one.
     - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
-  - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
+  - `components` - The names of a collection's component models, in order; empty for other models.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
+    - The checkpoint that fills the role named by its key.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1723,9 +1786,10 @@ An unknown model answers `404` with `code` `model_not_found`.
   - `sampling_method` - Default sampler, when the model sets one.
   - `flow_shift` - Default flow shift, when the model sets one.
   - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
-- `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
+- `components` - The names of a collection's component models, in order; empty for other models.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
 - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
+  - The checkpoint that fills the role named by its key.
 - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
 - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1809,6 +1873,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Per-architecture defaults are chosen by the architecture in the model's GGUF metadata, so a model that has not been downloaded yet shows every key with the value it has before those defaults apply.
 
+An unknown model answers `404` with `code` `model_not_found`.
+
 ### Example request
 
 === "PowerShell"
@@ -1889,9 +1955,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `dry_run` | No | `true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-The request merges into the model's saved entry, so keys it leaves out keep their values. `null` removes an option, and the model falls back to the next layer of the [priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
+The request merges into the model's saved entry, so keys it leaves out keep their values. `null` removes an option, as do `-1`, `""` and `"auto"` for any option but `ctx_size`, and the model falls back to the next layer of the [priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
 
 A `400` answers an empty or invalid body, an unrecognized option or one from another recipe, a value of the wrong type or an invalid `ctx_size`, a non-boolean `dry_run`, and nothing from that request is saved.
+
+An unknown model answers `404` with `code` `model_not_found`, even when the body is also invalid.
 
 A running model keeps its current options until it is next loaded.
 
@@ -1979,6 +2047,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+An unknown model answers `404` with `code` `model_not_found`.
 
 ### Example request
 

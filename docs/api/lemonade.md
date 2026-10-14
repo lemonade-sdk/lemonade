@@ -61,9 +61,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | No | The classifier model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `input` | Yes | Text to classify. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `input` | No | Text to classify. Required unless `text` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Return only the highest-scoring `k` labels. Defaults to every label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `text` | No | Alias for `input`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `text` | No | Alias for `input`, used instead of it when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Supported Models
 
@@ -73,7 +73,7 @@ A servable model directory holds `model.onnx`, `tokenizer.json` and `config.json
 
 Some upstream models declare only generic `LABEL_<n>` label names; their model card explains them.
 
-A malformed request (invalid JSON, a missing `input`/`text`, non-string fields, a non-positive `top_k`) answers `400` before any model loads.
+A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string fields, a non-positive `top_k`) answers `400` before any model loads, as does an omitted `model` while no single classification model is loaded.
 
 ### Example request
 
@@ -109,19 +109,16 @@ A malformed request (invalid JSON, a missing `input`/`text`, non-string fields, 
 {
   "object": "classification",
   "model": "Phishing-Email-Detection-ONNX",
-  "labels": {
-    "LABEL_0": 5.558096745517105e-05,
-    "LABEL_1": 0.9999443888664246,
-    "LABEL_2": 7.880903929446959e-09,
-    ... 1 more
-  }
+  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more}
 }
 ```
 
 **Field Descriptions:**
 
+- `object` - Always `classification`.
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
-- `labels` - Score in `[0, 1]` for each label.
+- `labels` - Each label's score, keyed by label name.
+  - The label's score, in `[0, 1]`.
 <!-- END GENERATED: lemonade.classify -->
 
 <!-- BEGIN GENERATED: lemonade.models_check_updates -->
@@ -192,7 +189,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `labels` | No | Model labels; see [Model Labels](./openai.md#model-labels). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `components` | No | Collections only: the component model names, each already registered. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A `400` answers a body that is not a JSON object, a missing `model_name`, a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a missing `recipe`, an embedded `models` array, and malformed `checkpoint`, `checkpoints`, `source` or `components` values.
+A `400` answers a body that is not a JSON object, a missing `model_name`, a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a missing `recipe`, an embedded `models` array, and malformed `checkpoint`, `checkpoints`, `source` or `components` values. Other invalid definitions answer `500` and register nothing, such as a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes.
 
 ### Example request
 
@@ -253,6 +250,7 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
 
 **Field Descriptions:**
 
+- `status` - Always `success`.
 - `model_name` - The ID [`GET /v1/models`](./openai.md#get-v1models) lists for the model.
 - `canonical_model_name` - The `user.*` name the request registered.
 - `model` - The registered model, in the shape [`GET /v1/models/{id}`](./openai.md#get-v1modelsid) returns.
@@ -279,9 +277,10 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
     - `sampling_method` - Default sampler, when the model sets one.
     - `flow_shift` - Default flow shift, when the model sets one.
     - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
-  - `components` - Omni collections only (`recipe: "collection.omni"`): the names of its component models, in order.
+  - `components` - The names of a collection's component models, in order; empty for other models.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
+    - The checkpoint that fills the role named by its key.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -307,7 +306,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `stream` | No | If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `subscribe` | No | Only applies when `stream=true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `subscribe` | No | Only applies when `stream=true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | Yes | A [registered model](https://lemonade-server.ai/models.html) to install, or a new `user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps registered models from colliding with built-in ones. `model` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `recipe` | No | Required when registering: the recipe that loads and runs the model, such as `llamacpp`, or `collection.omni` for an omni collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoint` | No | The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -317,7 +316,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `embedding` | No | `true` adds the `embeddings` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `reranking` | No | `true` adds the `reranking` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mmproj` | No | Multimodal projector file for a vision model, in the `checkpoint` repository. The same as `checkpoints.mmproj`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `components` | No | Required for omni collections: the component model names, in order; each must be a regular model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `components` | No | Required for an omni collection registered without a `checkpoint`: the component model names, in order; each must be a regular model, not a collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `models` | No | Full model definitions, one per `components` entry, with the same fields as a single registration. Components not yet registered are registered from them; registered ones keep their local definition. Without `models`, every component must already be registered. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `labels` | No | Registering only: model labels; see [Model Labels](./openai.md#model-labels). Omitting the deployment label applies the recipe's default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` | No | Registry to download from: `huggingface` or `modelscope`. Defaults to the server's `default_model_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -325,9 +324,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `do_not_upgrade` | No | `true` skips checking an already-downloaded model's registry for updates. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `local_import` | No | Register model files a client already copied into the Hugging Face cache, without downloading. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Only this route checks a downloaded model's registry for updates; loading a model on first use never does.
+Pulling an already-downloaded model downloads any newer commit from its registry. Loading a model never checks for updates, and [`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.
 
-A `400` answers an invalid definition, including labels or `embedding`/`reranking` flags that name a deployment mode the recipe cannot serve or name two, or an unknown model (with `code: "unknown_model"`), and nothing is registered. In offline mode the request still registers a new definition, then answers `400` with `code: "lemond_offline"` without downloading.
+A `400` answers an invalid `source`, a reserved or non-`user.*` name for a new definition, malformed `checkpoints` or `components`, or labels or `embedding`/`reranking` flags that name a deployment mode the recipe cannot serve or name two, and nothing is registered. Without `stream`, an unknown model also answers `400` with `code: "unknown_model"`; with `stream`, the error event or the job reports it instead. Other failures answer `500`, such as a new `user.*` model without `recipe` or `checkpoint`, a GGUF `checkpoint` without a variant, or a failed download, which leaves a new definition registered.
+
+In offline mode the request still registers a new definition, then answers `400` with `code: "lemond_offline"` without downloading.
 
 ### Register and Install a Model
 
@@ -345,7 +346,7 @@ curl -X POST http://localhost:13305/v1/pull \
 
 ### Register an Omni Collection
 
-An omni collection bundles several models into one entry that is loaded and pulled as a unit. Register it with `recipe: "collection.omni"` and `components` instead of a checkpoint. Components not yet downloaded are pulled by the same call.
+An omni collection bundles several models into one entry that is loaded and pulled as a unit. Register it with `recipe: "collection.omni"` and `components` instead of a checkpoint. The same call pulls each component.
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -381,6 +382,24 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true, "subscribe": false}'
     ```
 
+=== "PowerShell (non-streaming)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/pull" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"model_name": "Qwen3-0.6B-GGUF"}'
+    ```
+
+=== "Bash (non-streaming)"
+
+    ```bash
+    curl http://localhost:13305/v1/pull \
+      -H "Content-Type: application/json" \
+      -d '{"model_name": "Qwen3-0.6B-GGUF"}'
+    ```
+
 === "PowerShell (streaming)"
 
     ```powershell
@@ -401,7 +420,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
 ### Response format
 
-=== "Non-streaming responses"
+=== "Job responses"
 
     `200`
 
@@ -429,10 +448,6 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
     **Field Descriptions:**
 
-    - `status` - `success`, or, in a server-owned job snapshot, the job's state.
-    - `model_name` - The installed model, or the job's model.
-    - `message` - Present for `local_import`: a confirmation that the files were registered.
-
     With `stream: true` and `subscribe: false`: the server-owned download job.
 
     - `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
@@ -455,6 +470,22 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
     - `error` - Error message, present only for failed jobs.
     - `code` - `unknown_model` when the model is not in the registry.
 
+=== "Non-streaming responses"
+
+    `200`
+
+    ```json
+    {"status": "success", "model_name": "Qwen3-0.6B-GGUF"}
+    ```
+
+    **Field Descriptions:**
+
+    Without `stream`, or with `local_import`: the model is installed or registered.
+
+    - `status` - Always `success`.
+    - `model_name` - The installed model.
+    - `message` - Only with `local_import`: a confirmation that the files were registered.
+
 === "Streaming responses"
 
     `200`
@@ -474,8 +505,16 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
     **Field Descriptions:**
 
-    progress events report one file; the complete event follows the last one, and an error event replaces it on failure.
+    A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
 
+    - `file` - The file downloading now.
+    - `file_index` - Its position among the download's files, from `1`.
+    - `total_files` - How many files the download has.
+    - `bytes_downloaded` - Bytes of the current file downloaded so far.
+    - `bytes_total` - Size of the current file in bytes.
+    - `total_download_size` - Total expected bytes across all files, or `0` when unknown.
+    - `bytes_previously_downloaded` - Bytes of the current file already on disk before this download, when resuming or skipping existing data.
+    - `percent` - Share of the current file downloaded, from `0` to `100`.
     - `status` - Only on a complete event for an operation that had nothing to download.
     - `error` - Only on an error event.
     - `code` - `unknown_model` when the model is not in the registry.
@@ -585,7 +624,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A `pause` or `cancel` for a job that already finished leaves it as it is.
 
-A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. A `pause` or `cancel` for a job that is not listed answers `404`.
+A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action for an existing job. Any action but `remove` for an `id` with no job answers `404`.
 
 `pause` and `cancel` answer the job's latest snapshot, as does `remove` for a running job. Removing a stopped job answers `{"status": "ok"}`, with `"missing": true` when the job was already gone.
 
@@ -609,33 +648,68 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. 
       -d '{"id": "model:Qwen3-0.6B-GGUF", "action": "pause"}'
     ```
 
+=== "PowerShell (remove)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/downloads/control" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
+    ```
+
+=== "Bash (remove)"
+
+    ```bash
+    curl http://localhost:13305/v1/downloads/control \
+      -H "Content-Type: application/json" \
+      -d '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
+    ```
+
 ### Response format
 
-`200`
+=== "Pause responses"
 
-```json
-{
-  "status": "paused",
-  "id": "model:Qwen3-0.6B-GGUF",
-  "type": "model",
-  "model_name": "Qwen3-0.6B-GGUF",
-  "running": true,
-  "file": "",
-  "file_index": 0,
-  "total_files": 0,
-  "bytes_downloaded": 0,
-  "bytes_total": 0,
-  "percent": 0,
-  "total_download_size": 0,
-  "bytes_previously_downloaded": 0,
-  "completed_files_bytes": 0,
-  "cumulative_bytes_downloaded": 0,
-  "overall_bytes_downloaded": 0,
-  "complete": false
-}
-```
+    `200`
+
+    ```json
+    {
+      "status": "paused",
+      "id": "model:Qwen3-0.6B-GGUF",
+      "type": "model",
+      "model_name": "Qwen3-0.6B-GGUF",
+      "running": true,
+      "file": "",
+      "file_index": 0,
+      "total_files": 0,
+      "bytes_downloaded": 0,
+      "bytes_total": 0,
+      "percent": 0,
+      "total_download_size": 0,
+      "bytes_previously_downloaded": 0,
+      "completed_files_bytes": 0,
+      "cumulative_bytes_downloaded": 0,
+      "overall_bytes_downloaded": 0,
+      "complete": false
+    }
+    ```
+
+=== "Remove responses"
+
+    `200`
+
+    ```json
+    {"status": "ok", "missing": true}
+    ```
 
 **Field Descriptions:**
+
+`remove` of a stopped job, or of an `id` with no job: the job is gone.
+
+- `status` - Always `ok`.
+- `missing` - Only when no job had that `id`.
+
+`pause`, `cancel`, or `remove` of a running job: the job's latest snapshot.
 
 - `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
 - `type` - Download type.
@@ -662,7 +736,7 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action. 
 ## `GET /v1/registry/search`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Searches Hugging Face or ModelScope for repositories matching a text query. The results are candidates chosen from registry metadata, so the desktop app's Model Manager checks each one with [`/v1/pull/variants`](#get-v1pullvariants) and offers a download only for repositories whose files pass.
+Searches Hugging Face or ModelScope for repositories matching a text query. The results are candidates chosen from registry metadata, so the desktop app's Model Manager checks each one with [`GET /v1/pull/variants`](#get-v1pullvariants) and offers a download only for repositories whose files pass.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -673,7 +747,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `query` (query) | Yes | Search text, minimum 3 characters after trimming. `q` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` (query) | No | Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. Defaults to `huggingface`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `limit` (query) | No | Maximum number of results, from `1` to `50`. Defaults to `12`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `format` (query) | No | Only `gguf`, which favors GGUF repositories in search and ranking. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `format` (query) | No | Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mode (`code: lemond_offline`). A `429` means the upstream registry rate-limited the request, and any other upstream failure answers `502`, with the upstream status code when available.
 
@@ -728,53 +802,7 @@ A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mo
       "likes": 30,
       "has_gguf": true
     },
-    {
-      "repository_id": "Qwen/Qwen1.5-7B-Chat",
-      "display_name": "千问1.5-7B-Chat",
-      "source": "modelscope",
-      "repository_type": "model",
-      "description": "Qwen1.5版本本次开源了包括0.5B、1.8B、4B、7B、14B和72B在内的六种大小的基础和聊天模型，同时，也开源了量化模型。不仅提供了Int4和Int8的GPTQ模型，还有AWQ模型，以及GGUF量化模型。为了提升开发者体验，Qwen1.5的代码合并到Hugging Face Transformers中，开发者现在可以直接使用transformers>=4.37.0而无需trust_remote_code。此外，Qwen1.5支持了例如vLLM、SGLang、AutoGPTQ等框架对Qwen1.5的支持。Qwen1.5显著提升了聊天模型与人类偏好的一致性，并且改善了它们的多语言能力。所有模型提供了统一的上下文长度支持，支持32K上下文, 基础语言模型的质量也有所改进。",
-      "tags": [
-        "license:other",
-        "model_type:qwen2",
-        "library:transformer",
-        "library:safetensors",
-        "library:pytorch",
-        "task:text-generation",
-        "custom_tag:chat",
-        "deploy:swingdeploy"
-      ],
-      "task": "text-generation",
-      "downloads": 1409896,
-      "likes": 168,
-      "has_gguf": true
-    },
-    {
-      "repository_id": "unsloth/Qwen3-30B-A3B-GGUF",
-      "display_name": "Qwen3-30B-A3B-GGUF",
-      "source": "modelscope",
-      "repository_type": "model",
-      "description": "",
-      "tags": [
-        "license:apache-2.0",
-        "model_type:qwen3_moe",
-        "library:transformer",
-        "library:gguf",
-        "library:pytorch",
-        "task:text-generation",
-        "custom_tag:qwen3",
-        "custom_tag:qwen",
-        "custom_tag:unsloth",
-        "custom_tag:transformers",
-        "custom_tag:gguf",
-        "deploy:swingdeploy"
-      ],
-      "task": "text-generation",
-      "downloads": 1120829,
-      "likes": 16,
-      "has_gguf": true
-    },
-    ... 9 more
+    ... 11 more
   ]
 }
 ```
@@ -813,7 +841,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `checkpoint` (query) | Yes | Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` (query) | No | Registry: `huggingface` or `modelscope`. Defaults to the server's `default_model_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `source` that disagrees with the checkpoint URL's registry, or offline mode (`code: lemond_offline`). A checkpoint the registry does not have answers `404`, and any other transport or parsing failure answers `500` with an `error` message.
+A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an unsupported `source` or one that disagrees with the checkpoint URL's registry, a Hugging Face GGUF repository that llama.cpp cannot run, or offline mode (`code: lemond_offline`). A checkpoint the registry does not have answers `404`, and any other failure, such as a repository with no GGUF, ONNX RyzenAI or collection files, answers `500` with an `error` message.
 
 ### Example request
 
@@ -851,21 +879,7 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `so
       "sharded": false,
       "size_bytes": 5027784512
     },
-    {
-      "name": "UD-Q4_K_XL",
-      "primary_file": "Qwen3-8B-UD-Q4_K_XL.gguf",
-      "files": ["Qwen3-8B-UD-Q4_K_XL.gguf"],
-      "sharded": false,
-      "size_bytes": 5135722304
-    },
-    {
-      "name": "Q8_0",
-      "primary_file": "Qwen3-8B-Q8_0.gguf",
-      "files": ["Qwen3-8B-Q8_0.gguf"],
-      "sharded": false,
-      "size_bytes": 8709519168
-    },
-    ... 22 more
+    ... 24 more
   ]
 }
 ```
@@ -877,8 +891,8 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `so
 - `recipe` - Suggested recipe: `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection.
 - `repo_kind` - Kind of repository: `gguf`, `onnx-ryzenai` or `collection`.
 - `suggested_name` - Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name.
-- `suggested_labels` - Inferred labels: `vision` if any `mmproj-*.gguf` files exist, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one.
-- `mmproj_files` - Bare filenames of `mmproj-*.gguf` files in the repo; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model.
+- `suggested_labels` - Inferred labels: `vision` if any GGUF file name contains `mmproj`, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one.
+- `mmproj_files` - Bare filenames of the repo's GGUF files whose name contains `mmproj`; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model.
 - `draft_files` - Bare names of draft-model GGUF files.
 - `variants` - Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order.
   - `name` - Variant name, such as `Q4_K_M`.
@@ -895,7 +909,7 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), a `so
 ## `POST /v1/delete`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Deletes a model's files from local storage, unloading the model first when it is loaded. Deleting a collection (`recipe: "collection.omni"`) removes only its entry from `user_models.json`; delete its components to free their disk space.
+Deletes a model's files from local storage, unloading the model first when it is loaded. A `user.*` model's entry in `user_models.json` is removed too. Deleting a collection (`recipe: "collection.omni"`) removes only that entry; delete its components to free their disk space.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -936,6 +950,11 @@ An unknown model, or one this system does not support, answers `422`; other fail
 ```json
 {"status": "success", "message": "Deleted model: user.Phi-4-Mini-GGUF"}
 ```
+
+**Field Descriptions:**
+
+- `status` - Always `success`.
+- `message` - A confirmation naming the deleted model.
 <!-- END GENERATED: lemonade.delete -->
 
 <!-- BEGIN GENERATED: lemonade.load -->
@@ -952,17 +971,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pinned` | No | If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. When omitted, a loaded model keeps its pin state and a new load uses the model's saved `pinned` option, else `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `save_options` | No | If `true`, saves the options this load uses as the model's `recipe_options.json` entry, replacing the stored one; an option sent as `null` keeps its stored value. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | `llamacpp`, `flm`, `ryzenai-llm`: context size, or `-1` to size it automatically. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `save_options` | No | If `true`, saves the options sent in this request as the model's `recipe_options.json` entry, replacing the stored one, so an option the request omits is no longer saved; one sent as `null` keeps its stored value. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Recipes that take a context size, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`: context size, or `-1` to size it automatically. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `llamacpp_args` | No | `llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, `--model-draft`, `--embeddings` and `--reranking`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `llamacpp_args` | No | `llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, `--model-draft`, `--embeddings`, `--reranking` and `--metrics`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_backend` | No | `whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or `metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_args` | No | `whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, `--model` and `--port` are rejected. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `steps` | No | `sd-cpp`: inference steps per image. Defaults to the model's own, else `20`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | `sd-cpp`: classifier-free guidance scale. Defaults to the model's own, else `7.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` | No | `sd-cpp`: image width in pixels. Defaults to the model's own, else `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | `sd-cpp`: image height in pixels. Defaults to the model's own, else `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `merge_args` | No | If `true` (the default), server-wide `*_args` still apply when the request sends `*_args`. If `false`, the request's `*_args` replace every server-wide argument instead of adding to them. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `merge_args` | No | If `true`, server-wide `*_args` still apply when the request sends `*_args`. If `false`, the request's `*_args` are the only arguments passed: server-wide, saved and architecture `*_args` are dropped, as are the arguments Lemonade adds to `llama-server` by default, such as `--parallel 1`. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Loading a collection (`recipe: "collection.omni"`) loads each component in turn with the component's own saved options; options in the request are not forwarded. A `collection.router` model loads nothing until a request routes to a candidate.
 
@@ -974,18 +993,19 @@ Each recipe option comes from the first of these layers that sets it:
 
 1. The `load` request
 2. The model's own options: its registry and image defaults, with its saved `recipe_options.json` entry on top
-3. Server-wide settings in `config.json`, or the environment variables that override them (see [Server Configuration](../guide/configuration/README.md))
-4. Lemonade's built-in defaults
+3. Lemonade's defaults for the model's GGUF architecture
+4. Server-wide settings in `config.json`, or the environment variables that override them (see [Server Configuration](../guide/configuration/README.md))
+5. Lemonade's built-in defaults
 
-An option sent as `null` skips the saved value for this load without changing `recipe_options.json`. A `*_args` in the request replaces the model's saved args for this load.
+An option sent as `null` skips the saved value for this load without changing `recipe_options.json`. A `*_args` option instead combines the flags of every layer, each flag from the highest layer that sets it, except that a `*_args` in the request replaces the model's and the architecture's `*_args` for this load.
 
 Every option the model's recipe accepts can be passed; the [Backend Reference](../dev/backends-reference.md#recipe-options) lists them per recipe.
 
-Load failures answer with the same error object as inference requests: `404` for an unknown or unsupported model, `409` when pinned models fill every slot, and `500` when the backend fails to start.
+Load failures answer with the same error object as inference requests: `404` for an unknown or unsupported model, `409` when pinned models fill every slot, and `500` for any other failure, such as a failed download or a backend that fails to start.
 
 ### Saved Options
 
-`recipe_options.json`, in the Lemonade config directory (`~/.config/lemonade` by default), holds each model's saved options, keyed by the full model name including any `user.` or `extra.` prefix:
+`recipe_options.json`, in the Lemonade config directory (`~/.config/lemonade` by default), holds each model's saved options, keyed by the model name with its source prefix: `user.` or `extra.` as in the name, and `builtin.` for a built-in model:
 
 ```json
 {
@@ -994,7 +1014,7 @@ Load failures answer with the same error object as inference requests: `404` for
     "llamacpp_backend": "vulkan",
     "llamacpp_args": "-np 2 -kvu"
   },
-  "whisper-large-v3-turbo-q8_0.bin": {
+  "builtin.Whisper-Large-v3-Turbo": {
     "whispercpp_backend": "npu",
     "whispercpp_args": "--convert"
   }
@@ -1021,24 +1041,61 @@ Load failures answer with the same error object as inference requests: `404` for
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
+=== "PowerShell (collection)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/load" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"model_name": "LMX-Omni-5.5B-Lite"}'
+    ```
+
+=== "Bash (collection)"
+
+    ```bash
+    curl http://localhost:13305/v1/load \
+      -H "Content-Type: application/json" \
+      -d '{"model_name": "LMX-Omni-5.5B-Lite"}'
+    ```
+
 ### Response format
 
-`200`
+=== "Model responses"
 
-```json
-{
-  "status": "success",
-  "model_name": "Qwen3-0.6B-GGUF",
-  "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-  "recipe": "llamacpp"
-}
-```
+    `200`
+
+    ```json
+    {
+      "status": "success",
+      "model_name": "Qwen3-0.6B-GGUF",
+      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+      "recipe": "llamacpp"
+    }
+    ```
+
+=== "Collection responses"
+
+    `200`
+
+    ```json
+    {"status": "success", "model_name": "LMX-Omni-5.5B-Lite", "recipe": "collection.omni"}
+    ```
 
 **Field Descriptions:**
 
 A model with a backend of its own.
 
+- `status` - Always `success`.
+- `model_name` - The loaded model.
+- `checkpoint` - The model's main checkpoint.
+- `recipe` - The recipe that loaded the model, such as `llamacpp`.
+
 A collection, which has no checkpoint of its own.
+
+- `status` - Always `success`.
+- `model_name` - The loaded collection.
+- `recipe` - The collection's recipe: `collection.omni` or `collection.router`.
 <!-- END GENERATED: lemonade.load -->
 
 <!-- BEGIN GENERATED: lemonade.unload -->
@@ -1055,7 +1112,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model_name` | No | The model to unload; omit it to unload every model. `model` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-An unparsable body also unloads every model. A model that is not loaded answers `404`.
+An unparsable body also unloads every model. A model that is not loaded answers `404`, and so does an omni collection, whose components are unloaded by their own names.
 
 ### Example request
 
@@ -1087,6 +1144,8 @@ An unparsable body also unloads every model. A model that is not loaded answers 
 
 **Field Descriptions:**
 
+- `status` - Always `success`.
+- `message` - A confirmation that one model, or every model, was unloaded.
 - `model_name` - Only when one model was unloaded.
 <!-- END GENERATED: lemonade.unload -->
 
@@ -1125,7 +1184,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 - Describe the voice ("gentle female vocals", "raspy male baritone") in `prompt`, not in the lyrics.
 - Lyrics may be in any supported language; set `vocal_language` to match.
 
-A failed request answers with a JSON `error` object: `400` for an invalid request, `404` for an unknown model, `500` when the backend reports an error, and `502` when it produces no output.
+A failed request answers with a JSON `error` object: `400` for an invalid request, `404` for an unknown model, `500` for a body that is not valid JSON or when the backend reports an error, and `502` when it produces no output.
 
 ### Example request
 
@@ -1298,19 +1357,7 @@ This endpoint does not take any parameters.
       "url": "/v1/docs/api/README",
       "bytes": 1778
     },
-    {
-      "id": "api/anthropic",
-      "title": "Anthropic-Compatible API",
-      "url": "/v1/docs/api/anthropic",
-      "bytes": 893
-    },
-    {
-      "id": "api/internal",
-      "title": "Internal API",
-      "url": "/v1/docs/api/internal",
-      "bytes": 453
-    },
-    ... 6 more
+    ... 8 more
   ]
 }
 ```
@@ -1318,9 +1365,12 @@ This endpoint does not take any parameters.
 **Field Descriptions:**
 
 - `version` - Lemonade Server version the pages describe.
-- `docs`
+- `format` - The media type of every listed page.
+- `docs` - The bundled pages.
   - `id` - Page id, mirroring the page's path on the documentation website.
+  - `title` - The page's title.
   - `url` - Where to read the page. Clients follow it rather than building URLs, so a release can add pages without breaking them.
+  - `bytes` - The page's size in bytes.
 <!-- END GENERATED: lemonade.docs -->
 
 <!-- BEGIN GENERATED: lemonade.docs_page -->
@@ -1462,7 +1512,7 @@ This endpoint does not take any parameters.
       "max_context_window": 40960
     }
   ],
-  "pinned_models": {"classification": 0, "embedding": 0, "image": 0, ... 4 more},
+  "pinned_models": {"classification": 0, ... 6 more},
   "max_models": {
     "llm": 1,
     "embedding": 1,
@@ -1474,12 +1524,7 @@ This endpoint does not take any parameters.
   },
   "websocket_port": 9001,
   "telemetry": {"enabled": false},
-  "pinned_helper_models": {
-    "classification": 0,
-    "embedding": 0,
-    "image": 0,
-    ... 4 more
-  }
+  "pinned_helper_models": {"classification": 0, ... 6 more}
 }
 ```
 
@@ -1507,14 +1552,15 @@ This endpoint does not take any parameters.
   - `slot_pool` - The loaded-model limit the model counts against, or `unmetered`.
   - `status` - Load state: `loading`, `ready`, `in_use`, `downsizing`, `downsized`, `evicting` or `unloaded`.
   - `backend_alive` - Always `true` for a listed model.
-  - `backend_health` - `ready`, `busy`, `exited`, `stopped` or `watchdog_reset`.
+  - `backend_health` - `ready`, or `busy` while the backend has a request in flight.
   - `loaded` - Always `true` for a listed model.
-  - `watchdog_reset` - Whether the backend watchdog has reset this backend.
+  - `watchdog_reset` - Always `false` for a listed model, since a model whose backend the watchdog reset is left out.
   - `watchdog_reset_reason` - Why the watchdog reset the backend; present after a reset.
   - `max_context_window` - Largest context the model supports, when known.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
-- `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
+- `pinned_models` - Loaded pinned models, counted per model type, such as `llm` or `embedding`.
+  - How many pinned models of this type are loaded.
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md))
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
@@ -1527,7 +1573,8 @@ This endpoint does not take any parameters.
 - `telemetry` - Telemetry state.
   - `enabled` - Whether telemetry collection is active
   - `captures` - The parts of each request telemetry captures, present when `enabled` is `true`.
-- `pinned_helper_models` - Pinned routing-helper models of each type.
+- `pinned_helper_models` - Loaded pinned routing-helper models, counted per model type.
+  - How many pinned routing-helper models of this type are loaded.
 <!-- END GENERATED: lemonade.health -->
 
 <!-- BEGIN GENERATED: lemonade.stats -->
@@ -1844,6 +1891,34 @@ The same backend can carry different labels on different operating systems. Each
     "acestep": {
       "default_backend": "vulkan",
       "experimental": true,
+      "order": 13,
+      "display_name": "ACE-Step",
+      "web_display_name": "ACE-Step",
+      "modality": "Audio generation",
+      "selectable_backend": true,
+      "uses_ctx_size": false,
+      "slot_policy": "standard",
+      "support": [
+        {
+          "backend": "cuda",
+          "device_summary": "NVIDIA GPUs",
+          "devices": [{"device": "nvidia_gpu", "families": []}],
+          "format": "native",
+          "os": ["linux", "windows"],
+          "tier": "experimental"
+        },
+        ... 2 more
+      ],
+      "options": [
+        {
+          "cli_flag": "--acestep",
+          "default": "",
+          "group": "Audio Generation Options",
+          "help": "ACE-Step backend to use",
+          "name": "acestep_backend",
+          "type_name": "BACKEND"
+        }
+      ],
       "backends": {
         "cuda": {
           "devices": [],
@@ -1856,171 +1931,10 @@ The same backend can carry different labels on different operating systems. Each
           "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
           "download_filename": "acestep-cuda-linux-x64.tar.gz"
         },
-        "rocm": {
-          "devices": ["amd_gpu"],
-          "state": "installable",
-          "message": "Backend is supported but not installed.",
-          "action": "lemonade backends install acestep:rocm",
-          "version": "v0.1.1",
-          "tier": "experimental",
-          "format": "native",
-          "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
-          "download_filename": "acestep-rocm-linux-x64.tar.gz"
-        },
-        "vulkan": {
-          "devices": ["amd_gpu", "cpu"],
-          "state": "installed",
-          "message": "",
-          "action": "",
-          "version": "v0.1.1",
-          "tier": "experimental",
-          "format": "native",
-          "release_url": "https://github.com/pwilkin/acestep.cpp/releases/tag/v0.1.1",
-          "download_filename": "acestep-vulkan-linux-x64.tar.gz"
-        }
-      },
-      "display_name": "ACE-Step",
-      "modality": "Audio generation",
-      "options": [
-        {
-          "cli_flag": "--acestep",
-          "default": "",
-          "group": "Audio Generation Options",
-          "help": "ACE-Step backend to use",
-          "name": "acestep_backend",
-          "type_name": "BACKEND"
-        }
-      ],
-      "order": 13,
-      "selectable_backend": true,
-      "slot_policy": "standard",
-      "support": [
-        {
-          "backend": "cuda",
-          "device_summary": "NVIDIA GPUs",
-          "devices": [{"device": "nvidia_gpu", "families": []}],
-          "format": "native",
-          "os": ["linux", "windows"],
-          "tier": "experimental"
-        },
-        {
-          "backend": "vulkan",
-          "device_summary": "Vulkan-capable GPUs",
-          "devices": [
-            {"device": "amd_gpu", "families": []},
-            {"device": "cpu", "families": ["x86_64"]},
-            {"device": "nvidia_gpu", "families": []}
-          ],
-          "format": "native",
-          "os": ["linux", "windows"],
-          "tier": "experimental"
-        },
-        {
-          "backend": "rocm",
-          "device_summary": "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)",
-          "devices": [
-            {
-              "device": "amd_gpu",
-              "families": ["gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X"]
-            }
-          ],
-          "format": "native",
-          "os": ["linux", "windows"],
-          "tier": "experimental"
-        }
-      ],
-      "uses_ctx_size": false,
-      "web_display_name": "ACE-Step"
+        ... 2 more
+      }
     },
-    "ds4": {
-      "default_backend": "rocm",
-      "experimental": true,
-      "backends": {
-        "rocm": {
-          "devices": ["amd_gpu"],
-          "state": "installable",
-          "message": "Backend is supported but not installed.",
-          "action": "lemonade backends install ds4:rocm",
-          "version": "b0001",
-          "tier": "guest",
-          "format": "native",
-          "release_url": "https://github.com/lemonade-sdk/ds4-rocm/releases/tag/b0001",
-          "download_filename": "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz"
-        }
-      },
-      "display_name": "DwarfStar4",
-      "modality": "Text generation",
-      "options": [
-        {
-          "cli_flag": "--ds4-args",
-          "default": "",
-          "group": "DS4 Options",
-          "help": "Custom arguments to pass to ds4-server",
-          "name": "ds4_args",
-          "type_name": "ARGS"
-        }
-      ],
-      "order": 10,
-      "selectable_backend": false,
-      "slot_policy": "standard",
-      "support": [
-        {
-          "backend": "rocm",
-          "device_summary": "Prebuilt ds4 for AMD Strix Halo",
-          "devices": [{"device": "amd_gpu", "families": ["gfx1151"]}],
-          "format": "native",
-          "os": ["linux"],
-          "tier": "guest"
-        }
-      ],
-      "uses_ctx_size": true,
-      "web_display_name": "DwarfStar4"
-    },
-    "flm": {
-      "default_backend": "npu",
-      "experimental": false,
-      "backends": {
-        "npu": {
-          "devices": ["amd_npu"],
-          "state": "update_required",
-          "message": "Backend update is required before use.",
-          "action": "lemonade backends install flm:npu",
-          "version": "v1.0.5",
-          "tier": "core",
-          "format": "native",
-          "release_url": "https://github.com/ROCm/FastFlowLM/releases/tag/v1.0.7",
-          "download_filename": "fastflowlm_1.0.7_linux.tar.gz"
-        }
-      },
-      "display_name": "FastFlowLM NPU",
-      "modality": "Text generation",
-      "options": [
-        {
-          "cli_flag": "--flm-args",
-          "default": "",
-          "group": "FastFlowLM Options",
-          "help": "Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption",
-          "name": "flm_args",
-          "type_name": "ARGS"
-        }
-      ],
-      "order": 6,
-      "selectable_backend": false,
-      "slot_policy": "coexist_by_type",
-      "support": [
-        {
-          "backend": "npu",
-          "device_summary": "XDNA2 NPU",
-          "devices": [{"device": "amd_npu", "families": ["XDNA2"]}],
-          "format": "native",
-          "os": ["linux", "windows"],
-          "tier": "core"
-        }
-      ],
-      "uses_ctx_size": true,
-      "web_display_name": "FastFlowLM NPU"
-    },
-    ... 13 more
+    ... 15 more
   },
   "cloud": {"providers": []},
   "unavailable_recipes": [],
@@ -2034,24 +1948,33 @@ The same backend can carry different labels on different operating systems. Each
 - `Processor` - CPU model name
 - `Physical Memory` - Total RAM
 - `model_storage` - Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.
-  - `path` - Active model storage path from server configuration
+  - `path` - Active model storage path: the `models_dir` setting, or the Hugging Face cache directory when it is `auto`.
   - `used_bytes` - Used bytes on the model-storage drive
   - `total_bytes` - Total capacity of the model-storage drive
   - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
   - `error` - Only when the drive could not be measured.
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
-  - `amd_gpu` - AMD GPUs, both integrated and discrete, when present.
-  - `nvidia_gpu` - NVIDIA GPUs, when present.
-  - `amd_npu` - AMD NPU device (if present)
+  - `amd_gpu` - Usable AMD GPUs, both integrated and discrete; empty when there are none.
+  - `nvidia_gpu` - NVIDIA GPUs. When none is found, it holds one entry whose `available` is `false` and whose `error` says why.
+  - `amd_npu` - The AMD NPU. Always present; `available` is `false` when none is found, and `error` says why.
 - `recipes` - Software recipes and their backend support status
   - One entry per recipe, such as `llamacpp` or `flm`.
-    - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
+    - `default_backend` - Preferred backend for this system: the one set in `config.json`, else the first in preference order that this system's devices can run, favoring an installed one. Absent when none is set and none can run here.
     - `experimental` - `true` when the `default_backend`'s tier is `experimental` or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+    - `order` - The recipe's position in Lemonade's backend registry, from `0`.
+    - `display_name` - The recipe's name for people, such as `Llama.cpp GPU`.
+    - `web_display_name` - The recipe's name on the Lemonade website.
+    - `modality` - The kind of model the recipe mainly serves, such as `Text generation`.
+    - `selectable_backend` - Whether a `<recipe>_backend` option chooses the recipe's backend.
+    - `uses_ctx_size` - Whether the recipe accepts the shared `ctx_size` option.
+    - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type) or `unmetered` (never counted or evicted).
+    - `support` - Every backend's operating systems, devices and tier, the same on every host.
+    - `options` - The recipe's load options, with each one's CLI flag, default and help text.
     - `backends` - Available backends for this recipe
       - One entry per backend.
         - `devices` - Devices **on this system** that support this backend; empty when none do.
-        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`
+        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`.
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.
         - `version` - Installed or configured backend version (when available)
@@ -2059,6 +1982,7 @@ The same backend can carry different labels on different operating systems. Each
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `release_url` - Where the backend's release asset downloads from.
         - `download_filename` - The release asset's filename.
+        - `can_uninstall` - Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`.
 - `cloud` - Cloud providers installed on this server.
   - `providers` - One entry per installed provider.
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
@@ -2100,7 +2024,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `auth_header_name` | No | Cloud providers: the header that carries the API key. Defaults to `"Authorization"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auth_header_prefix` | No | Cloud providers: the text before the key in that header. Defaults to `"Bearer "`; pass `""` for gateways that expect the bare key. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `wire_format` | No | Cloud providers: `"openai"` or `"anthropic"`. An `"anthropic"` provider is served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults to `"openai"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `subscribe` | No | Local backends with `stream: true`: `false` makes the download server-owned and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `subscribe` | No | Local backends with `stream: true`: `false` makes the download server-owned and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A local install without both `recipe` and `backend`, or of a backend this system does not support and without `force`, answers `400` with an `error` string; an invalid cloud provider field answers `400` with an `error` object. Any other failure, including invalid JSON, answers `500` with an `error` string.
 
@@ -2120,11 +2044,7 @@ Optional fields are applied only when present in the request body. Re-installing
       -Uri "http://localhost:13305/v1/install" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "backend": "cloud",
-          "provider": "fireworks",
-          "base_url": "https://api.fireworks.ai/inference/v1"
-        }'
+      -Body '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
 === "Bash"
@@ -2132,11 +2052,7 @@ Optional fields are applied only when present in the request body. Re-installing
     ```bash
     curl http://localhost:13305/v1/install \
       -H "Content-Type: application/json" \
-      -d '{
-          "backend": "cloud",
-          "provider": "fireworks",
-          "base_url": "https://api.fireworks.ai/inference/v1"
-        }'
+      -d '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
 === "PowerShell (streaming)"
@@ -2157,45 +2073,120 @@ Optional fields are applied only when present in the request body. Re-installing
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true}'
     ```
 
+=== "PowerShell (job)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/install" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
+    ```
+
+=== "Bash (job)"
+
+    ```bash
+    curl http://localhost:13305/v1/install \
+      -H "Content-Type: application/json" \
+      -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
+    ```
+
+=== "PowerShell (cloud)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/install" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "backend": "cloud",
+          "provider": "fireworks",
+          "base_url": "https://api.fireworks.ai/inference/v1"
+        }'
+    ```
+
+=== "Bash (cloud)"
+
+    ```bash
+    curl http://localhost:13305/v1/install \
+      -H "Content-Type: application/json" \
+      -d '{
+          "backend": "cloud",
+          "provider": "fireworks",
+          "base_url": "https://api.fireworks.ai/inference/v1"
+        }'
+    ```
+
 ### Response format
 
-=== "Non-streaming responses"
+=== "Local responses"
 
     `200`
 
     ```json
-    {
-      "status": "success",
-      "backend": "cloud",
-      "provider": "fireworks",
-      "base_url": "https://api.fireworks.ai/inference/v1",
-      "allow_insecure_http": false,
-      "auth_header_name": "Authorization",
-      "auth_header_prefix": "Bearer ",
-      "wire_format": "openai",
-      "models_discovered": 0,
-      "auth_state": {"env_var_set": false, "runtime_key_set": false}
-    }
+    {"status": "success", "recipe": "llamacpp", "backend": "cpu"}
     ```
 
     **Field Descriptions:**
 
     A local backend installed or already up to date.
 
-    - `status` - `success`, or, in a server-owned job snapshot, the job's state.
+    - `status` - Always `success`.
+    - `recipe` - The recipe from the request.
+    - `backend` - The backend from the request.
 
-    A backend that needs manual setup on this system, such as FLM on Linux: nothing was installed and action is the setup guide's URL.
+=== "Streaming responses"
 
-    - `action` - Present instead of `status` when the backend needs manual setup on this system, such as FLM on Linux: the setup guide's URL. Nothing was installed.
+    `200`
 
-    A cloud provider registered.
+    ```text
+    event: complete
+    data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
+    ```
 
-    - `models_discovered` - Chat models discovered with the resolved API key; `0` when no key resolves.
-    - `auth_state`
-      - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
-      - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
-    - `warnings` - Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`.
-    - `warning` - The warnings joined into one string, for older clients.
+    **Field Descriptions:**
+
+    A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
+
+    - `file` - The file downloading now.
+    - `file_index` - Its position among the download's files, from `1`.
+    - `total_files` - How many files the download has.
+    - `bytes_downloaded` - Bytes of the current file downloaded so far.
+    - `bytes_total` - Size of the current file in bytes.
+    - `total_download_size` - Total expected bytes across all files, or `0` when unknown.
+    - `bytes_previously_downloaded` - Bytes of the current file already on disk before this download, when resuming or skipping existing data.
+    - `percent` - Share of the current file downloaded, from `0` to `100`.
+    - `status` - Only on a complete event for an operation that had nothing to download.
+    - `error` - Only on an error event.
+    - `code` - `unknown_model` when the model is not in the registry.
+
+=== "Job responses"
+
+    `200`
+
+    ```json
+    {
+      "status": "downloading",
+      "id": "backend:llamacpp:vulkan",
+      "type": "backend",
+      "model_name": "llamacpp:vulkan",
+      "running": true,
+      "file": "",
+      "file_index": 0,
+      "total_files": 0,
+      "bytes_downloaded": 0,
+      "bytes_total": 0,
+      "percent": 0,
+      "total_download_size": 0,
+      "bytes_previously_downloaded": 0,
+      "completed_files_bytes": 0,
+      "cumulative_bytes_downloaded": 0,
+      "overall_bytes_downloaded": 0,
+      "complete": false
+    }
+    ```
+
+    **Field Descriptions:**
 
     `stream: true` with `subscribe: false`: the server-owned download job just started.
 
@@ -2219,22 +2210,43 @@ Optional fields are applied only when present in the request body. Re-installing
     - `error` - Error message, present only for failed jobs.
     - `code` - `unknown_model` when the model is not in the registry.
 
-=== "Streaming responses"
+=== "Cloud responses"
 
     `200`
 
-    ```text
-    event: complete
-    data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
+    ```json
+    {
+      "status": "success",
+      "backend": "cloud",
+      "provider": "fireworks",
+      "base_url": "https://api.fireworks.ai/inference/v1",
+      "allow_insecure_http": false,
+      "auth_header_name": "Authorization",
+      "auth_header_prefix": "Bearer ",
+      "wire_format": "openai",
+      "models_discovered": 0,
+      "auth_state": {"env_var_set": false, "runtime_key_set": false}
+    }
     ```
 
     **Field Descriptions:**
 
-    progress events report one file; the complete event follows the last one, and an error event replaces it on failure.
+    A cloud provider registered.
 
-    - `status` - Only on a complete event for an operation that had nothing to download.
-    - `error` - Only on an error event.
-    - `code` - `unknown_model` when the model is not in the registry.
+    - `status` - Always `success`.
+    - `backend` - Always `cloud`.
+    - `provider` - The provider's name, which prefixes its model names.
+    - `base_url` - The provider's saved base URL.
+    - `allow_insecure_http` - Whether an API key may be sent to an `http://` base URL.
+    - `auth_header_name` - The header that carries the API key.
+    - `auth_header_prefix` - The text before the key in that header.
+    - `wire_format` - The API the provider speaks: `openai` or `anthropic`.
+    - `models_discovered` - Chat models discovered with the resolved API key; `0` when no key resolves.
+    - `auth_state` - Which API keys are set for the provider.
+      - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
+      - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
+    - `warnings` - Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`.
+    - `warning` - The warnings joined into one string, for older clients.
 <!-- END GENERATED: lemonade.install -->
 
 <!-- BEGIN GENERATED: lemonade.install_dry_run -->
@@ -2257,7 +2269,7 @@ A device ISA may resolve to a family target name used by the release repository,
 
 Lemonade does not check that the asset exists; fetch `url`, or its split-archive manifest, to verify it.
 
-A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or install-parameter resolution failing (an unknown recipe/backend pair, an unsupported platform, unavailable architecture detection, failed version resolution), answers `500`. Errors carry an `error` string, plus `arch` when it was parsed before the failure.
+A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or install-parameter resolution failing (an unknown recipe/backend pair, an unsupported platform, unavailable architecture detection, failed version resolution), answers `500`. Errors carry an `error` string, and a `500` also carries `arch` when the request set one.
 
 ### Example request
 
@@ -2342,10 +2354,28 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
       -Uri "http://localhost:13305/v1/uninstall" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"backend": "cloud", "provider": "fireworks"}'
+      -Body '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
 === "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/uninstall \
+      -H "Content-Type: application/json" \
+      -d '{"recipe": "llamacpp", "backend": "cpu"}'
+    ```
+
+=== "PowerShell (cloud)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/uninstall" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"backend": "cloud", "provider": "fireworks"}'
+    ```
+
+=== "Bash (cloud)"
 
     ```bash
     curl http://localhost:13305/v1/uninstall \
@@ -2355,18 +2385,35 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
 
 ### Response format
 
-`200`
+=== "Local responses"
 
-```json
-{"status": "success", "backend": "cloud", "provider": "fireworks", "models_evicted": 0}
-```
+    `200`
+
+    ```json
+    {"status": "success", "recipe": "llamacpp", "backend": "cpu"}
+    ```
+
+=== "Cloud responses"
+
+    `200`
+
+    ```json
+    {"status": "success", "backend": "cloud", "provider": "fireworks", "models_evicted": 0}
+    ```
 
 **Field Descriptions:**
 
 A local backend removed.
 
+- `status` - Always `success`.
+- `recipe` - The recipe from the request.
+- `backend` - The backend from the request.
+
 A cloud provider removed.
 
+- `status` - Always `success`.
+- `backend` - Always `cloud`.
+- `provider` - The provider that was removed.
 - `models_evicted` - Discovered models removed from the catalog.
 <!-- END GENERATED: lemonade.uninstall -->
 
@@ -2427,7 +2474,7 @@ A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a non-
 
 - `provider` - The provider the key was set for.
 - `allow_insecure_http` - Whether the provider may receive keys over `http://`, after this request.
-- `auth_state`
+- `auth_state` - Which API keys are set for the provider.
   - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
   - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
 - `models_discovered` - Chat models discovered with the key; `0` when discovery fails.
@@ -2479,8 +2526,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 **Field Descriptions:**
 
+- `provider` - The provider whose key was cleared.
 - `cleared_runtime_key` - `false` when no in-memory key was present, for example when the only key came from the environment variable.
-- `auth_state`
+- `auth_state` - Which API keys are set for the provider, after the clear.
   - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
   - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
 <!-- END GENERATED: lemonade.cloud_auth_provider -->
@@ -2613,13 +2661,17 @@ This endpoint does not take any parameters.
 ```json
 {"status": "ok"}
 ```
+
+**Field Descriptions:**
+
+- `status` - Always `ok`.
 <!-- END GENERATED: lemonade.live -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_create -->
 ## `POST /v1/jobs`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts, and can be paused, interrupted, resumed, read and deleted.
+Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2627,14 +2679,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `name` | No | Display name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `steps` | No | The steps, in order; see [Recipe: steps](../dev/job-system.md#recipe-steps). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `definition` | No | Alternative to `steps`: an object whose `steps` holds the steps. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `name` | No | Display name. Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | The steps, in order, at least one; see [Recipe: steps](../dev/job-system.md#recipe-steps). Required unless `definition` holds them. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `definition` | No | Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over `steps`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `inputs` | No | Values the steps read as `context.inputs`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-An invalid step graph answers `400` at creation. While the job store holds 50 jobs that are all still active or resumable, a new job answers `429` until one is deleted or finishes.
+An invalid step graph answers `400` at creation. The job store holds 50 jobs: a new job evicts the oldest finished one, and while all 50 are still active or resumable, a new job answers `429` until one is deleted or finishes.
 
-Exclusive ops (`load`, `unload`, `chat`) hold a Router slot, so normal traffic queues behind a running job.
+A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot for as long as it runs, so normal traffic queues behind it.
 
 [`docs/dev/job-system.md`](../dev/job-system.md) specifies the step schema, op set and lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) the `when`/`branch` expression grammar.
 
@@ -2711,23 +2763,25 @@ This endpoint does not take any parameters.
       "created_at": "2026-10-07T17:15:03Z",
       "progress": {"cursor": "wait", "completed": 0, "step_count": 1}
     },
-    {
-      "id": "job-20261007-171503-000001",
-      "name": "example",
-      "status": "running",
-      "created_at": "2026-10-07T17:15:03Z",
-      "progress": {"cursor": "wait", "completed": 0, "step_count": 1}
-    }
+    ... 1 more
   ]
 }
 ```
 
 **Field Descriptions:**
 
-- `jobs`
-  - `progress`
-    - `cursor` - Id of the current or next step.
+- `jobs` - Every job not deleted or evicted, newest first.
+  - `id` - The job's id.
+  - `name` - The display name the job was created with.
+  - `status` - The job's state: `queued`, `running`, `paused`, `interrupted`, `completed` or `failed`.
+  - `created_at` - When the job was created, as an ISO 8601 UTC time.
+  - `finished_at` - When the job finished, present once it has.
+  - `progress` - How far through its steps the job is.
+    - `cursor` - Id of the current or next step; empty once the job has run its last step.
     - `completed` - Steps that need no more work: completed, skipped, or failed with the failure handled.
+    - `step_count` - How many steps the job has.
+  - `summary` - Summary text that Lemonade never writes itself: present only when the job's entry in `jobs.json`, in the Lemonade config directory, has one.
+  - `error` - Why the job failed or was interrupted, present when known.
 <!-- END GENERATED: lemonade.jobs_list -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_pause -->
@@ -2769,6 +2823,10 @@ An unknown job, or one that is not queued or running, answers `404`.
 ```json
 {"status": "pausing"}
 ```
+
+**Field Descriptions:**
+
+- `status` - Always `pausing`.
 <!-- END GENERATED: lemonade.jobs_pause -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_interrupt -->
@@ -2810,6 +2868,10 @@ An unknown job, or one that is not queued or running, answers `404`.
 ```json
 {"status": "interrupting"}
 ```
+
+**Field Descriptions:**
+
+- `status` - Always `interrupting`.
 <!-- END GENERATED: lemonade.jobs_interrupt -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_resume -->
@@ -2851,6 +2913,10 @@ An unknown job, or one that is not paused or interrupted, answers `404`.
 ```json
 {"status": "resuming"}
 ```
+
+**Field Descriptions:**
+
+- `status` - Always `resuming`.
 <!-- END GENERATED: lemonade.jobs_resume -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_get -->
@@ -2910,15 +2976,32 @@ An unknown job answers `404`.
 
 **Field Descriptions:**
 
+- `id` - The job's id.
+- `name` - The display name the job was created with.
+- `status` - The job's state: `queued`, `running`, `paused`, `interrupted`, `completed` or `failed`.
+- `inputs` - The `inputs` the job was created with.
 - `context` - Each completed step's output under its id, the extracted keys, and inputs.
-- `cursor` - Id of the current or next step.
+- `steps` - The job's steps, in order.
+  - `id` - The step's id.
+  - `op` - The operation the step runs.
+  - `params` - The step's parameters.
+  - `status` - The step's state: `pending`, `running`, `completed`, `failed` or `skipped`.
+  - `duration_ms` - How long the step ran, in milliseconds.
+  - `error` - Why the step failed, present after a failure.
+  - `output` - What the step returned, present once it has output.
+- `cursor` - Id of the current or next step; empty once the job has run its last step.
+- `created_at` - When the job was created, as an ISO 8601 UTC time.
+- `started_at` - When the job first ran, present once it has.
+- `finished_at` - When the job finished, present once it has.
+- `summary` - Summary text that Lemonade never writes itself: present only when the job's entry in `jobs.json`, in the Lemonade config directory, has one.
+- `error` - Why the job failed or was interrupted, present when known.
 <!-- END GENERATED: lemonade.jobs_get -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_delete -->
 ## `DELETE /v1/jobs/{id}`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Removes a job. An active job is interrupted first, and the models it loaded are unloaded before it disappears.
+Removes a job at once, even a running one, which is interrupted. The models a running or paused job loaded are unloaded in the background; a finished job's models stay loaded.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2953,4 +3036,8 @@ An unknown job answers `404`.
 ```json
 {"status": "deleted"}
 ```
+
+**Field Descriptions:**
+
+- `status` - Always `deleted`.
 <!-- END GENERATED: lemonade.jobs_delete -->

@@ -30,6 +30,8 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 | `model` | Yes | Reranker model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+A model that is not a reranker answers `400`, or `501` from llama.cpp when it is a llama.cpp model. A body that is not valid JSON answers `500`.
+
 ### Example request
 
 === "PowerShell"
@@ -74,11 +76,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 {
   "model": "bge-reranker-v2-m3-GGUF",
   "object": "list",
-  "results": [
-    {"index": 0, "relevance_score": 8.634263038635254},
-    {"index": 2, "relevance_score": -3.4511733055114746},
-    {"index": 1, "relevance_score": -5.399629592895508}
-  ],
+  "results": [{"index": 0, "relevance_score": 8.634263038635254}, ... 2 more],
   "usage": {"prompt_tokens": 51, "total_tokens": 51}
 }
 ```
@@ -132,12 +130,14 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
   {
     "id": 0,
     "next_token": [
-      {"has_next_token": false, "n_remain": -1, "n_decoded": 0, "has_new_line": false}
+      {"has_next_token": false, "has_new_line": false, "n_remain": -1, "n_decoded": 0}
     ],
     "id_task": 212,
     "n_ctx": 40960,
     "is_processing": false,
     "n_prompt_tokens": 224,
+    "n_prompt_tokens_cache": 0,
+    "n_prompt_tokens_processed": 0,
     "params": {
       "adaptive_decay": 0.8999999761581421,
       "adaptive_target": -1.0,
@@ -192,8 +192,6 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
       "xtc_probability": 0.0,
       "xtc_threshold": 0.10000000149011612
     },
-    "n_prompt_tokens_cache": 0,
-    "n_prompt_tokens_processed": 0,
     "speculative": false
   }
 ]
@@ -204,13 +202,17 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 - `id` - The slot's ID.
 - `next_token` - Generation state of the slot's current request.
   - `has_next_token` - Whether more tokens are expected
+  - `has_new_line` - Whether the request's generated text contains a newline.
   - `n_remain` - Number of tokens remaining to generate
   - `n_decoded` - Number of tokens already decoded
 - `id_task` - The task the slot is processing, or processed last when idle.
 - `n_ctx` - Context size of the slot.
 - `is_processing` - Whether the slot is serving a request.
 - `n_prompt_tokens` - Tokens in the slot's current prompt.
+- `n_prompt_tokens_cache` - Prompt tokens reused from the slot's cache instead of processed again.
+- `n_prompt_tokens_processed` - Prompt tokens processed for the current request.
 - `params` - Sampling parameters of the slot's last request.
+- `speculative` - Whether the slot uses speculative decoding.
 <!-- END GENERATED: llamacpp.slots -->
 
 <!-- BEGIN GENERATED: llamacpp.slots_action -->

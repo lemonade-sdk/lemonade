@@ -43,7 +43,7 @@ public:
         stream.format = ResponseFormat::JsonLines;
         stream.schema = ordered_json::parse(R"({
             "type": "object",
-            "description": "The first line is `pulling manifest`, then one line per progress report, then `success`.",
+            "description": "The first line is `pulling manifest`, then one line per progress report, then two `success` lines.",
             "properties": {
                 "status": {"type": "string", "description": "`pulling manifest`, `downloading <file>`, or `success`."},
                 "digest": {"type": "string", "description": "Download lines: `sha256:` followed by the file name."},

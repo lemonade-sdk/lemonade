@@ -68,21 +68,23 @@ public:
             "Each recipe option comes from the first of these layers that sets it:\n\n"
             "1. The `load` request\n"
             "2. The model's own options: its registry and image defaults, with its saved `recipe_options.json` entry on top\n"
-            "3. Server-wide settings in `config.json`, or the environment variables that override "
+            "3. Lemonade's defaults for the model's GGUF architecture\n"
+            "4. Server-wide settings in `config.json`, or the environment variables that override "
             "them (see [Server Configuration](../guide/configuration/README.md))\n"
-            "4. Lemonade's built-in defaults\n\n"
+            "5. Lemonade's built-in defaults\n\n"
             "An option sent as `null` skips the saved value for this load without changing "
-            "`recipe_options.json`. A `*_args` in the request replaces the model's saved args for "
-            "this load.",
+            "`recipe_options.json`. A `*_args` option instead combines the flags of every layer, "
+            "each flag from the highest layer that sets it, except that a `*_args` in the request "
+            "replaces the model's and the architecture's `*_args` for this load.",
             "Every option the model's recipe accepts can be passed; the [Backend "
             "Reference](../dev/backends-reference.md#recipe-options) lists them per recipe.",
             "Load failures answer with the same error object as inference requests: `404` for an "
             "unknown or unsupported model, `409` when pinned models fill every slot, and `500` "
-            "when the backend fails to start.",
+            "for any other failure, such as a failed download or a backend that fails to start.",
             "### Saved Options\n\n"
             "`recipe_options.json`, in the Lemonade config directory (`~/.config/lemonade` by "
-            "default), holds each model's saved options, keyed by the full model name including "
-            "any `user.` or `extra.` prefix:\n\n"
+            "default), holds each model's saved options, keyed by the model name with its source "
+            "prefix: `user.` or `extra.` as in the name, and `builtin.` for a built-in model:\n\n"
             "```json\n"
             "{\n"
             "  \"user.Qwen2.5-Coder-1.5B-Instruct\": {\n"
@@ -90,7 +92,7 @@ public:
             "    \"llamacpp_backend\": \"vulkan\",\n"
             "    \"llamacpp_args\": \"-np 2 -kvu\"\n"
             "  },\n"
-            "  \"whisper-large-v3-turbo-q8_0.bin\": {\n"
+            "  \"builtin.Whisper-Large-v3-Turbo\": {\n"
             "    \"whispercpp_backend\": \"npu\",\n"
             "    \"whispercpp_args\": \"--convert\"\n"
             "  }\n"
@@ -105,20 +107,22 @@ public:
              "When omitted, a loaded model keeps its pin state and a new load uses the model's "
              "saved `pinned` option, else `false`."},
             {"save_options", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If `true`, saves the options this load uses as the model's `recipe_options.json` "
-             "entry, replacing the stored one; an option sent as `null` keeps its stored value. To "
+             "If `true`, saves the options sent in this request as the model's "
+             "`recipe_options.json` entry, replacing the stored one, so an option the request "
+             "omits is no longer saved; one sent as `null` keeps its stored value. To "
              "save options without loading, or to change one option without resending the rest, "
              "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
              "`false`."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "`llamacpp`, `flm`, `ryzenai-llm`: context size, or `-1` to size it automatically."},
+             "Recipes that take a context size, such as `llamacpp`, `flm`, `ryzenai-llm` and "
+             "`vllm`: context size, or `-1` to size it automatically."},
             {"llamacpp_backend", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
              "or `system` for a `llama-server` already installed where supported."},
             {"llamacpp_args", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
              "with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, "
-             "`--model-draft`, `--embeddings` and `--reranking`."},
+             "`--model-draft`, `--embeddings`, `--reranking` and `--metrics`."},
             {"whispercpp_backend", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "`whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or "
              "`metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports."},
@@ -134,9 +138,10 @@ public:
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "`sd-cpp`: image height in pixels. Defaults to the model's own, else `512`."},
             {"merge_args", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If `true` (the default), server-wide `*_args` still apply when the request sends "
-             "`*_args`. If `false`, the request's `*_args` replace every server-wide argument "
-             "instead of adding to them."},
+             "If `true`, server-wide `*_args` still apply when the request sends `*_args`. If "
+             "`false`, the request's `*_args` are the only arguments passed: server-wide, saved "
+             "and architecture `*_args` are dropped, as are the arguments Lemonade adds to "
+             "`llama-server` by default, such as `--parallel 1`. Defaults to `true`."},
         };
 
         RouteResponse response;

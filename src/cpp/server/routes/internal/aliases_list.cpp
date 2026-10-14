@@ -21,8 +21,10 @@ public:
         s.summary = "List all active model aliases";
         s.description = "Lists every model alias with its target.";
         s.notes = {
-            "An alias stands in for its target in the `model` field of OpenAI-compatible and "
-            "Lemonade requests; the Ollama and Anthropic gateways do not resolve aliases. "
+            "An alias stands in for its target in the `model` field of inference requests and of "
+            "[`POST /v1/load`](./lemonade.md#post-v1load) and "
+            "[`POST /v1/unload`](./lemonade.md#post-v1unload); the Ollama and Anthropic gateways "
+            "do not resolve aliases. "
             "Aliases live in "
             "`<cache_dir>/aliases.json`; see "
             "[Model Aliases](../guide/configuration/custom-models.md).",

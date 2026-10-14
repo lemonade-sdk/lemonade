@@ -23,7 +23,7 @@ public:
         s.description =
             "Searches Hugging Face or ModelScope for repositories matching a text query. The "
             "results are candidates chosen from registry metadata, so the desktop app's Model "
-            "Manager checks each one with [`/v1/pull/variants`](#get-v1pullvariants) and offers a "
+            "Manager checks each one with [`GET /v1/pull/variants`](#get-v1pullvariants) and offers a "
             "download only for repositories whose files pass.";
         s.notes = {
             "A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mode (`code: lemond_offline`). A `429` means the upstream "
@@ -39,7 +39,8 @@ public:
             {"limit", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
              "Maximum number of results, from `1` to `50`. Defaults to `12`."},
             {"format", ArgIn::Query, {{"enum", json::array({"gguf"})}}, false, Support::Available,
-             "Only `gguf`, which favors GGUF repositories in search and ranking."},
+             "Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them "
+             "in a ModelScope search."},
         };
 
         RouteResponse response;

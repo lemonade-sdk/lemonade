@@ -115,6 +115,8 @@ public:
         // always returns it.
         ordered_json decision = route_decision_field_schema();
         decision["properties"]["trace"]["description"] = "Per-condition trace of the evaluation.";
+        decision["properties"]["outputs"]["description"] =
+            "The matched rule's `outputs`, passed through unchanged.";
         decision["description"] =
             "The routing decision, shaped like the `x_lemonade_route` object a routed completion "
             "returns with `route_trace: true`.";

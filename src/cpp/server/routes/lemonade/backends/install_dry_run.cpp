@@ -36,8 +36,8 @@ public:
             "A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or "
             "install-parameter resolution failing (an unknown recipe/backend pair, an unsupported "
             "platform, unavailable architecture detection, failed version resolution), answers "
-            "`500`. Errors carry an `error` string, plus `arch` when it was parsed before the "
-            "failure.",
+            "`500`. Errors carry an `error` string, and a `500` also carries `arch` when the "
+            "request set one.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

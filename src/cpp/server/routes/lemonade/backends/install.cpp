@@ -138,7 +138,7 @@ public:
              "Local backends with `stream: true`: `false` makes the download server-owned and "
              "answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) "
              "and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
-             "Defaults to `true`."},
+             "With `true`, closing the stream cancels the download. Defaults to `true`."},
         };
 
         RouteResponse response;

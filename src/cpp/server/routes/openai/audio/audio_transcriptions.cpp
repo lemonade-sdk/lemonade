@@ -27,6 +27,8 @@ public:
         s.notes = {
             "On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400` and "
             "`verbose_json` has no `segments`.",
+            "A model that cannot transcribe answers `400` with `type` `unsupported_operation`, "
+            "after it loads.",
         };
         s.args = {
             {"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
@@ -34,15 +36,16 @@ public:
             {"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
              "The transcription model to use (e.g., `Whisper-Tiny`)."},
             {"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
-             "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to the "
-             "backend's own."},
+             "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, "
+             "which detects it, for whisper.cpp models, and to the backend's own for the others."},
             {"response_format", ArgIn::Form,
              {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
              "`json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`."},
             {"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
              "Text to guide the transcription's style or continue a previous segment."},
             {"temperature", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own "
+             "for FastFlowLM models. Moonshine models ignore it."},
         };
 
         RouteResponse transcript;

@@ -4,7 +4,7 @@ Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/do
 
 To enable auto-detection by Ollama-integrated apps, configure the server to use the Ollama default port `11434`. See [Server Configuration](../guide/configuration/README.md#settings-reference) for how to change the port.
 
-A model name may carry a `:latest` tag, which Lemonade ignores. Errors answer with a JSON body `{"error": "<message>"}`, and an unknown model answers `404`.
+A model name may carry a `:latest` tag, which Lemonade ignores. Errors answer with a JSON body `{"error": "<message>"}`. An unknown model answers `404`, and so does a route that loads the model on first use when that load fails for any reason, except a load blocked by a `collection.router` residency constraint, which answers `409`. A backend error answers `500`.
 
 <!-- BEGIN GENERATED: ollama.summary -->
 | Method | Endpoint | Status | Description |
@@ -40,7 +40,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | Yes | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `tools` | No | Tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `format` | No | `json` constrains the reply to a JSON object. JSON schemas are not supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `think` | No | Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
@@ -129,9 +129,12 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
     - `model` - The model that generated the response.
     - `created_at` - Always `2024-01-01T00:00:00Z`.
-    - `message`
+    - `message` - The assistant's message; in a streamed line, the next piece of it.
+      - `role` - Always `assistant`.
+      - `content` - The message text.
       - `thinking` - Reasoning models only: the model's thinking.
       - `tool_calls` - Calls to the request's tools, with arguments as objects.
+    - `done` - `false` while the message streams; `true` once it ends, and on a response that is not streamed.
     - `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
     - `prompt_eval_count` - Prompt tokens.
     - `eval_count` - Generated tokens.
@@ -158,9 +161,12 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
     - `model` - The model that generated the response.
     - `created_at` - Always `2024-01-01T00:00:00Z`.
-    - `message`
+    - `message` - The assistant's message; in a streamed line, the next piece of it.
+      - `role` - Always `assistant`.
+      - `content` - The message text.
       - `thinking` - Reasoning models only: the model's thinking.
       - `tool_calls` - Calls to the request's tools, with arguments as objects.
+    - `done` - `false` while the message streams; `true` once it ends, and on a response that is not streamed.
     - `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
     - `prompt_eval_count` - Prompt tokens.
     - `eval_count` - Generated tokens.
@@ -184,7 +190,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `width` | No | Image models only: image width in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | Image models only: image height in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `steps` | No | Image models only: inference steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -284,7 +290,7 @@ Image generation never streams.
     - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `response` - Generated text. Empty for an image model.
     - `image` - Image models only: the generated image, base64-encoded.
-    - `done` - `true` on the last line, or on the whole response when not streaming.
+    - `done` - `true` on a response that is not streamed, and on the last two lines of a stream.
     - `done_reason` - `stop`, or `unload` after an unload request.
     - `context` - Always empty.
     - `prompt_eval_count` - Prompt tokens.
@@ -312,7 +318,7 @@ Image generation never streams.
     - `created_at` - Always `2024-01-01T00:00:00Z`.
     - `response` - Generated text. Empty for an image model.
     - `image` - Image models only: the generated image, base64-encoded.
-    - `done` - `true` on the last line, or on the whole response when not streaming.
+    - `done` - `true` on a response that is not streamed, and on the last two lines of a stream.
     - `done_reason` - `stop`, `length`, or `unload` after an unload request.
     - `context` - Always empty.
     - `prompt_eval_count` - Prompt tokens.
@@ -368,37 +374,7 @@ This endpoint does not take any parameters.
         "quantization_level": ""
       }
     },
-    {
-      "name": "Qwen3-0.6B-GGUF:latest",
-      "model": "Qwen3-0.6B-GGUF:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 382252089,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llamacpp",
-        "families": ["llamacpp"],
-        "parameter_size": "0.6B",
-        "quantization_level": "Q4_0"
-      }
-    },
-    {
-      "name": "Qwen3-0.6B-HRX:latest",
-      "model": "Qwen3-0.6B-HRX:latest",
-      "modified_at": "2024-01-01T00:00:00Z",
-      "size": 382252089,
-      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llamacpp-hrx",
-        "families": ["llamacpp-hrx"],
-        "parameter_size": "0.6B",
-        "quantization_level": "Q4_0"
-      }
-    },
-    ... 8 more
+    ... 10 more
   ]
 }
 ```
@@ -415,6 +391,7 @@ This endpoint does not take any parameters.
     - `parent_model` - Always empty.
     - `format` - Always `gguf`.
     - `family` - The model's recipe, e.g. `llamacpp`.
+    - `families` - A list holding only `family`.
     - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
     - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
 <!-- END GENERATED: ollama.tags -->
@@ -485,16 +462,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 **Field Descriptions:**
 
 - `modelfile` - A `FROM` line naming the checkpoint.
-- `parameters` - `num_ctx` followed by the model's configured context size.
+- `parameters` - `num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time.
 - `template` - Always empty.
 - `details` - Inferred from the model name, recipe and checkpoint.
   - `parent_model` - Always empty.
   - `format` - Always `gguf`.
   - `family` - The model's recipe, e.g. `llamacpp`.
+  - `families` - A list holding only `family`.
   - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
-- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` when the model carries the matching label.
-- `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length`; the other keys are always `0`.
+- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
+- `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->
@@ -512,7 +490,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | No | Model to delete. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Success answers `200` with an empty body, as Ollama does. A model this system does not support also answers `404`.
+Success answers `200` with an empty body, as Ollama does. A model this system does not support also answers `404`, and other failures answer `500`.
 
 ### Example request
 
@@ -614,7 +592,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
 
     **Field Descriptions:**
 
-    The first line is `pulling manifest`, then one line per progress report, then `success`.
+    The first line is `pulling manifest`, then one line per progress report, then two `success` lines.
 
     - `status` - `pulling manifest`, `downloading <file>`, or `success`.
     - `digest` - Download lines: `sha256:` followed by the file name.
@@ -637,7 +615,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
 
 <!-- BEGIN GENERATED: ollama.embed -->
 ## `POST /api/embed`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Returns one embedding per input text, loading the model on first use.
 
@@ -649,7 +627,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` | Yes | Text to embed, or an array of texts. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `options` | No | `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
@@ -697,7 +675,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 <!-- BEGIN GENERATED: ollama.embeddings -->
 ## `POST /api/embeddings`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Returns the embedding of one text in Ollama's older format, loading the model on first use.
 
@@ -710,7 +688,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to embed. Required unless `input` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` | No | Accepted in place of `prompt`. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `options` | No | `num_ctx` sets the context size when this request loads the model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
@@ -816,6 +794,7 @@ This endpoint does not take any parameters.
     - `parent_model` - Always empty.
     - `format` - Always `gguf`.
     - `family` - The model's recipe, e.g. `llamacpp`.
+    - `families` - A list holding only `family`.
     - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
     - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
   - `expires_at` - Always `2099-01-01T00:00:00Z`.

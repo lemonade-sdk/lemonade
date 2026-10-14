@@ -38,9 +38,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `beta` (query) | No | Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; `true` is passed on to providers that are relayed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Lemonade runs the request as an OpenAI chat completion and converts both ways. Fields it cannot convert are ignored, and each one is reported in the `X-Lemonade-Warning` header (joined with ` | `) and, on a non-streaming response, in a `warnings` array. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so nothing is dropped; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
+Lemonade runs the request as an OpenAI chat completion and converts both ways. Some values it cannot convert, such as an unsupported content block type or `metadata`, are ignored and reported in the `X-Lemonade-Warning` header (joined with ` | `) and in a `warnings` array. Unknown fields are ignored without a warning. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so nothing is dropped; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
 
-Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. An unknown model answers `404` with a `not_found_error`.
+Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. A model that fails to load, whether unknown or not, answers `404` with a `not_found_error`, except a load blocked by a `collection.router` residency constraint, which answers `409`.
 
 ### Example request
 
@@ -123,10 +123,22 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
     **Field Descriptions:**
 
-    - `content`
+    - `id` - The message's ID.
+    - `type` - Always `message`.
+    - `role` - Always `assistant`.
+    - `model` - The model that generated the message.
+    - `content` - The message's content blocks.
       - `type` - `text` or `tool_use`. A relayed provider can add its own block types, such as `thinking`.
+      - `text` - In a `text` block: the text.
+      - `id` - In a `tool_use` block: the tool call's ID.
+      - `name` - In a `tool_use` block: the tool's name.
+      - `input` - In a `tool_use` block: the call's arguments.
     - `stop_reason` - `end_turn`, `max_tokens` or `tool_use`.
-    - `warnings` - Fields Lemonade ignored while converting.
+    - `stop_sequence` - The stop sequence that ended the message; always `null` for local models.
+    - `usage` - Token counts.
+      - `input_tokens` - Prompt tokens.
+      - `output_tokens` - Generated tokens.
+    - `warnings` - What Lemonade ignored or changed while converting; present only when there is something to report.
 
 === "Streaming responses"
 
@@ -136,9 +148,9 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
     event: message_start
     data: {"type": "message_start", "message": {"content": [], "id": "chatcmpl-W8xmVYifwOmFLduA4zOyS4skhoHrbmJi", "model": "Qwen3-0.6B-GGUF", "role": "assistant", "stop_reason": null, "stop_sequence": null, "type": "message", "usage": {"input_tokens": 0, "output_tokens": 0}}}
     event: content_block_start
-    data: {"type": "content_block_start", "content_block": {"text": "", "type": "text"}, "index": 0}
+    data: {"type": "content_block_start", "index": 0, "content_block": {"text": "", "type": "text"}}
     event: content_block_delta
-    data: {"type": "content_block_delta", "delta": {"text": "The", "type": "text_delta"}, "index": 0}
+    data: {"type": "content_block_delta", "index": 0, "delta": {"text": "The", "type": "text_delta"}}
     ...
     event: message_delta
     data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"input_tokens": 0, "output_tokens": 0}}
@@ -149,4 +161,10 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
     **Field Descriptions:**
 
     - `type` - Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`.
+    - `message` - In `message_start`: the message, with empty `content` and zero `usage`.
+    - `index` - In `content_block_start`, `content_block_delta` and `content_block_stop`: the block's position in the message's `content`.
+    - `content_block` - In `content_block_start`: the block, with empty `text` or `input`.
+    - `delta` - In `content_block_delta`: the block's next `text_delta` text or `input_json_delta` partial JSON. In `message_delta`: the `stop_reason` and `stop_sequence`.
+    - `usage` - In `message_delta`: token counts. Both are `0` when the backend's stream carries no usage, as with llama.cpp.
+    - `warnings` - In `message_delta`: what Lemonade ignored while converting; present only when there is something to report.
 <!-- END GENERATED: anthropic.messages -->

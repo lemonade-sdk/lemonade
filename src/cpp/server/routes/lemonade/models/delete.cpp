@@ -25,8 +25,9 @@ public:
         s.summary = "Delete a model";
         s.description =
             "Deletes a model's files from local storage, unloading the model first when it is "
-            "loaded. Deleting a collection (`recipe: \"collection.omni\"`) removes only its entry "
-            "from `user_models.json`; delete its components to free their disk space.";
+            "loaded. A `user.*` model's entry in `user_models.json` is removed too. Deleting a "
+            "collection (`recipe: \"collection.omni\"`) removes only that entry; delete its "
+            "components to free their disk space.";
         s.notes = {
             "A file still held open, for example by a download that was just cancelled, is retried "
             "up to 3 times, 5 seconds apart.",
