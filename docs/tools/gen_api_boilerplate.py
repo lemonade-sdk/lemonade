@@ -59,8 +59,8 @@ TEXT_LINES = 20
 LONG_STRING = 1000
 LONG_STRING_KEPT = 80
 LONG_ARRAY = 16
-# Arrays of objects and maps keyed by data show this many entries in the page.
-SHOWN_ENTRIES = 3
+# Arrays of objects and maps keyed by data show their first entry in the page.
+SHOWN_ENTRIES = 1
 MORE = "\u0000more:"
 MAX_JSON_LINES = 100
 EXAMPLE_TIMEOUT = 1800
