@@ -1120,10 +1120,20 @@ set(LEMON_CAPABILITY_ENTRIES "")
 # Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
 set(LEMON_BACKEND_DESCRIPTOR_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json" BACKEND_DEFINITION_SCHEMA)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json" THINKSOUND_DEFINITION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json")
+configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
+    "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
 set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_load_helpers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_hook_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
 foreach(_backend_entry ${LEMON_BACKENDS})
@@ -3577,4 +3587,10 @@ if(BUILD_TESTING)
     add_executable(test_thinksound_oracle test/cpp/test_thinksound_oracle.cpp)
     target_link_libraries(test_thinksound_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(ThinkSoundOracleTest CI ON COMMAND test_thinksound_oracle)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_backend_definition test/cpp/test_backend_definition.cpp)
+    target_link_libraries(test_backend_definition PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendDefinitionTest CI ON COMMAND test_backend_definition)
 endif()

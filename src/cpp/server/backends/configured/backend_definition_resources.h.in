@@ -1,0 +1,6 @@
+#pragma once
+
+namespace lemon::backends {
+inline constexpr char k_backend_definition_schema[] = R"definition(@BACKEND_DEFINITION_SCHEMA@)definition";
+inline constexpr char k_thinksound_definition[] = R"definition(@THINKSOUND_DEFINITION@)definition";
+}
