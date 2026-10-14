@@ -1636,7 +1636,8 @@ curl http://localhost:13305/v1/stats
   "prompt_tokens_total": 108,
   "cache_tokens_total": 1152,
   "routing_decisions_total": 4,
-  "routing_switches_total": 1
+  "routing_switches_total": 1,
+  "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
 }
 ```
 
@@ -1649,6 +1650,7 @@ curl http://localhost:13305/v1/stats
 - `prompt_tokens` - Total prompt tokens including cached tokens
 - `cache_tokens` - Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` / Responses-API `input_tokens_details.cached_tokens` from OpenAI-compatible cloud providers). `null` when the last request did not report cache usage
 - `*_total` - Cumulative counters since server start
+- `live` - Number of streams with recent generated output and best-effort tokens/s. The rate estimates tokens from SSE text and is **not** an exact token count; use the existing last-request statistics for exact completed-inference numbers. The values become zero after about 3 seconds without generated output or immediately when a request ends. Status and keepalive SSE events are ignored.
 - `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
 - `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
 
