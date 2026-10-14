@@ -51,6 +51,14 @@ std::optional<RegistryId> registry_id_from(const std::string& spelling);
 // and contributes nothing; startup does not abort.
 const RegistryDescriptor* descriptor_for(const RegistryId& id);
 
+namespace detail {
+// Registration is the only writer, and the built-in hosts seed the table on
+// first touch, so the order of static initializers across translation units
+// cannot observe an empty table or invalidate a descriptor pointer. A row with
+// the same id is replaced: registration carries the descriptor.
+void add_descriptor(const RegistryDescriptor& descriptor);
+}  // namespace detail
+
 const RegistryDescriptor& huggingface_descriptor();
 const RegistryDescriptor& modelscope_descriptor();
 

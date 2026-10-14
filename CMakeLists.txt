@@ -1036,9 +1036,11 @@ set(SOURCES_CORE
     src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
+    src/cpp/server/models/artifact_ref.cpp
     src/cpp/server/models/artifact_transfer.cpp
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp
+    src/cpp/server/models/fetchable_repository.cpp
     src/cpp/server/models/locator.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
@@ -3090,6 +3092,19 @@ if(BUILD_TESTING AND EXISTS "${_REGISTRY_IDENTITY_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RegistryIdentityTest CI ON COMMAND test_registry_identity)
+endif()
+
+set(_ARTIFACT_SOURCE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_source.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARTIFACT_SOURCE_TEST_SRC}")
+    add_executable(test_artifact_source
+        test/cpp/test_artifact_source.cpp
+    )
+    target_link_libraries(test_artifact_source PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ArtifactSourceTest CI ON COMMAND test_artifact_source)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC
