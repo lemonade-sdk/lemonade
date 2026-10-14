@@ -55,7 +55,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.load", ""}};
+        example.setup = {{"lemonade.load", "model"}};
         example.args = {{"content", "This is a string to tokenize"}};
         s.examples = {example};
         return s;

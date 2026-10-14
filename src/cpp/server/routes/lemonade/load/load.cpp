@@ -24,10 +24,10 @@ ordered_json load_schema() {
                 "description": "A model with a backend of its own.",
                 "required": ["status", "model_name", "checkpoint", "recipe"],
                 "properties": {
-                    "status": {"const": "success"},
-                    "model_name": {"type": "string"},
-                    "checkpoint": {"type": "string"},
-                    "recipe": {"type": "string"}
+                    "status": {"const": "success", "description": "Always `success`."},
+                    "model_name": {"type": "string", "description": "The loaded model."},
+                    "checkpoint": {"type": "string", "description": "The model's main checkpoint."},
+                    "recipe": {"type": "string", "description": "The recipe that loaded the model, such as `llamacpp`."}
                 }
             },
             {
@@ -35,9 +35,9 @@ ordered_json load_schema() {
                 "description": "A collection, which has no checkpoint of its own.",
                 "required": ["status", "model_name", "recipe"],
                 "properties": {
-                    "status": {"const": "success"},
-                    "model_name": {"type": "string"},
-                    "recipe": {"enum": ["collection.omni", "collection.router"]}
+                    "status": {"const": "success", "description": "Always `success`."},
+                    "model_name": {"type": "string", "description": "The loaded collection."},
+                    "recipe": {"enum": ["collection.omni", "collection.router"], "description": "The collection's recipe: `collection.omni` or `collection.router`."}
                 },
                 "not": {"required": ["checkpoint"]}
             }
@@ -145,9 +145,15 @@ public:
         s.responses = {response};
 
         RouteExample example;
+        example.name = "model";
         example.format = ResponseFormat::Json;
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}};
-        s.examples = {example};
+
+        RouteExample collection_example;
+        collection_example.name = "collection";
+        collection_example.format = ResponseFormat::Json;
+        collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
+        s.examples = {example, collection_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

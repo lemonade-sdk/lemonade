@@ -33,7 +33,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.pull", "non-streaming"}};
+        example.setup = {{"lemonade.pull", "job"}};
         example.args = json::object();
         s.examples = {example};
         s.quiet_log = true;

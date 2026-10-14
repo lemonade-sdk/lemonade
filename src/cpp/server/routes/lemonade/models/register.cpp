@@ -54,7 +54,7 @@ public:
             {"type", "object"},
             {"required", ordered_json::array({"status", "model_name", "canonical_model_name"})},
             {"properties", {
-                {"status", {{"const", "success"}}},
+                {"status", {{"const", "success"}, {"description", "Always `success`."}}},
                 {"model_name", {{"type", "string"}, {"description", "The ID [`GET /v1/models`](./openai.md#get-v1models) lists for the model."}}},
                 {"canonical_model_name", {{"type", "string"}, {"description", "The `user.*` name the request registered."}}},
                 {"model", [] {

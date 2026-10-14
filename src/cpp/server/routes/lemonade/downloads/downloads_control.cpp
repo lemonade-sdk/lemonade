@@ -50,21 +50,31 @@ public:
         response.format = ResponseFormat::Json;
         ordered_json removed = ordered_json::parse(R"({
             "type": "object",
+            "description": "`remove` of a stopped job, or of an `id` with no job: the job is gone.",
             "required": ["status"],
             "properties": {
-                "status": {"const": "ok"},
-                "missing": {"const": true}
+                "status": {"const": "ok", "description": "Always `ok`."},
+                "missing": {"const": true, "description": "Only when no job had that `id`."}
             }
         })");
         ordered_json snapshot = DownloadManager::job_schema();
+        snapshot["description"] = "`pause`, `cancel`, or `remove` of a running job: the job's latest snapshot.";
         response.schema = {{"oneOf", ordered_json::array({removed, snapshot})}};
         s.responses = {response};
 
         RouteExample example;
+        example.name = "pause";
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.pull", "non-streaming"}};
+        example.setup = {{"lemonade.pull", "job"}};
         example.args = {{"id", "$lemonade.pull/id"}, {"action", "pause"}};
-        s.examples = {example};
+
+        // No other example starts a job for this model, so the result does not depend on
+        // whether an earlier job's worker has stopped yet.
+        RouteExample remove_example;
+        remove_example.name = "remove";
+        remove_example.format = ResponseFormat::Json;
+        remove_example.args = {{"id", "model:Qwen3-1.7B-GGUF"}, {"action", "remove"}};
+        s.examples = {example, remove_example};
         return s;
     }
 

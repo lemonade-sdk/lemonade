@@ -16,11 +16,12 @@ using ordered_json = nlohmann::ordered_json;
 ordered_json pull_schema() {
     ordered_json success = ordered_json::parse(R"({
         "type": "object",
+        "description": "Without `stream`, or with `local_import`: the model is installed or registered.",
         "required": ["status", "model_name"],
         "properties": {
-            "status": {"const": "success", "description": "`success`, or, in a server-owned job snapshot, the job's state."},
-            "model_name": {"type": "string", "description": "The installed model, or the job's model."},
-            "message": {"type": "string", "description": "Present for `local_import`: a confirmation that the files were registered."}
+            "status": {"const": "success", "description": "Always `success`."},
+            "model_name": {"type": "string", "description": "The installed model."},
+            "message": {"type": "string", "description": "Only with `local_import`: a confirmation that the files were registered."}
         }
     })");
     ordered_json job = DownloadManager::job_schema();
@@ -153,7 +154,7 @@ public:
         s.responses = {job, events};
 
         RouteExample job_example;
-        job_example.name = "non-streaming";
+        job_example.name = "job";
         job_example.format = ResponseFormat::Json;
         job_example.args = ordered_json::parse(R"({
             "model_name": "Qwen3-0.6B-GGUF",
@@ -169,7 +170,14 @@ public:
             "stream": true
         })");
 
-        s.examples = {job_example, events_example};
+        RouteExample success_example;
+        success_example.name = "non-streaming";
+        success_example.format = ResponseFormat::Json;
+        success_example.args = ordered_json::parse(R"({
+            "model_name": "Qwen3-0.6B-GGUF"
+        })");
+
+        s.examples = {job_example, success_example, events_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

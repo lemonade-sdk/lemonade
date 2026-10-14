@@ -61,12 +61,12 @@ public:
             "type": "object",
             "required": ["object", "model", "labels"],
             "properties": {
-                "object": {"const": "classification"},
+                "object": {"const": "classification", "description": "Always `classification`."},
                 "model": {"type": "string", "description": "The model that classified the input, including one chosen because it was the only one loaded."},
                 "labels": {
                     "type": "object",
-                    "description": "Score in `[0, 1]` for each label.",
-                    "additionalProperties": {"type": "number"}
+                    "description": "Each label's score, keyed by label name.",
+                    "additionalProperties": {"type": "number", "description": "The label's score, in `[0, 1]`."}
                 }
             }
         })");

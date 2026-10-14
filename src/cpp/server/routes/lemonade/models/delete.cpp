@@ -45,8 +45,8 @@ public:
             "type": "object",
             "required": ["status", "message"],
             "properties": {
-                "status": {"const": "success"},
-                "message": {"type": "string"}
+                "status": {"const": "success", "description": "Always `success`."},
+                "message": {"type": "string", "description": "A confirmation naming the deleted model."}
             }
         })");
         s.responses = {response};

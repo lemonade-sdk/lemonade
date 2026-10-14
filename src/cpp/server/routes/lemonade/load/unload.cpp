@@ -35,8 +35,8 @@ public:
             "type": "object",
             "required": ["status", "message"],
             "properties": {
-                "status": {"const": "success"},
-                "message": {"type": "string"},
+                "status": {"const": "success", "description": "Always `success`."},
+                "message": {"type": "string", "description": "A confirmation that one model, or every model, was unloaded."},
                 "model_name": {"type": "string", "description": "Only when one model was unloaded."}
             }
         })");
@@ -44,7 +44,7 @@ public:
 
         RouteExample example;
         example.format = ResponseFormat::Json;
-        example.setup = {{"lemonade.load", ""}};
+        example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
         return s;

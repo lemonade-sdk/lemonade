@@ -234,7 +234,7 @@ nlohmann::ordered_json ModelJson::schema() {
             "models": {"type": "array", "items": {"type": "object"},
                        "description": "Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull)."},
             "checkpoints": {"type": "object", "description": "Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.",
-                            "additionalProperties": {"type": "string"}},
+                            "additionalProperties": {"type": "string", "description": "The checkpoint that fills the role named by its key."}},
             "source": {"type": "string", "description": "Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`."},
             "registry_source": {"type": "string", "description": "Remote registry the checkpoint downloads from: `huggingface` or `modelscope`."},
             "recipe_options": {"type": "object", "description": "The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top."},
