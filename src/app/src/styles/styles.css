@@ -4824,6 +4824,16 @@ optgroup {
   margin-bottom: var(--space-2);
 }
 
+.mermaid-block__error-details {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
 .mermaid-block__source {
   text-align: left;
   font-size: 0.8rem;
