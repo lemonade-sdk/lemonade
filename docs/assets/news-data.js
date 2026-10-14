@@ -1,10 +1,10 @@
 // News content data - easy to add new entries
 const newsData = [
     {
-        title: "Vision: Automatically selecting the best known configuration (auto-BKC)",
+        title: "Vision: Automatically Selecting the Best Known Configuration (auto-BKC)",
         url: "https://lemonade-server.ai/news/auto-bkc-vision.html",
         date: "October 14, 2026",
-        description: "Our roadmap for auto-BKC: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click. Plus the engine database, agent manager, and maintainability work that makes it possible.",
+        description: "Pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.",
         image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
