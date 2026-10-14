@@ -32,7 +32,7 @@ ordered_json text_completion_schema(bool chunk) {
             "usage": {"type": "object"}
         }
     })");
-    schema["properties"]["x_lemonade_route"] = route_decision_schema();
+    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
     if (chunk) {
         schema["properties"]["usage"]["description"] = "Final chunk only: token usage.";
     }

@@ -25,7 +25,7 @@ ordered_json response_schema() {
             "usage": {"type": "object"}
         }
     })");
-    schema["properties"]["x_lemonade_route"] = route_decision_schema();
+    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
     return schema;
 }
 

@@ -16,6 +16,10 @@ json route_decision_to_json(const Decision& decision);
 // The routing engine owns decision.schema.json, the schema of route_decision_to_json()'s output.
 nlohmann::ordered_json route_decision_schema();
 
+// Completions document the decision as their x_lemonade_route field, whose description speaks to
+// API callers rather than to the routing engine's maintainers.
+nlohmann::ordered_json route_decision_field_schema();
+
 std::string route_decision_header_value(const Decision& decision);
 
 void attach_route_header(httplib::Response& res, const Decision& decision);

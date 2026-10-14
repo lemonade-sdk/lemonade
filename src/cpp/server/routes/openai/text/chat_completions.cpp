@@ -52,7 +52,7 @@ ordered_json chat_completion_schema() {
         }
     })");
     // Router collections add their routing decision to the response.
-    schema["properties"]["x_lemonade_route"] = route_decision_schema();
+    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
     return schema;
 }
 
@@ -84,7 +84,7 @@ ordered_json chat_completion_chunk_schema() {
             "usage": {"type": "object", "description": "Final chunk only: token usage."}
         }
     })");
-    schema["properties"]["x_lemonade_route"] = route_decision_schema();
+    schema["properties"]["x_lemonade_route"] = route_decision_field_schema();
     return schema;
 }
 

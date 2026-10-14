@@ -56,6 +56,15 @@ nlohmann::ordered_json route_decision_schema() {
     return nlohmann::ordered_json::parse(file);
 }
 
+nlohmann::ordered_json route_decision_field_schema() {
+    nlohmann::ordered_json schema = route_decision_schema();
+    schema["description"] =
+        "The routing decision for a request that named a `collection.router` model, present "
+        "when the request sets `route_trace`. The `x-lemonade-route` response header carries the "
+        "matched rule id, or `default` when the request routed to `default_model`.";
+    return schema;
+}
+
 json route_decision_to_json(const Decision& decision) {
     json out = {
         {"version", "1"},

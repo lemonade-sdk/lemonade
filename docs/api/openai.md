@@ -247,7 +247,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
       - `message`
         - `reasoning_content` - Reasoning models only: the model's thinking.
         - `tool_calls` - Calls to the request's tools.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 
 === "Streaming responses"
 
@@ -265,7 +265,7 @@ The image tool runs during the loop and its output is embedded as a markdown ima
     **Field Descriptions:**
 
     - `usage` - Final chunk only: token usage.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -397,7 +397,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
     **Field Descriptions:**
 
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 
 === "Streaming responses"
 
@@ -415,7 +415,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     **Field Descriptions:**
 
     - `usage` - Final chunk only: token usage.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 <!-- END GENERATED: openai.completions -->
 
 <!-- BEGIN GENERATED: openai.embeddings -->
@@ -623,7 +623,7 @@ Naming a `collection.router` model routes the request to one of its candidates; 
     **Field Descriptions:**
 
     - `output` - Output items; a message item carries its text in content[].text.
-    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, added to the response body as `x_lemonade_route` when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
+    - `x_lemonade_route` - The routing decision for a request that named a `collection.router` model, present when the request sets `route_trace`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed to `default_model`.
 
 === "Streaming responses"
 
