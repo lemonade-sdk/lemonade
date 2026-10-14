@@ -1240,21 +1240,31 @@ namespace lemon::backends {
         // Stored relative, not absolute.
         constexpr const char* kRocblasDepthFile = "rocblas_path_depth.txt";
 
-        std::string resolved_cache_dir(const std::string& cache_dir) {
-            const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
+        // The \\?\ prefix below turns off Win32 path normalization, so a "." or
+        // ".." component left in the path makes every call against it fail.
+        // fs::absolute() does not remove them; lexically_normal() does.
+        fs::path normalized_absolute(const fs::path& p) {
             std::error_code ec;
-            fs::path p = fs::absolute(utils::path_from_utf8(raw), ec);
+            fs::path absolute = fs::absolute(p, ec);
             if (ec) {
-                p = utils::path_from_utf8(raw);
+                absolute = p;
             }
-            return utils::path_to_utf8(p.lexically_normal().make_preferred());
+            return absolute.lexically_normal().make_preferred();
         }
 
+        std::string resolved_cache_dir(const std::string& cache_dir) {
+            const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
+            return utils::path_to_utf8(normalized_absolute(utils::path_from_utf8(raw)));
+        }
+
+        // Normalized here rather than at each use: the depth measured below is
+        // relative to this root, so both sides of that subtraction have to agree
+        // on the spelling.
         fs::path therock_root(const std::string& arch, const std::string& version,
                               bool wheel_layout) {
-            return utils::path_from_utf8(wheel_layout
-                                             ? BackendUtils::get_therock_wheel_dir(arch, version)
-                                             : BackendUtils::get_therock_install_dir(arch, version));
+            return normalized_absolute(utils::path_from_utf8(
+                wheel_layout ? BackendUtils::get_therock_wheel_dir(arch, version)
+                             : BackendUtils::get_therock_install_dir(arch, version)));
         }
 
         // MSVC's std::filesystem never applies the Win32 long-path prefix, so
@@ -1263,17 +1273,10 @@ namespace lemon::backends {
         fs::path long_path(const fs::path& p) {
 #ifdef _WIN32
             static const std::wstring kPrefix = L"\\\\?\\";
-            std::error_code ec;
-            fs::path absolute = fs::absolute(p, ec);
-            if (ec) {
-                absolute = p;
+            if (p.native().rfind(kPrefix, 0) == 0) {
+                return p;
             }
-            absolute.make_preferred();
-            const std::wstring native = absolute.native();
-            if (native.rfind(kPrefix, 0) == 0) {
-                return absolute;
-            }
-            return fs::path(kPrefix + native);
+            return fs::path(kPrefix + normalized_absolute(p).native());
 #else
             return p;
 #endif
@@ -1313,7 +1316,20 @@ namespace lemon::backends {
             // "absent" reads as a pass.
             const fs::path scan_root = long_path(root);
             std::error_code ec;
-            if (!fs::is_directory(scan_root, ec)) {
+            const fs::file_status root_status = fs::status(scan_root, ec);
+            if (root_status.type() == fs::file_type::not_found ||
+                ec == std::errc::no_such_file_or_directory) {
+                return size_t{0};  // Nothing installed.
+            }
+            if (ec) {
+                // Anything else means the root exists but could not be read, and
+                // that must not be reported as a pass.
+                LOG(WARNING, "BackendUtils")
+                    << "Could not stat " << utils::path_to_utf8(root) << " (" << ec.message()
+                    << "); ROCm path lengths could not be verified" << std::endl;
+                return std::nullopt;
+            }
+            if (!fs::is_directory(root_status)) {
                 return size_t{0};
             }
 
@@ -1343,6 +1359,11 @@ namespace lemon::backends {
         std::string rocblas_measure_key(const std::string& arch, const std::string& version,
                                         bool wheel_layout) {
             return arch + "|" + version + "|" + (wheel_layout ? "wheel" : "tarball");
+        }
+
+        void forget_rocblas_measure(const std::string& key) {
+            std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
+            g_rocblas_measure_cache.erase(key);
         }
     }
 
@@ -1402,6 +1423,10 @@ namespace lemon::backends {
 
     void BackendUtils::record_rocblas_max_path(const std::string& arch, const std::string& version,
                                                bool wheel_layout) {
+        // The tree just changed underneath us. A cached measurement taken before
+        // the install -- in particular a 0 from a half-extracted tree -- would
+        // otherwise stick for the life of the process and silence the check.
+        forget_rocblas_measure(rocblas_measure_key(arch, version, wheel_layout));
         const std::optional<size_t> depth = measure_rocblas_max_path(arch, version, wheel_layout);
         if (!depth.has_value() || *depth == 0) {
             return;
@@ -1505,7 +1530,8 @@ namespace lemon::backends {
                     // mismatch reinstall on every load.
                     if (method == "wheel") {
                         std::error_code ec;
-                        fs::remove_all(get_therock_install_dir(arch, version), ec);
+                        remove_rocm_tree(
+                            utils::path_from_utf8(get_therock_install_dir(arch, version)), ec);
                     }
                     return;
                 }

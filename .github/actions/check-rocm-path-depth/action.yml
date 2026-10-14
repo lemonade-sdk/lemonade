@@ -48,13 +48,14 @@ runs:
             $rocblas = @($all | Where-Object { $_.FullName -like '*\rocblas\*' -and $_.Name -like 'TensileLibrary*' } |
                          Sort-Object { $_.FullName.Length } -Descending)
             if ($rocblas.Count -eq 0) {
-                Write-Host "::error::ROCm is installed at $root but no rocBLAS Tensile files were found beneath it. The $name layout has moved, which silently disables the product's measurement. Update find_rocblas_data_dir() in src/cpp/server/backends/backend_utils.cpp to match the new layout."
+                Write-Host "::error::ROCm is installed at $root but no rocBLAS Tensile files were found beneath it. The $name layout has moved, which silently disables the product's measurement. Update is_rocblas_tensile_file() in src/cpp/server/backends/backend_utils.cpp to match the new layout."
                 exit 1
             }
 
             $longest = $rocblas[0]
             $depth = $longest.FullName.Length - $cacheDir.Length
-            $budget = $maxPath - $depth
+            # Clamped like the product does, so the two never disagree on the figure.
+            $budget = [Math]::Max(0, $maxPath - $depth)
             Write-Host ("{0,4}  {1}" -f $longest.FullName.Length, $longest.FullName)
             Write-Host "$name rocBLAS sits $depth chars below the cache root, so the longest usable cache dir for this install is $budget chars." -ForegroundColor Green
 

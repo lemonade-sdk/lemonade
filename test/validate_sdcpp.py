@@ -112,10 +112,12 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Directory (NOT a file) holding lemond's captured logs as "
             "lemond.stdout.log / lemond.stderr.log. REQUIRED for GPU backends with "
-            "a verified device banner (rocm): the per-model GPU-offload check scans "
-            "these logs and the run FAILS if this is unset, no log is found, or any "
-            "model fell back to CPU. lemond must be started in debug mode "
-            "(LEMONADE_CI_MODE=1 or log_level=debug) so the banner is emitted."
+            "a verified device banner (rocm, vulkan): the per-model GPU-offload check "
+            "scans these logs. This script exits 1 if the flag is unset or no log is "
+            "found; a CPU fallback is instead recorded as gpu=FAIL in the summary, "
+            "which the GPU offload gate turns into a merge block. lemond must be "
+            "started in debug mode (LEMONADE_CI_MODE=1 or log_level=debug) so the "
+            "banner is emitted."
         ),
     )
     return parser.parse_args()

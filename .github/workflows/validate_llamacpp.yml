@@ -900,6 +900,12 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+      # After Cleanup: lemond and llama-server hold open handles on the ROCm
+      # DLLs in here, and a partial delete makes the next run's wipe fail hard.
       - name: Remove lemond cache
         if: always() && runner.os == 'Windows'
         shell: PowerShell
@@ -916,10 +922,6 @@ jobs:
           } else {
               Write-Host "Removed $cacheDir" -ForegroundColor Green
           }
-
-      - name: Cleanup
-        if: always()
-        uses: ./.github/actions/cleanup-processes-windows
 
   # ========================================================================
   # Create PR if both validations passed (schedule or workflow_dispatch only)
