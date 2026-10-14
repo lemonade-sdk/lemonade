@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="../assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="../assets/navbar.js"></script>
   <meta name="description" content="Lemonade's vision for auto-BKC: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
@@ -100,6 +101,191 @@
       background: rgba(45, 47, 47, 0.06);
       padding: 0.08em 0.34em;
       border-radius: 0.25rem;
+    }
+
+    .tm-board {
+      overflow: hidden;
+      margin: 1.6rem auto 2.4rem;
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-heavy);
+    }
+
+    .tm-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1.4rem 1.5rem 1.5rem;
+      background:
+        radial-gradient(circle at 82% 6%, rgba(252, 216, 70, 0.22), transparent 44%),
+        linear-gradient(160deg, #fffdf4, #f5f3e8);
+    }
+
+    .tm-label {
+      margin-top: 0.15rem;
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .tm-row { display: grid; gap: 0.5rem; }
+    .tm-row-engines { grid-template-columns: 1fr auto 1fr; align-items: stretch; }
+    .tm-row-foundation { grid-template-columns: 1fr 1fr; align-items: stretch; }
+
+    .tm-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+      padding: 0.7rem 0.8rem;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow-light);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .tm-card:hover {
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-medium);
+      transform: translateY(-1px);
+    }
+
+    .tm-head { display: flex; align-items: center; gap: 0.5rem; }
+
+    .tm-icon {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 1.85rem;
+      height: 1.85rem;
+      border-radius: var(--radius-sm);
+      background: rgba(252, 216, 70, 0.28);
+      font-size: 1.1rem;
+      color: var(--accent-gold);
+    }
+
+    .tm-name {
+      font-family: var(--font-display);
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+
+    .tm-desc {
+      font-size: 0.76rem;
+      line-height: 1.4;
+      color: var(--text-secondary);
+    }
+
+    .tm-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .tm-arrow .material-symbols-outlined { font-size: 1rem; color: var(--text-primary); }
+
+    .tm-arrow-side { flex-direction: column; gap: 0; padding: 0 0.15rem; }
+
+    .tm-subs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    .tm-subs a {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      min-width: 0;
+      padding: 0.45rem 0.6rem;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow-light);
+      font-family: var(--font-display);
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .tm-subs a:hover { background: var(--surface-container-lowest); box-shadow: var(--shadow-medium); }
+    .tm-subs .material-symbols-outlined { font-size: 1rem; color: var(--accent-gold); }
+
+    .tm-board.armed .tm-body > * {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    .tm-board.in .tm-body > * {
+      animation: tm-in 0.42s ease forwards;
+      animation-delay: calc(var(--i, 0) * 0.06s + 0.12s);
+    }
+
+    @keyframes tm-in {
+      to { opacity: 1; transform: none; }
+    }
+
+    .bkc h3[id],
+    .bkc h4[id] { scroll-margin-top: 6rem; }
+
+    .bkc-table-wrap {
+      margin: 1.2rem 0 1.6rem;
+      overflow-x: auto;
+      border-radius: var(--radius-xl);
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-ambient);
+    }
+
+    .bkc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+
+    .bkc-table th,
+    .bkc-table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .bkc-table thead th {
+      background: var(--surface-container-low);
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .bkc-table tbody th {
+      font-family: var(--font-display);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .bkc-table tbody tr:nth-child(even) { background: rgba(252, 216, 70, 0.07); }
+
+    .bkc-table td { color: var(--text-secondary); }
+
+    .bkc-table code { white-space: nowrap; }
+
+    .bkc-table .loc {
+      display: block;
+      margin-top: 0.3rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
     }
 
     .bkc .bkc-note {
@@ -495,6 +681,23 @@
 
       .flow-track { grid-template-columns: 1fr; gap: 1.6rem; }
 
+      .tm-body { padding: 1.1rem 1rem 1.2rem; }
+      .tm-row-engines,
+      .tm-row-foundation { grid-template-columns: 1fr; }
+      .tm-arrow-side { flex-direction: row; gap: 0.25rem; padding: 0; }
+      .tm-arrow-side .material-symbols-outlined { transform: rotate(90deg); }
+
+      .bkc-table thead { display: none; }
+      .bkc-table tr,
+      .bkc-table th,
+      .bkc-table td { display: block; }
+      .bkc-table tbody tr { padding: 0.8rem 1rem; }
+      .bkc-table tbody th,
+      .bkc-table td { padding: 0; }
+      .bkc-table td + td,
+      .bkc-table th + td { margin-top: 0.3rem; }
+      .bkc-table .loc { display: inline; margin: 0 0 0 0.5rem; }
+
       .flow-step:not(:last-child)::after {
         top: auto;
         right: auto;
@@ -510,6 +713,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       .anim-stage * { transition: none !important; animation: none !important; }
+      .tm-board.armed .tm-body > * { opacity: 1; transform: none; animation: none; }
     }
   </style>
 </head>
@@ -640,22 +844,75 @@
       <h2>Enabling Technology</h2>
       <p>What do we need to build to enable the vision of auto-BKC?</p>
 
-      <h3>Engine Database</h3>
-      <p>Deterministically selecting an engine for a target system is possible when we have a comprehensive database of performance for all relevant models/engine combinations on that system.</p>
-      <ul>
-        <li>Performance: PP, TG, memory, and power. For both the single-user and batched cases.</li>
-        <li>Relevant models: the latest releases from Qwen, Meta, Liquid, Google, etc.</li>
-        <li>Systems: Strix Halo first. Radeon 9700, Gorgon Halo, and non-AMD systems to follow based on availability.</li>
-        <li>Engines: anything that has demonstrated significant community traction; at the time of this writing it should include DwarfStar4, Halogen, Gufo, and strix-llama.cpp engines.</li>
-      </ul>
+      <nav class="tm-board" aria-label="Enabling Technology contents">
+        <div class="tm-body">
+          <div class="tm-label">Agents</div>
+          <div class="tm-row">
+            <a class="tm-card" href="#agent-manager">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">smart_toy</span><span class="tm-name">Agent Manager</span></span>
+              <span class="tm-desc">Install, configure, and launch agents to work with local AI.</span>
+            </a>
+          </div>
+          <div class="tm-arrow" aria-hidden="true"><span class="material-symbols-outlined">arrow_downward</span>requests</div>
+          <div class="tm-label">Routing</div>
+          <div class="tm-row">
+            <a class="tm-card" href="#smart-router">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">alt_route</span><span class="tm-name">Smart Router</span></span>
+              <span class="tm-desc">Local engines, on-prem token servers, and cloud APIs.</span>
+            </a>
+          </div>
+          <div class="tm-arrow" aria-hidden="true"><span class="material-symbols-outlined">arrow_downward</span>routes to</div>
+          <div class="tm-label">Engines</div>
+          <div class="tm-row tm-row-engines">
+            <a class="tm-card" href="#engine-integrations">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">memory</span><span class="tm-name">Engine Integrations</span></span>
+              <span class="tm-desc">Core, experimental, and guest tiers.</span>
+            </a>
+            <div class="tm-arrow tm-arrow-side" aria-hidden="true"><span class="material-symbols-outlined">arrow_back</span>ranks</div>
+            <a class="tm-card" href="#engine-database">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">leaderboard</span><span class="tm-name">Engine Database</span></span>
+              <span class="tm-desc">Performance and correctness per system.</span>
+            </a>
+          </div>
+          <div class="tm-label">Foundation</div>
+          <div class="tm-row tm-row-foundation">
+            <a class="tm-card tm-card-foundation" href="#maintainability">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">foundation</span><span class="tm-name">Maintainability</span></span>
+              <span class="tm-desc">Sustaining high code velocity and high quality as Lemonade grows.</span>
+            </a>
+            <div class="tm-subs">
+              <a href="#container-strategy"><span class="material-symbols-outlined">deployed_code</span>Container Strategy</a>
+              <a href="#api-contract"><span class="material-symbols-outlined">handshake</span>API Contract</a>
+              <a href="#extensibility"><span class="material-symbols-outlined">extension</span>Extensibility</a>
+              <a href="#planned-refactors"><span class="material-symbols-outlined">construction</span>Planned Refactors</a>
+            </div>
+          </div>
+        </div>
+      </nav>
 
-      <h4>Correctness</h4>
+      <h3 id="engine-database">Engine Database</h3>
+      <p>Deterministically selecting an engine for a target system is possible when we have a comprehensive database of performance for all relevant models/engine combinations on that system.</p>
+      <div class="bkc-table-wrap">
+        <table class="bkc-table">
+          <thead>
+            <tr><th>Dimension</th><th>Coverage</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Performance</th><td>PP, TG, memory, and power. For both the single-user and batched cases.</td></tr>
+            <tr><th scope="row">Relevant models</th><td>The latest releases from Qwen, Meta, Liquid, Google, etc.</td></tr>
+            <tr><th scope="row">Systems</th><td>Strix Halo first. Radeon 9700, Gorgon Halo, and non-AMD systems to follow based on availability.</td></tr>
+            <tr><th scope="row">Engines</th><td>Anything that has demonstrated significant community traction; at the time of this writing it should include DwarfStar4, Halogen, Gufo, and strix-llama.cpp engines.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="correctness">Correctness</h4>
       <p>We should adopt a way to assess whether an engine correctly implements a model, since performance data for incorrect implementations should be disregarded. Donato's Terminal Bench Mini is a good candidate.</p>
 
-      <h4>Official Submissions</h4>
+      <h4 id="official-submissions">Official Submissions</h4>
       <p>A baseline of data will be collected using AMD's DevLab cloud.</p>
 
-      <h4>User Submissions</h4>
+      <h4 id="user-submissions">User Submissions</h4>
       <p>The database should also support user-submitted data, which enables:</p>
       <ul>
         <li>More devices than what is available in DevLab.</li>
@@ -663,7 +920,7 @@
         <li>Parameterizations of the engine that are not part of our sweeps.</li>
       </ul>
 
-      <h3>Engine Integrations</h3>
+      <h3 id="engine-integrations">Engine Integrations</h3>
       <p>New engines should be integrated into Lemonade as soon as they meet the following criteria:</p>
       <ul>
         <li>Significant community traction.</li>
@@ -671,13 +928,20 @@
         <li>Clear differentiation from other engines. Includes non-performance differentiators such as software license, portability, platform support, etc.</li>
       </ul>
       <p>Engines will be classified into the following support tiers:</p>
-      <ol>
-        <li>Core: recommended for production use with guaranteed support from industry.</li>
-        <li>Experimental: supported long term by at least one trusted Lemonade maintainer.</li>
-        <li>Guest: provided by an external party and deployed into a sandbox (e.g., containers, nono.sh). May be removed at any time.</li>
-      </ol>
+      <div class="bkc-table-wrap">
+        <table class="bkc-table">
+          <thead>
+            <tr><th>Tier</th><th>Support</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Core</th><td>Supported by Lemonade's maintainers for production use.</td></tr>
+            <tr><th scope="row">Experimental</th><td>Provided by Lemonade's maintainers, but not supported for production use.</td></tr>
+            <tr><th scope="row">Guest</th><td>Developed and published outside Lemonade's maintainers. Use at your own risk.</td></tr>
+          </tbody>
+        </table>
+      </div>
 
-      <h3>Agent Manager</h3>
+      <h3 id="agent-manager">Agent Manager</h3>
       <p>Assists users with the installation, configuration, and launch of agents to work with local AI. Contains enough metadata about each agent's use case to enable auto-BKC, along with benchmark data, to recommend engines and models.</p>
       <p>Candidate agents: Pi, AnythingLLM, Hermes, DeepSeek Harness, Claude Code, Codex, GitHub CLI.</p>
       <p>We will also investigate deep integration of Pi into Lemonade, which could be used for:</p>
@@ -688,13 +952,13 @@
       </ul>
       <p class="bkc-note">Note: we are still working to define this capability in more detail. It will have a phased rollout, first enabling easy-to-deploy developer-first agents (e.g., Pi) before moving on to more complex cases. Model recommendations will be performed by humans until benchmark data is available.</p>
 
-      <h3>Smart Router</h3>
+      <h3 id="smart-router">Smart Router</h3>
       <p>The smart router enables the agents to easily take advantage of on-prem token servers (e.g., Instinct Coder, Threadripper Halo, etc.) and cloud APIs when available. Our work will improve the ease of configuration of such resources, such as by integration of Lemonade Nexus.</p>
 
-      <h3>Maintainability</h3>
+      <h3 id="maintainability">Maintainability</h3>
       <p>As Lemonade grows, certain measures are needed to ensure that we can sustain both high code velocity and high quality.</p>
 
-      <h4>Container Strategy</h4>
+      <h4 id="container-strategy">Container Strategy</h4>
       <p>Historically Lemonade has preferred to distribute native engines. We're adopting containers as a distribution mechanism for two reasons:</p>
       <ol>
         <li>Enabling sandboxed deployment, which keeps users' systems and data safer than running native binaries as the <code>lemonade</code> user.</li>
@@ -706,27 +970,34 @@
         <li>Enabling container-based agents in the agent manager.</li>
       </ol>
 
-      <h4>API Contract</h4>
+      <h4 id="api-contract">API Contract</h4>
       <p>The Lemonade Contract is a set of CI tests that assert certain APIs never receive breaking changes. It will solve two maintainability problems:</p>
       <ol>
         <li>PR reviewers need certainty that a PR they're approving won't have unintended downstream consequences.</li>
         <li>Downstream apps need certainty that they can take a dependence on these APIs.</li>
       </ol>
 
-      <h4>Extensibility</h4>
+      <h4 id="extensibility">Extensibility</h4>
       <p>Users should be able to try new agents, engines, models, and parameterizations without waiting for Lemonade to add in-tree support. This can be accomplished with the following extensibility interfaces:</p>
       <ul>
         <li>Already-installed engines that meet a supported interface specification should be able to connect to Lemonade's router.</li>
         <li>Users should be able to develop and distribute custom model catalogs, including model definitions that come with specialized parameterizations.</li>
       </ul>
 
-      <h4>Planned Refactors</h4>
+      <h4 id="planned-refactors">Planned Refactors</h4>
       <p>There are a few major Lemonade code modules that recently hit their maintainability limit: PRs became too difficult to correctly review, so we stopped accepting contributions. The refactors will allow for greatly increased code velocity by adding specs, tests, and other guardrails to allow agents to autonomously write correct code.</p>
-      <ol>
-        <li>Model Manager: <code>model_manager.cpp</code> is a ~7000 LoC single file. It needs to be refactored into subclasses with crisp interfaces, which will enable future work such as custom user-provided model catalogs.</li>
-        <li>API server: <code>server.cpp</code> is a ~8000 LoC single file. It needs to be refactored onto an endpoint base class, broken into API-specific modules (OpenAI API, Lemonade API, etc.), and the API docs should be auto-generated. This will make endpoint modifications and additions much easier to review, and enable our API Contract work.</li>
-        <li>Smart Router: <code>router.cpp</code> is a ~3000 LoC file. It needs a clear architecture, to be determined.</li>
-      </ol>
+      <div class="bkc-table-wrap">
+        <table class="bkc-table">
+          <thead>
+            <tr><th>Module</th><th>File</th><th>Refactor</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Model Manager</th><td><code>model_manager.cpp</code><span class="loc">~7000 LoC</span></td><td>Refactor into subclasses with crisp interfaces, which will enable future work such as custom user-provided model catalogs.</td></tr>
+            <tr><th scope="row">API server</th><td><code>server.cpp</code><span class="loc">~8000 LoC</span></td><td>Refactor onto an endpoint base class, break into API-specific modules (OpenAI API, Lemonade API, etc.), and auto-generate the API docs. This will make endpoint modifications and additions much easier to review, and enable our API Contract work.</td></tr>
+            <tr><th scope="row">Smart Router</th><td><code>router.cpp</code><span class="loc">~3000 LoC</span></td><td>Needs a clear architecture, to be determined.</td></tr>
+          </tbody>
+        </table>
+      </div>
 
     </article>
   </main>
@@ -739,6 +1010,19 @@
       initializeNavbar('../');
       initializeFooter('../');
     });
+
+    (() => {
+      const map = document.querySelector('.tm-board');
+      if (!map || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      [...map.querySelector('.tm-body').children].forEach((el, i) => el.style.setProperty('--i', i));
+      map.classList.add('armed');
+      const io = new IntersectionObserver(([entry]) => {
+        if (!entry.isIntersecting) return;
+        map.classList.add('in');
+        io.disconnect();
+      }, { threshold: 0.2 });
+      io.observe(map);
+    })();
 
     (() => {
       const stage = document.getElementById('anim-stage');
