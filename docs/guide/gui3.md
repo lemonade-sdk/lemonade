@@ -1,4 +1,4 @@
-# GUI3 Beta app
+# GUI3 app
 
 GUI3 is Lemonade's graphical client for finding models, configuring inference,
 and using a Lemonade Server. The desktop and browser builds share the same
@@ -6,7 +6,7 @@ React interface. The server owns model files, loaded models, backends, and
 persistent load configuration; each GUI client owns its connection, layout,
 chat history, and chat preferences.
 
-This guide describes the GUI3 beta experience. To build GUI3 from source, start
+This guide describes the GUI3 experience. To build GUI3 from source, start
 with the [developer app guide](../dev/app.md#building).
 
 ![GUI3 Chat workspace](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/01-chat.png)
@@ -17,13 +17,13 @@ identify the controls described in the text.*
 The Chat view shows the workspace navigation (**1**), selected model (**2**),
 and **Effective settings** button (**3**).
 
-## Build GUI3 Beta from source
+## Build GUI3 from source
 
-On Windows, clone the current GUI3 beta branch, configure the repository, and
-build the Tauri desktop app:
+On Windows, clone and configure the repository, then build the Tauri
+desktop app:
 
 ```powershell
-git clone --branch GUI3_squashed https://github.com/lemonade-sdk/lemonade.git
+git clone https://github.com/lemonade-sdk/lemonade.git
 cd lemonade
 .\setup.ps1
 cmake --build --preset windows --target tauri-app --parallel 4
@@ -407,16 +407,16 @@ For a problem specific to GUI3, use the repository's
 [issue forms](https://github.com/lemonade-sdk/lemonade/issues/new/choose) and
 choose **Bug Report**. Include:
 
-- OS, GUI3 app version, and Lemonade Server version;
+- OS and Lemonade version (from the About dialog or `lemonade --version`);
+- desktop app or browser UI, and the commit hash for a source build;
 - steps to reproduce;
 - expected and actual behavior;
 - relevant logs or screenshots; and
-- whether it also happens with the stable GUI against the stable server.
+- whether the issue also occurs with the other GUI client on the same server,
+  when that comparison is practical.
 
-For a preview build, select the **GUI3 Beta** milestone if GitHub allows you to
-assign it. If you do not have milestone permission, mention that you are using
-the GUI3 beta build and leave the milestone assignment to a maintainer. Use
-the normal issue process for unrelated server, backend, model, or API issues.
+Select **Desktop App / UI** as the issue component. Use the regular issue
+process for unrelated server, backend, model, or API issues.
 
 For server behavior, see [server concepts](concepts.md),
 [configuration](configuration/README.md), and the [API reference](../api/README.md).
