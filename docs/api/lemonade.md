@@ -2135,6 +2135,12 @@ Optional fields are applied only when present in the request body. Re-installing
     - `recipe` - The recipe from the request.
     - `backend` - The backend from the request.
 
+    A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.
+
+    - `action` - The setup guide's URL.
+    - `recipe` - The recipe from the request.
+    - `backend` - The backend from the request.
+
 === "Streaming responses"
 
     `200`

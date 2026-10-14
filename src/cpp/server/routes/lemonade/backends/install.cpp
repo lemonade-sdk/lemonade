@@ -32,6 +32,7 @@ ordered_json install_schema() {
     auto manual = ordered_json::parse(R"({
         "type": "object",
         "description": "A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.",
+        "x-no-example": "Only a Strix Halo running a kernel without the CWSR fix returns it.",
         "required": ["action", "recipe", "backend"],
         "properties": {
             "action": {"type": "string", "description": "The setup guide's URL."},

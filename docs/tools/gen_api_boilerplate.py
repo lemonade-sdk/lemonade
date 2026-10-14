@@ -776,6 +776,8 @@ def docs_problems(spec: dict, entries: dict) -> list[str]:
             label = shape.get("description") or f"shape {index}"
             if not shape.get("description"):
                 problems.append(f"{where}: shape {index} has no description")
+            if shape.get("x-no-example"):
+                continue
             validator = jsonschema.Draft202012Validator(shape)
             if not any(validator.is_valid(payload) for payload in payloads):
                 problems.append(f"{where}: no example returns the shape {label!r}")
@@ -1232,22 +1234,26 @@ def render_example_request(entries: list[dict], labels: list[str]) -> str:
 
 
 def tab_fields(schema: dict, fmt: str, entry: dict, shown: list) -> str:
-    """The Field Descriptions not yet shown in an earlier tab: the format's own fields in
-    its first tab, and each shape in the first tab whose response matches it."""
+    """The Field Descriptions not yet shown in an earlier tab: the format's own fields and
+    its shapes no example returns in its first tab, and each other shape in the first tab
+    whose response matches it."""
     import jsonschema
 
     shapes = schema.get("oneOf", [])
     payloads = recorded_payloads(fmt, entry["response"])
+    first = not any(schema is seen for seen in shown)
     new_shapes = [
         shape
         for shape in shapes
         if not any(shape is seen for seen in shown)
-        and any(
-            jsonschema.Draft202012Validator(shape).is_valid(payload)
-            for payload in payloads
+        and (
+            (first and shape.get("x-no-example"))
+            or any(
+                jsonschema.Draft202012Validator(shape).is_valid(payload)
+                for payload in payloads
+            )
         )
     ]
-    first = not any(schema is seen for seen in shown)
     shown += [schema] + new_shapes
     if not first and not new_shapes:
         return ""
