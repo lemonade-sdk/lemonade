@@ -20,7 +20,7 @@ In practice:
 
 ### Theory
 
-Auto-BKC should be possible because there are two subjective aspects to setting up a local AI agent, and everything else has an objective answer.
+Auto-BKC is possible because there are two subjective aspects to setting up a local AI agent, and everything else has an objective answer.
 
 The subjective components are:
 1. The agent itself, which must meet the user's unique use case.
@@ -39,13 +39,13 @@ Once those are selected, everything else should be deterministic:
 
 What do we need to build to enable the vision of auto-BKC?
 
-### Performance Database
+### Engine Database
 
-Deterministically selecting an engine for a target system is possible when we have a comprehensive database of performance for all relevant models on that system.
+Deterministically selecting an engine for a target system is possible when we have a comprehensive database of performance for all relevant models/engine combinations on that system.
 - Performance: PP, TG, memory, and power. For both the single-user and batched cases.
 - Relevant models: the latest releases from Qwen, Meta, Liquid, Google, etc.
 - Systems: Strix Halo first. Radeon 9700, Gorgon Halo, and non-AMD systems to follow based on availability.
-- Engines: anything that has demonstrated significant community traction; at the time of this writing it should include Halogen, Gufo, and strix-llama.cpp engines.
+- Engines: anything that has demonstrated significant community traction; at the time of this writing it should include DwarfStar4, Halogen, Gufo, and strix-llama.cpp engines.
 
 #### Correctness
 
@@ -60,7 +60,7 @@ A baseline of data will be collected using AMD's DevLab cloud.
 The database should also support user-submitted data, which enables:
 - More devices than what is available in DevLab.
 - Emergent engines not already on our list.
-- Parameter/option permutations not part of our sweeps.
+- Parameterizations of the engine that not part of our sweeps.
 
 ### Engine Integrations
 
@@ -89,7 +89,7 @@ We will also investigate deep integration of Pi into Lemonade, which could be us
 
 ### Smart Router
 
-The smart router enables the agents to easily take advantage of on-prem token servers (e.g., Instinct Coder, Threadripper Halo, etc.) and cloud APIs when available. Our work will improve the ease of configuration of such resources.
+The smart router enables the agents to easily take advantage of on-prem token servers (e.g., Instinct Coder, Threadripper Halo, etc.) and cloud APIs when available. Our work will improve the ease of configuration of such resources, such as by integration of Lemonade Nexus.
 
 ### Maintainability
 
@@ -112,9 +112,15 @@ The Lemonade Contract is a set of CI tests that assert certain APIs never receiv
 1. PR reviewers need certainty that a PR they're approving won't have unintended downstream consequences.
 2. Downstream apps need certainty that they can take a dependence on these APIs.
 
+#### Extensibility
+
+Users should be able to try new agents, engines, models, and parameterizations without waiting for Lemonade to add in-tree support. This can be accomplished with the following extensibility interfaces:
+- Already-installed engines that meet a supported interface specification should be able to connect to Lemonade's router.
+- Users should be able to develop and distribute custom model catalogs, including model definitions that come with specialized parameterizations.
+
 #### Planned Refactors
 
-There are a few major Lemonade code modules that recently hit their maintainability limit: PRs became too difficult to correctly review, so we stopped accepting contributions. The refactors will allow for greatly increased code velocity.
+There are a few major Lemonade code modules that recently hit their maintainability limit: PRs became too difficult to correctly review, so we stopped accepting contributions. The refactors will allow for greatly increased code velocity by adding specs, tests, and other guardrails to allow agents to autonomously write correct code.
 
 1. Model Manager: model_manager.cpp is a ~7000 LoC single file. It needs to be refactored into subclasses with crisp interfaces, which will enable future work such as custom user-provided model catalogs.
 2. API server: server.cpp is a ~8000 LoC single file. It needs to be refactored onto an endpoint base class, broken into API-specific modules (openai api, lemonade api, etc.), and the API docs should be auto-generated. This will make endpoint modifications and additions much easier to review, and enable our API Contract work.
