@@ -8,12 +8,8 @@
 namespace lemon {
 namespace models {
 
-// Two signals with one subscriber each, registered at startup and living as long
-// as lemond. Both subscribers are routing. No unsubscribe handle and no topic
-// registry: nothing here has a varying set of listeners.
-//
-// A subscriber runs outside every store lock and reads the snapshot published at
-// the generation it is handed, so a notification always follows the swap.
+// Two signals, one subscriber each, registered at startup. A subscriber runs
+// outside every store lock, after the snapshot for its generation is published.
 class ModelChangeNotifier {
   public:
     // Recomputes which helper models the policies in force still need.

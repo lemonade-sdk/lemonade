@@ -27,8 +27,7 @@ struct RejectedModel {
 };
 
 // The visible set plus why everything else is not visible. The reasons travel
-// with the set they describe, so a caller cannot read a reason against a model
-// set of a different generation.
+// with the set they describe.
 struct FilterResult {
     std::map<std::string, ModelInfo> visible;
     std::vector<RejectedModel> rejected;
@@ -36,9 +35,7 @@ struct FilterResult {
     std::vector<std::string> empty_recipes;
 };
 
-// The reasons from a FilterResult, without the visible set. A caller that
-// already holds the visible models publishes this beside them instead of
-// keeping a second copy of the whole model map alive.
+// The reasons from a FilterResult, without a second copy of the model map.
 struct FilterReasons {
     std::vector<RejectedModel> rejected;
     std::vector<std::string> empty_recipes;
@@ -50,16 +47,14 @@ std::set<std::string> recipes_missing_all_models(
     const std::set<std::string>& size_filtered_recipes,
     const std::set<std::string>& visible_recipes);
 
-// Working set of a streaming model: its declared resident footprint, or the
-// whole model when nothing smaller is known.
+// Declared resident footprint, or the whole model when nothing smaller is known.
 double streaming_working_set_gb(double min_resident_gb, double size_gb);
 
 // An unknown pool (<= 0) hides nothing.
 bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
 
 // Which of these models this machine can run now, and the reason for the rest.
-// Pure: every input is in `availability`, so the same models and machine always
-// filter the same way.
+// Pure: every input is in `availability`.
 FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
                              const BackendAvailability& availability);
 

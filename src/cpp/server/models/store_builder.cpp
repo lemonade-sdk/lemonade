@@ -23,8 +23,7 @@ std::set<std::string> collect_helper_models(
 
 namespace {
 
-// A user- or extra-owned model is one the operator registered or discovered
-// locally, and is never hidden by machine-fit rules.
+// Registered or discovered locally: never hidden by machine-fit rules.
 bool names_a_local_model(const std::string& canonical_id_value) {
     const auto parsed = parse_canonical_id(canonical_id_value);
     return parsed && parsed->source != ModelSource::Builtin;
@@ -77,15 +76,13 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
         std::string filter_reason;
         RejectCause cause = RejectCause::BackendMissing;
 
-        // Collections are UI-level entries that orchestrate components. They
-        // should always be visible if present in the registry.
+        // Collections orchestrate components; visible whenever present.
         if (is_model_collection_recipe(recipe)) {
             result.visible[name] = info;
             continue;
         }
 
-        // Cloud-offloaded models bypass local backend/RAM checks (the model
-        // executes on a remote provider).
+        // Cloud-offloaded models run remotely: no local backend or RAM check.
         if (recipe == "cloud") {
             result.visible[name] = info;
             continue;
@@ -109,12 +106,10 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
         // Filter out models too large to run on this machine.
         if (!filter_out && !user_controlled_model && info.size > 0.0) {
             if (recipe_availability.streams_model_from_storage) {
-                // A streaming backend reads the model from disk on demand, so
-                // the full model need not fit in memory — only its resident
-                // working set, and only in the device's own pool. ROCm cannot
-                // address system RAM plus the iGPU carveout as one pool; it
-                // gets the larger of the pools (largest_mem_pool_gb), so that
-                // is the ceiling.
+                // A streaming backend reads from disk on demand: only the
+                // resident working set must fit, in the device's own pool. ROCm
+                // cannot address system RAM and the iGPU carveout as one pool,
+                // so its ceiling is the larger pool.
                 const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
                 if (streaming_model_exceeds_pool(working_set, availability.largest_mem_pool_gb)) {
                     filter_out = true;

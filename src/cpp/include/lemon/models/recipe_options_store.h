@@ -11,21 +11,14 @@ namespace lemon {
 using json = nlohmann::json;
 
 // Persistence and CRUD for recipe_options.json, keyed by canonical model ID.
-//
-// Only persistence lives here. The precedence ladder that folds these entries
-// over registry defaults and architecture overlays belongs to whoever holds the
-// catalogs, so this store reads no catalog and no artifact state, and reaches no
-// other component.
+// The precedence ladder that folds these over registry defaults is not here.
 class RecipeOptionsStore {
 public:
-    // Reads the file now. A missing or unparseable file is an empty set; so is a
-    // file whose top level is not an object, which older releases could produce.
+    // A missing, unparseable or non-object file reads as an empty set.
     explicit RecipeOptionsStore(std::string file_path);
 
-    // Renames keys written before IDs were canonical: a bare name that
-    // known_builtin recognises gains the builtin. prefix, an already canonical
-    // key is kept as is, and anything else is preserved so a stale entry does not
-    // silently lose its options. Logs how many keys it moved.
+    // Renames keys written before IDs were canonical. Anything unrecognized is
+    // preserved so a stale entry keeps its options. Logs how many keys moved.
     void migrate(const std::function<bool(const std::string& bare_name)>& known_builtin);
 
     // What the user saved for one model, or an empty object.

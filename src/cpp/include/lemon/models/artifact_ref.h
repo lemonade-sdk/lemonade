@@ -9,21 +9,18 @@
 namespace lemon {
 namespace models {
 
-// What a checkpoint is, apart from where its bytes sit. This is the join between
-// a catalog entry and the registry cache layout: blob naming, update checks and
-// provenance files all key on it.
+// What a checkpoint is, apart from where its bytes sit: the join between a
+// catalog entry and the cache layout.
 struct ArtifactRef {
-    // Set only when the bytes came from a pullable host. A local file names no
-    // host, so no default here: defaulting would claim provenance that is absent.
+    // Set only when the bytes came from a pullable host.
     std::optional<RegistryId> registry;
     std::string repo_id;
     std::string variant;
     std::string revision;
     bool required = true;
 
-    // A locator says where bytes come from; the ref adds whether their absence
-    // leaves the model incomplete. Bytes that never came from a host are named
-    // by where they were found, so two files never share a ref.
+    // Adds whether absence leaves the model incomplete; bytes from no host are
+    // named by where they were found.
     static ArtifactRef from_locator(const Locator& locator, bool required);
 
     bool operator==(const ArtifactRef& other) const;

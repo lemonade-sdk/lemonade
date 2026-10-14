@@ -8,7 +8,7 @@ namespace models {
 namespace {
 
 // delete_model fires from a scope-guard destructor, where a propagating
-// exception would call std::terminate.
+// exception would terminate.
 void swallow(const std::function<void()>& fire, const char* what) {
     try {
         fire();
@@ -33,8 +33,7 @@ void ModelChangeNotifier::on_model_updated(std::function<void(const std::string&
 }
 
 void ModelChangeNotifier::models_changed(std::uint64_t generation) {
-    // A subscriber reads the registry, which can request another rebuild; block
-    // same-thread re-entry so that cannot re-fire this.
+    // A subscriber can request another rebuild; re-entry must not re-fire.
     static thread_local bool in_notify = false;
     if (in_notify) {
         return;

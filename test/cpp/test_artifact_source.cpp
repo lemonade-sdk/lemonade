@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -49,7 +50,7 @@ static RegistryDescriptor fake_descriptor() {
 // seam leaks something the host cannot supply.
 class FakeRepository : public FetchableRepository {
   public:
-    FakeRepository() : FetchableRepository(ArtifactRef{}) {}
+    explicit FakeRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
     std::string resolve() const override { return ""; }
@@ -85,6 +86,8 @@ LEMONADE_REGISTER_ARTIFACT_REPOSITORY(FakeRepository, fake_descriptor());
 // A second host claiming the same id: reported, not silently decided by link order.
 class DuplicateRepository : public FakeRepository {
   public:
+    using FakeRepository::FakeRepository;
+
     RegistryId id() const override { return RegistryId("zzfake"); }
 };
 
@@ -117,7 +120,7 @@ static void test_registration_builds_the_host_it_names() {
     const RegistryId fake = RegistryId("zzfake");
 
     const std::unique_ptr<FetchableRepository> repository =
-        lemon::models::create_repository(fake);
+        lemon::models::create_repository(fake, ArtifactRef{});
     check("a registered host builds", repository != nullptr);
     if (repository != nullptr) {
         check("and reports its own id", repository->id() == fake);
@@ -130,7 +133,7 @@ static void test_registration_builds_the_host_it_names() {
     }
 
     check("an unregistered host builds nothing",
-          lemon::models::create_repository(RegistryId("zznobody")) == nullptr);
+          lemon::models::create_repository(RegistryId("zznobody"), ArtifactRef{}) == nullptr);
 }
 
 static void test_registration_carries_the_descriptor() {
