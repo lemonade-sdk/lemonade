@@ -21,6 +21,7 @@
 #include "model_types.h"
 #include "models/change_notifier.h"
 #include "models/download_progress.h"
+#include "models/registry_documents.h"
 #include "models/recipe_options_store.h"
 #include "recipe_options.h"
 
@@ -457,16 +458,15 @@ private:
                        bool allow_missing_checkpoint,
                        bool replace_existing);
 
-    json load_server_models();
+    static json load_server_models();
     json load_architecture_defaults();
-    void save_user_models(const json& user_models);
 
     // Remove a user model entry from user_models.json (no file deletion).
     // Used to roll back a collection registered earlier in the same call when
     // its component resolution fails.
     void unregister_user_model(const std::string& model_name);
 
-    std::string get_user_models_file();
+    static std::string get_user_models_file();
     std::string get_recipe_options_file();
 
     // Collection manifests (recipe="collection.omni" with a registry checkpoint):
@@ -494,12 +494,12 @@ private:
     // Populate a collection's components from a manifest already cached on disk
     // (offline, no registration). Used by build_cache so a pulled collection keeps
     // its components across restarts. No-op if the manifest is not cached.
-    // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
-    void populate_collection_components_from_cache_locked(ModelInfo& info);
+    void populate_collection_components_from_cache(ModelInfo& info);
 
+    // The model's own `recipe_options` block from user_models.json /
+    // server_models.json, i.e. the layer between image_defaults and what the user
+    // saved. Takes no store lock.
     json registry_recipe_options(const std::string& cache_key);
-    // Caller must hold models_cache_mutex_.
-    json registry_recipe_options_locked(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
 
     // Cache management
@@ -525,8 +525,7 @@ private:
     std::map<std::string, ModelInfo> discover_extra_models(
         const std::set<std::filesystem::path>& registered_paths = {}) const;
 
-    json server_models_;
-    json user_models_;
+    models::RegistryDocuments registries_;
     RecipeOptionsStore recipe_options_;
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery

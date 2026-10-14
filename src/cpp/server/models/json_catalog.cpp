@@ -154,9 +154,11 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
     parse_image_defaults(info, row);
     parse_extras(info, row);
 
-    if (rules.recipe_options && row.contains("recipe_options") &&
-        row["recipe_options"].is_object()) {
-        rules.recipe_options(info.model_name, row["recipe_options"]);
+    if (rules.recipe_options) {
+        const json authored = row_recipe_options(row);
+        if (!authored.is_null()) {
+            rules.recipe_options(info.model_name, authored);
+        }
     }
 
     info.type = get_model_type_from_labels(info.labels);
@@ -178,9 +180,19 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
     return info;
 }
 
-JsonCatalog::JsonCatalog(CatalogDescriptor descriptor, const json& document,
+json row_recipe_options(const json& row) {
+    if (!row.is_object() || !row.contains("recipe_options") ||
+        !row["recipe_options"].is_object()) {
+        return json(nullptr);
+    }
+    return row["recipe_options"];
+}
+
+JsonCatalog::JsonCatalog(CatalogDescriptor descriptor, std::shared_ptr<const json> document,
                          RegistryRowRules rules)
-    : descriptor_(std::move(descriptor)), document_(&document), rules_(std::move(rules)) {}
+    : descriptor_(std::move(descriptor)),
+      document_(std::move(document)),
+      rules_(std::move(rules)) {}
 
 void JsonCatalog::enumerate(CatalogAccumulator& accumulator) const {
     for (const auto& [key, row] : document_->items()) {

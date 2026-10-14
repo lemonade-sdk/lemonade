@@ -144,8 +144,8 @@ static void test_a_bad_row_costs_one_model() {
         {"Bad", {{"source", "huggingface"}, {"registry_source", "modelscope"}}},
         {"Good", {{"recipe", "llamacpp"}}},
     };
-    const JsonCatalog catalog(CatalogDescriptor{"user_models.json"}, document,
-                              rules(rec, "user."));
+    const JsonCatalog catalog(CatalogDescriptor{"user_models.json"},
+                              std::make_shared<const json>(document), rules(rec, "user."));
     catalog.enumerate(acc);
     check("the readable rows of a broken document survive", acc.size() == 1);
     check("and one is keyed by its minted name", acc.contains("user.Good"));
