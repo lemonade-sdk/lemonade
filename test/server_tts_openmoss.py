@@ -6,7 +6,7 @@ voice cloning from a reference WAV, and voice design from a text description.
 
 Usage:
     python server_tts_openmoss.py --wrapped-server openmoss --backend vulkan
-    python server_tts_openmoss.py --wrapped-server openmoss --backend cuda
+    python server_tts_openmoss.py --wrapped-server openmoss --backend rocm
 """
 
 import base64

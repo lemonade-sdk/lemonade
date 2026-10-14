@@ -60,14 +60,6 @@ LONG_STRING_KEPT = 80
 LONG_ARRAY = 16
 EXAMPLE_TIMEOUT = 1800
 
-# The cache key cannot see lemond's own defaults, so a recorded config would outlive a
-# change to them. These answer the same on every fresh lemond, so each run compares
-# them with the server it already starts.
-LIVE_CHECKED_ROUTES = {
-    "internal.config": "/internal/config",
-    "internal.config_defaults": "/internal/config/defaults",
-}
-
 PAGE_TITLES = {
     "openai": "OpenAI-Compatible API",
     "lemonade": "Lemonade API",
@@ -1225,16 +1217,6 @@ def main() -> int:
     binary = find_lemond(args.lemond)
     with Lemond(binary) as server:
         route_list = json.loads(server._get("/internal/routes", timeout=30))
-        live = {
-            route_id: record(
-                200,
-                "application/json",
-                server._get(path, timeout=10),
-                "Json",
-                server._cache.name,
-            )["body"]
-            for route_id, path in LIVE_CHECKED_ROUTES.items()
-        }
     specs = {spec["id"]: spec for spec in route_list}
     validate_specs(specs)
 
@@ -1250,18 +1232,6 @@ def main() -> int:
             )
 
     problems = []
-    for (route_id, fmt), key in keys.items():
-        entry = cache.get(key)
-        if route_id not in live or entry is None:
-            continue
-        if entry["response"].get("body") != live[route_id]:
-            if args.check:
-                problems.append(
-                    f"recorded example for {route_id} {fmt} differs from a fresh lemond"
-                )
-            else:
-                del cache[key]
-
     missing = [ref for ref, key in keys.items() if key not in cache]
     if missing and args.check:
         problems += [

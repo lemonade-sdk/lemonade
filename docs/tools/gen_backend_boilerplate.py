@@ -81,18 +81,10 @@ class Lemond:
             )
 
     def __enter__(self):
-        # These seed the config with the recording machine's settings, which would
-        # leak into the generated defaults and recorded examples.
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key not in ("LEMONADE_DEFAULTS_PATH", "LEMONADE_ALLOWED_ORIGINS")
-        }
         self._proc = subprocess.Popen(
             [str(self.binary), self._cache.name, "--port", str(self.port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            env=env,
         )
         deadline = time.time() + 60
         while time.time() < deadline:
