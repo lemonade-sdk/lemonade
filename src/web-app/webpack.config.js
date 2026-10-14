@@ -95,7 +95,6 @@ module.exports = (env, argv) => {
   const systemPackageAliases = useSystemPackages ? {
     'dompurify$': path.resolve(__dirname, 'system-stubs/dompurify.ts'),
     'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
-    'highlight.js/styles/github-dark.css$': path.resolve(__dirname, 'system-stubs/highlight-github-dark.css'),
   } : {};
 
   let bufferPolyfill = false;
