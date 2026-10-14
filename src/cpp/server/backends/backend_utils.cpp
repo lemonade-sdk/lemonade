@@ -1232,6 +1232,7 @@ namespace lemon::backends {
     }
 
     namespace {
+#ifdef _WIN32
         // Windows resolves a full path against MAX_PATH (260) including the
         // terminator, so 259 usable characters.
         constexpr size_t kMaxPathChars = 259;
@@ -1239,6 +1240,7 @@ namespace lemon::backends {
         // Depth of the longest rocBLAS path below the ROCm install directory.
         // Stored relative, not absolute.
         constexpr const char* kRocblasDepthFile = "rocblas_path_depth.txt";
+#endif
 
         // The \\?\ prefix below turns off Win32 path normalization, so a "." or
         // ".." component left in the path makes every call against it fail.
@@ -1252,10 +1254,12 @@ namespace lemon::backends {
             return absolute.lexically_normal().make_preferred();
         }
 
+#ifdef _WIN32
         std::string resolved_cache_dir(const std::string& cache_dir) {
             const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
             return utils::path_to_utf8(normalized_absolute(utils::path_from_utf8(raw)));
         }
+#endif
 
         // Normalized here rather than at each use: the depth measured below is
         // relative to this root, so both sides of that subtraction have to agree
@@ -1276,7 +1280,13 @@ namespace lemon::backends {
             if (p.native().rfind(kPrefix, 0) == 0) {
                 return p;
             }
-            return fs::path(kPrefix + normalized_absolute(p).native());
+            const std::wstring native = normalized_absolute(p).native();
+            // \\server\share has to take the UNC form; prefixing it as-is would
+            // produce \\?\\\server, which Windows rejects.
+            if (native.rfind(L"\\\\", 0) == 0) {
+                return fs::path(kPrefix + L"UNC" + native.substr(1));
+            }
+            return fs::path(kPrefix + native);
 #else
             return p;
 #endif
@@ -1286,6 +1296,30 @@ namespace lemon::backends {
             ec.clear();
             fs::remove_all(long_path(dir), ec);
         }
+
+#ifdef _WIN32
+        // Staged through a temp file: a half-written number reads back smaller
+        // than it is, which is the one way this marker can wave through an
+        // install that is actually too deep.
+        void write_rocblas_depth(const fs::path& root, size_t depth) {
+            const fs::path tmp = root / (std::string(kRocblasDepthFile) + ".tmp");
+            std::ofstream f(long_path(tmp), std::ios::trunc);
+            f << depth;
+            f.close();
+            if (!f) {
+                return;
+            }
+            std::error_code ec;
+            if (!utils::atomic_replace_file(long_path(tmp), long_path(root / kRocblasDepthFile),
+                                            ec)) {
+                LOG(WARNING, "BackendUtils")
+                    << "Could not record the rocBLAS path depth (" << ec.message()
+                    << "); it will be measured again on the next load" << std::endl;
+                std::error_code rm_ec;
+                fs::remove(long_path(tmp), rm_ec);
+            }
+        }
+#endif
 
         // A rocBLAS Tensile solution file is a TensileLibrary* file under a directory named "rocblas".
         // Locating them by shape rather than by a fixed path keeps the check working if upstream moves them.
@@ -1365,10 +1399,12 @@ namespace lemon::backends {
             return arch + "|" + version + "|" + (wheel_layout ? "wheel" : "tarball");
         }
 
+#ifdef _WIN32
         void forget_rocblas_measure(const std::string& key) {
             std::lock_guard<std::mutex> lock(g_rocblas_measure_mutex);
             g_rocblas_measure_cache.erase(key);
         }
+#endif
     }
 
     std::string BackendUtils::rocm_path_budget_message(const std::string& cache_dir,
@@ -1435,6 +1471,7 @@ namespace lemon::backends {
 
     void BackendUtils::record_rocblas_max_path(const std::string& arch, const std::string& version,
                                                bool wheel_layout) {
+#ifdef _WIN32
         // The tree just changed underneath us. A cached measurement taken before
         // the install -- in particular a 0 from a half-extracted tree -- would
         // otherwise stick for the life of the process and silence the check.
@@ -1443,8 +1480,14 @@ namespace lemon::backends {
         if (!depth.has_value() || *depth == 0) {
             return;
         }
-        std::ofstream f(long_path(therock_root(arch, version, wheel_layout) / kRocblasDepthFile));
-        f << *depth;
+        write_rocblas_depth(therock_root(arch, version, wheel_layout), *depth);
+#else
+        // Only ensure_rocm_tensile_reachable() reads this, and that is a no-op
+        // off Windows. Measuring here would walk the whole wheel tree for nothing.
+        (void)arch;
+        (void)version;
+        (void)wheel_layout;
+#endif
     }
 
     void BackendUtils::ensure_rocm_tensile_reachable(const std::string& arch,
@@ -1473,8 +1516,7 @@ namespace lemon::backends {
             }
             depth = *measured;
             if (depth > 0) {
-                std::ofstream out(long_path(root / kRocblasDepthFile));
-                out << depth;
+                write_rocblas_depth(root, depth);
             }
         }
 
