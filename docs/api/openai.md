@@ -56,10 +56,6 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, which is loaded before the check. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
 
-### Image Input
-
-To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
-
 ### Server-Side Tools
 
 Omni collection orchestration is a Lemonade extension to the Chat Completions API; requests to other models are unaffected.
@@ -186,9 +182,9 @@ data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.comple
 data: [DONE]
 ```
 
-#### Vision
+#### Image input
 
-Asks a vision model what `image.png` shows.
+Asks a vision model what `image.png` shows. A `messages[*].content` array mixes `text` and `image_url` items, with each image as a base64 data URL, such as one from `FileReader.readAsDataURL(...)` in a web app.
 
 === "PowerShell"
 
@@ -284,9 +280,9 @@ Asks a vision model what `image.png` shows.
 }
 ```
 
-#### Omni
+#### Server-side tools
 
-Asks the `LMX-Omni-5.5B-Lite` collection for a picture, which its image tool generates during the loop.
+Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, whose image tool draws the requested picture.
 
 === "PowerShell"
 

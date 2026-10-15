@@ -130,11 +130,6 @@ public:
             "conflict answers `409`; any other load failure answers `500`. A backend error answers "
             "with the backend's status, except that once a stream has started it arrives as a "
             "`data: {\"error\": ...}` event in the `200` stream.",
-            "### Image Input\n"
-            "\n"
-            "To send images to `chat/completions`, pass a `messages[*].content` array that mixes "
-            "`text` and `image_url` items. The image can be provided as a base64 data URL (for "
-            "example, from `FileReader.readAsDataURL(...)` in web apps).",
             "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
@@ -233,11 +228,14 @@ public:
             "stream": true
         })");
 
-        RouteExample vision_example;
-        vision_example.name = "vision";
-        vision_example.description = "Asks a vision model what `image.png` shows.";
-        vision_example.format = ResponseFormat::Json;
-        vision_example.args = ordered_json::parse(R"({
+        RouteExample image_example;
+        image_example.name = "image input";
+        image_example.description =
+            "Asks a vision model what `image.png` shows. A `messages[*].content` array mixes `text` "
+            "and `image_url` items, with each image as a base64 data URL, such as one from "
+            "`FileReader.readAsDataURL(...)` in a web app.";
+        image_example.format = ResponseFormat::Json;
+        image_example.args = ordered_json::parse(R"({
             "model": "Qwen3.5-0.8B-GGUF",
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": "What is in this image?"},
@@ -246,19 +244,19 @@ public:
             "stream": false
         })");
 
-        RouteExample omni_example;
-        omni_example.name = "omni";
-        omni_example.description =
-            "Asks the `LMX-Omni-5.5B-Lite` collection for a picture, which its image tool "
-            "generates during the loop.";
-        omni_example.format = ResponseFormat::Json;
-        omni_example.args = ordered_json::parse(R"({
+        RouteExample tools_example;
+        tools_example.name = "server-side tools";
+        tools_example.description =
+            "Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, whose "
+            "image tool draws the requested picture.";
+        tools_example.format = ResponseFormat::Json;
+        tools_example.args = ordered_json::parse(R"({
             "model": "LMX-Omni-5.5B-Lite",
             "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
             "stream": false
         })");
 
-        s.examples = {completion_example, stream_example, vision_example, omni_example};
+        s.examples = {completion_example, stream_example, image_example, tools_example};
         s.request_format = RequestFormat::Json;
         return s;
     }
