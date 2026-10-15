@@ -54,8 +54,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
-Once a stream has started, a backend error arrives as a `data: {"error": ...}` event in the `200` stream.
-
 ### Server-Side Tools
 
 Omni collection orchestration is a Lemonade extension to the Chat Completions API; requests to other models are unaffected.
@@ -446,8 +444,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
-Once a stream has started, a backend error arrives as a `data: {"error": ...}` event in the `200` stream.
-
 ### Examples
 
 #### Non-streaming
@@ -748,8 +744,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
-
-Once a stream has started, a backend error arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Examples
 

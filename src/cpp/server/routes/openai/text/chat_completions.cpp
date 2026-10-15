@@ -128,8 +128,6 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
-            "Once a stream has started, a backend error arrives as a `data: {\"error\": ...}` "
-            "event in the `200` stream.",
             "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "

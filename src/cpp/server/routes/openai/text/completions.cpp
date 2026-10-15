@@ -90,8 +90,6 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
-            "Once a stream has started, a backend error arrives as a `data: {\"error\": ...}` "
-            "event in the `200` stream.",
         };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
