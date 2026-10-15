@@ -1,6 +1,8 @@
 #include <lemon/models/ingest.h>
 
 #include <lemon/backends/backend_registry.h>
+#include <lemon/routing_policy.h>
+#include <lemon/routing_policy_parser.h>
 #include <lemon/canonical_id.h>
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
@@ -10,6 +12,8 @@
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/registry_descriptors.h>
+#include <lemon/models/definition_labels.h>
+#include <lemon/models/routing_parse_options.h>
 #include <lemon/models/registry_documents.h>
 #include <lemon/registry_files.h>
 #include <lemon/runtime_config.h>
@@ -575,7 +579,7 @@ void ModelIngest::pull(const std::string& model_name,
         }
 
         if (is_model_collection_recipe(actual_recipe)) {
-            if (auto err = deps_.validate_collection(model_name, model_data)) {
+            if (auto err = validate_collection(model_name, model_data)) {
                 throw std::runtime_error(*err);
             }
             LOG(INFO, "ModelManager") << "Registering new collection: " << model_name << std::endl;
@@ -621,7 +625,7 @@ void ModelIngest::pull(const std::string& model_name,
         if (register_only && replace_existing &&
             is_user_model_name(model_name) && explicit_definition) {
             if (is_model_collection_recipe(actual_recipe)) {
-                if (auto err = deps_.validate_collection(model_name, model_data)) {
+                if (auto err = validate_collection(model_name, model_data)) {
                     throw std::runtime_error(*err);
                 }
             }
@@ -635,7 +639,7 @@ void ModelIngest::pull(const std::string& model_name,
                 // Validate the original user-authored request, not registration_data:
                 // the latter is enriched with the persisted registry source, which is
                 // not part of the public routing-policy document the parser accepts.
-                if (auto err = deps_.validate_collection(model_name, model_data)) {
+                if (auto err = validate_collection(model_name, model_data)) {
                     throw std::runtime_error(*err);
                 }
                 model_registered = false;
@@ -1085,6 +1089,165 @@ std::vector<std::string> ModelIngest::resolve_components_from_manifest(
         bool do_not_upgrade) {
     json manifest = fetch_collection_manifest(repo_id, registry_source, do_not_upgrade);
     return register_components(manifest["components"], manifest["models"], registry_source);
+}
+
+std::optional<std::string> ModelIngest::validate_collection(
+    const std::string& model_name, const json& model_data) {
+    // A registry-backed collection is registered as a pointer: recipe + a checkpoint
+    // that names the HF repo, with no inline components. /pull downloads the
+    // repo's manifest to disk and resolves the components from it, so there is
+    // nothing to validate here - accept the pointer body.
+    std::string checkpoint_pointer = model_data.value("checkpoint", std::string());
+    if (checkpoint_pointer.empty() && model_data.contains("checkpoints") &&
+        model_data["checkpoints"].is_object()) {
+        checkpoint_pointer = model_data["checkpoints"].value("main", std::string());
+    }
+    const bool has_components =
+        model_data.contains("components") && model_data["components"].is_array() &&
+        !model_data["components"].empty();
+    if (!has_components) {
+        if (!checkpoint_pointer.empty()) {
+            return std::nullopt;  // pointer-only registry-backed collection
+        }
+        return std::string("Collection recipe requires a non-empty 'components' array");
+    }
+    // An inline collection import carries its component definitions in a `models`
+    // array. Every component must be *resolvable*: either it is already
+    // registered locally (local-wins) or it has a matching definition in
+    // `models`. Validate this per-component and fail closed. `models` being
+    // present is not a blanket license - a component it omits would otherwise
+    // pass here and then be silently skipped during registration, persisting a
+    // collection smaller than the imported file describes. Mirror the
+    // name-matching that register_components() uses (bare names; `model_name`
+    // or `id` keys) so this gate rejects exactly what registration would drop.
+    const bool has_models_array =
+        model_data.contains("models") && model_data["models"].is_array();
+    auto inline_def_name = [](const json& def) -> std::string {
+        if (!def.is_object()) return "";
+        for (const char* key : {"model_name", "id"}) {
+            if (def.contains(key) && def[key].is_string()) {
+                return bare_component_name(def[key].get<std::string>());
+            }
+        }
+        return "";
+    };
+    auto find_inline_def = [&](const std::string& bare) -> const json* {
+        if (!has_models_array) return nullptr;
+        for (const auto& candidate : model_data["models"]) {
+            if (inline_def_name(candidate) == bare) return &candidate;
+        }
+        return nullptr;
+    };
+    const std::string bare_collection = bare_component_name(model_name);
+    for (const auto& component : model_data["components"]) {
+        if (!component.is_string()) {
+            return std::string("components entries must be strings");
+        }
+        std::string component_name = component.get<std::string>();
+        std::string bare = bare_component_name(component_name);
+        // Self-reference: compare bare forms so a collection `user.MyCol` with
+        // `components: ["MyCol"]` is rejected too, not only the exact-string case.
+        if (bare == bare_collection) {
+            return "Collection cannot reference itself: " + component_name;
+        }
+        // Components must be regular models, not collections.
+        const json* def = find_inline_def(bare);
+        bool is_collection_component =
+            (def != nullptr && def->is_object() &&
+             is_model_collection_recipe(def->value("recipe", std::string()))) ||
+            (deps_.model_exists(bare) && is_model_collection_recipe(deps_.model_info(bare).recipe));
+        if (is_collection_component) {
+            return "Collection components must be regular models, not collections: '" +
+                   component_name + "'";
+        }
+        if (has_models_array) {
+            if (!deps_.model_exists(bare) && def == nullptr) {
+                return "Inline collection component '" + component_name +
+                       "' has no matching definition in 'models' and is not a "
+                       "registered model. Every component must be defined inline "
+                       "(matching 'model_name') or reference an already-registered "
+                       "model.";
+            }
+            // A component that resolves to its inline definition (rather than an
+            // already-registered model) must be a usable registration. Reject a
+            // half-defined component here instead of registering it and failing
+            // later mid-download.
+            if (!deps_.model_exists(bare) && def != nullptr &&
+                !collection_component_def_is_valid(*def)) {
+                return "Inline collection component '" + component_name +
+                       "' has an incomplete definition in 'models' (a recipe and "
+                       "at least one checkpoint are required).";
+            }
+            // register_user_model() would throw on this once the import reached
+            // registration, leaving a partly-imported collection behind. Report
+            // it here, where the import can still be refused whole.
+            if (!deps_.model_exists(bare) && def != nullptr) {
+                std::string illegal;
+                normalized_definition_labels(*def, &illegal);
+                if (!illegal.empty()) {
+                    return describe_illegal_labels(component_name, illegal);
+                }
+            }
+        } else if (!deps_.model_exists(component_name)) {
+            return "Collection component not registered: '" + component_name +
+                   "'. Pull or register it before referencing it in a collection.";
+        }
+    }
+    if (is_router_collection_recipe(model_data.value("recipe", std::string()))) {
+        // Same resolution shape as build_cache()'s, differing only in its
+        // tiers: this one resolves live and falls back to the request's own
+        // inline `models[]`, because an import validates names that are not
+        // registered yet. Unresolvable names are kept as authored by
+        // make_routing_parse_options, so component-role validation can still
+        // compare them against the authored components array.
+        RoutingPolicyParseOptions options = make_routing_parse_options({
+            [this](const std::string& name) -> std::optional<std::string> {
+                try {
+                    return deps_.resolve_name(name);
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this](const std::string& name) -> std::optional<ModelType> {
+                try {
+                    return deps_.model_info(name).type;
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+                // Not registered - the name may match an inline `models[]`
+                // definition in this same request. Derive the type exactly as
+                // register_user_model() would once that definition is
+                // registered, so validation and runtime cannot disagree
+                // (absent labels default to LLM, same as everywhere else).
+                // nullopt only when no definition exists at all - the
+                // "truly unknown" case.
+                const json* def = find_inline_def(bare_component_name(name));
+                if (!def) {
+                    return std::nullopt;
+                }
+                std::set<std::string> label_set = normalized_definition_labels(*def);
+                return get_model_type_from_labels(
+                    std::vector<std::string>(label_set.begin(), label_set.end()));
+            },
+        });
+        try {
+            // Strip pull-protocol keys (stream, subscribe, do_not_upgrade, …)
+            // that the client merges into the body but the policy parser does
+            // not know about. Passing the raw request body would trigger the
+            // reject_unknown_keys check inside parse_route_policy_collection.
+            json policy_json = json::object();
+            for (const auto& key : routing_policy_root_keys()) {
+                if (model_data.contains(key)) policy_json[key] = model_data.at(key);
+            }
+            RoutePolicy policy = parse_route_policy_collection(policy_json, options);
+            RoutingPolicyEngine(std::move(policy), ClassifierServices{});
+        } catch (const std::exception& e) {
+            return std::string("Invalid collection.router routing policy: ") + e.what();
+        }
+    }
+    return std::nullopt;
 }
 
 void ModelIngest::populate_from_cached_manifest(ModelInfo& info) {

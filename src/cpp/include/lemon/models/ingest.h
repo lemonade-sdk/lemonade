@@ -60,10 +60,6 @@ class ModelIngest : public ArtifactFetchService {
         std::function<RegistryDocuments::Pin()> pin;
         std::function<void(const ModelInfo&)> save_options;
         std::function<void(const std::string&)> model_updated;
-        // A collection definition is validated by the model layer, which owns the
-        // routing-policy parse options a registry-backed component needs.
-        std::function<std::optional<std::string>(const std::string&, const nlohmann::json&)>
-            validate_collection;
     };
 
     explicit ModelIngest(Deps deps);
@@ -72,6 +68,11 @@ class ModelIngest : public ArtifactFetchService {
 
     void fetch_registry_artifacts(const ModelInfo& info,
                                   DownloadProgressCallback progress) override;
+
+    // Why a `collection.omni` / `collection.router` definition cannot be registered,
+    // in the words the caller returns; empty when it can.
+    std::optional<std::string> validate_collection(const std::string& model_name,
+                                                   const nlohmann::json& model_data);
 
     // Register a definition and its recipe options without fetching anything.
     void register_model(const std::string& model_name, const nlohmann::json& model_data,
