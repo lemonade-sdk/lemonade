@@ -13,6 +13,19 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidAuthJson{400, "", "The body is not valid JSON"};
+const RouteError kMissingAuthFields{400, "", "`provider` or `api_key` is missing or not a string"};
+const RouteError kInvalidAllowInsecure{400, "", "`allow_insecure_http` is not a boolean"};
+const RouteError kEmptyAuthFields{400, "", "`provider` or `api_key` is empty"};
+const RouteError kProviderNotInstalled{
+    404, "", "`provider` was not installed with [`POST /v1/install`](#post-v1install)"};
+const RouteError kAuthConflict{
+    409, "",
+    "`LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; "
+    "`error.env_var` names the variable"};
+const RouteError kAuthFailed{
+    500, "", "The body holds a number out of range, or storing the key fails unexpectedly"};
+
 class CloudAuthRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -29,17 +42,6 @@ public:
             "discovered models. The key is held in `lemond`'s memory only, never written to disk, "
             "and is gone after a restart; for a key that persists, set "
             "`LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.";
-        s.notes = {
-            "When `LEMONADE_<PROVIDER>_API_KEY` is set, it takes precedence: the request answers "
-            "`409` without storing the key, with `error.type` `auth_conflict` and the `env_var` "
-            "that took precedence.",
-            "A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a "
-            "non-boolean `allow_insecure_http`, or a provider whose base URL is `http://` when "
-            "neither this request nor the provider's install set "
-            "`allow_insecure_http` (code `insecure_http_requires_opt_in`). A provider that is not "
-            "installed answers `404`; install it with [`POST /v1/install`](#post-v1install) and `backend: \"cloud\"` "
-            "first.",
-        };
         s.args = {
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The installed provider's name."},
@@ -81,6 +83,8 @@ public:
             "api_key": "fw-XXXXX"
         })");
         s.examples = {example};
+        s.errors = {kInvalidAuthJson, kMissingAuthFields, kInvalidAllowInsecure, kEmptyAuthFields,
+                    kProviderNotInstalled, kInsecureHttpError, kAuthConflict, kAuthFailed};
         return s;
     }
 
@@ -90,7 +94,8 @@ public:
             const auto body = json::parse(req.http.body);
             if (!body.contains("provider") || !body["provider"].is_string() ||
                 !body.contains("api_key") || !body["api_key"].is_string()) {
-                write_openai_error(res, 400, "Body must contain string fields: provider, api_key");
+                write_openai_error(res, kMissingAuthFields,
+                                   "Body must contain string fields: provider, api_key");
                 return;
             }
             const auto provider = body["provider"].get<std::string>();
@@ -98,18 +103,19 @@ public:
             bool allow_insecure_http = false;
             if (body.contains("allow_insecure_http")) {
                 if (!body["allow_insecure_http"].is_boolean()) {
-                    write_openai_error(res, 400, "allow_insecure_http must be a boolean when provided");
+                    write_openai_error(res, kInvalidAllowInsecure,
+                                       "allow_insecure_http must be a boolean when provided");
                     return;
                 }
                 allow_insecure_http = body["allow_insecure_http"].get<bool>();
             }
             if (provider.empty() || api_key.empty()) {
-                write_openai_error(res, 400, "provider and api_key must be non-empty");
+                write_openai_error(res, kEmptyAuthFields, "provider and api_key must be non-empty");
                 return;
             }
 
             if (!registry.is_installed(provider)) {
-                write_openai_error(res, 404,
+                write_openai_error(res, kProviderNotInstalled,
                     "Cloud provider '" + provider + "' is not installed. "
                     "Call POST /v1/install with backend=cloud, provider, "
                     "and base_url first.");
@@ -132,7 +138,7 @@ public:
             // The environment variable wins over a runtime key, so refusing with 409
             // tells the caller its POST had no effect.
             if (!registry.set_runtime_key(provider, api_key)) {
-                res.status = 409;
+                res.status = kAuthConflict.status;
                 const auto env_name = CloudProviderRegistry::env_var_name(provider);
                 json error = {{"error", {
                     {"message", env_name + " is set in the lemond process; the env var "
@@ -161,10 +167,10 @@ public:
                 CloudProviderRegistry::base_url_warnings(base_url, /*api_key_available=*/true));
             res.set_content(response.dump(), "application/json");
         } catch (const json::parse_error& e) {
-            write_openai_error(res, 400, "Invalid JSON: " + std::string(e.what()));
+            write_openai_error(res, kInvalidAuthJson, "Invalid JSON: " + std::string(e.what()));
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
-            write_openai_error(res, 500, e.what(), "server_error");
+            write_openai_error(res, kAuthFailed, e.what(), "server_error");
         }
     }
 };

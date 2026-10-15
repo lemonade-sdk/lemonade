@@ -12,6 +12,15 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kModelRequired{400, "", "The body has no `model`, or it is empty"};
+const RouteError kModelNotLoaded{
+    404, "",
+    "`model` fails to load for any reason other than a residency conflict, such as naming no "
+    "model or a failed download"};
+const RouteError kInputRequired{400, "", "The body has no `input`"};
+const RouteError kRequestFailed{
+    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+
 class EmbedRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -61,6 +70,8 @@ public:
             "input": "Why is the sky blue?"
         })");
         s.examples = {example};
+        s.errors = {kModelRequired, ModelLoader::kRouterResidencyConflict, kModelNotLoaded,
+                    kInputRequired, kOllamaBackendError, kRequestFailed};
         return s;
     }
 
@@ -70,7 +81,7 @@ public:
 
             std::string model = strip_latest_tag(request_json.value("model", ""));
             if (model.empty()) {
-                res.status = 400;
+                res.status = kModelRequired.status;
                 res.set_content(R"({"error":"model is required"})", "application/json");
                 return;
             }
@@ -82,7 +93,7 @@ public:
                 write_ollama_residency_conflict(e, res);
                 return;
             } catch (const std::exception& e) {
-                res.status = 404;
+                res.status = kModelNotLoaded.status;
                 json error = {{"error", "model '" + model + "' not found"}};
                 res.set_content(error.dump(), "application/json");
                 return;
@@ -94,7 +105,7 @@ public:
             if (request_json.contains("input")) {
                 openai_req["input"] = request_json["input"];
             } else {
-                res.status = 400;
+                res.status = kInputRequired.status;
                 res.set_content(R"({"error":"input is required"})", "application/json");
                 return;
             }
@@ -123,7 +134,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/embed: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kRequestFailed.status;
             json error = {{"error", std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
         }

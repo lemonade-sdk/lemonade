@@ -16,6 +16,15 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
+const RouteError kProviderNotInstalled{404, "", "The cloud `provider` is not installed"};
+const RouteError kMissingRecipeOrBackend{
+    400, "", "A local uninstall is missing `recipe` or `backend`, or one is empty"};
+const RouteError kUninstallFailed{
+    500, "",
+    "The body is not valid JSON, a field has the wrong type, or unloading a model or removing "
+    "the backend fails"};
+
 class UninstallRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -30,10 +39,6 @@ public:
             "Removes a recipe's backend, unloading the models that use it first, or a cloud "
             "provider when `backend` is `\"cloud\"`.";
         s.notes = {
-            "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
-            "`provider`, answers `400`, and a cloud provider that was never installed answers "
-            "`404`. Any other failure, including invalid JSON, answers `500` with an `error` "
-            "string.",
             "### Uninstall a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
@@ -94,6 +99,8 @@ public:
             "provider": "fireworks"
         })");
         s.examples = {local_example, cloud_example};
+        s.errors = {kMissingProvider, kProviderNotInstalled, kMissingRecipeOrBackend,
+                    kUninstallFailed};
         return s;
     }
 
@@ -105,7 +112,7 @@ public:
             if (request_json.value("backend", "") == "cloud") {
                 const std::string provider = request_json.value("provider", "");
                 if (provider.empty()) {
-                    write_openai_error(res, 400, "Cloud uninstall requires 'provider' string field");
+                    write_openai_error(res, kMissingProvider, "Cloud uninstall requires 'provider' string field");
                     return;
                 }
                 // Router::unload_model takes a model name, not a recipe filter, so the
@@ -120,7 +127,8 @@ public:
                 bool removed = ctx_.cloud_registry->uninstall(provider);
                 size_t evicted = ctx_.model_manager->evict_cloud_models(provider);
                 if (!removed) {
-                    write_openai_error(res, 404, "Cloud provider '" + provider + "' is not installed");
+                    write_openai_error(res, kProviderNotInstalled,
+                                       "Cloud provider '" + provider + "' is not installed");
                     return;
                 }
                 persist_cloud_providers(ctx_);
@@ -138,7 +146,7 @@ public:
             std::string backend = request_json.value("backend", "");
 
             if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, 400, "Both 'recipe' and 'backend' are required");
+                write_plain_error(res, kMissingRecipeOrBackend, "Both 'recipe' and 'backend' are required");
                 return;
             }
 
@@ -176,7 +184,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_uninstall: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kUninstallFailed, e.what());
         }
     }
 };

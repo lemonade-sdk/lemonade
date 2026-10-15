@@ -7,6 +7,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidJson{500, "", "The body is empty or is not valid JSON"};
+const RouteError kNotLlamaCpp{400, "", "`model` is not a llama.cpp model"};
+
 class RerankRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -21,10 +24,6 @@ public:
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
-        s.notes = {
-            "A model that is not a reranker answers `400`, or `501` from llama.cpp when it is a "
-            "llama.cpp model. A body that is not valid JSON answers `500`.",
-        };
         s.args = {
             {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The search query text."},
@@ -77,6 +76,7 @@ public:
             ]
         })");
         s.examples = {example};
+        s.errors = {kNotLlamaCpp, kBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -85,7 +85,7 @@ protected:
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->reranking(req.body);
         if (response.contains("error")) {
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
         res.set_content(response.dump(), "application/json");
@@ -93,8 +93,9 @@ protected:
 
     void write_invalid_body(const RouteRequest&, const std::exception& error,
                             httplib::Response& res) const override {
-        write_plain_error(res, 500, error.what());
+        write_plain_error(res, kInvalidJson, error.what());
     }
+    std::vector<RouteError> invalid_body_errors() const override { return {kInvalidJson}; }
 
     LoadSpan load_span() const override { return {"RERANKER", "reranking"}; }
 };

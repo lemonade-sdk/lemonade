@@ -29,7 +29,6 @@ public:
             "Per-architecture defaults are chosen by the architecture in the model's GGUF "
             "metadata, so a model that has not been downloaded yet shows every key with the "
             "value it has before those defaults apply.",
-            "An unknown model answers `404` with `code` `model_not_found`.",
         };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
@@ -45,6 +44,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"id", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
+        s.errors = model_options_errors();
         return s;
     }
 

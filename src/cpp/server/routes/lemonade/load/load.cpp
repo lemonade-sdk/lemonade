@@ -16,6 +16,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidLoadRequest{
+    400, "invalid_request",
+    "`model_name` is missing or not a string, or the body is not a JSON object"};
+
 ordered_json load_schema() {
     return ordered_json::parse(R"({
         "oneOf": [
@@ -78,9 +82,6 @@ public:
             "replaces the model's and the architecture's `*_args` for this load.",
             "Every option the model's recipe accepts can be passed; the [Backend "
             "Reference](../dev/backends-reference.md#recipe-options) lists them per recipe.",
-            "Load failures answer with the same error object as inference requests: `404` for an "
-            "unknown or unsupported model, `409` when pinned models fill every slot, and `500` "
-            "for any other failure, such as a failed download or a backend that fails to start.",
             "### Saved Options\n\n"
             "`recipe_options.json`, in the Lemonade config directory (`~/.config/lemonade` by "
             "default), holds each model's saved options, keyed by the model name with its source "
@@ -159,6 +160,8 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
+        s.errors = {kInvalidLoadRequest};
+        for (const auto& error : ModelLoader::errors()) s.errors.push_back(error);
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -284,8 +287,8 @@ public:
             if (!model_name.empty()) {
                 ctx_.model_loader->write_load_error(res, model_name, e.what());
             } else {
-                write_openai_error(res, 400, std::string("Invalid request: ") + e.what(),
-                                   "invalid_request_error", "invalid_request");
+                write_openai_error(res, kInvalidLoadRequest,
+                                   std::string("Invalid request: ") + e.what());
             }
         }
     }

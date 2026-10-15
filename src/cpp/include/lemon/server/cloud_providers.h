@@ -6,6 +6,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "lemon/server/route_error.h"
 #include "lemon/server/server_context.h"
 
 namespace lemon {
@@ -17,6 +18,7 @@ void persist_cloud_providers(ServerContext& ctx);
 
 // An API key must not reach an http:// provider unless the client opted in, so install and
 // cloud/auth refuse it with this error.
+extern const RouteError kInsecureHttpError;
 void write_insecure_http_error(httplib::Response& res, const std::string& provider);
 
 // Adds "warnings", plus the single joined "warning" string that older clients read.

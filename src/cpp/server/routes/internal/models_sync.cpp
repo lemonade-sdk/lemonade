@@ -16,6 +16,16 @@ using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
+const RouteError kOffline{409, "", "Offline mode (`offline=true`) is on, so no network request is made"};
+const RouteError kInvalidJson{400, "", "The body is not valid JSON"};
+const RouteError kNotObject{400, "", "The body is not a JSON object"};
+const RouteError kBadModels{400, "", "`models` is not an array of strings"};
+const RouteError kBadDryRun{400, "", "`dry_run` is not a boolean"};
+const RouteError kBadAsync{400, "", "`async` is not a boolean"};
+const RouteError kBadAttach{400, "", "`attach_if_running` is not a boolean"};
+const RouteError kDryRunFailed{500, "", "Checking for updates with `dry_run` fails"};
+const RouteError kSyncFailed{500, "", "A sync with `async: false` fails"};
+
 class ModelsSyncRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -38,8 +48,6 @@ public:
             "with what a sync would update.",
             "While a sync is running, a new request answers `200` with that sync's status "
             "instead of starting another.",
-            "Offline mode (`offline=true`) answers `409` without any network request.",
-            "A `400` answers a body that is not a JSON object, or an argument of the wrong type.",
             "See Model Synchronization & Auto-Updates in "
             "[Server Configuration](../guide/configuration/README.md).",
         };
@@ -65,13 +73,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.examples = {example};
+        s.errors = {kOffline, kInvalidJson, kNotObject, kBadModels, kBadDryRun, kBadAsync,
+                    kBadAttach, kDryRunFailed, kSyncFailed};
         s.quiet_log = true;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         if (ctx_.config->offline()) {
-            write_plain_error(res, 409, "Cannot sync model updates while offline=true");
+            write_plain_error(res, kOffline, "Cannot sync model updates while offline=true");
             return;
         }
 
@@ -85,17 +95,17 @@ public:
             try {
                 auto body_json = json::parse(req.http.body);
                 if (!body_json.is_object()) {
-                    write_plain_error(res, 400, "Request body must be a JSON object");
+                    write_plain_error(res, kNotObject, "Request body must be a JSON object");
                     return;
                 }
                 if (body_json.contains("models")) {
                     if (!body_json["models"].is_array()) {
-                        write_plain_error(res, 400, "'models' must be an array of strings");
+                        write_plain_error(res, kBadModels, "'models' must be an array of strings");
                         return;
                     }
                     for (const auto& item : body_json["models"]) {
                         if (!item.is_string()) {
-                            write_plain_error(res, 400, "Each item in 'models' must be a string");
+                            write_plain_error(res, kBadModels, "Each item in 'models' must be a string");
                             return;
                         }
                         target_models.push_back(item.get<std::string>());
@@ -103,14 +113,14 @@ public:
                 }
                 if (body_json.contains("dry_run")) {
                     if (!body_json["dry_run"].is_boolean()) {
-                        write_plain_error(res, 400, "'dry_run' must be a boolean");
+                        write_plain_error(res, kBadDryRun, "'dry_run' must be a boolean");
                         return;
                     }
                     dry_run = body_json["dry_run"].get<bool>();
                 }
                 if (body_json.contains("async")) {
                     if (!body_json["async"].is_boolean()) {
-                        write_plain_error(res, 400, "'async' must be a boolean");
+                        write_plain_error(res, kBadAsync, "'async' must be a boolean");
                         return;
                     }
                     async_dispatch = body_json["async"].get<bool>();
@@ -118,13 +128,13 @@ public:
                 }
                 if (body_json.contains("attach_if_running")) {
                     if (!body_json["attach_if_running"].is_boolean()) {
-                        write_plain_error(res, 400, "'attach_if_running' must be a boolean");
+                        write_plain_error(res, kBadAttach, "'attach_if_running' must be a boolean");
                         return;
                     }
                     attach_if_running = body_json["attach_if_running"].get<bool>();
                 }
             } catch (const std::exception& e) {
-                write_plain_error(res, 400, std::string("Invalid JSON body: ") + e.what());
+                write_plain_error(res, kInvalidJson, std::string("Invalid JSON body: ") + e.what());
                 return;
             }
         }
@@ -138,7 +148,7 @@ public:
                 res.status = 200;
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Model sync dry-run failed: " << e.what() << std::endl;
-                write_plain_error(res, 500, std::string("Model sync dry-run failed: ") + e.what());
+                write_plain_error(res, kDryRunFailed, std::string("Model sync dry-run failed: ") + e.what());
             }
             return;
         }
@@ -169,7 +179,7 @@ public:
             res.status = 200;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model sync failed: " << e.what() << std::endl;
-            write_plain_error(res, 500, std::string("Model sync failed: ") + e.what());
+            write_plain_error(res, kSyncFailed, std::string("Model sync failed: ") + e.what());
         }
     }
 };

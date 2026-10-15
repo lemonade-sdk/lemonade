@@ -10,6 +10,11 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidJson{400, "", "The body is not valid JSON"};
+const RouteError kMissingModel{400, "", "The body has neither `model` nor `model_name`"};
+const RouteError kBadPinned{400, "", "`pinned` is missing or not a boolean"};
+const RouteError kNotLoaded{400, "", "`model_name` is not a string or names no loaded model"};
+
 class PinRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -26,10 +31,8 @@ public:
             "skips pinned models.";
         s.notes = {
             "A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a "
-            "slot held only by pinned models fails with `409` and a "
+            "slot held only by pinned models fails with a "
             "`slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).",
-            "A `400` answers invalid JSON, a missing model name, a missing or non-boolean "
-            "`pinned`, or a model that is not loaded.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -56,6 +59,7 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}, {"pinned", true}};
         s.examples = {example};
+        s.errors = {kInvalidJson, kMissingModel, kBadPinned, kNotLoaded};
         return s;
     }
 
@@ -65,18 +69,18 @@ public:
             try {
                 request_json = json::parse(req.http.body);
             } catch (const std::exception& parse_err) {
-                write_openai_error(res, 400,
+                write_openai_error(res, kInvalidJson,
                                    "Invalid JSON body: " + std::string(parse_err.what()));
                 return;
             }
 
             if (!request_json.contains("model") && !request_json.contains("model_name")) {
-                write_openai_error(res, 400, "Parameter 'model' or 'model_name' is required");
+                write_openai_error(res, kMissingModel, "Parameter 'model' or 'model_name' is required");
                 return;
             }
 
             if (!request_json.contains("pinned") || !request_json["pinned"].is_boolean()) {
-                write_openai_error(res, 400,
+                write_openai_error(res, kBadPinned,
                                    "Parameter 'pinned' is required and must be a boolean");
                 return;
             }
@@ -98,7 +102,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Pin/unpin failed: " << e.what() << std::endl;
-            write_openai_error(res, 400, e.what());
+            write_openai_error(res, kNotLoaded, e.what());
         }
     }
 };

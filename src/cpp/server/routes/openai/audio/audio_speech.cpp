@@ -10,6 +10,18 @@ namespace {
 
 using json = nlohmann::json;
 
+const RouteError kNotTtsModel{
+    400, "model_not_applicable",
+    "`model` is not a text-to-speech model, which is checked before it loads"};
+const RouteError kMissingInput{400, "", "The body has no `input`"};
+const RouteError kInputNotString{400, "", "`input` is not a string"};
+const RouteError kBadStreamFormat{400, "", "`stream_format` is not `audio`"};
+const RouteError kUnsupportedFormat{
+    400, "",
+    "`response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams"};
+const RouteError kSpeechFailure{
+    500, "", "The body is not valid JSON, or the request fails unexpectedly"};
+
 class AudioSpeechRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -29,12 +41,9 @@ public:
         s.notes = {
             "Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp3`, "
             "`wav`, `opus` and `pcm`, and OpenMOSS encodes `wav` or `pcm`. Streaming produces "
-            "`pcm` only, so a streaming request with another explicit `response_format` answers "
-            "`400`. OpenMOSS PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and "
+            "`pcm` only. OpenMOSS PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and "
             "`X-MOSS-Channels` headers, since its format depends on the model (24 kHz mono for "
             "`OpenMOSS-TTS`, 48 kHz stereo for `MOSS-TTS-Local`).",
-            "A request for a model that is not a text-to-speech model answers `400` with `code` "
-            "`model_not_applicable`, before any model loads.",
         };
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -88,6 +97,8 @@ public:
                           {"stream_format", "audio"}};
 
         s.examples = {audio_example, stream_example};
+        s.errors = {kNotTtsModel, kMissingInput, kInputNotString, kBadStreamFormat,
+                    kUnsupportedFormat, kNoOutputError, kBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -100,8 +111,8 @@ protected:
         req.body["model"].get<std::string>();  // a non-string model fails before any load
         if (auto info = ctx_.router->try_get_model_info(req.model);
             info && info->type != ModelType::TTS) {
-            write_openai_error(res, 400, "Model '" + req.model + "' is not a text-to-speech model",
-                               "invalid_request_error", "model_not_applicable");
+            write_openai_error(res, kNotTtsModel,
+                               "Model '" + req.model + "' is not a text-to-speech model");
             return false;
         }
         return true;
@@ -110,11 +121,11 @@ protected:
     void run(RouteRequest& req, httplib::Response& res) override {
         json& request_json = req.body;
         if (!request_json.contains("input")) {
-            write_openai_error(res, 400, "Missing 'input' field in request");
+            write_openai_error(res, kMissingInput, "Missing 'input' field in request");
             return;
         }
         if (!request_json["input"].is_string()) {
-            write_openai_error(res, 400, "'input' must be a string");
+            write_openai_error(res, kInputNotString, "'input' must be a string");
             return;
         }
 
@@ -123,7 +134,7 @@ protected:
         if (request_json.contains("stream_format")) {
             is_streaming = true;
             if (request_json["stream_format"] != "audio") {
-                write_openai_error(res, 400, "Only 'audio' is supported for stream_format");
+                write_openai_error(res, kBadStreamFormat, "Only 'audio' is supported for stream_format");
                 return;
             }
         }
@@ -131,7 +142,7 @@ protected:
         const AudioFormat format =
             negotiate_speech_format(*ctx_.router, req.model, request_json, is_streaming);
         if (!format.error.empty()) {
-            write_openai_error(res, 400, format.error);
+            write_openai_error(res, kUnsupportedFormat, format.error);
             return;
         }
         for (const auto& [name, value] : format.headers) {
@@ -162,11 +173,13 @@ protected:
                             httplib::Response& res) const override {
         write_exception(error, res);
     }
+    std::vector<RouteError> invalid_body_errors() const override { return {kSpeechFailure}; }
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in audio speech: " << error.what() << std::endl;
-        write_openai_error(res, 500, error.what(), "internal_error");
+        write_openai_error(res, kSpeechFailure, error.what(), "internal_error");
     }
+    std::vector<RouteError> exception_errors() const override { return {kSpeechFailure}; }
 };
 
 } // namespace

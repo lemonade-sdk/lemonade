@@ -11,6 +11,13 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kNameRequired{
+    400, "", "The body has neither `model` nor `name`, or the one used is empty"};
+const RouteError kModelNotFound{
+    404, "", "The model names no model in the registry, or one filtered out on this system"};
+const RouteError kRequestFailed{
+    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+
 json build_ollama_capabilities(const ModelInfo& info) {
     json capabilities = json::array();
     ModelType model_type = get_model_type_from_labels(info.labels);
@@ -76,6 +83,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
         s.examples = {example};
+        s.errors = {kNameRequired, kModelNotFound, kRequestFailed};
         return s;
     }
 
@@ -87,13 +95,13 @@ public:
             request_json.value("model", "") : request_json.value("name", ""));
 
             if (name.empty()) {
-                res.status = 400;
+                res.status = kNameRequired.status;
                 res.set_content(R"({"error":"name is required"})", "application/json");
                 return;
             }
 
             if (!ctx_.model_manager->model_exists(name)) {
-                res.status = 404;
+                res.status = kModelNotFound.status;
                 json error = {{"error", "model '" + name + "' not found"}};
                 res.set_content(error.dump(), "application/json");
                 return;
@@ -121,7 +129,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/show: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kRequestFailed.status;
             json error = {{"error", std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
         }

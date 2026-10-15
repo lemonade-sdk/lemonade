@@ -24,6 +24,32 @@
 namespace lemon {
 namespace {
 
+const RouteError kModelRequired{400, "", "The body has no `model`, or it is empty"};
+const RouteError kProviderNoBaseUrl{
+    500, "", "`model` is a cloud model whose `--wire-format anthropic` provider has no base URL"};
+const RouteError kProviderNoApiKey{
+    401, "", "`model` is a cloud model whose `--wire-format anthropic` provider has no API key"};
+const RouteError kProviderInsecureHttp{
+    400, "",
+    "`model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base "
+    "URL and was not installed with `--allow-insecure-http`"};
+const RouteError kCloudModelNoCheckpoint{
+    500, "", "`model` is a `--wire-format anthropic` cloud model with no `checkpoint`"};
+const RouteError kCloudRequestFailed{
+    502, "",
+    "The relayed cloud request fails or the provider answers with an error; the provider's own "
+    "status and body replace this one when it answers"};
+const RouteError kResidencyConflict{
+    409, "",
+    "Loading `model` would evict a model that a `collection.router` model needs resident on the "
+    "same NPU"};
+const RouteError kModelNotLoaded{
+    404, "",
+    "`model` fails to load for any reason other than a residency conflict, such as naming no "
+    "model or a failed download"};
+const RouteError kRequestFailed{
+    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
@@ -159,7 +185,7 @@ bool set_anthropic_backend_error_response(const json& response, httplib::Respons
 void set_anthropic_residency_conflict_response(
     const RouterResidencyConflictException& error,
     httplib::Response& res) {
-    res.status = 409;
+    res.status = kResidencyConflict.status;
     json body = {
         {"type", "error"},
         {"error", {
@@ -186,15 +212,15 @@ struct AnthropicUpstream {
 struct AnthropicUpstreamMatch {
     bool claimed = false;
     std::optional<AnthropicUpstream> upstream;
-    int error_status = 0;
+    const RouteError* error = nullptr;
     std::string error_message;
 };
 
-void set_anthropic_error_response(httplib::Response& res, int status,
-                                         const std::string& message) {
-    res.status = status;
+void set_anthropic_error_response(httplib::Response& res, const RouteError& error,
+                                  const std::string& message) {
+    res.status = error.status;
     res.set_content(
-        anthropic::build_anthropic_error(json{{"message", message}}, status).dump(),
+        anthropic::build_anthropic_error(json{{"message", message}}, error.status).dump(),
         "application/json");
 }
 
@@ -221,27 +247,27 @@ AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
     if (registry->wire_format_for(info.cloud_provider) != "anthropic") return match;
 
     match.claimed = true;
-    auto fail = [&match](int status, std::string message) {
-        match.error_status = status;
+    auto fail = [&match](const RouteError& error, std::string message) {
+        match.error = &error;
         match.error_message = std::move(message);
         return match;
     };
 
     const std::string base_url = registry->base_url_for(info.cloud_provider);
     if (base_url.empty()) {
-        return fail(500, "provider '" + info.cloud_provider +
+        return fail(kProviderNoBaseUrl, "provider '" + info.cloud_provider +
                          "' has no base URL configured");
     }
     const std::string api_key = registry->resolve_key(info.cloud_provider);
     if (api_key.empty()) {
-        return fail(401, "no API key for provider '" + info.cloud_provider + "'; set " +
+        return fail(kProviderNoApiKey, "no API key for provider '" + info.cloud_provider + "'; set " +
                          CloudProviderRegistry::env_var_name(info.cloud_provider) +
                          " or POST /v1/cloud/auth");
     }
     const bool allow_insecure_http =
         registry->allow_insecure_http_for(info.cloud_provider);
     if (CloudProviderRegistry::is_http_base_url(base_url) && !allow_insecure_http) {
-        return fail(400, "provider '" + info.cloud_provider +
+        return fail(kProviderInsecureHttp, "provider '" + info.cloud_provider +
                          "' uses an http:// base URL; re-install it with "
                          "--allow-insecure-http to send the API key in plaintext");
     }
@@ -250,7 +276,7 @@ AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
     // the same check here a hand-authored registry entry would relay an empty
     // model id and surface an opaque provider 400 instead.
     if (info.checkpoint().empty()) {
-        return fail(500, "cloud model '" + model + "' is missing the 'checkpoint' "
+        return fail(kCloudModelNoCheckpoint, "cloud model '" + model + "' is missing the 'checkpoint' "
                          "field (provider's upstream model id)");
     }
 
@@ -314,7 +340,7 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
             res.set_content(response.body, "application/json");
         } catch (const std::exception& e) {
             set_anthropic_error_response(
-                res, 502, "cloud request for '" + model + "' failed: " + e.what());
+                res, kCloudRequestFailed, "cloud request for '" + model + "' failed: " + e.what());
         }
         return;
     }
@@ -798,9 +824,7 @@ public:
             "nothing is dropped; see [Cloud "
             "Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
             "Errors use Anthropic's shape, `{\"type\": \"error\", \"error\": {\"type\", "
-            "\"message\"}}`. A model that fails to load, whether unknown or not, answers `404` "
-            "with a `not_found_error`, except a load blocked by a `collection.router` residency "
-            "constraint, which answers `409`.",
+            "\"message\"}}`.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -891,7 +915,8 @@ public:
                 "content_block": {"type": "object", "description": "In `content_block_start`: the block, with empty `text` or `input`."},
                 "delta": {"type": "object", "description": "In `content_block_delta`: the block's next `text_delta` text or `input_json_delta` partial JSON. In `message_delta`: the `stop_reason` and `stop_sequence`."},
                 "usage": {"type": "object", "description": "In `message_delta`: token counts. Both are `0` when the backend's stream carries no usage, as with llama.cpp."},
-                "warnings": {"type": "array", "items": {"type": "string"}, "description": "In `message_delta`: what Lemonade ignored while converting; present only when there is something to report."}
+                "warnings": {"type": "array", "items": {"type": "string"}, "description": "In `message_delta`: what Lemonade ignored while converting; present only when there is something to report."},
+                "error": {"type": "object", "description": "In `error`, sent when the backend or provider fails after the stream started: the error's `type` and `message`."}
             }
         })");
 
@@ -919,6 +944,9 @@ public:
         })");
 
         s.examples = {message_example, stream_example};
+        s.errors = {kModelRequired, kProviderNoBaseUrl, kProviderNoApiKey, kProviderInsecureHttp,
+                    kCloudModelNoCheckpoint, kCloudRequestFailed, kResidencyConflict,
+                    kModelNotLoaded, kBackendError, kRequestFailed};
         return s;
     }
 
@@ -929,7 +957,7 @@ public:
 
             std::string model = strip_latest_tag(request_json.value("model", ""));
             if (model.empty()) {
-                set_anthropic_error_response(res, 400, "model is required");
+                set_anthropic_error_response(res, kModelRequired, "model is required");
                 return;
             }
 
@@ -953,8 +981,7 @@ public:
             if (match.claimed) {
                 emit_warning_header();
                 if (!match.upstream) {
-                    set_anthropic_error_response(res, match.error_status,
-                                                 match.error_message);
+                    set_anthropic_error_response(res, *match.error, match.error_message);
                     return;
                 }
                 forward_anthropic_upstream(std::move(*match.upstream),
@@ -971,7 +998,7 @@ public:
                 set_anthropic_residency_conflict_response(e, res);
                 return;
             } catch (const std::exception&) {
-                set_anthropic_error_response(res, 404,
+                set_anthropic_error_response(res, kModelNotLoaded,
                                              "model '" + model + "' not found, try pulling it first");
                 return;
             }
@@ -1004,7 +1031,7 @@ public:
 
         } catch (const std::exception& e) {
             std::cerr << "[OllamaApi] Error in /v1/messages: " << e.what() << std::endl;
-            set_anthropic_error_response(res, 500, e.what());
+            set_anthropic_error_response(res, kRequestFailed, e.what());
         }
     }
 };

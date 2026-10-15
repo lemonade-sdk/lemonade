@@ -9,6 +9,22 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidClassifyBody{400, "", "The body is empty or is not valid JSON"};
+const RouteError kNonStringModel{400, "", "`model` is not a string"};
+const RouteError kMissingInput{400, "", "Neither `input` nor `text` is present"};
+const RouteError kNonStringInput{400, "", "`input` or `text` is not a string"};
+const RouteError kBlankInput{400, "", "The input text is empty or only whitespace"};
+const RouteError kInvalidTopK{400, "", "`top_k` is not an integer from 1 to 1,000,000"};
+const RouteError kNoSoleClassifier{
+    400, "", "`model` is omitted and not exactly one classification model is loaded"};
+const RouteError kBackendRejected{
+    400, "",
+    "The backend rejects the request, for example because `model` is not a classification "
+    "model, which is found only after it loads"};
+const RouteError kModelNotLoaded{
+    404, "", "The model is unloaded between its load and the classification"};
+const RouteError kUnexpectedResponse{500, "", "The backend's response has no `labels` object"};
+
 class ClassifyRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -40,9 +56,6 @@ public:
             "`manifest.json`.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
-            "A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string "
-            "fields, a non-positive `top_k`) answers `400` before any model loads, as does an "
-            "omitted `model` while no single classification model is loaded.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
@@ -80,6 +93,9 @@ public:
             "input": "Please verify your account at http://secure-login.example now."
         })");
         s.examples = {example};
+        s.errors = {kNonStringModel, kMissingInput, kNonStringInput, kBlankInput, kInvalidTopK,
+                    kNoSoleClassifier, kBackendRejected, kModelNotLoaded, kBackendError,
+                    kUnexpectedResponse};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -90,29 +106,36 @@ protected:
 
         // Malformed requests are rejected before any model gets loaded.
         std::string validation_error;
+        const RouteError* validation_route_error = nullptr;
         bool has_text = request_json.contains("text");
         bool has_input = request_json.contains("input");
         const auto& input_field = has_text ? request_json["text"]
                                  : has_input ? request_json["input"] : request_json;
         if (request_json.contains("model") && !request_json["model"].is_string()) {
             validation_error = "'model' must be a string";
+            validation_route_error = &kNonStringModel;
         } else if (!has_text && !has_input) {
             validation_error = "Missing 'input' (or 'text') string in classify request";
+            validation_route_error = &kMissingInput;
         } else if (has_text && !request_json["text"].is_string()) {
             validation_error = "'text' must be a string";
+            validation_route_error = &kNonStringInput;
         } else if (has_input && !request_json["input"].is_string()) {
             validation_error = "'input' must be a string";
+            validation_route_error = &kNonStringInput;
         } else if (input_field.get<std::string>().find_first_not_of(" \t\r\n") ==
                    std::string::npos) {
             validation_error = "input text must not be empty";
+            validation_route_error = &kBlankInput;
         } else if (request_json.contains("top_k") &&
                    (!request_json["top_k"].is_number_integer() ||
                     request_json["top_k"].get<long long>() < 1 ||
                     request_json["top_k"].get<long long>() > 1000000)) {
             validation_error = "'top_k' must be a positive integer";
+            validation_route_error = &kInvalidTopK;
         }
-        if (!validation_error.empty()) {
-            write_openai_error(res, 400, validation_error);
+        if (validation_route_error) {
+            write_openai_error(res, *validation_route_error, validation_error);
             return false;
         }
 
@@ -121,7 +144,7 @@ protected:
         if (!req.body.contains("model")) {
             req.model = ctx_.router->get_sole_loaded_model_of_type(ModelType::CLASSIFICATION);
             if (req.model.empty()) {
-                write_openai_error(res, 400,
+                write_openai_error(res, kNoSoleClassifier,
                     "No 'model' specified and no single classification model "
                     "is loaded (load one, or name it in the request)");
                 return false;
@@ -139,20 +162,20 @@ protected:
             if (err.contains("status_code") && err["status_code"].is_number_integer()) {
                 res.status = err["status_code"].get<int>();
             } else if (err.contains("code") && err["code"].is_string()) {
-                res.status = ModelLoader::load_error_status(err["code"].get<std::string>());
+                res.status = ModelLoader::load_error(err["code"].get<std::string>()).status;
             } else if (err.contains("type") && err["type"].is_string()) {
                 // LemonException::to_json carries only {message, type}.
                 const std::string type = err["type"].get<std::string>();
                 if (type == "invalid_request" || type == "invalid_request_error" ||
                     type == "unsupported_operation") {
-                    res.status = 400;
+                    res.status = kBackendRejected.status;
                 } else if (type == "model_not_loaded") {
-                    res.status = 404;
+                    res.status = kModelNotLoaded.status;
                 } else {
-                    res.status = 500;
+                    res.status = kBackendError.status;
                 }
             } else {
-                res.status = 500;
+                res.status = kBackendError.status;
             }
             res.set_content(response.dump(), "application/json");
             return;
@@ -161,7 +184,8 @@ protected:
         // The envelope pins the public API shape; the backend subprocess's raw
         // output is not the contract.
         if (!response.contains("labels") || !response["labels"].is_object()) {
-            write_openai_error(res, 500, "Classification backend returned an unexpected response",
+            write_openai_error(res, kUnexpectedResponse,
+                               "Classification backend returned an unexpected response",
                                "classification_error");
             return;
         }
@@ -175,8 +199,10 @@ protected:
 
     void write_invalid_body(const RouteRequest&, const std::exception& error,
                             httplib::Response& res) const override {
-        write_openai_error(res, 400, std::string("Invalid JSON in request body: ") + error.what());
+        write_openai_error(res, kInvalidClassifyBody,
+                           std::string("Invalid JSON in request body: ") + error.what());
     }
+    std::vector<RouteError> invalid_body_errors() const override { return {kInvalidClassifyBody}; }
 
     LoadSpan load_span() const override { return {"CLASSIFIER", "classify"}; }
 };

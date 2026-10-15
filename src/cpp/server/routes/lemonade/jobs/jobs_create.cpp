@@ -9,6 +9,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidJobBody{
+    400, "", "The body is not a JSON object, or `name` or a step has the wrong type"};
+const RouteError kInvalidSteps{
+    400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
+const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
+
 class JobsCreateRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -26,9 +32,7 @@ public:
             "server restarts (a restart leaves an active job interrupted), and can be paused, "
             "interrupted, resumed, read and deleted.";
         s.notes = {
-            "An invalid step graph answers `400` at creation. The job store holds 50 jobs: a new "
-            "job evicts the oldest finished one, and while all 50 are still active or resumable, "
-            "a new job answers `429` until one is deleted or finishes.",
+            "The job store holds 50 jobs: a new job evicts the oldest finished one.",
             "A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot "
             "for as long as it runs, so normal traffic queues behind it.",
             "[`docs/dev/job-system.md`](../dev/job-system.md) specifies the step schema, op set and "
@@ -65,6 +69,7 @@ public:
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
         s.examples = {example};
+        s.errors = {kInvalidJobBody, kInvalidSteps, kJobLimit};
         return s;
     }
 
@@ -89,9 +94,10 @@ public:
             res.status = 202;
             res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");
         } catch (const lemon::jobs::JobError& e) {
-            write_plain_error(res, e.status, e.what());
+            write_plain_error(res, e.status == kJobLimit.status ? kJobLimit : kInvalidSteps,
+                              e.what());
         } catch (const std::exception& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kInvalidJobBody, e.what());
         }
     }
 };

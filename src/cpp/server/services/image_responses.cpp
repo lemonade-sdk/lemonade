@@ -9,6 +9,17 @@ namespace lemon {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+namespace {
+
+const RouteError kImageInvalidJson{
+    400, "", "The body is not valid JSON, or a field has the wrong JSON type"};
+const RouteError kImageRouteFailure{500, "", "The request fails unexpectedly"};
+const RouteError kImageCountOutOfRange{400, "", "`n` is outside `1` to `10`"};
+const RouteError kImageFieldsMixed{400, "", "The form has files under both `image` and `image[]`"};
+const RouteError kMissingImage{400, "", "The form has no file under `image` or `image[]`"};
+
+} // namespace
+
 ordered_json image_response_schema() {
     return ordered_json::parse(R"({
         "type": "object",
@@ -27,22 +38,33 @@ ordered_json image_response_schema() {
     })");
 }
 
+std::vector<RouteError> image_route_exception_errors() {
+    return {kImageInvalidJson, kImageRouteFailure};
+}
+
 void write_image_route_exception(const std::exception& error, httplib::Response& res,
                                  const char* fallback_type) {
     if (dynamic_cast<const json::exception*>(&error)) {
         LOG(ERROR, "Server") << "JSON parse error in image route: " << error.what() << std::endl;
-        write_openai_error(res, 400, "Invalid JSON: " + std::string(error.what()));
+        write_openai_error(res, kImageInvalidJson, "Invalid JSON: " + std::string(error.what()));
         return;
     }
     LOG(ERROR, "Server") << "ERROR in image route: " << error.what() << std::endl;
-    write_openai_error(res, 500, error.what(), fallback_type);
+    write_openai_error(res, kImageRouteFailure, error.what(), fallback_type);
+}
+
+std::vector<RouteError> attach_form_image_errors(bool allow_multiple) {
+    if (allow_multiple) {
+        return {kImageCountOutOfRange, kImageFieldsMixed, kMissingImage};
+    }
+    return {kImageCountOutOfRange, kMissingImage};
 }
 
 bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_multiple) {
     if (req.body.contains("n")) {
         const int n = req.body["n"].get<int>();
         if (n < 1 || n > 10) {
-            write_openai_error(res, 400, "Invalid value for 'n': must be between 1 and 10");
+            write_openai_error(res, kImageCountOutOfRange, "Invalid value for 'n': must be between 1 and 10");
             return false;
         }
     }
@@ -50,7 +72,7 @@ bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_mul
     const auto& files = req.http.form.files;
     // A multipart map groups files by field name, losing mixed upload order.
     if (allow_multiple && files.count("image") > 0 && files.count("image[]") > 0) {
-        write_openai_error(res, 400, "Use either 'image' or 'image[]', not both");
+        write_openai_error(res, kImageFieldsMixed, "Use either 'image' or 'image[]', not both");
         return false;
     }
 
@@ -77,7 +99,7 @@ bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_mul
         });
     }
     if (images.empty()) {
-        write_openai_error(res, 400, "Missing 'image' field in request");
+        write_openai_error(res, kMissingImage, "Missing 'image' field in request");
         return false;
     }
     req.body["image_files"] = std::move(images);

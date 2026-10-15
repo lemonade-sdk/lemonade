@@ -12,6 +12,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kMissingProvider{400, "", "The path names no provider"};
+const RouteError kClearFailed{500, "", "Clearing the key or evicting the provider's models fails"};
+
 class CloudAuthProviderRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -57,6 +60,7 @@ public:
         example.setup = {{"lemonade.cloud_auth", ""}};
         example.args = {{"provider", "fireworks"}};
         s.examples = {example};
+        s.errors = {kMissingProvider, kClearFailed};
         return s;
     }
 
@@ -64,7 +68,7 @@ public:
         try {
             const std::string provider = req.http.matches[1].str();
             if (provider.empty()) {
-                write_openai_error(res, 400, "Missing provider in URL");
+                write_openai_error(res, kMissingProvider, "Missing provider in URL");
                 return;
             }
 
@@ -87,7 +91,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_clear: " << e.what() << std::endl;
-            write_openai_error(res, 500, e.what(), "server_error");
+            write_openai_error(res, kClearFailed, e.what(), "server_error");
         }
     }
 };

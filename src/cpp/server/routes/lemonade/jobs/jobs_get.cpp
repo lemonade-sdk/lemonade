@@ -7,6 +7,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kUnknownJob{404, "", "`id` names no job, or a deleted one"};
+
 class JobsGetRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -21,7 +23,6 @@ public:
         s.description =
             "Returns a job's full record: its status, the state of each step, and the context "
             "the steps have written.";
-        s.notes = {"An unknown job answers `404`."};
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
@@ -65,13 +66,14 @@ public:
         example.setup = {{"lemonade.jobs_create", ""}};
         example.args = {{"id", "$lemonade.jobs_create/id"}};
         s.examples = {example};
+        s.errors = {kUnknownJob};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         const auto job = ctx_.job_manager->get(req.http.matches[1]);
         if (!job) {
-            write_plain_error(res, 404, "unknown job");
+            write_plain_error(res, kUnknownJob, "unknown job");
             return;
         }
         res.set_content(job->dump(), "application/json");

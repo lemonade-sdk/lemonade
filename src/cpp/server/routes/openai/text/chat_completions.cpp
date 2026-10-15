@@ -4,6 +4,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/omni_collection.h"
+#include "lemon/streaming_proxy.h"
 #include "lemon/thinking_controls.h"
 
 namespace lemon {
@@ -68,6 +69,7 @@ ordered_json chat_completion_schema() {
 ordered_json chat_completion_chunk_schema() {
     auto schema = ordered_json::parse(R"({
         "type": "object",
+        "description": "A chunk of the assistant's message. The stream ends with `data: [DONE]`.",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
             "id": {"type": "string", "description": "Identifier of the completion, the same on every chunk."},
@@ -106,6 +108,8 @@ ordered_json chat_completion_chunk_schema() {
     return schema;
 }
 
+const RouteError kNotLlm{400, "", "`model` is not an LLM, which is checked after it loads"};
+
 class ChatCompletionsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -124,12 +128,8 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
-            "A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, "
-            "which is loaded before the check. An unknown model, or one not available on this "
-            "system, answers `404`; a load blocked by pinned models or a routing residency "
-            "conflict answers `409`; any other load failure answers `500`. A backend error answers "
-            "with the backend's status, except that once a stream has started it arrives as a "
-            "`data: {\"error\": ...}` event in the `200` stream.",
+            "Once a stream has started, a backend error arrives as a `data: {\"error\": ...}` "
+            "event in the `200` stream.",
             "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
@@ -206,7 +206,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = chat_completion_chunk_schema();
+        stream.schema = {{"oneOf", ordered_json::array({
+            chat_completion_chunk_schema(), StreamingProxy::error_event_schema()})}};
 
         s.responses = {completion, stream};
 
@@ -257,6 +258,7 @@ public:
         })");
 
         s.examples = {completion_example, stream_example, image_example, tools_example};
+        s.errors = {kNotLlm, kBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -285,7 +287,7 @@ protected:
     void run(RouteRequest& req, httplib::Response& res) override {
         if (ctx_.router->get_model_type(req.model) != ModelType::LLM) {
             LOG(ERROR, "Server") << "Model does not support chat completion" << std::endl;
-            write_openai_error(res, 400, "This model does not support chat completion. Only LLM models support this endpoint.");
+            write_openai_error(res, kNotLlm, "This model does not support chat completion. Only LLM models support this endpoint.");
             return;
         }
 
@@ -309,7 +311,7 @@ protected:
         auto response = ctx_.router->chat_completion(req.body);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
 

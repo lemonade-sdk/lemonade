@@ -3,6 +3,8 @@
 namespace lemon {
 namespace {
 
+const RouteError kNotSupported{501, "", "Lemonade does not support this Ollama operation"};
+
 class CopyRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -14,12 +16,12 @@ public:
         s.paths = {"/api/copy"};
         s.prefixes = Prefixes::Root;
         s.summary = "Copy a model";
-        s.description = "Answers `501`.";
+        s.errors = {kNotSupported};
         return s;
     }
 
     void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = 501;
+        res.status = kNotSupported.status;
         res.set_content(R"({"error":"not supported by Lemonade"})", "application/json");
     }
 };

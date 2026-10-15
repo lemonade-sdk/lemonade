@@ -2,12 +2,19 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/streaming_proxy.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kUnparsableBody{500, "", "The body is empty or is not valid JSON"};
+const RouteError kNoResponsesApi{
+    400, "",
+    "The request does not stream and `model`'s backend has no Responses API, such as a "
+    "FastFlowLM, cloud or non-LLM model"};
 
 ordered_json response_schema() {
     auto schema = ordered_json::parse(R"({
@@ -46,6 +53,7 @@ ordered_json response_schema() {
 ordered_json response_event_schema() {
     auto schema = ordered_json::parse(R"({
         "type": "object",
+        "description": "An event of the response, passed through from the backend. The stream ends with `data: [DONE]`.",
         "required": ["type"],
         "properties": {
             "type": {"type": "string", "description": "Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)."},
@@ -82,12 +90,8 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
-            "A `400` answers a missing `model`, or a model whose backend has no Responses API, "
-            "such as a FastFlowLM, cloud or non-LLM model. An unknown model, or one not available "
-            "on this system, answers `404`; a load blocked by pinned models or a routing residency "
-            "conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A "
-            "backend error answers with the backend's status, except that once a stream has "
-            "started it arrives as a `data: {\"error\": ...}` event in the `200` stream.",
+            "Once a stream has started, a backend error arrives as a `data: {\"error\": ...}` "
+            "event in the `200` stream.",
         };
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
@@ -123,7 +127,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = response_event_schema();
+        stream.schema = {{"oneOf", ordered_json::array({
+            response_event_schema(), StreamingProxy::error_event_schema()})}};
 
         s.responses = {response, stream};
 
@@ -146,6 +151,7 @@ public:
         })");
 
         s.examples = {response_example, stream_example};
+        s.errors = {kNoResponsesApi, kBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -177,7 +183,7 @@ protected:
         auto response = ctx_.router->responses(req.body);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Responses backend error: " << response["error"].dump() << std::endl;
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
 
@@ -188,8 +194,10 @@ protected:
 
     void write_invalid_body(const RouteRequest&, const std::exception& error,
                             httplib::Response& res) const override {
-        write_plain_error(res, 500, error.what());
+        write_plain_error(res, kUnparsableBody, error.what());
     }
+
+    std::vector<RouteError> invalid_body_errors() const override { return {kUnparsableBody}; }
 };
 
 } // namespace

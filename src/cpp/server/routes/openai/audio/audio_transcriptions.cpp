@@ -10,6 +10,16 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kUnsupportedResponseFormat{
+    400, "", "`response_format` is not a supported transcript format"};
+const RouteError kMissingFile{400, "", "The form has no `file`"};
+const RouteError kCannotTranscribe{400, "", "`model` cannot transcribe, which is found after it loads"};
+const RouteError kNoTimestamps{
+    400, "",
+    "`response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no "
+    "segment timestamps"};
+const RouteError kTranscriptionFailure{500, "", "The request fails unexpectedly"};
+
 class AudioTranscriptionsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -25,10 +35,7 @@ public:
             "Transcribes an audio file to text, loading the model on first use. Whisper "
             "(whisper.cpp), Moonshine and FastFlowLM models serve this endpoint.";
         s.notes = {
-            "On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400` and "
-            "`verbose_json` has no `segments`.",
-            "A model that cannot transcribe answers `400` with `type` `unsupported_operation`, "
-            "after it loads.",
+            "On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.",
         };
         s.args = {
             {"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
@@ -76,6 +83,8 @@ public:
                         {"response_format", "text"}};
 
         s.examples = {transcript_example, text_example};
+        s.errors = {kUnsupportedResponseFormat, kMissingFile, kCannotTranscribe, kNoTimestamps,
+                    kBackendError};
         s.request_format = RequestFormat::Form;
         return s;
     }
@@ -87,13 +96,13 @@ protected:
         const std::string response_format =
             req.body.value("response_format", lemon::audio::ResponseFormat::JSON);
         if (!lemon::audio::is_supported_response_format(response_format)) {
-            write_openai_error(res, 400, "Unsupported response_format: " + response_format);
+            write_openai_error(res, kUnsupportedResponseFormat, "Unsupported response_format: " + response_format);
             return false;
         }
 
         const httplib::FormData* file = find_form_file(req.http, {"file"});
         if (!file) {
-            write_openai_error(res, 400, "Missing 'file' field in request");
+            write_openai_error(res, kMissingFile, "Missing 'file' field in request");
             return false;
         }
         req.body["file_data"] = file->content;
@@ -109,7 +118,7 @@ protected:
 
         auto response = ctx_.router->audio_transcriptions(req.body);
         if (response.contains("error")) {
-            set_error_response(response, res, 500);
+            set_error_response(response, res, kBackendError);
             return;
         }
 
@@ -124,8 +133,9 @@ protected:
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in audio transcriptions: " << error.what() << std::endl;
-        write_openai_error(res, 500, error.what(), "internal_error");
+        write_openai_error(res, kTranscriptionFailure, error.what(), "internal_error");
     }
+    std::vector<RouteError> exception_errors() const override { return {kTranscriptionFailure}; }
 };
 
 } // namespace

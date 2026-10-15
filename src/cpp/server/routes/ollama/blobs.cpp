@@ -3,6 +3,8 @@
 namespace lemon {
 namespace {
 
+const RouteError kNotSupported{501, "", "Lemonade does not support this Ollama operation"};
+
 class BlobsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -14,16 +16,16 @@ public:
         s.paths = {"/api/blobs/{digest}"};
         s.prefixes = Prefixes::Root;
         s.summary = "Upload a blob";
-        s.description = "Answers `501`.";
         s.args = {
             {"digest", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::NotAvailable,
              "SHA256 digest of the blob."},
         };
+        s.errors = {kNotSupported};
         return s;
     }
 
     void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = 501;
+        res.status = kNotSupported.status;
         res.set_content(R"({"error":"not supported by Lemonade"})", "application/json");
     }
 };

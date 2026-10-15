@@ -3,12 +3,17 @@
 #include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/streaming_proxy.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kUnparsableBody{500, "", "The body is empty or is not valid JSON"};
+const RouteError kNotLlm{400, "", "`model` is not an LLM, which is checked after it loads"};
+const RouteError kNoChoices{500, "", "The backend's response has no `choices`"};
 
 ordered_json text_completion_schema(bool chunk) {
     auto schema = ordered_json::parse(R"({
@@ -50,6 +55,7 @@ ordered_json text_completion_schema(bool chunk) {
          "[Routing](./router.md#routing-collectionrouter) for the decision object."},
     };
     if (chunk) {
+        schema["description"] = "A chunk of the completion text. The stream ends with `data: [DONE]`.";
         auto& properties = schema["properties"];
         properties["id"]["description"] = "Identifier of the completion, the same on every chunk.";
         properties["model"]["description"] =
@@ -84,12 +90,8 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
-            "A `400` answers a missing `model`, or a model that is not an LLM, which is loaded "
-            "before the check. An unknown model, or one not available on this system, answers "
-            "`404`; a load blocked by pinned models or a routing residency conflict answers `409`; "
-            "any other load failure, or invalid JSON, answers `500`. A backend error answers with "
-            "the backend's status, except that once a stream has started it arrives as a "
-            "`data: {\"error\": ...}` event in the `200` stream.",
+            "Once a stream has started, a backend error arrives as a `data: {\"error\": ...}` "
+            "event in the `200` stream.",
         };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
@@ -134,7 +136,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = text_completion_schema(true);
+        stream.schema = {{"oneOf", ordered_json::array({
+            text_completion_schema(true), StreamingProxy::error_event_schema()})}};
 
         s.responses = {completion, stream};
 
@@ -159,6 +162,7 @@ public:
         })");
 
         s.examples = {completion_example, stream_example};
+        s.errors = {kNotLlm, kBackendError, kNoChoices};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -174,7 +178,7 @@ protected:
     void run(RouteRequest& req, httplib::Response& res) override {
         if (ctx_.router->get_model_type(req.model) != ModelType::LLM) {
             LOG(ERROR, "Server") << "Model does not support completion" << std::endl;
-            write_openai_error(res, 400, "This model does not support completion. Only LLM models support this endpoint.");
+            write_openai_error(res, kNotLlm, "This model does not support completion. Only LLM models support this endpoint.");
             return;
         }
 
@@ -192,13 +196,13 @@ protected:
         auto response = ctx_.router->completion(req.body);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
 
         if (!response.contains("choices")) {
             LOG(ERROR, "Server") << "Response missing 'choices' field. Response: " << response.dump() << std::endl;
-            write_plain_error(res, 500, "Backend returned invalid response format");
+            write_plain_error(res, kNoChoices, "Backend returned invalid response format");
             return;
         }
 
@@ -209,8 +213,10 @@ protected:
 
     void write_invalid_body(const RouteRequest&, const std::exception& error,
                             httplib::Response& res) const override {
-        write_plain_error(res, 500, error.what());
+        write_plain_error(res, kUnparsableBody, error.what());
     }
+
+    std::vector<RouteError> invalid_body_errors() const override { return {kUnparsableBody}; }
 
     LoadSpan load_span() const override { return {"LLM", "completions"}; }
 };

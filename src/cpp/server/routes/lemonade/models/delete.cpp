@@ -13,6 +13,13 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kUnknownModel{
+    422, "", "The model is not in the registry, or this system does not support it"};
+const RouteError kDeleteFailed{
+    500, "",
+    "Another failure occurs, for example a file that stays locked after the retries, a "
+    "failed unload, or a `model_name` of the wrong type"};
+
 class DeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -31,8 +38,6 @@ public:
         s.notes = {
             "A file still held open, for example by a download that was just cancelled, is retried "
             "up to 3 times, 5 seconds apart.",
-            "An unknown model, or one this system does not support, answers `422`; other failures "
-            "answer `500`.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -57,6 +62,7 @@ public:
         example.setup = {{"lemonade.models_register", ""}};
         example.args = {{"model_name", "$lemonade.models_register/canonical_model_name"}};
         s.examples = {example};
+        s.errors = {kUnknownModel, kDeleteFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -120,9 +126,9 @@ public:
             std::string error_msg = e.what();
             if (error_msg.find("Model not found") != std::string::npos ||
                 error_msg.find("not supported") != std::string::npos) {
-                res.status = 422;
+                res.status = kUnknownModel.status;
             } else {
-                res.status = 500;
+                res.status = kDeleteFailed.status;
             }
 
             json error = {{"error", e.what()}};

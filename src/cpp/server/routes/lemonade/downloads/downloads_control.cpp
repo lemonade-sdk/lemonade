@@ -7,6 +7,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidControlBody{
+    400, "", "The body is not a JSON object, or `id` or `action` is not a string"};
+const RouteError kMissingIdOrAction{400, "", "`id` or `action` is missing or empty"};
+
 class DownloadsControlRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -32,8 +36,6 @@ public:
             "running, the server keeps the job visible and treats the request as a cancel request "
             "until the worker stops. |",
             "A `pause` or `cancel` for a job that already finished leaves it as it is.",
-            "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action for "
-            "an existing job. Any action but `remove` for an `id` with no job answers `404`.",
             "`pause` and `cancel` answer the job's latest snapshot, as does `remove` for a running "
             "job. Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
             "the job was already gone.",
@@ -75,6 +77,8 @@ public:
         remove_example.format = ResponseFormat::Json;
         remove_example.args = {{"id", "model:Qwen3-1.7B-GGUF"}, {"action", "remove"}};
         s.examples = {example, remove_example};
+        s.errors = {kInvalidControlBody, kMissingIdOrAction,
+                    DownloadManager::kDownloadNotFound, DownloadManager::kUnsupportedAction};
         return s;
     }
 
@@ -85,7 +89,7 @@ public:
             std::string action = request_json.value("action", "");
 
             if (id.empty() || action.empty()) {
-                write_plain_error(res, 400, "Both 'id' and 'action' are required");
+                write_plain_error(res, kMissingIdOrAction, "Both 'id' and 'action' are required");
                 return;
             }
 
@@ -94,7 +98,7 @@ public:
             res.status = status;
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kInvalidControlBody, e.what());
         }
     }
 };

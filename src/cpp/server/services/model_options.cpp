@@ -19,6 +19,10 @@ using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
+const RouteError kOptionsUpdateFailed{
+    500, "internal_error",
+    "Reading or saving the model's options fails, for example on an unwritable options file"};
+
 // Fill in every option the recipe accepts, resolving unset keys through the
 // default chain, so a client can render a complete form from one response.
 // `pinned` is live-process state that /v1/load and /internal/pin own, so it is left out.
@@ -29,6 +33,10 @@ json resolve_all_recipe_options(const RecipeOptions& options) {
 }
 
 } // namespace
+
+std::vector<RouteError> model_options_errors() {
+    return {ModelLoader::kModelNotSupported, ModelLoader::kModelNotFound, kOptionsUpdateFailed};
+}
 
 ordered_json model_options_schema() {
     return ordered_json::parse(R"({
@@ -112,9 +120,9 @@ void respond_with_model_options(ServerContext& ctx, const httplib::Request& http
         }
         // Anything else is server-side, most often an unwritable options file, so it
         // must not be reported as a model load error.
-        write_openai_error(res, 500,
+        write_openai_error(res, kOptionsUpdateFailed,
                            "Failed to read or update options for '" + model_id + "': " + e.what(),
-                           "server_error", "internal_error");
+                           "server_error");
     }
 }
 

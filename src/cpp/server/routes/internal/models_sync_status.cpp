@@ -10,6 +10,10 @@ using json = nlohmann::json;
 
 namespace {
 
+const RouteError kInvalidSyncId{
+    400, "", "`sync_id` does not start with a number, or is too large for 64 bits"};
+const RouteError kStatusFailed{500, "", "Reading the sync status fails"};
+
 class ModelsSyncStatusRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -26,7 +30,7 @@ public:
             "[`POST /internal/models/sync`](#post-internalmodelssync).";
         s.notes = {
             "A `sync_id` that is neither running nor recorded answers `200` with "
-            "`status: \"not_found\"`. A `sync_id` that is not a number answers `400`.",
+            "`status: \"not_found\"`.",
         };
         s.args = {
             {"sync_id", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
@@ -42,6 +46,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kInvalidSyncId, kStatusFailed};
         s.quiet_log = true;
         return s;
     }
@@ -53,7 +58,7 @@ public:
                 try {
                     sync_id = std::stoull(req.http.get_param_value("sync_id"));
                 } catch (...) {
-                    write_plain_error(res, 400, "Invalid sync_id parameter");
+                    write_plain_error(res, kInvalidSyncId, "Invalid sync_id parameter");
                     return;
                 }
             }
@@ -62,7 +67,7 @@ public:
             res.status = 200;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Failed to get sync status: " << e.what() << std::endl;
-            write_plain_error(res, 500, std::string("Failed to get sync status: ") + e.what());
+            write_plain_error(res, kStatusFailed, std::string("Failed to get sync status: ") + e.what());
         }
     }
 };

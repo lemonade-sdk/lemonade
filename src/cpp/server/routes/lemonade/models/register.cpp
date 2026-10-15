@@ -11,6 +11,20 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kNotObject{400, "", "The body is not a JSON object"};
+const RouteError kMissingModelName{400, "", "`model_name` is missing or not a string"};
+const RouteError kInvalidDefinition{
+    400, "",
+    "The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, "
+    "`recipe` is missing, the body embeds a `models` array, or `checkpoint`, `checkpoints`, "
+    "`source` or `components` is malformed"};
+const RouteError kWrongFieldType{400, "", "A definition field has the wrong JSON type"};
+const RouteError kRegisterFailed{
+    500, "",
+    "The definition is invalid in another way and nothing is registered, for example a GGUF "
+    "`checkpoint` without a variant, a recipe this system cannot run, or labels that name two "
+    "deployment modes"};
+
 class RegisterRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -25,14 +39,6 @@ public:
             "Registers or updates a `user.*` model definition in `user_models.json` without "
             "downloading any files, for clients that register and install as separate steps. "
             "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
-        s.notes = {
-            "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
-            "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
-            "missing `recipe`, an embedded `models` array, and malformed `checkpoint`, "
-            "`checkpoints`, `source` or `components` values. Other invalid definitions answer "
-            "`500` and register nothing, such as a GGUF `checkpoint` without a variant, a recipe "
-            "this system cannot run, or labels that name two deployment modes.",
-        };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Non-empty namespaced model name under `user.*`."},
@@ -78,6 +84,8 @@ public:
             "recipe": "llamacpp"
         })");
         s.examples = {example};
+        s.errors = {kNotObject, kMissingModelName, kInvalidDefinition, kWrongFieldType,
+                    kRegisterFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -86,11 +94,11 @@ public:
         json& request_json = req.body;
         try {
             if (!request_json.is_object()) {
-                write_plain_error(res, 400, "Request body must be a JSON object");
+                write_plain_error(res, kNotObject, "Request body must be a JSON object");
                 return;
             }
             if (!request_json.contains("model_name") || !request_json["model_name"].is_string()) {
-                write_plain_error(res, 400, "A string `model_name` is required");
+                write_plain_error(res, kMissingModelName, "A string `model_name` is required");
                 return;
             }
 
@@ -117,12 +125,12 @@ public:
 
             res.set_content(response.dump(), "application/json");
         } catch (const std::invalid_argument& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kInvalidDefinition, e.what());
         } catch (const json::exception& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kWrongFieldType, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_model_register: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kRegisterFailed, e.what());
         }
     }
 };

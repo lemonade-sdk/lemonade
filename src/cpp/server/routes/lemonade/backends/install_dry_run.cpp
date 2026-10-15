@@ -11,6 +11,13 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kMissingRecipeOrBackend{400, "", "`recipe` or `backend` is missing or empty"};
+const RouteError kResolveFailed{
+    500, "",
+    "The body is not valid JSON, or resolving the install parameters fails, for example for an "
+    "unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body "
+    "also carries `arch` when the request set one"};
+
 class InstallDryRunRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -33,11 +40,6 @@ public:
             "`backend_versions.json`.",
             "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
             "manifest, to verify it.",
-            "A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or "
-            "install-parameter resolution failing (an unknown recipe/backend pair, an unsupported "
-            "platform, unavailable architecture detection, failed version resolution), answers "
-            "`500`. Errors carry an `error` string, and a `500` also carries `arch` when the "
-            "request set one.",
         };
         s.args = {
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -77,6 +79,7 @@ public:
             "arch": "gfx1201"
         })");
         s.examples = {example};
+        s.errors = {kMissingRecipeOrBackend, kResolveFailed};
         return s;
     }
 
@@ -90,7 +93,7 @@ public:
             requested_arch = request_json.value("arch", "");
 
             if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, 400, "Both 'recipe' and 'backend' are required");
+                write_plain_error(res, kMissingRecipeOrBackend, "Both 'recipe' and 'backend' are required");
                 return;
             }
 
@@ -131,7 +134,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             SystemInfo::set_rocm_arch_override("");
-            res.status = 500;
+            res.status = kResolveFailed.status;
             json error = {{"error", e.what()}};
             if (!requested_arch.empty()) {
                 error["arch"] = requested_arch;

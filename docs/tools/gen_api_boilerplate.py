@@ -283,7 +283,8 @@ GENERATED_PHRASES = ["Also served at", "Requires `LEMONADE_API_KEY`", "> **Note:
 OTHER_PREFIXES = re.compile(r"/api/v[01]\b|(?<![\w/])/v0/")
 PLACEHOLDER = re.compile(r"<(?!(?:sub|br)\b)[A-Za-z_][\w-]*>")
 SENTENCE_END = re.compile(r"(?<!e\.g)(?<!i\.e)(?<=[.!?])\s+")
-ERROR_STATUS = re.compile(r"`[45]\d\d`")
+# The error statuses HTTP defines, so a value such as a `512` pixel default is not one.
+ERROR_STATUS = re.compile(r"`(?:4(?:0\d|1[0-7]|2[1-689]|31|51)|50\d|51[01])`")
 MAX_SUMMARY_WORDS = 10
 MAX_DESCRIPTION_SENTENCES = 3
 REPEAT_MIN_CHARS = 40
@@ -340,9 +341,11 @@ def lint_spec(spec: dict) -> list[str]:
             problems.append(f"{where} has an em dash")
         for match in PLACEHOLDER.finditer(prose):
             problems.append(f"{where} has {match.group(0)} outside backticks")
-    for where, text in [("description", spec["description"])] + [
-        (f"notes[{index}]", note) for index, note in enumerate(spec["notes"])
-    ]:
+    for where, text in (
+        [("description", spec["description"])]
+        + [(f"notes[{index}]", note) for index, note in enumerate(spec["notes"])]
+        + [(f"argument {arg['name']}", arg["description"]) for arg in spec["args"]]
+    ):
         if ERROR_STATUS.search(text):
             problems.append(
                 f"{where} names an error status, which belongs in a RouteError"
@@ -380,7 +383,7 @@ ROUTE_ERROR_NAME = re.compile(
 )
 ERROR_LISTS = re.compile(
     r"errors\s*=\s*\{.*?\};"
-    r"|_errors\([^)]*\)\s*const(?:\s+override)?\s*\{.*?\n    \}"
+    r"|_errors\([^)]*\)\s*const(?:\s+override)?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}"
     r"|errors\.(?:push_back|insert)\(.*?\);",
     re.S,
 )

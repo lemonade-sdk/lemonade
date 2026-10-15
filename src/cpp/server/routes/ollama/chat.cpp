@@ -15,6 +15,14 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kModelRequired{400, "", "The body has no `model`, or it is empty"};
+const RouteError kModelNotLoaded{
+    404, "",
+    "`model` fails to load for any reason other than a residency conflict, such as naming no "
+    "model or a failed download"};
+const RouteError kRequestFailed{
+    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+
 // Ollama sends tool-call arguments as an object; OpenAI sends a JSON string.
 json normalize_ollama_tool_calls(json tool_calls) {
     if (!tool_calls.is_array()) {
@@ -374,6 +382,8 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
+        s.errors = {kModelRequired, ModelLoader::kRouterResidencyConflict, kModelNotLoaded,
+                    kOllamaBackendError, kRequestFailed};
         return s;
     }
 
@@ -383,7 +393,7 @@ public:
 
             std::string model = strip_latest_tag(request_json.value("model", ""));
             if (model.empty()) {
-                res.status = 400;
+                res.status = kModelRequired.status;
                 res.set_content(R"({"error":"model is required"})", "application/json");
                 return;
             }
@@ -415,7 +425,7 @@ public:
                 write_ollama_residency_conflict(e, res);
                 return;
             } catch (const std::exception& e) {
-                res.status = 404;
+                res.status = kModelNotLoaded.status;
                 json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
                 res.set_content(error.dump(), "application/json");
                 return;
@@ -491,7 +501,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/chat: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kRequestFailed.status;
             json error = {{"error", std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
         }

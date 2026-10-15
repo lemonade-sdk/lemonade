@@ -9,6 +9,7 @@
 
 #include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 
@@ -158,17 +159,19 @@ void map_ollama_options(const json& ollama_request, json& openai_req) {
     }
 }
 
+const RouteError kOllamaBackendError{500, "", "The backend reports an error, whatever its own status"};
+
 bool write_ollama_backend_error(const json& response, httplib::Response& res) {
     if (!response.contains("error")) return false;
     LOG(ERROR, "OllamaApi") << "Backend returned error: " << response["error"].dump() << std::endl;
-    res.status = 500;
+    res.status = kOllamaBackendError.status;
     json error = {{"error", response["error"].value("message", "backend error")}};
     res.set_content(error.dump(), "application/json");
     return true;
 }
 
 void write_ollama_residency_conflict(const std::exception& error, httplib::Response& res) {
-    res.status = 409;
+    res.status = ModelLoader::kRouterResidencyConflict.status;
     json body = {
         {"error", error.what()},
         {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},

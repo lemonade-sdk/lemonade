@@ -9,6 +9,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kStatsFailed{500, "", "Reading the statistics fails"};
+
 class StatsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -57,6 +59,7 @@ public:
         example.setup = {{"openai.chat_completions", "non-streaming"}};
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kStatsFailed};
         s.quiet_log = true;
         return s;
     }
@@ -72,7 +75,7 @@ public:
             res.set_content(stats.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_stats: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kStatsFailed, e.what());
         }
     }
 };

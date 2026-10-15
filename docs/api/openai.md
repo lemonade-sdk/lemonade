@@ -54,7 +54,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
-A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, which is loaded before the check. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
+Once a stream has started, a backend error arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Server-Side Tools
 
@@ -376,6 +376,8 @@ Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, w
 
 **Field Descriptions:**
 
+A chunk of the assistant's message. The stream ends with `data: [DONE]`.
+
 - `id` - Identifier of the completion, the same on every chunk.
 - `object` - Always `"chat.completion.chunk"`.
 - `created` - Unix timestamp of when the completion was created.
@@ -392,6 +394,28 @@ Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, w
 - `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
 - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+
+The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+
+- `error` - The backend's error.
+  - `message` - What failed.
+  - `type` - The error's type, such as `backend_error`.
+  - `status_code` - The status the backend answered with.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` |  | The body is empty or is not valid JSON |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -422,7 +446,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
-A `400` answers a missing `model`, or a model that is not an LLM, which is loaded before the check. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
+Once a stream has started, a backend error arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Examples
 
@@ -562,6 +586,8 @@ data: [DONE]
 
 **Field Descriptions:**
 
+A chunk of the completion text. The stream ends with `data: [DONE]`.
+
 - `id` - Identifier of the completion, the same on every chunk.
 - `object` - Always `"text_completion"`.
 - `created` - Unix timestamp of when the completion was created.
@@ -579,6 +605,29 @@ data: [DONE]
   - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
 - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+
+The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+
+- `error` - The backend's error.
+  - `message` - What failed.
+  - `type` - The error's type, such as `backend_error`.
+  - `status_code` - The status the backend answered with.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The backend's response has no `choices` |
+| `500` |  | The body is empty or is not valid JSON |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.completions -->
 
 <!-- BEGIN GENERATED: openai.embeddings -->
@@ -597,8 +646,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | The embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `encoding_format` | No | `float` or `base64`. Defaults to `float`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-A `400` answers a missing `model`, or a model whose backend cannot embed, such as a text-to-speech model. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error, such as llama.cpp's `501` for a model that is not an embedding model, answers with the backend's status.
 
 ### Example
 
@@ -659,6 +706,22 @@ A `400` answers a missing `model`, or a model whose backend cannot embed, such a
 - `usage` - Token usage.
   - `prompt_tokens` - Tokens in the input.
   - `total_tokens` - Tokens processed in total.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The body is empty or is not valid JSON |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `501` |  | `model` is a llama.cpp model that is not an embedding model |
 <!-- END GENERATED: openai.embeddings -->
 
 <!-- BEGIN GENERATED: openai.responses -->
@@ -686,7 +749,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
-A `400` answers a missing `model`, or a model whose backend has no Responses API, such as a FastFlowLM, cloud or non-LLM model. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
+Once a stream has started, a backend error arrives as a `data: {"error": ...}` event in the `200` stream.
 
 ### Examples
 
@@ -820,6 +883,8 @@ data: [DONE]
 
 **Field Descriptions:**
 
+An event of the response, passed through from the backend. The stream ends with `data: [DONE]`.
+
 - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
 - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
 - `item` - Output item events, such as `response.output_item.added`, only: the output item.
@@ -827,6 +892,28 @@ data: [DONE]
 - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
 - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+
+The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+
+- `error` - The backend's error.
+  - `message` - What failed.
+  - `type` - The error's type, such as `backend_error`.
+  - `status_code` - The status the backend answered with.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The request does not stream and `model`'s backend has no Responses API, such as a FastFlowLM, cloud or non-LLM model |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The body is empty or is not valid JSON |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.responses -->
 
 <!-- BEGIN GENERATED: openai.audio_transcriptions -->
@@ -848,9 +935,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own for FastFlowLM models. Moonshine models ignore it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400` and `verbose_json` has no `segments`.
-
-A model that cannot transcribe answers `400` with `type` `unsupported_operation`, after it loads.
+On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.
 
 ### Examples
 
@@ -910,6 +995,25 @@ A model that cannot transcribe answers `400` with `type` `unsupported_operation`
 
 - `text` - The transcribed text.
 - `segments` - `verbose_json` only: timestamped segments.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | `response_format` is not a supported transcript format |
+| `400` |  | The form has no `file` |
+| `400` |  | `model` cannot transcribe, which is found after it loads |
+| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
+| `400` |  | The request is not `multipart/form-data` |
+| `400` |  | A numeric form field does not parse as its parameter's type |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.audio_transcriptions -->
 
 ## `WS /realtime`
@@ -1059,8 +1163,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own, else `7.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducible output; a negative value picks a random seed. Defaults to the backend's fixed seed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
-
 ### Example
 
 === "PowerShell"
@@ -1115,6 +1217,21 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body has no `prompt` |
+| `400` |  | The body is not valid JSON, or a field has the wrong JSON type |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error, for example when `model` cannot generate images |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | The backend fails to load `model` |
 <!-- END GENERATED: openai.images_generations -->
 
 <!-- BEGIN GENERATED: openai.images_edits -->
@@ -1134,7 +1251,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | A PNG mask: white areas are edited and black areas are kept. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate, from `1` to `10`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1144,8 +1261,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `quality` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `input_fidelity` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `output_compression` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-
-A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
 
 ### Edit with the OpenAI Python Client
 
@@ -1214,6 +1329,26 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | `n` is outside `1` to `10` |
+| `400` |  | The form has files under both `image` and `image[]` |
+| `400` |  | The form has no file under `image` or `image[]` |
+| `400` |  | The form has no `prompt` |
+| `400` |  | The request is not `multipart/form-data` |
+| `400` |  | A numeric form field does not parse as its parameter's type |
+| `400` |  | The request names no `model` |
+| `400` |  | The body is not valid JSON, or a field has the wrong JSON type |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error, for example when `model` cannot edit images |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.images_edits -->
 
 <!-- BEGIN GENERATED: openai.images_variations -->
@@ -1232,11 +1367,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `image` | Yes | The source image (PNG). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Ignored; the variation depends only on the image. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `size` | No | Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate, from `1` to `10`; other values answer `400`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate, from `1` to `10`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `user` | No | Accepted for OpenAI compatibility and ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-
-A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
 
 ### Create Variations with the OpenAI Python Client
 
@@ -1303,6 +1436,24 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | `n` is outside `1` to `10` |
+| `400` |  | The form has no file under `image` or `image[]` |
+| `400` |  | The request is not `multipart/form-data` |
+| `400` |  | A numeric form field does not parse as its parameter's type |
+| `400` |  | The request names no `model` |
+| `400` |  | The body is not valid JSON, or a field has the wrong JSON type |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error, for example when `model` cannot make image variations |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.images_variations -->
 
 <!-- BEGIN GENERATED: openai.images_upscale -->
@@ -1321,8 +1472,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The model is downloaded on first use.
-
-A missing `image` or `model`, a model without the `upscaling` label, or one whose recipe cannot upscale answers `400`; an unknown model `404`; a failed upscale `500`; each with an `error` object.
 
 ### Upscale a Generated Image
 
@@ -1373,6 +1522,19 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 - `data` - The upscaled image.
   - `b64_json` - Base64-encoded PNG of the upscaled image.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | `image` is missing or not a string |
+| `400` | `model` is missing or empty |
+| `400` | `model` has no `upscaling` label |
+| `400` | `model`'s recipe cannot upscale |
+| `400` | The body is not valid JSON, or a field has the wrong JSON type |
+| `404` | `model` names no model in the registry, or downloading it fails |
+| `500` | The backend produces no upscaled image |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: openai.images_upscale -->
 
 <!-- BEGIN GENERATED: openai.audio_speech -->
@@ -1397,9 +1559,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `stream_format` | No | `audio` streams the response. It selects the transport only: the container still comes from `response_format`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `stream` | No | `true` streams the response, like `stream_format: audio`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp3`, `wav`, `opus` and `pcm`, and OpenMOSS encodes `wav` or `pcm`. Streaming produces `pcm` only, so a streaming request with another explicit `response_format` answers `400`. OpenMOSS PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels` headers, since its format depends on the model (24 kHz mono for `OpenMOSS-TTS`, 48 kHz stereo for `MOSS-TTS-Local`).
-
-A request for a model that is not a text-to-speech model answers `400` with `code` `model_not_applicable`, before any model loads.
+Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp3`, `wav`, `opus` and `pcm`, and OpenMOSS encodes `wav` or `pcm`. Streaming produces `pcm` only. OpenMOSS PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels` headers, since its format depends on the model (24 kHz mono for `OpenMOSS-TTS`, 48 kHz stereo for `MOSS-TTS-Local`).
 
 ### Examples
 
@@ -1470,6 +1630,25 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
     ```
 
 **Response:** `200 OK`, `audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
+| `400` |  | The body has no `input` |
+| `400` |  | `input` is not a string |
+| `400` |  | `stream_format` is not `audio` |
+| `400` |  | `response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The body is not valid JSON, or the request fails unexpectedly |
+| `500` | `model_load_error` | The backend fails to load `model` |
+| `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: openai.audio_speech -->
 
 <!-- BEGIN GENERATED: openai.models -->
@@ -1670,8 +1849,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-An unknown model answers `404` with `code` `model_not_found`.
-
 ### Example
 
 === "PowerShell"
@@ -1752,6 +1929,13 @@ An unknown model answers `404` with `code` `model_not_found`.
 - `audio_defaults` - Audio models only: default generation parameters.
 - `version` - Router collections only: the policy document's version.
 - `routing` - Router collections only: the routing policy.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
 <!-- END GENERATED: openai.models_id -->
 
 <!-- BEGIN GENERATED: openai.models_id_files -->
@@ -1768,8 +1952,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `include_paths` (query) | No | `true` adds each file's absolute `path`, which can reveal local usernames and the cache layout. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-An unknown model answers `404` with `code` `model_not_found`.
 
 ### Example
 
@@ -1807,6 +1989,14 @@ An unknown model answers `404` with `code` `model_not_found`.
   - `role` - Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role.
   - `size_bytes` - File size in bytes. Directories are summed recursively. Missing files report `0`.
   - `exists` - Whether the resolved path currently exists on disk.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `404` | `model_load_error` | Resolving or listing `id`'s files fails |
 <!-- END GENERATED: openai.models_id_files -->
 
 <!-- BEGIN GENERATED: openai.models_id_options_get -->
@@ -1824,8 +2014,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Per-architecture defaults are chosen by the architecture in the model's GGUF metadata, so a model that has not been downloaded yet shows every key with the value it has before those defaults apply.
-
-An unknown model answers `404` with `code` `model_not_found`.
 
 ### Example
 
@@ -1888,6 +2076,14 @@ An unknown model answers `404` with `code` `model_not_found`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
 <!-- END GENERATED: openai.models_id_options_get -->
 
 <!-- BEGIN GENERATED: openai.models_id_options_post -->
@@ -1909,13 +2105,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 The request merges into the model's saved entry, so keys it leaves out keep their values. `null` removes an option, as do `-1`, `""` and `"auto"` for any option but `ctx_size`, and the model falls back to the next layer of the [priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
 
-A `400` answers an empty or invalid body, an unrecognized option or one from another recipe, a value of the wrong type or an invalid `ctx_size`, a non-boolean `dry_run`, and nothing from that request is saved.
+A request that fails validation saves nothing.
 
-An unknown model answers `404` with `code` `model_not_found`, even when the body is also invalid.
+The model is resolved before the body is read, so an unknown model is reported even when the body is also invalid.
 
 A running model keeps its current options until it is next loaded.
 
-`pinned` answers `400` here and is omitted from `effective` and `defaults`; it belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
+`pinned` is omitted from `effective` and `defaults`; it belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
 
 ### Example
 
@@ -1984,6 +2180,22 @@ A running model keeps its current options until it is next loaded.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body is empty |
+| `400` |  | The body is not valid JSON |
+| `400` |  | The body is not a JSON object |
+| `400` |  | `dry_run` is not a boolean |
+| `400` |  | The body names an option that the model's recipe does not accept |
+| `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
+| `400` |  | An option's value has the wrong JSON type |
+| `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
 <!-- END GENERATED: openai.models_id_options_post -->
 
 <!-- BEGIN GENERATED: openai.models_id_options_delete -->
@@ -1999,8 +2211,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-An unknown model answers `404` with `code` `model_not_found`.
 
 ### Example
 
@@ -2065,4 +2275,12 @@ An unknown model answers `404` with `code` `model_not_found`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
 - `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | `model` names no model in the registry |
+| `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
 <!-- END GENERATED: openai.models_id_options_delete -->

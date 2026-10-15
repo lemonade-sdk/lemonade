@@ -41,8 +41,12 @@ nlohmann::ordered_json ollama_details_schema();
 // Copies Ollama sampling options, from "options" or the top level, to OpenAI names.
 void map_ollama_options(const nlohmann::json& ollama_request, nlohmann::json& openai_request);
 
-// Writes an Ollama-shaped 500 when the router returned an error. Returns true if it did.
+// Ollama errors carry no backend status, so every backend error is this one status.
+extern const RouteError kOllamaBackendError;
+
+// Writes kOllamaBackendError when the router returned an error. Returns true if it did.
 bool write_ollama_backend_error(const nlohmann::json& response, httplib::Response& res);
+// Writes ModelLoader::kRouterResidencyConflict in Ollama's shape.
 void write_ollama_residency_conflict(const std::exception& error, httplib::Response& res);
 
 std::string anthropic_message_id();

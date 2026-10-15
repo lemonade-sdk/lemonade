@@ -9,6 +9,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kNotLoaded{
+    404, "",
+    "The named model is not loaded, which includes an omni collection, whose components are "
+    "unloaded by their own names"};
+const RouteError kUnloadFailed{500, "", "Unloading fails for another reason"};
+
 class UnloadRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -22,8 +28,7 @@ public:
         s.description =
             "Unloads a model from memory, freeing it while `lemond` keeps running.";
         s.notes = {
-            "An unparsable body also unloads every model. A model that is not loaded answers `404`, and so does an omni collection, whose "
-            "components are unloaded by their own names.",
+            "An unparsable body also unloads every model.",
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
@@ -48,6 +53,7 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
+        s.errors = {kNotLoaded, kUnloadFailed};
         return s;
     }
 
@@ -97,7 +103,8 @@ public:
             LOG(ERROR, "Server") << "Unload failed: " << e.what() << std::endl;
 
             std::string error_msg = e.what();
-            res.status = error_msg.find("not loaded") != std::string::npos ? 404 : 500;
+            res.status = error_msg.find("not loaded") != std::string::npos ? kNotLoaded.status
+                                                                         : kUnloadFailed.status;
             json error = {{"error", e.what()}};
             res.set_content(error.dump(), "application/json");
         }

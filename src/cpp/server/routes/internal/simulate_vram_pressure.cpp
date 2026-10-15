@@ -7,6 +7,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidBody{
+    400, "", "The body is not a JSON object, or `pct` is a string, array, object or `null`"};
+
 class SimulateVramPressureRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -29,7 +32,6 @@ public:
             "The answer comes after the evaluation finishes, so a test can check the outcome "
             "right away. While an exclusive job session is active no evaluation runs, and the "
             "answer is still `200`.",
-            "A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pct`.",
         };
         s.args = {
             {"pct", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -51,6 +53,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"pct", 0.5}};
         s.examples = {example};
+        s.errors = {kInvalidBody};
         return s;
     }
 
@@ -61,7 +64,7 @@ public:
             ctx_.router->simulate_vram_pressure(pct);
             res.set_content(R"({"status": "ok"})", "application/json");
         } catch (const std::exception& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kInvalidBody, e.what());
         }
     }
 };

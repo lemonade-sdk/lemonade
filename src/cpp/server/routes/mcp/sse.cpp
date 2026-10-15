@@ -3,6 +3,9 @@
 namespace lemon {
 namespace {
 
+const RouteError kGetNotSupported{
+    405, "-32600", "Always, since MCP calls go to `POST /mcp`; the reply carries `Allow: POST`"};
+
 class McpSseRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -17,14 +20,12 @@ public:
         s.description =
             "Lemonade opens no server-initiated event stream, so tools return their full result "
             "in the [`POST /mcp`](#post-mcp) reply.";
-        s.notes = {
-            "Answers `405` with `Allow: POST` and a JSON-RPC `-32600` error.",
-        };
+        s.errors = {kGetNotSupported};
         return s;
     }
 
     void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = 405;
+        res.status = kGetNotSupported.status;
         res.set_header("Allow", "POST");
         res.set_content(
             "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,"

@@ -16,6 +16,13 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kBadPolicy{400, "", "`policy` is missing or not a JSON object"};
+const RouteError kBadPrompt{400, "", "`prompt` is not a string"};
+const RouteError kBadHasImages{400, "", "`has_images` is not a boolean"};
+const RouteError kBadHasTools{400, "", "`has_tools` is not a boolean"};
+const RouteError kBadMetadata{400, "", "`metadata` is not an object of string values"};
+const RouteError kInvalidPolicy{400, "", "`policy` is invalid or internally inconsistent"};
+
 class RoutingValidateRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -93,10 +100,6 @@ public:
             "Match `decision.matched_rule` against this document: a policy written with only "
             "`routing.router` has no rules of its own, only the generated `__route_0`, "
             "`__route_1`, etc.",
-            "A `400` answers a body that is not valid JSON, a missing or non-object `policy`, a "
-            "non-string `prompt`, non-boolean `has_images`/`has_tools`, a `metadata` that is not an "
-            "object of string values, or a policy document that is invalid or internally "
-            "inconsistent, whose `error` is prefixed with `Invalid routing policy:`.",
         };
         s.args = {
             {"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
@@ -153,6 +156,8 @@ public:
             "prompt": "please write a def to reverse a list"
         })");
         s.examples = {example};
+        s.errors = {kBadPolicy, kBadPrompt, kBadHasImages, kBadHasTools, kBadMetadata,
+                    kInvalidPolicy};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -161,23 +166,23 @@ public:
         const json& request_json = req.body;
 
         if (!request_json.contains("policy") || !request_json["policy"].is_object()) {
-            write_plain_error(res, 400, "'policy' must be a JSON object");
+            write_plain_error(res, kBadPolicy, "'policy' must be a JSON object");
             return;
         }
         if (request_json.contains("prompt") && !request_json["prompt"].is_string()) {
-            write_plain_error(res, 400, "'prompt' must be a string");
+            write_plain_error(res, kBadPrompt, "'prompt' must be a string");
             return;
         }
         const std::string prompt = request_json.value("prompt", std::string());
 
         if (request_json.contains("has_images") && !request_json["has_images"].is_boolean()) {
-            write_plain_error(res, 400, "'has_images' must be a boolean");
+            write_plain_error(res, kBadHasImages, "'has_images' must be a boolean");
             return;
         }
         const bool has_images = request_json.value("has_images", false);
 
         if (request_json.contains("has_tools") && !request_json["has_tools"].is_boolean()) {
-            write_plain_error(res, 400, "'has_tools' must be a boolean");
+            write_plain_error(res, kBadHasTools, "'has_tools' must be a boolean");
             return;
         }
         const bool has_tools = request_json.value("has_tools", false);
@@ -186,12 +191,12 @@ public:
         if (request_json.contains("metadata")) {
             const json& metadata_json = request_json["metadata"];
             if (!metadata_json.is_object()) {
-                write_plain_error(res, 400, "'metadata' must be a JSON object of string values");
+                write_plain_error(res, kBadMetadata, "'metadata' must be a JSON object of string values");
                 return;
             }
             for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
                 if (!it.value().is_string()) {
-                    write_plain_error(res, 400,
+                    write_plain_error(res, kBadMetadata,
                         "'metadata' value for key '" + it.key() + "' must be a string");
                     return;
                 }
@@ -243,7 +248,7 @@ public:
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
-            write_plain_error(res, 400, std::string("Invalid routing policy: ") + e.what());
+            write_plain_error(res, kInvalidPolicy, std::string("Invalid routing policy: ") + e.what());
         }
     }
 };

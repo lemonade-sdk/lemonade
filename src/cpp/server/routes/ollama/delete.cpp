@@ -11,6 +11,14 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kNameRequired{
+    400, "", "The body has neither `model` nor `name`, or the one used is empty"};
+const RouteError kModelNotFound{
+    404, "", "The model names no model, or one this system does not support"};
+const RouteError kDeleteFailed{
+    500, "",
+    "Deleting fails for another reason, such as an `extra.` model, or the body is not valid JSON"};
+
 class DeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -25,8 +33,7 @@ public:
         s.description =
             "Deletes a downloaded model's files, unloading it first when it is loaded.";
         s.notes = {
-            "Success answers `200` with an empty body, as Ollama does. A model this system "
-            "does not support also answers `404`, and other failures answer `500`.",
+            "Success answers `200` with an empty body, as Ollama does.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
@@ -46,6 +53,7 @@ public:
         example.setup = {{"ollama.pull", "non-streaming"}};
         example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
         s.examples = {example};
+        s.errors = {kNameRequired, kModelNotFound, kDeleteFailed};
         return s;
     }
 
@@ -55,7 +63,7 @@ public:
             std::string name = strip_latest_tag(request_json.value("name", request_json.value("model", "")));
 
             if (name.empty()) {
-                res.status = 400;
+                res.status = kNameRequired.status;
                 res.set_content(R"({"error":"name is required"})", "application/json");
                 return;
             }
@@ -73,9 +81,9 @@ public:
             std::string error_msg = e.what();
             if (error_msg.find("not found") != std::string::npos ||
                 error_msg.find("not supported") != std::string::npos) {
-                res.status = 404;
+                res.status = kModelNotFound.status;
             } else {
-                res.status = 500;
+                res.status = kDeleteFailed.status;
             }
             json error = {{"error", std::string(e.what())}};
             res.set_content(error.dump(), "application/json");

@@ -18,6 +18,11 @@ constexpr auto kTerminalVisibility = std::chrono::seconds(30);
 
 } // namespace
 
+const RouteError DownloadManager::kDownloadNotFound{
+    404, "", "`id` names no download job and `action` is not `remove`"};
+const RouteError DownloadManager::kUnsupportedAction{
+    400, "", "`action` is not `pause`, `cancel` or `remove` for an existing job"};
+
 DownloadManager::~DownloadManager() {
     cancel_all();
 }
@@ -292,7 +297,7 @@ json DownloadManager::control(const std::string& id, const std::string& action, 
             if (action == "remove") {
                 return {{"status", "ok"}, {"missing", true}};
             }
-            status = 404;
+            status = kDownloadNotFound.status;
             return {{"error", "Download not found"}};
         }
 
@@ -334,7 +339,7 @@ json DownloadManager::control(const std::string& id, const std::string& action, 
                 response_json = {{"status", "ok"}};
             }
         } else {
-            status = 400;
+            status = kUnsupportedAction.status;
             return {{"error", "Unsupported download action"}};
         }
     }

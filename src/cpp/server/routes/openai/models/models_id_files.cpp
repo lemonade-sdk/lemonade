@@ -8,6 +8,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kFilesUnreadable{404, "model_load_error", "Resolving or listing `id`'s files fails"};
+
 class ModelsIdFilesRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -22,9 +24,6 @@ public:
         s.description =
             "Lists the resolved local files of one model, for model-detail views such as the "
             "app's Files tab. It inventories one model, not drive storage.";
-        s.notes = {
-            "An unknown model answers `404` with `code` `model_not_found`.",
-        };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models)."},
@@ -59,6 +58,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"id", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
+        s.errors = {ModelLoader::kModelNotSupported, ModelLoader::kModelNotFound, kFilesUnreadable};
         return s;
     }
 
@@ -99,7 +99,7 @@ public:
 
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception&) {
-            res.status = 404;
+            res.status = kFilesUnreadable.status;
             res.set_content(ctx_.model_loader->model_error(model_id, "Model not found").dump(),
                             "application/json");
         }

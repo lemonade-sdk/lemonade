@@ -139,6 +139,12 @@ One JSON-RPC 2.0 response, or an array of them for a batch.
 - `error` - A JSON-RPC error, such as `-32601` for an unknown method.
   - `code` - The JSON-RPC error code.
   - `message` - What went wrong.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `500` | `-32603` | An exception escapes the JSON-RPC handling, such as a number too large for a double or invalid UTF-8 in the body |
 <!-- END GENERATED: mcp.rpc -->
 
 <!-- BEGIN GENERATED: mcp.sse -->
@@ -149,7 +155,11 @@ Lemonade opens no server-initiated event stream, so tools return their full resu
 
 Requires `LEMONADE_API_KEY` when it is set.
 
-Answers `405` with `Allow: POST` and a JSON-RPC `-32600` error.
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `405` | `-32600` | Always, since MCP calls go to `POST /mcp`; the reply carries `Allow: POST` |
 <!-- END GENERATED: mcp.sse -->
 
 ## Tools

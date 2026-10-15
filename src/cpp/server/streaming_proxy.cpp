@@ -10,6 +10,26 @@
 
 namespace lemon {
 
+nlohmann::ordered_json StreamingProxy::error_event_schema() {
+    return nlohmann::ordered_json::parse(R"({
+        "type": "object",
+        "description": "The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.",
+        "x-no-example": "Only a backend that fails mid-stream sends it.",
+        "required": ["error"],
+        "properties": {
+            "error": {
+                "type": "object",
+                "description": "The backend's error.",
+                "properties": {
+                    "message": {"type": "string", "description": "What failed."},
+                    "type": {"type": "string", "description": "The error's type, such as `backend_error`."},
+                    "status_code": {"type": "integer", "description": "The status the backend answered with."}
+                }
+            }
+        }
+    })");
+}
+
 namespace {
 
 void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {

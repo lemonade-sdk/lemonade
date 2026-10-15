@@ -10,6 +10,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kListFailed{500, "", "Listing the models throws"};
+
 class TagsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -50,6 +52,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kListFailed};
         return s;
     }
 
@@ -77,7 +80,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/tags: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kListFailed.status;
             json error = {{"error", std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
         }

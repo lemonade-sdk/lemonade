@@ -7,6 +7,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kUnknownJob{404, "", "`id` names no job, or a deleted one"};
+
 class JobsDeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -22,7 +24,6 @@ public:
             "Removes a job at once, even a running one, which is interrupted. The models a "
             "running or paused job loaded are unloaded in the background; a finished job's "
             "models stay loaded.";
-        s.notes = {"An unknown job answers `404`."};
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
@@ -41,13 +42,14 @@ public:
         example.setup = {{"lemonade.jobs_create", ""}};
         example.args = {{"id", "$lemonade.jobs_create/id"}};
         s.examples = {example};
+        s.errors = {kUnknownJob};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         bool active = false;
         if (!ctx_.job_manager->remove(req.http.matches[1], active)) {
-            write_plain_error(res, active ? 409 : 404, active ? "job is active" : "unknown job");
+            write_plain_error(res, kUnknownJob, "unknown job");
             return;
         }
         res.set_content(R"({"status":"deleted"})", "application/json");

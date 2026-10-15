@@ -9,6 +9,14 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidSlotId{400, "", "`id` is too large for a 32-bit integer"};
+const RouteError kMissingAction{400, "", "`action` is missing or empty"};
+const RouteError kUnknownAction{400, "", "`action` is not `erase`, `save` or `restore`"};
+const RouteError kNoModelLoaded{400, "", "No model is loaded"};
+const RouteError kInvalidJson{400, "", "The body is not empty and is not valid JSON"};
+const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
+const RouteError kSlotActionFailed{500, "", "The slot action fails unexpectedly"};
+
 class SlotsActionRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -25,10 +33,7 @@ public:
             "Saves a slot's prompt cache to a file, restores it from one, or erases it, so a "
             "conversation can resume where it left off.";
         s.notes = {
-            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
-            "the answer is `400`. An `error` from llama.cpp is returned with its status.",
-            "Every action needs llama.cpp started with `--slot-save-path`; without it, llama.cpp "
-            "answers `501`. Set it for every load with `lemonade config set "
+            "Every action needs llama.cpp started with `--slot-save-path`. Set it for every load with `lemonade config set "
             "llamacpp.args=\"--slot-save-path /path/to/slot/saves\"` (see "
             "[Server Configuration](../guide/configuration/README.md)), or for one load with "
             "`llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).",
@@ -97,6 +102,8 @@ public:
         erase.args = {{"id", 0}, {"action", "erase"}};
 
         s.examples = {save, restore, erase};
+        s.errors = {kInvalidSlotId, kMissingAction, kUnknownAction, kNoModelLoaded, kInvalidJson,
+                    kNotLlamaCpp, kBackendError, kSlotActionFailed};
         return s;
     }
 
@@ -108,20 +115,20 @@ public:
                 slot_id = std::stoi(slot_id_str);
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
-                write_plain_error(res, 400, std::string("Invalid slot ID: ") + slot_id_str);
+                write_plain_error(res, kInvalidSlotId, std::string("Invalid slot ID: ") + slot_id_str);
                 return;
             }
 
             auto action_param = req.http.get_param_value("action");
             if (action_param.empty()) {
                 LOG(ERROR, "Server") << "Missing action parameter for slots POST endpoint" << std::endl;
-                write_plain_error(res, 400, "POST /api/v1/slots/{id} requires action query parameter (e.g., ?action=erase)");
+                write_plain_error(res, kMissingAction, "POST /api/v1/slots/{id} requires action query parameter (e.g., ?action=erase)");
                 return;
             }
 
             if (action_param != "erase" && action_param != "save" && action_param != "restore") {
                 LOG(ERROR, "Server") << "Unknown action parameter: " << action_param << std::endl;
-                write_plain_error(res, 400, std::string("Unknown action: ") + action_param + ". Supported actions: erase, save, restore");
+                write_plain_error(res, kUnknownAction, std::string("Unknown action: ") + action_param + ". Supported actions: erase, save, restore");
                 return;
             }
 
@@ -129,7 +136,7 @@ public:
             // than a named one.
             if (!ctx_.router->is_model_loaded()) {
                 LOG(ERROR, "Server") << "No model loaded for slots " << action_param << " operation" << std::endl;
-                write_plain_error(res, 400, std::string("No model loaded for slots ") + action_param + " operation");
+                write_plain_error(res, kNoModelLoaded, std::string("No model loaded for slots ") + action_param + " operation");
                 return;
             }
 
@@ -139,21 +146,21 @@ public:
                     request_body = json::parse(req.http.body);
                 } catch (const std::exception& e) {
                     LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
-                    write_plain_error(res, 400, "Invalid JSON in request body");
+                    write_plain_error(res, kInvalidJson, "Invalid JSON in request body");
                     return;
                 }
             }
 
             auto response = ctx_.router->slots_action(slot_id, action_param, request_body);
             if (response.contains("error")) {
-                set_error_response(response, res);
+                set_error_response(response, res, kBackendError);
                 return;
             }
 
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kSlotActionFailed, e.what());
         }
     }
 };

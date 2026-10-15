@@ -8,6 +8,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kAliasNotFound{404, "alias_not_found", "`alias` names no alias"};
+const RouteError kSaveFailed{500, "internal_error", "Saving the alias file fails"};
+
 class AliasesDeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -20,7 +23,6 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Remove a model alias";
         s.description = "Removes a model alias.";
-        s.notes = {"An alias that does not exist answers `404`."};
         s.args = {
             {"alias", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "The alias name to remove."},
@@ -43,25 +45,25 @@ public:
         example.setup = {{"internal.aliases_create", ""}};
         example.args = {{"alias", "$internal.aliases_create/alias"}};
         s.examples = {example};
+        s.errors = {kAliasNotFound, kSaveFailed};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         std::string alias = utils::normalize_model_name(req.http.matches[1]);
-        auto write_error = [&res](int status, const std::string& message, const std::string& code,
+        auto write_error = [&res](const RouteError& error, const std::string& message,
                                   const std::string& type) {
-            res.status = status;
+            res.status = error.status;
             res.set_content(json{{"error", {
                 {"message", message},
                 {"type", type},
                 {"param", "alias"},
-                {"code", code}
+                {"code", error.code}
             }}}.dump(), "application/json");
         };
         try {
             if (!ctx_.alias_manager || !ctx_.alias_manager->remove_alias(alias)) {
-                write_error(404, "Alias not found: " + alias, "alias_not_found",
-                            "invalid_request_error");
+                write_error(kAliasNotFound, "Alias not found: " + alias, "invalid_request_error");
                 return;
             }
             json response = {
@@ -70,7 +72,7 @@ public:
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
-            write_error(500, e.what(), "internal_error", "server_error");
+            write_error(kSaveFailed, e.what(), "server_error");
         }
     }
 };

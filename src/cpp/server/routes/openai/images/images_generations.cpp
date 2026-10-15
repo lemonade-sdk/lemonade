@@ -11,6 +11,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kMissingPrompt{400, "", "The body has no `prompt`"};
+const RouteError kImageBackendError{
+    500, "", "The backend reports an error, for example when `model` cannot generate images"};
+
 class ImagesGenerationsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -24,10 +28,6 @@ public:
         s.modality = "prompt -> image";
         s.description =
             "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
-        s.notes = {
-            "A model that cannot do this answers `500` with `type` `unsupported_operation`, after "
-            "it loads.",
-        };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text description of the image to generate."},
@@ -63,6 +63,7 @@ public:
             "response_format": "b64_json"
         })");
         s.examples = {example};
+        s.errors = {kMissingPrompt, kImageBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -71,7 +72,7 @@ protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
         if (!req.body.contains("prompt")) {
-            write_openai_error(res, 400, "Missing 'prompt' field in request");
+            write_openai_error(res, kMissingPrompt, "Missing 'prompt' field in request");
             return false;
         }
         if (req.body.contains("model")) {
@@ -84,7 +85,7 @@ protected:
         auto response = ctx_.router->image_generations(req.body);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
-            res.status = 500;
+            res.status = kImageBackendError.status;
         }
         res.set_content(response.dump(), "application/json");
     }
@@ -93,9 +94,15 @@ protected:
                             httplib::Response& res) const override {
         write_exception(error, res);
     }
+    std::vector<RouteError> invalid_body_errors() const override {
+        return image_route_exception_errors();
+    }
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         write_image_route_exception(error, res, "internal_error");
+    }
+    std::vector<RouteError> exception_errors() const override {
+        return image_route_exception_errors();
     }
 };
 

@@ -177,6 +177,16 @@ Each line carries the next message piece with `done: false`. When the message en
 - `total_duration`, `load_duration` - Always `0`.
 - `prompt_eval_duration` - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
 - `eval_duration` - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body has no `model`, or it is empty |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.chat -->
 
 <!-- BEGIN GENERATED: ollama.generate -->
@@ -332,6 +342,16 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 - `prompt_eval_count` - Prompt tokens.
 - `eval_count` - Generated tokens.
 - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body has no `model`, or it is empty |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.generate -->
 
 <!-- BEGIN GENERATED: ollama.tags -->
@@ -402,6 +422,12 @@ This endpoint does not take any parameters.
     - `families` - A list holding only `family`.
     - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
     - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `500` | Listing the models throws |
 <!-- END GENERATED: ollama.tags -->
 
 <!-- BEGIN GENERATED: ollama.show -->
@@ -481,6 +507,14 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
 - `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | The body has neither `model` nor `name`, or the one used is empty |
+| `404` | The model names no model in the registry, or one filtered out on this system |
+| `500` | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->
@@ -498,7 +532,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | No | Model to delete. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Success answers `200` with an empty body, as Ollama does. A model this system does not support also answers `404`, and other failures answer `500`.
+Success answers `200` with an empty body, as Ollama does.
 
 ### Example
 
@@ -521,6 +555,14 @@ Success answers `200` with an empty body, as Ollama does. A model this system do
     ```
 
 **Response:** `200 OK`
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | The body has neither `model` nor `name`, or the one used is empty |
+| `404` | The model names no model, or one this system does not support |
+| `500` | Deleting fails for another reason, such as an `extra.` model, or the body is not valid JSON |
 <!-- END GENERATED: ollama.delete -->
 
 <!-- BEGIN GENERATED: ollama.pull -->
@@ -540,8 +582,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.
-
-In offline mode the request answers `400` with code `lemond_offline`.
 
 ### Examples
 
@@ -621,6 +661,15 @@ The first line is `pulling manifest`, then one line per progress report, then tw
 **Field Descriptions:**
 
 - `status` - Always `success`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body has neither `model` nor `name`, or the one used is empty |
+| `400` | `lemond_offline` | Lemonade runs in offline mode and the model exists |
+| `404` |  | The model names no model in the registry, or one filtered out on this system |
+| `500` |  | A non-streaming download fails, the body is not valid JSON, or a field has the wrong type |
 <!-- END GENERATED: ollama.pull -->
 
 <!-- BEGIN GENERATED: ollama.embed -->
@@ -681,6 +730,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `model` - The model that produced the embeddings.
 - `embeddings` - One vector per input, in input order.
 - `total_duration`, `load_duration`, `prompt_eval_count` - Always `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body has no `model`, or it is empty |
+| `400` |  | The body has no `input` |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.embed -->
 
 <!-- BEGIN GENERATED: ollama.embeddings -->
@@ -736,6 +796,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 - `model` - The model that produced the embedding.
 - `embedding` - The text's embedding vector.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body has no `model`, or it is empty |
+| `400` |  | The body has neither `prompt` nor `input` |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.embeddings -->
 
 <!-- BEGIN GENERATED: ollama.ps -->
@@ -809,6 +880,12 @@ This endpoint does not take any parameters.
     - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
   - `expires_at` - Always `2099-01-01T00:00:00Z`.
   - `size_vram` - Always `0`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `500` | Listing the models throws |
 <!-- END GENERATED: ollama.ps -->
 
 <!-- BEGIN GENERATED: ollama.version -->
@@ -854,34 +931,58 @@ This endpoint does not take any parameters.
 ## `POST /api/create`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
+Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.create -->
 
 <!-- BEGIN GENERATED: ollama.copy -->
 ## `POST /api/copy`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`.
+
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.copy -->
 
 <!-- BEGIN GENERATED: ollama.push -->
 ## `POST /api/push`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`.
+
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.push -->
 
 <!-- BEGIN GENERATED: ollama.blobs -->
 ## `POST /api/blobs/{digest}`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`.
+
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.blobs -->

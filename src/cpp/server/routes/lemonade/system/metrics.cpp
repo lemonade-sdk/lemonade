@@ -11,6 +11,8 @@ namespace {
 
 using json = nlohmann::json;
 
+const RouteError kMetricsFailed{500, "", "Collecting a metric or rendering the exposition fails"};
+
 class MetricsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -61,6 +63,7 @@ public:
         example.format = ResponseFormat::Text;
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kMetricsFailed};
         s.quiet_log = true;
         return s;
     }
@@ -83,7 +86,7 @@ public:
                             "text/plain; version=0.0.4; charset=utf-8");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_metrics: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kMetricsFailed.status;
             res.set_content("# Lemonade metrics error\n", "text/plain; version=0.0.4; charset=utf-8");
         }
     }

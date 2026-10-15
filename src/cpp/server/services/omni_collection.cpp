@@ -65,7 +65,7 @@ void run_omni_collection(ServerContext& ctx, RouteRequest& req, httplib::Respons
     CollectionOrchestrator orchestrator(*router, *model_manager, ensure_loaded);
     json response = orchestrator.chat_completion(req.body, info);
     if (response.contains("error")) {
-        set_error_response(response, res);
+        set_error_response(response, res, kBackendError);
         return;
     }
     res.set_content(response.dump(), "application/json");

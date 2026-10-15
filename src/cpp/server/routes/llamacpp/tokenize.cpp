@@ -9,6 +9,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidJson{400, "", "The body is not empty and is not valid JSON"};
+const RouteError kMissingContent{400, "", "`content` is missing or not a string"};
+const RouteError kNoModelLoaded{400, "", "No model is loaded"};
+const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
+const RouteError kTokenizeFailed{500, "", "Tokenizing fails unexpectedly"};
+
 class TokenizeRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -23,10 +29,6 @@ public:
         s.description =
             "Tokenizes text without using the model's context window. After a request to a "
             "reranker, for example, the reranker's tokenizer answers.";
-        s.notes = {
-            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
-            "the answer is `400`.",
-        };
         s.args = {
             {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text to tokenize."},
@@ -58,6 +60,8 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"content", "This is a string to tokenize"}};
         s.examples = {example};
+        s.errors = {kInvalidJson, kMissingContent, kNoModelLoaded, kNotLlamaCpp, kBackendError,
+                    kTokenizeFailed};
         return s;
     }
 
@@ -71,33 +75,33 @@ public:
                     request_body = json::parse(req.http.body);
                 } catch (const std::exception& e) {
                     LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
-                    write_plain_error(res, 400, "Invalid JSON in request body");
+                    write_plain_error(res, kInvalidJson, "Invalid JSON in request body");
                     return;
                 }
             }
 
             if (!request_body.contains("content") || !request_body["content"].is_string()) {
                 LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
-                write_plain_error(res, 400, "'content' parameter is required");
+                write_plain_error(res, kMissingContent, "'content' parameter is required");
                 return;
             }
 
             if (!ctx_.router->is_model_loaded()) {
                 LOG(ERROR, "Server") << "No model loaded for tokenization" << std::endl;
-                write_plain_error(res, 400, "No model loaded for tokenization");
+                write_plain_error(res, kNoModelLoaded, "No model loaded for tokenization");
                 return;
             }
 
             auto response = ctx_.router->tokenize(request_body);
             if (response.contains("error")) {
-                set_error_response(response, res);
+                set_error_response(response, res, kBackendError);
                 return;
             }
 
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_tokenize: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kTokenizeFailed, e.what());
         }
     }
 };
