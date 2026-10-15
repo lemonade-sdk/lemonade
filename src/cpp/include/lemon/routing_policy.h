@@ -219,9 +219,16 @@ struct CostServices {
 
 // What a classifier sees when evaluated. Holds the request plus the injected
 // services it may call. The const& outlive the call.
+//
+// cost_services is by-value (unlike its const& siblings above) so existing
+// aggregate brace-init call sites that predate the "cost" classifier keep
+// compiling unchanged — an omitted trailing member just default-constructs an
+// empty CostServices, whereas a reference member has no such safe default.
+// Do not change this to a const&.
 struct ClassifierContext {
     const RouteContext& request;
     const ClassifierServices& services;
+    CostServices cost_services;
 };
 
 // Abstract base for every classifier type (semantic_similarity, classifier,
@@ -374,6 +381,10 @@ struct EvalContext {
     // ASCII-lowered copy of request.input, memoized so keyword leaves fold the
     // input at most once per request (the input is constant within a request).
     std::optional<std::string> lowered_input;
+
+    // By-value for the same reason as ClassifierContext::cost_services above —
+    // existing brace-init call sites that omit this field must keep compiling.
+    CostServices cost_services;
 };
 
 // A node in a rule's compiled match tree. Both composites (all/any/not) and
