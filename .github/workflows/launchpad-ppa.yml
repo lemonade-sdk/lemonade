@@ -303,8 +303,11 @@ jobs:
           $ok
 
           echo "=== baseline downloaded models ==="
-          lemonade list --downloaded
-          lemonade list --downloaded | grep 'Tiny-Test-Model-GGUF' | grep -q 'Yes'
+          # Capture before matching: under `set -o pipefail`, `grep -q` exiting
+          # at the first match SIGPIPEs `lemonade` and fails the pipeline.
+          downloaded="$(lemonade list --downloaded)"
+          echo "$downloaded"
+          grep 'Tiny-Test-Model-GGUF' <<<"$downloaded" | grep 'Yes' >/dev/null
           echo "Baseline model present."
 
       - name: Stop stable lemond
@@ -344,14 +347,16 @@ jobs:
           curl -sf "http://127.0.0.1:${LEMONADE_PORT:-13305}/api/v1/health"; echo
 
           echo "=== config after upgrade ==="
-          lemonade config
-          if ! lemonade config | grep -qiE 'log_level.*debug'; then
+          config="$(lemonade config)"
+          echo "$config"
+          if ! grep -qiE 'log_level.*debug' <<<"$config"; then
             echo "FAIL: log_level=debug did not survive the upgrade"; exit 1
           fi
 
           echo "=== downloaded models after upgrade ==="
-          lemonade list --downloaded
-          if ! lemonade list --downloaded | grep 'Tiny-Test-Model-GGUF' | grep -q 'Yes'; then
+          downloaded="$(lemonade list --downloaded)"
+          echo "$downloaded"
+          if ! grep 'Tiny-Test-Model-GGUF' <<<"$downloaded" | grep 'Yes' >/dev/null; then
             echo "FAIL: Tiny-Test-Model-GGUF was lost during the upgrade"; exit 1
           fi
           echo "PASS: config and model survived the upgrade."

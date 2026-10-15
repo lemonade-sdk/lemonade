@@ -53,6 +53,12 @@ assert.match(apiSource, /async ensureModelState\(\)/);
 assert.match(hookSource, /useSyncExternalStore\(subscribe, getSnapshot, getSnapshot\)/);
 assert.match(appSource, /const serverModelState = useServerModelState\(\)/);
 assert.match(appSource, /void api\.connect\(\)/);
+assert.equal((appSource.match(/api\.startPolling\(15000\);/g) || []).length, 2,
+  'both bootstrap paths must start global status polling, including Monitor');
+assert.doesNotMatch(appSource, /api\.stopPolling\(\)/,
+  'entering Monitor must not stop the only global disconnection detector');
+assert.match(appSource, /apiClientRef\.current\?\.stopPolling\(\)/,
+  'unmount must still clean up the global poll timer');
 assert.match(appSource, /const rawLoadedModels = serverModelState\.health\?\.all_models_loaded/);
 assert.doesNotMatch(appSource, /useState<LoadedModel\[]>/);
 assert.doesNotMatch(appSource, /api\.connect\(\)\.then\([\s\S]*api\.refresh\(/);
@@ -82,6 +88,7 @@ require.extensions['.ts'] = function transpileTs(module, filename) {
 
 const originalFetch = global.fetch;
 let healthRequests = 0;
+let healthAvailable = true;
 let modelRequests = 0;
 let deleteRequests = 0;
 let registerRequests = 0;
@@ -109,6 +116,7 @@ global.fetch = async (url, init = {}) => {
   const method = String(init.method || 'GET').toUpperCase();
 
   if (target.includes('/api/v1/health')) {
+    if (!healthAvailable) throw new TypeError('Server unavailable');
     await new Promise(resolve => setTimeout(resolve, 15));
     healthRequests += 1;
     return new Response(JSON.stringify({
@@ -257,6 +265,22 @@ async function waitFor(predicate, timeoutMs = 1500) {
       api.modelStateSnapshot.models.data.some(model => model.model_name === 'user.collection'),
       'a late stale response must not overwrite post-write model state',
     );
+
+    const transitions = [];
+    const unsubscribeStatus = api.onStatusChange(status => transitions.push(status));
+    healthAvailable = false;
+    api.startPolling(20);
+    try {
+      await waitFor(() => api.modelStateSnapshot.status === 'disconnected');
+      assert.equal(api.modelStateSnapshot.health, null);
+      healthAvailable = true;
+      await waitFor(() => api.modelStateSnapshot.status === 'connected');
+      assert.deepEqual(transitions, ['disconnected', 'connected']);
+    } finally {
+      api.stopPolling();
+      healthAvailable = true;
+      unsubscribeStatus();
+    }
 
     unsubscribe();
     console.log('Model state deduplication checks passed.');
