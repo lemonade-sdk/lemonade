@@ -419,7 +419,6 @@ Registration follows these rules:
 - **Order.** httplib uses the first registered route that matches, so routes register in the order each folder's `routes.cpp` lists them, and a folder lists a specific path before a pattern that also matches it, such as `models/{id}/files` before `models/{id}`. `WebUi` registers its catch-all route after every API route.
 - **Pages.** `router.md` documents the routing concepts and `/routing/validate`. `internal.md` documents all 14 internal routes.
 - **Gateways.** The Anthropic routes live in `routes/anthropic/`, separate from Ollama's. The OpenAI-to-gateway stream conversion both use lives in `services/`. `McpServer`'s HTTP route is a route class in `routes/mcp/`.
-- **Routing context.** `/routing/validate` builds its context with `build_route_context()`, the function that real requests use, so a new routing condition needs no route edit.
 
 ## Core Components
 
@@ -440,7 +439,6 @@ This section lists the core components, each with an interface of a few calls:
 These are internal details of other classes:
 
 - `resolve_host_to_ip()` and `parse_traceparent()` are private to `HttpListener` and `RequestMiddleware`.
-- The CPU-usage state (`last_cpu_stats_` and its mutex) lives in `SystemMetricsPlatform`.
 - `/internal/shutdown` is an ordinary route in `routes/internal/` that calls `Server::stop()`.
 
 ## Generated Docs
@@ -652,7 +650,7 @@ Findings that shaped specific rules:
 
 - Across all PRs, 37% edited `server.h` and 24% the include block, the two spots unrelated PRs most often both edit. Route classes have no headers.
 - Replayed against the folder layout, 14 of the 19 PRs that would have touched 3 or more route folders were changing model loading, load errors, router dispatch or telemetry. These have one home in `ModelRoute` or a shared helper.
-- 9 of the open PRs edit collections and routing, and 5 of those edit `/routing/validate` because it builds its routing context by hand. Hence the `router/` folder and the use of `build_route_context()`.
+- 9 of the open PRs edit collections and routing. Hence the `router/` folder.
 
 ## Appendix B: Error Format Cleanup
 
