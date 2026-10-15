@@ -570,6 +570,7 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
 static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     lemon_cli::ChatOptions options;
     options.initial_model = config.model;
+    options.initial_model_options = config.generic_options;
     options.system_prompt = config.chat_system_prompt;
     options.stream = !config.chat_no_stream;
     return lemon_cli::run_chat_repl(client, options);

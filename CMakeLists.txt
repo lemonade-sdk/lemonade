@@ -3687,4 +3687,7 @@ if(BUILD_TESTING)
     add_cpp_ci_test(BackendSchemaCliTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_schema_cli.py $<TARGET_FILE:lemonade>
         DEPENDS lemonade)
+    add_cpp_ci_test(CliReplOptionsTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_repl_options.py $<TARGET_FILE:lemond> $<TARGET_FILE:lemonade>
+        DEPENDS lemond lemonade)
 endif()

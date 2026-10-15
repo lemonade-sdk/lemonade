@@ -171,7 +171,7 @@ def main(binary):
         agent.chmod(0o755)
         env["PATH"] = str(root) + os.pathsep + env.get("PATH", "")
 
-        def run(*args, target=True):
+        def run(*args, target=True, input_text=None):
             fixture.calls.clear()
             command = [str(binary)]
             if target:
@@ -184,6 +184,7 @@ def main(binary):
                 ]
             return subprocess.run(
                 command + list(args),
+                input=input_text,
                 text=True,
                 capture_output=True,
                 env=env,
@@ -467,6 +468,96 @@ def main(binary):
                 "REST null clearing is retained at CLI request boundary",
             )
             fixture.schema = copy.deepcopy(SCHEMA)
+            for assignments, expected in (
+                (("server_batch=4",), {"server_batch": 4}),
+                (("server_batch=null",), {"server_batch": None}),
+                (
+                    ("server_enabled=false", 'server_label=""', "server_ratio=0"),
+                    {"server_enabled": False, "server_label": "", "server_ratio": 0},
+                ),
+            ):
+                arguments = ["run", "remote-model", "--chat-cli"]
+                for assignment in assignments:
+                    arguments += ["--option", assignment]
+                result = run(
+                    *arguments,
+                    input_text="/model other-model\n/load remote-model\n/model remote-model\n/exit\n",
+                )
+                check(result.returncode == 0, result.stderr)
+                bodies = [
+                    json.loads(body)
+                    for method, _, body, _ in fixture.calls
+                    if method == "POST"
+                ]
+                original = {
+                    "model_name": "remote-model",
+                    "save_options": False,
+                    **expected,
+                }
+                check(
+                    bodies
+                    == [
+                        original,
+                        original,
+                        {"model_name": "other-model", "save_options": False},
+                        original,
+                        original,
+                    ],
+                    "generic values survive startup and same-model reloads only: "
+                    + repr(bodies),
+                )
+            for arguments, first in (
+                (("run", "remote-model", "--chat-cli"), {}),
+                (
+                    ("run", "remote-model", "--chat-cli", "--ctx-size", "1024"),
+                    {"ctx_size": 1024},
+                ),
+                (("chat", "remote-model"), None),
+            ):
+                result = run(*arguments, input_text="/exit\n")
+                check(result.returncode == 0, result.stderr)
+                bodies = [
+                    json.loads(body)
+                    for method, _, body, _ in fixture.calls
+                    if method == "POST"
+                ]
+                empty = {"model_name": "remote-model", "save_options": False}
+                check(
+                    bodies
+                    == ([{**empty, **first}, empty] if first is not None else [empty])
+                    and not any("schema" in path for _, path, *_ in fixture.calls),
+                    "commands without generic options keep their requests",
+                )
+            result = run(
+                "run",
+                "remote-model",
+                "--chat-cli",
+                "--save-options",
+                "--option",
+                "server_batch=4",
+                input_text="/exit\n",
+            )
+            check(result.returncode == 0, result.stderr)
+            check(
+                [
+                    json.loads(body)
+                    for method, _, body, _ in fixture.calls
+                    if method == "POST"
+                ]
+                == [
+                    {
+                        "model_name": "remote-model",
+                        "save_options": True,
+                        "server_batch": 4,
+                    },
+                    {
+                        "model_name": "remote-model",
+                        "save_options": False,
+                        "server_batch": 4,
+                    },
+                ],
+                "only the explicit initial save persists options",
+            )
             if os.name != "nt":
                 result = run(
                     "launch",
@@ -497,6 +588,30 @@ def main(binary):
                     schema_time < posts[0][3]
                     and schema_time < float(marker.read_text()),
                     "launch preflight precedes background work and agent start",
+                )
+                result = run(
+                    "launch",
+                    "claude",
+                    "--model",
+                    "remote-model",
+                    "--option",
+                    "server_batch=null",
+                )
+                check(result.returncode == 0, result.stderr)
+                check(
+                    [
+                        json.loads(body)
+                        for method, _, body, _ in fixture.calls
+                        if method == "POST"
+                    ]
+                    == [
+                        {
+                            "model_name": "remote-model",
+                            "save_options": False,
+                            "server_batch": None,
+                        }
+                    ],
+                    "launch background load retains explicit null without saving",
                 )
             engine_port = free_port()
             nonexistent = root / "unread-model.fixture"
