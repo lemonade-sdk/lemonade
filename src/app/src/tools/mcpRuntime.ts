@@ -156,12 +156,12 @@ const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'generate_3d',
-      description: 'Create a textured GLB with a Lemonade 3D model. With an image, performs image-to-3D. With prompt only, first generates a reconstruction-friendly reference image and then runs image-to-3D.',
+      description: 'Create a textured GLB with a Lemonade 3D model. Pass a prompt to build a new reconstruction-friendly reference image and then run image-to-3D on it. Omit the prompt to run image-to-3D on the latest image instead. An image attached to this message always wins over the prompt.',
       parameters: {
         type: 'object',
         properties: {
-          prompt: { type: 'string', description: 'Object description for text -> image -> 3D.' },
-          image: { type: 'string', description: 'Optional data:image/... URL. Latest conversation image is used when omitted.' },
+          prompt: { type: 'string', description: 'Object description for text -> image -> 3D. Supplying it generates a new reference image, so omit it to reconstruct an image that already exists.' },
+          image: { type: 'string', description: 'Optional data:image/... URL. When omitted, an image attached to this message is used; an earlier conversation image is used only when no prompt is given.' },
           model: { type: 'string', description: '3D model, for example a TRELLIS model.' },
           image_model: { type: 'string', description: 'Image model used only for text -> image -> 3D.' },
           resolution: { type: 'integer', enum: [512, 1024, 1536] },
@@ -341,13 +341,24 @@ async function ensureLoaded(model: { name: string; info: ModelInfo | null }): Pr
   if (!alreadyLoaded) await api.loadModel(model.name, undefined, model.info);
 }
 
-function latestImage(context: McpRuntimeContext, explicit: string): string {
+function newestDataImage(images: Array<string | undefined>): string {
+  const usable = images.filter(
+    (image): image is string => typeof image === 'string' && image.startsWith('data:image/'),
+  );
+  return usable.length > 0 ? usable[usable.length - 1] : '';
+}
+
+function latestImage(
+  context: McpRuntimeContext,
+  explicit: string,
+  generated: string[] = [],
+): string {
   if (explicit.startsWith('data:image/')) return explicit;
-  const images = [
-    ...(context.attachedImages || []),
+  return newestDataImage([
     ...(context.previousImages || []),
-  ].filter(image => typeof image === 'string' && image.startsWith('data:image/'));
-  return images.length > 0 ? images[images.length - 1] : '';
+    ...(context.attachedImages || []),
+    ...generated,
+  ]);
 }
 
 function imageOptions(args: Record<string, unknown>): Record<string, unknown> {
@@ -362,6 +373,7 @@ function imageOptions(args: Record<string, unknown>): Record<string, unknown> {
 async function executeLemonadeMultimodalTool(
   call: ToolCall,
   context: McpRuntimeContext,
+  generated: string[] = [],
 ): Promise<ToolExecutionPayload> {
   let args: Record<string, unknown>;
   try {
@@ -389,7 +401,7 @@ async function executeLemonadeMultimodalTool(
       case 'edit_image': {
         const prompt = stringArg(args, 'prompt');
         if (!prompt) throw new Error('edit_image requires prompt.');
-        const image = latestImage(context, stringArg(args, 'image'));
+        const image = latestImage(context, stringArg(args, 'image'), generated);
         if (!image) throw new Error('No attached or previously generated image is available to edit.');
         const model = await resolveModel('image', stringArg(args, 'model'), 'image-edit', supportsImageEdit);
         await ensureLoaded(model);
@@ -457,7 +469,11 @@ async function executeLemonadeMultimodalTool(
 
       case 'generate_3d': {
         const prompt = stringArg(args, 'prompt');
-        let image = latestImage(context, stringArg(args, 'image'));
+        const explicitImage = stringArg(args, 'image');
+        let image = explicitImage.startsWith('data:image/')
+          ? explicitImage
+          : newestDataImage(context.attachedImages || []);
+        if (!image && !prompt) image = latestImage(context, '', generated);
         const artifacts: ToolArtifact[] = [];
         let imageModelName = '';
 
@@ -528,6 +544,7 @@ function buildLemonadeRuntime(
   const multimodalNames = new Set(MULTIMODAL_LEMONADE_TOOLS.map(tool => tool.function.name));
   const tools = filterTools(LEMONADE_MCP_TOOLS as unknown as Record<string, unknown>[], allowedToolNames);
   if (tools.length === 0) return null;
+  const generated: string[] = [];
   return {
     tools,
     systemPrompt: [
@@ -539,9 +556,18 @@ function buildLemonadeRuntime(
       'For text-to-3D call generate_3d with prompt: it MUST generate the reference image first and then reconstruct that image as a GLB. For image-to-3D pass or reuse the attached image.',
       'Do not invent local model names; use list_models/get_model_info when model selection is unclear.',
     ].join('\n'),
-    execute: async call => multimodalNames.has(call.function.name)
-      ? executeLemonadeMultimodalTool(call, context)
-      : executeTool(call) as Promise<ToolExecutionPayload>,
+    execute: async call => {
+      if (!multimodalNames.has(call.function.name)) {
+        return executeTool(call) as Promise<ToolExecutionPayload>;
+      }
+      const payload = await executeLemonadeMultimodalTool(call, context, generated);
+      for (const artifact of payload.artifacts || []) {
+        if (artifact.type === 'image' && artifact.url.startsWith('data:image/')) {
+          generated.push(artifact.url);
+        }
+      }
+      return payload;
+    },
   };
 }
 
