@@ -455,7 +455,7 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     // 1. Explicit model argument always wins.
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        return arguments["model"].get<std::string>();
+        return model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     }
 
     // 2. Reuse a model of the right type that's already loaded \u2014 zero cost.
@@ -821,7 +821,7 @@ json McpServer::tool_omni(const json& arguments) {
     std::string model;
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        model = arguments["model"].get<std::string>();
+        model = model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     } else {
         for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
             if (is_omni_collection_recipe(info.recipe)) {

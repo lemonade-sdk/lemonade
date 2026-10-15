@@ -1046,6 +1046,7 @@ set(SOURCES_CORE
     src/cpp/server/models/change_notifier.cpp
     src/cpp/server/models/checkpoint_grammar.cpp
     src/cpp/server/models/definition_labels.cpp
+    src/cpp/server/models/entry_identity.cpp
     src/cpp/server/models/fetchable_repository.cpp
     src/cpp/server/models/ingest.cpp
     src/cpp/server/models/json_catalog.cpp
@@ -3214,6 +3215,19 @@ if(BUILD_TESTING AND EXISTS "${_ARTIFACT_RESOLVER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ArtifactResolverTest CI ON COMMAND test_artifact_resolver)
+endif()
+
+set(_MODEL_ENTRY_IDENTITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_entry_identity.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_ENTRY_IDENTITY_TEST_SRC}")
+    add_executable(test_model_entry_identity
+        test/cpp/test_model_entry_identity.cpp
+    )
+    target_link_libraries(test_model_entry_identity PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ModelEntryIdentityTest CI ON COMMAND test_model_entry_identity)
 endif()
 
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC
