@@ -51,6 +51,7 @@ import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComp
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
+import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
   lemonadeDefaultModel,
@@ -123,6 +124,7 @@ const CHAT_LOGS_WIDTH_KEY = 'chat_logs_split_width';
 const CHAT_THINKING_MODE_KEY = 'chat_thinking_mode';
 const CHAT_COMPOSER_INPUT_MIN_HEIGHT = 40;
 const CHAT_COMPOSER_INPUT_MAX_HEIGHT = 200;
+const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = 12;
 
 const CHAT_LOGS_DEFAULT_WIDTH = 520;
 const CHAT_LOGS_DEFAULT_EDGE_RATIO = 0.60;
@@ -919,6 +921,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
   const [isLiveRecording, setIsLiveRecording] = useState(false);
+  const [micPreparation, setMicPreparation] = useState<string | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -969,6 +972,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [currentModelRecipeOptions, setCurrentModelRecipeOptions] = useState<Record<string, unknown> | null>(null);
   const chatRootRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const threadFollowBottomRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
@@ -987,6 +991,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   const wasStreamingRef = useRef(false);
   const streamModelsRef = useRef<Record<string, ModelSnapshot | null>>({});
   const realtimeRef = useRef<RealtimeTranscriptionHandle | null>(null);
+  // Dictation uses an independent ASR model; the selected chat model stays the target for Send.
+  const micSessionRef = useRef<'dictation' | 'transcription' | null>(null);
+  const lastDictationTextRef = useRef('');
+  const finishDictationRef = useRef<(() => void) | null>(null);
   const isLiveRecordingRef = useRef(false);
   const liveTranscriptRef = useRef('');
   const liveFinalizeTimerRef = useRef<number | null>(null);
@@ -1396,6 +1404,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     () => canUseMicrophone() && hasRealtimeAudio,
     [hasRealtimeAudio],
   );
+  const supportsDictation = currentCapability === 'chat' && canUseMicrophone();
   const supportsChatAudioInput = useMemo(
     () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
     [currentKnownModelInfo, currentLoadedModel],
@@ -1699,12 +1708,14 @@ const ChatView: React.FC<ChatViewProps> = ({
     const trimmed = text.trim();
     if (!trimmed) return;
     const accumulated = liveTranscriptRef.current;
-    if (isFinal) {
-      const next = accumulated ? `${accumulated} ${trimmed}` : trimmed;
-      liveTranscriptRef.current = next;
-      setLiveTranscript(next);
-    } else {
-      setLiveTranscript(accumulated ? `${accumulated} ${trimmed}` : trimmed);
+    const next = accumulated ? `${accumulated} ${trimmed}` : trimmed;
+    if (isFinal) liveTranscriptRef.current = next;
+    setLiveTranscript(next);
+    if (micSessionRef.current === 'dictation') {
+      const previous = lastDictationTextRef.current;
+      setInputValue(draft => updateDraftWithDictation(draft, previous, next));
+      lastDictationTextRef.current = next;
+      if (isFinal && !isLiveRecordingRef.current) finishDictationRef.current?.();
     }
   }, []);
 
@@ -2037,7 +2048,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const isStreaming = !!currentStream;
   const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
-  const isBusy = isStreaming || capabilityBusy || isLiveRecording || modelPreparation !== null;
+  const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
 
   useEffect(() => {
     if (isBusy) setThinkingMenuOpen(false);
@@ -2164,18 +2175,38 @@ const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [activeId, conversations]);
 
+  const handleThreadScroll = useCallback(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    // Only follow new output while the reader is still near the bottom.
+    threadFollowBottomRef.current =
+      thread.scrollHeight - thread.scrollTop - thread.clientHeight <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
+  }, []);
+
   const scrollToBottom = useCallback(() => {
+    if (!threadFollowBottomRef.current) return;
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
-      if (threadRef.current) {
-        threadRef.current.scrollTop = threadRef.current.scrollHeight;
-      }
+      scrollRafRef.current = 0;
+      if (!threadFollowBottomRef.current) return;
+      const thread = threadRef.current;
+      if (thread) thread.scrollTop = thread.scrollHeight;
     });
   }, []);
+
+  // Opening another conversation always starts at its latest message.
+  useEffect(() => {
+    threadFollowBottomRef.current = true;
+    scrollToBottom();
+  }, [activeId, scrollToBottom]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingContent, streamingThinking, capabilityBusy, scrollToBottom]);
+
+  useEffect(() => () => {
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+  }, []);
 
   // Auto-scroll the thinking content box when sticky
   useEffect(() => {
@@ -2413,17 +2444,48 @@ ${finalText}`
   }, []);
 
   const handleMicStart = useCallback(async () => {
-    if (!currentModel || !currentModelSnapshot || !supportsRealtimeAudio || isStreaming || capabilityBusy) return;
+    if (!currentModel || !currentModelSnapshot || micPreparation !== null || isStreaming || capabilityBusy
+      || (currentCapability === 'chat' ? !supportsDictation : !supportsRealtimeAudio)) return;
     if (liveFinalizeTimerRef.current) {
       window.clearTimeout(liveFinalizeTimerRef.current);
       liveFinalizeTimerRef.current = null;
+      finishDictationRef.current = null;
+      realtimeRef.current?.close();
+      realtimeRef.current = null;
     }
     setLiveError(null);
     setLiveTranscript('');
     liveTranscriptRef.current = '';
+    lastDictationTextRef.current = '';
+    const dictating = currentCapability === 'chat';
+    micSessionRef.current = dictating ? 'dictation' : 'transcription';
+    setMicPreparation(dictating ? t('Preparing dictation...') : t('Connecting microphone…'));
     try {
       const api = await getApiClient();
-      const handle = await api.connectRealtimeTranscription(currentModel, {
+      let transcriptionModel = currentModel;
+      if (dictating) {
+        // GUI2 behavior: use a separate Whisper/Moonshine model for dictation.
+        // Never send realtime audio to an ordinary chat model.
+        const [health, registry] = await Promise.all([
+          api.health(),
+          api.models(true).catch(() => ({ data: knownModelInfos })),
+        ]);
+        const choice = selectDictationModel(
+          [...registry.data, ...knownModelInfos], health.all_models_loaded || loadedModels,
+        );
+        if (!choice) throw new Error('No realtime transcription model available. Install Whisper-Tiny or Moonshine in Models.');
+        transcriptionModel = choice.name;
+        if (!choice.alreadyLoaded) {
+          if (!choice.downloaded) {
+            setMicPreparation(t('Downloading {model} for dictation...', { model: choice.name }));
+            await api.pullModel(choice.name);
+          }
+          setMicPreparation(t('Loading {model} for dictation...', { model: choice.name }));
+          await api.loadModel(choice.name, undefined, choice.info);
+          await Promise.resolve(onRefresh());
+        }
+      }
+      const handle = await api.connectRealtimeTranscription(transcriptionModel, {
         onConnected: () => setIsLiveConnected(true),
         onDisconnected: () => setIsLiveConnected(false),
         onError: message => setLiveError(message),
@@ -2439,7 +2501,10 @@ ${finalText}`
       realtimeRef.current = null;
       stopRecording();
       clearLiveMicState();
+      micSessionRef.current = null;
       setLiveError(friendlyErrorMessage(err));
+    } finally {
+      setMicPreparation(null);
     }
   }, [
     capabilityBusy,
@@ -2450,26 +2515,41 @@ ${finalText}`
     handleLiveSpeechEvent,
     handleLiveTranscription,
     isStreaming,
+    knownModelInfos,
+    loadedModels,
+    micPreparation,
+    onRefresh,
     startRecording,
     stopRecording,
+    supportsDictation,
     supportsRealtimeAudio,
+    t,
   ]);
 
   const handleMicStop = useCallback(() => {
     stopRecording();
     const handle = realtimeRef.current;
+    const dictating = micSessionRef.current === 'dictation';
     handle?.commitAudio();
     clearLiveMicState();
 
-    liveFinalizeTimerRef.current = window.setTimeout(() => {
+    // A final ASR segment may arrive well after Stop on slower CPUs.
+    // Finish when the server sends it, with a bounded fallback for silence/errors.
+    const finish = () => {
+      if (liveFinalizeTimerRef.current !== null) window.clearTimeout(liveFinalizeTimerRef.current);
       const finalText = liveTranscriptRef.current.trim();
-      if (finalText) appendLiveTranscript(finalText);
+      if (!dictating && finalText) appendLiveTranscript(finalText);
+      if (dictating) requestAnimationFrame(() => inputRef.current?.focus());
       setLiveTranscript('');
       liveTranscriptRef.current = '';
       handle?.close();
       if (realtimeRef.current === handle) realtimeRef.current = null;
+      micSessionRef.current = null;
+      finishDictationRef.current = null;
       liveFinalizeTimerRef.current = null;
-    }, 1200);
+    };
+    if (dictating) finishDictationRef.current = finish;
+    liveFinalizeTimerRef.current = window.setTimeout(finish, dictating ? 10000 : 1200);
   }, [appendLiveTranscript, clearLiveMicState, stopRecording]);
 
   useEffect(() => {
@@ -2918,6 +2998,8 @@ ${finalText}`
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
 
+    // Sending a new message explicitly resumes following the latest reply.
+    threadFollowBottomRef.current = true;
     let convoId = activeId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
@@ -3006,6 +3088,7 @@ ${finalText}`
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'assistant') return;
 
+    threadFollowBottomRef.current = true;
     let userIndex = messageIndex - 1;
     while (userIndex >= 0 && convo.messages[userIndex].role !== 'user') userIndex--;
     if (userIndex < 0) return;
@@ -3050,6 +3133,7 @@ ${finalText}`
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
 
+    threadFollowBottomRef.current = true;
     const originalMessage = convo.messages[messageIndex];
     const priorMessages = convo.messages.slice(0, messageIndex);
     const editedUserMessage: Message = {
@@ -3569,7 +3653,7 @@ ${finalText}`
       </div>
 
       {/* Main pane */}
-      <div className="chat__main" ref={threadRef}>
+      <div className="chat__main" ref={threadRef} onScroll={handleThreadScroll}>
         <WorkspaceMobileMenuButton
           menuLabel={t('Open conversation history')}
           panelId="conversation-history-panel"
@@ -4225,16 +4309,20 @@ ${finalText}`
             ))}
           </div>
         )}
-        {(isLiveRecording || liveTranscript || liveError || micError) && (supportsRealtimeAudio || currentCapability === 'audio') && (
+        {(isLiveRecording || micPreparation || liveTranscript || liveError || micError) && (supportsDictation || supportsRealtimeAudio || isLiveRecording || micPreparation) && (
           <div className={`composer__live${liveError || micError ? ' composer__live--error' : ''}`}>
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
-              <span>{isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone')}</span>
+              <span>{micPreparation || (micSessionRef.current === 'dictation'
+                ? t('Dictation to chat draft')
+                : isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone'))}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
-            <div className="composer__live-text">
-              {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
-            </div>
+            {!micPreparation && (
+              <div className="composer__live-text">
+                {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+              </div>
+            )}
           </div>
         )}
         <div className="composer__bar">
@@ -4509,16 +4597,18 @@ ${finalText}`
               )}
             </div>
           )}
-          {(supportsRealtimeAudio || isLiveRecording) && (
+          {(supportsDictation || supportsRealtimeAudio || isLiveRecording) && (
             <button
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
-              disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? t('Stop live microphone transcription') : supportsRealtimeAudio ? t('Start live microphone transcription') : t('Live microphone needs HTTPS/localhost and a realtime-capable audio model')}
-              aria-label={isLiveRecording ? t('Stop live microphone transcription') : t('Start live microphone transcription')}
+              disabled={!currentModel || !!micPreparation || (!supportsDictation && !supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
+              title={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat'
+                ? t('Dictate speech into the chat draft (uses a transcription model)')
+                : t('Start live audio transcription')}
+              aria-label={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat' ? t('Dictate message') : t('Start live audio transcription')}
               aria-pressed={isLiveRecording}
             >
-              <Icon name="mic" size={16} />
+              <Icon name={isLiveRecording ? 'stop' : currentCapability === 'chat' ? 'mic' : 'audio'} size={16} />
             </button>
           )}
           {isStreaming ? (
