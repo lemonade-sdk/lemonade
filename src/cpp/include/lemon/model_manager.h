@@ -288,9 +288,18 @@ public:
     // Delete a model
     void delete_model(const std::string& model_name);
 
+    // The rows of a listing: the models given, plus one row per alias that resolves
+    // to one of them, keyed by the alias. Pointers into `listed`.
+    std::vector<std::pair<std::string, const ModelInfo*>> listing_rows(
+        const std::map<std::string, ModelInfo>& listed);
+
     // One requested name to one model: normalize, snapshot precedence, then the
     // alias map. Every surface that accepts a model name answers through this.
     std::optional<models::ResolvedModel> resolve(const std::string& requested);
+
+    // A requested alias settles to the model it points at; anything else passes
+    // through. Every surface that acts on a model name goes through this.
+    std::string canonical_for_request(const std::string& requested);
 
     // Aliases: one map, held here, delegated everywhere.
     std::map<std::string, std::string> aliases() const;

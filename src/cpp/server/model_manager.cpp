@@ -1927,6 +1927,28 @@ void ModelManager::download_model(const std::string& model_name,
     ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback);
 }
 
+std::string ModelManager::canonical_for_request(const std::string& requested) {
+    auto resolved = resolve(requested);
+    return resolved && resolved->via_alias ? resolved->canonical_id : requested;
+}
+
+std::vector<std::pair<std::string, const ModelInfo*>> ModelManager::listing_rows(
+    const std::map<std::string, ModelInfo>& listed) {
+    std::vector<std::pair<std::string, const ModelInfo*>> rows;
+    rows.reserve(listed.size());
+    for (const auto& [id, info] : listed) {
+        rows.emplace_back(id, &info);
+    }
+    for (const auto& [alias_id, target] : alias_manager_.get_all_aliases()) {
+        if (listed.count(alias_id) > 0) continue;
+        const std::string alias_target = alias_manager_.resolve_alias(alias_id).value_or(target);
+        auto row = listed.find(resolve_model_name(alias_target));
+        if (row == listed.end()) row = listed.find(alias_target);
+        if (row != listed.end()) rows.emplace_back(alias_id, &row->second);
+    }
+    return rows;
+}
+
 std::optional<models::ResolvedModel> ModelManager::resolve(const std::string& requested) {
     build_cache();
     auto snapshot = std::atomic_load(&store_snapshot_);

@@ -411,6 +411,7 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
 
     // Map model (normalize name)
     std::string model = normalize_model_name(ollama_request.value("model", ""));
+    model = model_manager_->canonical_for_request(model);
     openai_req["model"] = model;
 
     // Map messages
@@ -502,6 +503,7 @@ json OllamaApi::convert_ollama_to_openai_completion(const json& ollama_request) 
     json openai_req;
 
     std::string model = normalize_model_name(ollama_request.value("model", ""));
+    model = model_manager_->canonical_for_request(model);
     openai_req["model"] = model;
 
     // For /api/generate, if there's a "system" field and "prompt", combine into messages
@@ -712,6 +714,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         auto request_json = json::parse(req.body);
 
         std::string model = normalize_model_name(request_json.value("model", ""));
+        model = model_manager_->canonical_for_request(model);
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
@@ -848,6 +851,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         auto request_json = json::parse(req.body);
 
         std::string model = normalize_model_name(request_json.value("model", ""));
+        model = model_manager_->canonical_for_request(model);
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
@@ -1309,6 +1313,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         auto request_json = json::parse(req.body);
 
         std::string model = normalize_model_name(request_json.value("model", ""));
+        model = model_manager_->canonical_for_request(model);
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
@@ -1379,6 +1384,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         auto request_json = json::parse(req.body);
 
         std::string model = normalize_model_name(request_json.value("model", ""));
+        model = model_manager_->canonical_for_request(model);
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
