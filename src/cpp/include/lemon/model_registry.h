@@ -22,6 +22,29 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// Throttling or an upstream outage, as opposed to a repository that does not
+// exist. Callers that already hold the requested files locally can continue;
+// the rest should retry after retry_after_seconds().
+class RegistryRateLimitError : public std::runtime_error {
+public:
+    RegistryRateLimitError(int status_code, int retry_after_seconds, const std::string& message)
+        : std::runtime_error(message),
+          status_code_(status_code),
+          retry_after_seconds_(retry_after_seconds) {}
+
+    int status_code() const noexcept { return status_code_; }
+    int retry_after_seconds() const noexcept { return retry_after_seconds_; }
+
+private:
+    int status_code_;
+    int retry_after_seconds_;
+};
+
+// CONTRACT: /pull attaches {"code": kRegistryUnavailableErrorCode, ...} on both
+// the JSON and SSE error paths. Clients key off it to retry rather than treat
+// the pull as permanently broken.
+constexpr const char* kRegistryUnavailableErrorCode = "registry_unavailable";
+
 class RegistrySearchError : public std::runtime_error {
 public:
     RegistrySearchError(int status_code, const std::string& message)

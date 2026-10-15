@@ -317,6 +317,10 @@ RuntimeConfig::RuntimeConfig(const json& config)
     if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
                     std::string(ci_mode) == "True" || std::string(ci_mode) == "TRUE")) {
         config_["log_level"] = "debug";
+        // The startup check calls the registry API once per downloaded model.
+        // Dozens of CI servers starting at once share one token and exhaust its
+        // rate limit, which surfaces as unrelated /pull failures.
+        config_["auto_check_model_updates"] = false;
     }
 }
 
