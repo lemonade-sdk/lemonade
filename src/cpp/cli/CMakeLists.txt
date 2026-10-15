@@ -17,6 +17,8 @@ endif()
 # Common sources
 set(COMMON_SOURCES
     main.cpp
+    backend_schema.cpp
+    ${LEMON_BACKEND_DEFINITION_DATA_SOURCES}
     lemonade_client.cpp
     model_selection.cpp
     recipe_import.cpp

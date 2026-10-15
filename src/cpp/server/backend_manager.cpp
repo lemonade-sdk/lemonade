@@ -387,7 +387,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
     }
 
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].contains(resolved_backend)) {
-        const auto fallback = backends::external_default_version(recipe, resolved_backend);
+        const auto fallback = backends::external_default_version(recipe, resolved_backend, backend_versions_);
         if (!fallback.empty()) return fallback;
     }
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {

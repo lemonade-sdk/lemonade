@@ -401,6 +401,21 @@ def main(binary):
                     (config / "recipe_options.json").read_bytes() == saved_before,
                     "invalid option writes nothing",
                 )
+            saved_before = (config / "recipe_options.json").read_bytes()
+            rejected_load = request(
+                server.port,
+                "/v1/load",
+                body={
+                    "model_name": "user.http_fixture",
+                    "http_batch": 9,
+                    "save_options": True,
+                },
+            )
+            check(
+                rejected_load[0] != 200
+                and (config / "recipe_options.json").read_bytes() == saved_before,
+                "invalid request cannot persist options or start a backend",
+            )
             result = request(server.port, model_path, body={"http_batch": None})
             check(
                 result[0] == 200

@@ -34,10 +34,11 @@ int main(int argc, char** argv) {
     utils::set_cache_dir(root.string());
     utils::set_config_dir(root.string());
     struct Cleanup { fs::path path; ~Cleanup() { fs::remove_all(path); } } cleanup{root};
-    if (argc > 1 && std::string(argv[1]) == "--late") {
+    if (argc > 1) {
         fs::create_directories(root / "backends.d");
         put(root / "backends.d" / "a.json", definition().dump());
-        RecipeOptions::known_keys();
+        if (std::string(argv[1]) == "--late-schema") frozen_backend_catalog().export_schema();
+        else RecipeOptions::known_keys();
         bool rejected = false;
         try { bootstrap_backend_catalog(root.string()); } catch (const std::logic_error&) { rejected = true; }
         check(rejected && !backend_catalog(), "late bootstrap cannot lose external defaults");
@@ -47,6 +48,12 @@ int main(int argc, char** argv) {
     check(schema_digest("abc") == "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "independent SHA-256 known-answer vector");
     auto alpha = definition();
     auto beta = beta_definition();
+    auto channel = beta;
+    channel["metadata"]["rocm_channels"] = {"stable"};
+    channel["launch"]["backend"]["fixed"] = "rocm";
+    channel["install"]["cases"][0]["backend"] = {"rocm-stable"};
+    channel["install"]["default_versions"] = {{"rocm-stable", "v8"}};
+    check(BackendCatalog({source(channel)}).export_schema("catalog-beta")["recipes"].size() == 1, "normalized managed version is checked before config loading");
     const auto original = source(alpha);
     const auto b = source(beta);
     BackendCatalog local({original, b});
@@ -68,11 +75,13 @@ int main(int argc, char** argv) {
     rejected({original, source(changed)}, "recipe_collision");
     changed = alpha; changed["recipe"] = "ds4";
     rejected({source(changed)}, "recipe_collision");
-    changed = alpha; changed["metadata"]["config_section"] = "host";
-    rejected({source(changed)}, "section_collision");
+    for (const auto* key : {"host", "no_broadcast"}) {
+        changed = alpha; changed["metadata"]["config_section"] = key;
+        rejected({source(changed)}, "section_collision");
+    }
     changed = beta; changed["metadata"]["config_section"] = "catalog-alpha";
     rejected({original, source(changed)}, "section_collision");
-    for (const auto* key : {"ctx_size", "llamacpp_backend", "model_name", "save_options", "dry_run", "messages", "port"}) {
+    for (const auto* key : {"ctx_size", "llamacpp_backend", "model_name", "save_options", "dry_run", "messages", "port", "no_broadcast"}) {
         changed = alpha; changed["metadata"]["options"][0]["name"] = key;
         rejected({source(changed)}, "option_collision");
     }
@@ -151,6 +160,12 @@ int main(int argc, char** argv) {
     RuntimeConfig config(ConfigFile::base_defaults());
     config.set({{"catalog-alpha", {{"alpha_batch", 5}}}});
     check(config.recipe_options("cpu")["alpha_batch"] == 5, "global nested option path preserves type");
+    for (const auto& value : {json(0), json(9), json(2.5), json("2"), json(false)}) {
+        const auto before = config.snapshot();
+        bool invalid = false;
+        try { config.set({{"catalog-alpha", {{"alpha_batch", value}}}}); } catch (const std::invalid_argument&) { invalid = true; }
+        check(invalid && config.snapshot() == before, "invalid global external values do not change config");
+    }
     const auto* a_spec = spec_for("catalog-alpha");
     const auto* b_spec = spec_for("catalog-beta");
     for (int pass = 0; pass < 3; ++pass) {
@@ -162,6 +177,8 @@ int main(int argc, char** argv) {
         check(params.repo == "fixture/beta" && params.filename == "beta-v9.zip" && a_spec->recipe == "catalog-alpha", "independent install context and identities");
     }
     check(external_default_version("beta-pin", "cpu") == "v7" && BackendUtils::get_backend_version("beta-pin", "cpu") == "v7", "external pin fallback");
+    check(BackendUtils::get_backend_version("catalog-beta", "cpu") == "v7", "public external identity uses pin fallback");
+    check(external_default_version("catalog-beta", "cpu", {{"beta-pin", {{"cpu", "v12"}}}}) == "v12", "shipped pin identity precedes definition default");
     RuntimeConfig::set_global(&config);
     BackendManager manager;
     const auto pinned_params = manager.get_install_params("catalog-beta", "cpu");

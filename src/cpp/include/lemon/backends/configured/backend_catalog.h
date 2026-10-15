@@ -25,6 +25,6 @@ std::vector<DefinitionSource> discover_backend_definitions(const std::string& co
 void bootstrap_backend_catalog(const std::string& config_dir, bool builtin_only = false);
 const BackendCatalog* backend_catalog();
 const BackendCatalog& frozen_backend_catalog();
-std::string external_default_version(const std::string& pin_recipe, const std::string& backend);
+std::string external_default_version(const std::string& pin_recipe, const std::string& backend, const json& shipped_pins = json::object());
 
 }

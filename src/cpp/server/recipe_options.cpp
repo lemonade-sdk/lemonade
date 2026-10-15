@@ -324,7 +324,7 @@ static const json& get_cli_options() {
     return cli_options;
 }
 
-void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
+void RecipeOptions::add_cli_options(CLI::App& app, json& storage, std::map<std::string, CLI::Option*>* named_options) {
     for (auto& [key, opt] : get_cli_options().items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
@@ -346,6 +346,7 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
 
         o->type_name(opt["type_name"]);
         o->group(opt.value("group", "Options"));
+        if (named_options) (*named_options)[opt_name] = o;
     }
 }
 #endif

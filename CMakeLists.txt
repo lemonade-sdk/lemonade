@@ -1132,13 +1132,15 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json")
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
+set(LEMON_BACKEND_DEFINITION_DATA_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backend_operation_data.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp)
 set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_load_helpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_hook_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_transport.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/configured_server.cpp
@@ -1185,7 +1187,7 @@ configure_file(
 
 # lemond gets both descriptor data and factories; the CLI gets only the data
 # (see src/cpp/cli/CMakeLists.txt, which reuses LEMON_BACKEND_DESCRIPTOR_SOURCES).
-list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_FACTORY_SOURCES})
+list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_DEFINITION_DATA_SOURCES} ${LEMON_BACKEND_FACTORY_SOURCES})
 
 # ============================================================
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
@@ -3675,7 +3677,14 @@ if(BUILD_TESTING)
     target_link_libraries(test_backend_catalog PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendCatalogTest CI ON COMMAND test_backend_catalog)
     add_cpp_ci_test(BackendCatalogLateBootstrapTest CI ON COMMAND test_backend_catalog --late)
+    add_cpp_ci_test(BackendCatalogLateSchemaBootstrapTest CI ON COMMAND test_backend_catalog --late-schema)
     add_cpp_ci_test(BackendCatalogHttpTest CI ON
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_catalog_http.py $<TARGET_FILE:lemond>
         DEPENDS lemond)
+endif()
+
+if(BUILD_TESTING)
+    add_cpp_ci_test(BackendSchemaCliTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_schema_cli.py $<TARGET_FILE:lemonade>
+        DEPENDS lemonade)
 endif()

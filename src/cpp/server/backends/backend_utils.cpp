@@ -446,7 +446,7 @@ namespace lemon::backends {
         json config = utils::JsonUtils::load_from_file(config_path);
 
         if (!config.contains(recipe) || !config[recipe].contains(resolved_backend)) {
-            const auto fallback = external_default_version(recipe, resolved_backend);
+            const auto fallback = external_default_version(recipe, resolved_backend, config);
             if (!fallback.empty()) return fallback;
         }
         if (!config.contains(recipe) || !config[recipe].is_object()) {

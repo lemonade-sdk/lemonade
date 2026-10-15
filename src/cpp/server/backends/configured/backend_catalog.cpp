@@ -76,7 +76,7 @@ json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition
 
 BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
     : data_(std::make_shared<BackendCatalogData>()), registrations_(builtin_registrations()), sources_(sources) {
-    std::set<std::string> ids, recipes, sections, option_names;
+    std::set<std::string> ids, recipes, sections{"no_broadcast"}, option_names{"no_broadcast"};
     const auto defaults = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/defaults.json"));
     for (const auto& [key, value] : defaults.items()) { sections.insert(key); option_names.insert(key); }
     for (const auto& [key, value] : RecipeOptions::common_option_defaults().items()) option_names.insert(key);
@@ -130,7 +130,13 @@ BackendCatalog::BackendCatalog(const std::vector<DefinitionSource>& sources)
             const auto versions = install.value("default_versions", json::object());
             const auto pins = utils::JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
             const auto shipped = pins.value(entry->spec.pin_recipe, json::object());
-            for (const auto& backend : backends) if (!shipped.contains(backend) && (!versions.contains(backend) || versions[backend].get<std::string>().empty())) fail("required", source.file, definition.id, "/install/default_versions", "Managed backend requires a default version");
+            std::set<std::string> normalized;
+            for (const auto& backend : backends) {
+                if (backend == "rocm" && !entry->descriptor.rocm_channels.empty()) {
+                    for (const auto& channel : entry->descriptor.rocm_channels) normalized.insert("rocm-" + channel);
+                } else if (backend != "system") normalized.insert(backend);
+            }
+            for (const auto& backend : normalized) if (!shipped.contains(backend) && (!versions.contains(backend) || versions[backend].get<std::string>().empty())) fail("required", source.file, definition.id, "/install/default_versions", "Managed backend requires a default version");
         }
         auto row = descriptor_row(entry->descriptor, &definition, true);
         for (const auto& binding : entry->bindings) row["operations"].push_back(operation_row(binding.description));
@@ -230,13 +236,16 @@ void bootstrap_backend_catalog(const std::string& config_dir, bool builtin_only)
 const BackendCatalog* backend_catalog() { return catalog.get(); }
 const BackendCatalog& frozen_backend_catalog() {
     if (catalog) return *catalog;
+    all_descriptors();
     static const BackendCatalog builtins({});
     return builtins;
 }
-std::string external_default_version(const std::string& pin_recipe, const std::string& backend) {
+std::string external_default_version(const std::string& pin_recipe, const std::string& backend, const json& shipped_pins) {
     for (const auto& registration : all_registrations()) {
         const auto* spec = registration.spec;
-        if (!spec || spec->pin_recipe != pin_recipe || !spec->definition || spec->definition->origin != DefinitionOrigin::External) continue;
+        if (!spec || (spec->pin_recipe != pin_recipe && registration.descriptor->recipe != pin_recipe) || !spec->definition || spec->definition->origin != DefinitionOrigin::External) continue;
+        const auto pinned = shipped_pins.value(spec->pin_recipe, json::object());
+        if (pinned.contains(backend) && pinned[backend].is_string()) return pinned[backend].get<std::string>();
         const auto versions = spec->definition->records["install"].value("default_versions", json::object());
         if (versions.contains(backend)) return versions[backend].get<std::string>();
     }

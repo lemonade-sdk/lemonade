@@ -16,6 +16,7 @@ bool option_is_unset(const nlohmann::json& contract, const nlohmann::json& value
 }
 
 std::string validate_option_contract(const nlohmann::json& contract, const nlohmann::json& value) {
+    if (value.is_object() || value.is_array()) return "Option values must be scalar";
     if (option_is_unset(contract, value)) return "";
     const auto type = contract.at("value_type").get<std::string>();
     const bool valid = type == "string" ? value.is_string() : type == "boolean" ? value.is_boolean() :

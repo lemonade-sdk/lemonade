@@ -64,3 +64,41 @@ the installed feature manifest, and exclude ports, paths and credentials.
 The docs generator uses separate temporary cache/config directories and
 `--builtin-backends-only`, which skips external directory discovery entirely.
 Generated committed artifacts remain built-in-only.
+
+## CLI
+
+`lemonade backends schema [RECIPE]` prints the connected server's complete JSON
+metadata response. `lemonade backends validate FILE` submits the original bounded
+file bytes to that server. It does not first reject definitions using the client's
+older embedded schema. Add `--offline` for provisional embedded-schema validation
+without discovery or network access; the warning explains that connected-server
+catalog collisions and executable bindings have not been validated.
+
+Existing named flags remain supported. `load`, `run`, and `launch` also accept
+repeatable `--option KEY=JSON_VALUE`, for example:
+
+```sh
+lemonade load MyModel --option 'example_batch=4' --option 'example_label="a=b"'
+lemonade run MyModel --option 'example_enabled=false' --chat-cli
+lemonade launch claude --model MyModel --option 'example_batch=4'
+```
+
+Each assignment splits at its first `=` and parses the entire remainder as one
+finite, non-overflowing JSON value. Keys are exact, with no trimming. Duplicate
+generic keys or collisions with explicitly supplied named flags (including
+negated aliases and `--pinned`) are errors; unprovided defaults do not collide.
+Generic values merge into raw outgoing JSON after named processing, without a
+client-local recipe allowlist.
+
+Generic options resolve the model's recipe and its option contract from the
+selected server before any pull, load, browser opening, background load or agent
+launch. Generic launch selection without an explicit model lists registered
+models, avoiding a recipe-import side effect before preflight. Named-only flows
+keep their existing selection and requests, with no mandatory schema request.
+There is no persistent schema cache or dependency on client-local definitions.
+
+New local option/definition validation errors exit 2. Successful schema/validation
+commands exit 0; transport, authentication, missing schema support, unknown recipe
+and incompatible protocol responses exit 1. Existing CLI11 and named-command
+error behavior is retained. An old or unreachable server never becomes an offline
+success; offline validation must be requested explicitly.

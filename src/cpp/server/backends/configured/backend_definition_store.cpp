@@ -154,6 +154,7 @@ public:
             if (reserved.count(name)) error("option_collision", p + "/name", "Reserved option name");
             if (source.origin == DefinitionOrigin::External && !option.value("cli_flag", "").empty()) error("invalid_value", p + "/cli_flag", "External named flags are forbidden");
             const auto sentinels = option.value("unset_values", json::array({nullptr}));
+            for (const auto& value : sentinels) if (value.is_object() || value.is_array()) error("invalid_type", p + "/unset_values", "Option unset values must be scalar");
             auto valid = [&](const json& value) { return type_matches(value, option["value_type"]) || std::find(sentinels.begin(), sentinels.end(), value) != sentinels.end(); };
             if (!valid(option["default_value"])) error("invalid_type", p + "/default_value", "Option default type mismatch");
             for (const auto& value : option.value("enum", json::array())) if (!valid(value)) error("invalid_type", p + "/enum", "Option enum type mismatch");
