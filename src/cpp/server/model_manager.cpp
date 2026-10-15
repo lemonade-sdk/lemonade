@@ -19,6 +19,7 @@
 #include <lemon/routing_policy_parser.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
+#include <lemon/utils/model_name_utils.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/safe_fs.h>
@@ -339,6 +340,7 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
 
 ModelManager::ModelManager(const std::string& extra_models_dir)
     : extra_models_dir_(extra_models_dir),
+      alias_manager_(utils::get_cache_dir()),
       registries_(load_server_models(), get_user_models_file()),
       recipe_options_(get_recipe_options_file()),
       artifacts_(std::make_unique<models::ModelArtifactStore>(models::ModelArtifactStore::Hooks{
@@ -1924,6 +1926,63 @@ void ModelManager::download_model(const std::string& model_name,
     }
     ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback);
 }
+
+std::optional<models::ResolvedModel> ModelManager::resolve(const std::string& requested) {
+    build_cache();
+    auto snapshot = std::atomic_load(&store_snapshot_);
+
+    std::string name = utils::normalize_model_name(requested);
+    constexpr const char kLatest[] = ":latest";
+    if (name.size() > strlen(kLatest) &&
+        name.compare(name.size() - strlen(kLatest), strlen(kLatest), kLatest) == 0) {
+        name.erase(name.size() - strlen(kLatest));
+    }
+
+    // A snapshot name wins over an alias, so an alias can never hide a model.
+    const auto from_snapshot = [&snapshot](const std::string& candidate) {
+        const std::string canonical = snapshot->canonical_for(candidate);
+        const ModelInfo* found = snapshot->find(canonical.empty() ? candidate : canonical);
+        if (found == nullptr) return std::pair<std::string, const ModelInfo*>{};
+        return std::pair<std::string, const ModelInfo*>{canonical.empty() ? candidate : canonical,
+                                                        found};
+    };
+
+    auto hit = from_snapshot(name);
+    bool via_alias = false;
+    if (hit.second == nullptr) {
+        const std::string target = alias_manager_.resolve_alias(name).value_or("");
+        if (target.empty()) return std::nullopt;
+        hit = from_snapshot(target);
+        if (hit.second == nullptr) return std::nullopt;
+        via_alias = true;
+    }
+
+    models::ResolvedModel resolved;
+    resolved.canonical_id = hit.first;
+    resolved.info = std::shared_ptr<const ModelInfo>(snapshot, hit.second);
+    resolved.via_alias = via_alias;
+    resolved.wire_id = via_alias
+                           ? name
+                           : get_public_model_name(hit.first);
+    return resolved;
+}
+
+std::map<std::string, std::string> ModelManager::aliases() const {
+    return alias_manager_.get_all_aliases();
+}
+
+bool ModelManager::set_alias(const std::string& alias, const std::string& target,
+                             std::string& err_msg) {
+    return alias_manager_.set_alias(alias, target, err_msg);
+}
+
+bool ModelManager::remove_alias(const std::string& alias) { return alias_manager_.remove_alias(alias); }
+
+std::optional<std::string> ModelManager::resolve_alias(const std::string& alias_or_name) const {
+    return alias_manager_.resolve_alias(alias_or_name);
+}
+
+bool ModelManager::has_alias(const std::string& alias) const { return alias_manager_.has_alias(alias); }
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);

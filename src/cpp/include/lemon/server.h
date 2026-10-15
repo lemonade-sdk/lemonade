@@ -22,7 +22,6 @@
 #include "runtime_config.h"
 #include "router.h"
 #include "routing_policy.h"
-#include "alias_manager.h"
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -371,7 +370,6 @@ private:
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
-    std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;

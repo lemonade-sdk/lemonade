@@ -13,6 +13,15 @@
 namespace lemon {
 namespace models {
 
+// What a requested name settled to. `wire_id` is what the client is answered with:
+// the public name normally, or the alias the client asked for.
+struct ResolvedModel {
+    std::string canonical_id;
+    std::string wire_id;
+    std::shared_ptr<const ModelInfo> info;
+    bool via_alias = false;
+};
+
 // Immutable view; a reader's shared_ptr keeps what it read valid.
 struct StoreSnapshot {
     // Canonical id -> info.
