@@ -105,10 +105,9 @@ image(result.content.find((block) => block.type === "image"));
 
 Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--codemode` does not change Pi's settings.
 
-## Images and thinking
+## Images and tool calling
 
 - Models labeled `vision` accept images: paste one, or reference it with `@image.png`. Other models get a note that the image was left out.
-- Models labeled `reasoning` show their thinking, and Pi's thinking level switches it between `off` and `medium`.
 - Launch warns when the model is not labeled `tool-calling`. Pi needs tool calls to read and edit files.
 
 ## How it works
@@ -127,7 +126,6 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
       "compat": {
         "supportsStore": false,
         "supportsDeveloperRole": false,
-        "supportsReasoningEffort": false,
         "maxTokensField": "max_tokens"
       },
       "models": [

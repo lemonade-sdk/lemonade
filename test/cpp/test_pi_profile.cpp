@@ -53,19 +53,14 @@ void test_provider_block() {
     check("provider compat targets llama.cpp", provider["compat"] == json{
         {"supportsStore", false},
         {"supportsDeveloperRole", false},
-        {"supportsReasoningEffort", false},
         {"maxTokensField", "max_tokens"},
     });
     check("plain model", provider["models"][0] == json{
         {"id", "Plain"}, {"contextWindow", 32768}, {"maxTokens", 32768}, {"input", {"text"}},
     });
     check("vision model takes images", provider["models"][1]["input"] == json{"text", "image"});
-    check("reasoning model toggles thinking off and on", provider["models"][2] == json{
+    check("reasoning model leaves thinking to the server", provider["models"][2] == json{
         {"id", "Thinker"}, {"contextWindow", 40960}, {"maxTokens", 40960}, {"input", {"text"}},
-        {"reasoning", true},
-        {"thinkingLevelMap", {{"off", "off"}, {"minimal", nullptr}, {"low", nullptr},
-                              {"medium", "medium"}, {"high", nullptr}, {"xhigh", nullptr}}},
-        {"compat", {{"thinkingFormat", "qwen-chat-template"}}},
     });
     check("unknown window is left to pi", provider["models"][3] == json{
         {"id", "Unknown"}, {"input", {"text"}},

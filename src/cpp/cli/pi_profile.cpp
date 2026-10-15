@@ -76,21 +76,6 @@ nlohmann::json build_pi_model_entry(const AgentModelEntry& model) {
         ? nlohmann::json::array({"text", "image"})
         : nlohmann::json::array({"text"});
 
-    if (has_label(model, "reasoning")) {
-        entry["reasoning"] = true;
-        // llama.cpp chat templates toggle thinking with enable_thinking and
-        // have no effort levels, so only off and on are offered.
-        entry["thinkingLevelMap"] = {
-            {"off", "off"},
-            {"minimal", nullptr},
-            {"low", nullptr},
-            {"medium", "medium"},
-            {"high", nullptr},
-            {"xhigh", nullptr},
-        };
-        entry["compat"] = {{"thinkingFormat", "qwen-chat-template"}};
-    }
-
     return entry;
 }
 
@@ -102,13 +87,12 @@ nlohmann::json build_pi_provider_block(
     provider_block["baseUrl"] = base_url;
     provider_block["api"] = "openai-completions";
     provider_block["apiKey"] = pi_api_key_value(api_key);
-    // Pi's defaults target OpenAI: a developer role, store, reasoning_effort
-    // and max_completion_tokens. These match what pi's own llama.cpp provider
+    // Pi's defaults target OpenAI: a developer role, store and
+    // max_completion_tokens. These match what pi's own llama.cpp provider
     // sends instead.
     provider_block["compat"] = {
         {"supportsStore", false},
         {"supportsDeveloperRole", false},
-        {"supportsReasoningEffort", false},
         {"maxTokensField", "max_tokens"},
     };
 

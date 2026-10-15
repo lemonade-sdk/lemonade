@@ -2294,7 +2294,7 @@ sys.exit(0)
             save_ctx_size(saved.get("ctx_size"))
 
     def test_133_launch_pi_not_downloaded_model_keeps_labels(self):
-        """A model that is not downloaded yet still gets its labels' image, thinking and tool settings."""
+        """A model that is not downloaded yet still gets its labels' image and tool settings."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
@@ -2332,7 +2332,7 @@ sys.exit(0)
                 payload = self._launch_pi(temp_dir, model=model_name)
                 model = self._pi_model_entry(temp_dir, model_name)
                 self.assertEqual(model["input"], ["text", "image"])
-                self.assertTrue(model.get("reasoning"))
+                self.assertNotIn("reasoning", model)
                 self.assertIn(
                     f"{model_name} is not labeled tool-calling", payload["stderr"]
                 )
