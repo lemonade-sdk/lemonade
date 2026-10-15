@@ -126,11 +126,25 @@ def parse_wg(body):
     m = re.search(r"scope of WG:\s*([^\n\r<]{1,60})", body, re.IGNORECASE)
     if m:
         candidate = m.group(1).strip()
-        return CANONICAL_WGS.get(candidate.lower(), candidate)
+        # Only accept known canonical WGs — rejects RFC/checkbox garbage
+        return CANONICAL_WGS.get(candidate.lower())
     body_lower = body.lower()
     for key in sorted(CANONICAL_WGS, key=len, reverse=True):
         if key in body_lower:
             return CANONICAL_WGS[key]
+    return None
+
+
+def parse_rfc_status(labels):
+    """Return RFC readiness from PR labels, or None."""
+    for p in [
+        "rfc:required",
+        "rfc:on-roadmap",
+        "rfc:open-for-comment",
+        "rfc:not-required",
+    ]:
+        if p in labels:
+            return p.replace("rfc:", "")
     return None
 
 
@@ -166,6 +180,9 @@ def fetch_prs(repo, top_contributors):
                 "days_stale": days_stale,
                 "days_old": (now - created).days,
                 "wg": parse_wg(body),
+                "rfc_status": parse_rfc_status(
+                    [lbl["name"] for lbl in it.get("labels", [])]
+                ),
                 "is_maintainer": is_maint,
                 "community_tier": (
                     None if is_maint else community_tier(login, assoc, top_contributors)
@@ -174,6 +191,126 @@ def fetch_prs(repo, top_contributors):
             }
         )
     return prs
+
+
+def fetch_activity(repo, days=30):
+    """Fetch closed PRs from the last N days to build daily activity data.
+
+    Returns a list of dicts with date, opened, merged, closed_not_merged counts
+    for each day in the window, plus the running open count reconstructed from
+    today backwards.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import timedelta
+
+    window_start = cutoff - timedelta(days=days - 1)
+
+    # Paginate closed PRs until we go past the window
+    closed_prs = []
+    page = 1
+    while True:
+        cmd = [
+            "gh",
+            "api",
+            f"/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}",
+        ]
+        try:
+            out = subprocess.run(
+                cmd, check=True, capture_output=True, text=True, encoding="utf-8"
+            ).stdout
+            batch = json.loads(out)
+        except Exception:
+            break
+        if not batch:
+            break
+        for pr in batch:
+            closed = pr.get("closed_at") or ""
+            if closed:
+                closed_dt = datetime.fromisoformat(closed.replace("Z", "+00:00"))
+                if closed_dt < window_start:
+                    # Past the window — stop paginating
+                    closed_prs_sorted = True
+                    break
+                closed_prs.append(pr)
+        else:
+            page += 1
+            continue
+        break  # inner break triggered
+
+    # Also get open PRs created in the window (already fetched but re-fetch
+    # created_at dates here to count opens per day)
+    open_prs = []
+    try:
+        cmd = [
+            "gh",
+            "api",
+            "--paginate",
+            "--slurp",
+            f"/repos/{repo}/pulls?state=open&sort=created&direction=desc&per_page=100",
+        ]
+        out = subprocess.run(
+            cmd, check=True, capture_output=True, text=True, encoding="utf-8"
+        ).stdout
+        pages = json.loads(out)
+        open_prs = [pr for page in pages for pr in page]
+    except Exception:
+        pass
+
+    # Build per-day buckets
+    from datetime import timedelta
+
+    days_list = [window_start + timedelta(days=i) for i in range(days)]
+    day_keys = [d.strftime("%Y-%m-%d") for d in days_list]
+    opened = {k: 0 for k in day_keys}
+    merged = {k: 0 for k in day_keys}
+    closed_nm = {k: 0 for k in day_keys}
+
+    for pr in open_prs:
+        created = pr.get("created_at", "")
+        if created:
+            d = created[:10]
+            if d in opened:
+                opened[d] += 1
+
+    for pr in closed_prs:
+        created = pr.get("created_at", "")
+        if created:
+            d = created[:10]
+            if d in opened:
+                opened[d] += 1
+        closed = pr.get("closed_at", "")
+        if closed:
+            d = closed[:10]
+            if d in merged:
+                if pr.get("merged_at"):
+                    merged[d] += 1
+                else:
+                    closed_nm[d] += 1
+
+    # Reconstruct running open count: start from today's known open count,
+    # go backwards subtracting opens and adding closes each day.
+    # We don't have exact daily snapshots, so we approximate from events.
+    # running_open[i] = open count at END of day i
+    total_open_now = len([pr for pr in open_prs if not pr.get("draft")])
+    running = {}
+    current = total_open_now
+    for d in reversed(day_keys):
+        running[d] = current
+        # Going backwards: undo today's events
+        current = current - opened.get(d, 0) + merged.get(d, 0) + closed_nm.get(d, 0)
+        current = max(current, 0)
+
+    return [
+        {
+            "date": d,
+            "opened": opened[d],
+            "merged": merged[d],
+            "closed_nm": closed_nm[d],
+            "running_open": running[d],
+        }
+        for d in day_keys
+    ]
 
 
 def script_safe_json(obj):
@@ -244,6 +381,46 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
 
   /* result bar */
   .flex-row { display:flex; align-items:center; flex-wrap:wrap; }
+  /* activity chart */
+  #activity-chart { padding:16px 24px 20px; border-bottom:1px solid var(--border); background:var(--panel); }
+  .chart-header { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .chart-header h2 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin:0; }
+  .legend-item { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
+  .legend-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .window-ctrl { display:flex; align-items:center; gap:8px; margin-left:auto; font-size:12px; color:var(--muted); }
+  .window-ctrl input[type=range] { accent-color:var(--link); width:100px; cursor:pointer; }
+  .window-ctrl strong { color:var(--fg); min-width:40px; display:inline-block; }
+  .chart-area { position:relative; }
+  .chart-wrap { display:flex; gap:2px; align-items:flex-end; height:140px; padding-bottom:24px; }
+  .chart-bar-group { display:flex; flex-direction:column; align-items:center; flex:1; position:relative; cursor:pointer; }
+  .chart-bar-group:hover .chart-tooltip { display:block; }
+  .chart-segments { display:flex; flex-direction:column-reverse; width:100%; gap:1px; border-radius:3px 3px 0 0; overflow:hidden; }
+  .bar-seg { width:100%; min-height:2px; }
+  .bar-opened { background:#58a6ff; }
+  .bar-merged  { background:#56d364; }
+  .bar-closed  { background:#f85149; }
+  .chart-date { font-size:9px; color:var(--muted); position:absolute; bottom:-20px; left:50%; transform:translateX(-50%) rotate(-35deg); transform-origin:top center; white-space:nowrap; }
+  .chart-baseline { position:absolute; bottom:24px; left:0; right:0; height:1px; background:var(--border); }
+  .chart-tooltip { display:none; position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); background:#1c2128; border:1px solid var(--border); border-radius:6px; padding:8px 12px; font-size:11.5px; white-space:nowrap; z-index:20; pointer-events:none; box-shadow:0 4px 12px #0006; }
+  .chart-tooltip div { color:var(--fg); line-height:1.8; }
+  .chart-stats { display:flex; gap:24px; margin-top:10px; flex-wrap:wrap; }
+  .stat-box { font-size:12px; }
+  .stat-box .num { font-size:20px; font-weight:700; line-height:1; }
+  .stat-box .lbl { color:var(--muted); margin-top:2px; }
+  .chart-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px 24px 20px; border-bottom:1px solid var(--border); background:var(--panel); }
+  .mini-chart { background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+  .mini-chart h3 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin:0 0 12px; }
+  /* WG breakdown bars */
+  .wg-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; }
+  .wg-bar-label { width:140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); text-align:right; flex-shrink:0; }
+  .wg-bar-track { flex:1; background:var(--bg); border-radius:3px; height:12px; position:relative; }
+  .wg-bar-fill { height:100%; border-radius:3px; display:flex; align-items:center; }
+  .wg-bar-open   { background:#58a6ff88; }
+  .wg-bar-unclaim { background:var(--border); }
+  .wg-bar-count { position:absolute; right:-28px; top:0; font-size:11px; color:var(--muted); line-height:12px; }
+  /* Cumulative open line */
+  #cumulative-chart { width:100%; overflow:hidden; }
+
   #result-bar { padding:10px 24px; gap:16px; border-bottom:1px solid var(--border); font-size:13px; }
   #result-count { font-weight:600; }
   .result-breakdown { color:var(--muted); font-size:12px; }
@@ -307,12 +484,42 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
       <div id="hdr-maint-count">— maintainer PRs</div>
       <div id="hdr-first-count">— first-timers</div>
       <div id="hdr-stale-count">— stale 30d+</div>
+      <div id="hdr-rfc-count" style="color:var(--hot)">— RFC required</div>
     </div>
     <a class="header-link" href="index.html">&#8592; Label dashboard</a>
   </div>
   <span class="gen-time">generated __GENERATED_AT__</span>
 </header>
 
+<div id="activity-chart">
+  <div class="chart-header">
+    <h2>PR Activity</h2>
+    <span class="legend-item"><span class="legend-dot bar-opened"></span>Opened</span>
+    <span class="legend-item"><span class="legend-dot bar-merged"></span>Merged</span>
+    <span class="legend-item"><span class="legend-dot bar-closed"></span>Closed (not merged)</span>
+    <span class="legend-item"><span style="display:inline-block;width:12px;height:2px;background:var(--staleness);border-radius:1px;margin-right:1px"></span>Open backlog</span>
+    <div class="window-ctrl">
+      <label for="day-window">Window:</label>
+      <input type="range" id="day-window" min="7" max="30" value="10" step="1">
+      <strong id="day-window-label">10 days</strong>
+    </div>
+  </div>
+  <div class="chart-area">
+    <div class="chart-baseline"></div>
+    <div class="chart-wrap" id="chart-bars"></div>
+  </div>
+  <div class="chart-stats" id="chart-stats"></div>
+</div>
+<div class="chart-row">
+  <div class="mini-chart">
+    <h3>Open PRs by Workgroup</h3>
+    <div id="wg-breakdown"></div>
+  </div>
+  <div class="mini-chart">
+    <h3>Cumulative Open PRs <span id="cumul-window" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h3>
+    <div id="cumulative-chart"></div>
+  </div>
+</div>
 <div id="filter-bar">
   <div class="filter-group">
     <label>Filter by</label>
@@ -347,6 +554,12 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
     </div>
   </div>
 
+  <div class="filter-group">
+    <label>RFC</label>
+    <div class="toggle-row">
+      <button class="toggle" id="tog-rfc-required">RFC Required</button>
+    </div>
+  </div>
   <button id="clear-btn">Clear all</button>
 </div>
 
@@ -373,6 +586,7 @@ const state = {
   firstTimer: false,
   wgLead: false,
   staleDays: 0,     // 0 = any, 14, 30, or 60
+  rfcRequired: false,
 };
 
 // ── helpers ──
@@ -399,6 +613,11 @@ function prChips(pr) {
   else if(pr.community_tier==="active") chips.push('<span class="chip active">active contributor</span>');
   else if(pr.community_tier==="first-timer") chips.push('<span class="chip first">first-timer</span>');
   if(pr.days_stale>=14) chips.push(`<span class="chip stale">${pr.days_stale}d stale</span>`);
+  if(pr.rfc_status) {
+    const RFC_LABEL = {"required":"RFC required","on-roadmap":"RFC on roadmap","open-for-comment":"RFC open","not-required":"RFC not required"};
+    const rfcColor = pr.rfc_status==="required" ? "var(--hot)" : pr.rfc_status==="on-roadmap" ? "var(--first)" : "var(--muted)";
+    chips.push(`<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600;background:var(--panel-2);border:1px solid ${rfcColor};color:${rfcColor}">${RFC_LABEL[pr.rfc_status]||pr.rfc_status}</span>`);
+  }
   return chips.join(" ");
 }
 
@@ -432,6 +651,7 @@ function prCard(pr) {
 
 // ── filtering ──
 function matchesPR(pr) {
+  // No filter active = show everything
   const SPECIAL = ["__unclaimed__","__maintainers__","__community__"];
   if(state.wg === "__unclaimed__"   && pr.wg) return false;
   if(state.wg === "__maintainers__" && !pr.is_maintainer) return false;
@@ -441,6 +661,7 @@ function matchesPR(pr) {
   if(state.firstTimer && pr.community_tier !== "first-timer") return false;
   if(state.wgLead && pr.community_tier !== "wg-lead") return false;
   if(state.staleDays && pr.days_stale < state.staleDays) return false;
+  if(state.rfcRequired && pr.rfc_status !== "required") return false;
   return true;
 }
 
@@ -528,8 +749,9 @@ function render() {
   if(state.firstTimer) parts.push("first-timers only");
   if(state.wgLead) parts.push("WG leads / owners only");
   if(state.staleDays) parts.push(`${state.staleDays}d+ stale`);
+  if(state.rfcRequired) parts.push("RFC required");
   document.getElementById("result-breakdown").textContent =
-    parts.length ? "Filters: " + parts.join(" · ") : "No filters active — showing all PRs";
+    parts.length ? "Filters: " + parts.join(" · ") : "All open PRs";
 }
 
 function updateSummary() {
@@ -542,6 +764,8 @@ function updateSummary() {
     DATA.filter(pr=>pr.community_tier==="first-timer").length + " first-timers";
   document.getElementById("hdr-stale-count").textContent =
     DATA.filter(pr=>pr.days_stale>=30).length + " stale 30d+";
+  document.getElementById("hdr-rfc-count").textContent =
+    DATA.filter(pr=>pr.rfc_status==="required").length + " RFC required";
 }
 
 // ── wire up controls ──
@@ -559,6 +783,7 @@ function wireToggle(id, stateKey) {
 wireToggle("tog-maintainer", "maintainer");
 wireToggle("tog-first",      "firstTimer");
 wireToggle("tog-lead",       "wgLead");
+wireToggle("tog-rfc-required", "rfcRequired");
 
 // Stale toggles are exclusive (picking one clears others)
 const staleToggles = [
@@ -579,13 +804,199 @@ for(const {id, days} of staleToggles) {
 
 document.getElementById("clear-btn").addEventListener("click", ()=>{
   state.wg=""; state.maintainer=false; state.firstTimer=false;
-  state.wgLead=false; state.staleDays=0;
+  state.wgLead=false; state.staleDays=0; state.rfcRequired=false;
   document.getElementById("wg-select").value = "";
   document.querySelectorAll(".toggle").forEach(b=>b.classList.remove("on"));
   render();
 });
 
-updateSummary();
+
+const ACTIVITY = __ACTIVITY_DATA__;
+let chartWindow = 10;
+
+function renderActivityChart() {
+  const data = ACTIVITY.slice(-chartWindow);
+  const container = document.getElementById("chart-bars");
+  const statsEl   = document.getElementById("chart-stats");
+  if (!data.length) { container.innerHTML = '<span style="color:var(--muted);font-size:12px">No activity data</span>'; return; }
+
+  const maxBar  = Math.max(...data.map(d => d.opened + d.merged + d.closed_nm), 1);
+  const maxOpen = Math.max(...data.map(d => d.running_open), 1);
+  const H = 116;
+
+  // Stats summary
+  const totalOpened = data.reduce((s,d) => s + d.opened, 0);
+  const totalMerged = data.reduce((s,d) => s + d.merged, 0);
+  const totalClosed = data.reduce((s,d) => s + d.closed_nm, 0);
+  const netChange   = totalOpened - totalMerged - totalClosed;
+  const currentOpen = data[data.length - 1].running_open;
+  statsEl.innerHTML = `
+    <div class="stat-box"><div class="num" style="color:#58a6ff">${totalOpened}</div><div class="lbl">opened</div></div>
+    <div class="stat-box"><div class="num" style="color:#56d364">${totalMerged}</div><div class="lbl">merged</div></div>
+    <div class="stat-box"><div class="num" style="color:#f85149">${totalClosed}</div><div class="lbl">closed (not merged)</div></div>
+    <div class="stat-box"><div class="num" style="color:${netChange>0?"#f85149":netChange<0?"#56d364":"var(--muted)"}">${netChange>0?"+":""}${netChange}</div><div class="lbl">net backlog change</div></div>
+    <div class="stat-box"><div class="num" style="color:var(--staleness)">${currentOpen}</div><div class="lbl">open now</div></div>
+  `;
+
+  // Bars
+  let html = "";
+  data.forEach((d, i) => {
+    const total  = d.opened + d.merged + d.closed_nm;
+    const hOpen  = total ? Math.max(Math.round((d.opened    / maxBar) * H), d.opened   ? 2 : 0) : 0;
+    const hMerge = total ? Math.max(Math.round((d.merged    / maxBar) * H), d.merged   ? 2 : 0) : 0;
+    const hClose = total ? Math.max(Math.round((d.closed_nm / maxBar) * H), d.closed_nm? 2 : 0) : 0;
+    const label  = d.date.slice(5);
+    html += `<div class="chart-bar-group">
+      <div class="chart-segments" style="height:${H}px">
+        ${hClose ? `<div class="bar-seg bar-closed" style="height:${hClose}px"></div>` : ""}
+        ${hMerge ? `<div class="bar-seg bar-merged" style="height:${hMerge}px"></div>` : ""}
+        ${hOpen  ? `<div class="bar-seg bar-opened" style="height:${hOpen}px"></div>`  : ""}
+      </div>
+      <div class="chart-tooltip">
+        <div><strong>${d.date}</strong></div>
+        <div style="color:#58a6ff">&#9650; Opened: ${d.opened}</div>
+        <div style="color:#56d364">&#10003; Merged: ${d.merged}</div>
+        <div style="color:#f85149">&#10005; Closed: ${d.closed_nm}</div>
+        <div style="color:var(--staleness)">&#9679; Open backlog: ${d.running_open}</div>
+      </div>
+      <div class="chart-date">${label}</div>
+    </div>`;
+  });
+  container.innerHTML = html;
+
+  // SVG open-backlog line
+  requestAnimationFrame(() => {
+    const wrap = container;
+    const W = wrap.offsetWidth;
+    if (!W) return;
+    const barW = W / data.length;
+    const pts  = data.map((d, i) =>
+      `${((i + 0.5) * barW).toFixed(1)},${(H - Math.round((d.running_open / maxOpen) * H)).toFixed(1)}`
+    ).join(" ");
+    // Remove old SVG if any
+    wrap.querySelectorAll("svg").forEach(s => s.remove());
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", W);
+    svg.setAttribute("height", H);
+    svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible";
+    svg.innerHTML = `
+      <polyline points="${pts}" fill="none" stroke="var(--staleness)" stroke-width="2" stroke-linejoin="round" opacity="0.9"/>
+      ${data.map((d, i) => {
+        const x = ((i + 0.5) * barW).toFixed(1);
+        const y = (H - Math.round((d.running_open / maxOpen) * H)).toFixed(1);
+        return `<circle cx="${x}" cy="${y}" r="3" fill="var(--staleness)" opacity="0.9"/>`;
+      }).join("")}
+    `;
+    wrap.style.position = "relative";
+    wrap.appendChild(svg);
+  });
+}
+
+
+function renderWGBreakdown() {
+  const el = document.getElementById("wg-breakdown");
+  // Count open PRs per WG from current DATA
+  const counts = {};
+  let unclaimed = 0;
+  for (const pr of DATA) {
+    if (pr.wg) counts[pr.wg] = (counts[pr.wg] || 0) + 1;
+    else unclaimed++;
+  }
+  const entries = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+  if (unclaimed) entries.push(["Unclaimed", unclaimed]);
+  const max = Math.max(...entries.map(e=>e[1]), 1);
+  const COLORS = ["#58a6ff","#56d364","#79c0ff","#ffa657","#d2a8ff","#a5d6ff"];
+  let html = "";
+  entries.forEach(([wg, count], i) => {
+    const pct = Math.round((count / max) * 100);
+    const color = wg === "Unclaimed" ? "var(--border)" : COLORS[i % COLORS.length];
+    html += `<div class="wg-bar-row">
+      <div class="wg-bar-label" title="${esc(wg)}">${esc(wg)}</div>
+      <div class="wg-bar-track">
+        <div class="wg-bar-fill" style="width:${pct}%;background:${color}"></div>
+        <span class="wg-bar-count">${count}</span>
+      </div>
+    </div>`;
+  });
+  if (!entries.length) html = '<div style="color:var(--muted);font-size:12px">No WG data</div>';
+  el.innerHTML = html;
+}
+
+function renderCumulativeChart() {
+  const data = ACTIVITY.slice(-chartWindow);
+  const el = document.getElementById("cumulative-chart");
+  document.getElementById("cumul-window").textContent = `— last ${chartWindow}d`;
+  if (!data.length) { el.innerHTML = ""; return; }
+
+  const W = el.getBoundingClientRect().width || el.parentElement.getBoundingClientRect().width || 300;
+  const H = 100;
+  const maxOpen = Math.max(...data.map(d => d.running_open), 1);
+  const minOpen = Math.min(...data.map(d => d.running_open));
+  // Use a padded range so the line isn't squashed at top/bottom
+  const range = Math.max(maxOpen - minOpen, 1);
+  const pad = Math.ceil(range * 0.15);
+  const lo = Math.max(minOpen - pad, 0);
+  const hi = maxOpen + pad;
+
+  const pts = data.map((d, i) => {
+    const x = (i / (data.length - 1 || 1)) * W;
+    const y = H - ((d.running_open - lo) / (hi - lo)) * H;
+    return [x.toFixed(1), y.toFixed(1)];
+  });
+
+  // Gradient fill under the line
+  const areaPath = [
+    `M ${pts[0][0]} ${H}`,
+    ...pts.map(p => `L ${p[0]} ${p[1]}`),
+    `L ${pts[pts.length-1][0]} ${H}`,
+    "Z"
+  ].join(" ");
+
+  const linePath = pts.map((p,i) => `${i===0?"M":"L"} ${p[0]} ${p[1]}`).join(" ");
+
+  // Y axis labels
+  const yLabels = [lo, Math.round((lo+hi)/2), hi].map((v,i) => {
+    const y = H - ((v - lo) / (hi - lo)) * H;
+    return `<text x="0" y="${y.toFixed(1)}" fill="var(--muted)" font-size="9" dominant-baseline="middle">${v}</text>`;
+  }).join("");
+
+  // X axis dates
+  const xLabels = [0, Math.floor(data.length/2), data.length-1].map(i => {
+    if (i >= data.length) return "";
+    const x = (i / (data.length - 1 || 1)) * W;
+    return `<text x="${x.toFixed(1)}" y="${H+12}" fill="var(--muted)" font-size="9" text-anchor="middle">${data[i].date.slice(5)}</text>`;
+  }).join("");
+
+  el.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H+18}" preserveAspectRatio="none" style="display:block">
+    <defs>
+      <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--staleness)" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="var(--staleness)" stop-opacity="0.02"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaPath}" fill="url(#cg)"/>
+    <path d="${linePath}" fill="none" stroke="var(--staleness)" stroke-width="2" stroke-linejoin="round"/>
+    ${pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="var(--staleness)"/>`).join("")}
+    ${yLabels}
+    ${xLabels}
+  </svg>`;
+}
+
+// Slider wiring
+const windowSlider = document.getElementById("day-window");
+const windowLabel  = document.getElementById("day-window-label");
+windowSlider.addEventListener("input", () => {
+  chartWindow = parseInt(windowSlider.value);
+  windowLabel.textContent = chartWindow + (chartWindow === 1 ? " day" : " days");
+  renderActivityChart();
+renderWGBreakdown();
+setTimeout(() => renderCumulativeChart(), 50);
+  renderCumulativeChart();
+});
+
+renderActivityChart();
+renderWGBreakdown();
+setTimeout(() => renderCumulativeChart(), 50);
 render();
 </script>
 </body>
@@ -609,7 +1020,11 @@ def main():
     community = sum(1 for pr in prs if not pr["is_maintainer"])
     print(f"  fetched {len(prs)} open PRs ({community} community)", file=sys.stderr)
 
-    wg_options = "\n".join(
+    print("Fetching 30-day activity…", file=sys.stderr)
+    activity = fetch_activity(args.repo, days=30)  # JS window slider slices client-side
+    print(f"  built {len(activity)} days of activity data", file=sys.stderr)
+
+    wg_options = chr(10).join(
         f'      <option value="{wg}">{wg} (lead: {WG_LEADS[wg]})</option>'
         for wg in ACTIVE_WGS
     )
@@ -620,6 +1035,7 @@ def main():
         .replace("__DATA__", script_safe_json(prs))
         .replace("__ALL_WGS__", script_safe_json(ACTIVE_WGS))
         .replace("__WG_OPTIONS__", wg_options)
+        .replace("__ACTIVITY_DATA__", script_safe_json(activity))
     )
 
     out = Path(args.output)

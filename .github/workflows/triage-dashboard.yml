@@ -25,6 +25,12 @@ on:
       - ".github/scripts/test_triage_dashboard.py"
       - ".github/workflows/triage-dashboard.yml"
 
+# Only one publish run at a time — concurrent pushes to lemonade-triage
+# race on the expected SHA and fail. Queue; never cancel in progress.
+concurrency:
+  group: triage-dashboard-publish
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
