@@ -255,7 +255,7 @@ An error shared by several routes, such as `kBackendError`, is defined once besi
 | Base class | `inherited_errors()` returns |
 | --- | --- |
 | `ApiRoute` | `invalid_body_errors()`, written by `write_invalid_body()`, when `request_format` is `Json` or `OptionalJson` |
-| `ModelRoute` | The form errors from step 1 when `request_format` is `Form`, the missing-`model` 400 from step 4, `ModelLoader::errors()` from step 5, and `exception_errors()`, written by `write_exception()` |
+| `ModelRoute` | The form errors from step 1 when `request_format` is `Form`, the missing-`model` 400 from step 4 when the route's `model` argument is `required`, `ModelLoader::errors()` from step 5, and `exception_errors()`, written by `write_exception()` |
 
 A route that overrides `write_invalid_body()` or `write_exception()` overrides the matching list beside it.
 
