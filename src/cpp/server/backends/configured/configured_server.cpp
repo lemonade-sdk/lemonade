@@ -20,6 +20,28 @@ const std::pair<BackendOperation, std::string_view> endpoints[] = {
 };
 }
 
+std::vector<OperationBinding> configured_operation_bindings(const BackendDefinition& definition, TrustedCompatibility trusted) {
+    std::vector<OperationBinding> bindings;
+    for (const auto& program : definition.operations) {
+        const auto& description = program.description;
+        const auto id = handler(description.operation, description.delivery);
+        const bool buffered = description.delivery == OperationDelivery::Buffered;
+        const bool audio = description.operation == BackendOperation::AudioGeneration;
+        const bool executable = audio ? program.kind == "http_bytes" && program.codec == "raw_bytes.v1" :
+            buffered ? program.kind == "http_json" && program.codec == "json.v1" : program.kind == "http_sse" && program.codec == "openai_sse.v1";
+        if (!executable) throw std::invalid_argument("Configured transport signature is not installed");
+        bindings.push_back({description, id, audio ? "media" : buffered ? "json" : "sse"});
+    }
+    const bool compatibility = trusted == TrustedCompatibility::LegacyNonChatSse;
+    if (compatibility) {
+        std::vector<OperationBinding> legacy;
+        for (const auto& [operation, endpoint] : endpoints) legacy.push_back({{operation, OperationDelivery::Streaming, k_all_operation_model_types, OperationProvenance::LegacyForwarding}, handler(operation, OperationDelivery::Streaming), "sse"});
+        bindings.insert(bindings.begin(), legacy.begin(), legacy.end());
+    }
+    validate_operation_binding_signatures(bindings, compatibility);
+    return bindings;
+}
+
 ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry> entry, const BackendContext& context, ConfiguredServerServices services)
     : WrappedServer(entry->definition->records["metadata"]["server_name"], effective_level(*entry, context.log_level), context.model_manager, context.backend_manager),
       entry_(std::move(entry)), services_(std::move(services)),
@@ -42,25 +64,11 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
     adapters.streaming_forwarder = [](WrappedServer& server, const std::string& endpoint, const std::string& body, httplib::DataSink& sink, bool sse, long timeout, TelemetryCallback callback) {
         server.forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
     };
-    std::vector<OperationBinding> bindings;
     for (const auto& program : entry_->definition->operations) {
-        const auto& description = program.description;
-        const auto id = handler(description.operation, description.delivery);
-        const bool buffered = description.delivery == OperationDelivery::Buffered;
-        const bool audio = description.operation == BackendOperation::AudioGeneration;
-        const bool executable = audio ? program.kind == "http_bytes" && program.codec == "raw_bytes.v1" :
-            buffered ? program.kind == "http_json" && program.codec == "json.v1" : program.kind == "http_sse" && program.codec == "openai_sse.v1";
-        if (!executable) throw std::invalid_argument("Configured transport signature is not installed");
-        if (description.operation <= BackendOperation::Responses) adapters.completion_implementations[static_cast<size_t>(description.operation)] = true;
-        bindings.push_back({description, id, audio ? "media" : buffered ? "json" : "sse"});
+        if (program.description.operation <= BackendOperation::Responses) adapters.completion_implementations[static_cast<size_t>(program.description.operation)] = true;
     }
     const bool compatibility = entry_->compatibility == TrustedCompatibility::LegacyNonChatSse;
-    if (compatibility) {
-        std::vector<OperationBinding> legacy;
-        for (const auto& [operation, endpoint] : endpoints) legacy.push_back({{operation, OperationDelivery::Streaming, k_all_operation_model_types, OperationProvenance::LegacyForwarding}, handler(operation, OperationDelivery::Streaming), "sse"});
-        bindings.insert(bindings.begin(), legacy.begin(), legacy.end());
-    }
-    bind_operations(OperationBindings(adapters, std::move(bindings), compatibility));
+    bind_operations(OperationBindings(adapters, entry_->bindings, compatibility));
     set_descriptor(&entry_->descriptor);
 }
 

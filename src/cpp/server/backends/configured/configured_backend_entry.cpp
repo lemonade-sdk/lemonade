@@ -1,3 +1,4 @@
+#include "lemon/backends/backend_option_contract.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/configured/launch_planner.h"
@@ -48,6 +49,11 @@ BackendDescriptor descriptor_from(const BackendDefinition& definition) {
     descriptor.bin_variants = metadata.value("bin_variants", std::vector<std::string>{});
     descriptor.config_extra = metadata.value("config_extra", json::object());
     descriptor.streams_model_from_storage = metadata.value("streams_model_from_storage", false);
+    if (definition.origin == DefinitionOrigin::External) for (const auto& option : metadata.at("options")) {
+        const std::string name = option["name"];
+        const std::string key = backend_option_config_key(name);
+        descriptor.config_extra[key] = option["default_value"];
+    }
     return descriptor;
 }
 }
@@ -63,6 +69,7 @@ std::shared_ptr<const ConfiguredBackendEntry> ConfiguredBackendEntry::make(std::
 
 ConfiguredBackendEntry::ConfiguredBackendEntry(std::shared_ptr<const BackendDefinition> input, TrustedCompatibility trusted, BuiltinLaunchCompatibility launch)
     : factory_state_(std::make_shared<FactoryState>()), definition(std::move(input)), descriptor(descriptor_from(*definition)),
+      bindings(configured_operation_bindings(*definition, trusted)),
       ops(std::make_shared<ConfiguredBackendOps>(definition)),
       spec(definition->records["install"].value("install_recipe", definition->recipe), descriptor.binary,
            definition->records["install"].value("supports_split_archive", false), definition->recipe,

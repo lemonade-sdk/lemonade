@@ -24,6 +24,8 @@ CLIParser::CLIParser()
         ->type_name("DIR")
         ->default_val(utils::get_config_dir());
 
+    app_.add_flag("--builtin-backends-only", config_.builtin_backends_only, "Use only compiled backend definitions");
+
     app_.add_option("--port", config_.port, "Port number to serve on (runtime override)")
         ->type_name("PORT");
 

@@ -58,6 +58,7 @@ struct BackendRegistration {
 };
 
 // All registered (descriptor, create, spec, ops) entries, in LEMON_BACKENDS order.
+const std::vector<BackendRegistration>& builtin_registrations();
 const std::vector<BackendRegistration>& all_registrations();
 
 // Install/download spec for a recipe, or nullptr if the recipe has none.

@@ -102,6 +102,7 @@ static bool is_empty_option(json option) {
 // Anything that is not a number is discarded, since every consumer of ctx_size
 // reads it as an integer.
 static bool is_empty_option(const std::string& key, const json& option) {
+    if (const auto* contract = backends::external_option_contract(key)) return option.is_null() || backends::option_is_unset(*contract, option);
     if (key == "ctx_size") {
         return !option.is_number();
     }
@@ -165,6 +166,8 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
     return cli;
 }
 
+const json& RecipeOptions::common_option_defaults() { return common_defaults(); }
+
 std::vector<std::string> RecipeOptions::known_keys() {
     std::vector<std::string> keys;
     for (auto& [key, value] : get_defaults().items()) {
@@ -180,6 +183,10 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     for (auto key : to_copy) {
         if (!options.contains(key)) {
             continue;
+        }
+        if (!options[key].is_null()) if (const auto* contract = backends::external_option_contract(recipe, key)) {
+            const auto error = backends::validate_option_contract(*contract, options[key]);
+            if (!error.empty()) throw std::invalid_argument("Invalid option " + key + ": " + error);
         }
         explicit_options_[key] = options[key];
         if (!is_empty_option(key, options[key])) {
@@ -245,6 +252,7 @@ json RecipeOptions::get_option(const std::string& opt) const {
     if (options_.contains(opt)) {
         return options_[opt];
     }
+    if (const auto* contract = backends::external_option_contract(recipe_, opt)) return contract->at("default_value");
 #ifndef LEMONADE_CLI
     // Dynamic defaults for backends if not explicitly set
     SystemInfo::SupportedBackendsResult backend_result;
@@ -262,6 +270,14 @@ bool RecipeOptions::has_option(const std::string& opt) const {
 }
 
 void RecipeOptions::set_option(const std::string& opt, const json& value) {
+    if (const auto* contract = backends::external_option_contract(recipe_, opt)) {
+        const auto error = value.is_null() ? "" : backends::validate_option_contract(*contract, value);
+        if (!error.empty()) throw std::invalid_argument("Invalid option " + opt + ": " + error);
+        explicit_options_[opt] = value;
+        if (value.is_null() || backends::option_is_unset(*contract, value)) options_.erase(opt);
+        else options_[opt] = value;
+        return;
+    }
     options_[opt] = value;
     explicit_options_[opt] = value;
 }

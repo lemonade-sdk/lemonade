@@ -32,6 +32,7 @@ public:
 #endif
     static std::vector<std::string> to_cli_options(const json& raw_options);
     static std::vector<std::string> known_keys();
+    static const json& common_option_defaults();
 
     /// Option names this recipe accepts, in declaration order.
     static std::vector<std::string> keys_for_recipe(const std::string& recipe);

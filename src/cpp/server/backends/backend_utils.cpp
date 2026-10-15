@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/install_staging.h"
 #include "lemon/runtime_config.h"
@@ -444,6 +445,10 @@ namespace lemon::backends {
 
         json config = utils::JsonUtils::load_from_file(config_path);
 
+        if (!config.contains(recipe) || !config[recipe].contains(resolved_backend)) {
+            const auto fallback = external_default_version(recipe, resolved_backend);
+            if (!fallback.empty()) return fallback;
+        }
         if (!config.contains(recipe) || !config[recipe].is_object()) {
             throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
         }

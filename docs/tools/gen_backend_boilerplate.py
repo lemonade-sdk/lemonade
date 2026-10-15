@@ -69,12 +69,20 @@ class Lemond:
     def __init__(self, binary: Path):
         self.binary = binary
         self.port = free_port()
-        self._cache = tempfile.TemporaryDirectory(prefix="lemond-docs-")
+        self._cache = tempfile.TemporaryDirectory(prefix="lemond-docs-cache-")
+        self._config = tempfile.TemporaryDirectory(prefix="lemond-docs-config-")
         self._proc: subprocess.Popen | None = None
 
     def __enter__(self):
         self._proc = subprocess.Popen(
-            [str(self.binary), self._cache.name, "--port", str(self.port)],
+            [
+                str(self.binary),
+                self._cache.name,
+                self._config.name,
+                "--builtin-backends-only",
+                "--port",
+                str(self.port),
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -101,6 +109,7 @@ class Lemond:
             except Exception:
                 self._proc.kill()
         self._cache.cleanup()
+        self._config.cleanup()
 
     def _get(self, path: str, timeout: float = 5):
         url = f"http://127.0.0.1:{self.port}{path}"

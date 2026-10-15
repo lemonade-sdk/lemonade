@@ -1119,7 +1119,8 @@ set(LEMON_CAPABILITY_ENTRIES "")
 # factory registry + per-backend server sources are server-only.
 # Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
 set(LEMON_BACKEND_DESCRIPTOR_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_option_contract.cpp)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json" BACKEND_DEFINITION_SCHEMA)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json" THINKSOUND_DEFINITION)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json" DS4_DEFINITION)
@@ -1136,6 +1137,7 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_load_helpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_hook_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_catalog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_definition_store.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/request_mapper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/configured/backend_transport.cpp
@@ -3666,4 +3668,14 @@ if(BUILD_TESTING)
     add_executable(test_ryzenai_oracle test/cpp/test_ryzenai_oracle.cpp)
     target_link_libraries(test_ryzenai_oracle PRIVATE lemonade-server-core)
     add_cpp_ci_test(RyzenAiOracleTest CI ON COMMAND test_ryzenai_oracle)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_backend_catalog test/cpp/test_backend_catalog.cpp)
+    target_link_libraries(test_backend_catalog PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendCatalogTest CI ON COMMAND test_backend_catalog)
+    add_cpp_ci_test(BackendCatalogLateBootstrapTest CI ON COMMAND test_backend_catalog --late)
+    add_cpp_ci_test(BackendCatalogHttpTest CI ON
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/backend_catalog_http.py $<TARGET_FILE:lemond>
+        DEPENDS lemond)
 endif()

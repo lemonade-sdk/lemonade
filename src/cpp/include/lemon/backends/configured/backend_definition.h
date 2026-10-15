@@ -46,7 +46,7 @@ struct OperationProgram {
     std::vector<std::pair<std::string, Expression>> set;
 };
 struct BackendDefinition {
-    std::string id, recipe;
+    std::string id, recipe, digest;
     DefinitionOrigin origin;
     json records;
     std::map<std::string, Expression> expressions;

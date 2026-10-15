@@ -1,3 +1,4 @@
+#include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
@@ -385,6 +386,10 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
         return "";
     }
 
+    if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].contains(resolved_backend)) {
+        const auto fallback = backends::external_default_version(recipe, resolved_backend);
+        if (!fallback.empty()) return fallback;
+    }
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {
         throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
     }
@@ -605,6 +610,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
+
+    if (spec->definition && spec->definition->records["install"]["strategy"] == "external_only") throw std::runtime_error("External-only backend cannot be downloaded");
 
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);

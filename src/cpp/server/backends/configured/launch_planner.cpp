@@ -1,3 +1,4 @@
+#include "lemon/backends/backend_option_contract.h"
 #include "lemon/backends/configured/launch_planner.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -51,6 +52,16 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
     auto& values = inputs.values;
     values = {{"options", context.options.to_json()}, {"model", {{"name", context.model_name}, {"checkpoint", context.model_info.checkpoint()}}},
               {"artifacts", json::object()}, {"launch", {{"ports", json::object()}}}};
+    if (definition.origin == DefinitionOrigin::External) {
+        values["options"] = context.options.to_resolved_json();
+        for (const auto& option : metadata.at("options")) {
+            const std::string name = option["name"];
+            const auto value = context.options.has_option(name) ? context.options.get_option(name) : option["default_value"];
+            const auto error = validate_option_contract(option, value);
+            if (!error.empty()) throw std::invalid_argument("Invalid option " + name + ": " + error);
+            values["options"][name] = value;
+        }
+    }
     std::string custom_text;
     if (launch.contains("custom_args")) {
         const std::string option = launch["custom_args"]["option"];
@@ -101,7 +112,10 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
                 [&](const auto&, const auto&) { services.install_backend(definition.recipe, backend); },
                 [&](const auto&, const auto&) { return services.managed_binary(spec, backend); }
             };
-            if (launch["program"]["source"] == "external_or_managed") inputs.executable = resolve_external_or_managed_binary(spec, backend, binary);
+            if (definition.records["install"]["strategy"] == "external_only") {
+                inputs.executable = services.external_binary(spec, backend);
+                if (inputs.executable.empty() || !services.exists(inputs.executable)) throw std::runtime_error("External backend executable is required");
+            } else if (launch["program"]["source"] == "external_or_managed") inputs.executable = resolve_external_or_managed_binary(spec, backend, binary);
             else { services.install_backend(definition.recipe, backend); inputs.executable = services.managed_binary(spec, backend); }
             values["launch"]["executable"] = inputs.executable;
             if (launch["program"].contains("missing_error") && inputs.executable.empty()) throw std::runtime_error(definition.required_value("/launch/program/missing_error", values).get<std::string>());

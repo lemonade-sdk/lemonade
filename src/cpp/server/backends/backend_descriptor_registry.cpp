@@ -1,5 +1,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 
+#include <atomic>
+#include <exception>
 #include <utility>
 
 // Generated from LEMON_BACKENDS at configure time. Defines
@@ -9,7 +11,39 @@
 namespace lemon {
 namespace backends {
 
+namespace {
+std::shared_ptr<const BackendCatalogData> catalog_data;
+std::atomic<bool> snapshot_consumed{false};
+}
+
+bool descriptor_snapshot_consumed() { return snapshot_consumed.load(std::memory_order_relaxed); }
+void publish_backend_catalog_data(std::shared_ptr<const BackendCatalogData> data) noexcept {
+    if (catalog_data || descriptor_snapshot_consumed() || !data) std::terminate();
+    catalog_data = std::move(data);
+}
+
+const nlohmann::json* external_option_contract(const std::string& recipe, const std::string& name) {
+    if (!catalog_data) return nullptr;
+    auto row = catalog_data->external_options.find(recipe);
+    if (row == catalog_data->external_options.end()) return nullptr;
+    auto option = row->second.find(name);
+    return option == row->second.end() ? nullptr : &*option;
+}
+const nlohmann::json* external_option_contract(const std::string& name) {
+    if (catalog_data) for (const auto& [recipe, options] : catalog_data->external_options) {
+        auto option = options.find(name);
+        if (option != options.end()) return &*option;
+    }
+    return nullptr;
+}
+
 const std::vector<const BackendDescriptor*>& all_descriptors() {
+    if (catalog_data) return catalog_data->descriptors;
+    snapshot_consumed.store(true, std::memory_order_relaxed);
+    return builtin_descriptors();
+}
+
+const std::vector<const BackendDescriptor*>& builtin_descriptors() {
     static const std::vector<const BackendDescriptor*> kDescriptors = all_generated_descriptors();
     return kDescriptors;
 }

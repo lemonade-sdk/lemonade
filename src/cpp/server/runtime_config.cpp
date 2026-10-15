@@ -312,6 +312,15 @@ RuntimeConfig::RuntimeConfig(const json& config)
         validate("log_level", config_["log_level"]);
     }
 
+    for (const auto* descriptor : backends::all_descriptors()) {
+        const auto section = descriptor->effective_config_section();
+        if (!config_.contains(section)) continue;
+        for (const auto& option : descriptor->options) if (backends::external_option_contract(descriptor->recipe, option.name)) {
+            const auto key = backends::backend_option_config_key(option.name);
+            if (config_[section].contains(key)) validate_backend(section, key, config_[section][key]);
+        }
+    }
+
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
     if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
@@ -1133,6 +1142,18 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
 
 void RuntimeConfig::validate_backend(const std::string& backend, const std::string& key,
                                       const json& value) const {
+    for (const auto* descriptor : backends::all_descriptors()) {
+        if (descriptor->effective_config_section() != backend) continue;
+        for (const auto& option : descriptor->options) {
+            const auto config_key = backends::backend_option_config_key(option.name);
+            if (config_key != key) continue;
+            if (const auto* contract = backends::external_option_contract(descriptor->recipe, option.name)) {
+                const auto error = backends::validate_option_contract(*contract, value);
+                if (!error.empty()) throw std::invalid_argument("Invalid option " + option.name + ": " + error);
+                return;
+            }
+        }
+    }
     if (key == "backend") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");

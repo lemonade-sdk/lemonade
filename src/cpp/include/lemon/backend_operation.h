@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 namespace lemon {
 
@@ -103,6 +104,8 @@ enum class LegacyOperationProfile : uint8_t {
     Count
 };
 
+void validate_operation_binding_signatures(const std::vector<OperationBinding>& bindings, bool compiled_compatibility);
+std::string_view backend_operation_name(BackendOperation operation) noexcept;
 bool parse_backend_operation(std::string_view name, BackendOperation& operation) noexcept;
 bool valid_operation_delivery(BackendOperation operation, OperationDelivery delivery) noexcept;
 

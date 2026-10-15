@@ -1,6 +1,8 @@
 #include "lemon/backends/configured/backend_definition_store.h"
 #include "backend_definition_resources.h"
 
+#include <mbedtls/md.h>
+
 #include <algorithm>
 #include <regex>
 #include <set>
@@ -148,7 +150,7 @@ public:
             const std::string p = "/metadata/options/" + std::to_string(i);
             const std::string name = option["name"];
             if (!option_names.insert(name).second) error("option_collision", p + "/name", "Duplicate option ownership");
-            const std::set<std::string> reserved = {"model", "prompt", "stream", "recipe", "checkpoints", "backend", "type"};
+            const std::set<std::string> reserved = {"model", "model_name", "prompt", "stream", "recipe", "checkpoints", "backend", "type", "save_options", "dry_run", "messages", "input", "instructions", "tools", "tool_choice", "temperature", "top_p", "max_tokens", "response_format", "audio", "image", "file", "n", "seed", "stop", "user"};
             if (reserved.count(name)) error("option_collision", p + "/name", "Reserved option name");
             if (source.origin == DefinitionOrigin::External && !option.value("cli_flag", "").empty()) error("invalid_value", p + "/cli_flag", "External named flags are forbidden");
             const auto sentinels = option.value("unset_values", json::array({nullptr}));
@@ -304,6 +306,25 @@ private:
 };
 }
 
+std::string schema_digest(const std::string& text) {
+    unsigned char digest[32];
+    const auto* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (!info || mbedtls_md(info, reinterpret_cast<const unsigned char*>(text.data()), text.size(), digest) != 0) throw std::runtime_error("SHA-256 unavailable");
+    const char* hex = "0123456789abcdef";
+    std::string result = "sha256:";
+    for (auto byte : digest) { result += hex[byte >> 4]; result += hex[byte & 15]; }
+    return result;
+}
+
+json installed_definition_features() {
+    return {{"definition_schema_version", 1}, {"schema", schema_digest(k_backend_definition_schema)},
+        {"transports", {"http_json:json.v1", "http_sse:openai_sse.v1", "http_bytes:raw_bytes.v1"}},
+        {"operations", {"chat_completion", "completion", "responses", "audio_generation"}},
+        {"install", {"github_release", "external_only"}},
+        {"expressions", {"literal", "ref", "concat", "string", "coalesce", "present", "eq", "gt", "all", "any", "not"}},
+        {"artifact", {"default", "active_snapshot", "sentinel_directory:first_existing"}}, {"hooks", json::array()}};
+}
+
 DefinitionValidationResult BackendDefinitionStore::validate(const DefinitionSource& source) const {
     DefinitionValidationResult result;
     Validator validator(source, result);
@@ -345,6 +366,7 @@ DefinitionValidationResult BackendDefinitionStore::validate(const DefinitionSour
             definition->id = definition->records["id"];
             definition->recipe = definition->records["recipe"];
             definition->origin = source.origin;
+            definition->digest = schema_digest(definition->records.dump());
             validator.relationships(*definition);
             if (result.diagnostics.empty()) result.definition = std::move(definition);
         }

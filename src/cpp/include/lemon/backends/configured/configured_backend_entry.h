@@ -12,6 +12,8 @@ struct BuiltinLaunchCompatibility {
     bool posix_executable_loader_path = false;
 };
 
+std::vector<OperationBinding> configured_operation_bindings(const BackendDefinition& definition, TrustedCompatibility trusted);
+
 struct ConfiguredBackendEntry {
 private:
     struct FactoryState;
@@ -23,6 +25,7 @@ public:
     ConfiguredBackendEntry& operator=(const ConfiguredBackendEntry&) = delete;
     const std::shared_ptr<const BackendDefinition> definition;
     const BackendDescriptor descriptor;
+    const std::vector<OperationBinding> bindings;
     const std::shared_ptr<const ConfiguredBackendOps> ops;
     const BackendSpec spec;
     const TrustedCompatibility compatibility;

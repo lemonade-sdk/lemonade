@@ -157,7 +157,32 @@ void validate_description(const OperationDescription& description, bool compiled
     }
 }
 
+const HandlerRegistration& validate_binding_signature(const OperationBinding& binding, bool compiled_compatibility) {
+    const auto& description = binding.description;
+    validate_description(description, compiled_compatibility);
+    const auto& handler = handler_for(binding.handler);
+    if (handler.operation != description.operation || handler.delivery != description.delivery || !handler_signature_matches(handler)) throw std::invalid_argument("Operation handler signature mismatch");
+    if (binding.codec != handler.codec) throw std::invalid_argument("Unknown or incompatible operation codec");
+    if (!std::visit([](auto target) { return target != nullptr; }, handler.target)) throw std::invalid_argument("Operation handler has no executable adapter");
+    return handler;
+}
+
 } // namespace
+
+void validate_operation_binding_signatures(const std::vector<OperationBinding>& bindings, bool compiled_compatibility) {
+    for (size_t i = 0; i < bindings.size(); ++i) {
+        validate_binding_signature(bindings[i], compiled_compatibility);
+        const auto& current = bindings[i].description;
+        for (size_t j = 0; j < i; ++j) {
+            const auto& previous = bindings[j].description;
+            if (previous.operation == current.operation && previous.delivery == current.delivery && (previous.model_types & current.model_types)) throw std::invalid_argument("Overlapping operation bindings");
+        }
+    }
+}
+
+std::string_view backend_operation_name(BackendOperation operation) noexcept {
+    return static_cast<size_t>(operation) < k_operation_names.size() ? k_operation_names[static_cast<size_t>(operation)] : "";
+}
 
 bool parse_backend_operation(std::string_view name, BackendOperation& operation) noexcept {
     for (size_t i = 0; i < k_operation_names.size(); ++i) {
@@ -189,17 +214,8 @@ OperationBindings::OperationBindings(OperationAdapters adapters, std::vector<Ope
     : adapters_(adapters), compiled_compatibility_(compiled_compatibility) {
     for (const auto& binding : bindings) {
         const auto& description = binding.description;
-        validate_description(description, compiled_compatibility);
-        const auto& handler = handler_for(binding.handler);
-        if (handler.operation != description.operation || handler.delivery != description.delivery ||
-            !handler_signature_matches(handler)) {
-            throw std::invalid_argument("Operation handler signature mismatch");
-        }
-        if (binding.codec != handler.codec) {
-            throw std::invalid_argument("Unknown or incompatible operation codec");
-        }
-        if (!std::visit([](auto target) { return target != nullptr; }, handler.target) ||
-            !has_adapter(adapters, description.operation, description.delivery, description.provenance)) {
+        validate_binding_signature(binding, compiled_compatibility);
+        if (!has_adapter(adapters, description.operation, description.delivery, description.provenance)) {
             throw std::invalid_argument("Operation handler has no executable adapter");
         }
         for (size_t i = 0; i < k_operation_model_types.size(); ++i) {

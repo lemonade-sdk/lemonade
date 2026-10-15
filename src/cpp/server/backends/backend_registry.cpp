@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/wrapped_server.h"
 
 // Generated from LEMON_BACKENDS at configure time. Defines
@@ -10,6 +11,12 @@ namespace lemon {
 namespace backends {
 
 const std::vector<BackendRegistration>& all_registrations() {
+    if (const auto* catalog = backend_catalog()) return catalog->registrations();
+    all_descriptors();
+    return builtin_registrations();
+}
+
+const std::vector<BackendRegistration>& builtin_registrations() {
     static const std::vector<BackendRegistration> kRegistrations = generated_registrations();
     return kRegistrations;
 }
