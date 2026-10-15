@@ -561,11 +561,16 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 namespace {
 class WhisperOps : public BackendOps {
 public:
-    // The NPU cache is useful only beside the .bin it was built for.
+    // The NPU cache is useful only beside the .bin it was built for, and only the
+    // NPU build of the engine asks for it, so it is fetched on first use.
     const lemon::models::ArtifactLayout* checkpoint_layout(
         const lemon::models::CheckpointRef& checkpoint) const override {
         return checkpoint.checkpoint_type == "npu_cache" ? &lemon::models::sibling_layout()
                                                         : nullptr;
+    }
+
+    bool acquires_lazily(const std::string& checkpoint_type) const override {
+        return checkpoint_type == "npu_cache";
     }
 
     std::string resolve_checkpoint_path(const ModelInfo& info,

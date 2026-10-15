@@ -197,35 +197,41 @@ static void test_no_host_and_no_default_is_an_error_not_a_miss() {
 }
 
 static void test_presence_asks_the_backend_that_reads_the_file() {
+    // No hook injects the validator: the ops of the recipe that reads the file answer.
+    const ArtifactSourceResolver resolver(base_hooks());
     const std::string path = temp_file();
-    ArtifactSourceResolver::Hooks accepting = base_hooks();
-    accepting.validate_file = [](const std::string&, const std::string&) { return std::string(); };
-    const ArtifactSourceResolver resolver(accepting);
 
-    ModelInfo info = model("llamacpp", path, "local_path");
-    check("a file that exists is present", resolver.source_for(info, "main")->present().complete);
+    ModelInfo any_reader = model("whispercpp", path, "local_path");
+    check("a file that exists is present",
+          resolver.source_for(any_reader, "main")->present().complete);
 
-    ArtifactSourceResolver::Hooks rejecting = base_hooks();
-    rejecting.validate_file = [](const std::string&, const std::string&) {
-        return std::string("no gguf magic");
-    };
-    const ArtifactSourceResolver strict(rejecting);
-    const Presence presence = strict.source_for(info, "main")->present();
+    // llamacpp opens a .gguf and looks for the magic, so a file without it is not a
+    // model that is really there.
+    ModelInfo gguf_reader = model("llamacpp", path, "local_path");
+    const Presence presence = resolver.source_for(gguf_reader, "main")->present();
     check("a file the backend rejects is not present", !presence.complete);
-    check("and says why", presence.reason == "no gguf magic");
+    check("and says why", !presence.reason.empty());
 
     std::filesystem::remove(path);
 }
 
 static void test_a_lazily_acquired_checkpoint_is_not_required() {
-    const ArtifactSourceResolver resolver(base_hooks());
-    ModelInfo info = model("flm", "gemma3:4b");
-    info.checkpoints["npu_cache"] = "someone/compiled:rai";
+    ArtifactSourceResolver::Hooks hooks = base_hooks();
+    hooks.default_registry_id = [] { return std::string("huggingface"); };
+    const ArtifactSourceResolver resolver(hooks);
+    ModelInfo info = model("whispercpp", "org/repo:model.bin");
+    info.checkpoints["npu_cache"] = "org/repo:model.bin.rai";
 
     check("an ordinary checkpoint is required",
           resolver.source_for(info, "main")->ref().required);
     check("a lazily acquired one is not",
           !resolver.source_for(info, "npu_cache")->ref().required);
+
+    // A recipe that fetches everything at pull time requires all of its checkpoints.
+    ModelInfo other = model("llamacpp", "org/repo:main.gguf");
+    other.checkpoints["npu_cache"] = "someone/compiled:rai";
+    check("another backend's side cache is still required",
+          resolver.source_for(other, "npu_cache")->ref().required);
 }
 
 static void test_a_checkpoint_that_binds_to_nothing_is_reported() {

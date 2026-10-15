@@ -122,6 +122,39 @@ static void test_required_checkpoint_completeness(ModelManager& manager,
           manager.checkpoints_complete(info));
 }
 
+// A side cache the engine fetches on first use must not hold the model back: the
+// whisper NPU build pulls the .rai beside the .bin the first time it needs one.
+static void test_a_side_cache_is_not_required(ModelManager& manager, const fs::path& root) {
+    const fs::path dir = root / "side-cache";
+    const fs::path main_path = dir / "model.bin";
+    const fs::path side_path = dir / "model.bin.rai";
+
+    ModelInfo info;
+    info.recipe = "whispercpp";
+    info.checkpoints = {{"main", "main"}, {"npu_cache", "npu_cache"}};
+    info.resolved_paths = {
+        {"main", path_to_utf8(main_path)},
+        {"npu_cache", path_to_utf8(side_path)},
+    };
+
+    check("with neither file present the model is not downloaded",
+          !manager.checkpoints_complete(info));
+
+    write_file(main_path);
+    check("the model is downloaded without its side cache",
+          manager.checkpoints_complete(info));
+
+    write_file(side_path);
+    check("and stays downloaded once the side cache arrives",
+          manager.checkpoints_complete(info));
+
+    // The optionality is the backend's declaration, not a property of the name.
+    info.recipe = "llamacpp";
+    fs::remove(side_path);
+    check("a backend that fetches everything needs all of it",
+          !manager.checkpoints_complete(info));
+}
+
 static void test_single_checkpoint_partial_guard(ModelManager& manager,
                                                  const fs::path& root) {
     fs::path model_path = root / "single-checkpoint" / "model.bin";
@@ -219,6 +252,7 @@ int main() {
     {
         ModelManager manager;
         test_required_checkpoint_completeness(manager, temp);
+        test_a_side_cache_is_not_required(manager, temp);
         test_single_checkpoint_partial_guard(manager, temp);
         test_hf_manifest_marks_variant_incomplete(manager, fixtures);
         test_variantless_snapshot_commit_state(manager, fixtures);

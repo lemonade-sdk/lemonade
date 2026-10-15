@@ -1,6 +1,7 @@
 #include <lemon/models/artifact_resolver.h>
 
 #include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -55,10 +56,9 @@ const RegistryDescriptor* host_of_scheme_prefix(const std::string& checkpoint, R
 ArtifactSourceResolver::ArtifactSourceResolver(Hooks hooks) : hooks_(std::move(hooks)) {}
 
 FileValidator ArtifactSourceResolver::validator_for(const std::string& recipe) const {
-    if (hooks_.validate_file == nullptr) {
-        return nullptr;
-    }
-    return [this, recipe](const std::string& path) { return hooks_.validate_file(recipe, path); };
+    return [recipe](const std::string& path) {
+        return backends::ops_for(recipe)->validate_checkpoint_file(path);
+    };
 }
 
 std::unique_ptr<ArtifactSource> ArtifactSourceResolver::open_repository(
@@ -82,22 +82,16 @@ void ArtifactSourceResolver::place(const ModelInfo& info, const std::string& che
 
 const ArtifactLayout& ArtifactSourceResolver::layout_for(const ModelInfo& info,
                                                          const std::string& checkpoint_type) const {
-    if (hooks_.checkpoint_layout != nullptr) {
-        const ArtifactLayout* layout =
-            hooks_.checkpoint_layout(info.recipe, CheckpointRef{info.model_name, checkpoint_type});
-        if (layout != nullptr) {
-            return *layout;
-        }
-    }
-    return hf_hub_layout();
+    const ArtifactLayout* layout = backends::ops_for(info.recipe)->checkpoint_layout(
+        CheckpointRef{info.model_name, checkpoint_type});
+    return layout != nullptr ? *layout : hf_hub_layout();
 }
 
 std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
     const std::string checkpoint = info.checkpoint(checkpoint_type);
-    const bool required = hooks_.acquired_lazily != nullptr
-                              ? !hooks_.acquired_lazily(checkpoint_type)
-                              : checkpoint_type != "npu_cache";
+    const bool required =
+        !backends::ops_for(info.recipe)->acquires_lazily(checkpoint_type);
 
     const backends::DownloadPolicy policy =
         hooks_.download_policy != nullptr ? hooks_.download_policy(info)

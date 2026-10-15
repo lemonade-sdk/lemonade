@@ -37,9 +37,10 @@ std::vector<std::string> merge_reuse_comparison_files(
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b);
 
-// Checkpoints without a "repo:variant" shape are skipped.
+// Checkpoints without a "repo:variant" shape are skipped, and so are the ones a
+// backend fetches on first use: a pull does not offer them.
 std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
-    const std::map<std::string, std::string>& checkpoints);
+    const std::string& recipe, const std::map<std::string, std::string>& checkpoints);
 
 // Empty when the resolved path does not point inside snapshots/.
 std::string snapshot_id_from_resolved_path(

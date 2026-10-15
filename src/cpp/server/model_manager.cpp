@@ -449,14 +449,7 @@ std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
     models::ArtifactSourceResolver::Hooks hooks;
     hooks.download_policy = [this](const ModelInfo& info) { return download_policy(info); };
-    hooks.checkpoint_layout = [](const std::string& recipe, const models::CheckpointRef& checkpoint) {
-        const backends::BackendOps* ops = backends::ops_for(recipe);
-        return ops != nullptr ? ops->checkpoint_layout(checkpoint) : nullptr;
-    };
-    hooks.validate_file = [](const std::string& recipe, const std::string& path) {
-        const backends::BackendOps* ops = backends::ops_for(recipe);
-        return ops != nullptr ? ops->validate_checkpoint_file(path) : std::string();
-    };
+
     hooks.default_registry_id = [this]() {
         return default_model_source_provider_ != nullptr ? default_model_source_provider_()
                                                         : std::string();
@@ -2922,14 +2915,14 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     // Pull must reject a malformed auxiliary checkpoint loudly, where the
     // update check (group_aux_checkpoint_variants) silently skips it.
     for (const auto& [type, checkpoint] : info.checkpoints) {
-        if (type == "main" || type == "npu_cache") continue;
+        if (type == "main" || backends::ops_for(info.recipe)->acquires_lazily(type)) continue;
         if (repo_id_from_checkpoint(checkpoint).empty() ||
             variant_from_checkpoint(checkpoint).empty()) {
             throw std::runtime_error("Additional checkpoints must contain an exact repository variant");
         }
     }
     for (const auto& [repo_id, variants] :
-         registry_files::group_aux_checkpoint_variants(info.checkpoints)) {
+         registry_files::group_aux_checkpoint_variants(info.recipe, info.checkpoints)) {
         if (!repositories.count(repo_id)) {
             repositories.emplace(repo_id, registry.fetch_repository(repo_id));
         }
