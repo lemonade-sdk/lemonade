@@ -88,9 +88,6 @@ private:
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
 
-    // A host or websocket_port change replaces the WebSocket server while request threads
-    // read its port, so it is only touched under this mutex.
-    mutable std::mutex websocket_mutex_;
     std::unique_ptr<WebSocketServer> websocket_server_;
 
     NetworkBeacon udp_beacon_;

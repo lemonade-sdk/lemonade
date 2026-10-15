@@ -68,7 +68,6 @@ void HttpListener::create_servers() {
     // /logs/stream are adopted by the libwebsockets server; everything else is
     // processed by the routed servers above.
     auto upgrade_handler = [this](socket_t sock) -> bool {
-        std::lock_guard<std::mutex> lock(websocket_mutex_);
         if (websocket_server_ && websocket_server_->is_running()) {
             return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
         }
@@ -275,15 +274,12 @@ void HttpListener::start() {
 
     running_ = true;
 
-    {
-        std::lock_guard<std::mutex> lock(websocket_mutex_);
-        if (websocket_server_) {
-            if (websocket_server_->start()) {
-                LOG(INFO, "Server") << "WebSocket server started on port "
-                                    << websocket_server_->get_port() << std::endl;
-            } else {
-                LOG(WARNING, "Server") << "Failed to start WebSocket server" << std::endl;
-            }
+    if (websocket_server_) {
+        if (websocket_server_->start()) {
+            LOG(INFO, "Server") << "WebSocket server started on port "
+                                << websocket_server_->get_port() << std::endl;
+        } else {
+            LOG(WARNING, "Server") << "Failed to start WebSocket server" << std::endl;
         }
     }
 
@@ -404,7 +400,6 @@ bool HttpListener::stop() {
     stop_servers();
     shutdown_requested_ = false;
 
-    std::lock_guard<std::mutex> lock(websocket_mutex_);
     if (websocket_server_) {
         LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
         websocket_server_->stop();
@@ -413,7 +408,6 @@ bool HttpListener::stop() {
 }
 
 void HttpListener::restart_websocket() {
-    std::lock_guard<std::mutex> lock(websocket_mutex_);
     if (!websocket_server_) {
         return;
     }
@@ -475,7 +469,6 @@ void HttpListener::rebind() {
 }
 
 int HttpListener::websocket_port() const {
-    std::lock_guard<std::mutex> lock(websocket_mutex_);
     if (websocket_server_ && websocket_server_->is_running()) {
         return websocket_server_->get_port();
     }
