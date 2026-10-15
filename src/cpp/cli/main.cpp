@@ -763,8 +763,10 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     const std::string config_api_key =
         (config.agent == "pi" || !config.api_key.empty()) ? config.api_key : "lemonade";
 
+    // Only pi's config follows the server's scheme; the other agents still get http.
     const std::string base_url =
-        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
+        lemon_tray::build_agent_server_base_url(
+            config.host, config.port, config.agent == "pi" && config.is_ssl) + "/v1";
 
     std::string error_message;
     if (!lemon_cli::sync_agent_config_file(*profile,
@@ -793,7 +795,8 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         if (config.pi_mcp.value_or(lemon_cli::pi_has_mcp_server())) {
             std::string mcp_error;
             if (!lemon_cli::sync_pi_mcp_server(
-                    lemon_tray::build_agent_server_base_url(config.host, config.port),
+                    lemon_tray::build_agent_server_base_url(config.host, config.port,
+                                                            config.is_ssl),
                     !config.api_key.empty(), mcp_error)) {
                 std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
                 std::cerr << "Continuing with launch anyway..." << std::endl;

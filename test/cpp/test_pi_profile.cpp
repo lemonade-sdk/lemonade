@@ -3,6 +3,7 @@
 // Build with: cmake --build --preset default --target test_pi_profile
 // Run with: ctest --test-dir build -R '^PiProfileTest$' --output-on-failure
 
+#include "lemon_cli/agent_launcher.h"
 #include "lemon_cli/pi_profile.h"
 
 #include <nlohmann/json.hpp>
@@ -79,6 +80,18 @@ void test_api_key() {
     check("no key writes the placeholder", api_key_for("") == "lemonade");
     check("a key is referenced from the environment, never written",
           api_key_for("real-secret-key") == "${LEMONADE_API_KEY}");
+}
+
+void test_server_origin() {
+    check("https server gets an https origin",
+          lemon_tray::build_agent_server_base_url("my.server", 443, true) ==
+              "https://my.server:443");
+    check("wildcard host keeps the scheme",
+          lemon_tray::build_agent_server_base_url("0.0.0.0", 13305, true) ==
+              "https://localhost:13305");
+    check("plain server stays http",
+          lemon_tray::build_agent_server_base_url("localhost", 13305, false) ==
+              "http://localhost:13305");
 }
 
 void test_mcp_server(const fs::path& mcp_path) {
@@ -173,6 +186,7 @@ int main() {
 
     test_provider_block();
     test_api_key();
+    test_server_origin();
     test_mcp_server(agent_dir / "mcp.json");
 
     std::error_code ec;
