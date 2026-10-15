@@ -38,6 +38,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from http import HTTPStatus
 from pathlib import Path
 
 from gen_backend_boilerplate import Lemond, find_lemond
@@ -1177,7 +1178,8 @@ def render_event(event: str, schema: dict) -> str:
 
 def render_recorded(fmt: str, entry: dict, schema: dict) -> str:
     recorded = entry["response"]
-    status = f"`{recorded['status']}`"
+    code = recorded["status"]
+    status = f"**Response:** `{code} {HTTPStatus(code).phrase}`"
     if fmt == "Json":
         return status + "\n\n" + fence("json", json_body_text(entry, schema))
     if fmt in ("JsonLines", "EventStream"):
@@ -1198,8 +1200,7 @@ def render_recorded(fmt: str, entry: dict, schema: dict) -> str:
         return status + "\n\n" + fence("text", "\n".join(lines))
     if fmt in ("Binary", "BinaryStream"):
         return (
-            f"{status}, `Content-Type: {recorded['content_type']}`, "
-            f"{recorded['bytes']:,} bytes"
+            f"{status}, `{recorded['content_type']}`, " f"{recorded['bytes']:,} bytes"
         )
     return status
 
@@ -1242,8 +1243,6 @@ def render_example(spec: dict, example: dict, entry: dict, heading: str) -> str:
     parts += [
         render_tab("PowerShell", fence("powershell", powershell_command(entry))),
         render_tab("Bash", fence("bash", bash_command(entry))),
-        "**Response:**",
-        "",
         render_recorded(response["format"], entry, schema),
     ]
     return "\n".join(parts)

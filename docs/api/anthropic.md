@@ -74,9 +74,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -123,9 +121,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 event: message_start

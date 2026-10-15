@@ -99,9 +99,7 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -169,9 +167,7 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
@@ -238,9 +234,7 @@ Asks a vision model what `image.png` shows. A `messages[*].content` array mixes 
         }"
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -310,9 +304,7 @@ Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, w
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -464,9 +456,7 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -533,9 +523,7 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
@@ -640,9 +628,7 @@ A `400` answers a missing `model`, or a model whose backend cannot embed, such a
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -732,9 +718,7 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -797,9 +781,7 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 event: response.created
@@ -890,9 +872,7 @@ A model that cannot transcribe answers `400` with `type` `unsupported_operation`
       -F file=@speech.wav
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"text": " Just seeing if this is working.\n"}
@@ -918,9 +898,7 @@ A model that cannot transcribe answers `400` with `type` `unsupported_operation`
       -F file=@speech.wav
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
  Just seeing if this is working.
@@ -1115,9 +1093,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1216,9 +1192,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
       -F image=@image.png
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1307,9 +1281,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
       -F image=@image.png
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1380,9 +1352,7 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
       -d "{\"image\": \"$(base64 -w0 image.png)\", \"model\": \"RealESRGAN-x4plus\"}"
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1465,9 +1435,7 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
       --output output.mp3
     ```
 
-**Response:**
-
-`200`, `Content-Type: audio/mpeg`, 40,516 bytes
+**Response:** `200 OK`, `audio/mpeg`, 40,516 bytes
 
 #### Streaming
 
@@ -1501,9 +1469,7 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
       --output output.l16
     ```
 
-**Response:**
-
-`200`, `Content-Type: audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
+**Response:** `200 OK`, `audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
 <!-- END GENERATED: openai.audio_speech -->
 
 <!-- BEGIN GENERATED: openai.models -->
@@ -1540,9 +1506,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
     curl http://localhost:13305/v1/models
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1722,9 +1686,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1823,9 +1785,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/files
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1881,9 +1841,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1979,9 +1937,7 @@ A running model keeps its current options until it is next loaded.
       -d '{"ctx_size": 8192}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2062,9 +2018,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl -X DELETE http://localhost:13305/v1/models/Qwen3-4B-GGUF/options
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {

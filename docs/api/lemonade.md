@@ -101,9 +101,7 @@ A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -155,9 +153,7 @@ The `lemonade check-updates` command uses this endpoint.
     curl -X POST http://localhost:13305/v1/models/check-updates
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "updates_available": 0, "models": [], "failed_models": {}}
@@ -223,9 +219,7 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -370,9 +364,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true, "subscribe": false}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -416,9 +408,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "model_name": "Qwen3-0.6B-GGUF"}
@@ -444,9 +434,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 event: progress
@@ -491,9 +479,7 @@ Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "model_name": "user.Qwen3-0.6B-Q4"}
@@ -529,9 +515,7 @@ Registers `user.MyKit`, an omni collection of three built-in models, and pulls e
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "model_name": "user.MyKit"}
@@ -618,9 +602,7 @@ Active, paused, cancelled and failed jobs stay listed until a client removes the
     curl http://localhost:13305/v1/downloads
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 [
@@ -722,9 +704,7 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action f
       -d '{"id": "model:Qwen3-0.6B-GGUF", "action": "pause"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -768,9 +748,7 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action f
       -d '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "ok", "missing": true}
@@ -841,9 +819,7 @@ A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mo
     curl "http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf"
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -935,9 +911,7 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an un
     curl "http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF"
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1023,9 +997,7 @@ An unknown model, or one this system does not support, answers `422`; other fail
       -d '{"model_name": "user.Phi-4-Mini-GGUF"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "message": "Deleted model: user.Phi-4-Mini-GGUF"}
@@ -1125,9 +1097,7 @@ Load failures answer with the same error object as inference requests: `404` for
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1158,9 +1128,7 @@ Load failures answer with the same error object as inference requests: `404` for
       -d '{"model_name": "LMX-Omni-5.5B-Lite"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "model_name": "LMX-Omni-5.5B-Lite", "recipe": "collection.omni"}
@@ -1220,9 +1188,7 @@ An unparsable body also unloads every model. A model that is not loaded answers 
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "message": "Model unloaded successfully", "model_name": "Qwen3-0.6B-GGUF"}
@@ -1308,9 +1274,7 @@ A failed request answers with a JSON `error` object: `400` for an invalid reques
       --output output.wav
     ```
 
-**Response:**
-
-`200`, `Content-Type: audio/wav`, 884,780 bytes
+**Response:** `200 OK`, `audio/wav`, 884,780 bytes
 
 #### Music with vocals
 
@@ -1346,9 +1310,7 @@ A failed request answers with a JSON `error` object: `400` for an invalid reques
       --output output.wav
     ```
 
-**Response:**
-
-`200`, `Content-Type: audio/wav`, 8,640,044 bytes
+**Response:** `200 OK`, `audio/wav`, 8,640,044 bytes
 <!-- END GENERATED: lemonade.audio_generations -->
 
 <!-- BEGIN GENERATED: lemonade.3d_generations -->
@@ -1401,9 +1363,7 @@ A failed request answers with a JSON `error` object: `400` for an invalid field,
       --output output.glb
     ```
 
-**Response:**
-
-`200`, `Content-Type: model/gltf-binary`, 4,534,160 bytes
+**Response:** `200 OK`, `model/gltf-binary`, 4,534,160 bytes
 <!-- END GENERATED: lemonade.3d_generations -->
 
 <!-- BEGIN GENERATED: lemonade.docs -->
@@ -1432,9 +1392,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/docs
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1509,9 +1467,7 @@ The same files are installed on disk, so they can be read without a running serv
     curl http://localhost:13305/v1/docs/api/lemonade
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 # Lemonade API
@@ -1566,9 +1522,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/health
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1699,9 +1653,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/stats
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1776,9 +1728,7 @@ GPU, VRAM and NPU telemetry depends on the operating system and installed driver
     curl http://localhost:13305/v1/system-stats
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -1869,9 +1819,7 @@ Lemonade starts llama.cpp backends with metrics enabled and, for each loaded `ll
     curl http://localhost:13305/metrics
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 # HELP lemonade_server_up Whether the Lemonade server is running.
@@ -1942,9 +1890,7 @@ The same backend can carry different labels on different operating systems. Each
     curl http://localhost:13305/v1/system-info
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2157,9 +2103,7 @@ Optional fields are applied only when present in the request body. Re-installing
       -d '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "recipe": "llamacpp", "backend": "cpu"}
@@ -2185,9 +2129,7 @@ Optional fields are applied only when present in the request body. Re-installing
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 event: complete
@@ -2214,9 +2156,7 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2268,9 +2208,7 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2405,9 +2343,7 @@ A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or insta
       -d '{"recipe": "whispercpp", "backend": "rocm", "arch": "gfx1201"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2483,9 +2419,7 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
       -d '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "recipe": "llamacpp", "backend": "cpu"}
@@ -2511,9 +2445,7 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
       -d '{"backend": "cloud", "provider": "fireworks"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "backend": "cloud", "provider": "fireworks", "models_evicted": 0}
@@ -2577,9 +2509,7 @@ A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a non-
       -d '{"provider": "fireworks", "api_key": "fw-XXXXX"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2634,9 +2564,7 @@ Requires `LEMONADE_API_KEY` when it is set.
     curl -X DELETE http://localhost:13305/v1/cloud/auth/fireworks
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2778,9 +2706,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/live
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "ok"}
@@ -2836,9 +2762,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
       -d '{"name": "example", "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]}'
     ```
 
-**Response:**
-
-`202`
+**Response:** `202 Accepted`
 
 ```json
 {"id": "job-20261007-171503-000001"}
@@ -2877,9 +2801,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/jobs
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -2946,9 +2868,7 @@ An unknown job, or one that is not queued or running, answers `404`.
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000003/pause
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "pausing"}
@@ -2993,9 +2913,7 @@ An unknown job, or one that is not queued or running, answers `404`.
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000004/interrupt
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "interrupting"}
@@ -3040,9 +2958,7 @@ An unknown job, or one that is not paused or interrupted, answers `404`.
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000006/resume
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "resuming"}
@@ -3085,9 +3001,7 @@ An unknown job answers `404`.
     curl http://localhost:13305/v1/jobs/job-20261007-171503-000007
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -3167,9 +3081,7 @@ An unknown job answers `404`.
     curl -X DELETE http://localhost:13305/v1/jobs/job-20261007-171503-000008
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "deleted"}

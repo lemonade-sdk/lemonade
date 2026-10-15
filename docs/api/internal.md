@@ -55,9 +55,7 @@ Backend processes such as `llama-server` have exited by the time the caller read
     curl -X POST http://localhost:13305/internal/shutdown
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "shutting down"}
@@ -100,9 +98,7 @@ A batch the collector rejects or does not receive is dropped without further ret
     curl -X POST http://localhost:13305/internal/telemetry/flush
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "flushed"}
@@ -154,9 +150,7 @@ A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pi
       -d '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "model_name": "Qwen3-0.6B-GGUF", "pinned": true}
@@ -255,9 +249,7 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
       -d '{"log_level": "info"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success", "updated": {"log_level": "info"}}
@@ -300,9 +292,7 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
     curl http://localhost:13305/internal/config
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -348,9 +338,7 @@ The per-backend sections come from the backend descriptors, so this is the autho
     curl http://localhost:13305/internal/config/defaults
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -406,9 +394,7 @@ Invalid JSON, including an empty body, answers `500`.
       -d '{"dry_run": true}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"orphaned_files": [], "total_bytes": 0, "dry_run": true}
@@ -468,9 +454,7 @@ A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pc
       -d '{"pct": 0.5}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "ok"}
@@ -532,9 +516,7 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
       -d '{"models": ["Qwen3-0.6B-GGUF"], "dry_run": true}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -612,9 +594,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
     curl http://localhost:13305/internal/models/sync/status
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -694,9 +674,7 @@ An alias stands in for its target in the `model` field of inference requests and
     curl http://localhost:13305/internal/aliases
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -759,9 +737,7 @@ A `400` answers invalid JSON, a missing `alias` or `target`, an alias equal to i
       -d '{"alias": "my-alias-1", "target": "user.custom-llama"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "ok", "alias": "my-alias-1", "target": "user.custom-llama"}
@@ -808,9 +784,7 @@ An alias that does not exist answers `404`.
     curl -X DELETE http://localhost:13305/internal/aliases/my-alias-1
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "deleted", "alias": "my-alias-1"}
@@ -854,9 +828,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     curl "http://localhost:13305/internal/routes?id=internal.telemetry_flush"
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 [

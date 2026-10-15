@@ -68,9 +68,7 @@ A model that is not a reranker answers `400`, or `501` from llama.cpp when it is
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -123,9 +121,7 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
     curl http://localhost:13305/v1/slots
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 [
@@ -261,9 +257,7 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -295,9 +289,7 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -325,9 +317,7 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
     curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"id_slot": 0, "n_erased": 224}
@@ -386,9 +376,7 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
       -d '{"content": "This is a string to tokenize"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"tokens": [1986, 374, 264, 914, 311, 77651]}

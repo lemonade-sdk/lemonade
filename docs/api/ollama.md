@@ -79,9 +79,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -127,9 +125,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": false}
@@ -243,9 +239,7 @@ Image generation never streams.
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -294,9 +288,7 @@ Image generation never streams.
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
@@ -368,9 +360,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/api/tags
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -449,9 +439,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "Qwen3-0.6B-GGUF"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -532,9 +520,7 @@ Success answers `200` with an empty body, as Ollama does. A model this system do
       -d '{"model": "RealESRGAN-x4plus-anime"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 <!-- END GENERATED: ollama.delete -->
 
 <!-- BEGIN GENERATED: ollama.pull -->
@@ -579,9 +565,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
       -d '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```text
 {"status": "pulling manifest"}
@@ -612,9 +596,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
       -d '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"status": "success"}
@@ -678,9 +660,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -741,9 +721,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -788,9 +766,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/api/ps
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -861,9 +837,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/api/version
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {"version": "0.16.1"}

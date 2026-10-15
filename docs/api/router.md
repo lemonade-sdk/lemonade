@@ -155,9 +155,7 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {

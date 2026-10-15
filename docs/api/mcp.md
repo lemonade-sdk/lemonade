@@ -91,9 +91,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
         }'
     ```
 
-**Response:**
-
-`200`
+**Response:** `200 OK`
 
 ```json
 {
@@ -127,9 +125,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
       -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
     ```
 
-**Response:**
-
-`202`
+**Response:** `202 Accepted`
 
 ### Response format
 
