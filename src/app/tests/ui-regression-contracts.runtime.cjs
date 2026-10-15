@@ -19,6 +19,12 @@ const files = {
 };
 const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) => [key, fs.readFileSync(filename, 'utf8')]));
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
+const fontStack = filename => fs.readFileSync(path.join(root, filename), 'utf8')
+  .match(/--font-sans:\s*([^;]+);/)?.[1]?.replace(/\s+/g, ' ').trim() || '';
+const appFontStack = fontStack('src/styles/tokens.css');
+assert.match(appFontStack, /system-ui.*"Microsoft YaHei UI"/);
+assert.doesNotMatch(appFontStack, /"Microsoft YaHei"/);
+assert.equal(fontStack('src/styles/critical.generated.css'), appFontStack);
 
 for (const [key, filename] of Object.entries(files)) {
   const compiled = ts.transpileModule(sources[key], {
