@@ -108,6 +108,7 @@ struct ExampleStep {
 // --check validates the response against the schema of the example's format.
 struct RouteExample {
     std::string name;                 // tab label, e.g. "streaming" or "save"; required when a route has several
+    std::string description;          // what this example shows that the route's other text does not; opens its response tab
     ResponseFormat format;            // the RouteResponse the response is validated against
     nlohmann::json args;              // argument values, e.g. {"id": "$lemonade.jobs_create/id"}
     std::vector<ExampleStep> setup;   // run first, in order
@@ -458,10 +459,10 @@ Page intros and concept sections stay hand-written between the regions, such as 
 
 ### Examples
 
-The Example request section has PowerShell and Bash tabs for each of the route's `examples`, and the Response format section shows what lemond returned to each. When a route has several examples, the first example's request tabs are unlabeled, every other example's are labeled with its `name`, such as "PowerShell (streaming)", and each response gets a tab named after its example, such as "Streaming responses". For a JSON format, a Field Descriptions list follows. It opens with the top-level `description` of the format's `RouteResponse::schema`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes lists each shape separately, opening with that shape's top-level `description`. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
+The Example request section has PowerShell and Bash tabs for each of the route's `examples`, and the Response format section shows what lemond returned to each. When a route has several examples, the first example's request tabs are unlabeled, every other example's are labeled with its `name`, such as "PowerShell (streaming)", each response gets a tab named after its example, such as "Streaming responses", which opens with the example's `description`. For a JSON format, a Field Descriptions list follows. It opens with the top-level `description` of the format's `RouteResponse::schema`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes lists each shape separately, opening with that shape's top-level `description`. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
 
 - **Arguments.** An example's `args` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
-- **Files.** A value of the form `@fixtures/<file>` is read from `docs/tools/fixtures/`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
+- **Files.** A `@fixtures/<file>` marker is read from `docs/tools/fixtures/`. It is a whole value, or follows a prefix such as `data:image/png;base64,`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
 - **Setup.** The steps in `setup` run first, in order. A step that names an example runs it after that example's own setup; a step with `args` sends that request as is and is left out of the docs. A `$<route id>/<json pointer>` value takes that field from the most recent response the route returned.
 - **One lemond.** Every example runs against one lemond started by the `Lemond` harness, which starts it again after an example stops it, as `/internal/shutdown` does. An example that deletes or uninstalls something removes what its own setup added.
 - **Recorded output.** Every response shows its status, plus a JSON body, the first three and last two events or lines of a stream, the first 20 lines of a `Text` body, or the `Content-Type` and byte count of a `Binary` or `BinaryStream` body.
@@ -476,11 +477,12 @@ This section specifies what each route's text says. The generator prints each ro
 | --- | --- | --- |
 | `summary` | What the route does, as a verb phrase of at most 10 words, such as "Pause a job" | Support status, formats, the description |
 | `description` | What the route does, and who uses it when that is not obvious, in at most 3 sentences, third person present ("Loads a model...") | URLs, prefixes, aliases, auth, argument details or defaults, the page intro |
-| `notes` | Behavior no argument or field can carry: error statuses ("A `400` answers ..."), side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description |
+| `notes` | Behavior no argument or field can carry: error statuses ("A `400` answers ..."), side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description, a request or response, which belongs in `examples` |
 | `RouteArg::description` | What the argument controls, its accepted values, its default ("Defaults to `false`."), and when it is required if that depends on other arguments | Where the argument goes, the Required column, the route's behavior |
 | Top-level `description` of a `RouteResponse::schema`, or of one of its shapes | What the response is as a whole: how a stream's lines or events relate, such as which line ends it, or when this shape is returned | A field's meaning |
 | Property `description` in a `RouteResponse::schema` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
+| `RouteExample::description` | What this example shows that the route's other text does not, in one sentence, such as which model or file it uses | The route's general behavior, which belongs in `notes` |
 
 These rules apply across the fields:
 
