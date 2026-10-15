@@ -50,7 +50,7 @@ module.exports = (env, argv) => {
   // src/app and src/web-app into the build directory side by side.
   const config = {
     mode: argv.mode || 'development',
-    entry: './index.js',
+    entry: '../app/src/renderer/index.tsx',
     target: 'web',  // Changed from 'electron-renderer' to 'web' for browser
     devtool: argv.mode === 'production' ? false : 'source-map',
     module: {
