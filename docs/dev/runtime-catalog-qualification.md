@@ -1,5 +1,9 @@
 # Runtime catalog and frozen CLI qualification
 
+For the subsequent shared-renderer work and a new full server/CLI/UI artifact
+freeze, see [schema-driven UI qualification](runtime-catalog-ui-qualification.md).
+The historical server/CLI-only freeze and results below remain unchanged.
+
 This records the Linux CPU qualification of design units 4e, 4f, and the
 server/CLI portion of 4j against the design of record
 `.synagent/reports/2026-10-15T14-25-14-codex.md`. The implementation branch is
