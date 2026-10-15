@@ -1,0 +1,43 @@
+#pragma once
+
+#include <nlohmann/json.hpp>
+
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+
+namespace lemon {
+namespace models {
+
+// What a locator observed at its last read. A rebuild compares this instead of
+// parsing the document again.
+struct CatalogState {
+    bool present = false;
+    std::uint64_t size = 0;
+    // Same clock the directory watcher compares against.
+    std::int64_t modified = 0;
+    std::string etag;
+    std::string last_modified;
+};
+
+// Where a JSON catalog document comes from and how it says it changed. A body
+// that is simply not there reads as nullopt; whether that is fatal belongs to the
+// catalog's `required()`, not to the locator.
+class CatalogLocator {
+  public:
+    virtual ~CatalogLocator() = default;
+
+    virtual const std::string& id() const = 0;
+
+    // Throws when a body exists but is not readable as a document of model rows.
+    virtual std::optional<nlohmann::json> read(CatalogState* observed) const = 0;
+
+    // True when the body differs from the one that produced `known`.
+    virtual bool changed(const CatalogState& known) const = 0;
+};
+
+std::shared_ptr<CatalogLocator> file_catalog_locator(std::string id, std::string path);
+
+}  // namespace models
+}  // namespace lemon
