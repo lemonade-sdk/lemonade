@@ -1194,11 +1194,21 @@ jobs:
         shell: PowerShell
         env:
           HF_HOME: ${{ env.HF_HOME }}
+          SUITES: ${{ matrix.suites }}
         run: |
           $ErrorActionPreference = "Continue"
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade.exe"
-          $suites = '${{ matrix.suites }}' | ConvertFrom-Json
+
+          # An unreadable suite list must fail loudly.
+          # An empty list would walk zero suites and report success without testing anything.
+          $suites = $null
+          try { $suites = $env:SUITES | ConvertFrom-Json } catch { }
+          $expected = @($suites).Count
+          if (-not $suites -or $expected -lt 1) {
+            Write-Host "::error title=Suite list unusable::Could not parse matrix.suites into at least one suite"
+            exit 1
+          }
 
           function Invoke-TestBackend {
             param(
@@ -1252,8 +1262,10 @@ jobs:
           }
 
           $failed = @()
+          $ran = 0
           foreach ($suite in $suites) {
             Write-Host "::group::$($suite.name)"
+            $ran++
             $backends = $suite.backends -split " " | Where-Object { $_ }
 
             if ($backends.Count -eq 0) {
@@ -1273,6 +1285,12 @@ jobs:
               }
             }
             Write-Host "::endgroup::"
+          }
+
+          Write-Host "Ran $ran of $expected suite(s) in this group."
+          if ($ran -ne $expected) {
+            Write-Host "::error title=Suites skipped::Ran $ran of $expected suite(s)"
+            exit 1
           }
 
           if ($failed.Count -gt 0) {
@@ -1395,9 +1413,24 @@ jobs:
           set -uo pipefail
           set +e  # a failing suite must not end the step; we report them together
           failed=()
+          ran=0
 
-          while IFS=$'\t' read -r name script extra_args backends; do
+          # An unreadable suite list must fail loudly.
+          # An empty list would walk zero suites and report success without testing anything.
+          expected=$(.venv/bin/python -c "
+          import json, os
+          print(len(json.loads(os.environ['SUITES'])))
+          ")
+          if ! printf '%s' "$expected" | grep -qE '^[1-9][0-9]*$'; then
+            echo "::error title=Suite list unusable::Could not parse matrix.suites into at least one suite"
+            exit 1
+          fi
+
+          # Unit separator, not tab: bash collapses runs of IFS whitespace, so a
+          # tab would drop an empty extra_args and shift backends into its place.
+          while IFS=$'\x1f' read -r name script extra_args backends; do
             echo "::group::$name"
+            ran=$((ran + 1))
             if [ -z "$backends" ]; then
               echo "Running test/$script $extra_args"
               .venv/bin/python "test/$script" $extra_args --cli-binary lemonade \
@@ -1413,8 +1446,14 @@ jobs:
           done < <(.venv/bin/python -c "
           import json, os
           for s in json.loads(os.environ['SUITES']):
-              print('\t'.join([s['name'], s['script'], s['extra_args'], s['backends']]))
+              print('\x1f'.join([s['name'], s['script'], s['extra_args'], s['backends']]))
           ")
+
+          echo "Ran $ran of $expected suite(s) in this group."
+          if [ "$ran" -ne "$expected" ]; then
+            echo "::error title=Suites skipped::Ran $ran of $expected suite(s)"
+            exit 1
+          fi
 
           if [ "${#failed[@]}" -gt 0 ]; then
             echo "::error title=Inference suites failed::${failed[*]}"
