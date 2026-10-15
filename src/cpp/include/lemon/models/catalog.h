@@ -21,7 +21,7 @@ struct CatalogEntry {
 // Collects entries from several catalogs; precedence lives here, not per source.
 class CatalogAccumulator {
   public:
-    enum class Conflict { KeepExisting, Overwrite };
+    using Conflict = models::Conflict;
     enum class Outcome { Added, KeptExisting };
 
     CatalogAccumulator() = default;

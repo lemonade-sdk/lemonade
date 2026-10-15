@@ -6,12 +6,12 @@ namespace lemon {
 namespace models {
 
 ListedCatalog::ListedCatalog(std::string provider, List list)
-    : descriptor_{
-          "listed:" + provider, false,
+    : descriptor_{make_catalog_descriptor(
+          "listed:" + provider, catalog_rank::cloud_listing, Conflict::KeepExisting,
           DocEntry{"listed-" + provider, "Cloud: " + provider,
                    "A cloud provider's own model listing.",
                    {"A provider that will not answer costs only its own entries."}, ""},
-          "", true},
+          "", true)},
       list_(std::move(list)) {}
 
 void ListedCatalog::enumerate(CatalogAccumulator& accumulator) const {
@@ -24,7 +24,7 @@ void ListedCatalog::enumerate(CatalogAccumulator& accumulator) const {
     }
 
     for (auto& info : listed) {
-        accumulator.add(CatalogEntry{descriptor_.id, std::move(info)});
+        accumulator.add(CatalogEntry{descriptor_.id, std::move(info)}, descriptor_.claim);
     }
 }
 

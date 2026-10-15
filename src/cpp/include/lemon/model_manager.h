@@ -75,6 +75,7 @@ struct RoutePolicy;
 
 namespace models {
 class ArtifactSource;
+class CatalogSet;
 class ModelArtifactStore;
 class ModelCatalog;
 struct FilterReasons;
@@ -535,7 +536,7 @@ private:
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
 
-    std::vector<models::CatalogDescriptor> catalog_descriptors_;
+    std::unique_ptr<models::CatalogSet> catalog_set_;
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
