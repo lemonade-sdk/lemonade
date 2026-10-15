@@ -8,6 +8,7 @@
 #include <lemon/models/catalog.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/definition_labels.h>
+#include <lemon/models/entry_identity.h>
 #include <lemon/models/ingest.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/listed_catalog.h>
@@ -803,26 +804,19 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
 
     struct Entry {
         std::string cache_key;
-        ModelSource source;
+        models::EntryIdentity identity;
     };
     std::map<std::string, std::vector<Entry>> by_bare;
 
     for (const auto& [cache_key, info] : models) {
-        ModelSource source;
-        std::string bare;
-        if (auto canon = parse_canonical_id(cache_key)) {
-            source = canon->source;
-            bare = canon->bare_name;
-        } else {
-            source = ModelSource::Builtin;
-            bare = cache_key;
-        }
-        by_bare[bare].push_back({cache_key, source});
+        models::EntryIdentity identity = models::entry_identity(cache_key, info);
+        by_bare[identity.bare].push_back({cache_key, std::move(identity)});
     }
 
     for (auto& [bare, entries] : by_bare) {
         std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-            return precedence_rank(a.source) < precedence_rank(b.source);
+            return models::entry_precedence_rank(a.identity) <
+                   models::entry_precedence_rank(b.identity);
         });
 
         const Entry& winner = entries.front();
@@ -830,15 +824,15 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
 
         const auto winner_it = models.find(winner.cache_key);
         const bool winner_is_prefixed_collection =
-            winner.source != ModelSource::Builtin &&
+            winner.identity.source != ModelSource::Builtin &&
             winner_it != models.end() &&
             is_model_collection_recipe(winner_it->second.recipe);
         result.canonical_public_names[winner.cache_key] =
-            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
+            winner_is_prefixed_collection ? canonical_id(winner.identity.source, bare) : bare;
 
         for (size_t i = 1; i < entries.size(); ++i) {
             const Entry& shadowed = entries[i];
-            std::string canonical = canonical_id(shadowed.source, bare);
+            std::string canonical = canonical_id(shadowed.identity.source, bare);
             result.canonical_public_names[shadowed.cache_key] = canonical;
             if (canonical != shadowed.cache_key) {
                 result.public_model_aliases[canonical] = shadowed.cache_key;
@@ -846,17 +840,20 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
         }
     }
 
-    for (const auto& [cache_key, _info] : models) {
+    for (const auto& [cache_key, info] : models) {
         if (parse_canonical_id(cache_key)) continue;
+        if (models::entry_identity(cache_key, info).qualifies_itself) continue;
         std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
         result.public_model_aliases.try_emplace(canonical, cache_key);
     }
 
-    auto source_for_cache_key = [](const std::string& cache_key) {
-        if (auto canon = parse_canonical_id(cache_key)) {
-            return canon->source;
-        }
-        return ModelSource::Builtin;
+    // Only an unqualified built-in can be pushed aside by an input alias; a
+    // provider-qualified id already carries where it came from.
+    auto demotable_builtin = [&models](const std::string& cache_key) {
+        auto it = models.find(cache_key);
+        if (it == models.end()) return false;
+        const models::EntryIdentity identity = models::entry_identity(cache_key, it->second);
+        return identity.source == ModelSource::Builtin && !identity.qualifies_itself;
     };
 
     for (const auto& [cache_key, info] : models) {
@@ -872,7 +869,7 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
                     continue;
                 }
 
-                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
+                if (demotable_builtin(existing->second)) {
                     std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
                     result.canonical_public_names[existing->second] = builtin_canonical;
                     result.public_model_aliases[builtin_canonical] = existing->second;
