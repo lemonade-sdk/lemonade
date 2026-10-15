@@ -283,6 +283,7 @@ GENERATED_PHRASES = ["Also served at", "Requires `LEMONADE_API_KEY`", "> **Note:
 OTHER_PREFIXES = re.compile(r"/api/v[01]\b|(?<![\w/])/v0/")
 PLACEHOLDER = re.compile(r"<(?!(?:sub|br)\b)[A-Za-z_][\w-]*>")
 SENTENCE_END = re.compile(r"(?<!e\.g)(?<!i\.e)(?<=[.!?])\s+")
+ERROR_STATUS = re.compile(r"`[45]\d\d`")
 MAX_SUMMARY_WORDS = 10
 MAX_DESCRIPTION_SENTENCES = 3
 REPEAT_MIN_CHARS = 40
@@ -306,6 +307,8 @@ def route_texts(spec: dict):
     for example in spec["examples"]:
         if example["description"]:
             yield f"example {example['name'] or '(main)'}", example["description"]
+    for error in spec["errors"]:
+        yield f"error {error['status']} {error['code']}".rstrip(), error["when"]
 
     def walk(schema, path):
         if not isinstance(schema, dict):
@@ -337,6 +340,13 @@ def lint_spec(spec: dict) -> list[str]:
             problems.append(f"{where} has an em dash")
         for match in PLACEHOLDER.finditer(prose):
             problems.append(f"{where} has {match.group(0)} outside backticks")
+    for where, text in [("description", spec["description"])] + [
+        (f"notes[{index}]", note) for index, note in enumerate(spec["notes"])
+    ]:
+        if ERROR_STATUS.search(text):
+            problems.append(
+                f"{where} names an error status, which belongs in a RouteError"
+            )
     if len(spec["summary"].split()) > MAX_SUMMARY_WORDS:
         problems.append(f"summary runs over {MAX_SUMMARY_WORDS} words")
     if len(sentences(spec["description"])) > MAX_DESCRIPTION_SENTENCES:
@@ -360,6 +370,61 @@ def lint_region(route_id: str, body: str) -> list[str]:
         for sentence, count in counts.items()
         if count > 1
     ]
+
+
+LITERAL_ERROR_STATUS = re.compile(
+    r"\bstatus\s*=\s*[45]\d\d\b|_error\(\s*res\s*,\s*[45]\d\d\b"
+)
+ROUTE_ERROR_NAME = re.compile(
+    r"\b(?:extern |static )?const RouteError (?:\w+::)?(k[A-Z]\w*)"
+)
+ERROR_LISTS = re.compile(
+    r"errors\s*=\s*\{.*?\};"
+    r"|_errors\([^)]*\)\s*const(?:\s+override)?\s*\{.*?\n    \}"
+    r"|errors\.(?:push_back|insert)\(.*?\);",
+    re.S,
+)
+ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
+
+
+def lint_sources() -> list[str]:
+    """Every error status a route or service writes comes from a RouteError, and every
+    RouteError a route file uses is in its route's errors."""
+    server = REPO_ROOT / "src" / "cpp" / "server"
+    sources = sorted((server / "routes").rglob("*.cpp")) + sorted(
+        (server / "services").rglob("*.cpp")
+    )
+    declared = set()
+    for path in (
+        sources
+        + sorted((REPO_ROOT / "src" / "cpp" / "include").rglob("*.h"))
+        + [server / "core" / "api_route.cpp"]
+    ):
+        declared.update(ROUTE_ERROR_NAME.findall(path.read_text(encoding="utf-8")))
+
+    problems = []
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        where = path.relative_to(REPO_ROOT)
+        for match in LITERAL_ERROR_STATUS.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{where}:{line} writes an error status that is not a RouteError's"
+            )
+        if path.parent.name == "services" or "RouteSpec spec()" not in text:
+            continue
+        lists = " ".join(m.group(0) for m in ERROR_LISTS.finditer(text))
+        inherited = "public ModelRoute" in text or "ModelLoader::errors()" in lists
+        used = {name for name in ROUTE_ERROR_USE.findall(text) if name in declared}
+        for name in sorted(used):
+            if re.search(rf"\b{name}\b", lists):
+                continue
+            if inherited and re.search(rf"ModelLoader::{name}\b", text):
+                continue
+            problems.append(
+                f"{where} uses {name}, which its route's errors do not list"
+            )
+    return problems
 
 
 # --------------------------------------------------------------------------
@@ -1278,6 +1343,25 @@ def render_response_format(spec: dict) -> str:
     return "\n".join(parts)
 
 
+def render_errors(spec: dict) -> str:
+    if not spec["errors"]:
+        return ""
+    errors = sorted(spec["errors"], key=lambda error: error["status"])
+    with_code = any(error["code"] for error in errors)
+    rows = ["### Errors", ""]
+    if with_code:
+        rows += ["| Status | Code | When |", "|--------|------|------|"]
+    else:
+        rows += ["| Status | When |", "|--------|------|"]
+    for error in errors:
+        cells = [f"`{error['status']}`"]
+        if with_code:
+            cells.append(f"`{error['code']}`" if error["code"] else "")
+        cells.append(md_cell(error["when"]))
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows)
+
+
 def render_parameters(spec: dict) -> str:
     if not spec["args"]:
         return "### Parameters\n\nThis endpoint does not take any parameters."
@@ -1329,6 +1413,9 @@ def render_route(spec: dict, entries: dict) -> str:
         fields = render_response_format(spec)
         if fields:
             parts += ["", fields]
+    errors = render_errors(spec)
+    if errors:
+        parts += ["", errors]
     return "\n".join(parts)
 
 
@@ -1511,7 +1598,7 @@ def main() -> int:
                 specs, spec["id"], example, backend_versions, server_models
             )
 
-    problems = []
+    problems = lint_sources()
     for spec in route_list:
         problems += lint_spec(spec)
     missing = [ref for ref, key in keys.items() if key not in cache]

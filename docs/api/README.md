@@ -32,3 +32,14 @@ curl http://localhost:13305/v1/models -H "Authorization: Bearer $LEMONADE_API_KE
 ```
 
 Each route says whether it needs a key. The internal routes take `LEMONADE_ADMIN_API_KEY` when it is set, and `LEMONADE_API_KEY` otherwise; the admin key also works on every other route. Lemonade reads no other header, so an Anthropic SDK client passes the key as `auth_token`, not `api_key`. The WebSocket APIs take the key as an `api_key` query parameter instead. See [API Key and Security](../guide/configuration/README.md#api-key-and-security) for every combination of the two keys.
+
+## Errors
+
+Each route lists the errors it answers with in its Errors table. These come from the server before a request reaches a route, so no route lists them:
+
+| Status | Body | When |
+|--------|------|------|
+| `401` | `{"error": "Invalid or missing API key"}`, or `"Invalid or missing admin API key"` for an internal route | The request lacks the key its route needs |
+| `403` | `{"error": "Origin not allowed"}` | The `Origin` header names an origin that [`allowed_origins`](../guide/configuration/README.md) does not allow |
+| `404` | `{"error": {"message": "The requested endpoint does not exist", "type": "not_found", "path"}}` | No route matches the path |
+| `405` | `{"error": "Method Not Allowed. Use POST for this endpoint"}` | A `GET` reaches a `POST`-only route |
