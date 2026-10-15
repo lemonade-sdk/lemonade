@@ -73,7 +73,9 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 **Merge semantics.** The built-in omni system prompt goes before a client-provided one. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -101,7 +103,51 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id": "chatcmpl-Ur8WXBSFmCy4xSW1gr9J6imPMcSBsmG7",
+  "object": "chat.completion",
+  "created": 1791990411,
+  "model": "Qwen3-0.6B-GGUF",
+  "system_fingerprint": "b11393-dbe4c3ed4",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The population of Paris, France, is approximately **2,015,000**. This number reflects the city's size and population, making it one of the most populous cities in the world.",
+        "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. First, I remember that Paris is a big city in France, right? I think it's the capital. But how do I find the exact population?\n\nWait, I think I heard that the population is around 2 million. But I'm not sure. Maybe I should check a reliable source. Oh, right! The official website of Paris might have the population numbers. Let me recall... Oh! Oh, right! The city's population is about 2,015,000. I think that's correct. But I'm a bit fuzzy on the exact number. Maybe I should confirm with another source. Wait, I'm not sure. Hmm. Let me think... Oh, yeah, I think it's 2,015,000. But sometimes people might say 2 million. But 2,015,000 is more accurate. So I'll go with that.\n"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 255,
+    "total_tokens": 270,
+    "prompt_tokens_details": {"cached_tokens": 0}
+  },
+  "timings": {
+    "cache_n": 0,
+    "predicted_ms": 756.876,
+    "predicted_n": 255,
+    "predicted_per_second": 335.5899777506487,
+    "predicted_per_token_ms": 2.9798267716535434,
+    "prompt_ms": 9.652,
+    "prompt_n": 15,
+    "prompt_per_second": 1554.0820555325322,
+    "prompt_per_token_ms": 0.6434666666666666
+  }
+}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -115,7 +161,7 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/chat/completions \
@@ -127,7 +173,24 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
-=== "PowerShell (vision)"
+**Response:**
+
+`200`
+
+```text
+data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
+...
+data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
+data: [DONE]
+```
+
+#### Vision
+
+Asks a vision model what `image.png` shows.
+
+=== "PowerShell"
 
     ```powershell
     $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
@@ -156,7 +219,7 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
       -Body $body
     ```
 
-=== "Bash (vision)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/chat/completions \
@@ -179,7 +242,53 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }"
     ```
 
-=== "PowerShell (omni)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id": "chatcmpl-CXUhlv8GPMS7biiWtkuu27a3Gy3eNEUS",
+  "object": "chat.completion",
+  "created": 1792076819,
+  "model": "Qwen3.5-0.8B-GGUF",
+  "system_fingerprint": "b11393-dbe4c3ed4",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "This image is a **minimalist graphic design**.\n\nHere are the specific details:\n\n*   **Central Element:** There is a solid **red circle** (often described as a \"dot\" or \"target\" symbol) centered on the image.\n*   **Background:** The background is a colorful gradient (transitioning from blue on the left, to grey in the middle, and to purple/grey on the right).\n*   **Style:** It is a simple, flat vector design—no shading, no textures—often used in interfaces or branding to draw immediate attention to a specific focus point.",
+        "reasoning_content": "The user is asking about the content of the image.\n\n1.  **Analyze the image:** T... (2,072 characters)"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 82,
+    "completion_tokens": 619,
+    "total_tokens": 701,
+    "prompt_tokens_details": {"cached_tokens": 0}
+  },
+  "timings": {
+    "cache_n": 0,
+    "predicted_ms": 2706.181,
+    "predicted_n": 619,
+    "predicted_per_second": 228.36609968069394,
+    "predicted_per_token_ms": 4.378933656957929,
+    "prompt_ms": 52.671,
+    "prompt_n": 82,
+    "prompt_per_second": 1556.8339313853924,
+    "prompt_per_token_ms": 0.6423292682926829
+  }
+}
+```
+
+#### Omni
+
+Asks the `LMX-Omni-5.5B-Lite` collection for a picture, which its image tool generates during the loop.
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -193,7 +302,7 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
-=== "Bash (omni)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/chat/completions \
@@ -205,193 +314,96 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
         }'
     ```
 
+**Response:**
+
+`200`
+
+```json
+{
+  "id": "chatcmpl-i37OtXcuKiFJ82bZjOEJmIDgbbrSLIWk",
+  "object": "chat.completion",
+  "created": 1792076833,
+  "model": "LMX-Omni-5.5B-Lite",
+  "system_fingerprint": "b11393-dbe4c3ed4",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I've generated an image of a red apple on a table for you! The image shows a cla... (393,258 characters)"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1102,
+    "completion_tokens": 63,
+    "total_tokens": 1165,
+    "prompt_tokens_details": {"cached_tokens": 1082}
+  },
+  "timings": {
+    "cache_n": 1082,
+    "draft_n": 69,
+    "draft_n_accepted": 39,
+    "predicted_ms": 706.57,
+    "predicted_n": 63,
+    "predicted_per_second": 87.74785230055055,
+    "predicted_per_token_ms": 11.396290322580645,
+    "prompt_ms": 97.681,
+    "prompt_n": 20,
+    "prompt_per_second": 204.74810863934647,
+    "prompt_per_token_ms": 4.88405
+  }
+}
+```
+
 ### Response format
 
-=== "Non-streaming responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {
-      "id": "chatcmpl-Ur8WXBSFmCy4xSW1gr9J6imPMcSBsmG7",
-      "object": "chat.completion",
-      "created": 1791990411,
-      "model": "Qwen3-0.6B-GGUF",
-      "system_fingerprint": "b11393-dbe4c3ed4",
-      "choices": [
-        {
-          "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": "The population of Paris, France, is approximately **2,015,000**. This number reflects the city's size and population, making it one of the most populous cities in the world.",
-            "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. First, I remember that Paris is a big city in France, right? I think it's the capital. But how do I find the exact population?\n\nWait, I think I heard that the population is around 2 million. But I'm not sure. Maybe I should check a reliable source. Oh, right! The official website of Paris might have the population numbers. Let me recall... Oh! Oh, right! The city's population is about 2,015,000. I think that's correct. But I'm a bit fuzzy on the exact number. Maybe I should confirm with another source. Wait, I'm not sure. Hmm. Let me think... Oh, yeah, I think it's 2,015,000. But sometimes people might say 2 million. But 2,015,000 is more accurate. So I'll go with that.\n"
-          },
-          "finish_reason": "stop"
-        }
-      ],
-      "usage": {
-        "prompt_tokens": 15,
-        "completion_tokens": 255,
-        "total_tokens": 270,
-        "prompt_tokens_details": {"cached_tokens": 0}
-      },
-      "timings": {
-        "cache_n": 0,
-        "predicted_ms": 756.876,
-        "predicted_n": 255,
-        "predicted_per_second": 335.5899777506487,
-        "predicted_per_token_ms": 2.9798267716535434,
-        "prompt_ms": 9.652,
-        "prompt_n": 15,
-        "prompt_per_second": 1554.0820555325322,
-        "prompt_per_token_ms": 0.6434666666666666
-      }
-    }
-    ```
+- `id` - Identifier of the completion.
+- `object` - Always `"chat.completion"`.
+- `created` - Unix timestamp of when the completion was created.
+- `model` - The model that generated the response.
+- `system_fingerprint` - Build identifier of the backend, when it reports one.
+- `choices` - The generated messages, one per choice.
+  - `index` - Position of the choice in `choices`.
+  - `message` - The generated assistant message.
+    - `role` - Always `"assistant"`.
+    - `content` - The message text.
+    - `reasoning_content` - Reasoning models only: the model's thinking.
+    - `tool_calls` - Calls to the request's tools.
+  - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`.
+- `usage` - Token counts for the request.
+  - `prompt_tokens` - Tokens in the prompt.
+  - `completion_tokens` - Tokens generated.
+  - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
+  - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
+- `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
-    **Field Descriptions:**
+#### Event stream
 
-    - `id` - Identifier of the completion.
-    - `object` - Always `"chat.completion"`.
-    - `created` - Unix timestamp of when the completion was created.
-    - `model` - The model that generated the response.
-    - `system_fingerprint` - Build identifier of the backend, when it reports one.
-    - `choices` - The generated messages, one per choice.
-      - `index` - Position of the choice in `choices`.
-      - `message` - The generated assistant message.
-        - `role` - Always `"assistant"`.
-        - `content` - The message text.
-        - `reasoning_content` - Reasoning models only: the model's thinking.
-        - `tool_calls` - Calls to the request's tools.
-      - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`.
-    - `usage` - Token counts for the request.
-      - `prompt_tokens` - Tokens in the prompt.
-      - `completion_tokens` - Tokens generated.
-      - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
-      - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
-    - `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+**Field Descriptions:**
 
-=== "Streaming responses"
-
-    `200`
-
-    ```text
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
-    ...
-    data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
-    data: [DONE]
-    ```
-
-    **Field Descriptions:**
-
-    - `id` - Identifier of the completion, the same on every chunk.
-    - `object` - Always `"chat.completion.chunk"`.
-    - `created` - Unix timestamp of when the completion was created.
-    - `model` - The backend's name for the model, such as the GGUF file path for llama.cpp models.
-    - `system_fingerprint` - Build identifier of the backend, when it reports one.
-    - `choices` - The next part of each choice's message.
-      - `index` - Position of the choice in `choices`.
-      - `delta` - The part of the assistant message generated since the previous chunk.
-        - `role` - First chunk only: always `"assistant"`.
-        - `content` - The next message text.
-        - `reasoning_content` - Reasoning models only: the next part of the model's thinking.
-        - `tool_calls` - Parts of calls to the request's tools, matched by `index`: a call's first part carries its `id` and `function.name`, and later parts carry the next piece of `function.arguments`.
-      - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it.
-    - `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
-    - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
-
-=== "Vision responses"
-
-    Asks a vision model what `image.png` shows.
-
-    `200`
-
-    ```json
-    {
-      "id": "chatcmpl-CXUhlv8GPMS7biiWtkuu27a3Gy3eNEUS",
-      "object": "chat.completion",
-      "created": 1792076819,
-      "model": "Qwen3.5-0.8B-GGUF",
-      "system_fingerprint": "b11393-dbe4c3ed4",
-      "choices": [
-        {
-          "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": "This image is a **minimalist graphic design**.\n\nHere are the specific details:\n\n*   **Central Element:** There is a solid **red circle** (often described as a \"dot\" or \"target\" symbol) centered on the image.\n*   **Background:** The background is a colorful gradient (transitioning from blue on the left, to grey in the middle, and to purple/grey on the right).\n*   **Style:** It is a simple, flat vector design—no shading, no textures—often used in interfaces or branding to draw immediate attention to a specific focus point.",
-            "reasoning_content": "The user is asking about the content of the image.\n\n1.  **Analyze the image:** T... (2,072 characters)"
-          },
-          "finish_reason": "stop"
-        }
-      ],
-      "usage": {
-        "prompt_tokens": 82,
-        "completion_tokens": 619,
-        "total_tokens": 701,
-        "prompt_tokens_details": {"cached_tokens": 0}
-      },
-      "timings": {
-        "cache_n": 0,
-        "predicted_ms": 2706.181,
-        "predicted_n": 619,
-        "predicted_per_second": 228.36609968069394,
-        "predicted_per_token_ms": 4.378933656957929,
-        "prompt_ms": 52.671,
-        "prompt_n": 82,
-        "prompt_per_second": 1556.8339313853924,
-        "prompt_per_token_ms": 0.6423292682926829
-      }
-    }
-    ```
-
-=== "Omni responses"
-
-    Asks the `LMX-Omni-5.5B-Lite` collection for a picture, which its image tool generates during the loop.
-
-    `200`
-
-    ```json
-    {
-      "id": "chatcmpl-i37OtXcuKiFJ82bZjOEJmIDgbbrSLIWk",
-      "object": "chat.completion",
-      "created": 1792076833,
-      "model": "LMX-Omni-5.5B-Lite",
-      "system_fingerprint": "b11393-dbe4c3ed4",
-      "choices": [
-        {
-          "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": "I've generated an image of a red apple on a table for you! The image shows a cla... (393,258 characters)"
-          },
-          "finish_reason": "stop"
-        }
-      ],
-      "usage": {
-        "prompt_tokens": 1102,
-        "completion_tokens": 63,
-        "total_tokens": 1165,
-        "prompt_tokens_details": {"cached_tokens": 1082}
-      },
-      "timings": {
-        "cache_n": 1082,
-        "draft_n": 69,
-        "draft_n_accepted": 39,
-        "predicted_ms": 706.57,
-        "predicted_n": 63,
-        "predicted_per_second": 87.74785230055055,
-        "predicted_per_token_ms": 11.396290322580645,
-        "prompt_ms": 97.681,
-        "prompt_n": 20,
-        "prompt_per_second": 204.74810863934647,
-        "prompt_per_token_ms": 4.88405
-      }
-    }
-    ```
+- `id` - Identifier of the completion, the same on every chunk.
+- `object` - Always `"chat.completion.chunk"`.
+- `created` - Unix timestamp of when the completion was created.
+- `model` - The backend's name for the model, such as the GGUF file path for llama.cpp models.
+- `system_fingerprint` - Build identifier of the backend, when it reports one.
+- `choices` - The next part of each choice's message.
+  - `index` - Position of the choice in `choices`.
+  - `delta` - The part of the assistant message generated since the previous chunk.
+    - `role` - First chunk only: always `"assistant"`.
+    - `content` - The next message text.
+    - `reasoning_content` - Reasoning models only: the next part of the model's thinking.
+    - `tool_calls` - Parts of calls to the request's tools, matched by `index`: a call's first part carries its `id` and `function.name`, and later parts carry the next piece of `function.arguments`.
+  - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it.
+- `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
+- `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -424,7 +436,9 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 A `400` answers a missing `model`, or a model that is not an LLM, which is loaded before the check. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -454,7 +468,48 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
         }'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id": "chatcmpl-f4ExiyuFYahpItfZ9kgOsndtQcaHrBjz",
+  "object": "text_completion",
+  "created": 1791943134,
+  "model": "Qwen3-0.6B-GGUF",
+  "system_fingerprint": "b11393-dbe4c3ed4",
+  "choices": [
+    {
+      "index": 0,
+      "text": " And what does the Parisian metro system include?\n\nThe population of Paris is approximately 2 million people. The Parisian metro system includes the Paris Métro, the Paris Underground, and the Paris TGV, which is a train system.\n\nNow, the question is: What is the population of the city of Paris?\n\n",
+      "logprobs": null,
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 7,
+    "completion_tokens": 64,
+    "total_tokens": 71,
+    "prompt_tokens_details": {"cached_tokens": 0}
+  },
+  "timings": {
+    "cache_n": 0,
+    "predicted_ms": 184.8,
+    "predicted_n": 64,
+    "predicted_per_second": 340.9090909090909,
+    "predicted_per_token_ms": 2.9333333333333336,
+    "prompt_ms": 6.219,
+    "prompt_n": 7,
+    "prompt_per_second": 1125.5828911400547,
+    "prompt_per_token_ms": 0.8884285714285715
+  }
+}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -469,7 +524,7 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
         }'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/completions \
@@ -482,99 +537,64 @@ A `400` answers a missing `model`, or a model that is not an LLM, which is loade
         }'
     ```
 
+**Response:**
+
+`200`
+
+```text
+data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " the", "logprobs": null, "finish_reason": null}]}
+...
+data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.04, "prompt_per_token_ms": 3.04, "prompt_per_second": 328.9473684210526, "predicted_n": 64, "predicted_ms": 184.45, "predicted_per_token_ms": 2.9277777777777776, "predicted_per_second": 341.5559772296015}}
+data: [DONE]
+```
+
 ### Response format
 
-=== "Non-streaming responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {
-      "id": "chatcmpl-f4ExiyuFYahpItfZ9kgOsndtQcaHrBjz",
-      "object": "text_completion",
-      "created": 1791943134,
-      "model": "Qwen3-0.6B-GGUF",
-      "system_fingerprint": "b11393-dbe4c3ed4",
-      "choices": [
-        {
-          "index": 0,
-          "text": " And what does the Parisian metro system include?\n\nThe population of Paris is approximately 2 million people. The Parisian metro system includes the Paris Métro, the Paris Underground, and the Paris TGV, which is a train system.\n\nNow, the question is: What is the population of the city of Paris?\n\n",
-          "logprobs": null,
-          "finish_reason": "length"
-        }
-      ],
-      "usage": {
-        "prompt_tokens": 7,
-        "completion_tokens": 64,
-        "total_tokens": 71,
-        "prompt_tokens_details": {"cached_tokens": 0}
-      },
-      "timings": {
-        "cache_n": 0,
-        "predicted_ms": 184.8,
-        "predicted_n": 64,
-        "predicted_per_second": 340.9090909090909,
-        "predicted_per_token_ms": 2.9333333333333336,
-        "prompt_ms": 6.219,
-        "prompt_n": 7,
-        "prompt_per_second": 1125.5828911400547,
-        "prompt_per_token_ms": 0.8884285714285715
-      }
-    }
-    ```
+- `id` - Identifier of the completion.
+- `object` - Always `"text_completion"`.
+- `created` - Unix timestamp of when the completion was created.
+- `model` - The model that generated the response.
+- `system_fingerprint` - Build identifier of the backend, when it reports one.
+- `choices` - The generated text, one entry per choice.
+  - `index` - Position of the choice in `choices`.
+  - `text` - The generated text.
+  - `logprobs` - Log probabilities of the output tokens when the request sets `logprobs`, else `null`.
+  - `finish_reason` - Why generation stopped, such as `stop` or `length`.
+- `usage` - Token counts for the request.
+  - `prompt_tokens` - Tokens in the prompt.
+  - `completion_tokens` - Tokens generated.
+  - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
+  - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
+- `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
-    **Field Descriptions:**
+#### Event stream
 
-    - `id` - Identifier of the completion.
-    - `object` - Always `"text_completion"`.
-    - `created` - Unix timestamp of when the completion was created.
-    - `model` - The model that generated the response.
-    - `system_fingerprint` - Build identifier of the backend, when it reports one.
-    - `choices` - The generated text, one entry per choice.
-      - `index` - Position of the choice in `choices`.
-      - `text` - The generated text.
-      - `logprobs` - Log probabilities of the output tokens when the request sets `logprobs`, else `null`.
-      - `finish_reason` - Why generation stopped, such as `stop` or `length`.
-    - `usage` - Token counts for the request.
-      - `prompt_tokens` - Tokens in the prompt.
-      - `completion_tokens` - Tokens generated.
-      - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
-      - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
-    - `timings` - Prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+**Field Descriptions:**
 
-=== "Streaming responses"
-
-    `200`
-
-    ```text
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " the", "logprobs": null, "finish_reason": null}]}
-    ...
-    data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.04, "prompt_per_token_ms": 3.04, "prompt_per_second": 328.9473684210526, "predicted_n": 64, "predicted_ms": 184.45, "predicted_per_token_ms": 2.9277777777777776, "predicted_per_second": 341.5559772296015}}
-    data: [DONE]
-    ```
-
-    **Field Descriptions:**
-
-    - `id` - Identifier of the completion, the same on every chunk.
-    - `object` - Always `"text_completion"`.
-    - `created` - Unix timestamp of when the completion was created.
-    - `model` - The backend's name for the model, such as the GGUF file path for llama.cpp models.
-    - `system_fingerprint` - Build identifier of the backend, when it reports one.
-    - `choices` - The next part of each choice's text.
-      - `index` - Position of the choice in `choices`.
-      - `text` - The text generated since the previous chunk.
-      - `logprobs` - Log probabilities of the output tokens when the request sets `logprobs`, else `null`.
-      - `finish_reason` - Why generation stopped, such as `stop` or `length`, on the choice's last chunk; `null` before it.
-    - `usage` - Final chunk only: token counts for the request.
-      - `prompt_tokens` - Tokens in the prompt.
-      - `completion_tokens` - Tokens generated.
-      - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
-      - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
-    - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+- `id` - Identifier of the completion, the same on every chunk.
+- `object` - Always `"text_completion"`.
+- `created` - Unix timestamp of when the completion was created.
+- `model` - The backend's name for the model, such as the GGUF file path for llama.cpp models.
+- `system_fingerprint` - Build identifier of the backend, when it reports one.
+- `choices` - The next part of each choice's text.
+  - `index` - Position of the choice in `choices`.
+  - `text` - The text generated since the previous chunk.
+  - `logprobs` - Log probabilities of the output tokens when the request sets `logprobs`, else `null`.
+  - `finish_reason` - Why generation stopped, such as `stop` or `length`, on the choice's last chunk; `null` before it.
+- `usage` - Final chunk only: token counts for the request.
+  - `prompt_tokens` - Tokens in the prompt.
+  - `completion_tokens` - Tokens generated.
+  - `total_tokens` - Sum of `prompt_tokens` and `completion_tokens`.
+  - `prompt_tokens_details` - Breakdown of the prompt tokens, such as `cached_tokens`, when the backend reports it.
+- `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.completions -->
 
 <!-- BEGIN GENERATED: openai.embeddings -->
@@ -596,7 +616,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A `400` answers a missing `model`, or a model whose backend cannot embed, such as a text-to-speech model. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error, such as llama.cpp's `501` for a model that is not an embedding model, answers with the backend's status.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -624,7 +644,7 @@ A `400` answers a missing `model`, or a model whose backend cannot embed, such a
         }'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -643,6 +663,8 @@ A `400` answers a missing `model`, or a model whose backend cannot embed, such a
   "usage": {"prompt_tokens": 12, "total_tokens": 12}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -684,7 +706,9 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 A `400` answers a missing `model`, or a model whose backend has no Responses API, such as a FastFlowLM, cloud or non-LLM model. An unknown model, or one not available on this system, answers `404`; a load blocked by pinned models or a routing residency conflict answers `409`; any other load failure, or invalid JSON, answers `500`. A backend error answers with the backend's status, except that once a stream has started it arrives as a `data: {"error": ...}` event in the `200` stream.
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -712,7 +736,46 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
         }'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id": "resp_UMCsVMSLV0H1cGKewMgTRY02v5PgKvr3",
+  "object": "response",
+  "created_at": 1791943139,
+  "completed_at": 1791943139,
+  "model": "Llama-3.2-1B-Instruct-GGUF",
+  "status": "completed",
+  "output": [
+    {
+      "content": [
+        {
+          "annotations": [],
+          "logprobs": [],
+          "text": "As of my knowledge cutoff in December 2023, the estimated population of Paris, the capital city of France, is approximately 2.1 million people. However, please note that this information may have changed since my knowledge cutoff date.",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_10jrFYwxMq9LWHeZAWQTw2bwfytTnjmU",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "usage": {
+    "input_tokens": 42,
+    "output_tokens": 49,
+    "total_tokens": 91,
+    "input_tokens_details": {"cached_tokens": 0}
+  }
+}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -726,7 +789,7 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
         }'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/responses \
@@ -738,87 +801,54 @@ A `400` answers a missing `model`, or a model whose backend has no Responses API
         }'
     ```
 
+**Response:**
+
+`200`
+
+```text
+event: response.created
+data: {"type": "response.created", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
+event: response.in_progress
+data: {"type": "response.in_progress", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
+event: response.output_item.added
+data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "role": "assistant", "status": "in_progress", "type": "message"}}
+...
+event: response.completed
+data: {"type": "response.completed", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "created_at": 1791943139, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of the latest available estimates, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area, which includes the surrounding regions, has a population of over 13.2 million people, according to the City of Paris's official statistics for 2020."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 71, "total_tokens": 113, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.586, "prompt_per_token_ms": 4.586, "prompt_per_second": 218.0549498473615, "predicted_n": 71, "predicted_ms": 310.157, "predicted_per_token_ms": 4.430814285714286, "predicted_per_second": 225.69214945978973}}
+data: [DONE]
+```
+
 ### Response format
 
-=== "Non-streaming responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {
-      "id": "resp_UMCsVMSLV0H1cGKewMgTRY02v5PgKvr3",
-      "object": "response",
-      "created_at": 1791943139,
-      "completed_at": 1791943139,
-      "model": "Llama-3.2-1B-Instruct-GGUF",
-      "status": "completed",
-      "output": [
-        {
-          "content": [
-            {
-              "annotations": [],
-              "logprobs": [],
-              "text": "As of my knowledge cutoff in December 2023, the estimated population of Paris, the capital city of France, is approximately 2.1 million people. However, please note that this information may have changed since my knowledge cutoff date.",
-              "type": "output_text"
-            }
-          ],
-          "id": "msg_10jrFYwxMq9LWHeZAWQTw2bwfytTnjmU",
-          "role": "assistant",
-          "status": "completed",
-          "type": "message"
-        }
-      ],
-      "usage": {
-        "input_tokens": 42,
-        "output_tokens": 49,
-        "total_tokens": 91,
-        "input_tokens_details": {"cached_tokens": 0}
-      }
-    }
-    ```
+- `id` - Identifier of the response.
+- `object` - Always `"response"`.
+- `created_at` - Unix timestamp of when the response was created.
+- `completed_at` - Unix timestamp of when the response completed, when the backend reports it.
+- `model` - The model that generated the response.
+- `status` - State of the response, such as `completed`.
+- `output` - Output items; a message item carries its text in `content[].text`.
+- `usage` - Token counts for the request.
+  - `input_tokens` - Tokens in the input.
+  - `output_tokens` - Tokens generated.
+  - `total_tokens` - Sum of `input_tokens` and `output_tokens`.
+  - `input_tokens_details` - Breakdown of the input tokens, such as `cached_tokens`, when the backend reports it.
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
-    **Field Descriptions:**
+#### Event stream
 
-    - `id` - Identifier of the response.
-    - `object` - Always `"response"`.
-    - `created_at` - Unix timestamp of when the response was created.
-    - `completed_at` - Unix timestamp of when the response completed, when the backend reports it.
-    - `model` - The model that generated the response.
-    - `status` - State of the response, such as `completed`.
-    - `output` - Output items; a message item carries its text in `content[].text`.
-    - `usage` - Token counts for the request.
-      - `input_tokens` - Tokens in the input.
-      - `output_tokens` - Tokens generated.
-      - `total_tokens` - Sum of `input_tokens` and `output_tokens`.
-      - `input_tokens_details` - Breakdown of the input tokens, such as `cached_tokens`, when the backend reports it.
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+**Field Descriptions:**
 
-=== "Streaming responses"
-
-    `200`
-
-    ```text
-    event: response.created
-    data: {"type": "response.created", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
-    event: response.in_progress
-    data: {"type": "response.in_progress", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
-    event: response.output_item.added
-    data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "role": "assistant", "status": "in_progress", "type": "message"}}
-    ...
-    event: response.completed
-    data: {"type": "response.completed", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "created_at": 1791943139, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of the latest available estimates, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area, which includes the surrounding regions, has a population of over 13.2 million people, according to the City of Paris's official statistics for 2020."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 71, "total_tokens": 113, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.586, "prompt_per_token_ms": 4.586, "prompt_per_second": 218.0549498473615, "predicted_n": 71, "predicted_ms": 310.157, "predicted_per_token_ms": 4.430814285714286, "predicted_per_second": 225.69214945978973}}
-    data: [DONE]
-    ```
-
-    **Field Descriptions:**
-
-    - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
-    - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
-    - `item` - Output item events, such as `response.output_item.added`, only: the output item.
-    - `item_id` - Delta events only: the `id` of the output item the text belongs to.
-    - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
-    - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+- `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
+- `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
+- `item` - Output item events, such as `response.output_item.added`, only: the output item.
+- `item_id` - Delta events only: the `id` of the output item the text belongs to.
+- `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
+- `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.responses -->
 
 <!-- BEGIN GENERATED: openai.audio_transcriptions -->
@@ -844,7 +874,9 @@ On FastFlowLM, which reports no segment timestamps, `srt` and `vtt` answer `400`
 
 A model that cannot transcribe answers `400` with `type` `unsupported_operation`, after it loads.
 
-### Example request
+### Examples
+
+#### Transcript
 
 === "PowerShell"
 
@@ -862,7 +894,17 @@ A model that cannot transcribe answers `400` with `type` `unsupported_operation`
       -F file=@speech.wav
     ```
 
-=== "PowerShell (plain text)"
+**Response:**
+
+`200`
+
+```json
+{"text": " Just seeing if this is working.\n"}
+```
+
+#### Plain text
+
+=== "PowerShell"
 
     ```powershell
     curl.exe http://localhost:13305/v1/audio/transcriptions `
@@ -871,7 +913,7 @@ A model that cannot transcribe answers `400` with `type` `unsupported_operation`
       -F file=@speech.wav
     ```
 
-=== "Bash (plain text)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/audio/transcriptions \
@@ -880,28 +922,20 @@ A model that cannot transcribe answers `400` with `type` `unsupported_operation`
       -F file=@speech.wav
     ```
 
+**Response:**
+
+`200`
+
+```text
+ Just seeing if this is working.
+```
+
 ### Response format
 
-=== "Transcript responses"
+**Field Descriptions:**
 
-    `200`
-
-    ```json
-    {"text": " Just seeing if this is working.\n"}
-    ```
-
-    **Field Descriptions:**
-
-    - `text` - The transcribed text.
-    - `segments` - `verbose_json` only: timestamped segments.
-
-=== "Plain text responses"
-
-    `200`
-
-    ```text
-     Just seeing if this is working.
-    ```
+- `text` - The transcribed text.
+- `segments` - `verbose_json` only: timestamped segments.
 <!-- END GENERATED: openai.audio_transcriptions -->
 
 ## `WS /realtime`
@@ -1053,7 +1087,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A model that cannot do this answers `500` with `type` `unsupported_operation`, after it loads.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1085,7 +1119,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
         }'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1100,6 +1134,8 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
   "output_format": "png"
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1158,7 +1194,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
     open("edited_image.png", "wb").write(image_data)
     ```
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1184,7 +1220,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
       -F image=@image.png
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1199,6 +1235,8 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
   "output_format": "png"
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1249,7 +1287,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
     open("variation.png", "wb").write(image_data)
     ```
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1273,7 +1311,7 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
       -F image=@image.png
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1288,6 +1326,8 @@ A model that cannot do this answers `500` with `type` `unsupported_operation`, a
   "output_format": "png"
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1320,7 +1360,7 @@ A missing `image` or `model`, a model without the `upscaling` label, or one whos
 
 To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgenerations), pass its `b64_json` as `image`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1344,7 +1384,7 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
       -d "{\"image\": \"$(base64 -w0 image.png)\", \"model\": \"RealESRGAN-x4plus\"}"
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1358,6 +1398,8 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1393,7 +1435,9 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 
 A request for a model that is not a text-to-speech model answers `400` with `code` `model_not_applicable`, before any model loads.
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -1425,7 +1469,13 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
       --output output.mp3
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`, `Content-Type: audio/mpeg`, 40,516 bytes
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -1441,7 +1491,7 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
       -OutFile output.l16
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/audio/speech \
@@ -1455,15 +1505,9 @@ A request for a model that is not a text-to-speech model answers `400` with `cod
       --output output.l16
     ```
 
-### Response format
+**Response:**
 
-=== "Non-streaming responses"
-
-    `200`, `Content-Type: audio/mpeg`, 40,516 bytes
-
-=== "Streaming responses"
-
-    `200`, `Content-Type: audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
+`200`, `Content-Type: audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
 <!-- END GENERATED: openai.audio_speech -->
 
 <!-- BEGIN GENERATED: openai.models -->
@@ -1486,7 +1530,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 
 `HEAD` returns `200 OK` with an empty body.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1500,7 +1544,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
     curl http://localhost:13305/v1/models
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1530,6 +1574,8 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1666,7 +1712,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown model answers `404` with `code` `model_not_found`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1680,7 +1726,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1706,6 +1752,8 @@ An unknown model answers `404` with `code` `model_not_found`.
   "recipe_options": {}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1765,7 +1813,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown model answers `404` with `code` `model_not_found`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1779,7 +1827,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/files
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1791,6 +1839,8 @@ An unknown model answers `404` with `code` `model_not_found`.
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1821,7 +1871,7 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 
 An unknown model answers `404` with `code` `model_not_found`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1835,7 +1885,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1874,6 +1924,8 @@ An unknown model answers `404` with `code` `model_not_found`.
 }
 ```
 
+### Response format
+
 **Field Descriptions:**
 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
@@ -1911,7 +1963,7 @@ A running model keeps its current options until it is next loaded.
 
 `pinned` answers `400` here and is omitted from `effective` and `defaults`; it belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1931,7 +1983,7 @@ A running model keeps its current options until it is next loaded.
       -d '{"ctx_size": 8192}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1970,6 +2022,8 @@ A running model keeps its current options until it is next loaded.
 }
 ```
 
+### Response format
+
 **Field Descriptions:**
 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
@@ -1996,7 +2050,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown model answers `404` with `code` `model_not_found`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2012,7 +2066,7 @@ An unknown model answers `404` with `code` `model_not_found`.
     curl -X DELETE http://localhost:13305/v1/models/Qwen3-4B-GGUF/options
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -2050,6 +2104,8 @@ An unknown model answers `404` with `code` `model_not_found`.
   "resolved_ctx_size": 32768
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 

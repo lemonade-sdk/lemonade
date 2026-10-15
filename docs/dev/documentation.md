@@ -82,8 +82,8 @@ Prefer confident statements. Reserve qualifiers for genuine uncertainty.
 2. Status badge immediately after the heading.
 3. One-sentence description.
 4. Parameters table.
-5. Example request (bash curl by default; add Python/JS tabs when usage warrants).
-6. Response format.
+5. Examples: one subsection per example, each with its request tabs and response.
+6. Response format: Field Descriptions for each response format.
 7. Error notes, if non-obvious.
 
 `docs/tools/gen_api_boilerplate.py` writes this structure for every HTTP route in `docs/api/` from the route's `RouteSpec`, with real requests and recorded responses. Edit the `RouteSpec`, not the generated region; prose between regions stays hand-written.

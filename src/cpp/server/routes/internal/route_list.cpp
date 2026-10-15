@@ -75,8 +75,8 @@ public:
                         "type": "object",
                         "required": ["name", "description", "format", "args", "setup"],
                         "properties": {
-                            "name": {"type": "string", "description": "Tab label; empty when the route has one example."},
-                            "description": {"type": "string", "description": "What the example shows, printed above its request; empty when the route's other text covers it."},
+                            "name": {"type": "string", "description": "Subsection heading; empty when the route has one example."},
+                            "description": {"type": "string", "description": "What the example shows, opening its subsection; empty when the route's other text covers it."},
                             "format": {"type": "string", "description": "The response format the reply is validated against."},
                             "args": {"description": "Argument values of the request."},
                             "setup": {"type": "array", "items": {

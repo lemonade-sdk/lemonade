@@ -32,7 +32,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 
 A model that is not a reranker answers `400`, or `501` from llama.cpp when it is a llama.cpp model. A body that is not valid JSON answers `500`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -68,7 +68,7 @@ A model that is not a reranker answers `400`, or `501` from llama.cpp when it is
         }'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -80,6 +80,8 @@ A model that is not a reranker answers `400`, or `501` from llama.cpp when it is
   "usage": {"prompt_tokens": 51, "total_tokens": 51}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -107,7 +109,7 @@ This endpoint does not take any parameters.
 
 With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -121,7 +123,7 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
     curl http://localhost:13305/v1/slots
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -197,6 +199,8 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 ]
 ```
 
+### Response format
+
 **Field Descriptions:**
 
 - `id` - The slot's ID.
@@ -235,7 +239,9 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 
 Every action needs llama.cpp started with `--slot-save-path`; without it, llama.cpp answers `501`. Set it for every load with `lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"` (see [Server Configuration](../guide/configuration/README.md)), or for one load with `llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).
 
-### Example request
+### Examples
+
+#### Save
 
 === "PowerShell"
 
@@ -255,7 +261,23 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-=== "PowerShell (restore)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id_slot": 0,
+  "filename": "my_conversation_cache.bin",
+  "n_saved": 46,
+  "n_written": 5277100,
+  "timings": {"save_ms": 3.777}
+}
+```
+
+#### Restore
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -265,7 +287,7 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       -Body '{"filename": "my_conversation_cache.bin"}'
     ```
 
-=== "Bash (restore)"
+=== "Bash"
 
     ```bash
     curl "http://localhost:13305/v1/slots/0?action=restore" \
@@ -273,7 +295,23 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       -d '{"filename": "my_conversation_cache.bin"}'
     ```
 
-=== "PowerShell (erase)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id_slot": 0,
+  "filename": "my_conversation_cache.bin",
+  "n_restored": 46,
+  "n_read": 5277100,
+  "timings": {"restore_ms": 0.879}
+}
+```
+
+#### Erase
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -281,49 +319,21 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
       -Method POST
     ```
 
-=== "Bash (erase)"
+=== "Bash"
 
     ```bash
     curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
     ```
 
+**Response:**
+
+`200`
+
+```json
+{"id_slot": 0, "n_erased": 224}
+```
+
 ### Response format
-
-=== "Save responses"
-
-    `200`
-
-    ```json
-    {
-      "id_slot": 0,
-      "filename": "my_conversation_cache.bin",
-      "n_saved": 46,
-      "n_written": 5277100,
-      "timings": {"save_ms": 3.777}
-    }
-    ```
-
-=== "Restore responses"
-
-    `200`
-
-    ```json
-    {
-      "id_slot": 0,
-      "filename": "my_conversation_cache.bin",
-      "n_restored": 46,
-      "n_read": 5277100,
-      "timings": {"restore_ms": 0.879}
-    }
-    ```
-
-=== "Erase responses"
-
-    `200`
-
-    ```json
-    {"id_slot": 0, "n_erased": 224}
-    ```
 
 **Field Descriptions:**
 
@@ -356,7 +366,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -376,13 +386,15 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
       -d '{"content": "This is a string to tokenize"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"tokens": [1986, 374, 264, 914, 311, 77651]}
 ```
+
+### Response format
 
 **Field Descriptions:**
 

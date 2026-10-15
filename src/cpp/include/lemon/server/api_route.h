@@ -63,8 +63,8 @@ struct ExampleStep {
 // gen_api_boilerplate.py sends each example to lemond and records the response into the docs, and
 // --check validates the response against the schema of the example's format.
 struct RouteExample {
-    std::string name;                 // tab label, e.g. "streaming" or "save"; required when a route has several
-    std::string description;          // what this example shows that the route's other text does not; printed above its request
+    std::string name;                 // subsection heading, e.g. "streaming" or "save"; required when a route has several
+    std::string description;          // what this example shows that the route's other text does not; opens its subsection
     ResponseFormat format;            // the RouteResponse the response is validated against
     nlohmann::ordered_json args;      // argument values, e.g. {"id": "$lemonade.jobs_create/id"}; ordered so the docs show them as written
     std::vector<ExampleStep> setup;   // run first, in order

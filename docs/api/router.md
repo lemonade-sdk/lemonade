@@ -99,7 +99,7 @@ Match `decision.matched_rule` against this document: a policy written with only 
 
 A `400` answers a body that is not valid JSON, a missing or non-object `policy`, a non-string `prompt`, non-boolean `has_images`/`has_tools`, a `metadata` that is not an object of string values, or a policy document that is invalid or internally inconsistent, whose `error` is prefixed with `Invalid routing policy:`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -155,7 +155,7 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
         }'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -187,6 +187,8 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
   }
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 

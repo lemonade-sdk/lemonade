@@ -75,7 +75,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 
 A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string fields, a non-positive `top_k`) answers `400` before any model loads, as does an omitted `model` while no single classification model is loaded.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -101,7 +101,7 @@ A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string
         }'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -112,6 +112,8 @@ A malformed request (invalid JSON, a missing or blank `input`/`text`, non-string
   "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -137,7 +139,7 @@ With `offline` set to `true`, it answers `409` without any network request.
 
 The `lemonade check-updates` command uses this endpoint.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -153,13 +155,15 @@ The `lemonade check-updates` command uses this endpoint.
     curl -X POST http://localhost:13305/v1/models/check-updates
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "success", "updates_available": 0, "models": [], "failed_models": {}}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -191,7 +195,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A `400` answers a body that is not a JSON object, a missing `model_name`, a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a missing `recipe`, an embedded `models` array, and malformed `checkpoint`, `checkpoints`, `source` or `components` values. Other invalid definitions answer `500` and register nothing, such as a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -219,7 +223,7 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
         }'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -247,6 +251,8 @@ A `400` answers a body that is not a JSON object, a missing `model_name`, a name
   }
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -342,7 +348,9 @@ An omni collection bundles several models into one entry that is loaded and pull
 
 Files written by `lemonade export` and the desktop app's Export button are `/v1/pull` request bodies: POST a file's contents as is to register and install its model. See [Share a collection](../guide/configuration/custom-models.md#share-a-collection-between-machines) for the file format and workflows.
 
-### Example request
+### Examples
+
+#### Job
 
 === "PowerShell"
 
@@ -362,7 +370,35 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true, "subscribe": false}'
     ```
 
-=== "PowerShell (non-streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "status": "downloading",
+  "model_name": "Qwen3-0.6B-GGUF",
+  "id": "model:Qwen3-0.6B-GGUF",
+  "type": "model",
+  "running": true,
+  "file": "",
+  "file_index": 0,
+  "total_files": 0,
+  "bytes_downloaded": 0,
+  "bytes_total": 0,
+  "percent": 0,
+  "total_download_size": 0,
+  "bytes_previously_downloaded": 0,
+  "completed_files_bytes": 0,
+  "cumulative_bytes_downloaded": 0,
+  "overall_bytes_downloaded": 0,
+  "complete": false
+}
+```
+
+#### Non-streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -372,7 +408,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -Body '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-=== "Bash (non-streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/pull \
@@ -380,7 +416,17 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "model_name": "Qwen3-0.6B-GGUF"}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -390,7 +436,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -Body '{"model_name": "Qwen3-0.6B-GGUF", "stream": true}'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/pull \
@@ -398,7 +444,28 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true}'
     ```
 
-=== "PowerShell (register)"
+**Response:**
+
+`200`
+
+```text
+event: progress
+data: {"file": "Qwen3-0.6B-Q4_0.gguf", "file_index": 1, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 382156480, "total_download_size": 382157232, "bytes_previously_downloaded": 0, "percent": 0}
+event: progress
+data: {"file": "Qwen3-0.6B-Q4_0.gguf", "file_index": 1, "total_files": 2, "bytes_downloaded": 382156480, "bytes_total": 382156480, "total_download_size": 382157232, "bytes_previously_downloaded": 382156480, "percent": 100}
+event: progress
+data: {"file": "config.json", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 752, "total_download_size": 382157232, "bytes_previously_downloaded": 0, "percent": 0}
+event: progress
+data: {"file": "config.json", "file_index": 2, "total_files": 2, "bytes_downloaded": 752, "bytes_total": 752, "total_download_size": 382157232, "bytes_previously_downloaded": 752, "percent": 100}
+event: complete
+data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
+```
+
+#### Register
+
+Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -412,7 +479,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
         }'
     ```
 
-=== "Bash (register)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/pull \
@@ -424,7 +491,19 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
         }'
     ```
 
-=== "PowerShell (collection)"
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "model_name": "user.Qwen3-0.6B-Q4"}
+```
+
+#### Collection
+
+Registers `user.MyKit`, an omni collection of three built-in models, and pulls each of them.
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -438,7 +517,7 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
         }'
     ```
 
-=== "Bash (collection)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/pull \
@@ -449,127 +528,66 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
           "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
         }'
     ```
+
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "model_name": "user.MyKit"}
+```
 
 ### Response format
 
-=== "Job responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {
-      "status": "downloading",
-      "model_name": "Qwen3-0.6B-GGUF",
-      "id": "model:Qwen3-0.6B-GGUF",
-      "type": "model",
-      "running": true,
-      "file": "",
-      "file_index": 0,
-      "total_files": 0,
-      "bytes_downloaded": 0,
-      "bytes_total": 0,
-      "percent": 0,
-      "total_download_size": 0,
-      "bytes_previously_downloaded": 0,
-      "completed_files_bytes": 0,
-      "cumulative_bytes_downloaded": 0,
-      "overall_bytes_downloaded": 0,
-      "complete": false
-    }
-    ```
+Without `stream`, or with `local_import`: the model is installed or registered.
 
-    **Field Descriptions:**
+- `status` - Always `success`.
+- `model_name` - The installed model.
+- `message` - Only with `local_import`: a confirmation that the files were registered.
 
-    With `stream: true` and `subscribe: false`: the server-owned download job.
+With `stream: true` and `subscribe: false`: the server-owned download job.
 
-    - `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
-    - `type` - Download type.
-    - `model_name` - Lemonade model name associated with the job, or `recipe:backend` for a backend job.
-    - `status` - Current state: `downloading`, `paused`, `cancelled`, `completed`, or `error`.
-    - `running` - Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources.
-    - `file` - The file downloading now.
-    - `file_index` - Its position among the download's files, from `1`.
-    - `total_files` - How many files the download has.
-    - `bytes_downloaded` - Bytes of the current file downloaded so far.
-    - `bytes_total` - Size of the current file in bytes.
-    - `percent` - Share of the current file downloaded, from `0` to `100`.
-    - `total_download_size` - Total expected bytes across all files when known.
-    - `bytes_previously_downloaded` - Bytes already present on disk for the current file when resuming or skipping existing data.
-    - `completed_files_bytes` - Bytes from files completed before the current file.
-    - `cumulative_bytes_downloaded` - Bytes downloaded across the whole job.
-    - `overall_bytes_downloaded` - Older name for `cumulative_bytes_downloaded`.
-    - `complete` - `true` when the download completed successfully.
-    - `error` - Error message, present only for failed jobs.
-    - `code` - `unknown_model` when the model is not in the registry.
+- `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
+- `type` - Download type.
+- `model_name` - Lemonade model name associated with the job, or `recipe:backend` for a backend job.
+- `status` - Current state: `downloading`, `paused`, `cancelled`, `completed`, or `error`.
+- `running` - Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources.
+- `file` - The file downloading now.
+- `file_index` - Its position among the download's files, from `1`.
+- `total_files` - How many files the download has.
+- `bytes_downloaded` - Bytes of the current file downloaded so far.
+- `bytes_total` - Size of the current file in bytes.
+- `percent` - Share of the current file downloaded, from `0` to `100`.
+- `total_download_size` - Total expected bytes across all files when known.
+- `bytes_previously_downloaded` - Bytes already present on disk for the current file when resuming or skipping existing data.
+- `completed_files_bytes` - Bytes from files completed before the current file.
+- `cumulative_bytes_downloaded` - Bytes downloaded across the whole job.
+- `overall_bytes_downloaded` - Older name for `cumulative_bytes_downloaded`.
+- `complete` - `true` when the download completed successfully.
+- `error` - Error message, present only for failed jobs.
+- `code` - `unknown_model` when the model is not in the registry.
 
-=== "Non-streaming responses"
+#### Event stream
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {"status": "success", "model_name": "Qwen3-0.6B-GGUF"}
-    ```
+A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
 
-    **Field Descriptions:**
-
-    Without `stream`, or with `local_import`: the model is installed or registered.
-
-    - `status` - Always `success`.
-    - `model_name` - The installed model.
-    - `message` - Only with `local_import`: a confirmation that the files were registered.
-
-=== "Streaming responses"
-
-    `200`
-
-    ```text
-    event: progress
-    data: {"file": "Qwen3-0.6B-Q4_0.gguf", "file_index": 1, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 382156480, "total_download_size": 382157232, "bytes_previously_downloaded": 0, "percent": 0}
-    event: progress
-    data: {"file": "Qwen3-0.6B-Q4_0.gguf", "file_index": 1, "total_files": 2, "bytes_downloaded": 382156480, "bytes_total": 382156480, "total_download_size": 382157232, "bytes_previously_downloaded": 382156480, "percent": 100}
-    event: progress
-    data: {"file": "config.json", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 752, "total_download_size": 382157232, "bytes_previously_downloaded": 0, "percent": 0}
-    event: progress
-    data: {"file": "config.json", "file_index": 2, "total_files": 2, "bytes_downloaded": 752, "bytes_total": 752, "total_download_size": 382157232, "bytes_previously_downloaded": 752, "percent": 100}
-    event: complete
-    data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
-    ```
-
-    **Field Descriptions:**
-
-    A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
-
-    - `file` - The file downloading now.
-    - `file_index` - Its position among the download's files, from `1`.
-    - `total_files` - How many files the download has.
-    - `bytes_downloaded` - Bytes of the current file downloaded so far.
-    - `bytes_total` - Size of the current file in bytes.
-    - `total_download_size` - Total expected bytes across all files, or `0` when unknown.
-    - `bytes_previously_downloaded` - Bytes of the current file already on disk before this download, when resuming or skipping existing data.
-    - `percent` - Share of the current file downloaded, from `0` to `100`.
-    - `status` - Only on a complete event for an operation that had nothing to download.
-    - `error` - Only on an error event.
-    - `code` - `unknown_model` when the model is not in the registry.
-
-=== "Register responses"
-
-    Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
-
-    `200`
-
-    ```json
-    {"status": "success", "model_name": "user.Qwen3-0.6B-Q4"}
-    ```
-
-=== "Collection responses"
-
-    Registers `user.MyKit`, an omni collection of three built-in models, and pulls each of them.
-
-    `200`
-
-    ```json
-    {"status": "success", "model_name": "user.MyKit"}
-    ```
+- `file` - The file downloading now.
+- `file_index` - Its position among the download's files, from `1`.
+- `total_files` - How many files the download has.
+- `bytes_downloaded` - Bytes of the current file downloaded so far.
+- `bytes_total` - Size of the current file in bytes.
+- `total_download_size` - Total expected bytes across all files, or `0` when unknown.
+- `bytes_previously_downloaded` - Bytes of the current file already on disk before this download, when resuming or skipping existing data.
+- `percent` - Share of the current file downloaded, from `0` to `100`.
+- `status` - Only on a complete event for an operation that had nothing to download.
+- `error` - Only on an error event.
+- `code` - `unknown_model` when the model is not in the registry.
 <!-- END GENERATED: lemonade.pull -->
 
 <!-- BEGIN GENERATED: lemonade.downloads -->
@@ -586,7 +604,7 @@ This endpoint does not take any parameters.
 
 Active, paused, cancelled and failed jobs stay listed until a client removes them with [`POST /v1/downloads/control`](#post-v1downloadscontrol). Completed jobs stay listed for 30 seconds, long enough for a client to see them finish.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -600,7 +618,7 @@ Active, paused, cancelled and failed jobs stay listed until a client removes the
     curl http://localhost:13305/v1/downloads
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -627,6 +645,8 @@ Active, paused, cancelled and failed jobs stay listed until a client removes the
   }
 ]
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -680,7 +700,9 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action f
 
 `pause` and `cancel` answer the job's latest snapshot, as does `remove` for a running job. Removing a stopped job answers `{"status": "ok"}`, with `"missing": true` when the job was already gone.
 
-### Example request
+### Examples
+
+#### Pause
 
 === "PowerShell"
 
@@ -700,7 +722,35 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action f
       -d '{"id": "model:Qwen3-0.6B-GGUF", "action": "pause"}'
     ```
 
-=== "PowerShell (remove)"
+**Response:**
+
+`200`
+
+```json
+{
+  "status": "paused",
+  "id": "model:Qwen3-0.6B-GGUF",
+  "type": "model",
+  "model_name": "Qwen3-0.6B-GGUF",
+  "running": true,
+  "file": "",
+  "file_index": 0,
+  "total_files": 0,
+  "bytes_downloaded": 0,
+  "bytes_total": 0,
+  "percent": 0,
+  "total_download_size": 0,
+  "bytes_previously_downloaded": 0,
+  "completed_files_bytes": 0,
+  "cumulative_bytes_downloaded": 0,
+  "overall_bytes_downloaded": 0,
+  "complete": false
+}
+```
+
+#### Remove
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -710,7 +760,7 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action f
       -Body '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
     ```
 
-=== "Bash (remove)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/downloads/control \
@@ -718,41 +768,15 @@ A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action f
       -d '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
     ```
 
+**Response:**
+
+`200`
+
+```json
+{"status": "ok", "missing": true}
+```
+
 ### Response format
-
-=== "Pause responses"
-
-    `200`
-
-    ```json
-    {
-      "status": "paused",
-      "id": "model:Qwen3-0.6B-GGUF",
-      "type": "model",
-      "model_name": "Qwen3-0.6B-GGUF",
-      "running": true,
-      "file": "",
-      "file_index": 0,
-      "total_files": 0,
-      "bytes_downloaded": 0,
-      "bytes_total": 0,
-      "percent": 0,
-      "total_download_size": 0,
-      "bytes_previously_downloaded": 0,
-      "completed_files_bytes": 0,
-      "cumulative_bytes_downloaded": 0,
-      "overall_bytes_downloaded": 0,
-      "complete": false
-    }
-    ```
-
-=== "Remove responses"
-
-    `200`
-
-    ```json
-    {"status": "ok", "missing": true}
-    ```
 
 **Field Descriptions:**
 
@@ -803,7 +827,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mode (`code: lemond_offline`). A `429` means the upstream registry rate-limited the request, and any other upstream failure answers `502`, with the upstream status code when available.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -817,7 +841,7 @@ A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mo
     curl "http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf"
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -859,6 +883,8 @@ A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mo
 }
 ```
 
+### Response format
+
 **Field Descriptions:**
 
 - `source` - The registry searched, by its canonical name.
@@ -895,7 +921,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an unsupported `source` or one that disagrees with the checkpoint URL's registry, a Hugging Face GGUF repository that llama.cpp cannot run, or offline mode (`code: lemond_offline`). A checkpoint the registry does not have answers `404`, and any other failure, such as a repository with no GGUF, ONNX RyzenAI or collection files, answers `500` with an `error` message.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -909,7 +935,7 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an un
     curl "http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF"
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -935,6 +961,8 @@ A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an un
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -975,7 +1003,7 @@ A file still held open, for example by a download that was just cancelled, is re
 
 An unknown model, or one this system does not support, answers `422`; other failures answer `500`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -995,13 +1023,15 @@ An unknown model, or one this system does not support, answers `422`; other fail
       -d '{"model_name": "user.Phi-4-Mini-GGUF"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "success", "message": "Deleted model: user.Phi-4-Mini-GGUF"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1073,7 +1103,9 @@ Load failures answer with the same error object as inference requests: `404` for
 }
 ```
 
-### Example request
+### Examples
+
+#### Model
 
 === "PowerShell"
 
@@ -1093,7 +1125,22 @@ Load failures answer with the same error object as inference requests: `404` for
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-=== "PowerShell (collection)"
+**Response:**
+
+`200`
+
+```json
+{
+  "status": "success",
+  "model_name": "Qwen3-0.6B-GGUF",
+  "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+  "recipe": "llamacpp"
+}
+```
+
+#### Collection
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -1103,7 +1150,7 @@ Load failures answer with the same error object as inference requests: `404` for
       -Body '{"model_name": "LMX-Omni-5.5B-Lite"}'
     ```
 
-=== "Bash (collection)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/load \
@@ -1111,28 +1158,15 @@ Load failures answer with the same error object as inference requests: `404` for
       -d '{"model_name": "LMX-Omni-5.5B-Lite"}'
     ```
 
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "model_name": "LMX-Omni-5.5B-Lite", "recipe": "collection.omni"}
+```
+
 ### Response format
-
-=== "Model responses"
-
-    `200`
-
-    ```json
-    {
-      "status": "success",
-      "model_name": "Qwen3-0.6B-GGUF",
-      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "recipe": "llamacpp"
-    }
-    ```
-
-=== "Collection responses"
-
-    `200`
-
-    ```json
-    {"status": "success", "model_name": "LMX-Omni-5.5B-Lite", "recipe": "collection.omni"}
-    ```
 
 **Field Descriptions:**
 
@@ -1166,7 +1200,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unparsable body also unloads every model. A model that is not loaded answers `404`, and so does an omni collection, whose components are unloaded by their own names.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1186,13 +1220,15 @@ An unparsable body also unloads every model. A model that is not loaded answers 
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "success", "message": "Model unloaded successfully", "model_name": "Qwen3-0.6B-GGUF"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1238,7 +1274,9 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 
 A failed request answers with a JSON `error` object: `400` for an invalid request, `404` for an unknown model, `500` for a body that is not valid JSON or when the backend reports an error, and `502` when it produces no output.
 
-### Example request
+### Examples
+
+#### Sound effect
 
 === "PowerShell"
 
@@ -1270,7 +1308,13 @@ A failed request answers with a JSON `error` object: `400` for an invalid reques
       --output output.wav
     ```
 
-=== "PowerShell (music with vocals)"
+**Response:**
+
+`200`, `Content-Type: audio/wav`, 884,780 bytes
+
+#### Music with vocals
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -1287,7 +1331,7 @@ A failed request answers with a JSON `error` object: `400` for an invalid reques
       -OutFile output.wav
     ```
 
-=== "Bash (music with vocals)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/audio/generations \
@@ -1302,15 +1346,9 @@ A failed request answers with a JSON `error` object: `400` for an invalid reques
       --output output.wav
     ```
 
-### Response format
+**Response:**
 
-=== "Sound effect responses"
-
-    `200`, `Content-Type: audio/wav`, 884,780 bytes
-
-=== "Music with vocals responses"
-
-    `200`, `Content-Type: audio/wav`, 8,640,044 bytes
+`200`, `Content-Type: audio/wav`, 8,640,044 bytes
 <!-- END GENERATED: lemonade.audio_generations -->
 
 <!-- BEGIN GENERATED: lemonade.3d_generations -->
@@ -1337,7 +1375,7 @@ Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher 
 
 A failed request answers with a JSON `error` object: `400` for an invalid field, `404` for an unknown model, `500` for a body that is not JSON or a backend error, and `502` when the backend produces no output.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1363,7 +1401,7 @@ A failed request answers with a JSON `error` object: `400` for an invalid field,
       --output output.glb
     ```
 
-### Response format
+**Response:**
 
 `200`, `Content-Type: model/gltf-binary`, 4,534,160 bytes
 <!-- END GENERATED: lemonade.3d_generations -->
@@ -1380,7 +1418,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 This endpoint does not take any parameters.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1394,7 +1432,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/docs
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1413,6 +1451,8 @@ This endpoint does not take any parameters.
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1455,7 +1495,7 @@ The same files are installed on disk, so they can be read without a running serv
 | Linux (optional prefix) | `/opt/share/lemonade-server/resources/docs/` |
 | Linux (per-user) | `~/.local/share/lemonade-server/resources/docs/` |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1469,7 +1509,7 @@ The same files are installed on disk, so they can be read without a running serv
     curl http://localhost:13305/v1/docs/api/lemonade
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1512,7 +1552,7 @@ This endpoint does not take any parameters.
 
 `HEAD` returns `200 OK` with an empty body.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1526,7 +1566,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/health
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1579,6 +1619,8 @@ This endpoint does not take any parameters.
   "pinned_helper_models": {"classification": 0, ... 6 more}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1643,7 +1685,7 @@ This endpoint does not take any parameters.
 
 `HEAD` returns `200 OK` with an empty body.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1657,7 +1699,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/stats
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1679,6 +1721,8 @@ This endpoint does not take any parameters.
   "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1718,7 +1762,7 @@ This endpoint does not take any parameters.
 
 GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1732,7 +1776,7 @@ GPU, VRAM and NPU telemetry depends on the operating system and installed driver
     curl http://localhost:13305/v1/system-stats
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1757,6 +1801,8 @@ GPU, VRAM and NPU telemetry depends on the operating system and installed driver
   "npu_percent": 0.0
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -1809,7 +1855,7 @@ The names, types, labels and help text are defined by the `metrics.describe(...)
 
 Lemonade starts llama.cpp backends with metrics enabled and, for each loaded `llamacpp` model, makes a best-effort scrape of the backend's private `/metrics` endpoint. Those metrics are renamed under the `lemonade_llamacpp_*` prefix and labeled with the same model metadata as `lemonade_model_info`. A failed backend scrape does not fail the response.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1823,7 +1869,7 @@ Lemonade starts llama.cpp backends with metrics enabled and, for each loaded `ll
     curl http://localhost:13305/metrics
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1882,7 +1928,7 @@ This endpoint does not take any parameters.
 
 The same backend can carry different labels on different operating systems. Each entry in a recipe's `backends` object reports the labels for this system's operating system.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -1896,7 +1942,7 @@ The same backend can carry different labels on different operating systems. Each
     curl http://localhost:13305/v1/system-info
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -1994,6 +2040,8 @@ The same backend can carry different labels on different operating systems. Each
 }
 ```
 
+### Response format
+
 **Field Descriptions:**
 
 - `OS Version` - Operating system name and version
@@ -2087,7 +2135,9 @@ The base URL is saved to `config.json`. See the [Cloud Offload guide](../guide/c
 
 Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
-### Example request
+### Examples
+
+#### Local
 
 === "PowerShell"
 
@@ -2107,7 +2157,17 @@ Optional fields are applied only when present in the request body. Re-installing
       -d '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "recipe": "llamacpp", "backend": "cpu"}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -2117,7 +2177,7 @@ Optional fields are applied only when present in the request body. Re-installing
       -Body '{"recipe": "llamacpp", "backend": "vulkan", "stream": true}'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/install \
@@ -2125,7 +2185,18 @@ Optional fields are applied only when present in the request body. Re-installing
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true}'
     ```
 
-=== "PowerShell (job)"
+**Response:**
+
+`200`
+
+```text
+event: complete
+data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
+```
+
+#### Job
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -2135,7 +2206,7 @@ Optional fields are applied only when present in the request body. Re-installing
       -Body '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
     ```
 
-=== "Bash (job)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/install \
@@ -2143,7 +2214,35 @@ Optional fields are applied only when present in the request body. Re-installing
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
     ```
 
-=== "PowerShell (cloud)"
+**Response:**
+
+`200`
+
+```json
+{
+  "status": "downloading",
+  "id": "backend:llamacpp:vulkan",
+  "type": "backend",
+  "model_name": "llamacpp:vulkan",
+  "running": true,
+  "file": "",
+  "file_index": 0,
+  "total_files": 0,
+  "bytes_downloaded": 0,
+  "bytes_total": 0,
+  "percent": 0,
+  "total_download_size": 0,
+  "bytes_previously_downloaded": 0,
+  "completed_files_bytes": 0,
+  "cumulative_bytes_downloaded": 0,
+  "overall_bytes_downloaded": 0,
+  "complete": false
+}
+```
+
+#### Cloud
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -2157,7 +2256,7 @@ Optional fields are applied only when present in the request body. Re-installing
         }'
     ```
 
-=== "Bash (cloud)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/install \
@@ -2169,142 +2268,99 @@ Optional fields are applied only when present in the request body. Re-installing
         }'
     ```
 
+**Response:**
+
+`200`
+
+```json
+{
+  "status": "success",
+  "backend": "cloud",
+  "provider": "fireworks",
+  "base_url": "https://api.fireworks.ai/inference/v1",
+  "allow_insecure_http": false,
+  "auth_header_name": "Authorization",
+  "auth_header_prefix": "Bearer ",
+  "wire_format": "openai",
+  "models_discovered": 0,
+  "auth_state": {"env_var_set": false, "runtime_key_set": false}
+}
+```
+
 ### Response format
 
-=== "Local responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {"status": "success", "recipe": "llamacpp", "backend": "cpu"}
-    ```
+A local backend installed or already up to date.
 
-    **Field Descriptions:**
+- `status` - Always `success`.
+- `recipe` - The recipe from the request.
+- `backend` - The backend from the request.
 
-    A local backend installed or already up to date.
+A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.
 
-    - `status` - Always `success`.
-    - `recipe` - The recipe from the request.
-    - `backend` - The backend from the request.
+- `action` - The setup guide's URL.
+- `recipe` - The recipe from the request.
+- `backend` - The backend from the request.
 
-    A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.
+A cloud provider registered.
 
-    - `action` - The setup guide's URL.
-    - `recipe` - The recipe from the request.
-    - `backend` - The backend from the request.
+- `status` - Always `success`.
+- `backend` - Always `cloud`.
+- `provider` - The provider's name, which prefixes its model names.
+- `base_url` - The provider's saved base URL.
+- `allow_insecure_http` - Whether an API key may be sent to an `http://` base URL.
+- `auth_header_name` - The header that carries the API key.
+- `auth_header_prefix` - The text before the key in that header.
+- `wire_format` - The API the provider speaks: `openai` or `anthropic`.
+- `models_discovered` - Chat models discovered with the resolved API key; `0` when no key resolves.
+- `auth_state` - Which API keys are set for the provider.
+  - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
+  - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
+- `warnings` - Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`.
+- `warning` - The warnings joined into one string, for older clients.
 
-=== "Streaming responses"
+`stream: true` with `subscribe: false`: the server-owned download job just started.
 
-    `200`
+- `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
+- `type` - Download type.
+- `model_name` - Lemonade model name associated with the job, or `recipe:backend` for a backend job.
+- `status` - Current state: `downloading`, `paused`, `cancelled`, `completed`, or `error`.
+- `running` - Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources.
+- `file` - The file downloading now.
+- `file_index` - Its position among the download's files, from `1`.
+- `total_files` - How many files the download has.
+- `bytes_downloaded` - Bytes of the current file downloaded so far.
+- `bytes_total` - Size of the current file in bytes.
+- `percent` - Share of the current file downloaded, from `0` to `100`.
+- `total_download_size` - Total expected bytes across all files when known.
+- `bytes_previously_downloaded` - Bytes already present on disk for the current file when resuming or skipping existing data.
+- `completed_files_bytes` - Bytes from files completed before the current file.
+- `cumulative_bytes_downloaded` - Bytes downloaded across the whole job.
+- `overall_bytes_downloaded` - Older name for `cumulative_bytes_downloaded`.
+- `complete` - `true` when the download completed successfully.
+- `error` - Error message, present only for failed jobs.
+- `code` - `unknown_model` when the model is not in the registry.
 
-    ```text
-    event: complete
-    data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 0, "bytes_total": 0, "total_download_size": 0, "bytes_previously_downloaded": 0, "percent": 100}
-    ```
+#### Event stream
 
-    **Field Descriptions:**
+**Field Descriptions:**
 
-    A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
+A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
 
-    - `file` - The file downloading now.
-    - `file_index` - Its position among the download's files, from `1`.
-    - `total_files` - How many files the download has.
-    - `bytes_downloaded` - Bytes of the current file downloaded so far.
-    - `bytes_total` - Size of the current file in bytes.
-    - `total_download_size` - Total expected bytes across all files, or `0` when unknown.
-    - `bytes_previously_downloaded` - Bytes of the current file already on disk before this download, when resuming or skipping existing data.
-    - `percent` - Share of the current file downloaded, from `0` to `100`.
-    - `status` - Only on a complete event for an operation that had nothing to download.
-    - `error` - Only on an error event.
-    - `code` - `unknown_model` when the model is not in the registry.
-
-=== "Job responses"
-
-    `200`
-
-    ```json
-    {
-      "status": "downloading",
-      "id": "backend:llamacpp:vulkan",
-      "type": "backend",
-      "model_name": "llamacpp:vulkan",
-      "running": true,
-      "file": "",
-      "file_index": 0,
-      "total_files": 0,
-      "bytes_downloaded": 0,
-      "bytes_total": 0,
-      "percent": 0,
-      "total_download_size": 0,
-      "bytes_previously_downloaded": 0,
-      "completed_files_bytes": 0,
-      "cumulative_bytes_downloaded": 0,
-      "overall_bytes_downloaded": 0,
-      "complete": false
-    }
-    ```
-
-    **Field Descriptions:**
-
-    `stream: true` with `subscribe: false`: the server-owned download job just started.
-
-    - `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
-    - `type` - Download type.
-    - `model_name` - Lemonade model name associated with the job, or `recipe:backend` for a backend job.
-    - `status` - Current state: `downloading`, `paused`, `cancelled`, `completed`, or `error`.
-    - `running` - Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources.
-    - `file` - The file downloading now.
-    - `file_index` - Its position among the download's files, from `1`.
-    - `total_files` - How many files the download has.
-    - `bytes_downloaded` - Bytes of the current file downloaded so far.
-    - `bytes_total` - Size of the current file in bytes.
-    - `percent` - Share of the current file downloaded, from `0` to `100`.
-    - `total_download_size` - Total expected bytes across all files when known.
-    - `bytes_previously_downloaded` - Bytes already present on disk for the current file when resuming or skipping existing data.
-    - `completed_files_bytes` - Bytes from files completed before the current file.
-    - `cumulative_bytes_downloaded` - Bytes downloaded across the whole job.
-    - `overall_bytes_downloaded` - Older name for `cumulative_bytes_downloaded`.
-    - `complete` - `true` when the download completed successfully.
-    - `error` - Error message, present only for failed jobs.
-    - `code` - `unknown_model` when the model is not in the registry.
-
-=== "Cloud responses"
-
-    `200`
-
-    ```json
-    {
-      "status": "success",
-      "backend": "cloud",
-      "provider": "fireworks",
-      "base_url": "https://api.fireworks.ai/inference/v1",
-      "allow_insecure_http": false,
-      "auth_header_name": "Authorization",
-      "auth_header_prefix": "Bearer ",
-      "wire_format": "openai",
-      "models_discovered": 0,
-      "auth_state": {"env_var_set": false, "runtime_key_set": false}
-    }
-    ```
-
-    **Field Descriptions:**
-
-    A cloud provider registered.
-
-    - `status` - Always `success`.
-    - `backend` - Always `cloud`.
-    - `provider` - The provider's name, which prefixes its model names.
-    - `base_url` - The provider's saved base URL.
-    - `allow_insecure_http` - Whether an API key may be sent to an `http://` base URL.
-    - `auth_header_name` - The header that carries the API key.
-    - `auth_header_prefix` - The text before the key in that header.
-    - `wire_format` - The API the provider speaks: `openai` or `anthropic`.
-    - `models_discovered` - Chat models discovered with the resolved API key; `0` when no key resolves.
-    - `auth_state` - Which API keys are set for the provider.
-      - `env_var_set` - Whether `LEMONADE_<PROVIDER>_API_KEY` is set for `lemond`.
-      - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
-    - `warnings` - Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`.
-    - `warning` - The warnings joined into one string, for older clients.
+- `file` - The file downloading now.
+- `file_index` - Its position among the download's files, from `1`.
+- `total_files` - How many files the download has.
+- `bytes_downloaded` - Bytes of the current file downloaded so far.
+- `bytes_total` - Size of the current file in bytes.
+- `total_download_size` - Total expected bytes across all files, or `0` when unknown.
+- `bytes_previously_downloaded` - Bytes of the current file already on disk before this download, when resuming or skipping existing data.
+- `percent` - Share of the current file downloaded, from `0` to `100`.
+- `status` - Only on a complete event for an operation that had nothing to download.
+- `error` - Only on an error event.
+- `code` - `unknown_model` when the model is not in the registry.
 <!-- END GENERATED: lemonade.install -->
 
 <!-- BEGIN GENERATED: lemonade.install_dry_run -->
@@ -2329,7 +2385,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 
 A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or install-parameter resolution failing (an unknown recipe/backend pair, an unsupported platform, unavailable architecture detection, failed version resolution), answers `500`. Errors carry an `error` string, and a `500` also carries `arch` when the request set one.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2349,7 +2405,7 @@ A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or insta
       -d '{"recipe": "whispercpp", "backend": "rocm", "arch": "gfx1201"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -2366,6 +2422,8 @@ A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or insta
   "supports_split_archive": false
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2403,7 +2461,9 @@ A local uninstall without both `recipe` and `backend`, or a cloud uninstall with
 
 Removes the provider record from `config.json`, drops its in-memory API key, if any, and evicts every discovered model for that provider from the catalog.
 
-### Example request
+### Examples
+
+#### Local
 
 === "PowerShell"
 
@@ -2423,7 +2483,17 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
       -d '{"recipe": "llamacpp", "backend": "cpu"}'
     ```
 
-=== "PowerShell (cloud)"
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "recipe": "llamacpp", "backend": "cpu"}
+```
+
+#### Cloud
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -2433,7 +2503,7 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
       -Body '{"backend": "cloud", "provider": "fireworks"}'
     ```
 
-=== "Bash (cloud)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/uninstall \
@@ -2441,23 +2511,15 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
       -d '{"backend": "cloud", "provider": "fireworks"}'
     ```
 
+**Response:**
+
+`200`
+
+```json
+{"status": "success", "backend": "cloud", "provider": "fireworks", "models_evicted": 0}
+```
+
 ### Response format
-
-=== "Local responses"
-
-    `200`
-
-    ```json
-    {"status": "success", "recipe": "llamacpp", "backend": "cpu"}
-    ```
-
-=== "Cloud responses"
-
-    `200`
-
-    ```json
-    {"status": "success", "backend": "cloud", "provider": "fireworks", "models_evicted": 0}
-    ```
 
 **Field Descriptions:**
 
@@ -2495,7 +2557,7 @@ When `LEMONADE_<PROVIDER>_API_KEY` is set, it takes precedence: the request answ
 
 A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a non-boolean `allow_insecure_http`, or a provider whose base URL is `http://` when neither this request nor the provider's install set `allow_insecure_http` (code `insecure_http_requires_opt_in`). A provider that is not installed answers `404`; install it with [`POST /v1/install`](#post-v1install) and `backend: "cloud"` first.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2515,7 +2577,7 @@ A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a non-
       -d '{"provider": "fireworks", "api_key": "fw-XXXXX"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -2527,6 +2589,8 @@ A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a non-
   "models_discovered": 0
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2554,7 +2618,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `provider` (path) | Yes | The installed provider's name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2570,7 +2634,7 @@ Requires `LEMONADE_API_KEY` when it is set.
     curl -X DELETE http://localhost:13305/v1/cloud/auth/fireworks
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -2581,6 +2645,8 @@ Requires `LEMONADE_API_KEY` when it is set.
   "auth_state": {"env_var_set": false, "runtime_key_set": false}
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2698,7 +2764,7 @@ This endpoint does not take any parameters.
 
 `HEAD` returns `200 OK` with an empty body.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2712,13 +2778,15 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/live
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "ok"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2748,7 +2816,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 
 [`docs/dev/job-system.md`](../dev/job-system.md) specifies the step schema, op set and lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) the `when`/`branch` expression grammar.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2768,13 +2836,15 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
       -d '{"name": "example", "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]}'
     ```
 
-### Response format
+**Response:**
 
 `202`
 
 ```json
 {"id": "job-20261007-171503-000001"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2793,7 +2863,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 This endpoint does not take any parameters.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2807,7 +2877,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/v1/jobs
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -2825,6 +2895,8 @@ This endpoint does not take any parameters.
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2858,7 +2930,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown job, or one that is not queued or running, answers `404`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2874,13 +2946,15 @@ An unknown job, or one that is not queued or running, answers `404`.
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000003/pause
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "pausing"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2903,7 +2977,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown job, or one that is not queued or running, answers `404`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2919,13 +2993,15 @@ An unknown job, or one that is not queued or running, answers `404`.
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000004/interrupt
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "interrupting"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2948,7 +3024,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown job, or one that is not paused or interrupted, answers `404`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -2964,13 +3040,15 @@ An unknown job, or one that is not paused or interrupted, answers `404`.
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000006/resume
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "resuming"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -2993,7 +3071,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown job answers `404`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -3007,7 +3085,7 @@ An unknown job answers `404`.
     curl http://localhost:13305/v1/jobs/job-20261007-171503-000007
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -3031,6 +3109,8 @@ An unknown job answers `404`.
   "created_at": "2026-10-07T17:15:03Z"
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -3071,7 +3151,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 An unknown job answers `404`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -3087,13 +3167,15 @@ An unknown job answers `404`.
     curl -X DELETE http://localhost:13305/v1/jobs/job-20261007-171503-000008
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "deleted"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 

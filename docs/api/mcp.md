@@ -59,7 +59,9 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 - Tools return their whole result: `lemonade_chat` ignores `stream`. Use [`POST /v1/chat/completions`](./openai.md#post-v1chatcompletions) for streamed tokens.
 - Embeddings and text-to-speech have no MCP tool; use [`/v1/embeddings`](./openai.md#post-v1embeddings) and [`/v1/audio/speech`](./openai.md#post-v1audiospeech).
 
-### Example request
+### Examples
+
+#### Request
 
 === "PowerShell"
 
@@ -89,7 +91,25 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
         }'
     ```
 
-=== "PowerShell (notification)"
+**Response:**
+
+`200`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "capabilities": {"tools": {}},
+    "protocolVersion": "2025-06-18",
+    "serverInfo": {"name": "lemonade-mcp", "version": "2026.43.0~1686.1553ede6"}
+  }
+}
+```
+
+#### Notification
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -99,7 +119,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
       -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
     ```
 
-=== "Bash (notification)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/mcp \
@@ -107,38 +127,22 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
       -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
     ```
 
+**Response:**
+
+`202`
+
 ### Response format
 
-=== "Request responses"
+**Field Descriptions:**
 
-    `200`
+One JSON-RPC 2.0 response, or an array of them for a batch.
 
-    ```json
-    {
-      "jsonrpc": "2.0",
-      "id": 1,
-      "result": {
-        "capabilities": {"tools": {}},
-        "protocolVersion": "2025-06-18",
-        "serverInfo": {"name": "lemonade-mcp", "version": "2026.43.0~1686.1553ede6"}
-      }
-    }
-    ```
-
-    **Field Descriptions:**
-
-    One JSON-RPC 2.0 response, or an array of them for a batch.
-
-    - `jsonrpc` - Always `2.0`.
-    - `id` - The `id` of the request this answers; `null` when it could not be read.
-    - `result` - The method's result.
-    - `error` - A JSON-RPC error, such as `-32601` for an unknown method.
-      - `code` - The JSON-RPC error code.
-      - `message` - What went wrong.
-
-=== "Notification responses"
-
-    `202`
+- `jsonrpc` - Always `2.0`.
+- `id` - The `id` of the request this answers; `null` when it could not be read.
+- `result` - The method's result.
+- `error` - A JSON-RPC error, such as `-32601` for an unknown method.
+  - `code` - The JSON-RPC error code.
+  - `message` - What went wrong.
 <!-- END GENERATED: mcp.rpc -->
 
 <!-- BEGIN GENERATED: mcp.sse -->

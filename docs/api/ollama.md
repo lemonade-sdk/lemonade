@@ -49,7 +49,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -77,7 +79,29 @@ A request with tools and streaming runs non-streaming on the backend and answers
         }'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "model": "Qwen3-0.6B-GGUF",
+  "created_at": "2024-01-01T00:00:00Z",
+  "message": {"role": "assistant", "content": "The capital of France is **Paris**."},
+  "done": true,
+  "done_reason": "stop",
+  "prompt_eval_count": 19,
+  "eval_count": 14,
+  "total_duration": 0,
+  "load_duration": 0,
+  "prompt_eval_duration": 10670000,
+  "eval_duration": 40000000
+}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -91,7 +115,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
         }'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/api/chat \
@@ -103,76 +127,60 @@ A request with tools and streaming runs non-streaming on the backend and answers
         }'
     ```
 
+**Response:**
+
+`200`
+
+```text
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": "The"}, "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": " capital"}, "done": false}
+...
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop"}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop", "prompt_eval_count": 0, "eval_count": 0, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
+```
+
 ### Response format
 
-=== "Non-streaming responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {
-      "model": "Qwen3-0.6B-GGUF",
-      "created_at": "2024-01-01T00:00:00Z",
-      "message": {"role": "assistant", "content": "The capital of France is **Paris**."},
-      "done": true,
-      "done_reason": "stop",
-      "prompt_eval_count": 19,
-      "eval_count": 14,
-      "total_duration": 0,
-      "load_duration": 0,
-      "prompt_eval_duration": 10670000,
-      "eval_duration": 40000000
-    }
-    ```
+- `model` - The model that generated the response.
+- `created_at` - Always `2024-01-01T00:00:00Z`.
+- `message` - The assistant's message; in a streamed line, the next piece of it.
+  - `role` - Always `assistant`.
+  - `content` - The message text.
+  - `thinking` - Reasoning models only: the model's thinking.
+  - `tool_calls` - Calls to the request's tools, with arguments as objects.
+- `done` - `false` while the message streams; `true` once it ends, and on a response that is not streamed.
+- `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
+- `prompt_eval_count` - Prompt tokens.
+- `eval_count` - Generated tokens.
+- `total_duration`, `load_duration` - Always `0`.
+- `prompt_eval_duration` - Prompt processing time in nanoseconds, when the backend reports timings; otherwise `0`.
+- `eval_duration` - Generation time in nanoseconds, when the backend reports timings; otherwise `0`.
 
-    **Field Descriptions:**
+#### NDJSON
 
-    - `model` - The model that generated the response.
-    - `created_at` - Always `2024-01-01T00:00:00Z`.
-    - `message` - The assistant's message; in a streamed line, the next piece of it.
-      - `role` - Always `assistant`.
-      - `content` - The message text.
-      - `thinking` - Reasoning models only: the model's thinking.
-      - `tool_calls` - Calls to the request's tools, with arguments as objects.
-    - `done` - `false` while the message streams; `true` once it ends, and on a response that is not streamed.
-    - `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
-    - `prompt_eval_count` - Prompt tokens.
-    - `eval_count` - Generated tokens.
-    - `total_duration`, `load_duration` - Always `0`.
-    - `prompt_eval_duration` - Prompt processing time in nanoseconds, when the backend reports timings; otherwise `0`.
-    - `eval_duration` - Generation time in nanoseconds, when the backend reports timings; otherwise `0`.
+**Field Descriptions:**
 
-=== "Streaming responses"
+Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
 
-    `200`
-
-    ```text
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": false}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": "The"}, "done": false}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": " capital"}, "done": false}
-    ...
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop"}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop", "prompt_eval_count": 0, "eval_count": 0, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
-    ```
-
-    **Field Descriptions:**
-
-    Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
-
-    - `model` - The model that generated the response.
-    - `created_at` - Always `2024-01-01T00:00:00Z`.
-    - `message` - The assistant's message; in a streamed line, the next piece of it.
-      - `role` - Always `assistant`.
-      - `content` - The message text.
-      - `thinking` - Reasoning models only: the model's thinking.
-      - `tool_calls` - Calls to the request's tools, with arguments as objects.
-    - `done` - `false` while the message streams; `true` once it ends, and on a response that is not streamed.
-    - `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
-    - `prompt_eval_count` - Prompt tokens.
-    - `eval_count` - Generated tokens.
-    - `total_duration`, `load_duration` - Always `0`.
-    - `prompt_eval_duration` - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
-    - `eval_duration` - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
+- `model` - The model that generated the response.
+- `created_at` - Always `2024-01-01T00:00:00Z`.
+- `message` - The assistant's message; in a streamed line, the next piece of it.
+  - `role` - Always `assistant`.
+  - `content` - The message text.
+  - `thinking` - Reasoning models only: the model's thinking.
+  - `tool_calls` - Calls to the request's tools, with arguments as objects.
+- `done` - `false` while the message streams; `true` once it ends, and on a response that is not streamed.
+- `done_reason` - `stop`, `length`, `tool_calls`, or `unload` after an unload request.
+- `prompt_eval_count` - Prompt tokens.
+- `eval_count` - Generated tokens.
+- `total_duration`, `load_duration` - Always `0`.
+- `prompt_eval_duration` - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
+- `eval_duration` - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
 <!-- END GENERATED: ollama.chat -->
 
 <!-- BEGIN GENERATED: ollama.generate -->
@@ -203,7 +211,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Image generation never streams.
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -233,7 +243,30 @@ Image generation never streams.
         }'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "model": "Qwen3-0.6B-GGUF",
+  "created_at": "2024-01-01T00:00:00Z",
+  "response": " Paris, right? Yes, that's correct. But there are other countries with",
+  "done": true,
+  "done_reason": "stop",
+  "context": [],
+  "prompt_eval_count": 5,
+  "eval_count": 16,
+  "total_duration": 0,
+  "load_duration": 0,
+  "prompt_eval_duration": 0,
+  "eval_duration": 0
+}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -248,7 +281,7 @@ Image generation never streams.
         }'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/api/generate \
@@ -261,69 +294,52 @@ Image generation never streams.
         }'
     ```
 
+**Response:**
+
+`200`
+
+```text
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ",", "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " which", "done": false}
+...
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
+```
+
 ### Response format
 
-=== "Non-streaming responses"
+#### JSON
 
-    `200`
+**Field Descriptions:**
 
-    ```json
-    {
-      "model": "Qwen3-0.6B-GGUF",
-      "created_at": "2024-01-01T00:00:00Z",
-      "response": " Paris, right? Yes, that's correct. But there are other countries with",
-      "done": true,
-      "done_reason": "stop",
-      "context": [],
-      "prompt_eval_count": 5,
-      "eval_count": 16,
-      "total_duration": 0,
-      "load_duration": 0,
-      "prompt_eval_duration": 0,
-      "eval_duration": 0
-    }
-    ```
+- `model` - The model that generated the response.
+- `created_at` - Always `2024-01-01T00:00:00Z`.
+- `response` - Generated text. Empty for an image model.
+- `image` - Image models only: the generated image, base64-encoded.
+- `done` - `true` on a response that is not streamed, and on the last two lines of a stream.
+- `done_reason` - `stop`, or `unload` after an unload request.
+- `context` - Always empty.
+- `prompt_eval_count` - Prompt tokens.
+- `eval_count` - Generated tokens.
+- `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
 
-    **Field Descriptions:**
+#### NDJSON
 
-    - `model` - The model that generated the response.
-    - `created_at` - Always `2024-01-01T00:00:00Z`.
-    - `response` - Generated text. Empty for an image model.
-    - `image` - Image models only: the generated image, base64-encoded.
-    - `done` - `true` on a response that is not streamed, and on the last two lines of a stream.
-    - `done_reason` - `stop`, or `unload` after an unload request.
-    - `context` - Always empty.
-    - `prompt_eval_count` - Prompt tokens.
-    - `eval_count` - Generated tokens.
-    - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
+**Field Descriptions:**
 
-=== "Streaming responses"
+Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
 
-    `200`
-
-    ```text
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ",", "done": false}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " which", "done": false}
-    ...
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
-    {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
-    ```
-
-    **Field Descriptions:**
-
-    Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
-
-    - `model` - The model that generated the response.
-    - `created_at` - Always `2024-01-01T00:00:00Z`.
-    - `response` - Generated text. Empty for an image model.
-    - `image` - Image models only: the generated image, base64-encoded.
-    - `done` - `true` on a response that is not streamed, and on the last two lines of a stream.
-    - `done_reason` - `stop`, `length`, or `unload` after an unload request.
-    - `context` - Always empty.
-    - `prompt_eval_count` - Prompt tokens.
-    - `eval_count` - Generated tokens.
-    - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
+- `model` - The model that generated the response.
+- `created_at` - Always `2024-01-01T00:00:00Z`.
+- `response` - Generated text. Empty for an image model.
+- `image` - Image models only: the generated image, base64-encoded.
+- `done` - `true` on a response that is not streamed, and on the last two lines of a stream.
+- `done_reason` - `stop`, `length`, or `unload` after an unload request.
+- `context` - Always empty.
+- `prompt_eval_count` - Prompt tokens.
+- `eval_count` - Generated tokens.
+- `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
 <!-- END GENERATED: ollama.generate -->
 
 <!-- BEGIN GENERATED: ollama.tags -->
@@ -338,7 +354,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 This endpoint does not take any parameters.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -352,7 +368,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/api/tags
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -378,6 +394,8 @@ This endpoint does not take any parameters.
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -411,7 +429,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | No | Model to describe. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -431,7 +449,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "Qwen3-0.6B-GGUF"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -458,6 +476,8 @@ Requires `LEMONADE_API_KEY` when it is set.
   }
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -492,7 +512,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Success answers `200` with an empty body, as Ollama does. A model this system does not support also answers `404`, and other failures answer `500`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -512,7 +532,7 @@ Success answers `200` with an empty body, as Ollama does. A model this system do
       -d '{"model": "RealESRGAN-x4plus-anime"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 <!-- END GENERATED: ollama.delete -->
@@ -537,7 +557,9 @@ Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](
 
 In offline mode the request answers `400` with code `lemond_offline`.
 
-### Example request
+### Examples
+
+#### Streaming
 
 === "PowerShell"
 
@@ -557,7 +579,22 @@ In offline mode the request answers `400` with code `lemond_offline`.
       -d '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
     ```
 
-=== "PowerShell (non-streaming)"
+**Response:**
+
+`200`
+
+```text
+{"status": "pulling manifest"}
+{"status": "downloading Qwen3-0.6B-Q4_0.gguf", "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "completed": 0, "total": 382156480}
+{"status": "downloading Qwen3-0.6B-Q4_0.gguf", "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "completed": 382156480, "total": 382156480}
+...
+{"status": "success"}
+{"status": "success"}
+```
+
+#### Non-streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -567,7 +604,7 @@ In offline mode the request answers `400` with code `lemond_offline`.
       -Body '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
     ```
 
-=== "Bash (non-streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/api/pull \
@@ -575,42 +612,33 @@ In offline mode the request answers `400` with code `lemond_offline`.
       -d '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
     ```
 
+**Response:**
+
+`200`
+
+```json
+{"status": "success"}
+```
+
 ### Response format
 
-=== "Streaming responses"
+#### NDJSON
 
-    `200`
+**Field Descriptions:**
 
-    ```text
-    {"status": "pulling manifest"}
-    {"status": "downloading Qwen3-0.6B-Q4_0.gguf", "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "completed": 0, "total": 382156480}
-    {"status": "downloading Qwen3-0.6B-Q4_0.gguf", "digest": "sha256:Qwen3-0.6B-Q4_0.gguf", "completed": 382156480, "total": 382156480}
-    ...
-    {"status": "success"}
-    {"status": "success"}
-    ```
+The first line is `pulling manifest`, then one line per progress report, then two `success` lines.
 
-    **Field Descriptions:**
+- `status` - `pulling manifest`, `downloading <file>`, or `success`.
+- `digest` - Download lines: `sha256:` followed by the file name.
+- `completed` - Download lines: bytes of the file downloaded so far.
+- `total` - Download lines: the file's size in bytes.
+- `error` - Only on a failed download's last line.
 
-    The first line is `pulling manifest`, then one line per progress report, then two `success` lines.
+#### JSON
 
-    - `status` - `pulling manifest`, `downloading <file>`, or `success`.
-    - `digest` - Download lines: `sha256:` followed by the file name.
-    - `completed` - Download lines: bytes of the file downloaded so far.
-    - `total` - Download lines: the file's size in bytes.
-    - `error` - Only on a failed download's last line.
+**Field Descriptions:**
 
-=== "Non-streaming responses"
-
-    `200`
-
-    ```json
-    {"status": "success"}
-    ```
-
-    **Field Descriptions:**
-
-    - `status` - Always `success`.
+- `status` - Always `success`.
 <!-- END GENERATED: ollama.pull -->
 
 <!-- BEGIN GENERATED: ollama.embed -->
@@ -630,7 +658,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -650,7 +678,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -665,6 +693,8 @@ Requires `LEMONADE_API_KEY` when it is set.
   "prompt_eval_count": 0
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -691,7 +721,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -711,7 +741,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -721,6 +751,8 @@ Requires `LEMONADE_API_KEY` when it is set.
   "embedding": [0.029926229268312454, 0.050356026738882065, -0.00871499814093113, -0.018384544178843498, 0.016114410012960434, 0.08822233229875565, -0.015040549449622631, -7.978447683854029e-05, ... 760 more]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -742,7 +774,7 @@ This endpoint does not take any parameters.
 
 [`GET /v1/health`](./lemonade.md#get-v1health) reports the loaded models in full.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -756,7 +788,7 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/api/ps
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -782,6 +814,8 @@ This endpoint does not take any parameters.
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -813,7 +847,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 This endpoint does not take any parameters.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -827,13 +861,15 @@ This endpoint does not take any parameters.
     curl http://localhost:13305/api/version
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"version": "0.16.1"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 

@@ -1230,78 +1230,53 @@ def in_example_order(example: dict, entry: dict) -> dict:
     return {**entry, "request": {**request, **reordered}}
 
 
-def render_example_request(entries: list[dict], labels: list[str]) -> str:
-    parts = ["### Example request\n"]
-    for index, (entry, label) in enumerate(zip(entries, labels)):
-        suffix = f" ({label})" if index else ""
-        parts.append(
-            render_tab(
-                f"PowerShell{suffix}", fence("powershell", powershell_command(entry))
-            )
-        )
-        parts.append(render_tab(f"Bash{suffix}", fence("bash", bash_command(entry))))
-    return "\n".join(parts).rstrip()
+FORMAT_HEADINGS = {"Json": "JSON", "JsonLines": "NDJSON", "EventStream": "Event stream"}
 
 
-def tab_fields(schema: dict, fmt: str, entry: dict, shown: list) -> str:
-    """The Field Descriptions not yet shown in an earlier tab: the format's own fields and
-    its shapes no example returns in its first tab, and each other shape in the first tab
-    whose response matches it."""
-    import jsonschema
-
-    shapes = schema.get("oneOf", [])
-    payloads = recorded_payloads(fmt, entry["response"])
-    first = not any(schema is seen for seen in shown)
-    new_shapes = [
-        shape
-        for shape in shapes
-        if not any(shape is seen for seen in shown)
-        and (
-            (first and shape.get("x-no-example"))
-            or any(
-                jsonschema.Draft202012Validator(shape).is_valid(payload)
-                for payload in payloads
-            )
-        )
+def render_example(spec: dict, example: dict, entry: dict, heading: str) -> str:
+    response = find_response(spec, example["format"])
+    schema = dereferenced(response["schema"])
+    parts = [heading, ""]
+    if example["description"]:
+        parts += [example["description"], ""]
+    parts += [
+        render_tab("PowerShell", fence("powershell", powershell_command(entry))),
+        render_tab("Bash", fence("bash", bash_command(entry))),
+        "**Response:**",
+        "",
+        render_recorded(response["format"], entry, schema),
     ]
-    shown += [schema] + new_shapes
-    if not first and not new_shapes:
-        return ""
-    if first:
-        return render_fields(schema, new_shapes)
-    return render_fields({"oneOf": []}, new_shapes)
+    return "\n".join(parts)
 
 
-def render_response_format(spec: dict, entries: list[dict], labels: list[str]) -> str:
-    """Each format's Field Descriptions appear once: after the tabs when every example
-    shares one format, else inside the tabs, each part in the first tab it applies to.
-    """
-    shared = len({example["format"] for example in spec["examples"]}) == 1
-    bodies, fields, shown, schemas = [], "", [], {}
+def render_examples(spec: dict, entries: list[dict]) -> str:
+    """One subsection per example, holding its request and what lemond returned."""
+    if len(spec["examples"]) == 1:
+        return render_example(spec, spec["examples"][0], entries[0], "### Example")
+    parts = ["### Examples"]
     for example, entry in zip(spec["examples"], entries):
-        response = find_response(spec, example["format"])
-        schema = schemas.setdefault(
-            response["format"], dereferenced(response["schema"])
-        )
-        body = render_recorded(response["format"], entry, schema)
-        if example["description"]:
-            body = f"{example['description']}\n\n{body}"
-        if shared:
-            fields = render_fields(schema) if schema else ""
-            bodies.append(body)
-            continue
-        tab = tab_fields(schema, response["format"], entry, shown) if schema else ""
-        bodies.append(f"{body}\n\n{tab}" if tab else body)
-    if len(bodies) == 1:
-        return (
-            "### Response format\n\n" + bodies[0] + (f"\n\n{fields}" if fields else "")
-        )
-    parts = ["### Response format\n"]
-    for label, body in zip(labels, bodies):
-        parts.append(render_tab(f"{label[0].upper()}{label[1:]} responses", body))
-    if shared and fields:
-        parts.append(fields)
-    return "\n".join(parts).rstrip()
+        title = f"{example['name'][0].upper()}{example['name'][1:]}"
+        parts += ["", render_example(spec, example, entry, f"#### {title}")]
+    return "\n".join(parts)
+
+
+def render_response_format(spec: dict) -> str:
+    """Each format's Field Descriptions, once, under a heading per format when there are
+    several."""
+    sections = [
+        (response["format"], render_fields(dereferenced(response["schema"])))
+        for response in spec["responses"]
+        if response["schema"]
+    ]
+    sections = [(fmt, fields) for fmt, fields in sections if fields]
+    if not sections:
+        return ""
+    if len(sections) == 1:
+        return "### Response format\n\n" + sections[0][1]
+    parts = ["### Response format"]
+    for fmt, fields in sections:
+        parts += ["", f"#### {FORMAT_HEADINGS[fmt]}", "", fields]
+    return "\n".join(parts)
 
 
 def render_parameters(spec: dict) -> str:
@@ -1351,13 +1326,10 @@ def render_route(spec: dict, entries: dict) -> str:
             in_example_order(example["args"], entries[example["name"]])
             for example in spec["examples"]
         ]
-        labels = [example["name"] for example in spec["examples"]]
-        parts += [
-            "",
-            render_example_request(ordered, labels),
-            "",
-            render_response_format(spec, ordered, labels),
-        ]
+        parts += ["", render_examples(spec, ordered)]
+        fields = render_response_format(spec)
+        if fields:
+            parts += ["", fields]
     return "\n".join(parts)
 
 

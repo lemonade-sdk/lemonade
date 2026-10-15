@@ -39,7 +39,7 @@ This endpoint does not take any parameters.
 
 Backend processes such as `llama-server` have exited by the time the caller reads the answer. `lemond` then cancels its downloads and exits about 100 ms later.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -55,13 +55,15 @@ Backend processes such as `llama-server` have exited by the time the caller read
     curl -X POST http://localhost:13305/internal/shutdown
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "shutting down"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -82,7 +84,7 @@ This endpoint does not take any parameters.
 
 A batch the collector rejects or does not receive is dropped without further retries, and the answer is still `flushed`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -98,13 +100,15 @@ A batch the collector rejects or does not receive is dropped without further ret
     curl -X POST http://localhost:13305/internal/telemetry/flush
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "flushed"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -130,7 +134,7 @@ A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a
 
 A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pinned`, or a model that is not loaded.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -150,13 +154,15 @@ A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pi
       -d '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "success", "model_name": "Qwen3-0.6B-GGUF", "pinned": true}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -229,7 +235,7 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 
 `config.json` keeps only values that differ from the defaults, so setting a key to its default removes it from the file.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -249,13 +255,15 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
       -d '{"log_level": "info"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "success", "updated": {"log_level": "info"}}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -278,7 +286,7 @@ This endpoint does not take any parameters.
 
 See the [Settings Reference](../guide/configuration/README.md#settings-reference) for each key.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -292,7 +300,7 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
     curl http://localhost:13305/internal/config
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -302,6 +310,8 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
   ... 46 more
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -324,7 +334,7 @@ This endpoint does not take any parameters.
 
 The per-backend sections come from the backend descriptors, so this is the authoritative list of factory defaults.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -338,7 +348,7 @@ The per-backend sections come from the backend descriptors, so this is the autho
     curl http://localhost:13305/internal/config/defaults
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -348,6 +358,8 @@ The per-backend sections come from the backend descriptors, so this is the autho
   ... 46 more
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -374,7 +386,7 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 
 Invalid JSON, including an empty body, answers `500`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -394,13 +406,15 @@ Invalid JSON, including an empty body, answers `500`.
       -d '{"dry_run": true}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"orphaned_files": [], "total_bytes": 0, "dry_run": true}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -434,7 +448,7 @@ The answer comes after the evaluation finishes, so a test can check the outcome 
 
 A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pct`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -454,13 +468,15 @@ A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pc
       -d '{"pct": 0.5}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "ok"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -496,7 +512,7 @@ A `400` answers a body that is not a JSON object, or an argument of the wrong ty
 
 See Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -516,7 +532,7 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
       -d '{"models": ["Qwen3-0.6B-GGUF"], "dry_run": true}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -534,6 +550,8 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
   "updated_count": 0
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -580,7 +598,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 A `sync_id` that is neither running nor recorded answers `200` with `status: "not_found"`. A `sync_id` that is not a number answers `400`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -594,7 +612,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
     curl http://localhost:13305/internal/models/sync/status
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -616,6 +634,8 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
   "updated_count": 0
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -660,7 +680,7 @@ This endpoint does not take any parameters.
 
 An alias stands in for its target in the `model` field of inference requests and of [`POST /v1/load`](./lemonade.md#post-v1load) and [`POST /v1/unload`](./lemonade.md#post-v1unload); the Ollama and Anthropic gateways do not resolve aliases. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -674,7 +694,7 @@ An alias stands in for its target in the `model` field of inference requests and
     curl http://localhost:13305/internal/aliases
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -690,6 +710,8 @@ An alias stands in for its target in the `model` field of inference requests and
   ]
 }
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -717,7 +739,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 A `400` answers invalid JSON, a missing `alias` or `target`, an alias equal to its target, or an alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an alias that is already a registered model's name, or one that would form a cycle or an alias chain too long to resolve.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -737,13 +759,15 @@ A `400` answers invalid JSON, a missing `alias` or `target`, an alias equal to i
       -d '{"alias": "my-alias-1", "target": "user.custom-llama"}'
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "ok", "alias": "my-alias-1", "target": "user.custom-llama"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -768,7 +792,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 An alias that does not exist answers `404`.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -784,13 +808,15 @@ An alias that does not exist answers `404`.
     curl -X DELETE http://localhost:13305/internal/aliases/my-alias-1
     ```
 
-### Response format
+**Response:**
 
 `200`
 
 ```json
 {"status": "deleted", "alias": "my-alias-1"}
 ```
+
+### Response format
 
 **Field Descriptions:**
 
@@ -814,7 +840,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 `docs/tools/gen_api_boilerplate.py` reads this endpoint to generate the API reference, including this page. See the [HTTP Server Spec](../dev/specs/http-server.md#route-base-classes) for each field.
 
-### Example request
+### Example
 
 === "PowerShell"
 
@@ -828,7 +854,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     curl "http://localhost:13305/internal/routes?id=internal.telemetry_flush"
     ```
 
-### Response format
+**Response:**
 
 `200`
 
@@ -864,6 +890,8 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 ]
 ```
 
+### Response format
+
 **Field Descriptions:**
 
 - `id` - `<page>.<name>`; names the route's generated region in `docs/api/<page>.md`.
@@ -886,8 +914,8 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `format` - The response format.
   - `schema` - JSON Schema of the body, each NDJSON line, or each event's data; null for other formats.
 - `examples` - The first is the route's main example.
-  - `name` - Tab label; empty when the route has one example.
-  - `description` - What the example shows, printed above its request; empty when the route's other text covers it.
+  - `name` - Subsection heading; empty when the route has one example.
+  - `description` - What the example shows, opening its subsection; empty when the route's other text covers it.
   - `format` - The response format the reply is validated against.
   - `args` - Argument values of the request.
   - `setup` - Requests that run first to put `lemond` in the state this example needs.
