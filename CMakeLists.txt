@@ -3305,6 +3305,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_DELETION_TEST_SRC}")
     add_cpp_ci_test(ModelDeletionTest CI ON COMMAND test_model_deletion)
 endif()
 
+# What each backend says its models need fetched.
+set(_DOWNLOAD_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_policy.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_POLICY_TEST_SRC}")
+    add_executable(test_download_policy test/cpp/test_download_policy.cpp)
+    target_link_libraries(test_download_policy PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(DownloadPolicyTest CI ON COMMAND test_download_policy)
+endif()
+
 # Golden of the published model cache plus the file inventory and orphan sweep, the
 # three build_cache() readers that later steps rewrite.
 set(_STORE_SNAPSHOT_TEST_SRC

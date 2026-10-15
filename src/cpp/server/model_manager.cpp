@@ -98,8 +98,9 @@ static std::string describe_illegal_labels(const std::string& model_name,
 // doesn't see FLM_MODEL_PATH, so we also probe every documented default.
 // Order is most-specific to most-historical.
 
-static void populate_model_metadata(ModelInfo& info) {
-    if (info.recipe == "cloud") {
+void ModelManager::populate_model_metadata(ModelInfo& info) {
+    // A route to someone else's GPU has no local bytes to read metadata from.
+    if (download_policy(info) == backends::DownloadPolicy::None) {
         return;
     }
     info.max_context_window = 0;
@@ -337,6 +338,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
       artifacts_(std::make_unique<models::ModelArtifactStore>(models::ModelArtifactStore::Hooks{
           [this] { return get_hf_cache_dir(); },
           [this](const ModelInfo& info, const std::string& type) { return source_for(info, type); },
+          [this] { return extra_models_dir_; },
       })),
       sync_(make_sync_deps()) {
     // Readers must always have a snapshot; an invalid one tells them to build.
@@ -446,12 +448,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
 std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
     const ModelInfo& info, const std::string& checkpoint_type) const {
     models::ArtifactSourceResolver::Hooks hooks;
-    hooks.fetches_no_artifacts = [this](const std::string& recipe) {
-        return fetches_no_artifacts(recipe);
-    };
-    hooks.backend_self_manages_downloads = [this](const std::string& recipe) {
-        return backend_self_manages_downloads(recipe);
-    };
+    hooks.download_policy = [this](const ModelInfo& info) { return download_policy(info); };
     hooks.checkpoint_layout = [](const std::string& recipe, const models::CheckpointRef& checkpoint) {
         const backends::BackendOps* ops = backends::ops_for(recipe);
         return ops != nullptr ? ops->checkpoint_layout(checkpoint) : nullptr;
@@ -467,114 +464,8 @@ std::unique_ptr<models::ArtifactSource> ModelManager::source_for(
     return models::ArtifactSourceResolver(hooks).source_for(info, checkpoint_type);
 }
 
-// Resolve the complete family of a registered sharded GGUF. A first shard
-// alone is not a usable model, and its remaining shards must not be discovered
-// as an unrelated extra.* model. Other quantizations remain independent.
-static bool collect_registered_shards(const fs::path& resolved, const fs::path& repo_root,
-                                      std::set<fs::path>& owned_paths) {
-    const fs::path file = resolved.lexically_normal();
-    std::string base;
-    int total = 0;
-    if (!is_gguf_shard_filename(file.filename().string(), &base, &total)) {
-        owned_paths.insert(file);
-        return true;
-    }
-
-    std::set<int> indices;
-    bool complete = true;
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
-        if (ec) return false;
-        const std::string filename = entry.path().filename().string();
-        if (!same_shard_family(filename, base, total)) continue;
-
-        int index = 0;
-        is_gguf_shard_filename(filename, nullptr, nullptr, &index);
-        if (!entry.is_regular_file(ec) || ec ||
-            !path_inside(entry.path(), repo_root)) {
-            return false;
-        }
-        owned_paths.insert(entry.path().lexically_normal());
-        const std::string path = path_to_utf8(entry.path());
-        if (!models::ModelArtifactStore::path_complete(path) ||
-            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
-            complete = false;  // Still scan remaining siblings for discovery exclusion.
-        }
-        indices.insert(index);
-    }
-    return !ec && complete && indices.size() == static_cast<size_t>(total);
-}
-
-// Only complete repository caches can reclaim registered model identities;
-// loose GGUFs remain independent extra.* entries.
-static bool try_resolve_registered_extra_cache(const models::ModelArtifactStore& artifacts,
-                                               ModelInfo& info, const std::string& extra_dir,
-                                               std::set<fs::path>* registered_paths = nullptr) {
-    if (extra_dir.empty() || !info.source.empty() ||
-        is_model_collection_recipe(info.recipe)) return false;
-
-    const fs::path root = path_from_utf8(extra_dir);
-    const std::string repo = repo_id_from_checkpoint(info.checkpoint("main"));
-    if (repo.empty()) return false;
-    const fs::path main_repo = root /
-        repo_id_to_cache_dir_name(repo, models::registry_source_of(info));
-    if (!safe_is_directory(main_repo) || !path_inside(main_repo, root)) {
-        return false;
-    }
-
-    ModelInfo candidate = info;
-    // Discovery must also exclude matched shards when the family is incomplete.
-    // Resolved model paths are still only committed after full validation.
-    std::set<fs::path> local_owned_paths;
-    std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
-    try {
-        for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
-            const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
-            if (checkpoint_repo.empty()) return false;
-            const fs::path expected_repo = root /
-                repo_id_to_cache_dir_name(checkpoint_repo, models::registry_source_of(info));
-            candidate.resolved_paths[type] =
-                artifacts.resolve_path_in(info, type, checkpoint, extra_dir);
-            const std::string& resolved = candidate.resolved_paths[type];
-            if (info.recipe == "llamacpp" && type == "main" &&
-                (safe_is_directory(path_from_utf8(resolved)) ||
-                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
-                return false;
-            }
-            // Reject escaped refs/main entries and symlinks, including redirects
-            // into a *different* repository under the same extra models root.
-            const fs::path resolved_path = path_from_utf8(resolved);
-            const bool own_repo = path_inside(expected_repo, root) &&
-                path_inside(resolved_path, expected_repo);
-            const bool legacy_main_repo = type != "main" &&
-                path_inside(resolved_path, main_repo);
-            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
-                !collect_registered_shards(resolved_path,
-                    own_repo ? expected_repo : main_repo, owned_paths)) {
-                return false;
-            }
-        }
-        if (!artifacts.complete(candidate)) return false;
-    } catch (const std::exception&) {
-        return false;  // An optional directory must never break catalog discovery.
-    }
-    info.resolved_paths = std::move(candidate.resolved_paths);
-    return true;
-}
-
 void ModelManager::resolve_all_model_paths(ModelInfo& info) {
-    for (auto const& [type, checkpoint] : info.checkpoints) {
-        info.resolved_paths[type] =
-            artifacts_->resolve_path(info, type, checkpoint);
-    }
-    // Prefer the managed cache, falling back only when incomplete.
-    if (!extra_models_dir_.empty() && info.source.empty() &&
-        !backend_self_manages_downloads(info.recipe) && !fetches_no_artifacts(info.recipe) &&
-        !is_model_collection_recipe(info.recipe) &&
-        !artifacts_->complete(info)) {
-        try_resolve_registered_extra_cache(*artifacts_, info, extra_models_dir_);
-    }
+    artifacts_->resolve_all(info);
 }
 
 json ModelManager::load_server_models() {
@@ -969,14 +860,14 @@ static bool check_component_downloaded(const ModelInfo& info,
     return true;
 }
 
-void ModelManager::download_from_registry_engine(const ModelInfo& info,
-                                                 DownloadProgressCallback progress_callback) {
-    download_from_registry(info, progress_callback);
+void ModelManager::fetch_registry_artifacts(const ModelInfo& info,
+                                            DownloadProgressCallback progress) {
+    download_from_registry(info, progress);
 }
 
 void ModelManager::download_from_huggingface_engine(
         const ModelInfo& info, DownloadProgressCallback progress_callback) {
-    download_from_registry_engine(info, progress_callback);
+    fetch_registry_artifacts(info, progress_callback);
 }
 
 // Every alias form rebuild_public_model_aliases_locked() computes -- bare
@@ -1189,8 +1080,7 @@ void ModelManager::build_cache() {
             if (!extra_models_dir_.empty()) {
                 for (const auto& [name, info] : claimed.models()) {
                     ModelInfo candidate = info;
-                    try_resolve_registered_extra_cache(*artifacts_, candidate, extra_models_dir_,
-                                                       &registered_extra_paths);
+                    artifacts_->adopt_extra_cache(candidate, &registered_extra_paths);
                 }
             }
 
@@ -1227,7 +1117,7 @@ void ModelManager::build_cache() {
         }();
 
         backends::BackendOpsContext octx;
-        octx.model_manager = this;
+        octx.fetch = this;
         octx.artifacts = artifacts_.get();
         octx.cloud_registry = cloud_registry_;
 
@@ -1329,7 +1219,7 @@ void ModelManager::build_cache() {
     // (flm, cloud) already set downloaded during discovery; everyone else asks
     // its backend ops (default = shared registry-cache completeness check).
     backends::BackendOpsContext status_ctx;
-    status_ctx.model_manager = this;
+    status_ctx.fetch = this;
     status_ctx.artifacts = artifacts_.get();
 
     int downloaded_count = 0;
@@ -1360,7 +1250,7 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
-        if (info.downloaded && !backend_self_manages_downloads(info.recipe)) {
+        if (info.downloaded && download_policy(info) != backends::DownloadPolicy::SelfManaged) {
             refresh_on_disk_size(info);
         }
         models_cache_[name] = info;
@@ -1513,7 +1403,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         info.downloaded = check_component_downloaded(info, models_cache_);
     } else {
         backends::BackendOpsContext octx;
-        octx.model_manager = this;
+        octx.fetch = this;
         octx.artifacts = artifacts_.get();
         info.downloaded = backends::ops_for(info.recipe)->is_downloaded(info, octx);
     }
@@ -2144,7 +2034,8 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     if (cached == nullptr) {
         return false;
     }
-    if (!cached->downloaded || backend_self_manages_downloads(cached->recipe) ||
+    if (!cached->downloaded ||
+        download_policy(*cached) == backends::DownloadPolicy::SelfManaged ||
         artifacts_->complete(*cached)) {
         return cached->downloaded;
     }
@@ -2159,15 +2050,8 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     return false;
 }
 
-bool ModelManager::backend_self_manages_downloads(const std::string& recipe) const {
-    const auto* desc = backends::descriptor_for(recipe);
-    return desc && desc->self_manages_downloads;
-}
-
-// A route to someone else's GPU has no bytes to fetch or remove. Not a descriptor
-// field, because cloud ships no descriptor at all: its spec() is null.
-bool ModelManager::fetches_no_artifacts(const std::string& recipe) const {
-    return recipe == "cloud";
+backends::DownloadPolicy ModelManager::download_policy(const ModelInfo& info) const {
+    return artifacts_->download_policy(info);
 }
 
 bool ModelManager::checkpoints_complete(const ModelInfo& info) const {
@@ -2194,7 +2078,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     // The backend's ops own the download (shared registry engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
     backends::BackendOpsContext octx;
-    octx.model_manager = this;
+    octx.fetch = this;
     octx.artifacts = artifacts_.get();
     backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, progress_callback, octx);
 
@@ -2896,7 +2780,8 @@ void ModelManager::download_model(const std::string& model_name,
     auto model_info = get_model_info(model_name);
 
     const std::string download_source = requested_registry_source(model_data);
-    if (!download_source.empty() && backend_self_manages_downloads(model_info.recipe)) {
+    if (!download_source.empty() &&
+        download_policy(model_info) == backends::DownloadPolicy::SelfManaged) {
         model_info.registry_source = download_source;
     }
 

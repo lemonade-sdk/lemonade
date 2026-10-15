@@ -1160,6 +1160,11 @@ public:
         return "";
     }
 
+    // A route to someone else's GPU has no bytes to fetch, hold, or remove.
+    DownloadPolicy plan_download(const ModelInfo&, const BackendOpsContext&) const override {
+        return DownloadPolicy::None;
+    }
+
     bool is_downloaded(const ModelInfo&, const BackendOpsContext&) const override {
         return true;
     }

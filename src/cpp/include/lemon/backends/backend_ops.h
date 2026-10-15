@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
 
 namespace lemon {
 
@@ -17,11 +18,22 @@ class ModelArtifactStore;
 
 namespace backends {
 
+// What a model needs fetched, asked once so the fetch path never branches on a
+// backend name: a repository to pull into the models directory, a backend that
+// pulls its own weights, or nothing at all. The default answer for a recipe comes
+// from its descriptor, which is where a backend already declares itself.
+enum class DownloadPolicy : int {
+    Repository,
+    SelfManaged,
+    None,
+};
+
 // Context handed to BackendOps methods: the server state model management needs
 // without a running subprocess.
 struct BackendOpsContext {
-    ModelManager* model_manager = nullptr;
     const models::ModelArtifactStore* artifacts = nullptr;
+    // Fetching mutates the models directory, so the service is not const.
+    models::ArtifactFetchService* fetch = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
 };
 
@@ -121,6 +133,9 @@ public:
     // Whether a model's local artifacts are present. Default: the artifact
     // store's checkpoint-completeness check.
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+
+    virtual DownloadPolicy plan_download(const ModelInfo& info,
+                                         const BackendOpsContext& ctx) const;
 
     // Validate a resolved checkpoint file for the cache. Returns "" if valid, or
     // a reason it should be treated as not-downloaded. Default: always valid.

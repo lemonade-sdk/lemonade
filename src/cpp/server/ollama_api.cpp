@@ -1,4 +1,5 @@
 #include "lemon/ollama_api.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/error_types.h"
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
@@ -261,7 +262,7 @@ void OllamaApi::auto_load_model(const std::string& model, const json& request_op
     auto info = model_manager_->get_model_info(name);
 
     // Download if not cached (backends that self-manage downloads pull on load)
-    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+    if (model_manager_->download_policy(info) != lemon::backends::DownloadPolicy::SelfManaged &&
         !model_manager_->is_model_downloaded(name)) {
         LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
         model_manager_->download_registered_model(info, true);

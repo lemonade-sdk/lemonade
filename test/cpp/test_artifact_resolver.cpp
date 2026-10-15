@@ -1,3 +1,4 @@
+#include "lemon/backends/backend_ops.h"
 #include "lemon/model_manager.h"
 #include "lemon/models/artifact_resolver.h"
 #include "lemon/models/fetchable_repository.h"
@@ -11,6 +12,7 @@
 #include <utility>
 
 using lemon::ModelInfo;
+using lemon::backends::DownloadPolicy;
 using lemon::models::ArtifactKind;
 using lemon::models::ArtifactRef;
 using lemon::models::ArtifactSource;
@@ -65,9 +67,11 @@ ArtifactRef g_built_ref;
 
 ArtifactSourceResolver::Hooks base_hooks() {
     ArtifactSourceResolver::Hooks hooks;
-    hooks.fetches_no_artifacts = [](const std::string& recipe) { return recipe == "cloud"; };
-    hooks.backend_self_manages_downloads =
-        [](const std::string& recipe) { return recipe == "flm"; };
+    hooks.download_policy = [](const ModelInfo& info) {
+        if (info.recipe == "cloud") return DownloadPolicy::None;
+        if (info.recipe == "flm") return DownloadPolicy::SelfManaged;
+        return DownloadPolicy::Repository;
+    };
     hooks.repository_for = [](const RegistryId& id, const ArtifactRef& ref)
         -> std::unique_ptr<FetchableRepository> {
         g_built_host = id;
