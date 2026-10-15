@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <cstdlib>
+#include <optional>
 #include <regex>
 
 #ifndef _WIN32
@@ -358,27 +359,31 @@ bool build_agent_config(const std::string& agent,
     return false;
 }
 
-bool opencode_needs_standalone(const std::string& binary) {
-    std::string version_output;
+std::optional<bool> opencode_needs_standalone(const std::string& binary) {
+    const std::regex version_pattern(R"(^\s*(?:opencode\s+)?v?(\d{1,4})\.\d+\.\d+)");
+    std::optional<int> major;
     try {
         lemon::utils::ProcessManager::run_process_with_output(
             binary,
             {"--version"},
-            [&version_output](const std::string& line) {
-                version_output += line;
+            [&](const std::string& line) {
+                std::smatch match;
+                if (!major && std::regex_search(line, match, version_pattern)) {
+                    major = std::stoi(match[1].str());
+                }
                 return true;
             },
             "",
-            10);
+            10,
+            false);
     } catch (const std::exception&) {
-        return false;
+        return std::nullopt;
     }
 
-    std::smatch match;
-    if (!std::regex_search(version_output, match, std::regex(R"((\d+)\.\d+\.\d+)"))) {
-        return false;
+    if (!major) {
+        return std::nullopt;
     }
-    return std::stoi(match[1].str()) >= 2;
+    return *major >= 2;
 }
 
 std::string find_agent_binary(const AgentConfig& config) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 #include <utility>
@@ -39,8 +40,8 @@ bool build_agent_config(const std::string& agent,
 
 // OpenCode v2's TUI attaches to a background service that ignores the launch
 // environment and caches config, so v2 must run with --standalone. v1 rejects
-// that flag. Returns false when the version can't be determined.
-bool opencode_needs_standalone(const std::string& binary);
+// that flag. Returns nullopt when the version can't be determined.
+std::optional<bool> opencode_needs_standalone(const std::string& binary);
 
 // Locate the agent executable.
 // Returns absolute or PATH-resolved executable for ProcessManager::start_process.

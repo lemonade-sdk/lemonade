@@ -317,7 +317,12 @@ class PersistentServerCLIClientTests(unittest.TestCase):
         return result
 
     def _write_fake_agent(
-        self, directory, agent_name, capture_file, version_output="fake-agent 1.0.0"
+        self,
+        directory,
+        agent_name,
+        capture_file,
+        version_output="fake-agent 1.0.0",
+        version_stderr="",
     ):
         """Create a tiny fake agent binary that captures argv and selected env vars."""
         exe_path = os.path.join(directory, agent_name)
@@ -327,6 +332,8 @@ import os
 import sys
 
 if sys.argv[1:] == ["--version"]:
+    if {version_stderr!r}:
+        print({version_stderr!r}, file=sys.stderr, flush=True)
     print({version_output!r})
     sys.exit(0)
 
@@ -1808,6 +1815,95 @@ sys.exit(0)
 
             self.assertEqual(payload["argv"], ["--standalone"])
             inline_config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+
+    def _launch_opencode_stub(
+        self,
+        temp_dir,
+        version_output,
+        version_stderr="",
+        inline_config=None,
+        extra_args=None,
+    ):
+        """Launch opencode against a fake binary; return (result, captured payload)."""
+        capture_path = os.path.join(temp_dir, "opencode_capture.json")
+        self._write_fake_agent(
+            temp_dir,
+            "opencode",
+            capture_path,
+            version_output=version_output,
+            version_stderr=version_stderr,
+        )
+        env = self._build_stubbed_agent_env(temp_dir)
+        env.pop("OPENCODE_CONFIG_CONTENT", None)
+        if inline_config is not None:
+            env["OPENCODE_CONFIG_CONTENT"] = inline_config
+
+        result = run_cli_command(
+            ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL] + (extra_args or []),
+            timeout=TIMEOUT_DEFAULT,
+            env=env,
+        )
+        payload = None
+        if os.path.exists(capture_path):
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        return result, payload
+
+    def test_117c_launch_opencode_version_probe_ignores_stderr(self):
+        """A version string on stderr must not make opencode v1 look like v2."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_stub(
+                temp_dir, "1.19.0", version_stderr="(node:123) warning on v22.1.0"
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["argv"], [])
+
+    def test_117d_launch_opencode_survives_oversized_version(self):
+        """An unparsable major version must not abort launch."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_stub(temp_dir, "99999999999.0.0")
+
+            self.assertEqual(result.returncode, 0)
+            self.assertIsNotNone(payload, "Fake opencode binary was not executed")
+            self.assertEqual(payload["argv"], [])
+
+    def test_117e_launch_opencode_warns_when_version_unknown(self):
+        """Launch should warn when it can't tell whether opencode needs --standalone."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_stub(temp_dir, "")
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["argv"], [])
+            self.assertIn("opencode version", (result.stdout + result.stderr).lower())
+
+    def test_117f_launch_opencode_merges_inline_config_and_orders_args(self):
+        """User inline config keys survive, model is overridden, user args follow --standalone."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_stub(
+                temp_dir,
+                "opencode v2.0.29",
+                inline_config='{"foo": 1, "model": "other/model"}',
+                extra_args=["--agent-args", "--auto"],
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["argv"], ["--standalone", "--auto"])
+            inline_config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(inline_config.get("foo"), 1)
             self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
 
     def test_118_launch_opencode_creates_config(self):
