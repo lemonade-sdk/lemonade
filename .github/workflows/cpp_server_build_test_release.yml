@@ -1100,7 +1100,7 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu vulkan"
+            backends: "cpu rocm vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: thenoise
             script: server_thenoise.py
@@ -2220,7 +2220,7 @@ jobs:
     steps:
       # Pre-checkout cleanup is run here as a safeguard to release file locks on Windows
       # in case this job is mapped to persistent self-hosted runners labeled as 'windows-latest'.
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Continue"
@@ -2630,7 +2630,7 @@ jobs:
     steps:
       # Pre-checkout cleanup is run here as a safeguard to release file locks on Windows
       # in case this job is mapped to persistent self-hosted runners labeled as 'windows-latest'.
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Continue"
