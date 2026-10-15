@@ -482,7 +482,7 @@ This section specifies what each route's text says. The generator prints each ro
 | Top-level `description` of a `RouteResponse::schema`, or of one of its shapes | What the response is as a whole: how a stream's lines or events relate, such as which line ends it, or when this shape is returned | A field's meaning |
 | Property `description` in a `RouteResponse::schema` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
-| `RouteExample::description` | What this example shows that the route's other text does not, in one sentence, such as which model or file it uses | The route's general behavior, which belongs in `notes` |
+| `RouteExample::description` | What this example shows that the route's other text does not, such as which model or file it uses, or a request shape that only this example uses | The route's general behavior, which belongs in `notes` |
 
 These rules apply across the fields:
 
