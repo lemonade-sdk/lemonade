@@ -107,6 +107,25 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
         }
         self.assertTrue(list(validator.iter_errors(base)))
 
+    def test_cost_classifier_labels_are_unique_and_bounded(self):
+        validator = jsonschema.Draft202012Validator(self.route_policy_schema)
+        base = {
+            "version": "1",
+            "recipe": "collection.router",
+            "routing": {
+                "candidates": ["a"],
+                "default_model": "a",
+                "classifiers": [{"id": "x", "type": "cost", "labels": ["a", "a"]}],
+                "rules": [{"id": "r", "match": {"classifier": "x"}, "route_to": "a"}],
+            },
+        }
+        self.assertTrue(list(validator.iter_errors(base)))
+
+        base["routing"]["classifiers"][0]["labels"] = [
+            f"candidate-{index}" for index in range(65)
+        ]
+        self.assertTrue(list(validator.iter_errors(base)))
+
     def test_locked_structural_invariants(self):
         """Cross-field invariants the JSON Schema cannot express: default_model
         and every rule.route_to must be a candidate; classifier condition refs

@@ -79,6 +79,26 @@ static RoutePolicy parse_l0b(const json& collection) {
     return lemon::parse_route_policy_collection(collection, options);
 }
 
+static json explicit_cost_collection() {
+    json collection = l0b_collection();
+    collection["routing"].erase("router");
+    collection["routing"]["classifiers"] = json::array({json{
+        {"id", "cost"},
+        {"type", "cost"},
+        {"labels", {"Cheap-GGUF", "Mid-GGUF"}},
+    }});
+    collection["routing"]["rules"] = json::array({json{
+        {"id", "cheap"},
+        {"match", {
+            {"classifier", "cost"},
+            {"label", "Cheap-GGUF"},
+            {"min_score", 1.0},
+        }},
+        {"route_to", "Cheap-GGUF"},
+    }});
+    return collection;
+}
+
 // Builds a CostServices whose cost_of looks prices up in `prices` (both
 // per-million fields, when the candidate is present) and otherwise returns an
 // empty CostInfo (no data). A candidate present in `throwing` throws instead.
@@ -460,6 +480,32 @@ static void test_candidates_cap_enforced() {
     check("cost_select: routing.candidates over the cap (65) is rejected", threw);
 }
 
+static void test_explicit_cost_labels_must_be_unique_candidates() {
+    json outside_candidates = explicit_cost_collection();
+    outside_candidates["components"].push_back("Not-A-Candidate");
+    outside_candidates["routing"]["classifiers"][0]["labels"].push_back(
+        "Not-A-Candidate");
+    bool outside_threw = false;
+    try {
+        parse_l0b(outside_candidates);
+    } catch (const std::invalid_argument&) {
+        outside_threw = true;
+    }
+    check("cost: explicit labels outside routing.candidates are rejected",
+          outside_threw);
+
+    json duplicate = explicit_cost_collection();
+    duplicate["routing"]["classifiers"][0]["labels"].push_back("Cheap-GGUF");
+    bool duplicate_threw = false;
+    try {
+        parse_l0b(duplicate);
+    } catch (const std::invalid_argument&) {
+        duplicate_threw = true;
+    }
+    check("cost: duplicate explicit candidate labels are rejected",
+          duplicate_threw);
+}
+
 // ---------------------------------------------------------------------------
 // End-to-end engine routing (the acceptance path)
 // ---------------------------------------------------------------------------
@@ -530,6 +576,7 @@ int main() {
     test_desugar_rejects_model_or_prompt();
     test_desugar_rejects_unknown_router_type();
     test_candidates_cap_enforced();
+    test_explicit_cost_labels_must_be_unique_candidates();
     test_e2e_routes_to_cheapest_and_reports_its_own_cost();
     test_e2e_no_data_falls_open_to_default_model();
 

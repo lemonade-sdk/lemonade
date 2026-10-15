@@ -131,7 +131,14 @@
                     "properties": { "labels": { "minItems": 1 } } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "cost" } } },
           "then": { "required": ["labels"],
-                    "properties": { "labels": { "minItems": 1 } },
+                    "properties": {
+                      "labels": {
+                        "description": "Cost candidates; each must be a unique member of routing.candidates.",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true
+                      }
+                    },
                     "not": { "anyOf": [{ "required": ["model"] },
                                        { "required": ["prompt"] },
                                        { "required": ["reference_phrases"] }] } } }

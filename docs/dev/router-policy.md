@@ -184,9 +184,9 @@ and every entry's `model` must be one of `components`:
 > [`routing.router.type: "cost_select"`](#cost-based-routing-routingroutertype-cost_select)
 > are the two cost forms. `cost_select` is shorthand for a single `cost`
 > classifier whose labels are the candidates; a standalone `type: "cost"`
-> classifier just produces a label — you can combine it with other conditions,
-> e.g. "route to the cheapest candidate, but only when the request carries no
-> tools."
+> classifier just produces a label — every label must name a unique member of
+> `routing.candidates`, and you can combine it with other conditions, e.g.
+> "route to the cheapest candidate, but only when the request carries no tools."
 
 ## Registering and invoking
 

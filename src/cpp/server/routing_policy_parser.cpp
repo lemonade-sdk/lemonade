@@ -395,6 +395,7 @@ MatchExpr parse_match_expr(const json& expr,
 }
 
 json parse_classifier_configs(const json& routing,
+                              const std::vector<std::string>& candidates,
                               const std::set<std::string>& declared,
                               const RoutingPolicyParseOptions& options) {
     if (!routing.contains("classifiers")) {
@@ -412,6 +413,37 @@ json parse_classifier_configs(const json& routing,
         reject_unknown_keys(classifier, routing_classifier_keys(), path);
         required_string(classifier, "id", path);
         const std::string type = required_string(classifier, "type", path);
+
+        if (type == "cost" && classifier.contains("labels")) {
+            const json& labels = classifier.at("labels");
+            if (!labels.is_array()) {
+                throw std::invalid_argument(path + ".labels must be an array");
+            }
+            if (labels.size() > kMaxCandidates) {
+                throw std::invalid_argument(path + ".labels must not exceed " +
+                                            std::to_string(kMaxCandidates) + " entries");
+            }
+            std::set<std::string> resolved_labels;
+            for (std::size_t label_index = 0; label_index < labels.size(); ++label_index) {
+                const std::string label_path = path_index(path + ".labels", label_index);
+                if (!labels[label_index].is_string() ||
+                    labels[label_index].get<std::string>().empty()) {
+                    throw std::invalid_argument(label_path + " must be a non-empty string");
+                }
+                const std::string original = labels[label_index].get<std::string>();
+                const std::string resolved =
+                    resolve_component(original, options, label_path);
+                if (!contains_string(candidates, resolved)) {
+                    throw std::invalid_argument(
+                        label_path + " references '" + original +
+                        "', which is not listed in routing.candidates");
+                }
+                if (!resolved_labels.insert(resolved).second) {
+                    throw std::invalid_argument(
+                        label_path + " duplicates cost candidate '" + original + "'");
+                }
+            }
+        }
 
         if (classifier.contains("on_error")) {
             const std::string on_error = optional_string(classifier, "on_error", path);
@@ -697,7 +729,8 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     // routing_policy.cpp for why an author-declared classifier never does.
     const bool expose_request_features = is_router_sugar;
 
-    const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
+    const json classifier_configs =
+        parse_classifier_configs(*routing_eff, policy.candidates, declared, options);
     policy.classifiers = make_classifiers(classifier_configs, expose_request_features);
     policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
     policy.helper_models = collect_policy_helper_models(policy);
