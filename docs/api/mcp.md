@@ -181,7 +181,7 @@ Success returns two `text` content blocks: a human-readable summary, then a JSON
 
 ### `lemonade_chat`
 
-Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI chat format). `model` is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a `model` or `allow_download: true`. Call `lemonade_list_models` first if you want to choose explicitly, since a wrong name may trigger a multi-GB download.
+Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI chat format). `model` is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a `model` or `allow_download: true` (which downloads the default, Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you want to choose explicitly, since a wrong name may trigger a multi-GB download.
 
 **Returns**
 
@@ -204,7 +204,7 @@ Success returns one `text` content block with the assistant output. If the model
 
 ### `lemonade_transcribe_audio`
 
-Transcribe an audio clip with a Whisper-class model. The Lemonade MCP server always runs on the same machine as the caller, so prefer `audio_path` (an absolute path to a local audio file: wav, mp3, m4a, ogg, flac, webm). Use `audio_base64` only when you genuinely have audio bytes in memory. If both are provided, `audio_path` takes precedence. `model` is OPTIONAL: when omitted, the server reuses an already-loaded transcription model, else an already-downloaded one; if neither exists it asks you to pass a `model` or `allow_download: true`.
+Transcribe an audio clip with a Whisper-class model. The Lemonade MCP server always runs on the same machine as the caller, so prefer `audio_path` (an absolute path to a local audio file: wav, mp3, m4a, ogg, flac, webm). Use `audio_base64` only when you genuinely have audio bytes in memory. If both are provided, `audio_path` takes precedence. `model` is OPTIONAL: when omitted, the server reuses an already-loaded transcription model, else an already-downloaded one; if neither exists it asks you to pass a `model` or `allow_download: true` (which downloads the default, Whisper-Tiny).
 
 **Returns**
 
@@ -224,7 +224,7 @@ Success returns two `text` content blocks: the transcript, then the JSON-stringi
 
 ### `lemonade_generate_image`
 
-Generate one or more images from a text prompt. The Lemonade MCP server always runs on the same machine as the caller, so PREFER writing the result directly to disk by passing `output_path` (single image) or `output_dir` (one or more). When you do, the tool returns absolute file path(s) as text, with no base64 round-trip and dramatically fewer tokens. Only omit both arguments when you genuinely need the image inline. For safety, disk writes are confined to a sandbox directory (&lt;cache_dir&gt;/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); paths outside it are rejected. `output_dir` writes get unique auto-generated filenames (so concurrent callers never clobber each other); use `output_path` when you need an exact name. `model` is OPTIONAL: when omitted, the server reuses an already-loaded image model, else an already-downloaded one; if neither exists it asks you to pass a `model` or `allow_download: true`.
+Generate one or more images from a text prompt. The Lemonade MCP server always runs on the same machine as the caller, so PREFER writing the result directly to disk by passing `output_path` (single image) or `output_dir` (one or more). When you do, the tool returns absolute file path(s) as text, with no base64 round-trip and dramatically fewer tokens. Only omit both arguments when you genuinely need the image inline. For safety, disk writes are confined to a sandbox directory (&lt;cache_dir&gt;/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); paths outside it are rejected. `output_dir` writes get unique auto-generated filenames (so concurrent callers never clobber each other); use `output_path` when you need an exact name. `model` is OPTIONAL: when omitted, the server reuses an already-loaded image model, else an already-downloaded one; if neither exists it asks you to pass a `model` or `allow_download: true` (which downloads the default, SD-Turbo).
 
 **Returns**
 
@@ -246,7 +246,7 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 
 ### `lemonade_omni`
 
-Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP `image` / `audio` content blocks (one per artifact). `model` is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a `model` or `allow_download: true`. Pass `model='LMX-Omni-52B-Halo'` (or any other recipe='collection.omni' model from `lemonade_list_models`) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER `output_dir` to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use `lemonade_chat` instead.
+Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP `image` / `audio` content blocks (one per artifact). `model` is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a `model` or `allow_download: true` (which downloads the default, `LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any other recipe='collection.omni' model from `lemonade_list_models`) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER `output_dir` to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use `lemonade_chat` instead.
 
 **Returns**
 
