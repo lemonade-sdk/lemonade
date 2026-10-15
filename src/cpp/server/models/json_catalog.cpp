@@ -125,9 +125,7 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
         info.auto_update = row["auto_update"].get<bool>();
     }
 
-    // A registry-backed collection stores its components remotely, so the cached
-    // manifest is the source of truth whenever a repo pointer is present; a pure
-    // inline collection keeps what it authored.
+    // A repo pointer means the cached manifest holds the components, not this row.
     if (is_model_collection_recipe(info.recipe) &&
         (info.components.empty() || !info.checkpoint().empty())) {
         info.components.clear();

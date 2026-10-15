@@ -58,9 +58,7 @@ std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
     return stem;
 }
 
-// A model kept in a Hugging Face or ModelScope cache lives under
-// <models--org--repo>/snapshots/<commit>/, so its folder is an opaque commit
-// hash. An empty name means the folder is not in a cache with a live revision.
+// <models--org--repo>/snapshots/<commit>/: the folder is an opaque commit hash.
 struct CacheRepoNaming {
     std::string name;
     std::string qualifier;

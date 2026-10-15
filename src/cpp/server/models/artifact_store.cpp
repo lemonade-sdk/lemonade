@@ -4,7 +4,9 @@
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/hf_cache_util.h>
 #include <lemon/gguf_reader.h>
+#include <lemon/canonical_id.h>
 #include <lemon/gguf_shard_utils.h>
+#include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/artifact_source.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -14,7 +16,10 @@
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -43,8 +48,6 @@ bool has_partial_files(const fs::path& dir) {
     return false;
 }
 
-// A side cache the engine fetches on first use is optional: absent bytes there
-// leave the model downloaded.
 bool acquired_lazily(const ModelInfo& info, const std::string& type) {
     return backends::ops_for(info.recipe)->acquires_lazily(type);
 }
@@ -176,6 +179,95 @@ void remove_stale_manifest_for_partial(const fs::path& partial_path, const fs::p
         }
         parent = parent.parent_path();
     }
+}
+
+
+std::string lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+bool ends_with(const std::string& text, const std::string& suffix) {
+    return text.size() >= suffix.size() &&
+           text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// A download marker reduced to what identifies the checkpoint it belongs to: bare
+// file name, no .partial, no shard index, no extension.
+std::string marker_key(std::string name) {
+    std::replace(name.begin(), name.end(), '\\', '/');
+    const size_t slash = name.find_last_of('/');
+    if (slash != std::string::npos) name = name.substr(slash + 1);
+    if (ends_with(name, ".partial")) name.erase(name.size() - strlen(".partial"));
+    std::string base;
+    int total = 0;
+    int index = 0;
+    if (is_gguf_shard_filename(name, &base, &total, &index)) name = base;
+    const size_t dot = name.find_last_of('.');
+    if (dot != std::string::npos) name = name.substr(0, dot);
+    return name;
+}
+
+// Whether an unfinished file is the download of `variant`. A variant may be a bare
+// quantization, which is only a token inside the file name, or a repo-relative path,
+// which the snapshot revision sits in front of.
+bool pending_matches_variant(const std::string& name, const std::string& variant) {
+    if (variant.empty()) return false;
+    const std::string n = lower(name);
+    const std::string v = lower(variant);
+    if (n == v) return true;
+    if (ends_with(n, "/" + v)) return true;
+    if (marker_key(n) == marker_key(v)) return true;
+    const std::string token = lower(gguf_quant_token(name));
+    return !token.empty() && marker_key(v).find('/') == std::string::npos && token == marker_key(v);
+}
+
+json read_json_file(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    json doc;
+    if (!in) return doc;
+    in >> doc;
+    return in.fail() ? json() : doc;
+}
+
+// An interrupted download leaves .partial files and the manifest that counts them;
+// a manifest on its own is still a live download.
+struct DownloadMarkers {
+    std::vector<fs::path> partials;
+    std::vector<fs::path> manifests;
+};
+
+DownloadMarkers collect_download_markers(const fs::path& repo_dir) {
+    DownloadMarkers markers;
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
+        if (ec) break;
+        const std::string name = entry.path().filename().string();
+        if (name == ".download_manifest.json") {
+            markers.manifests.push_back(entry.path());
+        } else if (entry.path().extension() == ".partial") {
+            markers.partials.push_back(entry.path());
+        }
+    }
+    return markers;
+}
+
+bool manifest_lists(const json& doc, std::vector<std::string>& files) {
+    if (!doc.is_object() || !doc.contains("files") || !doc["files"].is_array()) return false;
+    for (const auto& entry : doc["files"]) {
+        if (entry.is_string()) {
+            files.push_back(entry.get<std::string>());
+        } else if (entry.is_object() && entry.contains("name") && entry["name"].is_string()) {
+            files.push_back(entry["name"].get<std::string>());
+        }
+    }
+    return !files.empty();
+}
+
+bool manifest_owner(const json& doc, std::string& owner) {
+    owner = doc.is_object() ? doc.value("model_name", std::string()) : std::string();
+    return !owner.empty();
 }
 
 // Another model in the same registry source still reads this repository.
@@ -488,7 +580,10 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
     return report;
 }
 
-// Whatever a cancelled download left behind; path_complete() says what marks one.
+// Whatever a cancelled download left behind. Which leftovers are this model's is
+// settled by the bytes on disk and the name the downloader recorded: a catalog
+// sibling that never filled the repository claims nothing, and a sibling that did
+// keeps what it asked for even when both models asked for the same file.
 bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
                                                      const KnownModels& all_models) const {
     const std::string main_checkpoint = info.checkpoint("main");
@@ -505,12 +600,101 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
         return false;
     }
 
-    // With no other model on this repository, the whole incomplete cache goes:
-    // .partial files, stale manifests, whatever finished before the cancellation,
-    // refs and blobs, in one atomic intent.
-    if (!repo_shared(main_repo, registry_source, info.model_name, all_models)) {
+    const std::string variant = variant_from_checkpoint(main_checkpoint);
+    std::vector<std::string> sibling_variants;
+    for (const auto& [name, other] : all_models) {
+        if (name == info.model_name || !other.source.empty()) continue;
+        if (registry_source_of(other) != registry_source) continue;
+        for (const auto& [type, checkpoint] : other.checkpoints) {
+            (void)type;
+            if (repo_id_from_checkpoint(checkpoint) == main_repo) {
+                sibling_variants.push_back(variant_from_checkpoint(checkpoint));
+            }
+        }
+    }
+    const auto claimed_by_sibling = [&sibling_variants](const std::string& name) {
+        for (const auto& other : sibling_variants) {
+            if (pending_matches_variant(name, other)) return true;
+        }
+        return false;
+    };
+
+    const DownloadMarkers markers = collect_download_markers(repo_dir);
+
+    // The name a manifest records says who started that download. It settles what
+    // a file name cannot, and it does not reach past the files it lists.
+    std::string recorded_owner;
+    std::vector<const json*> manifests;
+    std::vector<json> documents;
+    for (const fs::path& path : markers.manifests) {
+        json doc = read_json_file(path);
+        std::string owner;
+        if (manifest_owner(doc, owner)) recorded_owner = owner;
+        documents.push_back(std::move(doc));
+    }
+    for (size_t i = 0; i < markers.manifests.size(); ++i) {
+        manifests.push_back(&documents[i]);
+    }
+    const bool named_for_us = !recorded_owner.empty() && recorded_owner == info.model_name;
+    const bool named_for_other = !recorded_owner.empty() && recorded_owner != info.model_name;
+    const bool sole_claimant = sibling_variants.empty();
+
+    std::vector<fs::path> ours;
+    bool foreign = false;
+    for (const fs::path& partial : markers.partials) {
+        std::string target = partial.filename().string();
+        target.erase(target.size() - strlen(".partial"));
+        const bool ours_partial =
+            sole_claimant ||
+            (pending_matches_variant(target, variant) &&
+             (named_for_us || !claimed_by_sibling(target)) && !named_for_other);
+        if (ours_partial) {
+            ours.push_back(partial);
+        } else {
+            foreign = true;
+        }
+    }
+
+    for (size_t i = 0; i < markers.manifests.size(); ++i) {
+        const json& doc = *manifests[i];
+        std::vector<std::string> listed;
+        const bool ours_manifest =
+            named_for_us ||
+            (!named_for_other && manifest_lists(doc, listed) &&
+             std::none_of(listed.begin(), listed.end(), claimed_by_sibling) &&
+             std::any_of(listed.begin(), listed.end(),
+                         [&variant](const std::string& name) {
+                             return pending_matches_variant(name, variant);
+                         }));
+        if (ours_manifest) {
+            ours.push_back(markers.manifests[i]);
+        } else {
+            foreign = true;
+        }
+    }
+
+    // A complete file in a repository somebody else named is theirs; a complete
+    // file with nobody else named is the one this model finished before quitting.
+    if (!sole_claimant) {
+        std::error_code ec;
+        for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file(ec) || ec) continue;
+            if (entry.path().extension() == ".partial" ||
+                entry.path().filename() == ".download_manifest.json") {
+                continue;
+            }
+            if (!ModelArtifactStore::path_complete(utils::path_to_utf8(entry.path()))) continue;
+            if (!pending_matches_variant(entry.path().filename().string(), variant)) {
+                foreign = true;
+                break;
+            }
+        }
+    }
+
+    if (!foreign) {
         LOG(INFO, kLog) << "Removing incomplete model cache: " << utils::path_to_utf8(repo_dir)
-                       << std::endl;
+                        << std::endl;
         std::error_code ec;
         fs::remove_all(repo_dir, ec);
         if (ec) {
@@ -520,48 +704,18 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
         return true;
     }
 
-    // A shared repository must not go wholesale: only this variant's partial, plus
-    // the manifest that counted it as an incomplete download.
-    const std::string variant = variant_from_checkpoint(main_checkpoint);
-    if (variant.empty()) {
-        LOG(INFO, kLog) << "Keeping shared incomplete cache for " << main_repo
-                        << " because the model has no exact variant" << std::endl;
-        return false;
-    }
-
-    fs::path snapshots_dir = repo_dir / "snapshots";
-    if (!safe_exists(snapshots_dir)) {
-        return false;
-    }
-
-    std::string normalized_variant = variant;
-    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
-
     bool removed_any = false;
-    std::error_code ec;
-    for (const auto& entry : fs::recursive_directory_iterator(snapshots_dir, safe_dir_options, ec)) {
-        if (ec) break;
-
-        const fs::path partial_path = entry.path();
-        const std::string rel = normalized_relative_path(partial_path, snapshots_dir);
-        const std::string filename = partial_path.filename().string();
-        const bool matches_variant_partial =
-            filename == variant + ".partial" ||
-            rel == normalized_variant + ".partial" ||
-            rel.rfind("/" + normalized_variant + ".partial") != std::string::npos;
-        if (!matches_variant_partial) {
-            continue;
+    for (const fs::path& path : ours) {
+        if (!safe_exists(path)) continue;
+        LOG(INFO, kLog) << "Removing leftover of an interrupted download: "
+                        << utils::path_to_utf8(path) << std::endl;
+        if (path.extension() == ".partial") {
+            remove_file_or_throw(path, "incomplete model download partial");
+        } else {
+            remove_file_or_throw(path, "stale download manifest");
         }
-
-        remove_file_or_throw(partial_path, "incomplete model download partial");
-        remove_stale_manifest_for_partial(partial_path, repo_dir);
-        cleanup_empty_parents(partial_path, repo_dir);
+        cleanup_empty_parents(path, repo_dir);
         removed_any = true;
-    }
-
-    if (!removed_any) {
-        LOG(INFO, kLog) << "No incomplete cache artifacts found for shared repo " << main_repo
-                        << std::endl;
     }
     return removed_any;
 }
@@ -775,8 +929,7 @@ static bool collect_registered_shards(const fs::path& resolved, const fs::path& 
     return !ec && complete && indices.size() == static_cast<size_t>(total);
 }
 
-// Only complete repository caches can reclaim registered model identities;
-// loose GGUFs remain independent extra.* entries.
+// Only a complete cache reclaims a registered identity; loose GGUFs stay extra.*.
 bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
                                            std::set<fs::path>* registered_paths) const {
     const std::string extra_dir =

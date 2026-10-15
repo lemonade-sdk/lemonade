@@ -105,9 +105,6 @@ public:
         return nullptr;
     }
 
-    // A checkpoint the engine fetches on first use rather than at pull time, so its
-    // absence leaves the model downloaded. The whisper NPU side cache is the shipped
-    // case; it lands beside the file it was built for, hence also a sibling layout.
     virtual bool acquires_lazily(const std::string& checkpoint_type) const {
         (void)checkpoint_type;
         return false;
