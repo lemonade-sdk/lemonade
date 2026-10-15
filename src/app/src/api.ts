@@ -467,6 +467,7 @@ export interface StatsData {
   output_tokens: number;
   time_to_first_token: number;
   tokens_per_second: number;
+  request_count_total?: number;
   decode_token_times: number[];
   prompt_tokens: number;
   live?: {
@@ -519,18 +520,19 @@ export interface JobRecord {
 export interface SlotData {
   id: number;
   n_ctx: number;
-  n_decoded: number;
+  n_decoded?: number;
+  next_token?: { n_decoded?: number } | Array<{ n_decoded?: number }>;
   n_prompt_tokens: number;
   n_prompt_tokens_processed: number;
-  state: number;
-  is_processing: boolean;
+  state: number | string;
+  is_processing?: boolean;
   model: string;
   temperature: number;
   top_k: number;
   top_p: number;
-  cache_tokens: number[];
+  cache_tokens: number[] | number;
   n_cache_tokens?: number;
-  timings: SlotTimings;
+  timings?: SlotTimings;
   prompt: string;
   truncated: boolean;
   stopped_eos: boolean;
@@ -541,7 +543,8 @@ export interface SlotData {
 /** Get usable cache token count — prefers n_cache_tokens (number) over cache_tokens array length */
 export function getCacheTokenCount(s: SlotData): number {
   if (typeof s.n_cache_tokens === 'number') return s.n_cache_tokens;
-  return s.cache_tokens?.length || 0;
+  if (typeof s.cache_tokens === 'number') return s.cache_tokens;
+  return Array.isArray(s.cache_tokens) ? s.cache_tokens.length : 0;
 }
 
 export interface LogEntry {
