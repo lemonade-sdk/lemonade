@@ -198,8 +198,7 @@ void JsonCatalog::enumerate(CatalogAccumulator& accumulator) const {
         if (!info) {
             continue;
         }
-        accumulator.add(CatalogEntry{descriptor_.id, std::move(*info)},
-                        CatalogAccumulator::Conflict::Overwrite);
+        accumulator.add(CatalogEntry{descriptor_.id, std::move(*info)}, descriptor_.claim);
     }
 }
 
