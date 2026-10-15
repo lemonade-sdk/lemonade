@@ -573,7 +573,11 @@ The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-o
 
 ### Image defaults
 
-For `sd-cpp` recipe models, you can specify default image generation parameters:
+For image models (including `sd-cpp` and `thenoise`), you can specify default generation parameters.
+The optional `soft_pixel_cap` limits the **inferred output area** of `/images/edits` when
+`size` is omitted; Lemonade preserves the input aspect ratio. If this field is
+missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
+Explicitly requested output sizes are not subject to this soft cap:
 
 ```json
 {
@@ -585,7 +589,8 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "soft_pixel_cap": 262144
         }
     }
 }
