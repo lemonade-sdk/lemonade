@@ -75,6 +75,7 @@ struct RoutePolicy;
 namespace models {
 class ArtifactSource;
 class ModelArtifactStore;
+class ModelCatalog;
 struct FilterReasons;
 struct ResolvedModel;
 struct StoreSnapshot;
@@ -177,8 +178,21 @@ struct ModelFileInfo {
 
 class CloudProviderRegistry;
 
+// Everything the composition root needs. Server fills it in; a test points the
+// same struct at fixture paths and fixture catalogs.
+struct ModelManagerConfig {
+    std::string cache_dir;  // empty: whatever utils::get_cache_dir() resolves to
+    std::string extra_models_dir;
+    CloudProviderRegistry* cloud_providers = nullptr;  // Not owned
+    std::function<std::string()> default_model_source;
+    std::vector<std::shared_ptr<models::ModelCatalog>> extra_catalogs;
+};
+
 class ModelManager {
 public:
+    explicit ModelManager(ModelManagerConfig config);
+
+    // The paths-only shorthand.
     explicit ModelManager(const std::string& extra_models_dir = "");
 
 // Joins the watcher thread: its callback locks models_cache_mutex_, declared
@@ -189,19 +203,8 @@ public:
         return discover_extra_models();
     }
 
-    // Wires the cloud provider registry. ModelManager uses it to look up
-    // {base_url, api_key} per provider when refreshing cloud models during
-    // build_cache(). Pointer (not ownership) — Server owns the registry.
-    // Must be called before the first build_cache() / get_supported_models().
-    void set_cloud_registry(CloudProviderRegistry* registry);
-
-    // The wired registry, or nullptr if set_cloud_registry was never called.
+    // The configured registry, or nullptr when none was configured.
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
-
-    // Wires a provider returning the server-wide default_model_source
-    // ("huggingface"/"modelscope"). Self-managed backends (flm) are excluded
-    // from apply_default_pull_source, so they consult this to honor the default.
-    void set_default_model_source_provider(std::function<std::string()> provider);
 
     // The registry a pull of this model reads: what the model was registered with
     // wins over the server-wide default.
@@ -509,6 +512,7 @@ private:
     models::RegistryDocuments registries_;
     RecipeOptionsStore recipe_options_;
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
+    ModelManagerConfig config_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     models::AliasManager alias_manager_;
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned

@@ -116,10 +116,6 @@ static const json* registry_row(const models::RegistryDocuments::Pin& rows,
                     strip_user_model_prefix(cache_key));
 }
 
-void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
-    default_model_source_provider_ = std::move(provider);
-}
-
 RegistryId ModelManager::download_source_for(const ModelInfo& info) const {
     return ingest_->download_source_for(info);
 }
@@ -340,8 +336,12 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
 }
 
 ModelManager::ModelManager(const std::string& extra_models_dir)
-    : extra_models_dir_(extra_models_dir),
-      alias_manager_(utils::get_cache_dir()),
+    : ModelManager(ModelManagerConfig{{}, extra_models_dir, nullptr, {}, {}}) {}
+
+ModelManager::ModelManager(ModelManagerConfig config)
+    : config_(std::move(config)),
+      extra_models_dir_(config_.extra_models_dir),
+      alias_manager_(config_.cache_dir.empty() ? utils::get_cache_dir() : config_.cache_dir),
       registries_(load_server_models(), get_user_models_file()),
       recipe_options_(get_recipe_options_file()),
       artifacts_(std::make_unique<models::ModelArtifactStore>(models::ModelArtifactStore::Hooks{
@@ -351,6 +351,9 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
       })),
       ingest_(std::make_unique<models::ModelIngest>(make_ingest_deps())),
       sync_(make_sync_deps()) {
+    cloud_registry_ = config_.cloud_providers;
+    default_model_source_provider_ = std::move(config_.default_model_source);
+
     // Readers must always have a snapshot; an invalid one tells them to build.
     std::atomic_store(&store_snapshot_, std::shared_ptr<const models::StoreSnapshot>(
                                             std::make_shared<models::StoreSnapshot>()));
@@ -1038,6 +1041,9 @@ void ModelManager::build_cache() {
     for (const auto& catalog : catalogs) {
         catalog->enumerate(accumulated);
     }
+    for (const auto& catalog : config_.extra_catalogs) {
+        catalog->enumerate(accumulated);
+    }
 
     std::map<std::string, ModelInfo> all_models = accumulated.take();
 
@@ -1652,10 +1658,6 @@ std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const
     auto snapshot = std::atomic_load(&store_snapshot_);
     const std::vector<std::string> hidden = snapshot->empty_recipes();
     return std::set<std::string>(hidden.begin(), hidden.end());
-}
-
-void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
-    cloud_registry_ = registry;
 }
 
 size_t ModelManager::refresh_cloud_models(const std::string& provider) {

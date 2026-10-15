@@ -44,7 +44,6 @@ struct DeleteReport {
     bool cleaned_partial_download = false;
 };
 
-// A checkpoint's file left inside another checkpoint's repository cache.
 struct OrphanedFile {
     std::string model;
     std::string type;
