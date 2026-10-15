@@ -104,7 +104,7 @@ ResolvedLaunchInputs LaunchPlanner::prepare(const BackendDefinition& definition,
             if (launch["program"]["source"] == "external_or_managed") inputs.executable = resolve_external_or_managed_binary(spec, backend, binary);
             else { services.install_backend(definition.recipe, backend); inputs.executable = services.managed_binary(spec, backend); }
             values["launch"]["executable"] = inputs.executable;
-            if (launch["program"].contains("missing_error") && !services.exists(inputs.executable)) throw std::runtime_error(definition.required_value("/launch/program/missing_error", values).get<std::string>());
+            if (launch["program"].contains("missing_error") && inputs.executable.empty()) throw std::runtime_error(definition.required_value("/launch/program/missing_error", values).get<std::string>());
         } else {
             for (const auto& port : launch.at("ports")) {
                 const int number = services.allocate_port();

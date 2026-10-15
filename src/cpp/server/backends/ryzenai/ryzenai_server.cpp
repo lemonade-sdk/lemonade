@@ -1,16 +1,20 @@
+#include "backend_definition_resources.h"
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_definition_store.h"
+#include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/model_manager.h"
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
-#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -22,7 +26,12 @@ InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, 
 }
 
 RyzenAIServer::RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager)
-    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager) {
+    : RyzenAIServer(debug, model_manager, backend_manager,
+                    backends::production_backend_effects(backend_manager, [this] { return choose_port(); })) {}
+
+RyzenAIServer::RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager,
+                           backends::BackendEffects effects)
+    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager), effects_(std::move(effects)) {
     bind_legacy_operations(LegacyOperationProfile::RyzenAI, *this);
 }
 
@@ -33,9 +42,9 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << "Loading model: " << model_name << std::endl;
     int ctx_size = options.get_option("ctx_size");
 
-    backend_manager_->install_backend("ryzenai-llm", "npu");
+    effects_.binary.install("ryzenai-llm", "npu");
 
-    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu");
+    std::string ryzenai_server_path = effects_.binary.managed_path(*backends::ryzenai::legacy_spec(), "npu");
     if (ryzenai_server_path.empty()) {
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }
@@ -43,13 +52,13 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << "Found ryzenai-server at: " << ryzenai_server_path << std::endl;
 
     const std::string model_path = model_info.resolved_path();
-    if (model_path.empty() || !fs::exists(model_path)) {
+    if (model_path.empty() || !effects_.exists(model_path)) {
         throw std::runtime_error("Model path does not exist: " + model_path);
     }
 
     LOG(DEBUG, "RyzenAI") << "Model path: " << model_path << std::endl;
 
-    port_ = choose_port();
+    port_ = effects_.allocate_port();
 
     std::vector<std::string> args = {
         "-m", model_path,
@@ -71,7 +80,7 @@ void RyzenAIServer::load(const std::string& model_name,
     command.program = ryzenai_server_path;
     command.args = std::move(args);
     command.port = port_;
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
+    start_server(effects_.make_process(ProcessOutput{is_debug(), true}, ""), command);
 }
 
 json RyzenAIServer::chat_completion(const json& request) {
@@ -92,7 +101,25 @@ namespace lemon {
 namespace backends {
 namespace ryzenai {
 
+namespace {
+bool configured_enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("LEMONADE_RYZENAI_CONFIGURED");
+        return value && std::string(value) == "1";
+    }();
+    return enabled;
+}
+std::shared_ptr<const ConfiguredBackendEntry> configured_entry() {
+    static const auto entry = [] {
+        auto result = BackendDefinitionStore().validate({"embedded:ryzenai.json", k_ryzenai_definition, DefinitionOrigin::Builtin});
+        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
+        return ConfiguredBackendEntry::make(result.definition);
+    }();
+    return entry;
+}
+}
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
+    if (configured_enabled()) return configured_entry()->factory(ctx);
     return std::make_unique<::lemon::RyzenAIServer>(ctx.log_level == "debug", ctx.model_manager,
                                                    ctx.backend_manager);
 }
@@ -124,12 +151,14 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() {
+const BackendSpec* legacy_spec() {
     static const BackendSpec kSpec("ryzenai-server", descriptor.binary,
                                    ::lemon::RyzenAIServer::get_install_params, /*split=*/false);
     return &kSpec;
 }
-const BackendOps* ops() { return single_ops<RyzenAiOps>(); }
+const BackendOps* legacy_ops() { return single_ops<RyzenAiOps>(); }
+const BackendSpec* spec() { return configured_enabled() ? &configured_entry()->spec : legacy_spec(); }
+const BackendOps* ops() { return configured_enabled() ? configured_entry()->ops.get() : legacy_ops(); }
 }  // namespace ryzenai
 }  // namespace backends
 }  // namespace lemon

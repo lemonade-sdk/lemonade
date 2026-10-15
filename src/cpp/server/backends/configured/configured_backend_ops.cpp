@@ -1,9 +1,24 @@
 #include "lemon/backends/configured/configured_backend_ops.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/utils/path_utils.h"
 
 #include <algorithm>
+#include <filesystem>
 
 namespace lemon::backends {
+namespace {
+std::string first_sentinel_directory(const std::string& root, const std::string& sentinel) {
+    const auto path = utils::path_from_utf8(root);
+    if (hf_cache::exists(path)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(path, hf_cache::dir_options())) {
+            if (entry.is_regular_file() && entry.path().filename() == sentinel) {
+                return utils::path_to_utf8(entry.path().parent_path());
+            }
+        }
+    }
+    return "";
+}
+}
 
 std::string ConfiguredBackendOps::resolve_checkpoint_path(const ModelInfo& info, const CheckpointResolveContext& context) const {
     const auto artifacts = definition_->records.value("artifacts", json::object());
@@ -15,7 +30,20 @@ std::string ConfiguredBackendOps::resolve_checkpoint_path(const ModelInfo& info,
         if (artifact["role"] == context.type) selected = &artifact;
     }
     if (selected && selected->value("cache_resolution", "default") == "active_snapshot") return hf_cache::active_snapshot_or_cache_path(context.model_cache_path);
+    if (selected && selected->value("cache_resolution", "default") == "sentinel_directory") {
+        const auto found = first_sentinel_directory(context.model_cache_path, selected->at("sentinel"));
+        return found.empty() ? context.model_cache_path : found;
+    }
     return BackendOps::resolve_checkpoint_path(info, context);
+}
+std::string ConfiguredBackendOps::find_imported_checkpoint(const std::string& import_directory) const {
+    const auto artifacts = definition_->records.value("artifacts", json::object());
+    for (const auto& [name, artifact] : artifacts.items()) {
+        if (artifact["role"] == "main" && artifact.value("import_resolution", "default") == "sentinel_directory") {
+            return first_sentinel_directory(import_directory, artifact.at("sentinel"));
+        }
+    }
+    return BackendOps::find_imported_checkpoint(import_directory);
 }
 std::optional<std::vector<std::string>> ConfiguredBackendOps::select_checkpoint_files(const std::string& variant, const std::vector<std::string>& repository_files) const {
     const auto artifacts = definition_->records.value("artifacts", json::object());

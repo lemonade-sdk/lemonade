@@ -197,7 +197,13 @@ public:
         const auto artifacts = doc.value("artifacts", json::object());
         for (const auto& [name, artifact] : artifacts.items()) {
             const std::string p = "/artifacts/" + escape(name);
-            if (artifact.value("cache_resolution", "default") == "sentinel_directory" || artifact.value("import_resolution", "default") == "sentinel_directory") error("unsupported_feature", p, "Sentinel artifact adapter not installed");
+            if (artifact.value("cache_resolution", "default") == "sentinel_directory" || artifact.value("import_resolution", "default") == "sentinel_directory") {
+                const std::string sentinel = artifact.value("sentinel", "");
+                if (sentinel.empty() || sentinel == "." || sentinel == ".." || sentinel.find_first_of("/\\:") != std::string::npos || sentinel.find('\0') != std::string::npos) {
+                    error("invalid_relationship", p + "/sentinel", "Sentinel must be a nonempty single filename");
+                }
+                if (artifact.value("selection", "") != "first_existing") error("unsupported_feature", p + "/selection", "Sentinel selection must be first_existing");
+            }
             if (artifact.contains("missing_error")) expression(definition, p + "/missing_error");
             else error("required", p + "/missing_error", "Load artifact error is required");
             if (artifact.contains("hook") || artifact["strategy"] == "hook") error("unknown_hook", p + "/hook", "Artifact hook not installed");

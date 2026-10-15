@@ -2,6 +2,7 @@
 
 namespace lemon::backends {
 inline constexpr char k_backend_definition_schema[] = R"definition(@BACKEND_DEFINITION_SCHEMA@)definition";
+inline constexpr char k_ryzenai_definition[] = R"definition(@RYZENAI_DEFINITION@)definition";
 inline constexpr char k_ds4_definition[] = R"definition(@DS4_DEFINITION@)definition";
 inline constexpr char k_thinksound_definition[] = R"definition(@THINKSOUND_DEFINITION@)definition";
 }

@@ -1123,10 +1123,12 @@ set(LEMON_BACKEND_DESCRIPTOR_SOURCES
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json" BACKEND_DEFINITION_SCHEMA)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json" THINKSOUND_DEFINITION)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json" DS4_DEFINITION)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json" RYZENAI_DEFINITION)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ryzenai.json")
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
 set(LEMON_BACKEND_FACTORY_SOURCES
@@ -3625,6 +3627,7 @@ if(BUILD_TESTING)
     add_executable(test_configured_llm_execution test/cpp/test_configured_llm_execution.cpp)
     target_link_libraries(test_configured_llm_execution PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredDs4ExecutionTest CI ON COMMAND test_configured_llm_execution)
+    add_cpp_ci_test(ConfiguredRyzenAiExecutionTest CI ON COMMAND test_configured_llm_execution --ryzenai)
 endif()
 
 if(BUILD_TESTING)
@@ -3632,11 +3635,13 @@ if(BUILD_TESTING)
     target_link_libraries(test_configured_registration PRIVATE lemonade-server-core)
     foreach(_thinksound RANGE 0 1)
         foreach(_ds4 RANGE 0 1)
-            add_cpp_ci_test(ConfiguredRegistration${_thinksound}${_ds4} CI ON
-                COMMAND ${CMAKE_COMMAND} -E env
-                    LEMONADE_THINKSOUND_CONFIGURED=${_thinksound} LEMONADE_DS4_CONFIGURED=${_ds4}
-                    $<TARGET_FILE:test_configured_registration>
-                DEPENDS test_configured_registration)
+            foreach(_ryzenai RANGE 0 1)
+                add_cpp_ci_test(ConfiguredRegistration${_thinksound}${_ds4}${_ryzenai} CI ON
+                    COMMAND ${CMAKE_COMMAND} -E env
+                        LEMONADE_THINKSOUND_CONFIGURED=${_thinksound} LEMONADE_DS4_CONFIGURED=${_ds4} LEMONADE_RYZENAI_CONFIGURED=${_ryzenai}
+                        $<TARGET_FILE:test_configured_registration>
+                    DEPENDS test_configured_registration)
+            endforeach()
         endforeach()
     endforeach()
     foreach(_value IN ITEMS "" "0" "true")
@@ -3647,12 +3652,18 @@ if(BUILD_TESTING)
         endif()
         add_cpp_ci_test(ConfiguredRegistration${_label} CI ON
             COMMAND ${CMAKE_COMMAND} -E env
-                LEMONADE_THINKSOUND_CONFIGURED=${_value} LEMONADE_DS4_CONFIGURED=${_value}
+                LEMONADE_THINKSOUND_CONFIGURED=${_value} LEMONADE_DS4_CONFIGURED=${_value} LEMONADE_RYZENAI_CONFIGURED=${_value}
                 $<TARGET_FILE:test_configured_registration>
             DEPENDS test_configured_registration)
     endforeach()
     add_cpp_ci_test(ConfiguredRegistrationUnset CI ON
-        COMMAND ${CMAKE_COMMAND} -E env --unset=LEMONADE_THINKSOUND_CONFIGURED --unset=LEMONADE_DS4_CONFIGURED
+        COMMAND ${CMAKE_COMMAND} -E env --unset=LEMONADE_THINKSOUND_CONFIGURED --unset=LEMONADE_DS4_CONFIGURED --unset=LEMONADE_RYZENAI_CONFIGURED
             $<TARGET_FILE:test_configured_registration>
         DEPENDS test_configured_registration)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_ryzenai_oracle test/cpp/test_ryzenai_oracle.cpp)
+    target_link_libraries(test_ryzenai_oracle PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RyzenAiOracleTest CI ON COMMAND test_ryzenai_oracle)
 endif()

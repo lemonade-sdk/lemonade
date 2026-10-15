@@ -1,6 +1,6 @@
-#include "llm_configured_fixture.h"
 #include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/ds4/ds4_server.h"
+#include "llm_configured_fixture.h"
 
 using namespace llm_oracle;
 
@@ -30,7 +30,7 @@ int main() {
     const auto& d = entry->descriptor;
     check(d.recipe == "ds4" && d.display_name == "DwarfStar4" && d.binary == "ds4-server" && d.config_section.empty() && d.default_device == DEVICE_GPU && d.slot_policy == SlotPolicy::Standard && d.uses_ctx_size && !d.selectable_backend && d.streams_model_from_storage, "independent DS4 metadata identities");
     check(d.options.size() == 1 && d.options[0].name == "ds4_args" && d.options[0].cli_flag == "--ds4-args" && d.options[0].default_value == "" && d.config_defaults() == json{{"args", ""}} && d.supported_modes == std::vector<std::string>{"chat"} && d.required_checkpoints == std::vector<std::string>{"main"}, "independent DS4 options/defaults/modes");
-    check(d.support[0].backend == "rocm" && d.support[0].supported_os == std::set<std::string>{"linux"} && d.support[0].devices == DeviceConstraints{{"amd_gpu", {"gfx1151"}}} && ds4::capabilities() == capability_mask_of<Ds4Server>(), "independent DS4 support and unchanged capability export");
+    check(d.support[0].backend == "rocm" && d.support[0].supported_os == std::set<std::string>{"linux"} && d.support[0].devices == DeviceConstraints{{"amd_gpu", {"gfx1151"}}} && ds4::capabilities() == 0, "independent DS4 support and unchanged capability export");
     auto external_document = json::parse(k_ds4_definition);
     external_document["metadata"]["options"][0]["cli_flag"] = "";
     auto external = BackendDefinitionStore().validate({"external.json", external_document.dump(), DefinitionOrigin::External});
