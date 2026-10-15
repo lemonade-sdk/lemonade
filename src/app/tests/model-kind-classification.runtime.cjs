@@ -52,7 +52,6 @@ const {
   isComposerSelectableCapability,
 } = loadTypeScriptModule(capabilitiesPath);
 
-/* ── Every documented deployment label maps to a surface ───────────── */
 
 const EXPECTED = {
   chat: 'chat',
@@ -76,7 +75,6 @@ for (const [label, kind] of Object.entries(EXPECTED)) {
   );
 }
 
-/* ── Drift guard against docs/api/openai.md ────────────────────────── */
 
 const apiDocs = fs.readFileSync(path.join(repoRoot, 'docs/api/openai.md'), 'utf8');
 const deploymentSection = apiDocs.slice(
@@ -87,7 +85,6 @@ assert.ok(deploymentSection.length > 0, 'the deployment label section must be fi
 
 const documented = new Set();
 for (const [, label] of deploymentSection.matchAll(/^\| `([a-z0-9-]+)` \|/gm)) documented.add(label);
-// "Also accepted as `embedding`." / "Also accepted as `classifier`."
 for (const [, alias] of deploymentSection.matchAll(/Also accepted as `([a-z0-9-]+)`/g)) documented.add(alias);
 
 assert.equal(documented.size, 11, 'nine deployment labels plus the two documented aliases');
@@ -106,7 +103,6 @@ assert.deepEqual(
   'the GUI lookup must carry exactly the deployment labels documented in docs/api/openai.md',
 );
 
-/* ── chat outranks every other mode, as find_deployment_mode does ──── */
 
 assert.equal(deploymentKindFromLabels(['chat', 'transcription']), 'chat');
 assert.equal(deploymentKindFromLabels(['image', 'chat']), 'chat', 'order does not matter');
@@ -116,7 +112,6 @@ assert.equal(
   'labels are compared case- and whitespace-insensitively',
 );
 
-/* ── Characteristics and input modalities name no mode ─────────────── */
 
 for (const labels of [[], ['reasoning'], ['tool-calling', 'coding'], ['vision'], ['chat-transcription'], ['hot']]) {
   assert.equal(
@@ -126,7 +121,6 @@ for (const labels of [[], ['reasoning'], ['tool-calling', 'coding'], ['vision'],
   );
 }
 
-/* ── Collections deploy as chat; Omni/Router are structural ────────── */
 
 const omniCollection = { id: 'user.suite', recipe: 'collection.omni', labels: ['chat'], components: ['a', 'b'] };
 const routerCollection = { id: 'user.router', recipe: 'collection.router', labels: ['chat'] };
@@ -140,14 +134,12 @@ assert.equal(capabilityFromModelInfo(omniCollection), 'chat', 'a collection depl
 assert.equal(identityFromModelInfo(omniCollection), 'omni');
 assert.equal(identityFromModelInfo(routerCollection), 'router');
 assert.equal(capabilityLabel(identityFromModelInfo(omniCollection)), 'Omni');
-// One identity rule, shared by rows, snapshots and the chat composer.
 assert.equal(identityFor('chat', 'collection.omni'), 'omni');
 assert.equal(identityFor('chat', 'collection.router'), 'router');
 assert.equal(identityFor('image', 'sd-cpp'), 'image');
 assert.equal(isComposerSelectableCapability('chat'), true);
 assert.equal(isComposerSelectableCapability('embedding'), false);
 
-/* ── Loaded models are classified by the router's own ModelType ────── */
 
 const LOADED = {
   llm: 'chat',
@@ -168,8 +160,6 @@ for (const [type, kind] of Object.entries(LOADED)) {
   );
 }
 
-// A collection is synthesized client-side when its components are all loaded:
-// it reports type 'omni', carries no labels, and is known only by its recipe.
 assert.equal(
   capabilityFromLoaded({ model_name: 'user.suite', type: 'omni', recipe: 'collection.omni' }),
   'chat',
@@ -181,7 +171,6 @@ assert.equal(
   'a non-collection reporting an unknown ModelType is still unknown',
 );
 
-/* ── The shipped registry never produces Unknown ───────────────────── */
 
 const registry = JSON.parse(
   fs.readFileSync(path.join(repoRoot, 'src/cpp/resources/server_models.json'), 'utf8'),
@@ -199,15 +188,12 @@ assert.deepEqual(
 const chatModels = entries.filter(([, info]) => capabilityFromModelInfo(info) === 'chat');
 assert.ok(chatModels.length > 100, 'the registry chat models must be recognized as chat');
 
-// The bug this refactor closes: a registry_source of huggingface/modelscope used
-// to send installed models down the remote-search branch and out as Unknown.
 assert.equal(
   capabilityFromModelInfo({ id: 'installed', recipe: 'llamacpp', registry_source: 'huggingface', labels: ['chat'] }),
   'chat',
   'an installed model carrying a registry_source stays classified',
 );
 
-// A remote search row genuinely has no deployment label, and Unknown is honest.
 assert.equal(capabilityFromModelInfo({ id: 'some/repo', recipe: 'llamacpp', labels: [] }), 'unknown');
 
 console.log(`Model kind classification checks passed (${entries.length} registry models, ${documented.size} labels).`);

@@ -45,8 +45,6 @@ test.describe('Model kind display', () => {
           display_name: row.id,
           labels: row.labels,
           recipe: row.recipe,
-          // Every served model carries this; it used to send the whole catalog
-          // down the remote-search branch and out as Unknown.
           registry_source: 'huggingface',
           downloaded: true,
           size: 1,
@@ -81,7 +79,6 @@ test.describe('Model kind display', () => {
     const chip = (name: RegExp) => page.locator('.model-nav-rail__task-chip').filter({ hasText: name });
     const list = page.locator('.model-list-panel__list .workspace-list-row');
 
-    // A collection serves chat but has its own task, so it is counted once.
     await chip(/^Chat/).click();
     await expect(list).toHaveCount(2);
     await expect(list.filter({ hasText: 'Collection' })).toHaveCount(0);

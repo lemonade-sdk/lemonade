@@ -20,7 +20,6 @@ const COPY_LABEL = 'Copy';
 const COPIED_LABEL = 'Copied';
 const COPY_FAILED_LABEL = 'Copy failed';
 
-/* ── Mermaid init ──────────────────────────────────────────── */
 
 let mermaidReady = false;
 function ensureMermaidInit() {
@@ -34,7 +33,6 @@ function ensureMermaidInit() {
   }
 }
 
-/* ── DOMPurify config ─────────────────────────────────────── */
 
 const PURIFY_CONFIG: DOMPurify.Config = {
   ALLOWED_TAGS: [
@@ -46,9 +44,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
     'blockquote', 'pre', 'code', 'kbd', 'var', 'samp',
     'details', 'summary', 'figure', 'figcaption',
     'abbr', 'cite', 'q', 'time', 'ruby', 'rt', 'rp',
-    // Interactive options
     'button', 'input',
-    // SVG basics for inline diagrams
     'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'text', 'g', 'defs',
     'use', 'clipPath', 'marker', 'pattern', 'foreignObject', 'tspan',
   ],
@@ -57,7 +53,6 @@ const PURIFY_CONFIG: DOMPurify.Config = {
     'colspan', 'rowspan', 'scope', 'align', 'valign',
     'open', 'datetime', 'cite',
     'data-option', 'data-mermaid-toggle', 'placeholder', 'type', 'value',
-    // SVG attrs
     'd', 'fill', 'stroke', 'stroke-width', 'viewBox', 'xmlns', 'x', 'y', 'rx', 'ry',
     'cx', 'cy', 'r', 'x1', 'y1', 'x2', 'y2', 'points', 'transform',
     'font-size', 'text-anchor', 'dominant-baseline', 'clip-path', 'marker-end',
@@ -66,7 +61,6 @@ const PURIFY_CONFIG: DOMPurify.Config = {
   ALLOW_DATA_ATTR: true,
 };
 
-/* ── Mermaid Block — proper React component with its own SVG state ── */
 
 const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ source, isComplete }) => {
   const { t } = useI18n();
@@ -127,7 +121,6 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
   );
 };
 
-/* ── Segment type for content splitting ── */
 
 interface Segment {
   type: 'text' | 'mermaid';
@@ -147,7 +140,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       typographer: true,
       breaks: true,
       highlight(str: string, lang: string): string {
-        // Options blocks get rendered as interactive buttons
         if (lang === 'options') {
           try {
             const parsed = JSON.parse(str);
@@ -191,7 +183,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       katexOptions: { throwOnError: false, displayMode: false },
     });
 
-    // Override fence to use our custom highlight wrapper
     instance.renderer.rules.fence = (tokens, idx) => {
       const token = tokens[idx];
       return instance.options.highlight!(token.content, token.info.trim(), '') || '';
@@ -200,7 +191,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return instance;
   }, [t]);
 
-  // Split content into text and mermaid segments
   const segments = useMemo((): Segment[] => {
     const result: Segment[] = [];
     const c = content || '';
@@ -223,7 +213,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return result;
   }, [content]);
 
-  // Render text segments to sanitized HTML
   const segmentHtmls = useMemo(() => {
     const map = new Map<number, string>();
     segments.forEach((seg, i) => {
@@ -234,7 +223,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return map;
   }, [md, segments]);
 
-  // Handle copy buttons and option buttons
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -242,7 +230,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
-      // Copy button
       const copyBtn = target.closest('.code-block__copy') as HTMLButtonElement | null;
       if (copyBtn) {
         e.preventDefault();
@@ -272,14 +259,12 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         return;
       }
 
-      // Option button
       const optBtn = target.closest('.options-block__btn') as HTMLButtonElement | null;
       if (optBtn && onOptionSelect) {
         onOptionSelect(optBtn.getAttribute('data-option') || optBtn.textContent || '');
         return;
       }
 
-      // Custom option submit
       const submitBtn = target.closest('.options-block__submit') as HTMLButtonElement | null;
       if (submitBtn && onOptionSelect) {
         const input = submitBtn.parentElement?.querySelector('.options-block__input') as HTMLInputElement | null;
@@ -291,7 +276,6 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       }
     };
 
-    // Handle Enter key in custom option input
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.classList.contains('options-block__input') && e.key === 'Enter' && onOptionSelect) {

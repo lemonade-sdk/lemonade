@@ -28,8 +28,8 @@ function dictionaryBody(source) {
   throw new Error('ZH_CN object literal is not balanced');
 }
 
-// A repeated key in an object literal is legal JavaScript: the last one silently
-// wins, so a shadowed translation would never surface at runtime or at build time.
+// A repeated key in an object literal is legal JavaScript: the last one silently wins, so a
+// shadowed translation would never surface at runtime or at build time.
 const entryPattern = new RegExp(`(?:^|\\n)\\s*(?:${SQ}|${DQ})\\s*:\\s*(?:${SQ}|${DQ})\\s*,`, 'g');
 const keys = [];
 for (const match of dictionaryBody(i18nSource).matchAll(entryPattern)) {
@@ -58,8 +58,6 @@ function walk(dir, out = []) {
   return out;
 }
 
-// Only literal keys can be checked statically. Keys reached through a variable
-// -- t(section.label) and friends -- are invisible here by construction.
 const callPattern = new RegExp(`\\b(?:t|translate|translateText)\\(\\s*(?:${SQ}|${DQ})`, 'g');
 const untranslated = [];
 for (const file of walk(srcRoot)) {
@@ -78,9 +76,9 @@ assert.deepEqual(
   `t() called with keys that have no zh-CN translation:\n  ${untranslated.join('\n  ')}`,
 );
 
-// Two shapes of JSX text escape a naive one-line `>text<` scan, and both shipped
-// English in the original pass: a text node on its own line between an opening
-// and a closing tag, and prose trailing a self-closing tag such as <Icon />.
+// Two shapes of JSX text escape a naive one-line `>text<` scan, and both shipped English in the
+// original pass: a text node on its own line between an opening and a closing tag, and prose
+// trailing a self-closing tag such as <Icon />.
 const JSX_FILES = [];
 (function collectTsx(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -100,7 +98,6 @@ for (const file of JSX_FILES) {
   const rel = path.relative(srcRoot, file).replace(/\\/g, '/');
   lines.forEach((line, i) => {
     const text = line.trim();
-    // Standalone text node: own line, previous line opens an element, next closes one.
     if (PROSE.test(text) && !/[<>{}]/.test(text)) {
       const prev = [...lines.slice(0, i)].reverse().find((l) => l.trim());
       const next = lines.slice(i + 1).find((l) => l.trim());
@@ -108,7 +105,6 @@ for (const file of JSX_FILES) {
         bareProse.push(`${rel}:${i + 1}: ${text}`);
       }
     }
-    // Prose trailing a self-closing tag on the same line.
     const trailing = line.match(/\/>\s+([A-Z][A-Za-z0-9 ,.'’\-&/()]{5,})$/);
     if (trailing) bareProse.push(`${rel}:${i + 1}: ${trailing[1].trim()}`);
   });
@@ -120,16 +116,15 @@ assert.deepEqual(
   `JSX text rendered without t():\n  ${bareProse.join('\n  ')}`,
 );
 
-// Label tables live at module scope and are translated at render via t(x.label).
-// A literal scan cannot see them, so their values are checked explicitly: a new
-// row here ships English to zh-CN users without tripping anything else.
+// Label tables live at module scope and are translated at render via t(x.label). A literal scan
+// cannot see them, so their values are checked explicitly: a new row here ships English to zh-CN
+// users without tripping anything else.
 const DYNAMIC_LABEL_TABLES = {
   'components/ModelNavRail.tsx': { const: 'TASK_ITEMS', field: 'label' },
   'components/ModelDetailPanel.tsx': { const: 'TABS', field: 'label' },
   'components/GlobalModelSettingsPanel.tsx': { const: 'READ_MODES', field: 'title' },
 };
 
-// Brands and model families read the same in every locale.
 const UNTRANSLATED_BY_DESIGN = new Set(['Hugging Face', 'ModelScope', 'Lemonade']);
 
 for (const [rel, spec] of Object.entries(DYNAMIC_LABEL_TABLES)) {
@@ -156,9 +151,9 @@ for (const [rel, spec] of Object.entries(DYNAMIC_LABEL_TABLES)) {
 //   - console.* arguments : developer output, never shown in the UI.
 const PROSE_SKIP_DIRS = ['tools/', 'features/router/', 'features/customModels/'];
 const CONSOLE_OR_THROW = /(console\.(log|warn|error|info|debug)|new Error)\s*\($/;
-// Only state setters. A literal in a module-level label table is correct when
-// the render site wraps it (t(section.label)), and no static rule can tell the
-// two apart -- those tables are covered by DYNAMIC_LABEL_TABLES below instead.
+// Only state setters. A literal in a module-level label table is correct when the render site wraps
+// it (t(section.label)), and no static rule can tell the two apart -- those tables are covered by
+// DYNAMIC_LABEL_TABLES below instead.
 const DISPLAY_SINK = /\bset[A-Z]\w*\(\s*$/;
 
 const strayProse = [];
@@ -168,7 +163,6 @@ for (const file of JSX_FILES) {
   const source = fs.readFileSync(file, 'utf8');
   for (const match of source.matchAll(new RegExp(SQ, 'g'))) {
     const value = unescape(match[1]);
-    // Only sentences and multi-word labels: single tokens are usually keys.
     if (!/^[A-Z][^<>{}=]*[ ·].{4,}$/.test(value) || value.length < 10) continue;
     const before = source.slice(Math.max(0, match.index - 60), match.index);
     if (CONSOLE_OR_THROW.test(before)) continue;
@@ -185,13 +179,13 @@ assert.deepEqual(
   `display prose assigned without t():\n  ${strayProse.join('\n  ')}`,
 );
 
-// The locale must stay per-client. Sending it to lemond would break the
-// many-clients-one-server topology.
+// The locale must stay per-client. Sending it to lemond would break the many-clients-one-server
+// topology.
 assert.match(i18nSource, /localStorage\.getItem\(LOCALE_STORAGE_KEY\)/);
 assert.doesNotMatch(i18nSource, /api\.|fetch\(/);
 
-// The critical CSS is inlined before the main stylesheet loads, so its font
-// stack must carry the CJK families too or zh-CN text swaps font on first paint.
+// The critical CSS is inlined before the main stylesheet loads, so its font stack must carry the
+// CJK families too or zh-CN text swaps font on first paint.
 const tokensCss = fs.readFileSync(path.join(srcRoot, 'styles/tokens.css'), 'utf8');
 const criticalCss = fs.readFileSync(path.join(srcRoot, 'styles/critical.generated.css'), 'utf8');
 for (const family of ['"Microsoft YaHei"', '"Noto Sans CJK SC"']) {

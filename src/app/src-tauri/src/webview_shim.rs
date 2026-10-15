@@ -89,7 +89,6 @@ pub(crate) fn apply(window: &WebviewWindow) {
     }
 }
 
-// ---------- Linux (webkit2gtk) ----------
 
 #[cfg(target_os = "linux")]
 fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
@@ -103,14 +102,12 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
 
     let wv = webview.inner();
 
-    // Enable WebRTC / getUserMedia. Off by default on webkit2gtk in Tauri.
     if let Some(settings) = wv.settings() {
         settings.set_enable_media_stream(true);
         settings.set_enable_mediasource(true);
         settings.set_enable_webrtc(true);
     }
 
-    // Auto-grant microphone/camera permission requests.
     wv.connect_permission_request(|_wv, request| {
         if request.is::<UserMediaPermissionRequest>() {
             request.allow();
@@ -120,7 +117,6 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
         }
     });
 
-    // Inject the click interceptor into every frame on every page load.
     if let Some(manager) = wv.user_content_manager() {
         let script = UserScript::new(
             CLICK_INTERCEPTOR_JS,
@@ -132,9 +128,9 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
         manager.add_script(&script);
     }
 
-    // Belt-and-suspenders fallback for non-click navigations to external URLs.
-    // The user script catches clicks; this catches programmatic navigations
-    // that bypass the click handler (e.g. `location.href = ...`).
+    // Belt-and-suspenders fallback for non-click navigations to external URLs. The user script
+    // catches clicks; this catches programmatic navigations that bypass the click handler (e.g.
+    // `location.href = ...`).
     wv.connect_decide_policy(|_wv, decision, decision_type| {
         if decision_type != PolicyDecisionType::NavigationAction {
             return false;
@@ -166,7 +162,6 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
     });
 }
 
-// ---------- macOS (WKWebView) ----------
 
 #[cfg(target_os = "macos")]
 fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
@@ -194,10 +189,6 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
     let mtm = MainThreadMarker::new()
         .expect("install_platform_shim must be called on the main thread");
 
-    // SAFETY: PlatformWebview::controller() returns a non-null
-    // WKUserContentController for the lifetime of the window. We only borrow
-    // it briefly to call addUserScript. Wry installs its own scripts the
-    // exact same way (see wry/src/wkwebview/mod.rs:780-787).
     unsafe {
         let manager: &WKUserContentController = &*webview.controller().cast();
         let alloc = WKUserScript::alloc(mtm);
@@ -206,16 +197,12 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
             alloc,
             &source,
             WKUserScriptInjectionTime::AtDocumentStart,
-            false, // forMainFrameOnly: false → injected into every frame
+            false,
         );
         manager.addUserScript(&script);
     }
-    // Mic/camera permission: wry's WryWebViewUIDelegate already auto-grants
-    // every WKMediaCaptureType (see wry/src/wkwebview/class/wry_web_view_ui_delegate.rs).
-    // Nothing additional to do here.
 }
 
-// ---------- Windows (WebView2) ----------
 
 #[cfg(target_os = "windows")]
 fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
@@ -235,7 +222,6 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
         }
     };
 
-    // Auto-grant microphone + camera. Clipboard is already auto-granted by wry.
     let mut token = 0i64;
     let handler = PermissionRequestedEventHandler::create(Box::new(|_, args| {
         let Some(args) = args else { return Ok(()) };
@@ -252,7 +238,6 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
         log::warn!("WebView2: add_PermissionRequested failed: {err}");
     }
 
-    // Inject the click interceptor into every frame on every navigation.
     let js = HSTRING::from(CLICK_INTERCEPTOR_JS);
     let result =
         webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler::wait_for_async_operation(

@@ -38,8 +38,8 @@ export function loadGlobalModelSettings(): GlobalModelSettings {
     if (!raw) return { ...DEFAULT_GLOBAL_MODEL_SETTINGS };
     const parsed = JSON.parse(raw);
     const sanitized = sanitizeGlobalModelSettings(parsed);
-    // Drop lifecycle fields written by older GUI3 builds. They are server-owned
-    // and must never be restored or translated into runtime configuration.
+    // Drop lifecycle fields written by older GUI3 builds. They are server-owned and must never be
+    // restored or translated into runtime configuration.
     if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
       localStorage.setItem(settingsKey(), JSON.stringify(sanitized));
     }
@@ -51,10 +51,10 @@ export function loadGlobalModelSettings(): GlobalModelSettings {
 
 export function saveGlobalModelSettings(settings: GlobalModelSettings): GlobalModelSettings {
   const sanitized = sanitizeGlobalModelSettings(settings);
-  try { localStorage.setItem(settingsKey(), JSON.stringify(sanitized)); } catch { /* best effort */ }
+  try { localStorage.setItem(settingsKey(), JSON.stringify(sanitized)); } catch {  }
   try {
     window.dispatchEvent(new CustomEvent(GLOBAL_MODEL_SETTINGS_EVENT, { detail: { settings: sanitized } }));
-  } catch { /* best effort */ }
+  } catch {  }
   return sanitized;
 }
 
@@ -76,8 +76,6 @@ function thresholdFraction(value: unknown): number {
 
 /** Read the effective eviction controls from the server runtime config snapshot. */
 export function evictionRuntimeSettingsFromConfig(config: Record<string, unknown>): EvictionRuntimeSettings {
-  // These fallbacks mirror RuntimeConfig's effective defaults when the optional
-  // keys have not yet been materialized in config.json.
   const autoEvict = typeof config.auto_evict === 'boolean' ? config.auto_evict : false;
   const fraction = config.auto_evict_threshold_pct === undefined
     ? 0.90

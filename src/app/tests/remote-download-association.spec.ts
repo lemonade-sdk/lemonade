@@ -116,8 +116,8 @@ test('remote progress belongs only to the repository registered for the download
   await expect(collidingRow).not.toContainText('Downloading');
   await expect(collidingRow.getByRole('button', { name: `Cancel download of ${collidingRepository}` })).toHaveCount(0);
 
-  // The association must also survive a reload, when component-local pull state is gone
-  // and the UI reconstructs progress solely from the server snapshots.
+  // The association must also survive a reload, when component-local pull state is gone and the UI
+  // reconstructs progress solely from the server snapshots.
   await page.reload();
   await page.locator('.titlebar__nav').getByText('Models', { exact: true }).click();
   await page.locator('#model-list-search').fill('llama 3.2');

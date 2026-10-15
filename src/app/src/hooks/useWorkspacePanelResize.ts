@@ -111,8 +111,8 @@ export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ s
     };
   }, [measureLayout]);
 
-  // A drag in flight owns window listeners and a global body class; unmounting
-  // mid-drag (view switch, error boundary) would otherwise strand both.
+  // A drag in flight owns window listeners and a global body class; unmounting mid-drag (view
+  // switch, error boundary) would otherwise strand both.
   useEffect(() => () => stopResizeRef.current?.(), []);
 
   const setCustomizedWidth = useCallback((width: number) => {

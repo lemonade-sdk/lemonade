@@ -608,8 +608,6 @@ function buildExternalRuntime(
       type: 'function',
       function: {
         ...(provided.function || {}),
-        // Always use the server-generated collision-safe name, even when an
-        // older host returns an openai_tool object with the raw MCP name.
         name: entry.chat_name,
         description: entry.description || `${entry.name} from ${entry.server_name}`,
         parameters: entry.inputSchema || { type: 'object', properties: {} },

@@ -220,9 +220,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const [dragRuleIndex, setDragRuleIndex] = useState<number | null>(null);
   const [selectedRuleIndex, setSelectedRuleIndex] = useState(0);
   const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(null);
-  // Tracks rule indices whose graph has been committed at least once. Needed to
-  // pass initialCommitted=true to the expanded RouterRuleGraph so a blank
-  // keywords_any node (textValue='') isn't mistaken for the initial empty state.
+  // Track committed graphs so an empty keywords_any node is not treated as a new draft.
   const committedRuleIndicesRef = useRef<Set<number>>(new Set());
   const [cloudProviders, setCloudProviders] = useState<CloudProviderRow[]>([]);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
@@ -314,9 +312,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       return;
     }
 
-    // The list endpoint may expose summary-only router fields. Fetch the
-    // authoritative detail before using any cached/list routing payload. A late
-    // response is guarded by the dirty baseline so it can never clobber edits.
+    // Fetch full router details; stale responses must not overwrite unsaved edits.
     const baselineAtDetailStart = baselineFingerprintRef.current;
     let cancelled = false;
     void api.modelDetail(modelNameValue)
@@ -402,8 +398,8 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const connectedModelNames = useMemo(() => {
     const names = new Set<string>();
     const add = (name: string) => {
-      // Model/component identifiers are exact server identities. Do not trim
-      // them here or the connection row can stop matching the draft/payload.
+      // Model/component identifiers are exact server identities. Do not trim them here or the
+      // connection row can stop matching the draft/payload.
       if (!name.length) return;
       names.add(name);
     };
@@ -415,8 +411,6 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
   const selectedConnections = useMemo(() => [...connectedModelNames].map(candidate => ({
     ...describeRouterModelConnection(candidate, models, cloudProviders),
-    // The connection helper normalizes for catalog lookup/display. Keep the
-    // draft's exact component identity for default badges and candidate removal.
     modelName: candidate,
   })), [connectedModelNames, models, cloudProviders]);
 
@@ -427,9 +421,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const jsonPreview = useMemo(() => request ? JSON.stringify(request, null, 2) : '', [request]);
 
   useEffect(() => {
-    // A successful copy only describes the exact payload that was copied. As
-    // soon as the draft changes, return the button to its normal state rather
-    // than showing a stale "Copied" confirmation for a different payload.
+    // Clear Copied status when the draft no longer matches the copied payload.
     setJsonCopied(false);
   }, [jsonPreview]);
 
@@ -490,10 +482,8 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const resetDraft = () => {
     const nextDraft = createEmptyRouterDraft();
     markBaseline(nextDraft);
-    // Keep the last processed initial-model key. `initialModel` is an opener
-    // prop, not the current draft identity; clearing it here would let a later
-    // same-router list refresh silently rehydrate the router we just replaced
-    // with a blank draft.
+    // Keep the processed initialModel key to prevent list refreshes from restoring a replaced
+    // draft.
     setDraft(nextDraft);
     setSelectedRuleIndex(0);
     setError(null);
@@ -720,11 +710,9 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       const parsedPayload = JSON.parse(await file.text());
       const importedDraft = parseRouterPayload(parsedPayload);
       const applyImport = () => {
-        // Imported JSON is editable but not yet registered in this session, so
-        // closing it should still count as discarding unsaved work.
         baselineFingerprintRef.current = '__imported-router__';
-        // Preserve the processed initial-model key for the same reason as New:
-        // a background refresh of the opener must not replace this import.
+        // Preserve the processed initial-model key for the same reason as New: a background refresh
+        // of the opener must not replace this import.
         setDraft(importedDraft);
         setSelectedRuleIndex(0);
         setExpandedRuleIndex(null);
@@ -810,9 +798,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       const savedModel = routerRequestToModelInfo(nextRequest, savedDraft);
 
       setDraft(current => {
-        // If the user edited while server registration was in flight, preserve those newer
-        // edits. Only attach the now-authoritative model ID. If nothing changed,
-        // commit the exact submitted snapshot as the clean baseline.
+        // Preserve edits made during registration; commit the submitted baseline only if unchanged.
         if (routerDraftFingerprint(current) === submittedFingerprint) return savedDraft;
         return { ...current, modelName: current.modelName || nextRequest.model_name };
       });
@@ -841,8 +827,8 @@ onSaved?.(savedModel);
       resetDraft();
       setNotice(`Deleted ${modelNameValue}.`);
     } catch (deleteError) {
-      // Close the modal so the persistent editor error is immediately visible;
-      // the router remains loaded and the user can retry intentionally.
+      // Close the modal so the persistent editor error is immediately visible; the router remains
+      // loaded and the user can retry intentionally.
       setConfirmation(null);
       setError(deleteError instanceof Error ? deleteError.message : t('Could not delete router.'));
     } finally {
@@ -885,8 +871,8 @@ onSaved?.(savedModel);
     const pending = confirmation;
     if (!pending || deleting) return;
     if (pending.kind === 'delete') {
-      // Keep the modal/focus trap mounted for the entire server mutation so the
-      // underlying draft cannot be edited and deleted concurrently.
+      // Keep the modal/focus trap mounted for the entire server mutation so the underlying draft
+      // cannot be edited and deleted concurrently.
       void deleteCurrent();
       return;
     }

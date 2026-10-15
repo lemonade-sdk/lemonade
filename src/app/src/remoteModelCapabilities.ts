@@ -103,8 +103,6 @@ export function remoteCapabilityEvidence(
   for (const label of normalizedStringList(variants?.suggested_labels)) addCanonicalFeature(label);
 
   const pipeline = String(result.pipeline_tag || '').trim().toLowerCase();
-  // Provider tags are accepted only as exact canonical values below. There is
-  // no substring scan and no use of the repository/display name.
   const declared = new Set([
     ...providerCapabilities,
     ...variantCapabilities,
@@ -157,12 +155,8 @@ export function remoteCapabilityEvidence(
   const repositoryEmbedding = hasMeaningfulValue(poolingType) || hasMeaningfulValue(embeddingLength);
   const repositoryReranking = hasMeaningfulValue(rerankerMarker);
   const repositoryChat = hasMeaningfulValue(chatTemplate);
-  // A validated llama.cpp GGUF plus an mmproj is repository-structure proof of
-  // a vision-language model. It does not depend on the repository name or tags.
   const repositoryVisionChat = hasUsableGguf && hasMmproj && variants?.recipe === 'llamacpp';
 
-  // A vision-language repository is a chat model that accepts images, so it
-  // resolves to chat and picks up `vision` from providerVision below.
   let primary: ModelCapability = 'unknown';
   let confidence: RemoteCapabilityConfidence = 'unknown';
   if (repositoryReranking) {

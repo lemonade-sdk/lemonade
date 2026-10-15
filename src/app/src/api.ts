@@ -9,8 +9,7 @@ import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageCon
 
 function detectDefaultBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
-    // When served by lemond at /app, window.location.origin IS the API server.
-    // Detect this by checking for the lemond-injected window.api shim or /app path.
+    // Under /app, use the serving lemond origin as the API base URL.
     const servedByLemond = window.location.pathname.startsWith('/app')
       || (window as any).api?.getServerPort;
     if (servedByLemond && window.location.port) {
@@ -35,11 +34,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/**
- * Generate the per-client session identifier using a cryptographically secure
- * source on every supported browser/WebView. randomUUID is preferred, while
- * getRandomValues provides a standards-compliant UUID v4 fallback.
- */
+/** Use crypto.randomUUID or a secure getRandomValues UUID v4 fallback. */
 export function createSecureClientSessionId(): string {
   const cryptoApi = globalThis.crypto;
   if (!cryptoApi || typeof cryptoApi.getRandomValues !== 'function') {
@@ -92,7 +87,6 @@ function serverErrorMessage(responseText: string): string {
     }
     if (typeof parsed?.message === 'string') return parsed.message;
   } catch {
-    // Plain-text server response.
   }
 
   return fallback;
@@ -260,11 +254,7 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
-/**
- * Canonical renderer-side snapshot of the server model registry and loaded
- * model state. Components subscribe to this instead of maintaining independent
- * copies and issuing their own startup requests.
- */
+/** Shared model registry snapshot; consumers should not fetch independent copies. */
 export interface ModelStateSnapshot {
   status: ConnectionStatus;
   health: HealthData | null;
@@ -783,20 +773,16 @@ class LemonadeAPI {
   public sessionHeadersEnabled = false;
   public onSessionHeadersFailed?: () => void;
 
-  // ── Config ──────────────────────────────────────────────────────
-  // Non-secret connection settings may be persisted in browser storage.
-  // API keys are never stored in localStorage; in the desktop app they are
-  // persisted through Lemonade's native settings bridge (`window.api.saveSettings`).
 
   get baseUrl(): string {
     try {
       const hasExplicitUrl = Boolean(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL));
       const raw = normalizeBaseUrl(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL) || DEFAULT_BASE_URL);
-      // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35).
-      // Substitute it when the configured host is localhost/127.0.0.1 so that all
-      // API calls and WebSocket connections resolve to the serving machine, not the phone.
-      // *.localhost is always loopback; Tauri on Windows serves the UI from tauri.localhost
-      // and intercepts every request to that host, so substituting it would never reach lemond.
+      // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35). Substitute it
+      // when the configured host is localhost/127.0.0.1 so that all API calls and WebSocket
+      // connections resolve to the serving machine, not the phone. *.localhost is always loopback;
+      // Tauri on Windows serves the UI from tauri.localhost and intercepts every request to that
+      // host, so substituting it would never reach lemond.
       const parsed = new URL(raw);
       const hasBuildTimeOverride = Boolean(process.env.LEMONADE_BASE_URL);
       if (!hasExplicitUrl && !hasBuildTimeOverride && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
@@ -826,11 +812,7 @@ class LemonadeAPI {
     this.setSessionApiKey(key);
   }
 
-  /**
-   * Credential for /internal/* routes. Lemonade defaults the server-side admin
-   * key to the regular API key, so an empty explicit admin key intentionally
-   * falls back to the current API key.
-   */
+  /** For /internal/*, use the API key when no admin key is configured. */
   get adminApiKey(): string {
     return this._sessionAdminApiKey || this._sessionApiKey;
   }
@@ -955,7 +937,6 @@ class LemonadeAPI {
     safeRemoveLocalStorage(LS_API_KEY);
   }
 
-  // ── Connection status ───────────────────────────────────────────
 
   get status(): ConnectionStatus { return this._status; }
   get lastConnectionError(): string | null { return this._lastConnectionError; }
@@ -1029,7 +1010,6 @@ class LemonadeAPI {
     this._modelStateListeners.forEach(fn => { try { fn(); } catch {} });
   }
 
-  // ── Fetch wrapper ───────────────────────────────────────────────
 
   private _headers(
     extra?: Record<string, string>,
@@ -1309,7 +1289,6 @@ class LemonadeAPI {
     });
   }
 
-  // ── Endpoints ───────────────────────────────────────────────────
 
   async health(): Promise<HealthData> {
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
@@ -1334,9 +1313,7 @@ class LemonadeAPI {
       const qs = showAll ? '?show_all=true' : '';
       const data = normalizeModels(await this._json<unknown>(`/api/v1/models${qs}`));
       if (showAll) {
-        // A registry read that began before a successful model write
-        // may complete later. Return it to its original caller, but
-        // never publish it or reuse it for post-write verification.
+        // Do not publish stale registry reads started before a model write.
         if (mutationRevision !== this._modelsMutationRevision) return data;
 
         const signature = JSON.stringify(data);
@@ -1415,16 +1392,16 @@ class LemonadeAPI {
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
     const cachedRecipe = String((cachedModelInfo as any)?.recipe || '').trim().toLowerCase();
     if (cachedRecipe === 'collection.router' || cachedRecipe.startsWith('collection.router.')) {
-      // Router definitions are server-owned. "Load" is a readiness operation only;
-      // never write a possibly stale cached definition back to /models/register here.
+      // Router definitions are server-owned. "Load" is a readiness operation only; never write a
+      // possibly stale cached definition back to /models/register here.
       return { model_name: modelName, status: 'ready', mode: 'router', virtual: true };
     }
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    // A load carries whatever the panel currently shows, saved or not, so it must
-    // not write those options back as the model's stored defaults.
+    // A load carries whatever the panel currently shows, saved or not, so it must not write those
+    // options back as the model's stored defaults.
     const body: Record<string, unknown> = {
       model_name: modelName,
       ...(stagedOptions || {}),
@@ -1502,9 +1479,7 @@ class LemonadeAPI {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
-    // Several views use the same expensive system-info endpoint. A workspace
-    // preload and the view's first effect can overlap, so share the in-flight
-    // request instead of making the server do the same discovery twice.
+    // Deduplicate overlapping system-info requests across views.
     if (this._systemInfoInFlight) return this._systemInfoInFlight;
 
     const request = this._json<Record<string, unknown>>(
@@ -1521,16 +1496,7 @@ class LemonadeAPI {
     return request;
   }
 
-  /**
-   * Real used/total bytes of the drive where models are stored.
-   *
-   * POC LIMITATION (fl0rianr #2424): lemond is OFF LIMITS and exposes no
-   * disk-usage field today (verified: /system-info and /system-stats lack it).
-   * This probes system-info for a future `storage` / `disk` shape so the meter
-   * lights up the moment the backend team adds it — no client changes needed.
-   * Returns null when no real source is reachable, letting the UI fall back to a
-   * derived estimate instead of a hardcoded mock.
-   */
+  /** Return real storage bytes when lemond exposes them; otherwise return null for the UI fallback. */
   async getStorageInfo(): Promise<StorageInfo | null> {
     try {
       const info = await this.systemInfo();
@@ -1602,7 +1568,6 @@ class LemonadeAPI {
     this._notifyModelsChanged();
   }
 
-  // ── External MCP client ─────────────────────────────────────────
 
   async listMcpServers(): Promise<McpServerState[]> {
     return [];
@@ -1669,7 +1634,6 @@ class LemonadeAPI {
     throw new Error('External MCP connections are temporarily unavailable.');
   }
 
-  // ── Capability-specific inference endpoints ────────────────────
 
   async imageGeneration(model: string, prompt: string, opts: Record<string, unknown> = {}): Promise<string[]> {
     const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : COLLECTION_IMAGE_SIZE;
@@ -1801,7 +1765,6 @@ class LemonadeAPI {
     return text;
   }
 
-  // ── Dashboard data ──────────────────────────────────────────────
 
   async stats(): Promise<StatsData> {
     return this._json<StatsData>('/api/v1/stats');
@@ -1818,7 +1781,6 @@ class LemonadeAPI {
     return [];
   }
 
-  // ── Runtime config ─────────────────────────────────────────────
 
   async getRuntimeConfig(): Promise<Record<string, unknown>> {
     return this._json<Record<string, unknown>>('/internal/config');
@@ -1842,7 +1804,6 @@ class LemonadeAPI {
     return undefined;
   }
 
-  // ── Log level ───────────────────────────────────────────────────
 
   async getLogLevel(): Promise<string> {
     const data = await this.getRuntimeConfig();
@@ -1858,16 +1819,13 @@ class LemonadeAPI {
     };
   }
 
-  // ── Log stream (WebSocket) ──────────────────────────────────────
 
   connectLogStream(callbacks: LogStreamCallbacks, afterSeq?: number | null): LogStreamHandle {
     let closed = false;
     let socket: WebSocket | null = null;
 
     const tryFallback = () => {
-      // Fall back to the dedicated websocket_port from /health (legacy port ~9000).
-      // This handles stale-binary scenarios where the main port doesn't yet support
-      // WebSocket upgrades. /logs/stream is served on both the main port and this port.
+      // Use /health websocket_port for older servers without main-port WebSocket support.
       const fallbackPort = this._healthData?.websocket_port;
       if (!fallbackPort) {
         if (!closed) callbacks.onError?.('Could not connect to log stream.');
@@ -1918,7 +1876,6 @@ class LemonadeAPI {
     }
   }
 
-  // ── Backend management ──────────────────────────────────────────
 
   async installBackend(
     recipe: string,
@@ -2022,7 +1979,6 @@ class LemonadeAPI {
     return result;
   }
 
-  // ── Persistent downloads ───────────────────────────────────────
 
   async downloads(): Promise<DownloadProgressEvent[]> {
     const data = await this._json<unknown>('/api/v1/downloads', { cache: 'no-store' } as LemonadeRequestInit);
@@ -2095,14 +2051,8 @@ class LemonadeAPI {
   }
 
   /**
-   * Refuse a load while lemond still owns an active/paused/finalizing download
-   * for the same model. Some registry snapshots expose `downloaded: true` as
-   * soon as the destination file exists, before the download is complete; a
-   * load request at that point can wait behind the server download lock and
-   * make an ordinary UI action look hung.
-   *
-   * The check is best-effort for older/unreachable download endpoints: only a
-   * positively identified in-progress job blocks the load.
+   * Block loading only for confirmed active downloads; partial files can appear downloaded and hold
+   * the server lock.
    */
   private async _assertModelNotDownloading(modelName: string): Promise<void> {
     let downloads: DownloadProgressEvent[];
@@ -2170,10 +2120,8 @@ class LemonadeAPI {
       } else if (sawServerJob) {
         consecutiveMissingSnapshots += 1;
         if (consecutiveMissingSnapshots >= 10) {
-          // Do not infer completion from `/models`. During a pull the registry
-          // may report `downloaded: true` as soon as a partial destination file
-          // exists. Only an explicit terminal download snapshot/SSE event is a
-          // safe completion signal.
+          // Only terminal download events signal completion; /models may report partial files as
+          // downloaded.
           throw new Error(`Download for ${modelName} disappeared before completion.`);
         }
       } else if (performance.now() - started > 30000) {
@@ -2186,7 +2134,6 @@ class LemonadeAPI {
     return null;
   }
 
-  // ── Pull variants (HF model file discovery) ────────────────────
 
   async pullVariants(
     checkpoint: string,
@@ -2212,7 +2159,6 @@ class LemonadeAPI {
     return this._json(`/api/v1/registry/search?${params}`, { signal });
   }
 
-  // ── Model registration / pull ───────────────────────────────────
 
   /**
    * Persist a user model or collection definition without downloading weights.
@@ -2230,7 +2176,6 @@ class LemonadeAPI {
     return result;
   }
 
-  // ── SSE: Pull (model download) ──────────────────────────────────
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: Record<string, unknown>): Promise<void> {
     const { onProgress, onComplete, onError, signal } = callbacks;
@@ -2239,8 +2184,8 @@ class LemonadeAPI {
         ...(opts || {}),
         model_name: modelName,
         stream: true,
-        // Let lemond own the download. The UI observes /downloads, just like
-        // Lemonade main, instead of deciding completion from a renderer stream.
+        // Let lemond own the download. The UI observes /downloads, just like Lemonade main, instead
+        // of deciding completion from a renderer stream.
         subscribe: false,
       };
 
@@ -2296,8 +2241,8 @@ class LemonadeAPI {
           if (signal?.aborted) reader.cancel().catch(() => undefined);
         }
 
-        // Prefer the server registry as the source of truth, so a 404/failed job
-        // cannot become completed merely because an SSE response ended.
+        // Prefer the server registry as the source of truth, so a 404/failed job cannot become
+        // completed merely because an SSE response ended.
         const terminal = await this._waitForModelDownloadTerminal(
           modelName,
           signal,
@@ -2337,7 +2282,6 @@ class LemonadeAPI {
     }
   }
 
-  // ── SSE: Chat completions ───────────────────────────────────────
 
   async chatCompletion(
     model: string,
@@ -2383,7 +2327,6 @@ class LemonadeAPI {
       const now = performance.now();
       const elapsed = now - t0;
       const total = tokenCount + reasoningTokenCount;
-      // TPS = decode rate from first token, not from request start
       const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
       onStats?.({
         tps: total > 0 && decodeTime > 0 ? total / decodeTime : 0,
@@ -2395,7 +2338,6 @@ class LemonadeAPI {
       });
     };
 
-    // Timer-based stats: update every 200ms so display stays live even between tokens
     const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
 
     try {
@@ -2448,7 +2390,6 @@ class LemonadeAPI {
           try {
             const chunk = JSON.parse(payload);
             if (isObject(chunk.x_lemonade_route)) routeDecision = { ...chunk.x_lemonade_route };
-            // If the Router already selected a candidate, keep that attribution in surfaced errors.
             if (chunk.error) {
               clearInterval(statsInterval);
               const baseMessage = chunk.error.message || 'Server streaming error';
@@ -2458,7 +2399,6 @@ class LemonadeAPI {
             }
             respId = chunk.id || respId;
             const delta = chunk.choices?.[0]?.delta;
-            // Handle reasoning/thinking tokens (Qwen3.5, etc.)
             if (delta?.reasoning_content) {
               const now = performance.now();
               if (!firstTokenTime) firstTokenTime = now;
@@ -2480,7 +2420,6 @@ class LemonadeAPI {
               full += delta.content;
               onToken?.(delta.content, full);
             }
-            // Accumulate tool calls (streamed incrementally)
             if (delta?.tool_calls) {
               for (const tc of delta.tool_calls) {
                 const idx = tc.index ?? 0;
@@ -2539,7 +2478,6 @@ class LemonadeAPI {
     return '';
   }
 
-  // ── Connection management ───────────────────────────────────────
 
   async connect(): Promise<boolean> {
     if (this._connectInFlight) return this._connectInFlight;
@@ -2555,13 +2493,8 @@ class LemonadeAPI {
   }
 
   /**
-   * Revalidate an established connection without publishing a transient
-   * "connecting" state. Background polling used to call `connect()` every
-   * 15 seconds, which made the whole React tree observe
-   * connected -> connecting -> connected even when nothing changed. Besides
-   * the visible status flicker, dependent views re-fetched and re-rendered,
-   * interrupting text selection in Chat and making otherwise static controls
-   * in Models/Connect appear to refresh periodically.
+   * Revalidate silently; transient connecting states cause needless rerenders and lost text
+   * selection.
    */
   private async _pollConnection(): Promise<boolean> {
     try {
@@ -2612,11 +2545,7 @@ class LemonadeAPI {
             ? this._modelsData
             : await this.models(true);
         } catch (err) {
-          // Health is the connection source of truth. Some tests and lightweight
-          // servers expose health/MCP before the model registry is available; do
-          // not flip the whole app back to disconnected merely because /models
-          // failed after /health succeeded. Keep the previous registry if present,
-          // otherwise use an empty one until the next refresh.
+          // Treat /health as authoritative; /models failures must not disconnect a healthy server.
           this._lastConnectionError = friendlyErrorMessage(err);
           models = this._modelsData || { data: [] };
           if (!this._modelsData) {
@@ -2661,14 +2590,12 @@ class LemonadeAPI {
   }
 }
 
-// Singleton export
 export const api = new LemonadeAPI();
 if (typeof window !== 'undefined') {
   (window as any).apiClient = api;
 }
 export default api;
 
-/* ── HuggingFace search (standalone — external API) ────────── */
 
 export interface RegistrySearchResult {
   repository_id?: string;
@@ -2695,7 +2622,7 @@ export interface RegistrySearchResponse {
 }
 
 export interface HFModelResult {
-  id: string;           // e.g. "TheBloke/Llama-2-7B-GGUF"
+  id: string;
   modelId: string;
   likes: number;
   downloads: number;
@@ -2729,7 +2656,6 @@ export async function searchHuggingFace(
     direction: '-1',
     limit: String(HUGGING_FACE_SEARCH_LIMIT),
   });
-  // Variant/file details are fetched on demand via pullVariants()
   const resp = await fetch(
     `https://huggingface.co/api/models?${params}`,
     { signal },

@@ -66,8 +66,6 @@ export default defineConfig({
     },
   ],
 
-  // A loopback PLAYWRIGHT_BASE_URL still needs a local renderer process.
-  // Only genuinely external URLs opt out of Playwright-managed startup.
   ...(!externalBaseURL || isLoopbackURL ? {
     webServer: {
       command: `npm run dev:renderer -- --host 127.0.0.1 --port ${serverPort} --no-hot`,

@@ -115,13 +115,11 @@ test('the log source list keeps the active filter reachable and reports what it 
   await page.goto('/#/dashboard/logs');
   await page.waitForSelector('.logs-rail');
 
-  // "All sources" plus exactly the ten most active mocked sources.
   const items = page.locator('.logs-sources .workspace-filter-list__item');
   await expect(items).toHaveCount(11);
   await expect(page.locator('.workspace-filter-list__note'))
     .toContainText('2 less active sources not shown');
 
-  // Selecting a source keeps it rendered and marked active.
   const selected = items.nth(1);
   const label = await selected.locator('.workspace-filter-list__label').textContent();
   await selected.click();
@@ -156,13 +154,11 @@ test('the workspace resizer advertises the width range it can actually reach', a
 
 
 test('no-rail layout: panel max-width uses full container width, not DEFAULT_RAIL_WIDTH fallback', async ({ page }) => {
-  // Regression guard for the bug where useWorkspacePanelResize fell back to
-  // DEFAULT_RAIL_WIDTH=248 when no .workspace__rail was present in the DOM,
-  // causing the list panel max-width to be under-computed in two-panel layouts.
-  //
-  // This test mirrors the exact constants and formula from useWorkspacePanelResize
-  // and asserts that railWidth=0 (noRail path) gives a strictly larger maxWidth
-  // than the old railWidth=DEFAULT_RAIL_WIDTH fallback at the same container size.
+  // Regression guard for the bug where useWorkspacePanelResize fell back to DEFAULT_RAIL_WIDTH=248
+  // when no .workspace__rail was present in the DOM, causing the list panel max-width to be
+  // under-computed in two-panel layouts. This test mirrors the exact constants and formula from
+  // useWorkspacePanelResize and asserts that railWidth=0 (noRail path) gives a strictly larger
+  // maxWidth than the old railWidth=DEFAULT_RAIL_WIDTH fallback at the same container size.
   await page.goto('/');
   const result = await page.evaluate(() => {
     const DEFAULT_RAIL_WIDTH = 248;
@@ -185,9 +181,7 @@ test('no-rail layout: panel max-width uses full container width, not DEFAULT_RAI
     return { withDefaultRailFallback, withNoRail };
   });
 
-  // noRail=true: availableWidth = 1000-0 = 1000; maxWidth = min(500, 1000-420) = 500
   expect(result.withNoRail.maxWidth).toBe(500);
-  // noRail=false (old bug): availableWidth = 1000-248 = 752; maxWidth = min(500, 752-420) = 332
   expect(result.withDefaultRailFallback.maxWidth).toBe(332);
   // Fix must produce a strictly wider upper bound on two-panel layouts.
   expect(result.withNoRail.maxWidth).toBeGreaterThan(result.withDefaultRailFallback.maxWidth);

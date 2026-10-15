@@ -78,9 +78,9 @@ export default function WorkspaceSectionRail<Section extends string>({
               className={activeSection === section.id ? 'is-active' : ''}
               aria-current={activeSection === section.id ? 'page' : undefined}
               aria-label={t(section.label)}
-              // aria-label keeps the name short and stable across the collapsed
-              // state; the description reaches assistive tech as a description
-              // rather than being swallowed by the label override.
+              // aria-label keeps the name short and stable across the collapsed state; the
+              // description reaches assistive tech as a description rather than being swallowed by
+              // the label override.
               aria-describedby={collapsed ? undefined : `${panelId}-${section.id}-description`}
               title={collapsed ? t(section.label) : undefined}
               onClick={() => {

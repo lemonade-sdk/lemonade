@@ -52,9 +52,9 @@ export default function Modal({
           const first = focusable[0];
           const last = focusable[focusable.length - 1];
           if (e.shiftKey) {
-            // The dialog title receives initial focus but is deliberately not
-            // in the normal tab order. Shift+Tab from that title must still
-            // stay inside the modal rather than escaping to the page behind it.
+            // The dialog title receives initial focus but is deliberately not in the normal tab
+            // order. Shift+Tab from that title must still stay inside the modal rather than
+            // escaping to the page behind it.
             if (document.activeElement === first || document.activeElement === titleRef.current) {
               last.focus();
               e.preventDefault();

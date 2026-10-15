@@ -1,6 +1,6 @@
 /* Lemonade component and feature styles. DESIGN.md defines the system. */
 
-/* ---------- Reset ---------- */
+/* Reset */
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
@@ -38,7 +38,7 @@ input, textarea {
   border: 0;
 }
 
-/* ---------- Checkbox ---------- */
+/* Checkbox */
 input[type="checkbox"] {
   -webkit-appearance: none;
   appearance: none;
@@ -90,7 +90,7 @@ input[type="checkbox"]:disabled {
   opacity: 0.45;
 }
 
-/* ---------- Focus rings ---------- */
+/* Focus rings */
 :focus-visible {
   outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
@@ -99,7 +99,7 @@ input[type="checkbox"]:disabled {
 /* Elements that handle their own focus styles */
 .slider:focus-visible { outline: none; }
 
-/* ---------- Screen reader only ---------- */
+/* Screen reader only */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -121,7 +121,7 @@ input[type="checkbox"]:disabled {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 
-/* ---------- Skip link ---------- */
+/* Skip link */
 .skip-link {
   position: absolute;
   top: -40px;
@@ -138,7 +138,7 @@ input[type="checkbox"]:disabled {
 
 .skip-link:focus { top: var(--space-2); }
 
-/* ---------- App shell ---------- */
+/* App shell */
 .app {
   display: grid;
   grid-template-rows: var(--titlebar-height) 1fr;
@@ -173,7 +173,7 @@ input[type="checkbox"]:disabled {
 
 .view-error .workspace-action-button { margin-top: var(--space-4); }
 
-/* ---------- Title bar ---------- */
+/* Title bar */
 .titlebar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -571,13 +571,13 @@ input[type="checkbox"]:disabled {
 
 @keyframes pulse { 50% { opacity: 0.4; } }
 
-/* ---------- View container ---------- */
+/* View container */
 .view-container {
   position: relative;
   overflow: hidden;
 }
 
-/* ---------- Chat layout ---------- */
+/* Chat layout */
 .chat {
   display: grid;
   grid-template-columns: var(--rail-collapsed) 1fr;
@@ -593,7 +593,7 @@ input[type="checkbox"]:disabled {
   grid-template-columns: var(--rail-expanded) 1fr;
 }
 
-/* ---------- Conversation rail ---------- */
+/* Conversation rail */
 .rail {
   grid-area: rail / rail / composer / rail;
   background: var(--surface-1);
@@ -653,7 +653,7 @@ input[type="checkbox"]:disabled {
   text-align: center;
 }
 
-/* ---------- Chat main pane ---------- */
+/* Chat main pane */
 .chat__main {
   grid-area: main;
   overflow-y: auto;
@@ -1020,7 +1020,7 @@ input[type="checkbox"]:disabled {
 .cap-badge--image  { background: color-mix(in srgb, var(--cap-image) 18%, transparent); color: var(--cap-image); }
 .cap-badge--classify { background: color-mix(in srgb, var(--cap-classification) 18%, transparent); color: var(--cap-classification); }
 
-/* ---------- Conversation thread ---------- */
+/* Conversation thread */
 .thread {
   display: flex;
   flex-direction: column;
@@ -1395,7 +1395,7 @@ input[type="checkbox"]:disabled {
   margin-right: var(--space-1);
 }
 
-/* ---------- Composer ---------- */
+/* Composer */
 .composer {
   grid-area: composer;
   padding: var(--space-3) var(--space-6) var(--space-4);
@@ -2043,8 +2043,8 @@ input[type="checkbox"]:disabled {
   color: var(--text-tertiary);
 }
 
-/* ---------- Model Manager ---------- */
-/* ========== Model Manager ========== */
+/* Model Manager */
+/* Model Manager */
 
 .manager {
   display: grid;
@@ -2085,7 +2085,7 @@ input[type="checkbox"]:disabled {
   color: var(--text-tertiary);
 }
 
-/* ── Zone ─────────────────────────────────────────────────── */
+/* Zone */
 
 .zone {
   display: flex;
@@ -2147,7 +2147,7 @@ input[type="checkbox"]:disabled {
   background: var(--border-subtle);
 }
 
-/* ── HuggingFace Zone ─────────────────────────────────────── */
+/* HuggingFace Zone */
 
 .zone__dot--hf {
   background: var(--provider-hugging-face);
@@ -2303,7 +2303,7 @@ input[type="checkbox"]:disabled {
   margin-top: var(--space-2);
 }
 
-/* ── Model Row ────────────────────────────────────────────── */
+/* Model Row */
 
 .row {
   background: var(--surface-1);
@@ -2567,7 +2567,7 @@ input[type="checkbox"]:disabled {
   border-color: var(--error);
 }
 
-/* ── Model Detail (expanded) ──────────────────────────────── */
+/* Model Detail (expanded) */
 
 .row__detail {
   padding: var(--space-4) var(--space-5);
@@ -2649,7 +2649,7 @@ input[type="checkbox"]:disabled {
   margin-top: var(--space-2);
 }
 
-/* ---------- Shared forms ---------- */
+/* Shared forms */
 .form-field {
   display: flex;
   flex-direction: column;
@@ -2674,7 +2674,7 @@ input[type="checkbox"]:disabled {
 .connect__status-dot--connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
 .connect__status-dot--connecting { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 
-/* ---------- Buttons ---------- */
+/* Buttons */
 .btn {
   min-width: 0;
   height: var(--control-height-sm);
@@ -2749,7 +2749,7 @@ input[type="checkbox"]:disabled {
 .btn--toolbar { height: var(--icon-button-size); }
 .btn:disabled { opacity: 0.42; cursor: default; }
 
-/* ---------- Capability chips ---------- */
+/* Capability chips */
 
 .cap-chip-list {
   display: flex;
@@ -2801,7 +2801,7 @@ input[type="checkbox"]:disabled {
 .cap-chip--audio         { --cap-color: var(--cap-audio); }
 .cap-chip--tts           { --cap-color: var(--cap-tts); }
 
-/* ---------- Applied list ---------- */
+/* Applied list */
 
 .applied-list {
   display: flex;
@@ -2874,7 +2874,7 @@ input[type="checkbox"]:disabled {
   gap: var(--space-2);
 }
 
-/* ---------- Dropdown (Import menu) ---------- */
+/* Dropdown (Import menu) */
 
 .dropdown {
   position: relative;
@@ -2921,7 +2921,7 @@ input[type="checkbox"]:disabled {
   color: var(--text-primary);
 }
 
-/* ---------- Scrim + Slide-over ---------- */
+/* Scrim + Slide-over */
 
 .scrim {
   position: fixed;
@@ -3073,9 +3073,9 @@ input[type="checkbox"]:disabled {
   gap: var(--space-2);
 }
 
-/* ---------- Recipe badge ---------- */
+/* Recipe badge */
 
-/* ---------- Form controls (slider, select, input) ---------- */
+/* Form controls (slider, select, input) */
 
 .field {
   display: flex;
@@ -3703,14 +3703,14 @@ optgroup {
   padding: 1px 6px;
 }
 
-/* ---------- Empty state inset ---------- */
+/* Empty state inset */
 
 .empty-state--inset {
   margin: var(--space-3) 0 0;
   padding: var(--space-8) var(--space-4);
 }
 
-/* ---------- Context rails: Models / Backends ---------- */
+/* Context rails: Models / Backends */
 .manager--with-rail,
 .backends--with-rail {
   display: grid;
@@ -3857,7 +3857,7 @@ optgroup {
 /* Overlay button for keyboard + SR selection (#2343).
  * Covers the full cell area; action buttons sit above it via z-index. */
 
-/* ---------- Responsive ---------- */
+/* Responsive */
 @media (max-width: 768px) {
   .chat {
     grid-template-columns: 1fr;
@@ -3887,10 +3887,10 @@ optgroup {
   .matrix th, .matrix td { padding: var(--space-3); }
 }
 
-/* ---------- 480px — phone --------------------------------- */
+/* 480px — phone */
 @media (max-width: 480px) {
 
-  /* ── Composer: keep primary and add actions at 44 px touch targets ── */
+  /* Composer: keep primary and add actions at 44 px touch targets */
   .composer__send,
   .composer__stop,
   .composer__add-trigger {
@@ -3903,21 +3903,21 @@ optgroup {
     height: 44px;
   }
 
-  /* ── Composer toolbar: allow wrapping on very narrow screens ── */
+  /* Composer toolbar: allow wrapping on very narrow screens */
 .composer__toolbar {
     flex-wrap: wrap;
     gap: var(--space-2); max-width: 100%;
   }
 
-  /* ── Composer: safe-area padding so it clears iPhone home indicator ── */
+  /* Composer: safe-area padding so it clears iPhone home indicator */
   .composer {
     padding: var(--space-2) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   }
 
-  /* ── Composer bar: full width, no max-width constraint ── */
+  /* Composer bar: full width, no max-width constraint */
   .composer__bar { max-width: 100%; }
 
-  /* ── Model selector: truncate aggressively so bar doesn't overflow ── */
+  /* Model selector: truncate aggressively so bar doesn't overflow */
 .composer__model-button {
 
     overflow: hidden;
@@ -3926,7 +3926,7 @@ optgroup {
     max-width: 50vw;
   }
 
-  /* ── Prevent iOS Safari auto-zoom on input focus (requires font-size >= 16px) ── */
+  /* Prevent iOS Safari auto-zoom on input focus (requires font-size >= 16px) */
   .composer__model-search input,
 
   .composer__input,
@@ -3934,23 +3934,24 @@ optgroup {
     font-size: 16px !important;
   }
 
-  /* ── BackendManager: tighten ── */
+  /* BackendManager: tighten */
   .backends__head { padding: var(--space-4) var(--space-3) var(--space-3); }
 
-  /* ── Connect view: reduce horizontal padding on phone ── */
+  /* Connect view: reduce horizontal padding on phone */
   .connect { padding: 0 var(--space-4); }
 
-  /* ── Slide-over: full-width on phone ── */
+  /* Slide-over: full-width on phone */
   .slideover { width: 100vw; max-width: 100vw; }
 
-  /* ── Hero greeting: tighten vertical space ── */
+  /* Hero greeting: tighten vertical space */
   .hero { padding: var(--space-3) 0 var(--space-2); }
 
-  /* ── Filter chips: allow wrapping in ModelManager toolbar ── */
+  /* Filter chips: allow wrapping in ModelManager toolbar */
 
-  /* ── Model card: stack vertically on phone ────────────────
-        Row-level grid switches from side-by-side to column;
-        actions move to a full-width strip at the bottom.    ── */
+  /*
+   * Model card: stack vertically on phone ──────────────── Row-level grid switches from
+   * side-by-side to column; actions move to a full-width strip at the bottom.
+   */
   .row__summary {
     display: flex;
     flex-direction: column;
@@ -3979,7 +3980,7 @@ optgroup {
   }
   .row__action { flex: 1 1 auto; justify-content: center; }
 
-  /* ── Chat: collapse rail column so full width is usable ── */
+  /* Chat: collapse rail column so full width is usable */
   .chat,
   .chat.rail-expanded {
     grid-template-columns: 1fr;
@@ -3989,21 +3990,21 @@ optgroup {
   }
   .rail { display: none; }
 
-  /* ── Chat inner: use smaller padding ── */
+  /* Chat inner: use smaller padding */
   .chat__inner { padding: var(--space-4) var(--space-3); }
 
-  /* ── Active-model cards in hero: more compact on phone ── */
+  /* Active-model cards in hero: more compact on phone */
   .active-card { padding: var(--space-3); gap: var(--space-2); }
   .active-card__name { font-size: var(--text-sm); }
 
-  /* ── Hero title/subtitle: tighten for mobile ── */
+  /* Hero title/subtitle: tighten for mobile */
   .hero__title { font-size: var(--text-xl); }
   .hero__subtitle { font-size: var(--text-sm); }
 
-  /* ── Section labels (e.g. "LOADED RIGHT NOW"): smaller ── */
+  /* Section labels (e.g. "LOADED RIGHT NOW"): smaller */
   .section-label { font-size: var(--type-overline-size); margin-bottom: var(--space-2); }
 
-  /* ── Composer pills row: smaller font + tighter padding to reduce chrome ── */
+  /* Composer pills row: smaller font + tighter padding to reduce chrome */
   .composer__toolbar .btn,
   .composer__toolbar .chip,
   .composer__toolbar button {
@@ -4011,15 +4012,13 @@ optgroup {
     padding: 4px var(--space-2);
   }
 
-  /* ── Model selector in composer: cap width more aggressively ── */
+  /* Model selector in composer: cap width more aggressively */
 
-  /* ── Right controls: slightly tighter gap on phone ── */
+  /* Right controls: slightly tighter gap on phone */
 .titlebar__right { gap: var(--space-1); }
 }
 
-/* ─────────────────────────────────────────────────────────
-   DASHBOARD v2
-   ───────────────────────────────────────────────────────── */
+/* DASHBOARD v2 */
 
 .dash2 {
   display: flex;
@@ -4029,7 +4028,7 @@ optgroup {
   background: var(--surface-base);
 }
 
-/* ── Top bar ───────────────────────────────────────────── */
+/* Top bar */
 
 .dash2-bar__dot {
   width: 8px; height: 8px;
@@ -4052,7 +4051,7 @@ optgroup {
   font-size: var(--text-sm);
 }
 
-/* ── Scroll area ───────────────────────────────────────── */
+/* Scroll area */
 
 .dash2-scroll {
   flex: 1;
@@ -4063,7 +4062,7 @@ optgroup {
   gap: var(--space-5, 24px);
 }
 
-/* ── Cards ─────────────────────────────────────────────── */
+/* Cards */
 
 .dash2-card {
   background: var(--surface-1);
@@ -4103,7 +4102,7 @@ optgroup {
   background: var(--surface-3);
 }
 
-/* ── 2-column grid ─────────────────────────────────────── */
+/* 2-column grid */
 
 .dash2-grid-2col {
   display: grid;
@@ -4116,11 +4115,11 @@ optgroup {
   flex-direction: column;
 }
 
-/* ── Hero throughput stats ─────────────────────────────── */
+/* Hero throughput stats */
 
-/* ── Area charts ───────────────────────────────────────── */
+/* Area charts */
 
-/* ── Gauges ─────────────────────────────────────────────── */
+/* Gauges */
 
 .dash2-gauges {
   display: flex;
@@ -4192,7 +4191,7 @@ optgroup {
   overflow-wrap: anywhere;
 }
 
-/* ── Inference tiles (vertical stack for side panel) ───── */
+/* Inference tiles (vertical stack for side panel) */
 
 .dash2-inf {
   display: flex;
@@ -4222,9 +4221,9 @@ optgroup {
   letter-spacing: 0.04em;
 }
 
-/* ── Slot cards with per-slot graphs ────────────────────── */
+/* Slot cards with per-slot graphs */
 
-/* ── Inference stats grid ──────────────────────────────── */
+/* Inference stats grid */
 
 .dash2-inf-grid {
   display: grid;
@@ -4232,7 +4231,7 @@ optgroup {
   gap: var(--space-4);
 }
 
-/* ── Model list ────────────────────────────────────────── */
+/* Model list */
 
 /* The loaded-models card renders the shared selection list, so it inherits the
    row template rather than restating it. Only the card's own inset differs. */
@@ -4248,7 +4247,7 @@ optgroup {
   font-style: italic;
 }
 
-/* ── Model capacity ────────────────────────────────────── */
+/* Model capacity */
 
 .dash2-caps {
   display: flex;
@@ -4289,7 +4288,7 @@ optgroup {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Session summary ───────────────────────────────────── */
+/* Session summary */
 
 .dash2-summary {
   display: grid;
@@ -4321,7 +4320,7 @@ optgroup {
   letter-spacing: 0.04em;
 }
 
-/* ── Dashboard inline-style replacements ───────────────── */
+/* Dashboard inline-style replacements */
 
 .dash2-hero-metrics {
   display: flex;
@@ -4430,7 +4429,7 @@ optgroup {
 
 .dash2-mt-auto { margin-top: auto; }
 
-/* ── Dashboard responsive ──────────────────────────────── */
+/* Dashboard responsive */
 
 @media (max-width: 900px) {
   .dash2-grid-2col { grid-template-columns: 1fr; }
@@ -4445,9 +4444,7 @@ optgroup {
   .dash2-cap { grid-template-columns: 80px 1fr 40px; }
 }
 
-/* ─────────────────────────────────────────────────────────
-   LOG VIEWER
-   ───────────────────────────────────────────────────────── */
+/* LOG VIEWER */
 
 .logs-view {
   display: flex;
@@ -4457,7 +4454,7 @@ optgroup {
   background: var(--surface-base);
 }
 
-/* ── Toolbar ───────────────────────────────────────────── */
+/* Toolbar */
 
 .logs-toolbar__count {
   font-size: 0.72rem;
@@ -4465,7 +4462,7 @@ optgroup {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Status dot ────────────────────────────────────────── */
+/* Status dot */
 
 .logs-status__dot {
   width: 8px;
@@ -4498,7 +4495,7 @@ optgroup {
   color: var(--text-secondary);
 }
 
-/* ── Search ────────────────────────────────────────────── */
+/* Search */
 
 .logs-search {
   width: 100%;
@@ -4521,7 +4518,7 @@ optgroup {
   outline: none;
 }
 
-/* ── Level selectors ───────────────────────────────────── */
+/* Level selectors */
 
 .logs-level {
   display: inline-flex;
@@ -4556,7 +4553,7 @@ optgroup {
   color: var(--text-primary);
 }
 
-/* ── Log output ────────────────────────────────────────── */
+/* Log output */
 
 .logs-output {
   flex: 1;
@@ -4577,7 +4574,7 @@ optgroup {
   font-size: 0.85rem;
 }
 
-/* ── Log line ──────────────────────────────────────────── */
+/* Log line */
 
 .logs-line {
   display: flex;
@@ -4656,7 +4653,7 @@ optgroup {
 .log-fatal .logs-line__badge { color: var(--danger-on); background: var(--danger); }
 .log-fatal .logs-line__text { color: var(--danger); font-weight: var(--weight-semibold); }
 
-/* ── Jump to bottom ────────────────────────────────────── */
+/* Jump to bottom */
 
 .logs-jump {
   position: absolute;
@@ -4667,7 +4664,7 @@ optgroup {
   z-index: 10;
 }
 
-/* ── Log viewer responsive ─────────────────────────────── */
+/* Log viewer responsive */
 
 @media (max-width: 768px) {
   .logs-line { padding: 1px var(--space-2); }
@@ -4679,9 +4676,7 @@ optgroup {
   .logs-line__time { width: 56px; }
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Mermaid diagrams
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* Mermaid diagrams */
 
 .mermaid-block {
   margin: var(--space-3) 0;
@@ -4833,9 +4828,7 @@ optgroup {
   overflow-x: auto;
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Interactive options blocks
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* Interactive options blocks */
 
 .options-block {
   margin: var(--space-3) 0;
@@ -4939,9 +4932,7 @@ optgroup {
   opacity: 0.9;
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Image attachments in composer
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* Image attachments in composer */
 
 .composer__images {
   width: 100%;
@@ -5138,9 +5129,7 @@ optgroup {
   color: var(--text-tertiary);
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Images in user messages
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* Images in user messages */
 
 .message__images {
   display: flex;
@@ -5163,9 +5152,7 @@ optgroup {
   opacity: 0.85;
 }
 
-/* -------------------------------------------------------------------
-   Functional hardening additions for capability-aware prototype paths
-   ------------------------------------------------------------------- */
+/* Functional hardening additions for capability-aware prototype paths */
 .rail__privacy {
   margin: var(--space-3);
   padding: var(--space-3);
@@ -5566,7 +5553,7 @@ optgroup {
   flex-shrink: 0;
 }
 
-/* ---------- Image mode composer settings ---------- */
+/* Image mode composer settings */
 .composer__image-settings {
   max-width: var(--max-content-width);
   margin: 0 auto var(--space-2);
@@ -5804,7 +5791,7 @@ optgroup {
 }
 .cap-chip--all { --cap-color: var(--accent-fg); }
 
-/* ---------- Integration polish: docs theme, searchable model picker, chat logs ---------- */
+/* Integration polish: docs theme, searchable model picker, chat logs */
 [data-theme="light"] .app {
   background: var(--surface-base);
 }
@@ -6208,7 +6195,7 @@ optgroup {
   }
 }
 
-/* ===== Mobile bottom sheet for conversations ===== */
+/* Mobile bottom sheet for conversations */
 .bottom-sheet-backdrop {
   display: none;
 }
@@ -6296,7 +6283,7 @@ optgroup {
   }
 }
 
-/* ---------- Reduced motion ---------- */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -6424,9 +6411,7 @@ optgroup {
 
 /* Follow-up: tighten speech settings and align Connect panels/cards */
 
-/* ─────────────────────────────────────────────────────────
-   Download manager
-   ───────────────────────────────────────────────────────── */
+/* Download manager */
 .titlebar__status-dot--brand {
   margin-left: var(--space-1);
 }
@@ -6736,9 +6721,7 @@ optgroup {
   .download-item__details { grid-template-columns: 1fr; }
 }
 
-/* ─────────────────────────────────────────────────────────
-   MCP Gateway panel (ConnectView)
-   ───────────────────────────────────────────────────────── */
+/* MCP Gateway panel (ConnectView) */
 
 .mcp-panel {
   display: flex;
@@ -6823,11 +6806,11 @@ optgroup {
    Master-detail model view — #2355 Slice 1
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── Layout shell ─────────────────────────────────────────────── */
+/* Layout shell */
 
 /* Responsive nav-rail toggle — hidden on wide viewports (rail always shown) */
 
-/* ── Left navigation rail (new three-pane left column) ────────── */
+/* Left navigation rail (new three-pane left column) */
 
 .model-nav-rail {
   display: flex;
@@ -7120,7 +7103,7 @@ optgroup {
   background: var(--accent-fg);
 }
 
-/* ── Model list panel (middle) ────────────────────────────────── */
+/* Model list panel (middle) */
 
 .model-list-panel {
   display: flex;
@@ -7285,7 +7268,7 @@ optgroup {
   text-align: center;
 }
 
-/* ── Model detail panel (right) ───────────────────────────────── */
+/* Model detail panel (right) */
 
 .model-detail-panel {
   position: relative;
@@ -7405,7 +7388,7 @@ optgroup {
   gap: var(--space-1);
 }
 
-/* ── HF detail panel variant ────────────────────────────────── */
+/* HF detail panel variant */
 
 .model-detail-panel__badge--pipeline {
   background: color-mix(in srgb, var(--provider-hugging-face) 12%, transparent);
@@ -7445,7 +7428,7 @@ optgroup {
   font-style: italic;
 }
 
-/* ── Tab list ─────────────────────────────────────────────────── */
+/* Tab list */
 
 .detail-tabs__tablist {
   display: flex;
@@ -7486,7 +7469,7 @@ optgroup {
 .detail-tabs__panel[hidden] { display: none; }
 .detail-tabs__panel--active { display: flex; flex-direction: column; }
 
-/* ── README tab ───────────────────────────────────────────────── */
+/* README tab */
 
 .detail-readme {
   flex: 1;
@@ -7541,7 +7524,7 @@ optgroup {
   min-height: 160px;
 }
 
-/* ── Files tab ────────────────────────────────────────────────── */
+/* Files tab */
 
 .detail-files {
   flex: 1;
@@ -7632,7 +7615,7 @@ optgroup {
 .detail-files__status--present { color: var(--success, var(--accent-fg)); }
 .detail-files__status--missing { color: var(--text-tertiary); }
 
-/* ── Responsive: list-first → tap-to-detail on narrow viewports ── */
+/* Responsive: list-first → tap-to-detail on narrow viewports */
 @media (max-width: 768px) {
   /* Remove grid; each panel takes full width/height */
 .manager--detail {
@@ -7698,7 +7681,7 @@ optgroup {
   .manager--detail .model-detail-panel__back-btn { display: inline-flex; }
 }
 
-/* ── Back button (visible on narrow viewports only) ────────────── */
+/* Back button (visible on narrow viewports only) */
 /* Hidden on desktop — the list is always visible in the three-pane layout, so
    "Back to models" is redundant. It is re-enabled inside the ≤700px media
    query below, where the list and detail are mutually exclusive. */
@@ -7748,7 +7731,7 @@ optgroup {
   outline-offset: -2px;
 }
 
-/* ── Favorite (star) toggle in the detail header ───────────────── */
+/* Favorite (star) toggle in the detail header */
 .model-detail-panel__fav-btn {
   display: inline-flex;
   align-items: center;
@@ -7870,7 +7853,7 @@ optgroup {
   }
 }
 
-/* ── Model Tuning tab ─────────────────────────────────────────── */
+/* Model Tuning tab */
 .detail-tuning {
   flex: 1;
   overflow-y: auto;
@@ -8227,7 +8210,7 @@ optgroup {
     flex-basis: 100%;
   }
 }
-/* -- Model Configuration Tab ---------------------------------------- */
+/* Model Configuration Tab */
 /* Spacing climbs a major-fourth ladder rounded to the token scale: 12px within
  * a control row, 16px between the rows of one control, 24px between the parts
  * of a section, 32px between control groups and between sections. */
@@ -8600,9 +8583,10 @@ optgroup {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Detailed samplers ────────────────────────────────────────
-   Folded by default, but never silently: the closed row carries the flags it
-   is holding, so the panel still states what will load. */
+/*
+ * Detailed samplers ──────────────────────────────────────── Folded by default, but never silently:
+ * the closed row carries the flags it is holding, so the panel still states what will load.
+ */
 .detail-configuration__sampler-details {
   display: grid;
   min-width: 0;
@@ -8820,7 +8804,7 @@ optgroup {
   }
 }
 
-/* ── Session Inspector Redesign Styles ──────────────────────── */
+/* Session Inspector Redesign Styles */
 .inspect-layout {
   display: grid;
   grid-template-columns: var(--workspace-rail) minmax(0, 1fr);
@@ -8831,7 +8815,7 @@ optgroup {
   overflow: hidden;
 }
 
-/* --- Left Rail --- */
+/* Left Rail */
 .inspect-rail {
   display: flex;
   flex-direction: column;
@@ -9108,7 +9092,7 @@ optgroup {
   border-color: var(--accent-hover);
 }
 
-/* --- Right Detail Pane --- */
+/* Right Detail Pane */
 .inspect-detail {
   display: flex;
   flex-direction: column;
@@ -9719,7 +9703,7 @@ optgroup {
   line-height: var(--leading-relaxed);
 }
 
-/* --- Replay & Compare CSS --- */
+/* Replay & Compare CSS */
 .inspect-detail__body--replay {
   overflow: hidden;
   display: flex;
@@ -10393,7 +10377,7 @@ optgroup {
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
-/* --- Layout Responsiveness (≤ 900px) --- */
+/* Layout Responsiveness (≤ 900px) */
 @media (max-width: 900px) {
   .inspect-layout {
     grid-template-columns: 1fr;
@@ -10415,7 +10399,7 @@ optgroup {
   }
 }
 
-/* --- Accessibility Audited Fixes --- */
+/* Accessibility Audited Fixes */
 
 /* A11Y-01: Restore focus outlines for unset interactive controls in Session Inspector */
 /* Selection lists are excluded: .workspace-list-row owns its own focus ring,
@@ -10442,7 +10426,7 @@ optgroup {
   }
 }
 
-/* --- Request Composer Modal --- */
+/* Request Composer Modal */
 .inspect-modal-overlay {
   position: fixed;
   top: 0;
@@ -10634,7 +10618,7 @@ optgroup {
   color: var(--danger);
 }
 
-/* --- Flex Utility Classes --- */
+/* Flex Utility Classes */
 .flex-col {
   display: flex;
   flex-direction: column;
@@ -10740,7 +10724,7 @@ optgroup {
   word-break: break-all;
 }
 
-/* ---------- Generated audio + 3D modalities ---------- */
+/* Generated audio + 3D modalities */
 .cap-badge--audio-gen { background: color-mix(in srgb, var(--cap-audio-generation) 16%, transparent); color: var(--cap-audio-generation); }
 .cap-badge--model3d { background: color-mix(in srgb, var(--cap-model3d) 17%, transparent); color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }
 .composer__mode-badge--audio-gen { color: var(--cap-audio-generation); background: color-mix(in srgb, var(--cap-audio-generation) 12%, transparent); }
@@ -11020,9 +11004,10 @@ optgroup {
 .cap-chip--audio-generation { --cap-color: var(--cap-audio-generation); }
 .cap-chip--model3d { --cap-color: var(--cap-model3d); }
 
-/* ── Unified workspace system ─────────────────────────────────
-   Product views use the same rail → content hierarchy. The rail owns
-   navigation and filters; the content pane owns one primary task. */
+/*
+ * Unified workspace system ───────────────────────────────── Product views use the same rail →
+ * content hierarchy. The rail owns navigation and filters; the content pane owns one primary task.
+ */
 
 .workspace-rail {
   min-width: 0;
@@ -12661,7 +12646,7 @@ a.backend-card__version:focus-visible {
   }
 }
 
-/* ── Simplified custom model management ─────────────────────── */
+/* Simplified custom model management */
 .custom-model-form__mode-switch {
   display: inline-flex;
   padding: 3px;
@@ -13014,7 +12999,7 @@ a.backend-card__version:focus-visible {
   }
 }
 
-/* ── Remote model providers (GUI3) ─────────────────────────── */
+/* Remote model providers (GUI3) */
 .model-nav-rail__section-label {
   display: flex;
   align-items: center;
@@ -13348,7 +13333,7 @@ a.backend-card__version:focus-visible {
 .mcp-server-form__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 720px) { .mcp-server-form, .mcp-panel__admin-auth-controls, .mcp-transport-options { grid-template-columns: 1fr; } .mcp-server-form__wide { grid-column: auto; } .mcp-panel__card-header { flex-direction: column; } }
 
-/* ── GUI3 model router editor ───────────────────────────────── */
+/* GUI3 model router editor */
 .manager__detail-form-panel--router { overflow: hidden; }
 .router-editor {
   width: 100%;
@@ -14057,7 +14042,7 @@ a.backend-card__version:focus-visible {
   .router-editor__toast { right: 16px; bottom: 16px; }
 }
 
-/* ── Global model settings ─────────────────────────────────── */
+/* Global model settings */
 .global-model-settings {
   width: 100%;
   color: var(--text-primary);
@@ -14367,13 +14352,14 @@ a.backend-card__version:focus-visible {
   color: var(--accent-fg);
 }
 
-/* ── Shared list ───────────────────────────────────────────────────
-   The model catalog, remote registry results, chat history, the composer's
-   model picker, captured requests, and Monitor's loaded-models readout all
-   render this row. Two columns: a lead glyph for the primary modality, and a
-   body of two lines — title, then either an in-flight status or the secondary
-   glyphs and facts, ending in the anchor. The action overlays the right edge
-   at full height. Only the body flexes, so nothing reflows between states. */
+/*
+ * Shared list ─────────────────────────────────────────────────── The model catalog, remote
+ * registry results, chat history, the composer's model picker, captured requests, and Monitor's
+ * loaded-models readout all render this row. Two columns: a lead glyph for the primary modality,
+ * and a body of two lines — title, then either an in-flight status or the secondary glyphs and
+ * facts, ending in the anchor. The action overlays the right edge at full height. Only the body
+ * flexes, so nothing reflows between states.
+ */
 
 .workspace-list {
   display: flex;

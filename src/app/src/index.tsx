@@ -47,7 +47,6 @@ if (typeof PerformanceObserver !== 'undefined') {
     const observer = new PerformanceObserver(() => collectPaintEntries());
     observer.observe({ type: 'paint', buffered: true });
   } catch {
-    // Older embedded webviews may not expose buffered paint observations.
   }
 }
 
@@ -60,9 +59,9 @@ function cssVariable(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// The source HTML contains a tiny white boot guard on purpose. Some Lemonade
-// web hosts serve the template directly instead of webpack's generated HTML.
-// That guard prevents a flash of raw, unstyled controls in both cases.
+// The source HTML contains a tiny white boot guard on purpose. Some Lemonade web hosts serve the
+// template directly instead of webpack's generated HTML. That guard prevents a flash of raw,
+// unstyled controls in both cases.
 const criticalStyle = document.getElementById('lemonade-critical-css') as HTMLStyleElement | null;
 const hasInlineCriticalCss = (criticalStyle?.textContent?.length || 0) > 256;
 if (hasInlineCriticalCss) {
@@ -92,9 +91,9 @@ function loadFullStyleFallback(): Promise<boolean> {
     import(/* webpackChunkName: "app-styles-fallback" */ './styles/tokens.css'),
     import(/* webpackChunkName: "app-styles-fallback" */ './styles/styles.css'),
   ]).then(() => {
-    // style-loader injects these rules while the chunk evaluates. The raw CSS
-    // fallback has no emitted app.css sentinel, so reaching this point is the
-    // readiness signal for the direct-template host path.
+    // style-loader injects these rules while the chunk evaluates. The raw CSS fallback has no
+    // emitted app.css sentinel, so reaching this point is the readiness signal for the
+    // direct-template host path.
     startup.fullCssReadyMs = performance.now();
     startup.cssSource = 'fallback-full';
     return true;
@@ -115,15 +114,12 @@ if (fullStyleLink) {
   });
   fullStyleLink.addEventListener('error', () => {
     fullStyleLinkFailed = true;
-    // If the host served the raw source template there is no embedded critical
-    // CSS and app.css may also be absent. Start recovery immediately while the
-    // white cover is still hiding the React tree.
     if (!hasInlineCriticalCss) void loadFullStyleFallback();
   }, { once: true });
 }
 
-// On the raw-template host path, do not wait for React to expose the missing CSS
-// problem. Fetch/inject full styles in parallel with the initial React render.
+// On the raw-template host path, do not wait for React to expose the missing CSS problem.
+// Fetch/inject full styles in parallel with the initial React render.
 const stylesReadyForFirstReveal: Promise<boolean> = hasInlineCriticalCss
   ? Promise.resolve(true)
   : loadFullStyleFallback();
@@ -152,9 +148,9 @@ function watchFirstUsableFrame(rootElement: HTMLElement): void {
     startup.uiCommitMs = performance.now();
 
     void stylesReadyForFirstReveal.then((stylesReady) => {
-      // Never expose raw browser-default controls. If both app.css and the JS
-      // fallback fail, keep the neutral white cover and surface the error only
-      // in the console instead of flashing a broken-looking application.
+      // Never expose raw browser-default controls. If both app.css and the JS fallback fail, keep
+      // the neutral white cover and surface the error only in the console instead of flashing a
+      // broken-looking application.
       if (!stylesReady) {
         console.error('Lemonade UI kept behind startup cover because styles are unavailable.');
         return;
@@ -170,9 +166,9 @@ function watchFirstUsableFrame(rootElement: HTMLElement): void {
           console.info('[startup] Lemonade first usable frame', { ...startup });
           window.dispatchEvent(new Event('lemonade:first-usable'));
 
-          // Critical CSS is enough for the default screen, but the rest of the
-          // application still needs full styles before the user visits another
-          // workspace. Recover after reveal without blocking the first frame.
+          // Critical CSS is enough for the default screen, but the rest of the application still
+          // needs full styles before the user visits another workspace. Recover after reveal
+          // without blocking the first frame.
           if (hasInlineCriticalCss) {
             recoveryTimer = window.setTimeout(() => {
               if (!markLinkedStylesReady()) void loadFullStyleFallback();
@@ -199,9 +195,9 @@ const rootElement = document.getElementById('root') as HTMLElement;
 const root = ReactDOM.createRoot(rootElement);
 watchFirstUsableFrame(rootElement);
 
-// React can render behind the white cover while CSS and JS finish their critical
-// work. The cover is removed only after both the active view and usable styles
-// are ready, eliminating FOUC without serializing React behind CSS loading.
+// React can render behind the white cover while CSS and JS finish their critical work. The cover is
+// removed only after both the active view and usable styles are ready, eliminating FOUC without
+// serializing React behind CSS loading.
 root.render(
   <I18nProvider>
     <App />

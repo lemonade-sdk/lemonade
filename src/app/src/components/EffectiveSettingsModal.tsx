@@ -333,7 +333,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
           await onReload();
         } catch (reloadErr) {
           restorePreviousOverride();
-          try { await onLoad(); } catch { /* keep the original failure */ }
+          try { await onLoad(); } catch {  }
           throw reloadErr;
         }
         setNotice(t('Applied and reloaded with the new arguments.'));

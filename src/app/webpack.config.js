@@ -5,8 +5,6 @@ const webpack = require('webpack');
 module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
 
-  // Keep the expected renderer.bundle.js entry name while allowing webpack
-  // to emit additional vendor, chart, and markdown chunks.
   entry: {
     renderer: './src/index.tsx',
   },
@@ -41,18 +39,15 @@ module.exports = (env, argv) => ({
     filename: '[name].bundle.js',
     chunkFilename: '[name].chunk.js',
 
-    // GUI3/Tauri packaging expects the renderer application here.
     path: path.resolve(__dirname, 'dist/renderer'),
 
-    // Resolve lazy-loaded chunks relative to the actual renderer bundle.
-    // This also works when the frontend is hosted below a sub-path.
     publicPath: 'auto',
     clean: true,
   },
 
   optimization: {
-    // GUI3 contains large visualization and markdown dependencies.
-    // Avoid expensive minification in CI and development builds.
+    // GUI3 contains large visualization and markdown dependencies. Avoid expensive minification in
+    // CI and development builds.
     minimize: false,
 
     splitChunks: {

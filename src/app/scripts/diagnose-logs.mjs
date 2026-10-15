@@ -45,7 +45,6 @@ const WAIT_MS = 10_000;
   console.log(`[diagnose] Opening ${APP_URL}...`);
   await page.goto(APP_URL, { waitUntil: 'networkidle' });
 
-  // Try to navigate to the Logs view — look for a nav link/button
   const logsNav = page.locator('[data-nav="logs"], a[href*="logs"], button:has-text("Logs")');
   if (await logsNav.count() > 0) {
     console.log('[diagnose] Clicking Logs nav...');
@@ -57,7 +56,6 @@ const WAIT_MS = 10_000;
   console.log(`[diagnose] Waiting ${WAIT_MS / 1000}s for connection attempts...`);
   await page.waitForTimeout(WAIT_MS);
 
-  // Check visible status indicator
   const statusLabel = await page.locator('.logs-status__label').textContent().catch(() => 'not found');
 
   console.log('\n══════════════════════════════════════════');

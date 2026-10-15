@@ -43,7 +43,6 @@ for (const [fileName, source] of [
   );
 }
 
-/* ── Backend identity stays a text label ─────────────────────────── */
 
 assert.match(component, /import \{ backendCompactLabel, backendLabel \}/);
 assert.doesNotMatch(component, /backendColor|--list-backend-color/,
@@ -52,7 +51,6 @@ assert.match(component, /function modelListBackendLabel\(recipe: string\): strin
 assert.doesNotMatch(component, /backendCompactLabel\(recipe\)\.toUpperCase\(\)/,
   'backend labels must preserve product casing such as llama.cpp and vLLM');
 
-/* ── Backend readiness still drives the row's status ──────────────── */
 
 assert.match(component, /export function modelBackendReadiness\(/);
 for (const state of ['installed', 'update_required', 'update_available', 'installable', 'action_required', 'unsupported']) {
@@ -64,13 +62,11 @@ for (const state of ['missing', 'update_required', 'update_available', 'installa
     `every attention state needs a short message for the row's meta line: ${state}`);
 }
 
-/* ── The row is the shared component, filled by priority ──────────── */
 
 assert.match(component, /<WorkspaceListRow/, 'the catalog must render the shared row');
 assert.match(component, /capability=\{primaryCapability\}/,
   'the lead glyph carries the primary modality');
 
-// The lead-glyph rule is shared, not restated per list.
 const capabilities = fs.readFileSync(path.join(root, 'src/modelCapabilities.ts'), 'utf8');
 assert.match(capabilities, /export function isRouterRecipe\(/);
 assert.match(capabilities, /export function identityFromModelInfo\(model: ModelInfo\): ModelIdentity/,
@@ -87,8 +83,8 @@ assert.match(component, /anchor=\{recipe && !neutralCollectionGuide \? displayed
 assert.match(component, /secondaryTags = capTags\.filter\(tag => tag !== \(primaryCapability as string\)\)/,
   'the primary modality must not repeat in the secondary glyph run');
 
-// Status is transient-only, and never carried by dot colour alone: a row that
-// is doing something says so in words, and a steady row says nothing at all.
+// Status is transient-only, and never carried by dot colour alone: a row that is doing something
+// says so in words, and a steady row says nothing at all.
 assert.match(component, /Downloading\$\{downloadPct != null \? ` \$\{downloadPct\.toFixed\(0\)\}%` : '…'\}/);
 assert.match(component, /\? backendReadinessMessage\(backendReadiness!\)/);
 assert.match(panels, /export type WorkspaceListRowStatus = 'live' \| 'busy' \| 'attention' \| 'error';/,
@@ -100,8 +96,6 @@ assert.match(component, /statusText=\{statusText\}/,
 assert.match(component, /const meta = model\.size/,
   'the meta slot carries facts only; state lives in statusText');
 
-/* Sections carry what every row in a run shares. Grouping is structural so the
-   headings stay true under every sort, not just the status-ranked default. */
 assert.match(component, /const listSections = useMemo/,
   'the catalog groups its rows into labelled sections');
 for (const label of ['Pinned', 'Downloaded', 'Local Catalog']) {
@@ -126,13 +120,14 @@ assert.match(component, /ariaKeyShortcuts=\{onTogglePin \? 'P' : undefined\}/,
 assert.doesNotMatch(component, /model-list-item__(footer|body|status|backend|pin|caps)/,
   'the per-tab catalog row markup is retired in favour of the shared row');
 
-/* ── The shared row component's own contract ─────────────────────── */
 
 assert.match(panels, /export const WorkspaceListRow/);
 assert.match(panels, /export const WorkspaceList/);
-/* A list you pick from is a listbox of options; a readout you merely act on is
-   a plain list, where the row's own button is a legal control rather than an
-   illegal nested one. Same row template either way — only the roles differ. */
+/*
+ * A list you pick from is a listbox of options; a readout you merely act on is a plain list, where
+ * the row's own button is a legal control rather than an illegal nested one. Same row template
+ * either way — only the roles differ.
+ */
 assert.match(panels, /role=\{selectable \? 'option' : 'listitem'\}/,
   'the row takes its role from whether the list is selectable');
 assert.match(panels, /role=\{selectable \? 'listbox' : 'list'\}/,
@@ -144,10 +139,6 @@ assert.match(panels, /--workspace-list-row-cap/,
 assert.match(panels, /event\.stopPropagation\(\); action\.onClick\(\)/,
   'the row action must not also select the row');
 
-/* ── The list owns roving tabindex, once ─────────────────────────
-   Every selection list used to carry its own copy of the ARIA listbox
-   keyboard contract, and the copies had already drifted. WorkspaceList owns
-   it now; a list supplies policy and callbacks only. */
 
 assert.match(panels, /data-row-id/, 'rows are identified to the list uniformly');
 for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter']) {
@@ -168,7 +159,6 @@ for (const [name, source] of [
     `${name} must not re-implement listbox keyboard navigation`);
 }
 
-/* ── The chat model picker is a selection list too ───────────────── */
 
 assert.match(chatView, /className="composer__model-results"[\s\S]{0,200}label="Models"/,
   'the model picker renders through WorkspaceList');
@@ -188,7 +178,6 @@ for (const expected of ['llama.cpp', 'vLLM', 'FLM', 'SD.cpp', 'Moonshine', 'Open
   assert.ok(presentation.includes(`compact: '${expected}'`), `missing complete compact backend label: ${expected}`);
 }
 
-/* ── Row geometry ────────────────────────────────────────────────── */
 
 assert.match(styles, /\.workspace-list-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*16px minmax\(0, 1fr\);[^}]*min-height:\s*52px;/s,
   'the row is a lead glyph and a flexible body; the action shares the anchor slot');
@@ -198,17 +187,16 @@ assert.match(styles, /\.workspace-list-row__title\s*\{[^}]*grid-column:\s*2;[^}]
 assert.match(styles, /\.workspace-list-row__anchor\s*\{[^}]*margin-inline-start:\s*auto;/s,
   'the anchor ends the meta line rather than competing with the title');
 
-/* The dot and its words are one unit inside the meta line. Split apart — dot in
-   the trailing column, words in the meta line — colour carried state on its own
-   and the mark sat diagonally away from what it marked. */
 assert.match(styles, /\.workspace-list-row__status\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;/s,
   'the status dot and its words render as one inline unit');
 assert.doesNotMatch(styles, /\.workspace-list-row__status\s*\{[^}]*grid-column:/s,
   'the status dot must not return to its own grid cell away from its words');
 
-/* The action overlays the row's right edge at full height instead of owning a
-   column. A column reserved on every row put a button beside every timestamp in
-   the app, and stopped the anchor short of the edge. */
+/*
+ * The action overlays the row's right edge at full height instead of owning a column. A column
+ * reserved on every row put a button beside every timestamp in the app, and stopped the anchor
+ * short of the edge.
+ */
 assert.match(styles, /\.workspace-list-row__action\s*\{[^}]*position:\s*absolute;[^}]*inset-block:\s*0;[^}]*width:\s*var\(--workspace-list-row-action\);[^}]*visibility:\s*hidden;/s,
   'the action fills the row height at its right edge and hides until hover');
 assert.match(styles, /\.workspace-list-row:hover \.workspace-list-row__anchor,[\s\S]*?\{\s*visibility:\s*hidden;\s*\}/,
@@ -225,11 +213,12 @@ assert.match(styles, /\.workspace-list-row__status::before\s*\{[^}]*width:\s*7px
 assert.match(styles, /\.workspace-list-row--selected[^{]*\{[^}]*--workspace-list-row-bg:[^;]+;\s*border-color:\s*color-mix\(in srgb, var\(--accent-fg\) 30%/s,
   'selection is one treatment shared by every list');
 
-/* Hover and selection must stay translucent. The five lists do not share a
-   ground — the catalog scrolls over --surface-base, the chat and telemetry
-   rails are --surface-1, the composer's picker floats on --surface-raised, and
-   the light theme collapses --surface-base and --surface-1 onto one color — so
-   an opaque value tuned against one list is invisible or inverted on another. */
+/*
+ * Hover and selection must stay translucent. The five lists do not share a ground — the catalog
+ * scrolls over --surface-base, the chat and telemetry rails are --surface-1, the composer's picker
+ * floats on --surface-raised, and the light theme collapses --surface-base and --surface-1 onto one
+ * color — so an opaque value tuned against one list is invisible or inverted on another.
+ */
 const stateToken = (label, pattern) => {
   const match = styles.match(pattern);
   assert.ok(match, `${label} must set --workspace-list-row-bg from a single token`);
@@ -252,8 +241,6 @@ for (const [state, token] of rowStateTokens) {
   }
 }
 
-/* Selection outranks hover. These share specificity, so the cascade resolves
-   them by source order and the order is the whole fix. */
 const hoverAt = styles.indexOf('.workspace-list-row:hover');
 const selectedHoverAt = styles.indexOf('.workspace-list-row--selected:hover');
 assert.ok(hoverAt >= 0 && selectedHoverAt > hoverAt,
@@ -266,17 +253,16 @@ assert.ok(
   styles.indexOf('.workspace-list-row--selected.workspace-list-row--disabled:hover') > selectedHoverAt,
   'a selected row that is busy must not lose its selection on hover');
 
-/* Degradation is by priority, driven by the list container. */
 assert.match(styles, /\.workspace-list\s*\{[^}]*container-type:\s*inline-size;[^}]*container-name:\s*workspace-list;/s);
 assert.match(styles, /@container workspace-list \(max-width: 260px\)\s*\{\s*\.workspace-list-row__glyphs > :nth-child\(n \+ 3\)/);
 assert.match(styles, /@container workspace-list \(max-width: 210px\)\s*\{\s*\.workspace-list-row__glyphs\s*\{\s*display:\s*none/);
 
-/* ── Keyboard reach ──────────────────────────────────────────────── */
 
-/* A listbox option owns the only tab stop in its row, so a row action that is a
-   real control can never be tabbed to. Arrow keys carry focus in and back out
-   instead, which is what keeps deleting a conversation, cancelling a download or
-   ejecting a model available without a pointer. */
+/*
+ * A listbox option owns the only tab stop in its row, so a row action that is a real control can
+ * never be tabbed to. Arrow keys carry focus in and back out instead, which is what keeps deleting
+ * a conversation, cancelling a download or ejecting a model available without a pointer.
+ */
 assert.match(panels, /case 'ArrowRight': \{[\s\S]*?querySelector<HTMLElement>\('button\.workspace-list-row__action'\)[\s\S]*?\.focus\(\);/,
   'ArrowRight moves focus from the row onto its action button');
 assert.match(panels, /case 'ArrowLeft': \{[\s\S]*?options\[current\]\.focus\(\);/,
@@ -284,21 +270,19 @@ assert.match(panels, /case 'ArrowLeft': \{[\s\S]*?options\[current\]\.focus\(\);
 assert.match(panels, /aria-keyshortcuts=\{selectable \? 'ArrowRight' : undefined\}/,
   'a listbox row advertises the key that reaches its action');
 
-/* Results arrive with nothing selected, so keying the tab stop off selection
-   alone left a whole provider list unreachable by Tab. */
 assert.match(manager, /const remoteRovingId = [\s\S]*?return selected \?\? results\[0\]\?\.id \?\? null;/,
   'the first remote result stands in as the tab stop until one is selected');
 assert.match(manager, /tabIndex=\{rovingId === result\.id \? 0 : -1\}/,
   'the remote row takes its tab stop from the roving id, not from selection');
 
-/* ── Sections must state a truth ─────────────────────────────────── */
 
-/* A model still being fetched is not on this machine yet, and a heading that
-   says otherwise invites treating a partial download as ready. */
+/*
+ * A model still being fetched is not on this machine yet, and a heading that says otherwise invites
+ * treating a partial download as ready.
+ */
 assert.match(component, /entry\.status !== 'available' && entry\.status !== 'downloading'/,
   'a download in flight is not grouped under Downloaded');
 
-/* ── Retired treatments must not come back ───────────────────────── */
 
 assert.doesNotMatch(styles, /\.model-list-item|\.rail__item|--model-list-line/,
   'the per-tab row styles are replaced by the shared row');

@@ -22,7 +22,6 @@ export function findRegisteredRemoteModel(
         (source && source !== 'huggingface' && source !== 'modelscope')) return false;
     if (registry !== provider || String(model.recipe || '').toLowerCase() !== 'llamacpp') return false;
 
-    // A matching main file alone does not establish equivalence for multimodal models.
     const extraFiles = model.checkpoints;
     if (extraFiles && typeof extraFiles === 'object' &&
         Object.keys(extraFiles).some(role => role !== 'main')) return false;

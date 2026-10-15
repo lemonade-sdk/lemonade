@@ -18,12 +18,11 @@ mod imp {
     }
 
     fn graceful_kill_tray() {
-        // SIGTERM first; if anything is still running after KILL_TIMEOUT_SECS
-        // fall back to SIGKILL. `pkill` returns non-zero when no process
-        // matches, which we treat as "already clean". Match by exact process
-        // name (-x) rather than full command line (-f) to avoid false positives
-        // from editors, log paths, or debuggers whose argv happens to contain
-        // the string "lemonade-tray".
+        // SIGTERM first; if anything is still running after KILL_TIMEOUT_SECS fall back to SIGKILL.
+        // `pkill` returns non-zero when no process matches, which we treat as "already clean".
+        // Match by exact process name (-x) rather than full command line (-f) to avoid false
+        // positives from editors, log paths, or debuggers whose argv happens to contain the string
+        // "lemonade-tray".
         match Command::new("pkill").args(["-x", "lemonade-tray"]).status() {
             Ok(status) if status.success() => {}
             _ => return,
@@ -60,9 +59,8 @@ mod imp {
             let _ = std::fs::remove_file(lock_file);
         }
 
-        // macOS GUI apps don't inherit /usr/local/bin in PATH, and runtime
-        // libraries live in /usr/local/lib — restore both so the tray can
-        // find its tools and DYLDs.
+        // macOS GUI apps don't inherit /usr/local/bin in PATH, and runtime libraries live in
+        // /usr/local/lib — restore both so the tray can find its tools and DYLDs.
         let mut path = std::env::var("PATH").unwrap_or_default();
         if !path.contains("/usr/local/bin") {
             path.push_str(":/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
@@ -100,6 +98,5 @@ pub(crate) fn ensure_tray_running() {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        // no-op on Windows/Linux
     }
 }

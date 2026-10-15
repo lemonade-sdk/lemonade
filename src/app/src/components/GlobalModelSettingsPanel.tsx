@@ -177,8 +177,8 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
       window.setTimeout(() => setSaved(false), 1600);
     } catch (error) {
       setServerError(`Failed to save settings: ${friendlyErrorMessage(error)}`);
-      // A rejected or unconfirmed write must not leave the attempted draft
-      // looking authoritative. Refetch if possible; otherwise clear it.
+      // A rejected or unconfirmed write must not leave the attempted draft looking authoritative.
+      // Refetch if possible; otherwise clear it.
       try {
         await refetchServerDraft();
       } catch {
@@ -203,8 +203,8 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     setServerLoading(true);
     setServerError(null);
     try {
-      // There is no complete authoritative reset for all lifecycle fields in the
-      // current runtime contract, so discard the draft and reload server state.
+      // There is no complete authoritative reset for all lifecycle fields in the current runtime
+      // contract, so discard the draft and reload server state.
       await refetchServerDraft();
     } catch (error) {
       setServerError(`Could not reload server settings: ${friendlyErrorMessage(error)}`);
