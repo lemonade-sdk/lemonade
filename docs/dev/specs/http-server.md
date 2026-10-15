@@ -87,6 +87,14 @@ struct RouteArg {
     std::string description;
 };
 
+// Clients branch on a route's error statuses, so each one is declared once, and both the code
+// that writes it and the docs read it from the declaration.
+struct RouteError {
+    int status;                       // e.g. 404
+    std::string code;                 // the code the body carries, e.g. "model_not_found"; empty when it carries none
+    std::string when;                 // the condition, e.g. "`id` names no job"
+};
+
 // Each format a route returns gets its own schema in the docs.
 struct RouteResponse {
     ResponseFormat format;
@@ -126,6 +134,7 @@ struct RouteSpec {
     std::vector<RouteArg> args;       // every argument
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
     std::vector<RouteExample> examples;    // the first is the route's main example
+    std::vector<RouteError> errors;        // every error the route writes, besides those its base class adds
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
     bool quiet_log = false;           // leave out of the access log
 };
@@ -137,6 +146,11 @@ public:
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 protected:
+    // A route's error shape is part of its contract, so a route can override how a body that
+    // does not parse is answered, together with the errors that override writes.
+    virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
+                                    httplib::Response& res) const;
+    virtual std::vector<RouteError> invalid_body_errors() const;
     ServerContext& ctx_;
 };
 
@@ -147,6 +161,10 @@ public:
 protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
+    // A route's error shape is part of its contract, so a route can override how an exception
+    // that escapes validate() or run() is answered, together with the errors that override writes.
+    virtual void write_exception(const std::exception& error, httplib::Response& res) const;
+    virtual std::vector<RouteError> exception_errors() const;
 };
 ```
 
@@ -215,6 +233,33 @@ schema["properties"]["x_lemonade_route"] = {
 };
 ```
 
+### Errors
+
+This section defines how a route declares its error statuses, so its handler and its docs read each one from the same `RouteError`.
+
+Every function that writes an error status, such as `write_plain_error()` and `write_openai_error()`, takes a `RouteError` in place of a status, or picks one of the `RouteError`s it defines, as `ModelLoader::write_load_error()` picks from `ModelLoader::errors()`. `set_error_response()` answers with the backend's status when the backend reports one, and with its `RouteError`'s status otherwise. Each function keeps the body shape its callers write; [Appendix B](#appendix-b-error-format-cleanup) unifies them. A route defines its errors as constants beside its class and lists them in `errors`:
+
+```cpp
+const RouteError kUnknownJob{404, "", "`id` names no job"};
+
+s.errors = {kUnknownJob};                                // in spec()
+write_plain_error(res, kUnknownJob, "unknown job");      // in handle()
+```
+
+An error shared by several routes, such as `kBackendError`, is defined once beside the function that writes it. A route also lists the errors its backends report that a client can act on, such as llama.cpp's 501 for a model that cannot embed, though only `set_error_response()` writes them. `RouteRegistry::add()` appends the errors that base-class steps write:
+
+| Base class | Errors appended |
+| --- | --- |
+| `ApiRoute` | `invalid_body_errors()`, written by `write_invalid_body()`, when `request_format` is `Json` or `OptionalJson` |
+| `ModelRoute` | The form errors from step 1 when `request_format` is `Form`, the missing-`model` 400 from step 4, `ModelLoader::errors()` from step 5, and `exception_errors()`, written by `write_exception()` |
+
+A route that overrides `write_invalid_body()` or `write_exception()` overrides the matching list beside it.
+
+These are not `RouteError`s:
+
+- **Errors in a started response.** An error event in a stream, or a JSON-RPC error answered with `200`, is a shape of the route's `RouteResponse::schema`.
+- **Errors outside the route.** `RequestMiddleware`'s 401 and 403, `RouteRegistry`'s 405 stubs and the 404 for an unknown path; `docs/api/README.md` states them.
+
 ### Complete Example
 
 `routes/openai/text/chat_completions.cpp`:
@@ -269,6 +314,7 @@ nlohmann::json chat_completion_schema() {
 nlohmann::json chat_completion_chunk_schema() {
     return nlohmann::json::parse(R"({
         "type": "object",
+        "description": "A chunk of the assistant's message. The stream ends with `data: [DONE]`.",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
             "id": {"type": "string"},
@@ -313,9 +359,11 @@ public:
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable, "Return the log probability of each output token."},
         };
 
+        // A backend that fails mid-stream sends an error event instead of the remaining chunks.
         s.responses = {
             {ResponseFormat::Json, chat_completion_schema()},
-            {ResponseFormat::EventStream, chat_completion_chunk_schema()},
+            {ResponseFormat::EventStream,
+             {{"oneOf", {chat_completion_chunk_schema(), StreamingProxy::error_event_schema()}}}},
         };
 
         RouteExample completion;
@@ -336,6 +384,7 @@ public:
         })");
 
         s.examples = {completion, stream};
+        s.errors = {kBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -360,7 +409,7 @@ protected:
         auto cancel = cancel_on_disconnect(req);
         nlohmann::json response = ctx_.router->chat_completion(req.body);
         if (response.contains("error")) {
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
         attach_route_decision(response, res, req.route_decision);
@@ -452,7 +501,7 @@ This section specifies how `docs/api` is generated from the routes, including re
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page.
-3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, the route's other paths and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Examples and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
+3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, the route's other paths and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, the Examples and Response format sections described in [Examples](#examples), and an Errors table listing each of the route's `errors` by status, code and `when`. The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
 4. Fills the Examples section from the response cache, running each example's setup and request against lemond only when its cache entry is invalid.
 
 Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
@@ -477,10 +526,11 @@ This section specifies what each route's text says. The generator prints each ro
 | --- | --- | --- |
 | `summary` | What the route does, as a verb phrase of at most 10 words, such as "Pause a job" | Support status, formats, the description |
 | `description` | What the route does, and who uses it when that is not obvious, in at most 3 sentences, third person present ("Loads a model...") | URLs, prefixes, aliases, auth, argument details or defaults, the page intro |
-| `notes` | Behavior no argument or field can carry: error statuses ("A `400` answers ..."), side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description, a request or response, which belongs in `examples` |
+| `notes` | Behavior no argument, field or error can carry: side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description, a request or response, which belongs in `examples` |
 | `RouteArg::description` | What the argument controls, its accepted values, its default ("Defaults to `false`."), and when it is required if that depends on other arguments | Where the argument goes, the Required column, the route's behavior |
 | Top-level `description` of a `RouteResponse::schema`, or of one of its shapes | What the response is as a whole: how a stream's lines or events relate, such as which line ends it, or when this shape is returned | A field's meaning |
 | Property `description` in a `RouteResponse::schema` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
+| `RouteError::when` | The condition that produces the error, as a clause such as "`id` names no job". For an error passed through from a backend, also that the backend's status replaces this one | The status, the code, the body's message |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
 | `RouteExample::description` | What this example shows that the route's other text does not, such as which model or file it uses, or a request shape that only this example uses | The route's general behavior, which belongs in `notes` |
 
@@ -515,6 +565,8 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
+- a file under `routes/` or `services/` writes an error status that is not a `RouteError`'s, or a route file uses a `RouteError` that its route's `errors` does not list
+- a route's `description`, `notes` or argument descriptions name an error status, such as `404`
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
 - a JSON format, or one of its shapes, has no example whose response it validates, unless the shape sets `x-no-example` to the reason no recording machine can return it
 - a field in a recorded JSON response has no `description` in its schema, unless an enclosing field is described without listing its properties
@@ -623,9 +675,38 @@ data: [DONE]
 
 ### Response format
 
+#### JSON
+
 **Field Descriptions:**
 
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+
+#### Event stream
+
+**Field Descriptions:**
+
+A chunk of the assistant's message. The stream ends with `data: [DONE]`.
+
+The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+
+- `error` - The backend's error, as an object or, when the backend sent one, a string.
+  - `message` - What failed.
+  - `type` - The error's type, such as `backend_error`.
+  - `status_code` - The status the backend answered with, or `502` when it closed the stream without a response.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` |  | The body is empty or is not valid JSON |
+| `400` |  | The request names no `model` |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.chat_completions -->
 ````
 
@@ -656,7 +737,7 @@ Findings that shaped specific rules:
 
 ## Appendix B: Error Format Cleanup
 
-This appendix describes a change that unifies error shapes, which vary by route: some return `{"error": "message"}`, some an OpenAI-style object, and invalid JSON gets a 400 from `chat/completions` but a 500 from `completions`.
+This appendix describes a change that unifies error shapes and statuses, which vary by route: some return `{"error": "message"}`, some an OpenAI-style object, and invalid JSON gets a 400 from `chat/completions` but a 500 from `completions`.
 
 Each route folder adopts the error format of the API its page documents:
 
@@ -667,9 +748,14 @@ Each route folder adopts the error format of the API its page documents:
 | `ollama/` | `{"error": "message"}` |
 | `lemonade/`, `internal/`, `router/`, `llamacpp/` | `{"error": {"message", "type", "code"}}` |
 
-`ApiRoute` provides one error writer per format. The same PR updates the clients that read `error` as a string, each a one-line change to accept either shape:
+The change has two parts:
 
-- **CLI:** `src/cpp/cli/main.cpp:1164` and `src/cpp/cli/lemonade_client.cpp:1037`, `1082` and `1413`. Line 1413 calls `get<std::string>()` without a type check and would throw.
+1. `ApiRoute` provides one error writer per format, each route writes its `RouteError`s through its folder's writer, and pull's and install's streams send their `error` events in the same shape. The `write_invalid_body()` and `write_exception()` overrides and their error lists are removed.
+2. `ApiRoute::serve()` checks the request against the route's `args` before `handle()`, and answers 400 for a missing `required` argument or a value that does not match its `schema`. Under this design, such a request answers 500 on some routes, such as `pull` with no `model_name`, and 404 on others, such as `chat/completions` with a numeric `model`.
+
+The same PR updates the clients that read `error` as a string, each a one-line change to accept either shape:
+
+- **CLI:** `src/cpp/cli/main.cpp:1164` reads `/internal/set`'s error, and `src/cpp/cli/lemonade_client.cpp:1037`, `1082` and `1423` read the `error` events of pull's and install's streams. Line 1423 calls `get<std::string>()` without a type check and would throw.
 - **GUI:** `src/app/src/renderer/utils/backendInstaller.ts:14` handles only strings, and `src/app/src/renderer/components/RouterTestPromptPanel.tsx:194` renders `data?.error` directly.
 
 Older CLIs and GUIs connected to a newer server would still hit those cases, which is why this change ships on its own.
