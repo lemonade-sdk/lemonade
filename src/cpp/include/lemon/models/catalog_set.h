@@ -1,7 +1,10 @@
 #pragma once
 
 #include <lemon/models/catalog.h>
+#include <lemon/models/json_catalog.h>
+#include <lemon/models/registry_documents.h>
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,6 +16,26 @@ namespace models {
 // The catalogs a store builds from. A build enumerates them in declared rank
 // order, so a catalog that joins later takes its precedence from its descriptor
 // instead of from where its construction happened to land.
+// How a host becomes catalogs. The set decides which catalogs exist and in what
+// precedence; the caller decides only how its own documents, directories and
+// installed backends are read.
+struct CatalogSetDeps {
+    // Row policy shared by every JSON registry document; each catalog applies
+    // what distinguishes it.
+    RegistryRowRules registry_rows;
+    std::function<RegistryDocuments::Pin()> pin_registries;
+    std::function<std::vector<ModelInfo>(const CatalogAccumulator&)> scan_extra_models;
+
+    bool offline = false;
+    std::function<std::vector<std::string>()> dynamic_recipes;
+    std::function<std::vector<ModelInfo>(const std::string& recipe)> discover_backend;
+    std::function<std::vector<std::string>()> cloud_providers;
+    std::function<std::vector<ModelInfo>(const std::string& provider)> list_cloud_models;
+};
+
+// The catalogs the shipped product builds from.
+std::vector<std::shared_ptr<ModelCatalog>> product_catalogs(const CatalogSetDeps& deps);
+
 class CatalogSet {
   public:
     CatalogSet() = default;

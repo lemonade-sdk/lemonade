@@ -894,6 +894,97 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
     return result;
 }
 
+std::vector<ModelInfo> ModelManager::scan_extra_models(
+    const models::CatalogAccumulator& claimed) {
+    std::set<fs::path> registered_extra_paths;
+    if (!extra_models_dir_.empty()) {
+        for (const auto& [name, info] : claimed.models()) {
+            ModelInfo candidate = info;
+            artifacts_->adopt_extra_cache(candidate, &registered_extra_paths);
+        }
+    }
+
+    // External discovery is additive. A filesystem failure in this
+    // optional source must never make built-in or user-registered
+    // models disappear.
+    std::vector<ModelInfo> discovered;
+    try {
+        for (auto& [name, info] : discover_extra_models(registered_extra_paths)) {
+            discovered.push_back(std::move(info));
+        }
+    } catch (const std::exception& e) {
+        LOG(ERROR, "ModelManager")
+            << "Extra model discovery failed; keeping registered models: " << e.what()
+            << std::endl;
+    }
+    return discovered;
+}
+
+models::CatalogSetDeps ModelManager::make_catalog_deps(
+    std::map<std::string, json>& json_recipe_options) {
+    models::CatalogSetDeps deps;
+
+    // What a row says about itself is parsed in models/json_catalog.cpp; these
+    // are the facts it cannot answer.
+    models::RegistryRowRules rows;
+    rows.device_for_recipe = [](const std::string& recipe) {
+        return device_type_for_recipe(recipe);
+    };
+    rows.stamp_labels = [](ModelInfo& info) {
+        std::string illegal =
+            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+        if (!illegal.empty()) {
+            return describe_illegal_labels(info.model_name, illegal);
+        }
+        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
+        return std::string();
+    };
+    rows.populate_components = [this](ModelInfo& info) {
+        ingest_->populate_from_cached_manifest(info);
+    };
+    rows.resolve_paths = [this](ModelInfo& info) { resolve_all_model_paths(info); };
+    rows.recipe_options = [&json_recipe_options](const std::string& name, const json& authored) {
+        json_recipe_options[name] = authored;
+    };
+    deps.registry_rows = std::move(rows);
+    deps.pin_registries = [this] { return registries_.pin(); };
+    deps.scan_extra_models = [this](const models::CatalogAccumulator& claimed) {
+        return scan_extra_models(claimed);
+    };
+
+    auto* config = RuntimeConfig::global();
+    deps.offline = config != nullptr && config->offline();
+    deps.dynamic_recipes = [] {
+        std::vector<std::string> recipes;
+        for (const auto* desc : backends::all_descriptors()) {
+            if (desc->dynamic_models) {
+                recipes.push_back(desc->recipe);
+            }
+        }
+        return recipes;
+    };
+    deps.discover_backend = [this](const std::string& recipe) {
+        backends::BackendOpsContext octx;
+        octx.fetch = ingest_.get();
+        octx.artifacts = artifacts_.get();
+        octx.cloud_registry = cloud_registry_;
+        return backends::ops_for(recipe)->discover_models(octx);
+    };
+    deps.cloud_providers = [this] {
+        std::vector<std::string> providers;
+        if (cloud_registry_ != nullptr) {
+            for (const auto& rec : cloud_registry_->list_installed()) {
+                providers.push_back(rec.name);
+            }
+        }
+        return providers;
+    };
+    deps.list_cloud_models = [this](const std::string& provider) {
+        return backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
+    };
+    return deps;
+}
+
 void ModelManager::build_cache() {
     // Probed before taking the writer: publishing on a read that changes nothing
     // would leave the generation useless as a change signal.
@@ -918,160 +1009,7 @@ void ModelManager::build_cache() {
 
     models::CatalogSet built;
 
-    // What a row says about itself is parsed in models/json_catalog.cpp; these
-    // are the facts it cannot answer.
-    models::RegistryRowRules rows;
-    rows.device_for_recipe = [](const std::string& recipe) {
-        return device_type_for_recipe(recipe);
-    };
-    rows.stamp_labels = [](ModelInfo& info) {
-        std::string illegal =
-            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
-        if (!illegal.empty()) {
-            return describe_illegal_labels(info.model_name, illegal);
-        }
-        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
-        return std::string();
-    };
-    rows.populate_components = [this](ModelInfo& info) {
-        ingest_->populate_from_cached_manifest(info);
-    };
-    rows.resolve_paths = [this](ModelInfo& info) { resolve_all_model_paths(info); };
-    rows.recipe_options = [&json_recipe_options](const std::string& name, const json& authored) {
-        json_recipe_options[name] = authored;
-    };
-
-    // Every source of models registers here, in the order that decides a claimed
-    // name. The two JSON registries author theirs; everything after them keeps an
-    // existing entry.
-    const models::RegistryDocuments::Pin documents = registries_.pin();
-
-    models::RegistryRowRules builtin_rows = rows;
-    builtin_rows.source_label = "built-in model";
-    built.add(std::make_shared<models::JsonCatalog>(
-        models::make_catalog_descriptor(
-            "server_models.json", models::catalog_rank::builtin_registry, models::Conflict::Overwrite,
-            models::DocEntry{"server_models", "Built-in registry",
-                             "The model list shipped with the server.",
-                             {"Nothing writes this file back: a new row ships in a release."}, ""}),
-        documents.builtin,
-        std::move(builtin_rows)));
-
-    // Registrations are keyed bare on disk and "user.<name>" in the cache.
-    models::RegistryRowRules user_rows = rows;
-    user_rows.name_prefix = "user.";
-    user_rows.suggested_default = true;
-    user_rows.source_label = "user model";
-    built.add(std::make_shared<models::JsonCatalog>(
-        models::make_catalog_descriptor(
-            "user_models.json", models::catalog_rank::registrations, models::Conflict::Overwrite,
-            models::DocEntry{"user_models", "Registrations",
-                             "Every model the user pulled or registered.",
-                             {"A registration keeps its own provenance, so a later built-in row "
-                              "cannot take its name."},
-                             ""}),
-        documents.user,
-        std::move(user_rows)));
-
-    // A scanning or listing source keeps what an earlier source already claimed.
-    built.add(std::make_shared<models::EnumeratedCatalog>(
-        models::make_catalog_descriptor(
-            "extra_models_dir", models::catalog_rank::scan, models::Conflict::KeepExisting,
-            models::DocEntry{"extra-models", "Extra models directory",
-                             "A scan of the extra models directory; GGUF files are identified "
-                             "by their header, not their name.",
-                             {"A directory watcher requests one rebuild when the tree changes."},
-                             ""},
-            "extra_models_dir"),
-        [this](const models::CatalogAccumulator& claimed) {
-            std::set<fs::path> registered_extra_paths;
-            if (!extra_models_dir_.empty()) {
-                for (const auto& [name, info] : claimed.models()) {
-                    ModelInfo candidate = info;
-                    artifacts_->adopt_extra_cache(candidate, &registered_extra_paths);
-                }
-            }
-
-            // External discovery is additive. A filesystem failure in this
-            // optional source must never make built-in or user-registered
-            // models disappear.
-            std::vector<ModelInfo> discovered;
-            try {
-                for (auto& [name, info] : discover_extra_models(registered_extra_paths)) {
-                    discovered.push_back(std::move(info));
-                }
-            } catch (const std::exception& e) {
-                LOG(ERROR, "ModelManager")
-                    << "Extra model discovery failed; keeping registered models: " << e.what()
-                    << std::endl;
-            }
-            return discovered;
-        },
-        [](const std::string& name) {
-            LOG(INFO, "ModelManager") << "Warning: Discovered model '" << name
-                                      << "' conflicts with another extra.* registration; skipping."
-                                      << std::endl;
-        }));
-
-    // Dynamic discovery: backends whose models are supplied at runtime
-    // (descriptor dynamic_models = true - flm from `flm list`, cloud from each
-    // provider), each model carrying its own downloaded status. The backend is
-    // reached through the catalog's callable, so nothing below this point needs
-    // to know which backend contributed an entry.
-    {
-        const bool offline = [] {
-            auto* cfg = RuntimeConfig::global();
-            return cfg && cfg->offline();
-        }();
-
-        backends::BackendOpsContext octx;
-        octx.fetch = ingest_.get();
-        octx.artifacts = artifacts_.get();
-        octx.cloud_registry = cloud_registry_;
-
-        for (const auto* desc : backends::all_descriptors()) {
-            if (!desc->dynamic_models) {
-                continue;
-            }
-
-            // A cloud provider is a listing, not a backend listing models from
-            // its own runtime: one catalog per provider, so one provider's
-            // failure costs only that provider's entries.
-            if (desc->recipe == "cloud") {
-                if (offline) {
-                    LOG(DEBUG, "ModelManager")
-                        << "Offline mode enabled, skipping cloud model listings" << std::endl;
-                    continue;
-                }
-                if (cloud_registry_ != nullptr) {
-                    for (const auto& rec : cloud_registry_->list_installed()) {
-                        const std::string provider = rec.name;
-                        built.add(std::make_shared<models::ListedCatalog>(
-                            provider, [this, provider] {
-                                return backends::CloudServer::discover_provider_models(
-                                    *cloud_registry_, provider);
-                            }));
-                    }
-                }
-                continue;
-            }
-
-            const backends::BackendOps* ops = backends::ops_for(desc->recipe);
-            built.add(std::make_shared<models::EnumeratedCatalog>(
-                models::make_catalog_descriptor(
-                    "discovered:" + desc->recipe, models::catalog_rank::backend_discovery,
-                    models::Conflict::KeepExisting,
-                    models::DocEntry{"discovered-" + desc->recipe,
-                                     "Installed backend: " + desc->recipe,
-                                     "Models an installed backend reports holding.",
-                                     {"Nothing is downloaded here: the backend already has them."},
-                                     ""},
-                    "", true),
-                [ops, octx](const models::CatalogAccumulator&) {
-                    return ops->discover_models(octx);
-                }));
-        }
-    }
+    built.replace_with(models::product_catalogs(make_catalog_deps(json_recipe_options)));
 
     for (const auto& catalog : config_.extra_catalogs) {
         built.add(catalog);

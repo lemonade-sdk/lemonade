@@ -1,11 +1,14 @@
 #include <lemon/models/catalog.h>
 #include <lemon/models/catalog_set.h>
+#include <nlohmann/json.hpp>
 
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
 
+using lemon::json;
 using lemon::ModelInfo;
 using lemon::models::CatalogAccumulator;
 using lemon::models::CatalogEntry;
@@ -15,7 +18,10 @@ using lemon::models::CatalogSet;
 using lemon::models::Conflict;
 using lemon::models::EnumeratedCatalog;
 using lemon::models::make_catalog_descriptor;
+using lemon::models::CatalogSetDeps;
 using lemon::models::ModelCatalog;
+using lemon::models::product_catalogs;
+using lemon::models::RegistryDocuments;
 
 static int g_failures = 0;
 
@@ -52,7 +58,58 @@ static std::string winner_recipe(const CatalogAccumulator& accumulator,
     return it == accumulator.models().end() ? std::string("none") : it->second.recipe;
 }
 
+static CatalogSetDeps stub_deps() {
+    CatalogSetDeps deps;
+    deps.pin_registries = [] {
+        RegistryDocuments::Pin pin;
+        pin.builtin = std::make_shared<const json>(json::object());
+        pin.user = std::make_shared<const json>(json::object());
+        return pin;
+    };
+    deps.scan_extra_models = [](const CatalogAccumulator&) { return std::vector<ModelInfo>{}; };
+    deps.dynamic_recipes = [] { return std::vector<std::string>{"flm", "cloud"}; };
+    deps.discover_backend = [](const std::string&) { return std::vector<ModelInfo>{}; };
+    deps.cloud_providers = [] { return std::vector<std::string>{"fireworks"}; };
+    deps.list_cloud_models = [](const std::string&) { return std::vector<ModelInfo>{}; };
+    return deps;
+}
+
 int main() {
+    {
+        CatalogSet product;
+        product.replace_with(product_catalogs(stub_deps()));
+        check("the product enumerates registries, then a scan, then what is installed",
+              ids(product.descriptors()) ==
+                  "server_models.json,user_models.json,extra_models_dir,discovered:flm,"
+                  "listed:fireworks");
+
+        bool ranks_ascend = true;
+        bool documents_author = true;
+        bool host_sources_yield = true;
+        int previous = std::numeric_limits<int>::min();
+        for (const auto& descriptor : product.descriptors()) {
+            ranks_ascend = ranks_ascend && descriptor.rank >= previous;
+            previous = descriptor.rank;
+            const bool document = descriptor.id == "server_models.json" ||
+                                  descriptor.id == "user_models.json";
+            documents_author = documents_author &&
+                               (descriptor.claim == Conflict::Overwrite) == document;
+            host_sources_yield = host_sources_yield &&
+                                 (descriptor.claim == Conflict::KeepExisting) != document;
+        }
+        check("ranks never run backwards in the shipped set", ranks_ascend);
+        check("only a document may claim a name it did not read", documents_author);
+        check("a scan or listing yields to what it read", host_sources_yield);
+
+        CatalogSetDeps offline = stub_deps();
+        offline.offline = true;
+        CatalogSet disconnected;
+        disconnected.replace_with(product_catalogs(offline));
+        check("offline keeps every catalog but the provider listings",
+              ids(disconnected.descriptors()) ==
+                  "server_models.json,user_models.json,extra_models_dir,discovered:flm");
+    }
+
     {
         CatalogSet set;
         set.add(fake("scan", 20, Conflict::KeepExisting, "scanned"));
