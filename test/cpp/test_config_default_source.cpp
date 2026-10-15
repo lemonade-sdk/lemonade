@@ -11,6 +11,7 @@
 using json = nlohmann::json;
 using lemon::ModelInfo;
 using lemon::ModelManager;
+using lemon::ModelManagerConfig;
 using lemon::RegistryId;
 using lemon::RuntimeConfig;
 using lemon::apply_default_pull_source;
@@ -201,12 +202,14 @@ int main() {
     }
 
     {
-        ModelManager manager;
+        ModelManager unpinned;
         ModelInfo info;
-        check(manager.download_source_for(info) == lemon::models::huggingface_descriptor().id,
+        check(unpinned.download_source_for(info) == lemon::models::huggingface_descriptor().id,
               "unpinned download falls back to huggingface without a provider");
 
-        manager.set_default_model_source_provider([]() { return "modelscope"; });
+        ModelManagerConfig config;
+        config.default_model_source = []() { return "modelscope"; };
+        ModelManager manager(std::move(config));
         check(manager.download_source_for(info) == lemon::models::modelscope_descriptor().id,
               "unpinned FLM download follows the configured default");
 

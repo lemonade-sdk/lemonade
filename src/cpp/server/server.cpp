@@ -477,10 +477,12 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         }
     }
 
-    model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
-    model_manager_->set_cloud_registry(cloud_registry_.get());
-    model_manager_->set_default_model_source_provider(
-        [this]() { return config_->default_model_source(); });
+    ModelManagerConfig manager_config;
+    manager_config.cache_dir = cache_dir_;
+    manager_config.extra_models_dir = config_->extra_models_dir();
+    manager_config.cloud_providers = cloud_registry_.get();
+    manager_config.default_model_source = [this]() { return config_->default_model_source(); };
+    model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());

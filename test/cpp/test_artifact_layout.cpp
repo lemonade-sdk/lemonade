@@ -11,6 +11,7 @@
 #include <string>
 
 using lemon::ModelManager;
+using lemon::ModelManagerConfig;
 using lemon::models::ArtifactKind;
 using lemon::ModelInfo;
 using lemon::models::ArtifactKind;
@@ -281,8 +282,9 @@ static void test_the_model_layer_hands_a_source_the_backends_layout() {
     const fs::path main_file = model_dir / "whisper.bin";
     std::ofstream(main_file) << "model";
 
-    ModelManager manager;
-    manager.set_default_model_source_provider([] { return "huggingface"; });
+    ModelManagerConfig config;
+    config.default_model_source = [] { return "huggingface"; };
+    ModelManager manager(std::move(config));
 
     ModelInfo info;
     info.model_name = "user.whisper";

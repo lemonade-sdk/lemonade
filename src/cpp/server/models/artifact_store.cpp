@@ -635,7 +635,6 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
         return report;
     }
 
-    // One checkpoint's repository cache, or only what this model owns inside it.
     for (const std::string& type : ownership.cache_dir) {
         const std::string checkpoint = info.checkpoint(type);
         const std::string resolved_str = current.resolved_path(type);
