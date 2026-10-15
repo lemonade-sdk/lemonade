@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
-import { COLLECTION_OMNI_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { COLLECTION_OMNI_MODEL_RECIPE, useRecipeDisplayNames } from './utils/recipeNames';
 
 export type ModelRegistrySource = 'huggingface' | 'modelscope';
 
@@ -42,7 +42,7 @@ interface AddModelPanelProps {
 const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'flm', 'ryzenai-llm'];
 const HIDDEN_RECIPE_OPTIONS = new Set([COLLECTION_OMNI_MODEL_RECIPE]);
 
-const getRecipeLabel = (recipe: string): string => RECIPE_DISPLAY_NAMES[recipe] ?? recipe;
+
 
 type RecipeExample = {
   name: string;
@@ -129,6 +129,8 @@ const hasRepoRelativeFilePath = (checkpoint: string): boolean => {
 const isGgufCheckpoint = (checkpoint: string): boolean => checkpoint.toLowerCase().includes('gguf');
 
 const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initialValues }) => {
+  const recipeDisplayNames = useRecipeDisplayNames();
+  const getRecipeLabel = (recipe: string): string => recipeDisplayNames[recipe] ?? recipe;
   const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [form, setForm] = useState(() => createEmptyForm(initialValues));
   const [error, setError] = useState<string | null>(null);

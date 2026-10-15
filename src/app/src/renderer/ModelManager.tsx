@@ -17,7 +17,7 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
-import { COLLECTION_ROUTER_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { COLLECTION_ROUTER_MODEL_RECIPE, useRecipeDisplayNames } from './utils/recipeNames';
 import { EjectIcon, PinIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
@@ -388,6 +388,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   // Get system context for lazy loading system info
   const { ensureSystemInfoLoaded, systemInfo } = useSystem();
 
+  const recipeDisplayNames = useRecipeDisplayNames();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
@@ -813,7 +814,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
       // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks") are
-      // synthesised in recipeBucketKey and won't be in RECIPE_DISPLAY_NAMES,
+      // synthesised in recipeBucketKey and won't be in recipeDisplayNames,
       // so format them here. The bucket is labelled with the provider's
       // registered name (with camel/acronym casing restored) — no " Cloud"
       // suffix, matching how the model names themselves are prefixed.
@@ -822,7 +823,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return PROVIDER_DISPLAY_NAMES[provider]
           ?? `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
       }
-      return RECIPE_DISPLAY_NAMES[key] || key;
+      return recipeDisplayNames[key] || key;
     } else {
       return getCategoryLabel(key);
     }

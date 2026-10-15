@@ -3,7 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { useSystem } from '../hooks/useSystem';
 import { useBackendInstall } from '../hooks/useBackendInstall';
 import { useConfirmDialog } from '../ConfirmDialog';
-import { RECIPE_DISPLAY_NAMES } from '../utils/recipeNames';
+import { useRecipeDisplayNames } from '../utils/recipeNames';
 import BackendRow from './BackendRow';
 
 interface ConnectedBackendRowProps {
@@ -34,6 +34,7 @@ const ConnectedBackendRow: React.FC<ConnectedBackendRowProps> = ({
   sizeLabel,
   onOpenReleaseUrl,
 }) => {
+  const recipeDisplayNames = useRecipeDisplayNames();
   const { systemInfo } = useSystem();
   const { handleInstall, handleUninstall, handleCopyAction, isInstalling } = useBackendInstall({ showError, showSuccess });
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -48,13 +49,13 @@ const ConnectedBackendRow: React.FC<ConnectedBackendRowProps> = ({
   const onConfirmUninstall = useCallback(async (r: string, b: string) => {
     const confirmed = await confirm({
       title: 'Uninstall Backend',
-      message: `Are you sure you want to uninstall ${RECIPE_DISPLAY_NAMES[r] || r} ${b}?`,
+      message: `Are you sure you want to uninstall ${recipeDisplayNames[r] || r} ${b}?`,
       confirmText: 'Uninstall',
       cancelText: 'Cancel',
       danger: true,
     });
     if (confirmed) await handleUninstall(r, b);
-  }, [confirm, handleUninstall]);
+  }, [confirm, handleUninstall, recipeDisplayNames]);
 
   return (
     <>

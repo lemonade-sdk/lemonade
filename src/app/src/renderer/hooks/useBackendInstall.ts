@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { installBackend, uninstallBackend } from '../utils/backendInstaller';
 import { writeClipboard } from '../utils/clipboardUtils';
-import { RECIPE_DISPLAY_NAMES } from '../utils/recipeNames';
+import { useRecipeDisplayNames } from '../utils/recipeNames';
 
 interface UseBackendInstallOptions {
   showError: (msg: string) => void;
@@ -9,6 +9,7 @@ interface UseBackendInstallOptions {
 }
 
 export function useBackendInstall({ showError, showSuccess }: UseBackendInstallOptions) {
+  const recipeDisplayNames = useRecipeDisplayNames();
   const [installingBackends, setInstallingBackends] = useState<Set<string>>(new Set());
 
   const handleInstall = useCallback(async (recipe: string, backend: string) => {
@@ -19,7 +20,7 @@ export function useBackendInstall({ showError, showSuccess }: UseBackendInstallO
       if (result === 'action') {
         return;
       }
-      showSuccess(`${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend} installed successfully.`);
+      showSuccess(`${recipeDisplayNames[recipe] || recipe} ${backend} installed successfully.`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       showError(`Failed: ${errorMessage}`);
@@ -30,16 +31,16 @@ export function useBackendInstall({ showError, showSuccess }: UseBackendInstallO
         return next;
       });
     }
-  }, [showError, showSuccess]);
+  }, [showError, showSuccess, recipeDisplayNames]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
     try {
       await uninstallBackend(recipe, backend);
-      showSuccess(`${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend} uninstalled successfully.`);
+      showSuccess(`${recipeDisplayNames[recipe] || recipe} ${backend} uninstalled successfully.`);
     } catch (error) {
       showError(`Failed to uninstall backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [showError, showSuccess]);
+  }, [showError, showSuccess, recipeDisplayNames]);
 
   const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
     if (!action) return;
@@ -53,11 +54,11 @@ export function useBackendInstall({ showError, showSuccess }: UseBackendInstallO
         }
       }
       await writeClipboard(action);
-      showSuccess(`Copied action for ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}.`);
+      showSuccess(`Copied action for ${recipeDisplayNames[recipe] || recipe} ${backend}.`);
     } catch {
       showError('Failed to copy action to clipboard.');
     }
-  }, [showError, showSuccess]);
+  }, [showError, showSuccess, recipeDisplayNames]);
 
   const isInstalling = useCallback((recipe: string, backend: string) => {
     return installingBackends.has(`${recipe}:${backend}`);

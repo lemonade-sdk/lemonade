@@ -1716,6 +1716,16 @@ void Server::setup_static_files(httplib::Server &web_server) {
             // Inject mock window.api for web compatibility with the shared Tauri app renderer
             std::string mock_api = R"(
 <script>
+const settingsListeners = new Set();
+const connectionListeners = new Set();
+const notifyLocalSettings = async () => {
+    const settings = await window.api.getSettings();
+    settingsListeners.forEach(listener => listener(settings));
+    connectionListeners.forEach(listener => listener(window.location.origin, settings.apiKey?.value || ''));
+};
+window.addEventListener('storage', event => {
+    if (event.key === 'lemonade-settings' || event.key === null) void notifyLocalSettings();
+});
 // Mock window.api for web compatibility (the Tauri shim is skipped in pure-web mode)
 window.api = {
     isWebApp: true,  // Explicit flag to indicate web mode
@@ -1749,9 +1759,17 @@ window.api = {
     },
     saveSettings: async (settings) => {
         localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        await notifyLocalSettings();
         return settings;
     },
-    onSettingsUpdated: () => {},
+    onSettingsUpdated: (listener) => {
+        settingsListeners.add(listener);
+        return () => settingsListeners.delete(listener);
+    },
+    onConnectionSettingsUpdated: (listener) => {
+        connectionListeners.add(listener);
+        return () => connectionListeners.delete(listener);
+    },
     getServerPort: () => parseInt(window.location.port) || 13305,
     onServerPortUpdated: () => {},
     getServerAPIKey: async () => {

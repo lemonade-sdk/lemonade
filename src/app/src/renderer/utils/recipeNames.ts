@@ -1,3 +1,6 @@
+import { useSyncExternalStore } from 'react';
+import { ConnectionSnapshot, serverConfig } from './serverConfig';
+
 export const COLLECTION_OMNI_MODEL_RECIPE = 'collection.omni';
 export const COLLECTION_ROUTER_MODEL_RECIPE = 'collection.router';
 
@@ -9,30 +12,30 @@ export const isModelCollectionRecipe = (recipe?: string): boolean => {
   return recipe === COLLECTION_OMNI_MODEL_RECIPE || recipe === COLLECTION_ROUTER_MODEL_RECIPE;
 };
 
-// Recipe display names. Hardware-backend names (llamacpp, whispercpp, sd-cpp, …)
-// are populated at runtime from /system-info's `recipes[].display_name`, which is
-// generated from the C++ backend descriptors — the single source of truth. Only
-// recipes NOT surfaced by /system-info's hardware support matrix are seeded here:
-// the collection orchestrator (not a backend) and cloud offload (a backend with
-// no local support rows).
-export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
+const seeds: Record<string, string> = {
   [COLLECTION_OMNI_MODEL_RECIPE]: 'Lemonade',
   [COLLECTION_ROUTER_MODEL_RECIPE]: 'Lemonade Router',
-  'cloud': 'Cloud',
-  'vllm': 'vLLM ROCm (experimental)',
+  cloud: 'Cloud',
+  vllm: 'vLLM ROCm (experimental)',
 };
-
-// Merge display names from a /system-info `recipes` object into RECIPE_DISPLAY_NAMES.
-// Called whenever system info is (re)fetched so the map reflects the descriptors.
-export const updateRecipeDisplayNames = (
-  recipes?: Record<string, { display_name?: string }>
-): void => {
-  if (!recipes) {
-    return;
+let sources = new Map<string, Record<string, { display_name?: string }>>();
+let snapshot: Readonly<Record<string, string>> = Object.freeze(Object.assign(Object.create(null), seeds));
+const listeners = new Set<() => void>();
+const publish = () => {
+  const next = Object.assign(Object.create(null), seeds);
+  for (const recipes of sources.values()) for (const [recipe, info] of Object.entries(recipes)) {
+    if (typeof info?.display_name === 'string' && info.display_name) next[recipe] = info.display_name;
   }
-  for (const [recipe, info] of Object.entries(recipes)) {
-    if (info && typeof info.display_name === 'string' && info.display_name) {
-      RECIPE_DISPLAY_NAMES[recipe] = info.display_name;
-    }
-  }
+  snapshot = Object.freeze(next);
+  listeners.forEach(listener => listener());
 };
+serverConfig.onConnectionChange(() => { sources = new Map(); publish(); });
+export function replaceRecipeDisplayNames(source: string, recipes: Record<string, { display_name?: string }> | undefined, connection: ConnectionSnapshot): void {
+  serverConfig.assertCurrent(connection);
+  if (recipes) sources.set(source, recipes);
+  else sources.delete(source);
+  publish();
+}
+export function useRecipeDisplayNames(): Readonly<Record<string, string>> {
+  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => snapshot);
+}
