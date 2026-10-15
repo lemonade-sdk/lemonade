@@ -27,11 +27,16 @@ namespace lemon {
 
 namespace {
 
-backends::PlatformInfo install_platform(const backends::BackendSpec& spec) {
+backends::PlatformInfo install_platform(const backends::BackendSpec& spec, const std::string& backend) {
     auto platform = backends::native_platform();
     if (spec.definition) {
         const auto& cases = spec.definition->records["install"]["cases"];
-        if (std::any_of(cases.begin(), cases.end(), [](const auto& record) { return record.contains("arch"); })) platform.rocm_arch = SystemInfo::get_rocm_arch();
+        const auto matches = [](const json& record, const char* axis, const std::string& value) {
+            return !record.contains(axis) || std::find(record[axis].begin(), record[axis].end(), value) != record[axis].end();
+        };
+        if (std::any_of(cases.begin(), cases.end(), [&](const auto& record) {
+            return matches(record, "backend", backend) && matches(record, "os", platform.os) && record.contains("arch");
+        })) platform.rocm_arch = SystemInfo::get_rocm_arch();
     }
     return platform;
 }
@@ -545,7 +550,7 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
         // templating is discarded.
         auto pinned_params = spec->install_params_fn(backends::InstallContext{
             *spec, spec->definition, recipe, spec->recipe, pin_recipe, resolved_backend,
-            spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec), backends::InstallPhase::Repository});
+            spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec, resolved_backend), backends::InstallPhase::Repository});
         return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
     } catch (const std::exception& e) {
         LOG(WARNING, "BackendManager") << "get_or_resolve_latest_tag(" << recipe
@@ -571,7 +576,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     // Two-pass: first call gets the repo for resolve_user_version (filename
     // discarded); second call templates the resolved tag into the real filename.
     backends::InstallContext context{*spec, spec->definition, recipe, spec->recipe, pin_recipe,
-        resolved_backend, spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec), backends::InstallPhase::Repository};
+        resolved_backend, spec->definition ? backends::BackendUtils::get_bin_config_value(recipe, resolved_backend) : "", pinned, "", install_platform(*spec, resolved_backend), backends::InstallPhase::Repository};
     auto pinned_params = spec->install_params_fn(context);
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);

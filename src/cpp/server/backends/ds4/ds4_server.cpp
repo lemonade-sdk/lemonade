@@ -1,14 +1,18 @@
-#include <filesystem>
+#include "backend_definition_resources.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_definition_store.h"
+#include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
+#include <cstdlib>
+#include <filesystem>
 #include <set>
 
 namespace fs = std::filesystem;
@@ -21,6 +25,11 @@ namespace backends {
 // come from lemonade-sdk/ds4-rocm, which builds a pinned upstream commit and
 // bundles the ROCm runtime.
 InstallParams Ds4Server::get_install_params(const std::string& backend, const std::string& version) {
+    return get_install_params(backend, version, {get_current_os, SystemInfo::get_rocm_arch});
+}
+
+InstallParams Ds4Server::get_install_params(const std::string& backend, const std::string& version,
+                                          const InstallPlatformSources& sources) {
     if (backend != "rocm") {
         throw std::runtime_error("ds4 backend '" + backend +
                                  "' is not supported. Supported: rocm");
@@ -31,13 +40,13 @@ InstallParams Ds4Server::get_install_params(const std::string& backend, const st
     // before building a name from it: model filtering normally keeps
     // unsupported hosts away, but the install path does not depend on that
     // having run, and an unchecked arch resolves to an asset that 404s.
-    const std::string current_os = get_current_os();
+    const std::string current_os = sources.os();
     if (!ds4::publishes_for_os(current_os)) {
         throw std::runtime_error(
             "ds4 backend 'rocm' publishes no build for " + current_os + "; Linux only");
     }
 
-    const std::string target_arch = SystemInfo::get_rocm_arch();
+    const std::string target_arch = sources.rocm_arch();
     if (target_arch.empty()) {
         throw std::runtime_error(
             "ds4 backend 'rocm' requires a ROCm GPU, but no ROCm architecture was detected");
@@ -56,7 +65,12 @@ InstallParams Ds4Server::get_install_params(const std::string& backend, const st
 
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
                      BackendManager* backend_manager)
-    : WrappedServer("ds4-server", log_level, model_manager, backend_manager) {
+    : Ds4Server(log_level, model_manager, backend_manager,
+                production_backend_effects(backend_manager, [this] { return choose_port(); })) {}
+
+Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
+                     BackendManager* backend_manager, BackendEffects effects)
+    : WrappedServer("ds4-server", log_level, model_manager, backend_manager), effects_(std::move(effects)) {
     bind_legacy_operations(LegacyOperationProfile::Ds4, *this);
 }
 
@@ -71,13 +85,13 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     // Hugging-Face-resolved local path or an absolute path used directly as
     // the checkpoint (user_models.json registrations of an existing file).
     std::string gguf_path = model_info.resolved_path("main");
-    if (gguf_path.empty() || !fs::exists(gguf_path)) {
+    if (gguf_path.empty() || !effects_.exists(gguf_path)) {
         const std::string checkpoint = model_info.checkpoint();
-        if (!checkpoint.empty() && fs::path(checkpoint).is_absolute() && fs::exists(checkpoint)) {
+        if (!checkpoint.empty() && fs::path(checkpoint).is_absolute() && effects_.exists(checkpoint)) {
             gguf_path = checkpoint;
         }
     }
-    if (gguf_path.empty() || !fs::exists(gguf_path)) {
+    if (gguf_path.empty() || !effects_.exists(gguf_path)) {
         throw std::runtime_error("ds4: no local GGUF found for model '" + model_name +
                                  "' (checkpoint: " + model_info.checkpoint() + ")");
     }
@@ -87,10 +101,10 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     const std::string backend = "rocm";
     device_type_ = DEVICE_GPU;
 
-    backend_manager_->install_backend(ds4::spec()->recipe, backend);
-    const std::string executable = BackendUtils::get_backend_binary_path(*ds4::spec(), backend);
+    effects_.binary.install(ds4::legacy_spec()->recipe, backend);
+    const std::string executable = effects_.binary.managed_path(*ds4::legacy_spec(), backend);
 
-    port_ = choose_port();
+    port_ = effects_.allocate_port();
 
     std::vector<std::string> args;
     args.push_back("-m");
@@ -131,8 +145,8 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     std::vector<std::pair<std::string, std::string>> env_vars;
     const std::string exe_dir = fs::path(executable).parent_path().string();
     std::string ld_path = exe_dir;
-    if (const char* existing = std::getenv("LD_LIBRARY_PATH")) {
-        ld_path += std::string(":") + existing;
+    if (const auto existing = effects_.inherited_posix_loader()) {
+        ld_path += std::string(":") + *existing;
     }
     env_vars.push_back({"LD_LIBRARY_PATH", ld_path});
 
@@ -150,7 +164,7 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     command.ready_endpoint = "/v1/models";
 
     const bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
+    start_server(effects_.make_process(ProcessOutput{inherit_output, true}, ""), command,
                  HttpClient::get_default_timeout());
 }
 
@@ -168,17 +182,35 @@ json Ds4Server::responses(const json& request) {
 
 namespace ds4 {
 
+namespace {
+bool configured_enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("LEMONADE_DS4_CONFIGURED");
+        return value && std::string(value) == "1";
+    }();
+    return enabled;
+}
+std::shared_ptr<const ConfiguredBackendEntry> configured_entry() {
+    static const auto entry = [] {
+        auto result = BackendDefinitionStore().validate({"embedded:ds4.json", k_ds4_definition, DefinitionOrigin::Builtin});
+        if (!result.definition) throw DefinitionValidationError(std::move(result.diagnostics));
+        return ConfiguredBackendEntry::make(result.definition, TrustedCompatibility::None, {DEVICE_GPU, true});
+    }();
+    return entry;
+}
+}
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
+    if (configured_enabled()) return configured_entry()->factory(ctx);
     return make_server<Ds4Server>(ctx);
 }
-
-const BackendSpec* spec() {
-    return make_spec<Ds4Server>(descriptor);
+const BackendSpec* legacy_spec() {
+    static const BackendSpec value(descriptor.recipe, descriptor.binary,
+        static_cast<InstallParams (*)(const std::string&, const std::string&)>(Ds4Server::get_install_params));
+    return &value;
 }
-
-const BackendOps* ops() {
-    return default_backend_ops();
-}
+const BackendOps* legacy_ops() { return default_backend_ops(); }
+const BackendSpec* spec() { return configured_enabled() ? &configured_entry()->spec : legacy_spec(); }
+const BackendOps* ops() { return configured_enabled() ? configured_entry()->ops.get() : legacy_ops(); }
 
 }  // namespace ds4
 

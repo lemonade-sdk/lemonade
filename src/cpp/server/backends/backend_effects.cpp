@@ -33,6 +33,10 @@ BackendEffects production_backend_effects(BackendManager* manager, std::function
 #endif
         return value ? std::optional<std::string>(value) : std::nullopt;
     };
+    effects.inherited_posix_loader = []() -> std::optional<std::string> {
+        const char* value = std::getenv("LD_LIBRARY_PATH");
+        return value ? std::optional<std::string>(value) : std::nullopt;
+    };
     effects.append_cuda = [](auto& env, const std::string& category) { BackendUtils::apply_cuda_env_vars(env, category); };
     effects.make_process = [](ProcessOutput output, const std::string& cwd) { return std::make_unique<NativeProcess>(output, cwd); };
     return effects;

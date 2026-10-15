@@ -19,6 +19,7 @@ struct MediaResponseTestHook {
     static void serve(httplib::Response& response, const std::function<void(httplib::DataSink&)>& generate) {
         Server::serve_media_or_error(response, "audio/wav", generate);
     }
+    static void chat(Server& server, const httplib::Request& request, httplib::Response& response) { server.handle_chat_completions(request, response); }
     static Router& router(Server& server) { return *server.router_; }
     static ModelManager& models(Server& server) { return *server.model_manager_; }
     static void generate(Server& server, const httplib::Request& request, httplib::Response& response) { server.handle_audio_generations(request, response); }

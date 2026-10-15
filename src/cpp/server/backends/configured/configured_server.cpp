@@ -28,7 +28,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
           [this](const auto& endpoint, const auto& body, auto& sink, bool sse, long timeout, TelemetryCallback callback) {
               WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
           }}) {
-    if (!services_.launch) services_.launch = std::make_shared<EffectLaunchServices>(production_backend_effects(context.backend_manager, [this] { return choose_port(); }));
+    if (!services_.launch) services_.launch = std::make_shared<EffectLaunchServices>(production_backend_effects(context.backend_manager, [this] { return choose_port(); }), entry_->launch_compatibility.posix_executable_loader_path);
     if (!services_.make_process) services_.make_process = [](ProcessOutput output, const std::string& cwd) { return std::make_unique<NativeProcess>(output, cwd); };
     OperationAdapters adapters;
     adapters.completion = this;
@@ -68,7 +68,11 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
     const std::string category = entry_->definition->records["metadata"]["log_category"];
     LOG(INFO, category.c_str()) << "Loading model: " << name << std::endl;
     LaunchPlanner planner;
-    const auto inputs = planner.prepare(*entry_->definition, entry_->spec, {name, model, options, log_level_, do_not_upgrade}, *services_.launch);
+    LoadContext context{name, model, options, log_level_, do_not_upgrade, {}};
+    if (entry_->launch_compatibility.device_on_backend_selection) context.backend_selected = [this] {
+        device_type_ = *entry_->launch_compatibility.device_on_backend_selection;
+    };
+    const auto inputs = planner.prepare(*entry_->definition, entry_->spec, context, *services_.launch);
     mapping_.values = inputs.values;
     const auto plan = planner.plan(*entry_->definition, inputs);
     configure_backend_watchdog({plan.command.ready_endpoint, plan.watchdog_enabled, true});
@@ -120,6 +124,11 @@ void ConfiguredServer::forward_streaming_request(const std::string& endpoint, co
     for (const auto& [operation, path] : endpoints) {
         if (path != endpoint) continue;
         if (const auto* selected = program(operation, OperationDelivery::Streaming)) {
+            if (selected->identity && selected->remove.empty() && selected->set.empty()) {
+                WrappedServer::forward_streaming_request(selected->path, body, sink, sse,
+                    selected->timeout_seconds == 0 ? timeout : selected->timeout_seconds, std::move(callback));
+                return;
+            }
             const auto request = json::parse(body);
             transport_.send_stream(RequestMapper().map(*selected, mapping_, request, body), sink, std::move(callback));
             return;

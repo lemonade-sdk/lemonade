@@ -13,10 +13,12 @@ struct LoadContext {
     const RecipeOptions& options;
     std::string log_level;
     bool do_not_upgrade;
+    std::function<void()> backend_selected;
 };
 struct ResolvedLaunchInputs {
     json values;
     std::string executable;
+    std::vector<std::string> custom_arguments;
     std::vector<std::pair<std::string, std::string>> environment;
 };
 struct LaunchPlan {
@@ -43,7 +45,8 @@ public:
 };
 class EffectLaunchServices : public LaunchServices {
 public:
-    explicit EffectLaunchServices(BackendEffects effects) : effects_(std::move(effects)) {}
+    explicit EffectLaunchServices(BackendEffects effects, bool posix_executable_loader_path = false)
+        : effects_(std::move(effects)), posix_executable_loader_path_(posix_executable_loader_path) {}
     bool exists(const std::string& path) const override { return effects_.exists(path); }
     std::vector<std::string> supported_backends(const std::string& recipe) const override { return effects_.supported_backends(recipe); }
     void validate_backend(const std::string& recipe, const std::string& backend) const override { effects_.validate_backend(recipe, backend); }
@@ -57,6 +60,7 @@ public:
     long default_timeout_seconds() const override;
 private:
     BackendEffects effects_;
+    bool posix_executable_loader_path_;
 };
 class LaunchPlanner {
 public:

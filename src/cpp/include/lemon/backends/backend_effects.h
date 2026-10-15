@@ -21,6 +21,7 @@ struct BackendEffects {
     std::function<std::string()> rocm_arch;
     std::function<std::string(const std::string&)> runtime_directories;
     std::function<std::optional<std::string>()> inherited_loader;
+    std::function<std::optional<std::string>()> inherited_posix_loader;
     std::function<void(std::vector<std::pair<std::string, std::string>>&, const std::string&)> append_cuda;
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
 };

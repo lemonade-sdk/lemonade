@@ -1122,9 +1122,11 @@ set(LEMON_BACKEND_DESCRIPTOR_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json" BACKEND_DEFINITION_SCHEMA)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json" THINKSOUND_DEFINITION)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json" DS4_DEFINITION)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/schemas/backend-definition-v1.schema.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/thinksound.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4.json")
 configure_file(src/cpp/server/backends/configured/backend_definition_resources.h.in
     "${CMAKE_CURRENT_BINARY_DIR}/include/backend_definition_resources.h" @ONLY)
 set(LEMON_BACKEND_FACTORY_SOURCES
@@ -3611,4 +3613,46 @@ if(BUILD_TESTING)
     target_link_libraries(test_configured_execution PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfiguredExecutionTest CI ON COMMAND test_configured_execution)
     add_cpp_ci_test(ConfiguredLegacyRegistrationTest CI ON COMMAND test_configured_execution --legacy-registration-only)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_ds4_oracle test/cpp/test_ds4_oracle.cpp)
+    target_link_libraries(test_ds4_oracle PRIVATE lemonade-server-core)
+    add_cpp_ci_test(Ds4OracleTest CI ON COMMAND test_ds4_oracle)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_configured_llm_execution test/cpp/test_configured_llm_execution.cpp)
+    target_link_libraries(test_configured_llm_execution PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfiguredDs4ExecutionTest CI ON COMMAND test_configured_llm_execution)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_configured_registration test/cpp/test_configured_registration.cpp)
+    target_link_libraries(test_configured_registration PRIVATE lemonade-server-core)
+    foreach(_thinksound RANGE 0 1)
+        foreach(_ds4 RANGE 0 1)
+            add_cpp_ci_test(ConfiguredRegistration${_thinksound}${_ds4} CI ON
+                COMMAND ${CMAKE_COMMAND} -E env
+                    LEMONADE_THINKSOUND_CONFIGURED=${_thinksound} LEMONADE_DS4_CONFIGURED=${_ds4}
+                    $<TARGET_FILE:test_configured_registration>
+                DEPENDS test_configured_registration)
+        endforeach()
+    endforeach()
+    foreach(_value IN ITEMS "" "0" "true")
+        if(_value STREQUAL "")
+            set(_label Empty)
+        else()
+            set(_label ${_value})
+        endif()
+        add_cpp_ci_test(ConfiguredRegistration${_label} CI ON
+            COMMAND ${CMAKE_COMMAND} -E env
+                LEMONADE_THINKSOUND_CONFIGURED=${_value} LEMONADE_DS4_CONFIGURED=${_value}
+                $<TARGET_FILE:test_configured_registration>
+            DEPENDS test_configured_registration)
+    endforeach()
+    add_cpp_ci_test(ConfiguredRegistrationUnset CI ON
+        COMMAND ${CMAKE_COMMAND} -E env --unset=LEMONADE_THINKSOUND_CONFIGURED --unset=LEMONADE_DS4_CONFIGURED
+            $<TARGET_FILE:test_configured_registration>
+        DEPENDS test_configured_registration)
 endif()
