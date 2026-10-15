@@ -1045,6 +1045,7 @@ set(SOURCES_CORE
     src/cpp/server/models/catalog.cpp
     src/cpp/server/models/change_notifier.cpp
     src/cpp/server/models/checkpoint_grammar.cpp
+    src/cpp/server/models/definition_labels.cpp
     src/cpp/server/models/fetchable_repository.cpp
     src/cpp/server/models/ingest.cpp
     src/cpp/server/models/json_catalog.cpp
@@ -1058,6 +1059,7 @@ set(SOURCES_CORE
     src/cpp/server/models/scan_catalog.cpp
     src/cpp/server/models/registry_id.cpp
     src/cpp/server/models/registry_descriptors.cpp
+    src/cpp/server/models/routing_parse_options.cpp
     src/cpp/server/models/registry_repository.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
