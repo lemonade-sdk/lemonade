@@ -3633,6 +3633,68 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(model_res_del.status_code, 404)
         print(f"[OK] /internal/aliases POST/GET/DELETE verified")
 
+    def test_021ab_alias_resolves_on_every_surface(self):
+        """An alias means the same model on OpenAI, Ollama and Anthropic surfaces."""
+        alias_name = "test-surface-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        add_res = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": target_model},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200)
+
+        try:
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            ollama_res = requests.post(
+                f"http://localhost:{PORT}/api/chat",
+                json={
+                    "model": alias_name,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4},
+                },
+                timeout=240,
+            )
+            self.assertEqual(ollama_res.status_code, 200, ollama_res.text)
+            self.assertEqual(ollama_res.json()["model"], target_model)
+
+            anthropic_res = requests.post(
+                f"http://localhost:{PORT}/v1/messages",
+                headers=_auth_headers(),
+                json={
+                    "model": alias_name,
+                    "max_tokens": 4,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                },
+                timeout=240,
+            )
+            self.assertEqual(anthropic_res.status_code, 200, anthropic_res.text)
+            self.assertEqual(anthropic_res.json()["model"], target_model)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        gone_res = requests.get(
+            f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(gone_res.status_code, 404)
+        print("[OK] alias resolves on OpenAI, Ollama and Anthropic surfaces")
+
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
 

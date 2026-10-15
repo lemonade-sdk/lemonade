@@ -186,8 +186,8 @@ private:
     void handle_aliases_get(const httplib::Request& req, httplib::Response& res);
     void handle_aliases_add(const httplib::Request& req, httplib::Response& res);
     void handle_aliases_remove(const httplib::Request& req, httplib::Response& res);
-    std::string resolve_alias_target(const std::string& model_name) const;
-    void normalize_and_resolve_request_model(nlohmann::json& request_json) const;
+    std::string resolve_alias_target(const std::string& model_name);
+    void normalize_and_resolve_request_model(nlohmann::json& request_json);
 
     // Cloud auth (public, all four prefixes).
     //   POST /v1/cloud/auth   body: {provider, api_key}
@@ -341,7 +341,7 @@ private:
     // own ctx_size, else the resolved options, else max_context_window.
     // Deliberately skips the VRAM auto-tuner, which probes the system on every
     // call and would do so once per model across a full listing.
-    int64_t resolve_context_length(const std::string& model_id, const ModelInfo& info) const;
+    int64_t resolve_context_length(const std::string& model_id, const ModelInfo& info);
 
     // Warm model list cache in the background after startup dependencies are initialized
     void start_model_cache_warmup();

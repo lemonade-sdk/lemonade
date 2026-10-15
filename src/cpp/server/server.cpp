@@ -2932,24 +2932,8 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     response["data"] = nlohmann::json::array();
     response["object"] = "list";
 
-    for (const auto& [model_id, model_info] : models) {
-        response["data"].push_back(model_info_to_json(model_id, model_info));
-    }
-
-    for (const auto& [alias_id, target_name] : model_manager_->aliases()) {
-        if (models.count(alias_id) > 0) {
-            continue;
-        }
-        std::string ultimate_target = target_name;
-        if (auto resolved = model_manager_->resolve_alias(alias_id)) {
-            ultimate_target = *resolved;
-        }
-        std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
-        if (models.count(canonical_target) > 0) {
-            response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
-        } else if (models.count(ultimate_target) > 0) {
-            response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
-        }
+    for (const auto& [row_id, model_info] : model_manager_->listing_rows(models)) {
+        response["data"].push_back(model_info_to_json(row_id, *model_info));
     }
 
     res.set_content(response.dump(), "application/json");
@@ -3188,7 +3172,7 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
     }
 }
 
-int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) const {
+int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) {
     // ctx_size stores -1 for "size this automatically", so only a positive
     // value answers; anything else falls through to the next source.
     auto ctx_size_of = [](const RecipeOptions& options) -> int64_t {
@@ -6628,23 +6612,17 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
     }
 }
 
-std::string Server::resolve_alias_target(const std::string& model_name) const {
-    return model_manager_->resolve_alias(model_name).value_or(model_name);
+std::string Server::resolve_alias_target(const std::string& model_name) {
+    return model_manager_->canonical_for_request(model_name);
 }
 
-void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) const {
-    if (request_json.contains("model") && request_json["model"].is_string()) {
-        std::string raw_name = request_json["model"].get<std::string>();
-        std::string resolved = resolve_alias_target(raw_name);
-        if (resolved != raw_name) {
-            request_json["model"] = resolved;
-        }
-    }
-    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
-        std::string raw_name = request_json["model_name"].get<std::string>();
-        std::string resolved = resolve_alias_target(raw_name);
-        if (resolved != raw_name) {
-            request_json["model_name"] = resolved;
+void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) {
+    for (const char* field : {"model", "model_name"}) {
+        if (!request_json.contains(field) || !request_json[field].is_string()) continue;
+        const std::string raw_name = request_json[field].get<std::string>();
+        auto resolved = model_manager_->resolve(raw_name);
+        if (resolved && resolved->via_alias) {
+            request_json[field] = resolved->canonical_id;
         }
     }
 }
