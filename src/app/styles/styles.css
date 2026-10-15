@@ -7959,6 +7959,7 @@ input::-webkit-calendar-picker-indicator {
 .schema-recipe-options .form-label {
   display: block;
   margin-bottom: 6px;
+  text-transform: none;
 }
 
 .schema-recipe-options textarea {

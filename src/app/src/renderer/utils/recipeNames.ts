@@ -37,5 +37,5 @@ export function replaceRecipeDisplayNames(source: string, recipes: Record<string
   publish();
 }
 export function useRecipeDisplayNames(): Readonly<Record<string, string>> {
-  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => snapshot);
+  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => snapshot, () => snapshot);
 }

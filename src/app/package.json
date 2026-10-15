@@ -16,7 +16,11 @@
     "test:custom-collections": "node ../../test/app/customCollections.test.cjs",
     "test:downloaded-only-settings": "node ../../test/app/downloadedOnlySettings.test.cjs",
     "test:app-settings": "node ../../test/app/appSettings.test.cjs",
-    "test:router-collections": "node ../../test/app/routerCollections.test.cjs"
+    "test:router-collections": "node ../../test/app/routerCollections.test.cjs",
+    "test:app-regression": "node ../../test/app/run-app-regression-tests.cjs",
+    "test:backend-catalog": "node ../../test/app/backendCatalog.test.cjs",
+    "test:recipe-form": "node ../../test/app/recipeForm.test.cjs",
+    "test:schema-recipe-options": "node ../../test/app/schemaRecipeOptions.test.cjs"
   },
   "keywords": [
     "tauri",

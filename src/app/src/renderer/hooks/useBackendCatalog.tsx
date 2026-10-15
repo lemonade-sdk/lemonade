@@ -34,7 +34,12 @@ export const BackendCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       update();
     });
     window.addEventListener('backendsUpdated', update);
-    return () => { unsubscribe(); window.removeEventListener('backendsUpdated', update); };
+    window.addEventListener('backendCatalogAvailable', update);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('backendsUpdated', update);
+      window.removeEventListener('backendCatalogAvailable', update);
+    };
   }, [refresh]);
   return <CatalogContext.Provider value={{ state, refresh,
     recipe: name => state.status === 'ready' ? state.catalog.recipes.find(row => row.recipe === name) : undefined }}>{children}</CatalogContext.Provider>;

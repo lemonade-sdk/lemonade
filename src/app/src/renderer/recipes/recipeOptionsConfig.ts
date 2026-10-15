@@ -1,12 +1,4 @@
-/**
- * Recipe Options Configuration
- *
- * This is the SINGLE SOURCE OF TRUTH for what options are available to each recipe.
- * It mirrors the C++ implementation in src/cpp/server/recipe_options.cpp
- *
- * All recipe option types, defaults, and utilities are defined here.
- * The per-recipe files have been eliminated to avoid duplication.
- */
+// Built-in defaults intentionally preserve the established renderer presentation.
 
 // =============================================================================
 // Base Option Types

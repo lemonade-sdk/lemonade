@@ -35,7 +35,7 @@ export const SchemaRecipeOptions: React.FC<Props> = ({ form, backends, disabled,
       return <div className="form-section" key={option.name}>
         {option.group && <div className="schema-group">{option.group}</div>}
         <label className="form-label" htmlFor={id}>{option.ui?.label ?? option.name}</label>
-        {control === 'checkbox' ? <input {...props} type="checkbox" checked={value === true}
+        {control === 'checkbox' ? <input {...props} className="settings-checkbox" type="checkbox" checked={value === true}
           onChange={event => set(event.target.checked)} /> :
           control === 'select' ? <select {...props} value={choices.findIndex(choice => choice === value)}
             onChange={event => { const choice = choices[Number(event.target.value)]; if (choice !== undefined) set(choice); }}>

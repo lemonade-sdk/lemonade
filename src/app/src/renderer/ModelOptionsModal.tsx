@@ -135,7 +135,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     }
     setLoadError(null);
     setExportError(null);
-    setModelInfo(undefined);
+    setModelInfo(previous => model === modelName && previous ? { recipe: previous.recipe, checkpoint: '', suggested: false } : undefined);
     setModelName(model ?? "");
     setModelUrl("");
     setOptions(undefined);
@@ -157,6 +157,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         const serverFetch = (endpoint: string) => serverConfig.fetchForConnection(connection, endpoint, { signal: controller.signal });
         const response = await serverFetch(`/models/${encodeURIComponent(model)}`);
         if (!response.ok) {
+          if (response.status === 401 || response.status === 403) throw new Error('Authentication failed for the selected server.');
           throw new Error(`Failed to load model options (${response.status})`);
         }
         const data = await response.json();

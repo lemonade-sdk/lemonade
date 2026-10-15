@@ -2243,17 +2243,6 @@ const [searchQuery, setSearchQuery] = useState('');
               <>
                 <div className="model-list">
                 {organizationMode === 'recipe' && !hasModels && renderBackendSetupBanner(category)}
-                <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
-                                   onCancel={() => {
-                                     setShowModelOptionsModal(false);
-                                     setOptionsModel(null);
-                                   }}
-                                   onSubmit={async (modelName, submission) => {
-                                     if (submission.kind === 'catalog') await handleLoadModel(modelName, submission);
-                                     else void handleLoadModel(modelName, submission);
-                                     setShowModelOptionsModal(false);
-                                     setOptionsModel(null);
-                                   }}/>
                 {listItems.map(item => {
                   if (item.type === 'family') {
                     return renderFamilyItem(item);
@@ -2281,6 +2270,17 @@ const [searchQuery, setSearchQuery] = useState('');
 
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>
+      <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
+                         onCancel={() => {
+                           setShowModelOptionsModal(false);
+                           setOptionsModel(null);
+                         }}
+                         onSubmit={async (modelName, submission) => {
+                           if (submission.kind === 'catalog') await handleLoadModel(modelName, submission);
+                           else void handleLoadModel(modelName, submission);
+                           setShowModelOptionsModal(false);
+                           setOptionsModel(null);
+                         }}/>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <ConfirmDialog />
       <div className="left-panel-shell">

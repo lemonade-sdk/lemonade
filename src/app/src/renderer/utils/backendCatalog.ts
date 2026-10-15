@@ -47,14 +47,16 @@ export class BackendCatalogClient {
       }
       const catalog = parseBackendSchema(await response.json());
       serverConfig.assertCurrent(connection);
+      const changed = this.cached?.catalog.catalog_id !== catalog.catalog_id;
       this.cached = { connection, catalog, etag: response.headers.get('ETag') };
+      if (changed && typeof window !== 'undefined') window.dispatchEvent(new Event('backendCatalogAvailable'));
       return { status: 'ready', connection, catalog };
     } catch (error) {
       serverConfig.assertCurrent(connection);
       if (error instanceof ObsoleteConnectionError) throw error;
       this.cached = undefined;
-      return { status: error instanceof SchemaError ? 'incompatible' : 'unreachable', connection,
-        message: error instanceof SchemaError ? error.message : 'Cannot reach the selected server for its backend schema.' };
+      return { status: error instanceof SchemaError || error instanceof SyntaxError ? 'incompatible' : 'unreachable', connection,
+        message: error instanceof SchemaError ? error.message : error instanceof SyntaxError ? 'Malformed backend schema response.' : 'Cannot reach the selected server for its backend schema.' };
     }
   }
 }

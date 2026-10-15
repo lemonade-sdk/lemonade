@@ -2,9 +2,10 @@ import { downloadTracker } from './downloadTracker';
 import type { DownloadProgressEvent } from './downloadTracker';
 import { ConnectionSnapshot, serverConfig, serverFetch } from './serverConfig';
 import { BackendRecipe, Scalar, backendSelector, isUnset, own, validateValue } from '../recipes/backendSchema';
+import { parseModelOptions } from '../recipes/recipeForm';
 import { fetchSystemInfoData, Recipes, SystemData } from './systemData';
 import { ModelsData } from './modelData';
-import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
+import { isLegacyRecipe, toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
 import { getCollectionComponents, isCollectionModel, isRouterCollection } from './collectionModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
@@ -401,15 +402,14 @@ export async function ensureBackendForRecipe(
   recipes?: Recipes,
   options?: { autoOpenGuide?: boolean }
 ): Promise<boolean> {
-  if (!recipes || !recipes[recipe]) return false;
-
-  const recipeInfo = recipes[recipe];
+  const recipeInfo = own(recipes, recipe);
+  if (!recipeInfo) return false;
   const defaultBackend = recipeInfo.default_backend;
   if (!defaultBackend) {
     throw new Error(`No supported backend available for recipe ${recipe}.`);
   }
 
-  const backendInfo = recipeInfo.backends[defaultBackend];
+  const backendInfo = own(recipeInfo.backends, defaultBackend);
   if (!backendInfo) {
     throw new Error(`Default backend '${defaultBackend}' not found for recipe ${recipe}.`);
   }
@@ -714,6 +714,33 @@ export async function ensureModelReady(
   if (options?.catalog) {
     await ensureCatalogModelReady(modelName, modelsData, options.loadBody ?? {}, options.catalog);
     return;
+  }
+  const recipeName = own(modelsData, modelName)?.recipe;
+  if (recipeName && !isLegacyRecipe(recipeName) && !isCollectionModel(own(modelsData, modelName))) {
+    await serverConfig.waitForInit();
+    const { backendCatalogClient } = await import('./backendCatalog');
+    const state = await backendCatalogClient.refresh();
+    const recipe = state.status === 'ready' ? state.catalog.recipes.find(row => row.recipe === recipeName) : undefined;
+    if (recipe?.source === 'external') {
+      if (!options?.skipHealthCheck) {
+        const health = await serverConfig.fetchForConnection(state.connection, '/health');
+        if (health.ok) {
+          const snapshot = await health.json();
+          serverConfig.assertCurrent(state.connection);
+          if (snapshot.all_models_loaded?.some((model: { model_name: string }) => model.model_name === modelName)) return;
+        }
+      }
+      const response = await serverConfig.fetchForConnection(state.connection, `/models/${encodeURIComponent(modelName)}/options`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...options?.loadBody, pinned: undefined, save_options: undefined, dry_run: true }),
+      });
+      if (!response.ok) throw new Error('The server rejected model options.');
+      const snapshot = parseModelOptions(await response.json(), recipeName, modelName);
+      serverConfig.assertCurrent(state.connection);
+      options?.onModelLoading?.();
+      await ensureCatalogModelReady(modelName, modelsData, options?.loadBody ?? {}, { connection: state.connection, recipe, effective: snapshot.effective });
+      return;
+    }
   }
   await ensureModelReadyInternal(modelName, modelsData, options, new Set<string>());
 }
