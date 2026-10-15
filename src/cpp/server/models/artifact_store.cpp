@@ -484,6 +484,110 @@ ModelArtifactStore::Ownership ModelArtifactStore::ownership_of(const ModelInfo& 
     return ownership;
 }
 
+static bool collect_registered_shards(const fs::path& resolved, const fs::path& repo_root,
+                                      std::set<fs::path>& owned_paths);
+
+namespace {
+
+// The unfinished downloads of one repository, split into this model's own and
+// somebody else's. A manifest's recorded name settles what a file name cannot, and
+// reaches no further than the files that manifest lists.
+struct PendingOwnership {
+    std::vector<fs::path> ours;
+    bool foreign = false;
+};
+
+PendingOwnership classify_pending(const fs::path& repo_dir, const std::string& variant,
+                                  const std::string& model_name,
+                                  const std::vector<std::string>& sibling_variants,
+                                  bool unattributed_is_mine) {
+    const auto claimed_by_sibling = [&sibling_variants](const std::string& name) {
+        for (const auto& other : sibling_variants) {
+            if (pending_matches_variant(name, other)) return true;
+        }
+        return false;
+    };
+
+    const DownloadMarkers markers = collect_download_markers(repo_dir);
+
+    std::string recorded_owner;
+    std::vector<json> documents;
+    documents.reserve(markers.manifests.size());
+    for (const fs::path& path : markers.manifests) {
+        json doc = read_json_file(path);
+        std::string owner;
+        if (manifest_owner(doc, owner)) recorded_owner = owner;
+        documents.push_back(std::move(doc));
+    }
+    const bool named_for_us = !recorded_owner.empty() && recorded_owner == model_name;
+    const bool named_for_other = !recorded_owner.empty() && recorded_owner != model_name;
+
+    PendingOwnership out;
+    for (const fs::path& partial : markers.partials) {
+        std::string target = partial.filename().string();
+        target.erase(target.size() - strlen(".partial"));
+        const bool ours_partial =
+            unattributed_is_mine ||
+            (pending_matches_variant(target, variant) &&
+             (named_for_us || !claimed_by_sibling(target)) && !named_for_other);
+        if (ours_partial) {
+            out.ours.push_back(partial);
+        } else {
+            out.foreign = true;
+        }
+    }
+
+    for (size_t i = 0; i < markers.manifests.size(); ++i) {
+        std::vector<std::string> listed;
+        const bool ours_manifest =
+            named_for_us ||
+            (!named_for_other && manifest_lists(documents[i], listed) &&
+             !std::any_of(listed.begin(), listed.end(), claimed_by_sibling) &&
+             std::any_of(listed.begin(), listed.end(), [&variant](const std::string& name) {
+                 return pending_matches_variant(name, variant);
+             }));
+        if (ours_manifest) {
+            out.ours.push_back(markers.manifests[i]);
+        } else {
+            out.foreign = true;
+        }
+    }
+    return out;
+}
+
+std::vector<std::string> sibling_variants_in(const ModelInfo& victim, const std::string& repo_id,
+                                             const std::string& registry_source,
+                                             const KnownModels& all_models) {
+    std::vector<std::string> variants;
+    for (const auto& [name, other] : all_models) {
+        if (name == victim.model_name || !other.source.empty()) continue;
+        if (registry_source_of(other) != registry_source) continue;
+        for (const auto& [type, checkpoint] : other.checkpoints) {
+            (void)type;
+            if (repo_id_from_checkpoint(checkpoint) == repo_id) {
+                variants.push_back(variant_from_checkpoint(checkpoint));
+            }
+        }
+    }
+    return variants;
+}
+
+}  // namespace
+
+namespace {
+
+// Revisions, blobs and the cache's own dotfiles are not one model's bytes.
+bool is_repo_plumbing(const fs::path& path, const fs::path& repo_dir) {
+    std::error_code ec;
+    const fs::path rel = fs::relative(path, repo_dir, ec);
+    if (ec || rel.empty()) return true;
+    const std::string first = rel.begin()->string();
+    if (first == "refs" || first == "blobs") return true;
+    return path.filename().string().find('.') == 0;
+}
+
+}  // namespace
+
 DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
                                                   const KnownModels& all_models) const {
     DeleteReport report;
@@ -497,10 +601,15 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
         return report;
     }
 
+    // Another application can fill a shared repository at any moment, so the delete
+    // resolves again rather than trusting the cached answer.
+    ModelInfo current = info;
+    resolve_all(current);
+
     // A download that never resolved can still leave resumable .partial files and
     // a manifest behind.
-    if (info.resolved_path().empty()) {
-        report.cleaned_partial_download = cleanup_incomplete_download(info, all_models);
+    if (current.resolved_path().empty()) {
+        report.cleaned_partial_download = cleanup_incomplete_download(current, all_models);
         return report;
     }
 
@@ -512,18 +621,30 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
 
     const fs::path managed_root = utils::path_from_utf8(root());
 
-    // One checkpoint's repository cache, or only its variant when another model
-    // shares the repository.
+    // A registered model is refused here, before anything is removed: the error the
+    // caller gets has to mean a server that did nothing.
+    bool outside = false;
+    for (const std::string& type : ownership.cache_dir) {
+        const std::string resolved = current.resolved_path(type);
+        if (!resolved.empty() && !path_inside(utils::path_from_utf8(resolved), managed_root)) {
+            outside = true;
+        }
+    }
+    if (outside && !is_user_model_name(info.model_name)) {
+        report.outside_managed_cache = true;
+        return report;
+    }
+
+    // One checkpoint's repository cache, or only what this model owns inside it.
     for (const std::string& type : ownership.cache_dir) {
         const std::string checkpoint = info.checkpoint(type);
-        const fs::path resolved = utils::path_from_utf8(info.resolved_path(type));
+        const std::string resolved_str = current.resolved_path(type);
+        if (resolved_str.empty()) continue;
+        const fs::path resolved = utils::path_from_utf8(resolved_str);
 
-        // The proof against the models directory rather than the checkpoint's own
-        // repository: an uploaded copy sits in the cache root, not in a
-        // models-- directory, and lemond wrote it, so lemond removes it.
         if (!path_inside(resolved, managed_root)) {
             report.outside_managed_cache = true;
-            return report;
+            continue;
         }
 
         if (info.source == "local_upload") {
@@ -550,7 +671,31 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
             continue;
         }
 
-        if (!repo_shared(repo, registry_source, info.model_name, all_models)) {
+        // Who lives here is a question about the disk: rows name repositories they
+        // never filled, and rows do not announce what arrived since.
+        const std::string variant = variant_from_checkpoint(checkpoint);
+        const std::vector<std::string> siblings =
+            sibling_variants_in(info, repo, registry_source, all_models);
+
+        std::set<fs::path> theirs;
+        for (const auto& [name, other] : all_models) {
+            if (name == info.model_name || !other.source.empty()) continue;
+            if (registry_source_of(other) != registry_source) continue;
+            ModelInfo fresh = other;
+            resolve_all(fresh);
+            for (const auto& [other_type, other_checkpoint] : other.checkpoints) {
+                if (repo_id_from_checkpoint(other_checkpoint) != repo) continue;
+                const std::string path = fresh.resolved_path(other_type);
+                if (path.empty() || !safe_exists(path)) continue;
+                collect_registered_shards(utils::path_from_utf8(path), repo_dir, theirs);
+            }
+        }
+
+        const PendingOwnership pending =
+            classify_pending(repo_dir, variant, info.model_name, siblings,
+                             /*unattributed_is_mine=*/false);
+
+        if (theirs.empty() && !pending.foreign) {
             if (safe_exists(repo_dir)) {
                 LOG(INFO, kLog) << "Removing repository cache: " << utils::path_to_utf8(repo_dir)
                                 << std::endl;
@@ -560,30 +705,58 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
                     throw std::runtime_error("Failed to remove repository cache '" +
                                              utils::path_to_utf8(repo_dir) + "': " + ec.message());
                 }
-            } else {
-                LOG(WARNING, kLog) << "Repository cache not found (may already be deleted): "
-                                   << utils::path_to_utf8(repo_dir) << std::endl;
             }
             continue;
         }
 
         LOG(INFO, kLog) << "Repository " << repo
-                        << " is shared with other models, removing its variant path only"
+                        << " still holds other models' bytes, removing only this model's"
                         << std::endl;
-        if (safe_exists(resolved)) {
-            cleanup_orphaned_blobs_under(resolved, repo_dir);
-            remove_path_or_throw(resolved, "variant path");
-            cleanup_empty_parents(resolved, repo_dir);
+
+        std::set<fs::path> ours;
+        if (safe_is_directory(resolved)) {
+            // A checkpoint that resolves to a folder — a directory checkpoint, or a
+            // repository with no refs/main — never takes the folder with it.
+            std::error_code ec;
+            for (const auto& entry :
+                 fs::recursive_directory_iterator(resolved, safe_dir_options, ec)) {
+                if (ec) break;
+                if (!entry.is_regular_file(ec) || ec) continue;
+                const fs::path& path = entry.path();
+                if (is_repo_plumbing(path, repo_dir) || path.extension() == ".partial") continue;
+                if (siblings.empty()) {
+                    ours.insert(path);
+                } else if (pending_matches_variant(path.filename().string(), variant)) {
+                    collect_registered_shards(path, repo_dir, ours);
+                }
+            }
+        } else {
+            collect_registered_shards(resolved, repo_dir, ours);
         }
+
+        for (const fs::path& path : ours) {
+            if (theirs.count(path) || !safe_exists(path)) continue;
+            cleanup_orphaned_blobs_under(path, repo_dir);
+            remove_path_or_throw(path, "variant path");
+            cleanup_empty_parents(path, repo_dir);
+        }
+        for (const fs::path& path : pending.ours) {
+            if (!safe_exists(path)) continue;
+            remove_file_or_throw(path, "incomplete model download partial");
+            cleanup_empty_parents(path, repo_dir);
+        }
+    }
+
+    // A model served from elsewhere can still have left its own bytes here; refusing
+    // to follow it out of the managed cache is not a refusal to clean the cache.
+    if (outside) {
+        report.cleaned_partial_download = cleanup_incomplete_download(current, all_models);
     }
 
     return report;
 }
 
-// Whatever a cancelled download left behind. Which leftovers are this model's is
-// settled by the bytes on disk and the name the downloader recorded: a catalog
-// sibling that never filled the repository claims nothing, and a sibling that did
-// keeps what it asked for even when both models asked for the same file.
+// Whatever a cancelled download left behind.
 bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
                                                      const KnownModels& all_models) const {
     const std::string main_checkpoint = info.checkpoint("main");
@@ -600,99 +773,32 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
         return false;
     }
 
+    const std::vector<std::string> siblings =
+        sibling_variants_in(info, main_repo, registry_source, all_models);
     const std::string variant = variant_from_checkpoint(main_checkpoint);
-    std::vector<std::string> sibling_variants;
-    for (const auto& [name, other] : all_models) {
-        if (name == info.model_name || !other.source.empty()) continue;
-        if (registry_source_of(other) != registry_source) continue;
-        for (const auto& [type, checkpoint] : other.checkpoints) {
-            (void)type;
-            if (repo_id_from_checkpoint(checkpoint) == main_repo) {
-                sibling_variants.push_back(variant_from_checkpoint(checkpoint));
-            }
-        }
-    }
-    const auto claimed_by_sibling = [&sibling_variants](const std::string& name) {
-        for (const auto& other : sibling_variants) {
-            if (pending_matches_variant(name, other)) return true;
-        }
-        return false;
-    };
+    PendingOwnership pending = classify_pending(repo_dir, variant, info.model_name, siblings,
+                                                /*unattributed_is_mine=*/siblings.empty());
 
-    const DownloadMarkers markers = collect_download_markers(repo_dir);
-
-    // The name a manifest records says who started that download. It settles what
-    // a file name cannot, and it does not reach past the files it lists.
-    std::string recorded_owner;
-    std::vector<const json*> manifests;
-    std::vector<json> documents;
-    for (const fs::path& path : markers.manifests) {
-        json doc = read_json_file(path);
-        std::string owner;
-        if (manifest_owner(doc, owner)) recorded_owner = owner;
-        documents.push_back(std::move(doc));
-    }
-    for (size_t i = 0; i < markers.manifests.size(); ++i) {
-        manifests.push_back(&documents[i]);
-    }
-    const bool named_for_us = !recorded_owner.empty() && recorded_owner == info.model_name;
-    const bool named_for_other = !recorded_owner.empty() && recorded_owner != info.model_name;
-    const bool sole_claimant = sibling_variants.empty();
-
-    std::vector<fs::path> ours;
-    bool foreign = false;
-    for (const fs::path& partial : markers.partials) {
-        std::string target = partial.filename().string();
-        target.erase(target.size() - strlen(".partial"));
-        const bool ours_partial =
-            sole_claimant ||
-            (pending_matches_variant(target, variant) &&
-             (named_for_us || !claimed_by_sibling(target)) && !named_for_other);
-        if (ours_partial) {
-            ours.push_back(partial);
-        } else {
-            foreign = true;
-        }
-    }
-
-    for (size_t i = 0; i < markers.manifests.size(); ++i) {
-        const json& doc = *manifests[i];
-        std::vector<std::string> listed;
-        const bool ours_manifest =
-            named_for_us ||
-            (!named_for_other && manifest_lists(doc, listed) &&
-             std::none_of(listed.begin(), listed.end(), claimed_by_sibling) &&
-             std::any_of(listed.begin(), listed.end(),
-                         [&variant](const std::string& name) {
-                             return pending_matches_variant(name, variant);
-                         }));
-        if (ours_manifest) {
-            ours.push_back(markers.manifests[i]);
-        } else {
-            foreign = true;
-        }
-    }
-
-    // A complete file in a repository somebody else named is theirs; a complete
-    // file with nobody else named is the one this model finished before quitting.
-    if (!sole_claimant) {
+    // While somebody else names this repository, a complete file in it is theirs
+    // unless this model can name it too.
+    if (!siblings.empty()) {
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(repo_dir, safe_dir_options, ec)) {
             if (ec) break;
             if (!entry.is_regular_file(ec) || ec) continue;
-            if (entry.path().extension() == ".partial" ||
-                entry.path().filename() == ".download_manifest.json") {
+            const std::string filename = entry.path().filename().string();
+            if (entry.path().extension() == ".partial" || filename == ".download_manifest.json") {
                 continue;
             }
             if (!ModelArtifactStore::path_complete(utils::path_to_utf8(entry.path()))) continue;
-            if (!pending_matches_variant(entry.path().filename().string(), variant)) {
-                foreign = true;
+            if (!pending_matches_variant(filename, variant)) {
+                pending.foreign = true;
                 break;
             }
         }
     }
 
-    if (!foreign) {
+    if (!pending.foreign) {
         LOG(INFO, kLog) << "Removing incomplete model cache: " << utils::path_to_utf8(repo_dir)
                         << std::endl;
         std::error_code ec;
@@ -705,7 +811,7 @@ bool ModelArtifactStore::cleanup_incomplete_download(const ModelInfo& info,
     }
 
     bool removed_any = false;
-    for (const fs::path& path : ours) {
+    for (const fs::path& path : pending.ours) {
         if (!safe_exists(path)) continue;
         LOG(INFO, kLog) << "Removing leftover of an interrupted download: "
                         << utils::path_to_utf8(path) << std::endl;
