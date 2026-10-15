@@ -1,5 +1,6 @@
 #include <lemon/models/update_scan.h>
 
+#include <lemon/backends/backend_registry.h>
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -124,7 +125,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
             // Auxiliary checkpoints can live in other repositories; those are
             // verified under their own repository entry.
             for (const auto& [repo_id, variants] :
-                 registry_files::group_aux_checkpoint_variants(info.checkpoints)) {
+                 registry_files::group_aux_checkpoint_variants(info.recipe, info.checkpoints)) {
                 (void)variants;
                 if (repo_id != main_repo_id) {
                     add_repo_entry(repo_id);
@@ -225,7 +226,8 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                     resolved = info.resolved_path("main");
                 } else {
                     for (const auto& [role, checkpoint] : info.checkpoints) {
-                        if (role == "main" || role == "npu_cache") {
+                        if (role == "main" ||
+                            backends::ops_for(info.recipe)->acquires_lazily(role)) {
                             continue;
                         }
                         if (repo_id_from_checkpoint(checkpoint) == entry.repo_id) {
@@ -279,7 +281,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                                 previous_it->second, latest_files);
                         }
                         const auto aux_variants =
-                            registry_files::group_aux_checkpoint_variants(info.checkpoints);
+                            registry_files::group_aux_checkpoint_variants(info.recipe, info.checkpoints);
                         const auto aux_it = aux_variants.find(entry.repo_id);
                         if (aux_it != aux_variants.end()) {
                             selected.insert(selected.end(),

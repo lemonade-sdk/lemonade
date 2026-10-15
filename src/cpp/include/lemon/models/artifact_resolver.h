@@ -35,13 +35,6 @@ class ArtifactSourceResolver {
                                                            const ArtifactRef& ref)> repository_for;
         // default_model_source; empty is an error, not a default
         std::function<std::string()> default_registry_id;
-        // fetched on first use, so absence does not make the model incomplete
-        std::function<bool(const std::string& checkpoint_type)> acquired_lazily;
-        std::function<std::string(const std::string& recipe, const std::string& path)>
-            validate_file;
-        // null falls back to the registered repositories
-        std::function<const ArtifactLayout*(const std::string& recipe, const CheckpointRef&)>
-            checkpoint_layout;
     };
 
     explicit ArtifactSourceResolver(Hooks hooks = {});

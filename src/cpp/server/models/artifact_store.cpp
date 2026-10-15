@@ -43,6 +43,18 @@ bool has_partial_files(const fs::path& dir) {
     return false;
 }
 
+// A side cache the engine fetches on first use is optional: absent bytes there
+// leave the model downloaded.
+bool acquired_lazily(const ModelInfo& info, const std::string& type) {
+    return backends::ops_for(info.recipe)->acquires_lazily(type);
+}
+
+// A checkpoint placed beside another checkpoint's file instead of in a snapshot of
+// its own belongs where it is; it is never a stray copy.
+bool lands_beside_main(const ModelInfo& info, const std::string& type) {
+    return backends::ops_for(info.recipe)->checkpoint_layout({info.model_name, type}) != nullptr;
+}
+
 std::string normalized_relative_path(const fs::path& path, const fs::path& root) {
     std::string rel = utils::path_to_utf8(path.lexically_relative(root));
     std::replace(rel.begin(), rel.end(), '\\', '/');
@@ -255,8 +267,8 @@ bool ModelArtifactStore::complete(const ModelInfo& info) const {
     for (const auto& [type, checkpoint] : info.checkpoints) {
         (void)checkpoint;
 
-        // Lazily fetched side caches retire with the engine's working set.
-        if (type == "npu_cache") continue;
+        // A side cache the engine fetches on first use is not required.
+        if (acquired_lazily(info, type)) continue;
 
         const std::string resolved_path = info.resolved_path(type);
         if (!path_complete(resolved_path)) {
@@ -356,8 +368,8 @@ ModelArtifactStore::Ownership ModelArtifactStore::ownership_of(const ModelInfo& 
     for (const auto& [type, checkpoint] : info.checkpoints) {
         (void)checkpoint;
 
-        // A lazily fetched side cache retires with the engine's working set.
-        if (type == "npu_cache") continue;
+        // It is beside the file it was built for, which this pass does remove.
+        if (acquired_lazily(info, type)) continue;
 
         Deletion::Kind kind = Deletion::Kind::CacheDir;
         try {
@@ -566,7 +578,8 @@ CleanupReport ModelArtifactStore::cleanup_orphaned_cache(const KnownModels& all_
         if (!safe_exists(main_cache)) continue;
 
         for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "main" || type == "npu_cache") continue;
+            // A sibling copy in the main repository is where it belongs.
+            if (type == "main" || lands_beside_main(info, type)) continue;
 
             const std::string cp_repo = repo_id_from_checkpoint(checkpoint);
             if (cp_repo == main_repo) continue;  // Same repository, no orphan possible.
@@ -782,7 +795,7 @@ bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
     std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
     try {
         for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
+            if (acquired_lazily(info, type)) continue;
             const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
             if (checkpoint_repo.empty()) return false;
             const fs::path expected_repo = root /

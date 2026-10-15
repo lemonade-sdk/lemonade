@@ -249,10 +249,10 @@ std::string active_local_snapshot(
 }
 
 std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
-    const std::map<std::string, std::string>& checkpoints) {
+    const std::string& recipe, const std::map<std::string, std::string>& checkpoints) {
     std::map<std::string, std::vector<std::string>> grouped;
     for (const auto& [type, checkpoint] : checkpoints) {
-        if (type == "main" || type == "npu_cache") continue;
+        if (type == "main" || backends::ops_for(recipe)->acquires_lazily(type)) continue;
         const std::string repo_id = models::repo_id_from_checkpoint(checkpoint);
         const std::string variant = models::variant_from_checkpoint(checkpoint);
         if (repo_id.empty() || variant.empty()) {

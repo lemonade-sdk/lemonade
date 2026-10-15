@@ -159,30 +159,22 @@ static void test_a_sibling_lands_beside_the_file_it_belongs_to() {
 static void test_layout_selection_is_a_backend_fact() {
     ModelInfo info;
     info.model_name = "user.whisper";
-    info.recipe = "whisper.cpp";
+    info.recipe = "whispercpp";
     info.checkpoints["main"] = "org/repo:model.bin";
     info.checkpoints["npu_cache"] = "org/repo:model.bin.rai";
 
-    const ArtifactSourceResolver unhooked;
-    check("a checkpoint with no backend fact uses the snapshot layout",
-          &unhooked.layout_for(info, "main") == &hf_hub_layout());
-
-    std::string seen_recipe;
-    std::string seen_type;
-    ArtifactSourceResolver::Hooks hooks;
-    hooks.checkpoint_layout = [&seen_recipe, &seen_type](const std::string& recipe,
-                                                         const CheckpointRef& checkpoint) {
-        seen_recipe = recipe;
-        seen_type = checkpoint.checkpoint_type;
-        return checkpoint.checkpoint_type == "npu_cache" ? &sibling_layout() : nullptr;
-    };
-    const ArtifactSourceResolver resolver(hooks);
-
-    check("the backend is asked about the checkpoint it owns",
-          &resolver.layout_for(info, "npu_cache") == &sibling_layout() && seen_recipe == "whisper.cpp" &&
-          seen_type == "npu_cache");
+    // The layout is the backend's fact, asked of its ops: whisper places the NPU
+    // cache beside the .bin it was built for, and says nothing about the .bin.
+    const ArtifactSourceResolver resolver;
+    check("a side cache beside another checkpoint uses the sibling layout",
+          &resolver.layout_for(info, "npu_cache") == &sibling_layout());
     check("a checkpoint the backend says nothing about keeps the snapshot layout",
           &resolver.layout_for(info, "main") == &hf_hub_layout());
+
+    ModelInfo other = info;
+    other.recipe = "llamacpp";
+    check("a recipe with no layout opinion resolves everything to snapshots",
+          &resolver.layout_for(other, "npu_cache") == &hf_hub_layout());
 }
 
 bool planned(const DownloadPlan& plan, const std::string& name) {

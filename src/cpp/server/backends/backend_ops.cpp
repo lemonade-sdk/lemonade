@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_descriptor.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_store.h"
 #include "lemon/utils/path_utils.h"
 
@@ -21,11 +22,10 @@ using lemon::utils::path_to_utf8;
 // falling back to the main repo and finally the model cache directory.
 std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const {
-    (void)info;
-
-    // NPU side-cache checkpoints have no resolvable local file here (the backend
-    // that uses them resolves them itself at load time).
-    if (ctx.type == "npu_cache") {
+    // A checkpoint that lives in no snapshot of its own — a side cache placed beside
+    // the file it was built for — has nothing to find here. The source that fetches
+    // it knows where it lands.
+    if (checkpoint_layout(models::CheckpointRef{info.model_name, ctx.type}) != nullptr) {
         return "";
     }
 
