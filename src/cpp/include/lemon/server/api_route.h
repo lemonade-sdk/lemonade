@@ -110,8 +110,8 @@ public:
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 
-    // The errors that base-class steps write for this route. RouteRegistry appends them to the
-    // route's spec, so the docs list them with the route's own.
+    // A base-class step writes errors the route's own spec does not list, and the docs must
+    // list them with the route's own.
     virtual std::vector<RouteError> inherited_errors(const RouteSpec& spec) const;
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
@@ -147,8 +147,8 @@ protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
 
-    // The same holds for an exception that escapes validate() or run(). The default answers a
-    // residency conflict with 409 and anything else with a 500 plain-string error.
+    // A route's error shape is part of its contract, so a route can override how an exception
+    // that escapes validate() or run() is answered, together with the errors that override writes.
     virtual void write_exception(const std::exception& error, httplib::Response& res) const;
     virtual std::vector<RouteError> exception_errors() const;
 
@@ -181,7 +181,6 @@ void attach_route_decision(nlohmann::json& response, httplib::Response& res,
 // fallback for a backend that reports none.
 extern const RouteError kBackendError;
 
-// Writes a backend error body with the backend's status, or fallback's when it reports none.
 void set_error_response(const nlohmann::json& response, httplib::Response& res,
                         const RouteError& fallback);
 
@@ -201,10 +200,8 @@ bool write_sse_event(httplib::DataSink& sink, const std::string& event,
 const httplib::FormData* find_form_file(const httplib::Request& http,
                                         std::initializer_list<const char*> names);
 
-// {"error": {"message", "type", "code"}}, with code only when error has one.
 void write_openai_error(httplib::Response& res, const RouteError& error, const std::string& message,
                         const std::string& type = "invalid_request_error");
-// {"error": "message"}
 void write_plain_error(httplib::Response& res, const RouteError& error, const std::string& message);
 
 } // namespace lemon

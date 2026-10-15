@@ -13,6 +13,7 @@ const RouteError kInvalidSlotId{400, "", "`id` is too large for a 32-bit integer
 const RouteError kMissingAction{400, "", "`action` is missing or empty"};
 const RouteError kUnknownAction{400, "", "`action` is not `erase`, `save` or `restore`"};
 const RouteError kNoModelLoaded{400, "", "No model is loaded"};
+const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
 const RouteError kInvalidJson{400, "", "The body is not empty and is not valid JSON"};
 const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
 const RouteError kSlotActionFailed{500, "", "The slot action fails unexpectedly"};
@@ -102,8 +103,8 @@ public:
         erase.args = {{"id", 0}, {"action", "erase"}};
 
         s.examples = {save, restore, erase};
-        s.errors = {kInvalidSlotId, kMissingAction, kUnknownAction, kNoModelLoaded, kInvalidJson,
-                    kNotLlamaCpp, kBackendError, kSlotActionFailed};
+        s.errors = {kInvalidSlotId, kMissingAction, kUnknownAction, kNoModelLoaded, kModelUnloaded,
+                    kInvalidJson, kNotLlamaCpp, kBackendError, kSlotActionFailed};
         return s;
     }
 

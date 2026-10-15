@@ -18,12 +18,12 @@ nlohmann::ordered_json StreamingProxy::error_event_schema() {
         "required": ["error"],
         "properties": {
             "error": {
-                "type": "object",
-                "description": "The backend's error.",
+                "type": ["object", "string"],
+                "description": "The backend's error, as an object or, when the backend sent one, a string.",
                 "properties": {
                     "message": {"type": "string", "description": "What failed."},
                     "type": {"type": "string", "description": "The error's type, such as `backend_error`."},
-                    "status_code": {"type": "integer", "description": "The status the backend answered with."}
+                    "status_code": {"type": "integer", "description": "The status the backend answered with, or `502` when it closed the stream without a response."}
                 }
             }
         }

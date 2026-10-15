@@ -12,7 +12,8 @@ using ordered_json = nlohmann::ordered_json;
 namespace {
 
 const RouteError kImageInvalidJson{
-    400, "", "The body is not valid JSON, or a field has the wrong JSON type"};
+    400, "",
+    "A JSON value in the request or in the backend's reply does not parse or has the wrong type"};
 const RouteError kImageRouteFailure{500, "", "The request fails unexpectedly"};
 const RouteError kImageCountOutOfRange{400, "", "`n` is outside `1` to `10`"};
 const RouteError kImageFieldsMixed{400, "", "The form has files under both `image` and `image[]`"};

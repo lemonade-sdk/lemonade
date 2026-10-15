@@ -42,6 +42,7 @@ public:
         s.notes = {
             "Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher "
             "`resolution` values take longer.",
+            "Errors carry a JSON `error` object.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,

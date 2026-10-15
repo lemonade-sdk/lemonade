@@ -12,6 +12,7 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kInvalidJson{400, "", "The body is not empty and is not valid JSON"};
 const RouteError kMissingContent{400, "", "`content` is missing or not a string"};
 const RouteError kNoModelLoaded{400, "", "No model is loaded"};
+const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
 const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
 const RouteError kTokenizeFailed{500, "", "Tokenizing fails unexpectedly"};
 
@@ -60,8 +61,8 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"content", "This is a string to tokenize"}};
         s.examples = {example};
-        s.errors = {kInvalidJson, kMissingContent, kNoModelLoaded, kNotLlamaCpp, kBackendError,
-                    kTokenizeFailed};
+        s.errors = {kInvalidJson, kMissingContent, kNoModelLoaded, kModelUnloaded, kNotLlamaCpp,
+                    kBackendError, kTokenizeFailed};
         return s;
     }
 

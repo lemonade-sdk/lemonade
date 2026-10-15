@@ -42,6 +42,8 @@ public:
             "sequence classifiers (one label set) and token classifiers (aggregated span labels), "
             "and provides the classification that the router's `classifier` condition uses.";
         s.notes = {
+            "A malformed request, such as one with a blank `input` or a non-positive `top_k`, is "
+            "rejected before any model loads.",
             "### Supported Models\n\n"
             "Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa "
             "(v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of "

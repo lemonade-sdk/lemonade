@@ -37,8 +37,8 @@ const RouteError kCloudModelNoCheckpoint{
     500, "", "`model` is a `--wire-format anthropic` cloud model with no `checkpoint`"};
 const RouteError kCloudRequestFailed{
     502, "",
-    "The relayed cloud request fails or the provider answers with an error; the provider's own "
-    "status and body replace this one when it answers"};
+    "Without `stream`, the relayed cloud request fails or the provider answers with an error; "
+    "the provider's own status and body replace this one when it answers"};
 const RouteError kResidencyConflict{
     409, "",
     "Loading `model` would evict a model that a `collection.router` model needs resident on the "

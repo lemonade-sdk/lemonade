@@ -39,7 +39,7 @@ public:
             "items": {
                 "type": "object",
                 "required": ["id", "methods", "paths", "prefixes", "summary", "modality", "description",
-                             "notes", "experimental", "args", "responses", "examples", "request_format",
+                             "notes", "experimental", "args", "responses", "examples", "errors", "request_format",
                              "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "`<page>.<name>`; names the route's generated region in `docs/api/<page>.md`."},
@@ -90,6 +90,15 @@ public:
                             }, "description": "Requests that run first to put `lemond` in the state this example needs."}
                         }
                     }, "description": "The first is the route's main example."},
+                    "errors": {"type": "array", "description": "Every error status the route answers with, including those its base class adds.", "items": {
+                        "type": "object",
+                        "required": ["status", "code", "when"],
+                        "properties": {
+                            "status": {"type": "integer", "description": "The HTTP status."},
+                            "code": {"type": "string", "description": "The code the error body carries, or empty when it carries none."},
+                            "when": {"type": "string", "description": "The condition that produces the error."}
+                        }
+                    }},
                     "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"], "description": "How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form."},
                     "quiet_log": {"type": "boolean", "description": "Whether the route is left out of the access log."}
                 }

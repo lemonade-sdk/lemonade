@@ -65,6 +65,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `top_k` | No | Return only the highest-scoring `k` labels. Defaults to every label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `text` | No | Alias for `input`, used instead of it when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+A malformed request, such as one with a blank `input` or a non-positive `top_k`, is rejected before any model loads.
+
 ### Supported Models
 
 Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as is.
@@ -132,13 +134,13 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `400` |  | The body is empty or is not valid JSON |
 | `400` |  | The request names no `model` |
 | `404` |  | The model is unloaded between its load and the classification |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The backend's response has no `labels` object |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: lemonade.classify -->
 
@@ -832,7 +834,7 @@ A `pause` or `cancel` for a job that already finished leaves it as it is.
 
 | Status | When |
 |--------|------|
-| `400` | The body is not a JSON object, or `id` or `action` is not a string |
+| `400` | The body is not valid JSON or not a JSON object, or `id` or `action` is not a string |
 | `400` | `id` or `action` is missing or empty |
 | `400` | `action` is not `pause`, `cancel` or `remove` for an existing job |
 | `404` | `id` names no download job and `action` is not `remove` |
@@ -1232,11 +1234,11 @@ A collection, which has no checkpoint of its own.
 |--------|------|------|
 | `400` | `invalid_request` | `model_name` is missing or not a string, or the body is not a JSON object |
 | `400` |  | The body is empty or is not valid JSON |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: lemonade.load -->
 
 <!-- BEGIN GENERATED: lemonade.unload -->
@@ -1320,6 +1322,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `response_format` | No | Output encoding. Only `wav`, the format the backend produces, is accepted. Defaults to `wav`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Generation runs on the GPU (Vulkan, ROCm or CUDA) and takes from seconds for a short sound effect to minutes for full-length music, depending on duration and hardware.
+
+Errors carry a JSON `error` object.
 
 ### Lyrics
 
@@ -1413,13 +1417,13 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 | `400` | `model_not_applicable` | `model` is not an audio-generation model |
 | `400` |  | `response_format` is not a format the model's backend produces |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | `model` is not a string, or generation fails unexpectedly |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.audio_generations -->
@@ -1445,6 +1449,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `response_format` | No | Output encoding. Only `glb`, the format the backend produces, is accepted. Defaults to `glb`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher `resolution` values take longer.
+
+Errors carry a JSON `error` object.
 
 ### Example
 
@@ -1488,13 +1494,13 @@ Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher 
 | `400` |  | `seed` is not an integer |
 | `400` |  | `uv` is not `box` or `xatlas` |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | `model` is not a 3D model, or generation fails unexpectedly |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.3d_generations -->
@@ -2221,6 +2227,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `wire_format` | No | Cloud providers: `"openai"` or `"anthropic"`. An `"anthropic"` provider is served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults to `"openai"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `subscribe` | No | Local backends with `stream: true`: `false` makes the download server-owned and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+A local install's errors carry an `error` string, and a cloud provider's invalid field an `error` object.
+
 ### Install a Cloud Provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
@@ -2478,6 +2486,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `arch` | No | A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's detected one, so CI can check an architecture's asset on a runner without that GPU. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+Errors carry an `error` string.
+
 A device ISA may resolve to a family target name used by the release repository, for example `gfx1201` to `gfx120X`. That mapping is defined by `rocm_asset_families` in `backend_versions.json`.
 
 Lemonade does not check that the asset exists; fetch `url`, or its split-archive manifest, to verify it.
@@ -2537,7 +2547,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 | Status | When |
 |--------|------|
 | `400` | `recipe` or `backend` is missing or empty |
-| `500` | The body is not valid JSON, or resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body also carries `arch` when the request set one |
+| `500` | The body is not valid JSON, a field has the wrong type, or resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body also carries `arch` when the request set one |
 <!-- END GENERATED: lemonade.install_dry_run -->
 
 <!-- BEGIN GENERATED: lemonade.uninstall -->
@@ -2712,7 +2722,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | `provider` or `api_key` is empty |
 | `400` | `insecure_http_requires_opt_in` | The provider's base URL is `http://`, an API key would be sent to it, and neither this request nor an earlier install sets `allow_insecure_http` |
 | `404` |  | `provider` was not installed with [`POST /v1/install`](#post-v1install) |
-| `409` |  | `LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; `error.env_var` names the variable |
+| `409` |  | `LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; `error.type` is `auth_conflict` and `error.env_var` names the variable |
 | `500` |  | The body holds a number out of range, or storing the key fails unexpectedly |
 <!-- END GENERATED: lemonade.cloud_auth -->
 
@@ -2770,7 +2780,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | When |
 |--------|------|
-| `400` | The path names no provider |
 | `500` | Clearing the key or evicting the provider's models fails |
 <!-- END GENERATED: lemonade.cloud_auth_provider -->
 
@@ -2967,7 +2976,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 
 | Status | When |
 |--------|------|
-| `400` | The body is not a JSON object, or `name` or a step has the wrong type |
+| `400` | The body is not valid JSON or not a JSON object, or `name` or a step has the wrong type |
 | `400` | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
 | `429` | All 50 jobs in the store are still active or resumable |
 <!-- END GENERATED: lemonade.jobs_create -->
@@ -3309,5 +3318,4 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | When |
 |--------|------|
 | `404` | `id` names no job, or a deleted one |
-| `409` | The job is still active and cannot be removed |
 <!-- END GENERATED: lemonade.jobs_delete -->

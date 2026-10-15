@@ -35,8 +35,8 @@ public:
             "Serves the MCP methods listed under [Supported Methods](#supported-methods) over "
             "JSON-RPC 2.0.";
         s.notes = {
-            "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
-            "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
+            "The body is one JSON-RPC message or a batch array of them. A JSON-RPC error is "
+            "answered with `200` like any other JSON-RPC response; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
             "### Supported Methods\n"
             "\n"

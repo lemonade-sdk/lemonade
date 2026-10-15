@@ -186,5 +186,5 @@ data: {"type": "message_stop"}
 | `500` | `model` is a `--wire-format anthropic` cloud model with no `checkpoint` |
 | `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` | The body is not valid JSON, a field has the wrong type, or another step throws |
-| `502` | The relayed cloud request fails or the provider answers with an error; the provider's own status and body replace this one when it answers |
+| `502` | Without `stream`, the relayed cloud request fails or the provider answers with an error; the provider's own status and body replace this one when it answers |
 <!-- END GENERATED: anthropic.messages -->

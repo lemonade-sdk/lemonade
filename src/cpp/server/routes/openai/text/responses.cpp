@@ -13,8 +13,10 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kUnparsableBody{500, "", "The body is empty or is not valid JSON"};
 const RouteError kNoResponsesApi{
     400, "",
-    "The request does not stream and `model`'s backend has no Responses API, such as a "
-    "FastFlowLM, cloud or non-LLM model"};
+    "The request does not stream and `model` is a FastFlowLM or cloud model, which has no "
+    "Responses API"};
+const RouteError kNotLlm{
+    400, "model_not_applicable", "The request does not stream and `model` is not an LLM"};
 
 ordered_json response_schema() {
     auto schema = ordered_json::parse(R"({
@@ -151,7 +153,7 @@ public:
         })");
 
         s.examples = {response_example, stream_example};
-        s.errors = {kNoResponsesApi, kBackendError};
+        s.errors = {kNoResponsesApi, kNotLlm, kBackendError};
         s.request_format = RequestFormat::Json;
         return s;
     }

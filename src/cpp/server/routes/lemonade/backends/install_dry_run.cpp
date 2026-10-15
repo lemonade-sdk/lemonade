@@ -14,9 +14,9 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kMissingRecipeOrBackend{400, "", "`recipe` or `backend` is missing or empty"};
 const RouteError kResolveFailed{
     500, "",
-    "The body is not valid JSON, or resolving the install parameters fails, for example for an "
-    "unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body "
-    "also carries `arch` when the request set one"};
+    "The body is not valid JSON, a field has the wrong type, or resolving the install "
+    "parameters fails, for example for an unknown recipe/backend pair, an unsupported platform "
+    "or a failed version lookup; the body also carries `arch` when the request set one"};
 
 class InstallDryRunRoute : public ApiRoute {
 public:
@@ -35,6 +35,7 @@ public:
             "reads local configuration and, for a backend version set to `latest`, GitHub release "
             "metadata.";
         s.notes = {
+            "Errors carry an `error` string.",
             "A device ISA may resolve to a family target name used by the release repository, for "
             "example `gfx1201` to `gfx120X`. That mapping is defined by `rocm_asset_families` in "
             "`backend_versions.json`.",

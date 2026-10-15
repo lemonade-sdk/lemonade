@@ -184,7 +184,7 @@ Each line carries the next message piece with `done: false`. When the message en
 |--------|------|------|
 | `400` |  | The body has no `model`, or it is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
 | `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.chat -->
@@ -349,7 +349,7 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 |--------|------|------|
 | `400` |  | The body has no `model`, or it is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
 | `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.generate -->
@@ -738,7 +738,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | The body has no `model`, or it is empty |
 | `400` |  | The body has no `input` |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
 | `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.embed -->
@@ -804,7 +804,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | The body has no `model`, or it is empty |
 | `400` |  | The body has neither `prompt` nor `input` |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
 | `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.embeddings -->

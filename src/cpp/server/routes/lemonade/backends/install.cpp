@@ -106,6 +106,8 @@ public:
         s.description =
             "Installs or updates a recipe's backend, or registers a cloud provider.";
         s.notes = {
+            "A local install's errors carry an `error` string, and a cloud provider's invalid field "
+            "an `error` object.",
             "### Install a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"

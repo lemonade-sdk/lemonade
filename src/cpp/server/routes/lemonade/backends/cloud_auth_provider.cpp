@@ -12,7 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kMissingProvider{400, "", "The path names no provider"};
 const RouteError kClearFailed{500, "", "Clearing the key or evicting the provider's models fails"};
 
 class CloudAuthProviderRoute : public ApiRoute {
@@ -60,17 +59,13 @@ public:
         example.setup = {{"lemonade.cloud_auth", ""}};
         example.args = {{"provider", "fireworks"}};
         s.examples = {example};
-        s.errors = {kMissingProvider, kClearFailed};
+        s.errors = {kClearFailed};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
             const std::string provider = req.http.matches[1].str();
-            if (provider.empty()) {
-                write_openai_error(res, kMissingProvider, "Missing provider in URL");
-                return;
-            }
 
             const bool cleared = ctx_.cloud_registry->clear_runtime_key(provider);
             // With the env var set, the models stay discovered because it still

@@ -10,7 +10,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidJobBody{
-    400, "", "The body is not a JSON object, or `name` or a step has the wrong type"};
+    400, "", "The body is not valid JSON or not a JSON object, or `name` or a step has the wrong type"};
 const RouteError kInvalidSteps{
     400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
 const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};

@@ -8,7 +8,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidBody{
-    400, "", "The body is not a JSON object, or `pct` is a string, array, object or `null`"};
+    400, "", "The body is not valid JSON or not a JSON object, or `pct` is a string, array, object or `null`"};
 
 class SimulateVramPressureRoute : public ApiRoute {
 public:

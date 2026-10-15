@@ -13,7 +13,7 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kInvalidJson{400, "", "The body is not valid JSON"};
 const RouteError kMissingModel{400, "", "The body has neither `model` nor `model_name`"};
 const RouteError kBadPinned{400, "", "`pinned` is missing or not a boolean"};
-const RouteError kNotLoaded{400, "", "`model_name` is not a string or names no loaded model"};
+const RouteError kNotLoaded{400, "", "`model` or `model_name` is not a string or names no loaded model"};
 
 class PinRoute : public ApiRoute {
 public:

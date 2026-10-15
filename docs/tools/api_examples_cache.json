@@ -668,6 +668,7 @@
               "setup": []
             }
           ],
+          "errors": [],
           "request_format": "Raw",
           "quiet_log": false
         }

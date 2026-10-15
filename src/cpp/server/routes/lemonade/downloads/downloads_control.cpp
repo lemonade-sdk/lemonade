@@ -8,7 +8,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidControlBody{
-    400, "", "The body is not a JSON object, or `id` or `action` is not a string"};
+    400, "", "The body is not valid JSON or not a JSON object, or `id` or `action` is not a string"};
 const RouteError kMissingIdOrAction{400, "", "`id` or `action` is missing or empty"};
 
 class DownloadsControlRoute : public ApiRoute {

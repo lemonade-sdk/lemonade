@@ -22,7 +22,9 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingPrompt{400, "", "The form has no `prompt`"};
 const RouteError kImageBackendError{
-    500, "", "The backend reports an error, for example when `model` cannot edit images"};
+    500, "",
+    "The backend reports an error, for example when `model` cannot edit images, an error whose "
+    "`type` is `unsupported_operation`"};
 
 std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
     auto at = [&bytes](size_t i) -> std::uint8_t {

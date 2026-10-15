@@ -39,6 +39,7 @@ public:
         s.notes = {
             "Generation runs on the GPU (Vulkan, ROCm or CUDA) and takes from seconds for a short "
             "sound effect to minutes for full-length music, depending on duration and hardware.",
+            "Errors carry a JSON `error` object.",
             "### Lyrics\n\n"
             "ACE-Step vocals are a two-stage pipeline inside the backend: a language model first "
             "turns the style description and lyrics into audio codes, then the diffusion "

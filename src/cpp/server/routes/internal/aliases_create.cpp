@@ -24,7 +24,7 @@ void write_alias_error(httplib::Response& res, const RouteError& error, const st
 
 const RouteError kInvalidBody{
     400, "invalid_request",
-    "The body is not a JSON object, or `alias`, `target` or `model` is not a string"};
+    "The body is not valid JSON or not a JSON object, or `alias`, `target` or `model` is not a string"};
 const RouteError kMissingField{400, "invalid_request", "`alias` or `target` is missing or blank"};
 const RouteError kSelfAlias{400, "invalid_alias", "`alias` equals `target`"};
 const RouteError kReservedPrefix{

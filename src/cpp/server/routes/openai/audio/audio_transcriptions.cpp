@@ -13,7 +13,8 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kUnsupportedResponseFormat{
     400, "", "`response_format` is not a supported transcript format"};
 const RouteError kMissingFile{400, "", "The form has no `file`"};
-const RouteError kCannotTranscribe{400, "", "`model` cannot transcribe, which is found after it loads"};
+const RouteError kCannotTranscribe{400, "", "`model` cannot transcribe, which is found after it loads; the error's `type` is "
+    "`unsupported_operation`"};
 const RouteError kNoTimestamps{
     400, "",
     "`response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no "

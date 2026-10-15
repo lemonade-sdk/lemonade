@@ -12,7 +12,9 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kImageBackendError{
-    500, "", "The backend reports an error, for example when `model` cannot make image variations"};
+    500, "",
+    "The backend reports an error, for example when `model` cannot make image variations, an error whose "
+    "`type` is `unsupported_operation`"};
 
 class ImagesVariationsRoute : public ModelRoute {
 public:

@@ -169,7 +169,7 @@ A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a
 | `400` | The body is not valid JSON |
 | `400` | The body has neither `model` nor `model_name` |
 | `400` | `pinned` is missing or not a boolean |
-| `400` | `model_name` is not a string or names no loaded model |
+| `400` | `model` or `model_name` is not a string or names no loaded model |
 <!-- END GENERATED: internal.pin -->
 
 <!-- BEGIN GENERATED: internal.set -->
@@ -499,7 +499,7 @@ The answer comes after the evaluation finishes, so a test can check the outcome 
 
 | Status | When |
 |--------|------|
-| `400` | The body is not a JSON object, or `pct` is a string, array, object or `null` |
+| `400` | The body is not valid JSON or not a JSON object, or `pct` is a string, array, object or `null` |
 <!-- END GENERATED: internal.simulate_vram_pressure -->
 
 <!-- BEGIN GENERATED: internal.models_sync -->
@@ -811,7 +811,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Status | Code | When |
 |--------|------|------|
-| `400` | `invalid_request` | The body is not a JSON object, or `alias`, `target` or `model` is not a string |
+| `400` | `invalid_request` | The body is not valid JSON or not a JSON object, or `alias`, `target` or `model` is not a string |
 | `400` | `invalid_request` | `alias` or `target` is missing or blank |
 | `400` | `invalid_alias` | `alias` equals `target` |
 | `400` | `invalid_alias` | `alias` starts with `user.`, `extra.` or `builtin.` |
@@ -868,7 +868,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Status | Code | When |
 |--------|------|------|
 | `404` | `alias_not_found` | `alias` names no alias |
-| `500` | `internal_error` | Saving the alias file fails |
+| `500` | `internal_error` | Checking the alias file on disk fails |
 <!-- END GENERATED: internal.aliases_delete -->
 
 <!-- BEGIN GENERATED: internal.routes -->
@@ -929,6 +929,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
       }
     ],
     "examples": [{"name": "", "description": "", "format": "Json", "args": {}, "setup": []}],
+    "errors": [],
     "request_format": "Raw",
     "quiet_log": false
   }
@@ -967,6 +968,10 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     - `route` - The `id` of the route the step requests.
     - `example` - The name of the route's example to run.
     - `args` - Set instead of example: a request sent as is and left out of the docs.
+- `errors` - Every error status the route answers with, including those its base class adds.
+  - `status` - The HTTP status.
+  - `code` - The code the error body carries, or empty when it carries none.
+  - `when` - The condition that produces the error.
 - `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form.
 - `quiet_log` - Whether the route is left out of the access log.
 <!-- END GENERATED: internal.routes -->

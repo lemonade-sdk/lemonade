@@ -9,7 +9,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kAliasNotFound{404, "alias_not_found", "`alias` names no alias"};
-const RouteError kSaveFailed{500, "internal_error", "Saving the alias file fails"};
+const RouteError kSaveFailed{500, "internal_error", "Checking the alias file on disk fails"};
 
 class AliasesDeleteRoute : public ApiRoute {
 public:

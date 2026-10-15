@@ -13,7 +13,9 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingPrompt{400, "", "The body has no `prompt`"};
 const RouteError kImageBackendError{
-    500, "", "The backend reports an error, for example when `model` cannot generate images"};
+    500, "",
+    "The backend reports an error, for example when `model` cannot generate images, an error whose "
+    "`type` is `unsupported_operation`"};
 
 class ImagesGenerationsRoute : public ModelRoute {
 public:

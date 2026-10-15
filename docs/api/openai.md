@@ -397,10 +397,10 @@ A chunk of the assistant's message. The stream ends with `data: [DONE]`.
 
 The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
 
-- `error` - The backend's error.
+- `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
   - `type` - The error's type, such as `backend_error`.
-  - `status_code` - The status the backend answered with.
+  - `status_code` - The status the backend answered with, or `502` when it closed the stream without a response.
 
 ### Errors
 
@@ -409,12 +409,12 @@ The backend failed after the stream started. This event replaces the rest of the
 | `400` |  | `model` is not an LLM, which is checked after it loads |
 | `400` |  | The body is empty or is not valid JSON |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.chat_completions -->
 
@@ -608,10 +608,10 @@ A chunk of the completion text. The stream ends with `data: [DONE]`.
 
 The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
 
-- `error` - The backend's error.
+- `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
   - `type` - The error's type, such as `backend_error`.
-  - `status_code` - The status the backend answered with.
+  - `status_code` - The status the backend answered with, or `502` when it closed the stream without a response.
 
 ### Errors
 
@@ -619,14 +619,14 @@ The backend failed after the stream started. This event replaces the rest of the
 |--------|------|------|
 | `400` |  | `model` is not an LLM, which is checked after it loads |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The backend's response has no `choices` |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.completions -->
 
@@ -713,13 +713,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 | `501` |  | `model` is a llama.cpp model that is not an embedding model |
 <!-- END GENERATED: openai.embeddings -->
@@ -895,24 +895,25 @@ An event of the response, passed through from the backend. The stream ends with 
 
 The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
 
-- `error` - The backend's error.
+- `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
   - `type` - The error's type, such as `backend_error`.
-  - `status_code` - The status the backend answered with.
+  - `status_code` - The status the backend answered with, or `502` when it closed the stream without a response.
 
 ### Errors
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request does not stream and `model`'s backend has no Responses API, such as a FastFlowLM, cloud or non-LLM model |
+| `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
+| `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.responses -->
 
@@ -1002,17 +1003,17 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 |--------|------|------|
 | `400` |  | `response_format` is not a supported transcript format |
 | `400` |  | The form has no `file` |
-| `400` |  | `model` cannot transcribe, which is found after it loads |
+| `400` |  | `model` cannot transcribe, which is found after it loads; the error's `type` is `unsupported_operation` |
 | `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
 | `400` |  | The request is not `multipart/form-data` |
 | `400` |  | A numeric form field does not parse as its parameter's type |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.audio_transcriptions -->
 
@@ -1223,15 +1224,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | The body has no `prompt` |
-| `400` |  | The body is not valid JSON, or a field has the wrong JSON type |
+| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error, for example when `model` cannot generate images |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error, for example when `model` cannot generate images, an error whose `type` is `unsupported_operation` |
 | `500` |  | The request fails unexpectedly |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.images_generations -->
 
 <!-- BEGIN GENERATED: openai.images_edits -->
@@ -1341,13 +1342,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | The request is not `multipart/form-data` |
 | `400` |  | A numeric form field does not parse as its parameter's type |
 | `400` |  | The request names no `model` |
-| `400` |  | The body is not valid JSON, or a field has the wrong JSON type |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error, for example when `model` cannot edit images |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error, for example when `model` cannot edit images, an error whose `type` is `unsupported_operation` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.images_edits -->
 
@@ -1446,13 +1447,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | The request is not `multipart/form-data` |
 | `400` |  | A numeric form field does not parse as its parameter's type |
 | `400` |  | The request names no `model` |
-| `400` |  | The body is not valid JSON, or a field has the wrong JSON type |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error, for example when `model` cannot make image variations |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error, for example when `model` cannot make image variations, an error whose `type` is `unsupported_operation` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.images_variations -->
 
@@ -1531,7 +1532,7 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 | `400` | `model` is missing or empty |
 | `400` | `model` has no `upscaling` label |
 | `400` | `model`'s recipe cannot upscale |
-| `400` | The body is not valid JSON, or a field has the wrong JSON type |
+| `400` | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
 | `404` | `model` names no model in the registry, or downloading it fails |
 | `500` | The backend produces no upscaled image |
 | `500` | The request fails unexpectedly |
@@ -1641,13 +1642,13 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 | `400` |  | `stream_format` is not `audio` |
 | `400` |  | `response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is not valid JSON, or the request fails unexpectedly |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: openai.audio_speech -->
 
@@ -1934,8 +1935,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
 <!-- END GENERATED: openai.models_id -->
 
 <!-- BEGIN GENERATED: openai.models_id_files -->
@@ -1994,8 +1995,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
 | `404` | `model_load_error` | Resolving or listing `id`'s files fails |
 <!-- END GENERATED: openai.models_id_files -->
 
@@ -2081,8 +2082,8 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 
 | Status | Code | When |
 |--------|------|------|
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
 <!-- END GENERATED: openai.models_id_options_get -->
 
@@ -2193,8 +2194,8 @@ A running model keeps its current options until it is next loaded.
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
 | `400` |  | An option's value has the wrong JSON type |
 | `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
 <!-- END GENERATED: openai.models_id_options_post -->
 
@@ -2280,7 +2281,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
 <!-- END GENERATED: openai.models_id_options_delete -->

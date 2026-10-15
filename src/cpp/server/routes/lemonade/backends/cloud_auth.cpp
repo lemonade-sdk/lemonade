@@ -22,7 +22,7 @@ const RouteError kProviderNotInstalled{
 const RouteError kAuthConflict{
     409, "",
     "`LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; "
-    "`error.env_var` names the variable"};
+    "`error.type` is `auth_conflict` and `error.env_var` names the variable"};
 const RouteError kAuthFailed{
     500, "", "The body holds a number out of range, or storing the key fails unexpectedly"};
 

@@ -10,6 +10,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kNoModelLoaded{400, "", "No model is loaded"};
+const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
 const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
 const RouteError kSlotsFailed{500, "", "Reading the slots fails unexpectedly"};
 
@@ -64,7 +65,7 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kNoModelLoaded, kNotLlamaCpp, kBackendError, kSlotsFailed};
+        s.errors = {kNoModelLoaded, kModelUnloaded, kNotLlamaCpp, kBackendError, kSlotsFailed};
         return s;
     }
 
