@@ -64,7 +64,6 @@ export interface Trace {
   startTimeMs: number;
   synthetic?: boolean;
 
-  // metrics
   ttft?: number;      // ms
   tps?: number;       // tok/s
   prompt?: number;     // Input tokens
@@ -73,17 +72,14 @@ export interface Trace {
   queue?: number;     // waterfall segment 1: Queue time
   prefill?: number;   // waterfall segment 2: Prefill time (TTFT)
 
-  // sampling
   temp?: number;
   topP?: number;
   topK?: number;
   max?: number;
 
-  // content
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string; redacted?: boolean; thinking?: string; tokens?: number }>;
   output: string;
 
-  // identity
   sessionId?: string;
   userId?: string;
   recipe?: string;
@@ -91,7 +87,6 @@ export interface Trace {
   device?: string;
   checkpoint?: string;
 
-  // diagnostics / improve
   diag?: { level: 'warn' | 'danger' | 'info'; title: string; detail: string };
   improveData?: OptimizedPromptData | null;
   improveRawOutput?: string;
@@ -107,7 +102,6 @@ export interface InspectState {
   toast: string | null;
 }
 
-// LocalStorage keys and helper functions
 const LOCAL_STORAGE_TRACES_KEY = 'lemonade_inspect_traces';
 const LOCAL_STORAGE_CAPTURING_KEY = 'lemonade_inspect_capturing';
 const MAX_STORED_TRACES = 100;
@@ -132,7 +126,6 @@ function safeRemoveLocalStorage(key: string): void {
   } catch {}
 }
 
-// Global store with LocalStorage persistence
 class InspectStoreClass {
   private listeners = new Set<() => void>();
   private state: InspectState = {
@@ -153,10 +146,8 @@ class InspectStoreClass {
   constructor() {
     this.loadFromLocalStorage();
 
-    // Start connection
     this.connect();
 
-    // Auto-reconnect if api config (port, host, or api key) changes
     api.onStatusChange(() => {
       this.connect();
     });
@@ -274,9 +265,9 @@ class InspectStoreClass {
       }
     }
 
-    // If capturing changed, persist to localStorage and start/stop capture.
-    // If callers set capturing=true while it is already true, still repair a missing
-    // socket. This keeps tests and recovery paths deterministic after a dropped WS.
+    // If capturing changed, persist to localStorage and start/stop capture. If callers set
+    // capturing=true while it is already true, still repair a missing socket. This keeps tests and
+    // recovery paths deterministic after a dropped WS.
     if (next.capturing !== undefined) {
       if (next.capturing !== prevState.capturing) {
         safeSetLocalStorage(LOCAL_STORAGE_CAPTURING_KEY, String(next.capturing));
@@ -322,9 +313,8 @@ class InspectStoreClass {
     if (index === -1) return;
 
     const traces = this.state.traces.filter((t) => t.id !== id);
-    // Deleting the selected request keeps the selection in place by falling to
-    // the row that slid up into it, so the detail pane never goes blank on a
-    // list the user is working through.
+    // Deleting the selected request keeps the selection in place by falling to the row that slid up
+    // into it, so the detail pane never goes blank on a list the user is working through.
     const selectedTraceId = this.state.selectedTraceId === id
       ? (traces[index] || traces[index - 1] || null)?.id ?? null
       : this.state.selectedTraceId;
@@ -352,7 +342,6 @@ class InspectStoreClass {
     const exists = this.state.traces.some((t) => t.id === trace.id);
     if (exists) return;
 
-    // Add to start of list (slicing and persistence are handled in setState)
     const updated = [trace, ...this.state.traces];
     const selectId = this.autoSelectNextTrace ? trace.id : (this.state.selectedTraceId || trace.id);
 
@@ -366,7 +355,6 @@ class InspectStoreClass {
     });
   }
 
-  // WebSocket Connection
   private hasActiveSocket() {
     return !!this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING);
   }
@@ -384,14 +372,11 @@ class InspectStoreClass {
     const baseUrl = api.baseUrl;
     const apiKey = api.apiKey;
 
-    // We derive websocket URL from api.baseUrl
     let wsUrl = baseUrl.replace(/^http/, 'ws') + '/spans/stream';
     const params = new URLSearchParams();
     params.set('client_session_id', api.clientSessionId);
     wsUrl += `?${params.toString()}`;
 
-    // Skip redundant automatic connection attempts, but allow explicit reconnect()
-    // to replace the socket even if the current socket is still open.
     if (!force && this.ws && this.currentWsUrl === wsUrl && this.hasActiveSocket()) {
       return;
     }
@@ -508,7 +493,6 @@ class InspectStoreClass {
     }
   }
 
-  // Force reconnect when settings change (e.g. key changed)
   reconnect() {
     this.connect(true);
   }
@@ -520,7 +504,6 @@ if (typeof window !== 'undefined') {
   (window as any).inspectStore = inspectStore;
 }
 
-// Custom hook to use store
 export function useInspectStore() {
   const [state, setState] = useState(() => inspectStore.getState());
 
@@ -533,13 +516,11 @@ export function useInspectStore() {
   return state;
 }
 
-// Helper to extract thinking blocks (leading <think>...</think> only)
 function extractThinking(rawContent: string): string | undefined {
   const thinkMatch = /^\s*<think>([\s\S]*?)<\/think>/.exec(rawContent);
   return thinkMatch ? thinkMatch[1].trim() : undefined;
 }
 
-// OTEL attribute parser helper
 function parseOtelSpan(span: OtelSpan): Trace | null {
   if (!span || !span.traceId) return null;
 
@@ -555,24 +536,19 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
     }
   }
 
-  // Extract kind
   let kind: Trace['kind'] = 'LLM';
   const spanKindAttr = attrs['openinference.span.kind'];
   if (spanKindAttr === 'EMBEDDING') kind = 'EMBEDDING';
   else if (spanKindAttr === 'RERANKER') kind = 'RERANKER';
 
-  // Parse timestamps
   const startNano = parseFloat(span.startTimeUnixNano ?? '0');
   const endNano = parseFloat(span.endTimeUnixNano ?? '0');
   const durationMs = (endNano - startNano) / 1000000;
 
-  // Extract model name
   const model = String(attrs['llm.model_name'] || attrs['embedding.model_name'] || attrs['reranker.model_name'] || attrs['gen_ai.request.model'] || '');
 
-  // Extract inputs/messages
   const messages: Trace['messages'] = [];
 
-  // Search for message array in attributes (support OpenInference & OTel GenAI)
   let i = 0;
   while (true) {
     const roleRaw = attrs[`llm.input_messages.${i}.message.role`] || attrs[`gen_ai.input.messages.${i}.role`] || attrs[`llm.input_messages.${i}.role`];
@@ -594,12 +570,10 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
     i++;
   }
 
-  // If no message array was found but we have input.value, use that
   if (messages.length === 0 && attrs['input.value']) {
     messages.push({ role: 'user', content: String(attrs['input.value']) });
   }
 
-  // Extract output
   let output = attrs['output.value'] || attrs['gen_ai.output.messages.0.content'] || '';
   if (kind === 'EMBEDDING') {
     output = '[Embedding vector returned]';
@@ -607,25 +581,21 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
     output = '[Re-ranked indices returned]';
   }
 
-  // Parse prompt/completion token count
   const promptRaw = attrs['llm.usage.prompt_tokens'] ?? attrs['gen_ai.usage.input_tokens'];
   const promptTokens = promptRaw !== undefined ? Number(promptRaw) : undefined;
 
   const completionRaw = attrs['llm.usage.completion_tokens'] ?? attrs['gen_ai.usage.output_tokens'];
   const completionTokens = completionRaw !== undefined ? Number(completionRaw) : undefined;
 
-  // Parse perf metrics
   const tpsRaw = attrs['llm.performance.tokens_per_second'];
   const tps = tpsRaw !== undefined ? Number(tpsRaw) : undefined;
   const ttftRaw = attrs['llm.performance.time_to_first_token'];
   const ttft = ttftRaw !== undefined ? Number(ttftRaw) * 1000 : undefined;
 
-  // Waterfall segments
   const queueRaw = attrs['lemon.queue_time_ms'];
   const queueTime = queueRaw !== undefined ? Number(queueRaw) : undefined;
-  const prefillTime = ttft; // TTFT is prefill time
+  const prefillTime = ttft;
 
-  // Sampling
   const tempRaw = attrs['llm.config.temperature'];
   const temp = tempRaw !== undefined ? Number(tempRaw) : undefined;
   const topPRaw = attrs['llm.config.top_p'];
@@ -635,13 +605,11 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
   const maxRaw = attrs['llm.config.max_tokens'];
   const max = maxRaw !== undefined ? Number(maxRaw) : undefined;
 
-  // Session & User
   const sessionIdRaw = attrs['openinference.session.id'] || attrs['gen_ai.conversation.id'];
   const userIdRaw = attrs['openinference.user.id'];
   const sessionId = sessionIdRaw === undefined ? undefined : String(sessionIdRaw);
   const userId = userIdRaw === undefined ? undefined : String(userIdRaw);
 
-  // Diagnostics (if any error in status)
   let status: Trace['status'] = 'ok';
   let diag: Trace['diag'] = undefined;
   if (span.status && span.status.code === 2) {
@@ -660,7 +628,6 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
     };
   }
 
-  // Extract thinking/reasoning if present (like <think> blocks)
   if (kind === 'LLM' && output && typeof output === 'string') {
     const thinking = extractThinking(output);
     messages.push({ role: 'assistant', content: output, thinking });

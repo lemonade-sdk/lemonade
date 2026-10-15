@@ -82,8 +82,6 @@ fn parse_beacon_message(bytes: &[u8]) -> Option<u16> {
 /// socket after any error and backs off for 10 seconds between retries.
 pub(crate) async fn run_beacon_listener(app: AppHandle) {
     loop {
-        // Skip if an explicit base URL is configured — no point scraping beacons
-        // when the user has told us exactly where to connect.
         if crate::settings::get_base_url_from_config().is_some() {
             log::info!("Beacon listener skipped - explicit server URL configured");
             tokio::time::sleep(Duration::from_secs(10)).await;

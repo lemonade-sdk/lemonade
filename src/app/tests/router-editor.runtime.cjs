@@ -443,7 +443,6 @@ assert.equal(router.routerDraftFingerprint(fingerprintA), router.routerDraftFing
 fingerprintB.rules[0].routeTo = 'user.smart';
 assert.notEqual(router.routerDraftFingerprint(fingerprintA), router.routerDraftFingerprint(fingerprintB));
 
-// The server restricts rule IDs but classifier IDs are arbitrary non-empty strings.
 const serverCompatibleClassifierId = structuredClone(draft);
 serverCompatibleClassifierId.classifiers[0].id = 'risk/topic';
 serverCompatibleClassifierId.rules[1].condition.classifierId = 'risk/topic';
@@ -486,9 +485,9 @@ assert.deepEqual(router.buildRouterPullRequest(implicitAllDraft).routing.rules[0
   all: [{ keywords_any: ['code'] }, { has_tools: true }],
 });
 
-// A valid nested singleton gate must survive save/import. If serialization
-// collapses the inner ALL, the two keywords_any leaves become direct siblings
-// and the saved payload is rejected as a duplicate on its next import.
+// A valid nested singleton gate must survive save/import. If serialization collapses the inner ALL,
+// the two keywords_any leaves become direct siblings and the saved payload is rejected as a
+// duplicate on its next import.
 const singletonGateRoundTripDraft = structuredClone(draft);
 singletonGateRoundTripDraft.rules = [{
   id: 'singleton-roundtrip',
@@ -559,8 +558,8 @@ assert.throws(
   'unknown metadata operators must fail closed instead of being silently dropped',
 );
 
-// Self-review: imports must fail closed at every schema layer instead of silently
-// dropping data that GUI3 cannot round-trip.
+// Self-review: imports must fail closed at every schema layer instead of silently dropping data
+// that GUI3 cannot round-trip.
 assert.throws(
   () => router.parseRouterPayload({ ...implicitAllPayload, future_root: true }),
   /Router JSON contains unsupported field/,
@@ -718,7 +717,6 @@ assert.doesNotMatch(editorSource, /<h3>Natural-language router<\/h3>|<h3>Natural
 assert.doesNotMatch(editorSource, /The selected model must return exactly one candidate\. Invalid output falls back to the default model\./, 'misleading NL-router helper copy must stay removed');
 
 
-// Maintainer self-review contracts beyond the explicit review list.
 assert.match(graphSource, /lastEmittedNodeRef[\s\S]*historyRef\.current = \[\][\s\S]*futureRef\.current = \[\]/, 'external graph changes must invalidate stale per-instance undo/redo history');
 assert.match(graphSource, /wrapRouterNode\(current, 'not'\)/, 'changing a multi-child gate to NOT must wrap the full subtree rather than truncate children');
 assert.match(nodeEditorSource, /Negate the complete existing expression[\s\S]*children: \[inner\]/, 'inspector AND\/OR to NOT conversion must preserve the complete existing subtree');
@@ -855,8 +853,8 @@ assert.match(managerSource, /openRouterEditor\(model\)/, 'editing a saved router
 
 
 
-// Self-review: LLM-classifier prompts and connected component identities are
-// authored/server-exact strings and must not be trimmed during save/display.
+// Self-review: LLM-classifier prompts and connected component identities are authored/server-exact
+// strings and must not be trimmed during save/display.
 {
   const draft = router.createEmptyRouterDraft();
   draft.name = 'ExactClassifierPrompt';

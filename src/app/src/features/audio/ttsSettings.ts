@@ -4,9 +4,6 @@ import type { RecipeOptions } from '../../modelConfiguration';
 export const TTS_SETTINGS_EVENT = 'lemonade:tts-settings-changed';
 export const DEFAULT_TTS_VOICE = 'coral';
 
-// Lemonade's Kokoro backend exposes an OpenAI-compatible speech contract. Keep
-// this list intentionally small and English-focused; users can still type a
-// custom value through direct model configuration.
 export const TTS_VOICES = [
   { id: 'alloy', label: 'Alloy' },
   { id: 'ash', label: 'Ash' },
@@ -61,17 +58,17 @@ export function saveActiveTtsModel( modelName: string | null): void {
     const key = activeModelKey();
     if (modelName) localStorage.setItem(key, modelName);
     else localStorage.removeItem(key);
-  } catch { /* ignore */ }
+  } catch {  }
   emitTtsSettingsChanged();
 }
 
 export function saveSpeakUserText( enabled: boolean): void {
-  try { localStorage.setItem(speakUserKey(), enabled ? 'true' : 'false'); } catch { /* ignore */ }
+  try { localStorage.setItem(speakUserKey(), enabled ? 'true' : 'false'); } catch {  }
   emitTtsSettingsChanged();
 }
 
 export function saveTtsPlaybackMode( mode: TtsPlaybackMode): void {
-  try { localStorage.setItem(playbackModeKey(), normalizePlaybackMode(mode)); } catch { /* ignore */ }
+  try { localStorage.setItem(playbackModeKey(), normalizePlaybackMode(mode)); } catch {  }
   emitTtsSettingsChanged();
 }
 
@@ -85,12 +82,12 @@ export function saveTtsReadMode( mode: TtsReadMode): void {
     try {
       localStorage.setItem(playbackModeKey(), 'demand');
       localStorage.setItem(speakUserKey(), 'false');
-    } catch { /* ignore */ }
+    } catch {  }
   } else {
     try {
       localStorage.setItem(playbackModeKey(), 'always');
       localStorage.setItem(speakUserKey(), mode === 'agent-and-user' ? 'true' : 'false');
-    } catch { /* ignore */ }
+    } catch {  }
   }
   emitTtsSettingsChanged();
 }
@@ -98,7 +95,7 @@ export function saveTtsReadMode( mode: TtsReadMode): void {
 export function emitTtsSettingsChanged(): void {
   try {
     window.dispatchEvent(new CustomEvent(TTS_SETTINGS_EVENT));
-  } catch { /* ignore */ }
+  } catch {  }
 }
 
 export function normalizeTtsVoice(value: unknown): string {

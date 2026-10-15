@@ -319,11 +319,6 @@ export const WorkspaceListPanel: React.FC<WorkspaceListPanelProps> = ({
   </section>
 );
 
-/* ── Shared selection list ────────────────────────────────────────
-   One row template behind every list in the app: the model catalog, remote
-   registry results, chat history, the composer's model picker, captured
-   requests, and Monitor's loaded-models readout. DESIGN.md treats a per-tab row
-   variant as prohibited variation. */
 
 /**
  * Operational state, and only the states worth interrupting for. A steady state
@@ -406,7 +401,6 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
   onRowFocus, onRowActivate, wrap = false, activateOnMove = false, selectable = true,
 }) => {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
-    // A row may claim a key first — the catalog's Favorite shortcut does.
     if (event.defaultPrevented) return;
 
     const options = Array.from(
@@ -433,11 +427,12 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
       case 'Home': next = 0; break;
       case 'End': next = last; break;
       case 'ArrowRight': {
-        /* A row's action is a distinct command — delete this conversation, cancel
-           this download — and an option may not own a second tab stop, so Tab
-           alone can never reach it. ArrowRight steps into it and ArrowLeft steps
-           back out, which also keeps ArrowUp/Down working from the button since
-           `current` matches on containment. */
+        /*
+         * A row's action is a distinct command — delete this conversation, cancel this download —
+         * and an option may not own a second tab stop, so Tab alone can never reach it. ArrowRight
+         * steps into it and ArrowLeft steps back out, which also keeps ArrowUp/Down working from
+         * the button since `current` matches on containment.
+         */
         if (current < 0) return;
         const action = options[current].querySelector<HTMLElement>('button.workspace-list-row__action');
         if (!action) return;
@@ -453,7 +448,6 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
       }
       case 'Enter':
       case ' ': {
-        // Let the row's own action button keep its activation.
         if (current < 0 || (event.target as HTMLElement).tagName === 'BUTTON') return;
         event.preventDefault();
         const rowId = options[current].getAttribute('data-row-id');
@@ -587,9 +581,11 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
 }) => {
   const leadColor = capability ? capabilityColor(capability) : undefined;
   const factParts = (Array.isArray(meta) ? meta : [meta]).filter(Boolean);
-  /* An active status takes the whole meta line rather than sharing it. Its words
-     default to the row's own facts, so a caller never has to pass the same
-     string to two props to keep it visible while the row is busy. */
+  /*
+   * An active status takes the whole meta line rather than sharing it. Its words default to the
+   * row's own facts, so a caller never has to pass the same string to two props to keep it visible
+   * while the row is busy.
+   */
   const statusWords = statusText ?? (factParts.length ? joinMeta(factParts) : null);
   const showStatus = Boolean(status && statusWords);
   const showAnchor = Boolean(anchor && !action?.latched);
@@ -668,9 +664,9 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
       )}
 
       {action && (action.pointerOnly ? (
-        // A listbox option cannot legally contain another interactive control.
-        // Use this only when the option itself owns the keyboard command; pointer
-        // behaviour and visuals stay intact without nesting a second interactive control.
+        // A listbox option cannot legally contain another interactive control. Use this only when
+        // the option itself owns the keyboard command; pointer behaviour and visuals stay intact
+        // without nesting a second interactive control.
         <span
           className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}${action.active ? ' workspace-list-row__action--active' : ''}`}
           onClick={event => { event.stopPropagation(); action.onClick(); }}
@@ -686,9 +682,9 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
           onClick={event => { event.stopPropagation(); action.onClick(); }}
           aria-label={action.label}
           title={action.label}
-          // A readout's rows are not chosen from, so its button is an ordinary tab
-          // stop. Inside a listbox the option owns the only tab stop, so the button
-          // is reached with ArrowRight instead (see WorkspaceList's key handler).
+          // A readout's rows are not chosen from, so its button is an ordinary tab stop. Inside a
+          // listbox the option owns the only tab stop, so the button is reached with ArrowRight
+          // instead (see WorkspaceList's key handler).
           tabIndex={selectable ? -1 : 0}
           aria-keyshortcuts={selectable ? 'ArrowRight' : undefined}
         >

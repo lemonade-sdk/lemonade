@@ -21,9 +21,6 @@ const DEFAULT_IMAGE_SIZE = COLLECTION_IMAGE_SIZE;
 const MAX_IMAGE_DIMENSION = 2048;
 const IMAGE_DIMENSION_STEP = 8;
 
-// Keep these built-in schemas aligned with GUI2/main's Omni tool definitions.
-// GUI3 currently owns Omni runtime wiring in omniTools.ts; when a shared
-// definition file exists in the target branch, only this data block should move.
 const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
   {
     "requires_labels": [
@@ -330,8 +327,6 @@ function renderOmniSystemPrompt(template: string, toolList: string, toolGuidance
   let rendered = replaceToken(source, '{tool_list}', toolList || 'No Omni tools available.');
   rendered = replaceToken(rendered, '{tool_guidance}', guidanceBlock);
 
-  // Be forgiving for hand-written prompts: keep the collection usable even if a
-  // user removes one of the placeholders from the template.
   if (!hasToolList && toolList.trim()) rendered = `${rendered}\n\nAvailable Omni tools:\n${toolList}`;
   if (!hasToolGuidance && guidanceBlock) rendered = `${rendered}${guidanceBlock}`;
   return rendered.trim();
@@ -523,7 +518,7 @@ export function buildOmniToolRuntime(
   const execute = async (call: ToolCall): Promise<ToolExecutionPayload> => {
     const name = call.function.name;
     let args: Record<string, unknown> = {};
-    try { args = JSON.parse(call.function.arguments || '{}'); } catch { /* keep empty args */ }
+    try { args = JSON.parse(call.function.arguments || '{}'); } catch {  }
 
     const customTool = customToolMap.get(name);
     if (customTool) {
@@ -617,10 +612,10 @@ export function buildOmniToolRuntime(
       }
 
       if (effectiveName === 'analyze_image') {
-        // Only trust LLM-provided image_url values if they are same-message
-        // data URLs. Otherwise fall back to the UI-owned latest image. This
-        // mirrors GUI2/main and prevents arbitrary http:/file:/javascript: URLs
-        // from being sent through the backend because a planner hallucinated one.
+        // Only trust LLM-provided image_url values if they are same-message data URLs. Otherwise
+        // fall back to the UI-owned latest image. This mirrors GUI2/main and prevents arbitrary
+        // http:/file:/javascript: URLs from being sent through the backend because a planner
+        // hallucinated one.
         const rawImageUrl = typeof args.image_url === 'string' ? args.image_url.trim() : '';
         const imageUrl = rawImageUrl.startsWith('data:image/') ? rawImageUrl : sourceImage;
         if (!imageUrl) throw new Error('No image was provided.');
@@ -669,8 +664,6 @@ function resolveImageSize(args: Record<string, unknown>): string {
   const explicitSize = resolveExplicitImageSize(args);
   if (explicitSize) return explicitSize;
 
-  // Be conservative: prompt text describes image content, not the output canvas.
-  // Only the explicit size tool argument can change canvas dimensions.
   return DEFAULT_IMAGE_SIZE;
 }
 

@@ -20,7 +20,6 @@ async function main() {
   await page.screenshot({ path: path.join(screenshotsDir, `${prefix}-chat-mobile.png`), fullPage: true });
   console.log(`Saved: ${prefix}-chat-mobile.png`);
 
-  // Navigate to Models page
   const modelsBtn = page.locator('button[title="Models"], button[aria-label="Models"]').first();
   if (await modelsBtn.count() > 0) {
     await modelsBtn.click();

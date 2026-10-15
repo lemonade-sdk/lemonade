@@ -186,9 +186,8 @@ export function splitSamplerArgs(specs: ArgFieldSpec[], args: string): SplitArgs
     }
   }
 
-  // The remainder keeps the order it was written in. Rebuilding it from the
-  // sorted map would rewrite the freeform field under the cursor of whoever is
-  // typing in it.
+  // The remainder keeps the order it was written in. Rebuilding it from the sorted map would
+  // rewrite the freeform field under the cursor of whoever is typing in it.
   const rest: string[] = [];
   let dropping = false;
   for (const token of tokens) {

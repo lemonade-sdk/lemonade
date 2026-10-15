@@ -127,13 +127,10 @@ export function capabilityFromModelInfo(model: ModelInfo): ModelCapability {
 
 export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapability {
   if (!model) return 'unknown';
-  // The router reports the mode it actually launched the subprocess for.
   const fromType = LOADED_TYPE_KIND[normalizeModelType(model.type)];
   if (fromType) return fromType;
   const labelled = deploymentKindFromLabels(model.labels);
   if (labelled !== 'unknown') return labelled;
-  // A loaded collection is synthesized client-side from its components, so it
-  // carries neither a router ModelType nor labels — only the recipe.
   return isCollectionRecipe(model.recipe) ? 'chat' : 'unknown';
 }
 
@@ -162,8 +159,8 @@ function inputModalities(model?: ModelInfo | LoadedModel | null): string[] {
 
 function servesChat(model?: ModelInfo | LoadedModel | null): boolean {
   if (!model) return false;
-  // Collections orchestrate their components server-side and expose their own
-  // surface, so they do not take the chat attachment decoration.
+  // Collections orchestrate their components server-side and expose their own surface, so they do
+  // not take the chat attachment decoration.
   if (isCollectionRecipe((model as any).recipe)) return false;
   const labelled = deploymentKindFromLabels((model as any).labels);
   if (labelled !== 'unknown') return labelled === 'chat';
@@ -297,7 +294,6 @@ export function selectPreferredLoadedModel(loadedModels: LoadedModel[]): LoadedM
 export function modelDisplayName(model: ModelSnapshot | null | undefined): string { return model?.name || 'Assistant'; }
 export function modelInitial(model: ModelSnapshot | null | undefined): string { return modelDisplayName(model).charAt(0).toUpperCase(); }
 
-/* Functional capability tags drive both the model filters and row badges. */
 export type CapabilityTag =
   | 'hot' | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
   | 'code' | 'audio' | 'audio-generation' | 'image' | 'tts' | 'model3d'

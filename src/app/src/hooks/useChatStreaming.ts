@@ -129,8 +129,8 @@ export function useChatStreaming(
   const tokenBufferRef = useRef<Record<string, StreamState>>({});
   const flushTimerRef = useRef<number | null>(null);
 
-  // Do not keep a 50ms interval alive for the entire lifetime of the Chat view.
-  // Schedule a flush only when a streaming token actually arrives.
+  // Do not keep a 50ms interval alive for the entire lifetime of the Chat view. Schedule a flush
+  // only when a streaming token actually arrives.
   const flushTokenBuffer = useCallback(() => {
     flushTimerRef.current = null;
     const buf = tokenBufferRef.current;
@@ -240,7 +240,6 @@ export function useChatStreaming(
                 return;
               }
 
-              // Show tool status in the stream and add running entries
               const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
               const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
                 let argsStr = '';
@@ -253,26 +252,21 @@ export function useChatStreaming(
                 [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: `Calling ${toolNames}…`, toolCalls: [...allToolCalls] },
               }));
 
-              // Append the assistant's tool_calls message
               fullMessages = [
                 ...fullMessages,
                 { role: 'assistant' as const, content: '', tool_calls: toolCalls },
               ];
 
-              // Execute all tool calls in parallel
               const results = await Promise.all(
                 toolCalls.map(tc => runtime!.execute(tc as ToolCall))
               );
 
-              // Tool execution takes no abort signal, so a stop mid-call lands
-              // here with a dead controller.
               if (controller.signal.aborted) {
                 dropTokenBufferIfOwned();
                 resolve();
                 return;
               }
 
-              // Update entries with results
               for (let j = 0; j < runningEntries.length; j++) {
                 const r = results[j];
                 const entry = runningEntries[j];
@@ -292,8 +286,8 @@ export function useChatStreaming(
                 }
               }
 
-              // Append tool results, then remind the model to produce a real final
-              // answer (or call a narrower tool) instead of echoing a broad count.
+              // Append tool results, then remind the model to produce a real final answer (or call
+              // a narrower tool) instead of echoing a broad count.
               for (const result of results) {
                 fullMessages = [
                   ...fullMessages,
@@ -305,13 +299,11 @@ export function useChatStreaming(
                 { role: 'user' as const, content: TOOL_FOLLOWUP_PROMPT },
               ];
 
-              // Clear tool status, keep accumulated tool call entries
               setActiveStreams(prev => ({
                 ...prev,
                 [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
               }));
 
-              // Re-run completion with tool results
               try {
                 await runCompletion();
                 resolve();
@@ -325,7 +317,6 @@ export function useChatStreaming(
                 resolve();
                 return;
               }
-              // Mark any still-running tool call entries as errored so the user sees what happened.
               const msg = err instanceof Error ? err.message : String(err);
               for (const entry of allToolCalls) {
                 if (entry.status === 'running') {

@@ -35,20 +35,18 @@ const onCompleteBlock = installBlock.match(
 )?.[0] || '';
 assert.doesNotMatch(onCompleteBlock, /status: 'completed'|still needs update/);
 
-// installBackend reports errors through its callback; capture and rethrow them so
-// a failure before the server registers a backend row cannot hang the UI.
+// installBackend reports errors through its callback; capture and rethrow them so a failure before
+// the server registers a backend row cannot hang the UI.
 assert.match(installBlock, /let installError: Error \| null = null/);
 assert.match(installBlock, /onError: \(err\) => \{[\s\S]*?installError = err;[\s\S]*?downloadStore\.wake/);
 assert.match(installBlock, /await api\.installBackend[\s\S]*?if \(installError\) throw installError/);
 assert.match(installBlock, /terminalDownload\.status === 'error'[\s\S]*?throw new Error/);
 assert.match(source, /BACKEND_DOWNLOAD_REGISTRATION_TIMEOUT_MS/);
 
-// Both install and update use the same post-terminal status synchronization.
 assert.match(installBlock, /const synced = await syncBackendStatus\(recipe, backend\)/);
 assert.match(source, /BACKEND_STATUS_RETRY_DELAYS_MS/);
 assert.match(source, /backendActionIsReflected/);
 
-// Concurrent refreshes may not overwrite the newest system-info snapshot.
 assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);
 assert.match(source, /requestId === systemInfoRequestRef\.current/);
 

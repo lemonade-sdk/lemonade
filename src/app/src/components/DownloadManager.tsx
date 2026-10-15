@@ -63,8 +63,6 @@ function isFinalizing(download: DownloadListItem): boolean {
 }
 
 async function removeDownload(download: DownloadListItem): Promise<void> {
-  // Terminal history can disappear immediately, but paused/non-terminal rows
-  // stay canonical until the server confirms removal through /downloads.
   downloadStore.dismiss(download.id);
   await api.controlDownload(download.id, 'remove').catch(err => {
     console.error('Remove download failed:', friendlyErrorMessage(err));
@@ -82,9 +80,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   useEffect(() => downloadStore.subscribeVisible(setDownloads), []);
 
-  // Announce status transitions (start/complete/error/pause/resume) to screen readers.
-  // Runs on every downloads change but only emits announcements on status transitions,
-  // never on every percentage tick.
+  // Announce status transitions (start/complete/error/pause/resume) to screen readers. Runs on
+  // every downloads change but only emits announcements on status transitions, never on every
+  // percentage tick.
   useEffect(() => {
     if (prevStatusRef.current === null) {
       // First run — initialise the map without announcing (avoids spurious on-mount reads).
@@ -253,11 +251,10 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     const removable = removableTerminalDownloads;
     if (removable.length === 0) return;
 
-    // Match main's behavior: remove the visible terminal rows immediately and
-    // tell the server in the background. Do not refresh right away, because the
-    // server may still return the terminal row for a short window and that makes
-    // the UI appear to jump into an unclear state. The dismissed ids suppress
-    // stale terminal snapshots across tabs until the server forgets them.
+    // Match main's behavior: remove the visible terminal rows immediately and tell the server in
+    // the background. Do not refresh right away, because the server may still return the terminal
+    // row for a short window and that makes the UI appear to jump into an unclear state. The
+    // dismissed ids suppress stale terminal snapshots across tabs until the server forgets them.
     downloadStore.dismissMany(removable.map(download => download.id));
     void Promise.allSettled(removable.map(download => api.controlDownload(download.id, 'remove')))
       .then(() => downloadStore.refresh());

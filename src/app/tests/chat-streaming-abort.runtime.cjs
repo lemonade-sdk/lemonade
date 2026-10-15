@@ -41,7 +41,6 @@ assert.match(
   'late callbacks must compare ownership against their own controller',
 );
 
-/* ── Minimal hook runtime ────────────────────────────────────────────────── */
 
 let slots = [];
 let hookIndex = 0;
@@ -68,7 +67,6 @@ const reactStub = {
 reactStub.default = reactStub;
 reactStub.__esModule = true;
 
-/* ── Controllable timers so the token flush is deterministic ─────────────── */
 
 let timers = [];
 const windowStub = {
@@ -81,7 +79,6 @@ function runTimers() {
   for (const fn of pending) fn();
 }
 
-/* ── Fake chat completion: the test drives the callbacks ─────────────────── */
 
 const calls = [];
 const apiStub = {
@@ -91,7 +88,6 @@ const apiStub = {
   },
 };
 
-/* ── Module wiring ───────────────────────────────────────────────────────── */
 
 const originalWindow = global.window;
 const originalReact = require.cache[require.resolve('react')];
@@ -120,7 +116,6 @@ new Function('exports', 'require', 'module', '__filename', '__dirname', compiled
 
 const { useChatStreaming } = hookModule.exports;
 
-/* ── Harness ─────────────────────────────────────────────────────────────── */
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -159,8 +154,7 @@ async function startRequestWithPendingTool() {
 
 async function main() {
 
-/* ── Case 1: stop, no resend, tool resolves ──────────────────────────────── */
-/* The stopped conversation must not come back when the orphaned tool lands.  */
+/* The stopped conversation must not come back when the orphaned tool lands. */
 {
   reset();
   const { settleTool } = await startRequestWithPendingTool();
@@ -180,8 +174,7 @@ async function main() {
   assert.equal(calls.length, 1, 'a stopped request must not start a follow-up completion');
 }
 
-/* ── Case 2: stop, resend, old tool REJECTS ──────────────────────────────── */
-/* The old error path must not tear down the new request.                     */
+/* The old error path must not tear down the new request. */
 {
   reset();
   const { settleTool } = await startRequestWithPendingTool();
@@ -210,8 +203,7 @@ async function main() {
   );
 }
 
-/* ── Case 3: stop, resend, old tool RESOLVES ─────────────────────────────── */
-/* The old success path must not discard the new request's buffered tokens.   */
+/* The old success path must not discard the new request's buffered tokens. */
 {
   reset();
   const { settleTool } = await startRequestWithPendingTool();

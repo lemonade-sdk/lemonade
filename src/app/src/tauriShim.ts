@@ -38,20 +38,16 @@ async function installTauriApi(): Promise<void> {
   const { openUrl } = await import('@tauri-apps/plugin-opener');
   const { writeText } = await import('@tauri-apps/plugin-clipboard-manager');
 
-  // Fire-and-forget invoke wrapper used by every void window-control method.
-  // The .catch logs the failure with the command name for debuggability.
   const fire = (cmd: string, args?: Record<string, unknown>) => () => {
     invoke(cmd, args).catch((e) => console.warn(cmd, e));
   };
 
-  // Subscribe to a Tauri event, matching the Electron callback shape (handler
-  // receives just the payload, not the whole event envelope).
-  //
-  // The `cancelled` flag handles the unmount-before-listen-resolves race: if
-  // the caller invokes the returned cleanup before `listen()` has returned its
-  // unlisten handle, we set the flag and run the unlisten immediately when the
-  // promise eventually resolves. Without this, React effects that mount and
-  // unmount synchronously would leak the underlying subscription.
+  // Subscribe to a Tauri event, matching the Electron callback shape (handler receives just the
+  // payload, not the whole event envelope). The `cancelled` flag handles the
+  // unmount-before-listen-resolves race: if the caller invokes the returned cleanup before
+  // `listen()` has returned its unlisten handle, we set the flag and run the unlisten immediately
+  // when the promise eventually resolves. Without this, React effects that mount and unmount
+  // synchronously would leak the underlying subscription.
   function on<T>(channel: string, cb: (payload: T) => void): () => void {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
@@ -71,8 +67,8 @@ async function installTauriApi(): Promise<void> {
     };
   }
 
-  // Resolved synchronously at install time so consumers can read it as a
-  // plain string field rather than a promise.
+  // Resolved synchronously at install time so consumers can read it as a plain string field rather
+  // than a promise.
   let platformCache = 'unknown';
   try {
     platformCache = (await invoke<string>('get_platform')) || 'unknown';
@@ -92,19 +88,16 @@ async function installTauriApi(): Promise<void> {
     updateMinWidth: (width: number) => fire('update_min_width', { width })(),
 
     onMaximizeChange: (callback: (isMaximized: boolean) => void) => {
-      // Prime with current state, then subscribe.
       getCurrentWindow().isMaximized().then(callback).catch(() => {});
       return on<boolean>(EVT_MAXIMIZE_CHANGE, callback);
     },
 
-    // Frameless-window edge resize. webkit2gtk does not draw resize handles on
-    // borderless windows, so the renderer paints its own invisible regions and
-    // calls this on mousedown. `getCurrentWindow().startResizeDragging` accepts
-    // the same direction strings the renderer uses (Left, TopRight, etc.).
+    // Frameless-window edge resize. webkit2gtk does not draw resize handles on borderless windows,
+    // so the renderer paints its own invisible regions and calls this on mousedown.
+    // `getCurrentWindow().startResizeDragging` accepts the same direction strings the renderer uses
+    // (Left, TopRight, etc.).
     startResizeDragging: (direction: string) => {
       getCurrentWindow()
-        // The Tauri API uses a tagged enum at the type level but accepts the
-        // bare string at runtime; cast to keep the shim free of @tauri-apps types.
         .startResizeDragging(direction as never)
         .catch((e: unknown) => console.warn('startResizeDragging', e));
     },
@@ -119,7 +112,6 @@ async function installTauriApi(): Promise<void> {
           openUrl(u.href).catch((e) => console.warn('openExternal', e));
         }
       } catch {
-        // Ignore invalid URLs
       }
     },
 
@@ -142,10 +134,9 @@ async function installTauriApi(): Promise<void> {
         (payload) => callback(payload.base_url, payload.api_key),
       ),
 
-    // Server version, system stats, and system info are NOT exposed via
-    // window.api anymore. The renderer fetches /health, /system-stats, and
-    // /system-info directly via serverConfig.fetch — see StatusBar.tsx and
-    // AboutModal.tsx. The old Rust proxy (system_info.rs) was redundant.
+    // Server version, system stats, and system info are NOT exposed via window.api anymore. The
+    // renderer fetches /health, /system-stats, and /system-info directly via serverConfig.fetch —
+    // see StatusBar.tsx and AboutModal.tsx. The old Rust proxy (system_info.rs) was redundant.
     getLocalMarketplaceUrl: () => invoke<string | null>('get_local_marketplace_url'),
     signalReady: fire('renderer_ready'),
     onNavigate: (callback: (data: NavData) => void) => on<NavData>(EVT_NAVIGATE, callback),
@@ -154,9 +145,6 @@ async function installTauriApi(): Promise<void> {
   (window as unknown as { api: typeof api }).api = api;
 }
 
-// Exported so other modules (ServerConfig) can await window.api being ready
-// before reading from it. In pure-web mode the promise resolves immediately
-// (window.api is injected synchronously by the C++ server's HTML template).
 export let tauriReady: Promise<void> = Promise.resolve();
 
 if (typeof window !== 'undefined' && isTauri() && !(window as unknown as { api?: unknown }).api) {

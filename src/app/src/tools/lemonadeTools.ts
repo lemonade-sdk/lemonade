@@ -8,7 +8,6 @@ import { capabilityFromLoaded, deploymentKindFromLabels, modelStructure } from '
 import { routerRegistrationOptions } from '../features/router/routerStore';
 import { preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 
-/* ── Tool schemas (OpenAI function calling format) ─────────────── */
 
 export interface ToolFunction {
   type: 'function';
@@ -186,14 +185,13 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
   },
 ];
 
-/* ── Tool executor ─────────────────────────────────────────────── */
 
 export interface ToolCall {
   id: string;
   type: 'function';
   function: {
     name: string;
-    arguments: string; // JSON string
+    arguments: string;
   };
 }
 
@@ -258,7 +256,6 @@ function routerRoutingSummary(model: AnyModel | null | undefined): Record<string
 
 function isDownloaded(model: AnyModel | null | undefined): boolean {
   if (!model) return false;
-  // A Router is a server-registered virtual definition, so local availability does not depend on a weights artifact.
   if (isRouterModel(model)) return true;
   if (model.downloaded === true) return true;
   return lowerLabels(model).some(label => ['downloaded', 'local', 'installed', 'ready'].includes(label));
@@ -765,8 +762,6 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         let recipe = recipeArg === 'sd_cpp' ? 'sd-cpp' : recipeArg === 'ryzenai_llm' ? 'ryzenai-llm' : recipeArg;
         let backend = backendArg;
 
-        // Router is an orchestration recipe. Backend/device/context tuning belongs
-        // to the candidate models selected by the Router, not to the Router itself.
         if (routerModel) {
           recipe = '';
           backend = '';

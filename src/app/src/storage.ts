@@ -168,8 +168,8 @@ export function migrateClientStorage(): void {
   migrationComplete = true;
 
   try {
-    // Pin ownership moved to lemond. Clear the stale GUI3 cache even
-    // when the v2 storage migration already ran in an older build.
+    // Pin ownership moved to lemond. Clear the stale GUI3 cache even when the v2 storage migration
+    // already ran in an older build.
     localStorage.removeItem(`${STORAGE_PREFIX}pinned_models`);
     if (localStorage.getItem(MIGRATION_KEY) === 'true') return;
 

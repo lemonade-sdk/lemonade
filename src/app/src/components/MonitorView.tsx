@@ -40,9 +40,9 @@ export default function MonitorView({
 
   useEffect(() => {
     if (!isActive) return;
-    // Do not wait for a click on Telemetry/Logs. As soon as Monitor itself is
-    // active, warm those modules without mounting them. Shared preload promises
-    // make this a no-op when the global post-start warm-up already finished.
+    // Do not wait for a click on Telemetry/Logs. As soon as Monitor itself is active, warm those
+    // modules without mounting them. Shared preload promises make this a no-op when the global
+    // post-start warm-up already finished.
     void preloadMonitorSections().catch(() => undefined);
   }, [isActive]);
 

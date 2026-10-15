@@ -35,7 +35,6 @@ export default function ModelSearchSelector({
     (m.name || m.id || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -46,7 +45,6 @@ export default function ModelSearchSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Reset search when dropdown closes or value changes, syncing query if needed
   useEffect(() => {
     if (!isOpen) {
       if (!isSelectingItemRef.current) {

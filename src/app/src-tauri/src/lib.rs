@@ -1,6 +1,5 @@
-// Tauri host: window, single-instance lock, deep-link handler, UDP beacon
-// listener, macOS tray bootstrap, and the invoke command surface consumed by
-// `src/app/src/renderer/tauriShim.ts`.
+// Tauri host: window, single-instance lock, deep-link handler, UDP beacon listener, macOS tray
+// bootstrap, and the invoke command surface consumed by `src/app/src/renderer/tauriShim.ts`.
 
 pub mod beacon;
 pub mod commands;
@@ -15,9 +14,9 @@ use tauri::{Emitter, Manager, WindowEvent};
 const WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../icons/icon.ico");
 
 fn parse_protocol_url(raw: &str) -> Option<serde_json::Value> {
-    // lemonade://open?view=dashboard/logs&model=foo
-    // The url crate treats unknown schemes as opaque, so swap to http:// for
-    // parsing and rely on query_pairs() instead of hand-splitting on '?'/'&'.
+    // lemonade://open?view=dashboard/logs&model=foo The url crate treats unknown schemes as opaque,
+    // so swap to http:// for parsing and rely on query_pairs() instead of hand-splitting on
+    // '?'/'&'.
     let normalized = raw.strip_prefix("lemonade://")?;
     let parsed = url::Url::parse(&format!("http://lemonade/{normalized}")).ok()?;
     let mut out = serde_json::Map::new();
@@ -45,8 +44,8 @@ fn handle_protocol_urls(app: &tauri::AppHandle, urls: &[String]) {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-            // If the renderer hasn't mounted yet, stash the nav for
-            // `renderer_ready` to drain. Otherwise fire-and-forget.
+            // If the renderer hasn't mounted yet, stash the nav for `renderer_ready` to drain.
+            // Otherwise fire-and-forget.
             if commands::is_renderer_ready() {
                 let _ = app.emit(events::NAVIGATE, nav);
             } else {
@@ -65,7 +64,6 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    // Single instance (desktop only).
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -75,7 +73,6 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-            // Find any lemonade:// URL in the CLI args (Windows ships them that way).
             let urls: Vec<String> = args
                 .iter()
                 .filter(|s| s.starts_with("lemonade://"))
@@ -94,7 +91,6 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Start macOS tray if needed (no-op elsewhere)
             tray_launcher::ensure_tray_running();
 
             // Background beacon listener — async task on Tauri's runtime
@@ -103,7 +99,6 @@ pub fn run() {
                 beacon::run_beacon_listener(listener_handle).await;
             });
 
-            // Register deep-link handler (macOS open-url, Linux xdg-open, etc.)
             #[cfg(desktop)]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -114,12 +109,8 @@ pub fn run() {
                     handle_protocol_urls(&deep_link_handle, &urls);
                 });
 
-                // Also register `lemonade` scheme at runtime (no-op if the OS already
-                // knows via the installer/Info.plist). Dev builds need this.
                 let _ = app.deep_link().register("lemonade");
 
-                // Cold start on Linux/Windows: the URL arrives via argv, not
-                // on_open_url. Single-instance covers warm re-launches.
                 let initial_urls: Vec<String> = std::env::args()
                     .filter(|s| s.starts_with("lemonade://"))
                     .collect();
@@ -128,9 +119,8 @@ pub fn run() {
                 }
             }
 
-            // Forward maximize state changes so TitleBar.tsx stays in sync
-            // with the window. Emitted on every resize, guarded by
-            // change-detection to avoid flooding the renderer.
+            // Forward maximize state changes so TitleBar.tsx stays in sync with the window. Emitted
+            // on every resize, guarded by change-detection to avoid flooding the renderer.
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
                 {

@@ -136,7 +136,6 @@ function decodeDrag(value: string): RouterGraphDragData | null {
     if (parsed.kind === 'operator' && ['all', 'any', 'not'].includes(parsed.operator)) return parsed as RouterGraphDragData;
     if (parsed.kind === 'leaf' && typeof parsed.leafType === 'string' && parsed.leafType in LEAF_LABELS) return parsed as RouterGraphDragData;
   } catch {
-    // Ignore foreign drag payloads.
   }
   return null;
 }
@@ -264,12 +263,10 @@ interface RouterRuleGraphProps {
   classifiers: RouterClassifier[];
   onChange: (node: RouterNode) => void;
   onExpand?: () => void;
-  // Full-modal layout: workspace and inspector sit side by side and the
-  // divider between them becomes draggable.
   expanded?: boolean;
-  // Allows a freshly-mounted expanded instance to inherit committed state from
-  // the inline instance. Without this, a blank keywords_any node (textValue='')
-  // looks identical to the initial empty graph and would be hidden on expand.
+  // Allows a freshly-mounted expanded instance to inherit committed state from the inline instance.
+  // Without this, a blank keywords_any node (textValue='') looks identical to the initial empty
+  // graph and would be hidden on expand.
   initialCommitted?: boolean;
 }
 
@@ -294,11 +291,10 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const historyRef = useRef<RouterNode[]>([]);
   const futureRef = useRef<RouterNode[]>([]);
   const lastEmittedNodeRef = useRef<RouterNode | null>(null);
-  // True once the user has explicitly dropped or committed a node. Prevents a
-  // freshly-dropped blank keywords_any (textValue='') from being hidden by the
-  // isBlankRouterGraphNode check, which also matches the initial default state.
-  // initialCommitted lets the expanded modal inherit committed state from the
-  // inline instance for nodes that look blank but were explicitly placed.
+  // True once the user has explicitly dropped or committed a node. Prevents a freshly-dropped blank
+  // keywords_any (textValue='') from being hidden by the isBlankRouterGraphNode check, which also
+  // matches the initial default state. initialCommitted lets the expanded modal inherit committed
+  // state from the inline instance for nodes that look blank but were explicitly placed.
   const hasCommittedRef = useRef(initialCommitted ?? !isBlankRouterGraphNode(node));
   const isMountedRef = useRef(false);
 
@@ -310,17 +306,17 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   }, [node, selectedPath]);
 
   useEffect(() => {
-    // Skip on initial mount — hasCommittedRef is correctly seeded by useRef
-    // (using initialCommitted when provided, otherwise derived from the node).
-    // Running on mount would overwrite that with a stale isBlankRouterGraphNode
-    // check and drop a committed-but-empty keywords_any node on the canvas.
+    // Skip on initial mount — hasCommittedRef is correctly seeded by useRef (using initialCommitted
+    // when provided, otherwise derived from the node). Running on mount would overwrite that with a
+    // stale isBlankRouterGraphNode check and drop a committed-but-empty keywords_any node on the
+    // canvas.
     if (!isMountedRef.current) {
       isMountedRef.current = true;
       return;
     }
-    // Inline and expanded builders may edit the same rule. If this instance
-    // receives a node it did not emit itself, its undo/redo snapshots belong to
-    // an older tree and must not be allowed to overwrite the external change.
+    // Inline and expanded builders may edit the same rule. If this instance receives a node it did
+    // not emit itself, its undo/redo snapshots belong to an older tree and must not be allowed to
+    // overwrite the external change.
     if (lastEmittedNodeRef.current === node) {
       lastEmittedNodeRef.current = null;
       return;
@@ -372,8 +368,6 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const removeAtPath = useCallback((path: RouterNodePath) => {
     const next = removeRouterNodeAtPath(node, path);
     if (isBlankRouterGraphNode(next)) {
-      // Removal produced the canonical blank leaf — treat as a full reset so
-      // the canvas returns to the empty-state placeholder.
       historyRef.current = [...historyRef.current.slice(-29), node];
       futureRef.current = [];
       hasCommittedRef.current = false;
@@ -389,8 +383,8 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     const current = routerNodeAtPath(node, path);
     if (!current || current.kind !== 'group' || current.operator === operator) return;
     if (operator === 'not' && current.children.length > 1) {
-      // Negate the complete gate rather than dropping every child except the
-      // first. The wrapper preserves the exact AND/OR subtree and all leaves.
+      // Negate the complete gate rather than dropping every child except the first. The wrapper
+      // preserves the exact AND/OR subtree and all leaves.
       commit(replaceRouterNodeAtPath(node, path, wrapRouterNode(current, 'not')));
       return;
     }
@@ -435,9 +429,8 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
 
   const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (!canvasRef.current) return;
-    // Keep the surrounding rule list scrollable. Zoom only when the user
-    // explicitly holds the platform zoom modifier, while the +/- controls
-    // remain available for pointer-only use.
+    // Keep the surrounding rule list scrollable. Zoom only when the user explicitly holds the
+    // platform zoom modifier, while the +/- controls remain available for pointer-only use.
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     const rect = canvasRef.current.getBoundingClientRect();

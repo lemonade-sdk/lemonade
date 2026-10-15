@@ -26,8 +26,8 @@ test('download manager keeps creation order while concurrent progress updates ar
   const names = page.locator('.download-item__names strong');
   await expect(names).toHaveText(['Newer-Model', 'Older-Model']);
 
-  // Reverse the server update order. A list sorted by updatedAt would now jump;
-  // creation-order sorting must keep the visual positions unchanged.
+  // Reverse the server update order. A list sorted by updatedAt would now jump; creation-order
+  // sorting must keep the visual positions unchanged.
   serverDownloads = [
     {
       id: 'model:Newer-Model', type: 'model', model_name: 'Newer-Model', status: 'downloading', running: true,
@@ -67,8 +67,6 @@ test('terminal-looking server download stays locked until the worker stops', asy
   await expect(item).toContainText('Finalizing');
   await expect(item.getByRole('button', { name: 'Remove from list' })).toHaveCount(0);
 
-  // A terminal status is not terminal while the server still owns the worker.
-  // Once running=false arrives, the row becomes removable.
   serverDownloads = [{ ...serverDownloads[0], running: false }];
   await page.waitForTimeout(1300);
   await expect(item).toContainText('Completed');

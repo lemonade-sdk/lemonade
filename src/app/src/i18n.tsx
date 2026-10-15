@@ -1367,7 +1367,6 @@ function detectLocale(): Locale {
     const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
     if (saved === 'zh-CN' || saved === 'en-US') return saved;
   } catch {
-    // Storage is optional in embedded or restricted webviews.
   }
   return typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('zh')
     ? 'zh-CN'
@@ -1390,7 +1389,6 @@ export const I18nProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     try {
       localStorage.setItem(LOCALE_STORAGE_KEY, nextLocale);
     } catch {
-      // The in-memory locale still applies when persistence is unavailable.
     }
   };
 

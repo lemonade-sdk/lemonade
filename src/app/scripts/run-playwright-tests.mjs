@@ -5,7 +5,6 @@ import process from 'node:process';
 
 const args = process.argv.slice(2);
 
-// If user explicitly specifies a project, we forward all args directly to a single Playwright run
 const hasProject = args.some(arg => arg.startsWith('--project') || arg === '-p');
 const hasHelp = args.some(arg => arg === '--help' || arg === '-h' || arg === 'help');
 

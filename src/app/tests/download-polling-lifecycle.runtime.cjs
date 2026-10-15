@@ -82,8 +82,8 @@ global.window = {
 let downloadRequests = 0;
 let serverDownloads = [];
 const apiStub = {
-  // The download endpoint must still be queried while the broader app
-  // connection handshake is settling.
+  // The download endpoint must still be queried while the broader app connection handshake is
+  // settling.
   isConnected: false,
   async downloads() {
     downloadRequests += 1;
@@ -154,8 +154,6 @@ async function waitFor(predicate, timeoutMs = 1500) {
       'an active download must remain represented after polling',
     );
 
-    // Pull callbacks are wake-up signals only. The server still says active,
-    // so a callback may not manufacture a terminal row in canonical state.
     const requestsBeforeCallbackWake = downloadRequests;
     downloadStore.wake('test-model', 'model');
     await downloadStore.refresh();
@@ -187,8 +185,8 @@ async function waitFor(predicate, timeoutMs = 1500) {
       'many SSE-style wake signals must coalesce into one /downloads request',
     );
 
-    // Dismissed state is presentation-only: canonical state remains intact, and
-    // non-terminal rows can never be hidden by a client-owned dismissed id.
+    // Dismissed state is presentation-only: canonical state remains intact, and non-terminal rows
+    // can never be hidden by a client-owned dismissed id.
     serverDownloads = [{
       id: 'model:completed-model',
       type: 'model',

@@ -8,7 +8,6 @@ const screenshotsDir = path.resolve(__dirname, '..', 'screenshots');
 async function main() {
   const browser = await chromium.launch({ headless: true });
 
-  // --- Mobile screenshots (390x844, iPhone 14) ---
   const mobileCtx = await browser.newContext({
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 2,
@@ -17,11 +16,9 @@ async function main() {
   await mobilePage.goto('http://localhost:8080', { waitUntil: 'networkidle' });
   await mobilePage.waitForTimeout(2000);
 
-  // Sheet closed
   await mobilePage.screenshot({ path: path.join(screenshotsDir, 'sheet-closed-mobile.png') });
   console.log('Saved: sheet-closed-mobile.png');
 
-  // Open the bottom sheet by clicking the mobile trigger
   const trigger = mobilePage.locator('.chat__mobile-rail-trigger');
   if (await trigger.count() > 0) {
     await trigger.click();
@@ -33,7 +30,6 @@ async function main() {
 
   await mobileCtx.close();
 
-  // --- Desktop screenshot (1280x800) ---
   const desktopCtx = await browser.newContext({
     viewport: { width: 1280, height: 800 },
     deviceScaleFactor: 1,

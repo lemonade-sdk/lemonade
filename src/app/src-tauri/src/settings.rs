@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 const SETTINGS_FILE_NAME: &str = "app_settings.json";
 
-// ---------- Default values ----------
 
 fn default_temperature() -> f64 {
     0.7
@@ -86,7 +85,6 @@ fn default_model_manager() -> ModelManagerSettings {
     }
 }
 
-// ---------- Types ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypedSetting {
@@ -120,10 +118,9 @@ pub struct TtsSettings {
     pub user_voice: TypedSetting,
     #[serde(rename = "assistantVoice")]
     pub assistant_voice: TypedSetting,
-    // The renderer's TS type uses the all-caps acronym `enableTTS`. Default
-    // serde rename_all = "camelCase" would emit `enableTts`, which the
-    // renderer's mergeWithDefaultSettings cannot find — and crashes on with
-    // a TypeError because it walks Object.keys() and dereferences each one
+    // The renderer's TS type uses the all-caps acronym `enableTTS`. Default serde rename_all =
+    // "camelCase" would emit `enableTts`, which the renderer's mergeWithDefaultSettings cannot find
+    // — and crashes on with a TypeError because it walks Object.keys() and dereferences each one
     // through the typed defaults map. Pin the JSON name explicitly.
     #[serde(rename = "enableTTS")]
     pub enable_tts: TypedSetting,
@@ -146,10 +143,9 @@ pub struct AppSettings {
     pub repeat_penalty: TypedSetting,
     pub enable_thinking: TypedSetting,
     pub collapse_thinking_by_default: TypedSetting,
-    // Renderer's TS type is `baseURL` (uppercase URL acronym). The default
-    // rename_all = "camelCase" would emit `baseUrl`, which the renderer's
-    // mergeWithDefaultSettings cannot find on the post-save round-trip.
-    // Pin the JSON name explicitly.
+    // Renderer's TS type is `baseURL` (uppercase URL acronym). The default rename_all = "camelCase"
+    // would emit `baseUrl`, which the renderer's mergeWithDefaultSettings cannot find on the
+    // post-save round-trip. Pin the JSON name explicitly.
     #[serde(rename = "baseURL")]
     pub base_url: TypedSetting,
     pub api_key: TypedSetting,
@@ -200,7 +196,6 @@ impl Default for AppSettings {
     }
 }
 
-// ---------- Path helpers ----------
 
 fn settings_file_path() -> Option<PathBuf> {
     Some(
@@ -251,7 +246,6 @@ fn migrate_legacy_settings_file() {
     }
 }
 
-// ---------- Sanitize helpers ----------
 
 fn json_num(value: f64) -> Value {
     serde_json::Number::from_f64(value)
@@ -414,7 +408,6 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
     s
 }
 
-// ---------- Read / write ----------
 
 pub(crate) fn read_app_settings() -> AppSettings {
     migrate_legacy_settings_file();
@@ -602,9 +595,9 @@ mod tests {
 
     #[test]
     fn left_panel_view_rejects_removed_prompt_debugger_value() {
-        // Prompt Debugger was removed as a standalone view (folded into the
-        // Router Builder's Test Prompt tab instead) - a stale settings file
-        // still naming it must fall back to the default, not crash or persist it.
+        // Prompt Debugger was removed as a standalone view (folded into the Router Builder's Test
+        // Prompt tab instead) - a stale settings file still naming it must fall back to the
+        // default, not crash or persist it.
         let incoming = json!({
             "layout": { "leftPanelView": "prompt-debugger" }
         });

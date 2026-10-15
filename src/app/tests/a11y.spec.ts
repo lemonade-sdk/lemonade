@@ -25,7 +25,6 @@ import AxeBuilder from '@axe-core/playwright';
 
 test.describe.configure({ mode: 'parallel' });
 
-// ─── Constants & helpers ──────────────────────────────────────────────────────
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
 
@@ -87,10 +86,9 @@ function formatViolations(
 function normaliseDurationToSecs(raw: string): number {
   const first = raw.split(',')[0].trim();
   if (first.endsWith('ms')) return parseFloat(first) / 1000;
-  return parseFloat(first); // seconds
+  return parseFloat(first);
 }
 
-// ─── beforeEach: mirror the screenshot path patch from features.spec.ts ──────
 
 test.beforeEach(async ({ page }, testInfo) => {
   const originalScreenshot = page.screenshot.bind(page);
@@ -103,7 +101,6 @@ test.beforeEach(async ({ page }, testInfo) => {
   }) as Page['screenshot'];
 });
 
-// ─── 1. axe-core automated scans (WCAG 2.1 AA, serious/critical only) ────────
 
 test.describe('Accessibility — axe-core automated scans', () => {
   test('A01 — Chat view (default /) passes WCAG 2.1 AA', async ({ page }) => {
@@ -165,7 +162,6 @@ test.describe('Accessibility — axe-core automated scans', () => {
   });
 });
 
-// ─── 2. Skip link ─────────────────────────────────────────────────────────────
 
 test.describe('Accessibility — skip link', () => {
   test('A06 — skip link is the first focusable element (Tab once from page load)', async ({ page }) => {
@@ -187,8 +183,8 @@ test.describe('Accessibility — skip link', () => {
     const skipLink = page.locator('.skip-link');
     const box = await skipLink.boundingBox();
 
-    // The element must exist in the DOM but be positioned above the viewport.
-    // CSS: position: absolute; top: -40px → bottom edge = top + height ≤ 0
+    // The element must exist in the DOM but be positioned above the viewport. CSS: position:
+    // absolute; top: -40px → bottom edge = top + height ≤ 0
     expect(box).not.toBeNull();
     if (box) {
       expect(box.y + box.height).toBeLessThanOrEqual(0);
@@ -199,18 +195,16 @@ test.describe('Accessibility — skip link', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar');
 
-    await page.keyboard.press('Tab'); // land on skip link
+    await page.keyboard.press('Tab');
 
     const skipLink = page.locator('.skip-link');
     const box = await skipLink.boundingBox();
 
-    // CSS: .skip-link:focus { top: var(--space-2); } → top: 8px → visible in viewport
     expect(box).not.toBeNull();
     if (box) {
       expect(box.y).toBeGreaterThanOrEqual(0);
     }
 
-    // :focus-visible ring should be applied (outline-width != 0px)
     const outlineWidth = await page.evaluate(
       () => window.getComputedStyle(document.activeElement as HTMLElement).outlineWidth,
     );
@@ -221,8 +215,8 @@ test.describe('Accessibility — skip link', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar');
 
-    await page.keyboard.press('Tab');   // focus skip link
-    await page.keyboard.press('Enter'); // activate skip link
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
 
     const focusedId = await page.evaluate(
       () => (document.activeElement as HTMLElement | null)?.id ?? '',
@@ -231,7 +225,6 @@ test.describe('Accessibility — skip link', () => {
   });
 });
 
-// ─── 3. Landmarks ─────────────────────────────────────────────────────────────
 
 test.describe('Accessibility — ARIA landmarks', () => {
   test('A10 — <main id="main-content"> exists and is unique', async ({ page }) => {
@@ -267,7 +260,6 @@ test.describe('Accessibility — ARIA landmarks', () => {
   });
 });
 
-// ─── 4. Keyboard navigation ───────────────────────────────────────────────────
 
 test.describe('Accessibility — keyboard navigation', () => {
   test('A14 — at least one titlebar nav button is reachable in the first 12 Tab presses', async ({ page }) => {
@@ -320,7 +312,6 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.composer__input');
 
-    // Click the textarea to give it focus via pointer (reliable way to start from a known position)
     await page.locator('.composer__input').click();
 
     await page.keyboard.press('Shift+Tab');
@@ -333,7 +324,6 @@ test.describe('Accessibility — keyboard navigation', () => {
   });
 });
 
-// ─── 5. Focus trap — bottom sheet (mobile 390 × 844) ─────────────────────────
 
 test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
   test.beforeEach(async ({ page }) => {
@@ -357,15 +347,14 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
     await page.locator('.chat__main .workspace-mobile-menu-button').click();
     await page.locator('.bottom-sheet--open').waitFor({ state: 'visible', timeout: 5000 });
 
-    // Count focusable descendants (matching useFocusTrap's FOCUSABLE selector,
-    // excluding elements inside aria-hidden="true" ancestors)
+    // Count focusable descendants (matching useFocusTrap's FOCUSABLE selector, excluding elements
+    // inside aria-hidden="true" ancestors)
     const count = await page.locator(
       '.bottom-sheet :is(a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]))',
     ).evaluateAll(els =>
       els.filter(el => !el.closest('[aria-hidden="true"]')).length,
     );
 
-    // Tab through all elements + one extra (wrap check)
     for (let i = 0; i < count; i++) {
       await page.keyboard.press('Tab');
     }
@@ -391,7 +380,7 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
     await page.locator('.bottom-sheet--open').waitFor({ state: 'visible', timeout: 5000 });
 
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(100); // allow rAF from closeMobileSheet to run
+    await page.waitForTimeout(100);
 
     const activeClass = await page.evaluate(
       () => (document.activeElement as HTMLElement | null)?.className ?? '',
@@ -400,14 +389,12 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
   });
 });
 
-// ─── 7. aria-live streaming announcement regions ──────────────────────────────
 
 test.describe('Accessibility — aria-live streaming regions', () => {
   test('A25 — assertive aria-live region exists in DOM at page load', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.chat');
 
-    // Assertive region announces "Assistant is responding" / "Response complete"
     const count = await page
       .locator('[aria-live="assertive"][aria-atomic="true"]')
       .count();
@@ -418,7 +405,6 @@ test.describe('Accessibility — aria-live streaming regions', () => {
     await page.goto('/');
     await page.waitForSelector('.chat');
 
-    // Polite region receives debounced streaming content chunks
     const count = await page
       .locator('[aria-live="polite"][aria-atomic="false"]')
       .count();
@@ -436,8 +422,6 @@ test.describe('Accessibility — aria-live streaming regions', () => {
       const el = page.locator(selector).first();
       const box = await el.boundingBox();
 
-      // sr-only: width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0)
-      // boundingBox may return null if clipped; treat null as "definitely off-screen" (pass)
       if (box !== null) {
         expect(box.width).toBeLessThanOrEqual(1);
         expect(box.height).toBeLessThanOrEqual(1);
@@ -446,22 +430,20 @@ test.describe('Accessibility — aria-live streaming regions', () => {
   });
 
   // TODO: Verify that the assertive region updates to "Assistant is responding" and
-  // the polite region receives debounced content during an active stream.
-  // This requires mocking POST /api/v1/chat/completions with a chunked SSE response
-  // via page.route(). Infrastructure pattern to follow from features.spec.ts.
-  // Blocked: no streaming mock available in the current test setup.
+  // the polite region receives debounced content during an active stream. This requires mocking
+  // POST /api/v1/chat/completions with a chunked SSE response via page.route(). Infrastructure
+  // pattern to follow from features.spec.ts. Blocked: no streaming mock available in the current
+  // test setup.
 });
 
-// ─── 8. Focus rings on :focus-visible ────────────────────────────────────────
 
 test.describe('Accessibility — :focus-visible rings', () => {
   test('A28 — keyboard-focused nav button has visible outline (2px from :focus-visible)', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Skip link first, then we hit the first nav button
-    await page.keyboard.press('Tab'); // skip link
-    await page.keyboard.press('Tab'); // first element after skip link (nav button area)
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
 
     let foundButtonWithRing = false;
     for (let i = 0; i < 6; i++) {
@@ -538,7 +520,6 @@ test.describe('Accessibility — :focus-visible rings', () => {
   });
 });
 
-// ─── 9. prefers-reduced-motion ────────────────────────────────────────────────
 
 test.describe('Accessibility — prefers-reduced-motion', () => {
   test('A31 — bottom-sheet transition-duration is near-zero when reducedMotion=reduce', async ({ page }) => {
@@ -562,7 +543,6 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
     await page.goto('/');
     await page.waitForSelector('.bottom-sheet');
 
-    // CSS: .bottom-sheet { transition: transform 280ms ease-out } → 0.28s
     const raw = await page.evaluate(() => {
       const sheet = document.querySelector('.bottom-sheet') as HTMLElement | null;
       return sheet ? window.getComputedStyle(sheet).transitionDuration : '0s';
@@ -576,7 +556,6 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Check a nav button which normally has hover transition effects in styles.css
     const raw = await page.evaluate(() => {
       const btn = document.querySelector('.titlebar__nav button') as HTMLElement | null;
       return btn ? window.getComputedStyle(btn).transitionDuration : '0s';
@@ -601,9 +580,6 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
   });
 });
 
-// ─── 15. Backend Manager — matrix cells, action labels, live regions ──────────
-//        Covers: #2343 (keyboard-operable cells), #2344 (qualified action names),
-//                #2351 (live-region toasts/notices).
 
 test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
   const MOCK_SYSTEM_INFO = {
@@ -634,9 +610,7 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
   });
 
-  // the #2432 describe block below (A167+).
 
-  // ── #2344 — action buttons have qualified accessible names ─────────────────
 
   test('A55 — Install button aria-label includes recipe and backend identifiers', async ({ page }) => {
     const installBtn = page.locator('[data-cell="llamacpp:vulkan"] button.cell__swap');
@@ -667,7 +641,6 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     await expect(page.locator('[data-cell="llamacpp:cpu"] .cell__experimental-icon')).toHaveCount(0);
   });
 
-  // ── #2351 — persistent polite live region for toasts ───
 
   test('A57 — backends view has a persistent role="status" live region for toast messages', async ({ page }) => {
     const liveRegion = page.locator('[data-backends-toast-live]');
@@ -678,7 +651,6 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
   });
 });
 
-// ─── Backend Manager — refresh hidden mounted view on activation ─────────────
 
 test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () => {
   function backendInfo(state: 'installed' | 'installable') {
@@ -722,9 +694,9 @@ test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // The Backends view is mounted but hidden in App.tsx. Before navigating to
-    // it, simulate a backend status change that should be visible immediately
-    // after opening the view without a browser reload.
+    // The Backends view is mounted but hidden in App.tsx. Before navigating to it, simulate a
+    // backend status change that should be visible immediately after opening the view without a
+    // browser reload.
     currentSystemInfo = backendInfo('installed');
 
     await navigateToView(page, 'Backends');
@@ -734,7 +706,6 @@ test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () 
   });
 });
 
-// ─── Backend argument tuning dialog ─────────────────────────────────────────
 
 test.describe('Accessibility — backend argument tuning', () => {
   let runtimeConfig: Record<string, any>;
@@ -797,7 +768,6 @@ test.describe('Accessibility — backend argument tuning', () => {
       'aria-label',
       /Add backend arguments for llama\.cpp \(cpu\)/,
     );
-    // Kokoro has no free-form backend args field in the load contract.
     await expect(page.locator('[data-backend-args-button="kokoro:cpu"]')).toHaveCount(0);
   });
 
@@ -869,7 +839,6 @@ test.describe('Accessibility — backend argument tuning', () => {
 });
 
 
-// ─── 15. Model row action qualified accessible names (#2341) ─────────────────
 
 test.describe('Accessibility — model row action qualified names (#2341)', () => {
   /**
@@ -903,35 +872,31 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager');
-    // Wait for model list items to render from the mocked API response
     await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
   });
 
   test('A46 — downloaded model row: Load button accessible name includes model name', async ({ page }) => {
-    // Click on Llama-3.1-8B in the list to open the detail panel
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' }).click();
     await page.waitForTimeout(200);
-    // aria-label="Load Llama-3.1-8B" makes the button uniquely identifiable in
-    // a list of multiple loaded models when navigating by button role.
+    // aria-label="Load Llama-3.1-8B" makes the button uniquely identifiable in a list of multiple
+    // loaded models when navigating by button role.
     await expect(
       page.getByRole('button', { name: /Load Llama-3\.1-8B/ }),
     ).toBeVisible();
   });
 
   test('A47 — downloaded model row: Delete button accessible name includes model name', async ({ page }) => {
-    // Click on Llama-3.1-8B in the list to open the detail panel
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' }).click();
     await page.waitForTimeout(200);
-    // Icon-only X button must carry aria-label="Delete Llama-3.1-8B" so it is
-    // not announced as a nameless button to screen reader users.
+    // Icon-only X button must carry aria-label="Delete Llama-3.1-8B" so it is not announced as a
+    // nameless button to screen reader users.
     await expect(
       page.getByRole('button', { name: /Delete.*Llama-3\.1-8B/ }),
     ).toBeVisible();
   });
 
   test('A48 — registry model row: Download button accessible name includes model name', async ({ page }) => {
-    // Click on Qwen2.5-7B in the list to open the detail panel
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Qwen2.5-7B' }).click();
     await page.waitForTimeout(200);
     await expect(
@@ -940,7 +905,6 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
   });
 
   test('A49 — registry model row: "Get and load" button accessible name includes model name', async ({ page }) => {
-    // Click on Qwen2.5-7B in the list to open the detail panel
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Qwen2.5-7B' }).click();
     await page.waitForTimeout(200);
     await expect(
@@ -949,15 +913,13 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
   });
 
   test('A50 — no model action button in the detail panel carries a bare unqualified accessible name', async ({ page }) => {
-    // Buttons whose accessible name is just "Load", "Download", "Delete", etc.
-    // cause collision when multiple model rows are rendered — NVDA hears
-    // "Load, Load, Load…" with no way to distinguish targets.
-    // In the new master-detail layout, action buttons are in the detail panel.
+    // Buttons whose accessible name is just "Load", "Download", "Delete", etc. cause collision when
+    // multiple model rows are rendered — NVDA hears "Load, Load, Load…" with no way to distinguish
+    // targets. In the new master-detail layout, action buttons are in the detail panel.
     const genericExact = new Set([
       'Load', 'Download', 'Delete', 'Unload', 'Get & Load', 'Cancel download',
       'Pin model', 'Unpin model', 'Copy model name', 'Copy repository name',
     ]);
-    // Click each model to check its action buttons
     const items = page.locator('.model-list-panel__list .workspace-list-row');
     const count = await items.count();
     for (let i = 0; i < count; i++) {
@@ -978,12 +940,8 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
   });
 });
 
-// ─── 16. Download progress bar semantics (#2342) ──────────────────────────────
 
 test.describe('Accessibility — download progress bar semantics', () => {
-  // A valid DownloadListItem for a 42%-complete model download.
-  // Passed to addInitScript so the singleton DownloadStore reads it from
-  // localStorage before any React code runs (avoids poll-timing flakiness).
   const MOCK_DOWNLOAD = {
     id: 'model:Llama-3.1-8B',
     downloadType: 'model',
@@ -1004,8 +962,6 @@ test.describe('Accessibility — download progress bar semantics', () => {
   };
 
   test.beforeEach(async ({ page }) => {
-    // Pre-populate localStorage so the DownloadStore singleton (read at module init)
-    // has an active downloading item before React renders anything.
     await page.addInitScript((item: typeof MOCK_DOWNLOAD) => {
       const timestamp = Date.now();
       localStorage.setItem('lemonade_download_manager_items_v1', JSON.stringify([{
@@ -1019,8 +975,8 @@ test.describe('Accessibility — download progress bar semantics', () => {
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
     );
-    // The server owns download truth. Return the same active job so the
-    // accessibility fixture remains valid after authoritative reconciliation.
+    // The server owns download truth. Return the same active job so the accessibility fixture
+    // remains valid after authoritative reconciliation.
     await page.route('**/api/v1/downloads**', route =>
       route.fulfill({ json: { downloads: [{
         id: MOCK_DOWNLOAD.id,
@@ -1039,10 +995,8 @@ test.describe('Accessibility — download progress bar semantics', () => {
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    // Open the download manager via its titlebar toggle button.
     await page.locator('.titlebar__download-toggle').click();
     await page.waitForSelector('.download-manager__panel');
-    // Ensure the download item row is rendered before we start asserting.
     await page.waitForSelector('.download-item--downloading', { timeout: 5000 });
   });
 
@@ -1076,7 +1030,6 @@ test.describe('Accessibility — download progress bar semantics', () => {
   });
 });
 
-// ─── 17. Conversation rail — listbox keyboard navigation ──────────────────────
 
 test.describe('Accessibility — conversation rail listbox', () => {
   const RAIL_CONVOS = [
@@ -1153,7 +1106,6 @@ test.describe('Accessibility — conversation rail listbox', () => {
   });
 });
 
-// ─── 19. Group F — Omni picker combobox semantics ─────────────────────────────
 
 test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => {
   async function openOmniCollectionForm(page: Page): Promise<void> {
@@ -1219,7 +1171,6 @@ test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => 
   });
 });
 
-// ─── 20. Group F — Connect / cloud form durable labels (#2349) ─────────────────
 
 test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
   test('A75 — Cloud provider form fields have programmatic labels (no placeholder-only)', async ({ page }) => {
@@ -1242,7 +1193,6 @@ test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
   });
 });
 
-// ─── 21. Group F — Icon-only / title-only controls have reliable names (#2353) ─
 
 test.describe('Accessibility — icon-button accessible names (#2353)', () => {
   test('A77 — LogViewer search input has an accessible name (not placeholder-only)', async ({ page }) => {
@@ -1281,8 +1231,6 @@ test.describe('Accessibility — icon-button accessible names (#2353)', () => {
   });
 });
 
-// ─── 22. MCP Gateway panel (ConnectView) — Phase A (read-only dashboard) ──────
-//        Covers: #2417 (endpoint visibility, copy, status, tools list)
 
 test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   const MCP_TOOLS = [
@@ -1307,7 +1255,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
     );
-    // Both initialize (id:1) and tools/list (id:2) go to /mcp
     let callIndex = 0;
     await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as { method?: string; id?: number };
@@ -1425,7 +1372,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await expect(toolList.locator('.mcp-panel__tool-meta').first()).toHaveText('1 input');
     await expect(toolList.locator('.mcp-panel__tool-description').first()).toHaveText(MCP_TOOLS[0].description);
 
-    // Verify first expected tool name is present
     await expect(toolList.getByText('lemonade_list_models')).toBeVisible();
     await expect(toolList.getByText('lemonade_chat')).toBeVisible();
   });
@@ -1480,7 +1426,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToConnectSection(page, 'MCP gateway');
-    // Wait for MCP panel and give tools list time to populate
     await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
     await page.waitForTimeout(500);
 
@@ -1534,7 +1479,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   });
 
   test('A89 — MCP handshake: initialize→notifications/initialized→tools/list in order with correct params and MCP-Protocol-Version + Mcp-Session-Id headers', async ({ page }) => {
-    // Capture all /mcp requests in order so we can assert the sequence.
     type CapturedRequest = {
       method: string;
       headers: Record<string, string>;
@@ -1556,7 +1500,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          // Expose header so the cross-origin fetch can read it via Response.headers.get()
           headers: {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Expose-Headers': 'Mcp-Session-Id',
@@ -1568,7 +1511,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
           }),
         });
       } else if (body?.method === 'notifications/initialized') {
-        // Notifications return 202 with empty body per Streamable HTTP spec.
         await route.fulfill({ status: 202, body: '' });
       } else {
         await route.fulfill({
@@ -1586,29 +1528,26 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     // Must have at least 3 requests: initialize, notifications/initialized, tools/list.
     expect(captured.length).toBeGreaterThanOrEqual(3);
 
-    // (a) initialize is first with correct params
     const initReq = captured[0];
     expect(initReq.method).toBe('initialize');
     const initParams = (initReq.body as { params?: Record<string, unknown> }).params ?? {};
-    // Advertise the current client revision; the mock server negotiates the
-    // session down to 2025-06-18, which subsequent request headers must use.
+    // Advertise the current client revision; the mock server negotiates the session down to
+    // 2025-06-18, which subsequent request headers must use.
     expect(initParams['protocolVersion']).toBe('2025-11-25');
     expect(initParams['capabilities']).toMatchObject({ tools: {} });
     const clientInfo = initParams['clientInfo'] as Record<string, string> | undefined;
     expect(clientInfo?.['name']).toBe('lemonade-gui3');
     expect(typeof clientInfo?.['version']).toBe('string');
 
-    // (b) notifications/initialized is second (no id field — it is a notification)
     const notifReq = captured[1];
     expect(notifReq.method).toBe('notifications/initialized');
     expect((notifReq.body as { id?: unknown }).id).toBeUndefined();
 
-    // (c) tools/list is third
     const toolsReq = captured[2];
     expect(toolsReq.method).toBe('tools/list');
 
-    // (d) subsequent requests carry MCP-Protocol-Version and Mcp-Session-Id headers
-    // (HTTP headers are lowercased by the browser/node fetch internals)
+    // (d) subsequent requests carry MCP-Protocol-Version and Mcp-Session-Id headers (HTTP headers
+    // are lowercased by the browser/node fetch internals)
     expect(notifReq.headers['mcp-protocol-version']).toBe('2025-06-18');
     expect(notifReq.headers['mcp-session-id']).toBe('sess-abc-123');
     expect(toolsReq.headers['mcp-protocol-version']).toBe('2025-06-18');
@@ -1622,7 +1561,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as { method?: string; id?: number };
       if (body?.method === 'initialize') {
-        // Server rejects with a JSON-RPC error in the response body.
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -1647,7 +1585,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     // Allow async flow to settle
     await page.waitForTimeout(600);
 
-    // Accessible error alert is visible and contains the server error message.
     const errorEl = page.locator('[data-mcp-tools-error]');
     await expect(errorEl).toBeVisible();
     await expect(errorEl).toContainText('Unsupported protocol version');
@@ -1661,11 +1598,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   });
 });
 
-// ─── 23. Master-detail model view (#2355 Slice 1) ─────────────────────────────
-//
-// Covers: model list panel, detail panel tablist, and filter ownership.
-// The duplicate middle-panel funnel was removed by #2936; filters live in the left rail.
-// Range: A91–A105.
 
 test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () => {
   /** Navigate to Models view and wait for the master-detail layout to mount. */
@@ -1700,7 +1632,6 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await page.waitForTimeout(200);
   }
 
-  // ── Layout landmarks ─────────────────────────────────────────────────────────
 
   test('A91 — manager--detail layout renders list panel and detail panel regions', async ({ page }) => {
     await goToModels(page);
@@ -1713,7 +1644,6 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await expect(page.locator('.manager__title h1')).toContainText('Models');
   });
 
-  // ── Search input ─────────────────────────────────────────────────────────────
 
   test('A93 — model list search input is associated with a label', async ({ page }) => {
     await goToModels(page);
@@ -1729,13 +1659,11 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     const search = page.locator('#model-list-search');
     await search.fill('zzznotamodel');
     await page.waitForTimeout(200);
-    // Either empty state is visible or count shows 0 models
     const countText = await page.locator('.model-list-panel__count').textContent();
     const emptyVisible = await page.locator('.manager__empty').isVisible().catch(() => false);
     expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
   });
 
-  // ── Filter ownership (#2936) ─────────────────────────────────────────────────
 
   test('A95 — models middle panel has no duplicate funnel dialog trigger', async ({ page }) => {
     await goToModels(page);
@@ -1755,7 +1683,6 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(2);
   });
 
-  // ── List keyboard navigation ─────────────────────────────────────────────────
 
   test('A97 — model list container has role=listbox with accessible label', async ({ page }) => {
     await goToModels(page);
@@ -1781,16 +1708,13 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await listbox.focus();
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(100);
-    // At least one option should now be selected
     const selectedCount = await page.locator('[role="option"][aria-selected="true"]').count();
     expect(selectedCount).toBeGreaterThanOrEqual(1);
   });
 
-  // ── Detail panel tablist ─────────────────────────────────────────────────────
 
   test('A100 — detail panel tablist has correct ARIA structure (role=tablist, tabs, tabpanels)', async ({ page }) => {
     await goToModelsWithMock(page);
-    // Select a model to open the detail panel
     await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
@@ -1799,14 +1723,13 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
 
     const tabs = page.locator('[role="tab"]');
     const tabCount = await tabs.count();
-    expect(tabCount).toBeGreaterThanOrEqual(2); // README + Configuration at minimum
+    expect(tabCount).toBeGreaterThanOrEqual(2);
 
     // Each tab must have aria-selected
     for (let i = 0; i < tabCount; i++) {
       await expect(tabs.nth(i)).toHaveAttribute('aria-selected');
     }
 
-    // Exactly one tab should be selected
     const selectedTabs = await page.locator('[role="tab"][aria-selected="true"]').count();
     expect(selectedTabs).toBe(1);
 
@@ -1827,12 +1750,10 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(100);
 
-    // Second tab should now have focus / be selected
     const secondSelected = await page.locator('[role="tab"][aria-selected="true"]').textContent();
     expect(secondSelected).not.toBe(initialLabel?.trim());
   });
 
-  // ── Configuration tab ───────────────────────────────────────────────────────
 
   test('A102 — Configuration tab in detail panel is keyboard-reachable and focusable', async ({ page }) => {
     await goToModelsWithMock(page);
@@ -1862,7 +1783,6 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     expect(labelledBy).toBeTruthy();
   });
 
-  // ── Custom model management ───────────────────────────────────────────────────
 
   test('A104 — custom-model heading action opens an accessible model-type switch', async ({ page }) => {
     await goToModels(page);
@@ -1885,7 +1805,6 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
 
   test('A105 — master-detail Models view passes WCAG 2.1 AA axe-core scan with mock data', async ({ page }) => {
     await goToModelsWithMock(page);
-    // Select first model to populate the detail panel
     const items = page.locator('.model-list-panel__list .workspace-list-row');
     if (await items.count() > 0) {
       await items.first().click();
@@ -1902,11 +1821,9 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
   });
 });
 
-//
-// Covers the 4 gaps addressed in the fl0rianr 2026-06-25 clarifications:
-//   A: README checkpoint derivation (tightened regex + checkpoints.main fallback)
-//   B: Sort controls (labeled select with 4 options)
-//   C: Responsive list-first (narrow ≤700px shows list only; selecting shows detail + Back)
+// Covers the 4 gaps addressed in the fl0rianr 2026-06-25 clarifications: A: README checkpoint
+// derivation (tightened regex + checkpoints.main fallback) B: Sort controls (labeled select with 4
+// options) C: Responsive list-first (narrow ≤700px shows list only; selecting shows detail + Back)
 // Range: A106–A115.
 
 test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarifications)', () => {
@@ -1941,7 +1858,6 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await page.waitForTimeout(200);
   }
 
-  // ── B: Sort controls ─────────────────────────────────────────────────────────
 
   test('A106 — sort control is a labelled <select> with accessible name', async ({ page }) => {
     await goToModels(page);
@@ -1978,12 +1894,10 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await sortSelect.focus();
     await sortSelect.selectOption('size');
     await expect(sortSelect).toHaveValue('size');
-    // Revert
     await sortSelect.selectOption('name');
     await expect(sortSelect).toHaveValue('name');
   });
 
-  // ── C: Responsive list-first ──────────────────────────────────────────────────
 
   test('A110 — on narrow viewport (640px), detail panel is hidden until model selected', async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 800 });
@@ -1993,7 +1907,6 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     const detailPanel = page.locator('.model-detail-panel');
     await expect(detailPanel).not.toBeVisible();
 
-    // List should be visible
     await expect(page.locator('.model-list-panel')).toBeVisible();
   });
 
@@ -2004,7 +1917,6 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
-    // Detail visible, list hidden
     await expect(page.locator('.model-detail-panel')).toBeVisible();
     await expect(page.locator('.model-list-panel')).not.toBeVisible();
   });
@@ -2034,19 +1946,11 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await backBtn.click();
     await page.waitForTimeout(200);
 
-    // List back, detail hidden
     await expect(page.locator('.model-list-panel')).toBeVisible();
     await expect(page.locator('.model-detail-panel')).not.toBeVisible();
   });
 });
 
-// ─── 25. Model README raw-HTML rendering (#2355 README tab fix) ───────────────
-//
-// HF model READMEs commonly embed raw HTML (<div align="center">, <img>, badges,
-// tables). The README tab previously used markdown-it { html: false }, which
-// ESCAPED that markup so it appeared as literal text. Fix: html:true behind the
-// existing strict DOMPurify allowlist + a leading YAML frontmatter strip.
-// Range: A116–A117.
 
 test.describe('Accessibility — model README raw-HTML rendering (#2355)', () => {
   async function goToModelsWithReadme(page: Page, readmeBody: string): Promise<void> {
@@ -2067,8 +1971,6 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
         }),
       }),
     );
-    // Mock the Hugging Face README fetch the component performs against
-    // https://huggingface.co/${hfRepo}/raw/main/README.md
     await page.route('**/huggingface.co/**/raw/main/README.md', async route =>
       route.fulfill({ contentType: 'text/plain', body: readmeBody }),
     );
@@ -2145,12 +2047,6 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
   });
 });
 
-// ─── 26. #2355 left-rail parity — pin / favorite (client-local) ───────────────
-//
-// Model-list secondary action: Favorite is client-local UI state. Runtime Pin is
-// server-owned and intentionally not the list row action. The obsolete
-// lemonade:pinned_models key must still be removed by storage migration.
-// Range: A118-A123.
 
 test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
   async function goToModelsWithMock(page: Page, serverPinned = false): Promise<void> {
@@ -2246,8 +2142,6 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     await selected.focus();
     await page.keyboard.press('f');
     await expect(selected.locator('.workspace-list-row__action')).not.toHaveClass(/workspace-list-row__action--latched/);
-    // The click that selected this row leaves the pointer over it. Move away before
-    // checking the at-rest state; while hovered the Favorite action should be visible.
     await page.locator('.model-list-panel__search-input').hover();
     await expect(selected.locator('.workspace-list-row__action')).toBeHidden();
     await expect(selected).toHaveAttribute('aria-label', /favorite/i);
@@ -2269,8 +2163,6 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     await page.waitForSelector('.model-list-panel__list .workspace-list-row');
     const reloadedRow = modelRow(page, 'Qwen2.5-7B');
     await expect(reloadedRow).toHaveAttribute('aria-label', /favorite/i);
-    // Reload preserves the pointer position, which may still be over this row.
-    // Move away before asserting the non-hover state.
     await page.locator('.model-list-panel__search-input').hover();
     await expect(reloadedRow.locator('.workspace-list-row__action')).toBeHidden();
     await expect(reloadedRow.locator('.model-list-panel__favorite-indicator')).toBeVisible();
@@ -2296,15 +2188,6 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
   });
 });
 
-// ─── Left navigation rail — three-pane model view (#2355 follow-up) ──────────
-//
-// fl0rianr (2026-06-25) posted a canonical 3-pane target: a NEW left NAVIGATION
-// rail (ModelNavRail) + the existing ModelListPanel (middle) + ModelDetailPanel
-// (right). The left rail surfaces filter dimensions — primary nav (All/
-// Downloaded/Favorites), collapsible Task chips, multi-select Backend chips,
-// collapsible Tags, and a Storage meter — all derived CLIENT-SIDE from the model
-// list (no lemond). Selecting any of them filters the middle list.
-// Range: A124–A136.
 
 test.describe('Accessibility — left navigation rail (#2355 three-pane)', () => {
   async function goToModelsWithNavMock(page: Page): Promise<void> {
@@ -2335,7 +2218,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await page.waitForTimeout(200);
   }
 
-  // ── Landmark & structure ─────────────────────────────────────────────────
 
   test('A124 — left rail is a <nav> landmark with an accessible name', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2344,14 +2226,11 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(await rail.getAttribute('aria-label')).toBeTruthy();
   });
 
-  // ── Primary nav ──────────────────────────────────────────────────────────
 
   test('A125 — primary nav items are buttons with counts that are not the only signal', async ({ page }) => {
     await goToModelsWithNavMock(page);
     const allBtn = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'All Models' });
     await expect(allBtn).toBeVisible();
-    // Visible count chip plus an sr-only "N models" phrase so the count is not
-    // conveyed by the digit alone.
     const accName = (await allBtn.getAttribute('aria-label')) ?? (await allBtn.textContent()) ?? '';
     expect(accName.toLowerCase()).toContain('models');
   });
@@ -2364,7 +2243,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await page.waitForTimeout(150);
     expect(await downloaded.getAttribute('aria-current')).toBe('true');
     const after = await page.locator('.model-list-panel__list .workspace-list-row').count();
-    // Two of four mock models are downloaded.
     expect(after).toBeLessThan(before);
     expect(after).toBe(2);
   });
@@ -2379,7 +2257,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(await fav.getAttribute('aria-current')).toBe('true');
   });
 
-  // ── Task chips (collapsible multi-select) ─────────────────────────────────
 
   test('A128 — Task section header is a button with aria-expanded that toggles the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2407,7 +2284,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await expect(rows.filter({ hasText: 'SDXL' })).toHaveCount(1);
   });
 
-  // ── Backends multi-select chips ──────────────────────────────────────────
 
   test('A130 — Backend chips support independent multi-selection', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2421,7 +2297,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(3);
   });
 
-  // ── Tags (collapsible chips) ─────────────────────────────────────────────
 
   test('A131 — Tags section uses aria-pressed chips that filter the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2472,7 +2347,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await expect(custom).toHaveCount(0);
   });
 
-  // ── Storage meter ────────────────────────────────────────────────────────
 
   test('A132 — Storage meter is a role=progressbar with value range and accessible name', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2486,7 +2360,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect((await bar.getAttribute('aria-label')) ?? '').not.toBe('');
   });
 
-  // ── Custom-model heading action ───────────────────────────────────────────
 
   test('A133 — custom-model action is grouped with the Models heading and keyboard reachable', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2503,13 +2376,11 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await page.keyboard.press('Enter');
     await expect(page.locator('.custom-model-form')).toBeVisible();
 
-    // The heading action remains grounded above the model list.
     const titleBox = await title.boundingBox();
     const listBox = await page.locator('.model-list-panel__list').boundingBox();
     expect(titleBox && listBox && titleBox.y < listBox.y).toBeTruthy();
   });
 
-  // ── Responsive nav toggle ────────────────────────────────────────────────
 
   test('A134 — on narrow viewport the nav toggle controls the rail and is keyboard reachable', async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 900 });
@@ -2518,7 +2389,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await expect(toggle).toBeVisible();
     expect(await toggle.getAttribute('aria-controls')).toBe('model-nav-rail');
     expect(await toggle.getAttribute('aria-expanded')).toBe('false');
-    // Rail hidden until toggled.
     await expect(page.locator('.model-nav-rail')).toBeHidden();
     await toggle.focus();
     await page.keyboard.press('Enter');
@@ -2527,7 +2397,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await expect(page.locator('.model-nav-rail')).toBeVisible();
   });
 
-  // ── Axe scan ─────────────────────────────────────────────────────────────
 
   test('A135 — three-pane model view with the left rail passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
     await goToModelsWithNavMock(page);
@@ -2542,15 +2411,6 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
 
 });
 
-// ─── PR #2424 maintainer refinements (fl0rianr 2026-06-25) ──────────────────
-//
-// Five review items: (1) a favorite STAR toggle in the model DETAIL panel that
-// reuses the existing client-local pin store and updates the Favorites nav
-// the updated A136); (3) "Back to models" hidden on desktop, shown on narrow;
-// (4) the middle-panel funnel filter was later removed by #2936 so filtering
-// lives only in the left rail; (5) the left rail scrolls independently instead of clipping the
-// lower part of the screen when its sections are expanded.
-// Range: A142–A148.
 
 test.describe('Accessibility — model view refinements (#2424)', () => {
   async function goToModelsRefined(page: Page): Promise<void> {
@@ -2560,9 +2420,8 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
         body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
       }),
     );
-    // Keep the storage-meter tests deterministic: this helper intentionally
-    // exercises the fallback estimate path instead of inheriting whatever disk
-    // shape a local dev server may expose today.
+    // Keep the storage-meter tests deterministic: this helper intentionally exercises the fallback
+    // estimate path instead of inheriting whatever disk shape a local dev server may expose today.
     await page.route('**/api/v1/system-info**', async route =>
       route.fulfill({
         contentType: 'application/json',
@@ -2590,7 +2449,6 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await page.waitForTimeout(200);
   }
 
-  // ── 1. Favorite star toggle in the detail panel ──────────────────────────
 
   test('A142 — detail panel favorite star is an aria-pressed toggle naming the model', async ({ page }) => {
     await goToModelsRefined(page);
@@ -2599,12 +2457,10 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     const star = page.locator('.model-detail-panel').getByRole('button', { name: /favorites/i });
     await expect(star).toBeVisible();
     await expect(star).toHaveRole('button');
-    // Off state: not pressed, label invites adding to favorites and names the model.
     expect(await star.getAttribute('aria-pressed')).toBe('false');
     const offLabel = (await star.getAttribute('aria-label')) ?? '';
     expect(offLabel.toLowerCase()).toContain('favorite');
     expect(offLabel).toContain('Llama-3.1-8B');
-    // Toggle on.
     await star.click();
     await page.waitForTimeout(120);
     expect(await star.getAttribute('aria-pressed')).toBe('true');
@@ -2618,12 +2474,11 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await page.locator('.model-detail-panel').getByRole('button', { name: /favorites/i }).click();
     await page.waitForTimeout(150);
 
-    // Favorites primary-nav entry now reports one model (via its sr-only phrase).
     const fav = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Favorites' });
     await expect(fav).toContainText('1');
 
-    // Favorites is a DISTINCT concept from Pinned (#2424): it must persist to a
-    // SEPARATE favorite_models key, NOT the pinned_models store.
+    // Favorites is a DISTINCT concept from Pinned (#2424): it must persist to a SEPARATE
+    // favorite_models key, NOT the pinned_models store.
     const stores = await page.evaluate(() => {
       let favorite: string | null = null;
       let pinned: string | null = null;
@@ -2641,18 +2496,15 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     expect((stores.pinned ?? '').toLowerCase()).not.toContain('llama-3.1-8b');
   });
 
-  // ── 3. "Back to models" only on narrow viewports ─────────────────────────
 
   test('A144 — "Back to models" is hidden on desktop widths', async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 800 });
     await goToModelsRefined(page);
     await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
-    // Present in the DOM but visually hidden on desktop.
     await expect(page.locator('.model-detail-panel__back-btn')).toBeHidden();
   });
 
-  // ── 4. Filters live only in the left rail (#2936) ─────────────────────────
 
   test('A145 — the models middle panel has no duplicate funnel filter control', async ({ page }) => {
     await goToModelsRefined(page);
@@ -2671,7 +2523,6 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(rows.first()).toContainText('Whisper-Large-v3');
   });
 
-  // ── 5. Left rail scrolls instead of clipping ─────────────────────────────
 
   test('A147 — the left nav rail is independently scrollable and reaches the Storage meter', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 600 });
@@ -2685,18 +2536,14 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     const box = await rail.boundingBox();
     expect(box, 'rail bounding box').toBeTruthy();
     expect((box!.y + box!.height)).toBeLessThanOrEqual(601);
-    // The Storage meter stays reachable by scrolling within the rail.
     const storage = page.locator('.model-nav-rail__storage');
     await storage.scrollIntoViewIfNeeded();
     await expect(storage).toBeVisible();
   });
 
-  // ── 6. Capability icons on rows + empty-state in detail pane (#2424) ──────
 
   test('A149 — middle-list rows show multiple capability icons with an accessible label', async ({ page }) => {
     await goToModelsRefined(page);
-    // The shared row renders the primary capability in the lead slot and
-    // secondary capabilities in the labelled glyph group. Llama has Chat + Tool use.
     const llamaRow = page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' });
     await expect(llamaRow.locator('.workspace-list-row__lead')).toBeVisible();
     const caps = llamaRow.locator('.workspace-list-row__glyphs');
@@ -2704,7 +2551,6 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     const label = (await caps.getAttribute('aria-label')) ?? '';
     expect(label.toLowerCase()).toContain('capabilities');
     expect(label).toMatch(/Tool use/i);
-    // Primary lead + at least one secondary glyph = multiple capabilities.
     const secondaryIconCount = await caps.locator(':scope > span').count();
     expect(1 + secondaryIconCount).toBeGreaterThanOrEqual(2);
   });
@@ -2713,24 +2559,20 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
     // Nothing selected yet: the middle list must NOT render an empty placeholder…
     await expect(page.locator('.model-list-panel__empty')).toHaveCount(0);
-    // …and the model rows are still present (the list is populated).
     expect(await page.locator('.model-list-panel__list .workspace-list-row').count()).toBeGreaterThan(0);
-    // The empty/placeholder message belongs to the RIGHT detail pane.
     const placeholder = page.locator('.model-detail-panel__placeholder');
     await expect(placeholder).toBeVisible();
     await expect(placeholder).toContainText(/no model selected/i);
   });
 
-  // ── 7. Storage meter uses derived data, not the 32/512 mock (#2424) ───────
 
   test('A151 — Storage meter derives from data (no hardcoded 512 GB) and labels fallback estimates', async ({ page }) => {
     await goToModelsRefined(page);
     const value = page.locator('.model-nav-rail__storage-value');
     const text = (await value.textContent()) ?? '';
-    // Downloaded mock sizes total 11 GB → the fallback capacity is derived from
-    // the data (32 GB), never the old 512 GB literal. If a real storage source
-    // is available in the test/browser environment, this assertion still guards
-    // against regressing to the hardcoded mock.
+    // Downloaded mock sizes total 11 GB → the fallback capacity is derived from the data (32 GB),
+    // never the old 512 GB literal. If a real storage source is available in the test/browser
+    // environment, this assertion still guards against regressing to the hardcoded mock.
     expect(text).not.toContain('512');
     const match = text.match(/(\d+)\s*GB\s*\/\s*(\d+)\s*GB/i);
     expect(match).not.toBeNull();
@@ -2751,7 +2593,6 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     expect(ariaValueText).toContain('estimat');
   });
 
-  // ── 8. HuggingFace inline zone in the model list panel (#2564) ──────────────
 
   async function goToModelsRefinedWithHf(page: Page): Promise<void> {
     await page.route('**huggingface.co/api/models**', async route => {
@@ -2807,19 +2648,14 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefinedWithHf(page);
     const search = page.locator('#model-list-search');
     await search.fill('mistral');
-    // Allow the debounced HF search (400ms) + render to settle.
     await page.waitForTimeout(900);
 
-    // No nav rail HF entry — results are inline in the list panel.
     await expect(page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' })).toHaveCount(0);
 
-    // HF zone is visible (elevated at top since no local models match "mistral").
     const hfZone = page.locator('.zone--hf');
     await expect(hfZone).toBeVisible();
     await expect(hfZone).toContainText('Online Catalog: Hugging Face');
 
-    // GUI2's compatibility filters remove both excluded pipeline categories and
-    // incompatible backends discovered from repository metadata.
     const hfRows = page.locator('.zone--hf .workspace-list-row');
     await expect(hfRows).toHaveCount(3);
     await expect(hfZone).not.toContainText('Mistral-Image');
@@ -2829,7 +2665,6 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await flmRow.click();
     await expect(page.locator('.model-detail-panel--hf').getByRole('button', { name: 'Download FastFlowLM/Mistral-FLM' })).toBeVisible();
 
-    // Clearing the search removes the HF zone entirely.
     await search.fill('');
     await page.waitForTimeout(300);
     await expect(page.locator('.zone--hf')).toHaveCount(0);
@@ -2839,7 +2674,6 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefinedWithHf(page);
     await page.locator('#model-list-search').fill('mistral');
     await page.waitForTimeout(900);
-    // HF zone is now inline in the list panel; no nav rail click needed.
     await expect(page.locator('.zone--hf')).toBeVisible();
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
@@ -2852,20 +2686,8 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 });
 
 
-//
-//   • Live changes (sampling / system prompt / tools) are a pure client-local
-//     rebind — NO network call, applied by request composition next request.
-//   • Load-time changes (recipe_options) perform a real reload = unload + load
-// Range: A154–A166.
 
 
-// ─── 29. Model-detail Files tab — model file listing (#2428 Slice 2) ──────────
-//
-// Slice 2 wires the Files tab to the new GET /api/v1/models/{id}/files endpoint
-// (PR #2437). The tab renders the physical files backing a model — filename,
-// role badge, human-readable size, and download status — in an accessible
-// <table> with column headers and a caption. Empty/error/loading states are
-// covered too. Range: A180–A184.
 
 test.describe('Accessibility — model-detail Files tab (#2428)', () => {
   const SAMPLE_FILES = [
@@ -2897,8 +2719,6 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
         }),
       }),
     );
-    // Registered AFTER the generic /models** route so this more specific handler
-    // wins (Playwright matches routes in reverse registration order).
     await page.route('**/api/v1/models/*/files', async route =>
       route.fulfill({
         status: filesStatus,
@@ -2922,11 +2742,9 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
     await goToFilesTab(page);
     const table = page.locator('.detail-files__table');
     await expect(table).toBeVisible();
-    // Column headers expose scope="col" so screen readers announce them.
     const headers = table.locator('th[scope="col"]');
     expect(await headers.count()).toBe(4);
     await expect(table.locator('caption')).toHaveText(/Files backing/i);
-    // One body row per file returned by the endpoint.
     await expect(table.locator('tbody tr')).toHaveCount(SAMPLE_FILES.length);
   });
 
@@ -2935,11 +2753,9 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
     const firstRow = page.locator('.detail-files__table tbody tr').first();
     await expect(firstRow.locator('.detail-files__name')).toContainText('Llama-3.1-8B-Q4_K_M.gguf');
     await expect(firstRow.locator('.detail-files__role-badge')).toHaveText(/Main/i);
-    // 4294967296 bytes == 4.00 GB (binary units).
     await expect(firstRow.locator('.detail-files__col-size')).toContainText('GB');
     await expect(firstRow.locator('.detail-files__status--present')).toContainText(/Downloaded/i);
 
-    // A not-yet-downloaded file surfaces the missing state (not by color alone).
     const missingRow = page.locator('.detail-files__table tbody tr').last();
     await expect(missingRow.locator('.detail-files__status--missing')).toContainText(/Not downloaded/i);
   });
@@ -2972,9 +2788,8 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
 });
 
 
-//
-// the Chat composer toolbar. The model selector, Effective Settings button,
-// Add menu, tools entry, and Logs toggle must remain accessible. Range: A185–A187.
+// the Chat composer toolbar. The model selector, Effective Settings button, Add menu, tools entry,
+// and Logs toggle must remain accessible. Range: A185–A187.
 
 test.describe('Chat toolbar accessibility', () => {
   async function goToChatWithLoadedModel(page: Page, inputModalities: string[] = []): Promise<void> {
@@ -3027,10 +2842,8 @@ test.describe('Chat toolbar accessibility', () => {
 
   test('A186 — composer toolbar retains model selector, add menu, and Logs buttons', async ({ page }) => {
     await goToChatWithLoadedModel(page);
-    // Model picker button is present (model is loaded so it appears)
     await expect(page.locator('.composer__model-button')).toBeVisible();
     await expect(page.getByRole('button', { name: /Add files, photos, or tools/i })).toBeVisible();
-    // Logs toggle
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });

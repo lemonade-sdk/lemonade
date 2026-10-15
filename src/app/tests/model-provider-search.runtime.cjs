@@ -46,8 +46,8 @@ assert.match(api, /source: 'modelscope'/);
 assert.match(api, /limit: String\(HUGGING_FACE_SEARCH_LIMIT\)/);
 assert.match(api, /filterHuggingFaceSearchResults\(data\)/);
 
-// User models and Omni collections must be server-backed, not only browser
-// localStorage entries. This keeps them visible through /models after restart.
+// User models and Omni collections must be server-backed, not only browser localStorage entries.
+// This keeps them visible through /models after restart.
 assert.match(api, /async registerModelDefinition\(modelName: string/,
   'API client must expose synchronous model-definition registration');
 assert.match(api, /\/api\/v1\/models\/register/,
@@ -77,9 +77,9 @@ assert.doesNotMatch(manager, /loadLegacyCustomModels|clearLegacyCustomModels|leg
 assert.doesNotMatch(customModelStoreSource, /localStorage|CUSTOM_MODELS_KEY|loadLegacyCustomModels|clearLegacyCustomModels/,
   'customModelStore must contain no browser persistence compatibility layer');
 
-// Registered custom models are pulled by name only. Their persisted definition
-// must not be resent through /pull, because the server then treats a public
-// bare name as a new model definition and rejects it.
+// Registered custom models are pulled by name only. Their persisted definition must not be resent
+// through /pull, because the server then treats a public bare name as a new model definition and
+// rejects it.
 assert.doesNotMatch(manager, /api\.pullModel\(name,\s*callbacks,\s*customRegistrationOptions\(model\)\)/,
   'registered custom model downloads must not resend their definition through /pull');
 assert.ok((manager.match(/await api\.pullModel\(name, callbacks\);/g) || []).length >= 2,
@@ -89,8 +89,8 @@ assert.doesNotMatch(manager, /ensureCustomRegistration|ensureCustomCollectionCom
 assert.match(manager, /api\.pullModel\(targetModelName, callbacks, \{[\s\S]*?checkpoint,[\s\S]*?recipe,[\s\S]*?source: provider/,
   'remote registry downloads must retain their explicit register+download payload');
 
-// Server selection remains the prototype's existing contract; ModelScope uses
-// Lemonade's registry endpoint without a browser-side fallback.
+// Server selection remains the prototype's existing contract; ModelScope uses Lemonade's registry
+// endpoint without a browser-side fallback.
 assert.doesNotMatch(api, /modelscope\.cn\/openapi/,
   'the GUI must not bypass lemond with a direct ModelScope search');
 

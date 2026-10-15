@@ -272,8 +272,8 @@ function sanitizeBackendTuning(raw: Partial<BackendTuning> | null | undefined): 
   };
 }
 
-// Backend args are server-owned. These compatibility exports intentionally do
-// not persist anything; BackendManager reads/writes /internal/config instead.
+// Backend args are server-owned. These compatibility exports intentionally do not persist anything;
+// BackendManager reads/writes /internal/config instead.
 export function loadBackendTunings(): Record<string, BackendTuning> {
   return {};
 }
@@ -330,9 +330,9 @@ export function loadModelTunings(): Record<string, ModelTuning> {
 }
 
 export function saveModelTunings(tunings: Record<string, ModelTuning>): void {
-  // recipe_options is server-owned. Persist only genuinely client-owned model
-  // tuning fields; stale recipe_options bytes from older GUI3 builds are never
-  // read, copied forward, migrated, or rewritten.
+  // recipe_options is server-owned. Persist only genuinely client-owned model tuning fields; stale
+  // recipe_options bytes from older GUI3 builds are never read, copied forward, migrated, or
+  // rewritten.
   const clientOwned: Record<string, Record<string, unknown>> = {};
   for (const [modelName, tuning] of Object.entries(tunings)) {
     const sanitized = sanitizeModelTuning(tuning);

@@ -70,7 +70,6 @@ function timestampNumber(value: unknown): number | undefined {
 
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
-  // Server timestamps may be Unix seconds or milliseconds.
   return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
 }
 
@@ -156,12 +155,11 @@ function idFromDownload(raw: DownloadProgressEvent, type: DownloadType, modelNam
   const name = modelName.trim();
   const stable = name ? `${type}:${name}` : '';
 
-  // Lemonade main keeps one logical row per model/backend. Some server/SSE
-  // payloads include per-file ids that still begin with model:/backend:; using
-  // those ids would split one pull into multiple UI rows and leave the model row
-  // progress on the raw per-file percentage. Prefer the caller/server model name
-  // whenever we have it, and only fall back to the raw id when there is no stable
-  // logical name to key by.
+  // Lemonade main keeps one logical row per model/backend. Some server/SSE payloads include
+  // per-file ids that still begin with model:/backend:; using those ids would split one pull into
+  // multiple UI rows and leave the model row progress on the raw per-file percentage. Prefer the
+  // caller/server model name whenever we have it, and only fall back to the raw id when there is no
+  // stable logical name to key by.
   if (stable) return stable;
   return rawId;
 }
@@ -373,10 +371,9 @@ export function normalizeDownload(raw: DownloadProgressEvent, previous?: Downloa
   const progress = calculateProgress(raw, previous, status);
   const hasExplicitRunning = typeof raw.running === 'boolean';
   let running = hasExplicitRunning ? raw.running : previous?.running;
-  // The server may publish a terminal-looking status while its worker is still
-  // unwinding. Preserve an explicit running=true; only infer stopped when no
-  // running state exists at all. An explicit completion event is also terminal
-  // on older servers that predate the `running` field.
+  // The server may publish a terminal-looking status while its worker is still unwinding. Preserve
+  // an explicit running=true; only infer stopped when no running state exists at all. An explicit
+  // completion event is also terminal on older servers that predate the `running` field.
   if (!hasExplicitRunning && (raw.complete === true || status === 'completed' || status === 'cancelled')) {
     running = false;
   } else if (running == null && (status === 'error')) {
@@ -425,11 +422,10 @@ export function normalizeDownload(raw: DownloadProgressEvent, previous?: Downloa
 }
 
 function sortDownloads(downloads: DownloadListItem[]): DownloadListItem[] {
-  // Match browser download managers: newest-created item first, with a stable
-  // position for the lifetime of the row. Sorting by updatedAt made concurrent
-  // downloads swap places on every progress poll; status grouping also moved a
-  // row as soon as it completed. JavaScript's stable sort preserves insertion
-  // order when two server items have the same creation timestamp.
+  // Match browser download managers: newest-created item first, with a stable position for the
+  // lifetime of the row. Sorting by updatedAt made concurrent downloads swap places on every
+  // progress poll; status grouping also moved a row as soon as it completed. JavaScript's stable
+  // sort preserves insertion order when two server items have the same creation timestamp.
   return [...downloads].sort((a, b) => b.createdAt - a.createdAt);
 }
 
@@ -469,7 +465,6 @@ function writeDismissed(dismissed: DismissedDownloads): void {
       localStorage.setItem(DISMISSED_STORAGE_KEY, serialized);
     }
   } catch {
-    // Ignore unavailable storage; dismissal remains presentation-only.
   }
 }
 
@@ -539,9 +534,8 @@ class DownloadStore {
   async refresh(): Promise<void> {
     if (this.refreshInFlight) return this.refreshInFlight;
 
-    // An explicit refresh also satisfies any queued SSE wake-up. Pull progress
-    // is deliberately coalesced so a fast SSE stream cannot turn into a burst
-    // of GET /downloads requests.
+    // An explicit refresh also satisfies any queued SSE wake-up. Pull progress is deliberately
+    // coalesced so a fast SSE stream cannot turn into a burst of GET /downloads requests.
     this.clearPollTimer();
     this.clearWakeTimer();
     this.wakeRefreshQueued = false;
@@ -561,9 +555,9 @@ class DownloadStore {
           .filter((item): item is DownloadListItem => Boolean(item));
         this.replaceFromServer(normalized);
       } catch {
-        // A failed poll is not an empty authoritative snapshot. Keep the last
-        // successful /downloads snapshot and retry only when server-owned work
-        // or a coalesced wake-up asks for another refresh.
+        // A failed poll is not an empty authoritative snapshot. Keep the last successful /downloads
+        // snapshot and retry only when server-owned work or a coalesced wake-up asks for another
+        // refresh.
       }
     })();
     try {
@@ -594,9 +588,9 @@ class DownloadStore {
     const ids = new Set(downloadIds.filter(Boolean));
     if (ids.size === 0) return;
 
-    // Dismissal is presentation-only and is tied to one concrete server
-    // attempt. It never expires on a wall-clock TTL: a failed server-side
-    // remove therefore cannot make old history mysteriously reappear later.
+    // Dismissal is presentation-only and is tied to one concrete server attempt. It never expires
+    // on a wall-clock TTL: a failed server-side remove therefore cannot make old history
+    // mysteriously reappear later.
     const dismissed = readDismissed();
     const dismissedAt = now();
     this.downloads.forEach(download => {
@@ -625,9 +619,9 @@ class DownloadStore {
     const dismissed = readDismissed();
     Object.entries(dismissed).forEach(([id, record]) => {
       const item = map.get(id);
-      // Missing rows, active rows, and a new attempt with the same stable id all
-      // invalidate an old presentation-only dismissal. This also handles a CLI
-      // retry that starts and finishes while GUI polling is idle.
+      // Missing rows, active rows, and a new attempt with the same stable id all invalidate an old
+      // presentation-only dismissal. This also handles a CLI retry that starts and finishes while
+      // GUI polling is idle.
       if (!item
         || isDownloadActive(item)
         || Math.abs(item.createdAt - record.createdAt) >= 1) {
@@ -686,10 +680,9 @@ class DownloadStore {
   }
 
   private syncPolling(): void {
-    // The initial start()/explicit refresh is enough to discover server-owned
-    // work. Once the authoritative snapshot is idle, do not keep hitting
-    // /downloads. Coalesced pull/install wakes, focus/online, and an explicitly
-    // opened download manager can wake the store again.
+    // The initial start()/explicit refresh is enough to discover server-owned work. Once the
+    // authoritative snapshot is idle, do not keep hitting /downloads. Coalesced pull/install wakes,
+    // focus/online, and an explicitly opened download manager can wake the store again.
     if (!this.started || !this.hasActiveDownloads()) {
       this.clearPollTimer();
       return;

@@ -408,7 +408,6 @@ function normalizeImportedCapability(raw: string, labels: string[]): CustomModel
     : IMPORTED_TYPE_KIND[raw.toLowerCase().trim()] || 'chat';
 
   if (kind !== 'chat' && kind !== 'unknown') return kind;
-  // The editor's Omni choice covers a chat model that also takes images.
   return [...lowerLabels, raw.toLowerCase().trim()].some(indicatesImageInput) ? 'omni' : 'chat';
 }
 

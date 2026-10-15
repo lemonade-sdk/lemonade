@@ -27,10 +27,10 @@ import {
   workspaceRouteFromPath,
 } from './features/navigation/workspaceNavigation';
 
-// Chat is the default route and stays in the initial renderer chunk to avoid an
-// immediate request waterfall. Non-default workspaces stay out of the cold path,
-// then their code is warmed immediately after the first usable frame so the
-// first tab switch does not pay the lazy-chunk latency.
+// Chat is the default route and stays in the initial renderer chunk to avoid an immediate request
+// waterfall. Non-default workspaces stay out of the cold path, then their code is warmed
+// immediately after the first usable frame so the first tab switch does not pay the lazy-chunk
+// latency.
 type ViewModule<P extends object> = { default: React.ComponentType<P> };
 
 let backendDataWarmStarted = false;
@@ -44,8 +44,8 @@ function warmBackendData(): void {
       const warm = () => {
         if (api.systemInfoData) return;
         void api.systemInfo().catch(error => {
-          // This is speculative warming only. BackendManager still owns the
-          // user-visible error/retry path when the workspace is actually open.
+          // This is speculative warming only. BackendManager still owns the user-visible
+          // error/retry path when the workspace is actually open.
           console.debug('Backend system-info prewarm skipped:', error);
         });
       };
@@ -92,8 +92,8 @@ const loadMonitorView = () => import(/* webpackChunkName: "view-monitor" */ './c
 
 const modelManagerView = createPreloadableView(loadModelManagerView);
 const backendManagerView = createPreloadableView(() => {
-  // Start expensive backend discovery as soon as navigation intent/code preload
-  // is known, but never wait for it before resolving the workspace module.
+  // Start expensive backend discovery as soon as navigation intent/code preload is known, but never
+  // wait for it before resolving the workspace module.
   warmBackendData();
   return import(/* webpackChunkName: "view-backends" */ './components/BackendManager');
 });
@@ -176,14 +176,13 @@ function searchKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-/* ── Error boundary ────────────────────────────────────────── */
 
 interface ErrorBoundaryProps { view: string; children: ReactNode; }
 interface ErrorBoundaryState { error: Error | null; }
 
 class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // An error boundary must be a class, so the locale arrives through the
-  // context object rather than through useI18n().
+  // An error boundary must be a class, so the locale arrives through the context object rather than
+  // through useI18n().
   static contextType = I18nContext;
   declare context: I18nContextValue | null;
 
@@ -344,7 +343,7 @@ function loadSavedRoute(): AppRoute {
     const saved = localStorage.getItem('lemonade_current_view');
     const savedRoute = routeFromValue(saved);
     if (savedRoute) return savedRoute;
-  } catch { /* ignore */ }
+  } catch {  }
   return { view: 'chat' };
 }
 
@@ -370,7 +369,7 @@ function loadTheme(): Theme {
   try {
     const saved = localStorage.getItem(THEME_KEY);
     if (saved === 'light' || saved === 'dark') return saved;
-  } catch { /* ignore */ }
+  } catch {  }
   return 'dark';
 }
 
@@ -378,9 +377,9 @@ const App: React.FC = () => {
   const { t } = useI18n();
   const [route, setRouteState] = useState<AppRoute>(loadSavedRoute);
   const view = route.view;
-  // Mount only the active workspace on cold start. Once a workspace has been
-  // visited it stays mounted (hidden when inactive) so navigation still
-  // preserves its local UI state without paying for every view up front.
+  // Mount only the active workspace on cold start. Once a workspace has been visited it stays
+  // mounted (hidden when inactive) so navigation still preserves its local UI state without paying
+  // for every view up front.
   const mountedViewsRef = useRef<Set<View>>(new Set());
   mountedViewsRef.current.add(view);
   const routeRef = useRef(route);
@@ -439,33 +438,30 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Still load on demand if the user reaches Apps before background warming
-    // has run (for example via a deep link or an immediate keyboard action).
     if (view === 'apps' || navigationSearchOpen) requestMarketplace();
   }, [navigationSearchOpen, requestMarketplace, view]);
 
   useEffect(() => {
-    // Keep the cold path minimal, but do not move that latency to navigation.
-    // Once the first usable frame is visible, evaluate every workspace module
-    // plus the heavy secondary surfaces that used to load on click (Monitor
-    // Telemetry/Logs and Models details/editors). They are cached but not mounted,
-    // so effects and polling still do not run until the user opens the surface.
+    // Keep the cold path minimal, but do not move that latency to navigation. Once the first usable
+    // frame is visible, evaluate every workspace module plus the heavy secondary surfaces that used
+    // to load on click (Monitor Telemetry/Logs and Models details/editors). They are cached but not
+    // mounted, so effects and polling still do not run until the user opens the surface.
     let cancelled = false;
 
     const warmRemainingWorkspaces = () => {
-      // Inspector state is a public runtime contract (window.inspectStore) and
-      // also owns capture/session-header wiring. Initialize it immediately after
-      // the first usable frame instead of waiting for the Telemetry tab to mount.
+      // Inspector state is a public runtime contract (window.inspectStore) and also owns
+      // capture/session-header wiring. Initialize it immediately after the first usable frame
+      // instead of waiting for the Telemetry tab to mount.
       void import(/* webpackChunkName: "inspect-store" */ './inspectStore').catch(error => {
         console.debug('Inspector state prewarm unavailable:', error);
       });
 
       if (cancelled) return;
 
-      // First warm only the two interactions users can notice immediately:
-      // Models -> Details and Monitor -> Telemetry. This starts after reveal,
-      // so it cannot regress first paint. The remaining interaction surfaces
-      // are scheduled by preloadInteractionSurfaces() in the background.
+      // First warm only the two interactions users can notice immediately: Models -> Details and
+      // Monitor -> Telemetry. This starts after reveal, so it cannot regress first paint. The
+      // remaining interaction surfaces are scheduled by preloadInteractionSurfaces() in the
+      // background.
       void preloadInteractionSurfaces().finally(() => {
         if (cancelled) return;
         const preloaders = (Object.keys(WORKSPACE_PRELOADERS) as LazyWorkspace[])
@@ -501,9 +497,6 @@ const App: React.FC = () => {
   }, [requestMarketplace]);
 
   useEffect(() => {
-    // Paint the application shell before loading the native bridge and before
-    // starting server I/O. Native settings are loaded explicitly here so we no
-    // longer depend on the hidden Settings screen mounting at startup.
     let cancelled = false;
     let frame = 0;
     let timer = 0;
@@ -513,9 +506,9 @@ const App: React.FC = () => {
         window.__LEMONADE_STARTUP_METRICS__.hostBootstrapStartMs = performance.now();
       }
       try {
-        // Pure-web launches already have their host bridge injected by the
-        // server. Do not request/evaluate the Tauri shim there. Desktop still
-        // loads it in parallel with the API client.
+        // Pure-web launches already have their host bridge injected by the server. Do not
+        // request/evaluate the Tauri shim there. Desktop still loads it in parallel with the API
+        // client.
         const tauriReadyPromise = '__TAURI_INTERNALS__' in window
           ? import(/* webpackChunkName: "tauri-shim" */ './tauriShim').then(module => module.tauriReady)
           : Promise.resolve();
@@ -568,9 +561,9 @@ const App: React.FC = () => {
       apiClientRef.current?.stopPolling();
     };
   }, []);
-  // Download persistence/polling is sizeable and not needed for the first
-  // paint. Hydrate the badge after the shell is visible instead of importing
-  // the whole download manager into the entry bundle.
+  // Download persistence/polling is sizeable and not needed for the first paint. Hydrate the badge
+  // after the shell is visible instead of importing the whole download manager into the entry
+  // bundle.
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const activeDownloadCountRef = useRef(0);
   const lastWorkspaceSectionsRef = useRef({
@@ -604,7 +597,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
+    try { localStorage.setItem(THEME_KEY, theme); } catch {  }
   }, [theme]);
 
   useEffect(() => {
@@ -716,7 +709,7 @@ const App: React.FC = () => {
     if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
     setRouteState(nextRoute);
     const newHash = hashForRoute(nextRoute);
-    try { localStorage.setItem('lemonade_current_view', newHash.slice(2)); } catch { /* ignore */ }
+    try { localStorage.setItem('lemonade_current_view', newHash.slice(2)); } catch {  }
     if (window.location.hash !== newHash) {
       window.history.pushState(null, '', newHash);
     }
@@ -907,7 +900,6 @@ const App: React.FC = () => {
     };
   }, [navigateToRoute]);
 
-  // Sync route from hash on back/forward navigation
   useEffect(() => {
     const onHashChange = () => {
       const nextRoute = routeFromHash();
@@ -916,7 +908,7 @@ const App: React.FC = () => {
         if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
         if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
         setRouteState(nextRoute);
-        try { localStorage.setItem('lemonade_current_view', hashForRoute(nextRoute).slice(2)); } catch { /* ignore */ }
+        try { localStorage.setItem('lemonade_current_view', hashForRoute(nextRoute).slice(2)); } catch {  }
       } else {
         window.history.replaceState(null, '', hashForRoute(routeRef.current));
       }
@@ -928,8 +920,8 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Client-local in-app deep-link: components dispatch
-  // `lemonade:navigate` with { view } to switch views without involving lemond.
+  // Client-local in-app deep-link: components dispatch `lemonade:navigate` with { view } to switch
+  // views without involving lemond.
   useEffect(() => {
     const onAppNavigate = (e: Event) => {
       const detail = (e as CustomEvent).detail as { view?: string } | undefined;
@@ -941,9 +933,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('lemonade:navigate', onAppNavigate as EventListener);
   }, [navigateToRoute]);
 
-  // The host bootstrap owns the API import and starts polling after its
-  // first connection attempt. Route changes only toggle that already-loaded
-  // client, avoiding a second API import request during the first React commit.
   useEffect(() => {
     const api = apiClientRef.current;
     if (!api) return;

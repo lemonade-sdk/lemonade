@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount, friendlyErrorMessage } from '../api';
 
-/* ── History ring buffer ───────────────────────────────────── */
 
-export const HISTORY_LEN = 300;    // 300 × 200ms tick = 60s visible window
-const TICK_MS = 200;               // Interpolation ticker interval
-const LERP_SPEED = 0.15;          // Per-tick lerp factor toward target
+export const HISTORY_LEN = 300;
+const TICK_MS = 200;
+const LERP_SPEED = 0.15;
 
 export interface SlotHistoryPoint {
   ts: number;
@@ -30,7 +29,6 @@ export interface HistoryPoint {
   cacheUtil: number | null;
 }
 
-/* ── Cumulative session counters ───────────────────────────── */
 
 export interface SessionCounters {
   totalTokensGenerated: number;
@@ -59,9 +57,8 @@ export interface SlotLiveTps {
   isActive: boolean;
 }
 
-/* ── Smoothing ─────────────────────────────────────────────── */
 
-const WINDOW_MS = 5000;     // 5-second sliding window for TPS averaging
+const WINDOW_MS = 5000;
 const LIVE_TIMING_TTL_MS = 2500;
 
 const ATTACK_ALPHA = 1.0;
@@ -89,7 +86,6 @@ function parseTimingLine(line: string): { slotId: number; decoded?: number; tg?:
   };
 }
 
-/* ── Hook return type ──────────────────────────────────────── */
 
 export interface SlotTarget {
   tps: number;
@@ -129,7 +125,6 @@ export interface DashboardData {
   cacheChartData: Record<string, number>[];
 }
 
-/* ── Hook ──────────────────────────────────────────────────── */
 
 const POLL_INTERVAL = 2000;
 
@@ -147,10 +142,7 @@ export function useDashboardData(isActive = true): DashboardData {
   const [slotStatus, setSlotStatus] = useState('Slot telemetry is waiting for a compatible backend.');
   const [paused, setPaused] = useState(false);
 
-  // Hardware topology is effectively static during a dashboard session. Fetch
-  // it once when the view becomes active instead of mixing it into the 2-second
-  // telemetry poll. The dashboard uses this to distinguish a discrete VRAM
-  // budget from an APU's shared RAM/VRAM pool.
+  // Fetch hardware topology once per activation, not on every telemetry poll.
   useEffect(() => {
     if (!isActive) return;
     let cancelled = false;
@@ -174,7 +166,6 @@ export function useDashboardData(isActive = true): DashboardData {
   const interpAggRef = useRef({ tps: 0, ppTps: 0 });
   const interpSlotRef = useRef(new Map<number, { tps: number; ppTps: number }>());
 
-  /* ── Aggregate throughput from all slots ──────────────────── */
 
   const computeAggregates = useCallback((slotData: SlotData[]) => {
     const c = countersRef.current;
@@ -230,7 +221,6 @@ export function useDashboardData(isActive = true): DashboardData {
     return { aggTps, aggPromptTps, perSlotLive };
   }, []);
 
-  /* ── Polling ─────────────────────────────────────────────── */
 
   const poll = useCallback(async () => {
     try {
@@ -254,9 +244,7 @@ export function useDashboardData(isActive = true): DashboardData {
       const activeModel = activeModelName
         ? loaded.find(m => m.model_name === activeModelName)
         : undefined;
-      // `/slots` returns 400 (and emits a server error log) when there is no
-      // active model. Gate the request on the active health entry rather than
-      // merely on stale/all-model metadata that can briefly outlive an unload.
+      // Only poll /slots for an active healthy model; stale metadata can cause 400s.
       const supportsSlots = Boolean(
         activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
       );
@@ -346,14 +334,11 @@ export function useDashboardData(isActive = true): DashboardData {
     }
   }, [computeAggregates]);
 
-  // A manual resume starts a fresh retry window. Without resetting the
-  // consecutive-failure counter, the very next failed poll immediately pauses
-  // again, making the Resume control appear ineffective.
+  // Reset failures on Resume so the next failed poll does not immediately pause again.
   useEffect(() => {
     if (!paused) failureCountRef.current = 0;
   }, [paused]);
 
-  // Resume polling when the global connection is re-established
   useEffect(() => {
     if (!isActive) return;
     const unsub = api.onStatusChange((s) => {
@@ -382,7 +367,6 @@ export function useDashboardData(isActive = true): DashboardData {
     };
   }, [poll, paused, isActive]);
 
-  /* ── Live throughput from log WebSocket ───────────────────── */
 
   const liveSlotTps = useRef(new Map<number, { tg: number; pp: number; seenAt: number }>());
   const lastLivePushRef = useRef(0);
@@ -473,7 +457,6 @@ export function useDashboardData(isActive = true): DashboardData {
     };
   }, [health?.websocket_port, paused, isActive]);
 
-  /* ── Interpolation ticker — smooth 200ms chart updates ───── */
 
   useEffect(() => {
     if (!isActive || paused) return;
@@ -536,7 +519,6 @@ export function useDashboardData(isActive = true): DashboardData {
     return () => clearInterval(ticker);
   }, [paused, isActive]);
 
-  /* ── Derived ─────────────────────────────────────────────── */
 
   const loadedModels = health?.all_models_loaded || [];
   const counters = countersRef.current;
@@ -567,8 +549,6 @@ export function useDashboardData(isActive = true): DashboardData {
 
   const slotChartData = useMemo(() => {
     if (slots.length === 0) return [];
-    // Use aggregate history length as the timeline — pad slot histories
-    // with leading zeros so both charts align horizontally
     const timelineLen = history.length;
     if (timelineLen === 0) return [];
     const data: Record<string, number>[] = [];
@@ -601,8 +581,8 @@ export function useDashboardData(isActive = true): DashboardData {
   return {
     health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
-    // Ejecting a model should be reflected immediately rather than at the next
-    // tick of the poll interval.
+    // Ejecting a model should be reflected immediately rather than at the next tick of the poll
+    // interval.
     refresh: poll,
     counters, getSlotTarget, loadedModels,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,

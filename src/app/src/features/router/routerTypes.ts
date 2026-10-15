@@ -159,11 +159,8 @@ const SINGLETON_ROUTER_LEAF_TYPES = new Set<RouterLeafType>([
 ]);
 
 /**
- * Identity for direct-child conditions that are semantically redundant when
- * repeated inside one gate. Regex, classifier, and metadata leaves are
- * intentionally not singletons: two regexes, two different classifier bands,
- * or multiple metadata predicates can express distinct constraints that cannot
- * be merged losslessly into one leaf.
+ * Deduplicate singleton gate conditions, but preserve distinct regex, classifier and metadata
+ * leaves.
  */
 export function routerConditionIdentity(node: RouterNode): string | null {
   if (node.kind !== 'leaf' || !SINGLETON_ROUTER_LEAF_TYPES.has(node.type)) return null;
@@ -217,8 +214,6 @@ export function createEmptyRouterDraft(): RouterDraft {
 
 function splitList(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(item => String(item).trim()).filter(Boolean);
-  // A comma is valid data in server-side keywords/metadata values, so list-valued
-  // rule fields use one item per line in the editor.
   return String(value ?? '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
 }
 
@@ -244,12 +239,7 @@ export function routerDraftHasLlmProgress(draft: RouterDraft): boolean {
   return Boolean(draft.llmRouter.model.trim() || draft.llmRouter.prompt.trim());
 }
 
-/**
- * Add or remove a routing candidate while keeping the dependent default/rule
- * destinations valid. UI affordances (checkboxes, connection-row trash
- * buttons, future pickers) should all use this transition rather than editing
- * the candidate array independently.
- */
+/** Update candidates and their dependent routing destinations atomically. */
 export function toggleRouterDraftCandidate(draft: RouterDraft, modelName: string): RouterDraft {
   const exists = draft.candidates.includes(modelName);
   const candidates = exists
@@ -360,18 +350,12 @@ export function normalizeRouterNode(node: RouterNode): RouterNode {
     return { ...node, children: children.slice(0, 1).length ? children.slice(0, 1) : [createRouterLeaf()] };
   }
   if (children.length === 0) return createRouterLeaf();
-  // Preserve AND/OR groups even with 1 child so gate structure is not silently
-  // discarded — validation will prompt the user to add a second condition.
   return { ...node, children };
 }
 
 function nodeToMatchExpression(node: RouterNode): Record<string, unknown> {
   if (node.kind === 'group') {
-    // Preserve valid singleton ALL/ANY groups during serialization. Collapsing a
-    // singleton here can promote its child into the parent gate and create a
-    // duplicate singleton condition that the editor/server correctly rejects on
-    // the next import. The draft has already been validated, so groups are safe
-    // to serialize exactly as authored.
+    // Keep singleton ALL/ANY groups; collapsing them can create duplicate conditions on re-import.
     if (node.operator === 'not') {
       return { not: nodeToMatchExpression(node.children[0]) };
     }
@@ -405,10 +389,7 @@ function nodeToMatchExpression(node: RouterNode): Record<string, unknown> {
 }
 
 function nestedUnboundedQuantifier(pattern: string): boolean {
-  // Mirror the server's load-time ReDoS safeguard: reject an unbounded
-  // quantifier applied to a group that already contains an unbounded
-  // quantifier. This includes wrapper groups and {m,} forms while ignoring
-  // escaped metacharacters and character classes.
+  // Match server ReDoS checks: reject nested unbounded quantifiers outside escapes/classes.
   const stack: Array<{ hasUnbounded: boolean }> = [];
   let previousClosedGroup = false;
   let closedGroupUnbounded = false;
@@ -1025,9 +1006,7 @@ export function routerDraftFromModelInfo(model: ModelInfo): RouterDraft {
     components: Array.isArray((model as any).components) ? (model as any).components : [],
     routing: (model as any).routing,
   };
-  // Preserve embedded component manifests for the strict round-trip guard. GUI3
-  // cannot safely author them, so silently omitting this field here would let a
-  // server-loaded HF redistribution policy lose data on its next save.
+  // Preserve component manifests to avoid losing HF redistribution policy on save.
   if ('models' in (model as any)) payload.models = (model as any).models;
   return parseRouterPayload(payload);
 }

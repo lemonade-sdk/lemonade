@@ -40,8 +40,6 @@ const TRACE_KIND_CAPABILITY: Record<Trace['kind'], CapabilityIconTarget> = {
   RERANKER: 'reranking',
 };
 
-/* A successful request has nothing in flight and nothing to warn about, so it
-   shows no status at all — its metrics stand on their own. */
 const TRACE_STATUS: Record<Trace['status'], WorkspaceListRowStatus | undefined> = {
   ok: undefined,
   slow: 'attention',
@@ -78,7 +76,6 @@ export default function TraceList({
   const listboxRef = useRef<HTMLUListElement>(null);
   const [activeTraceId, setActiveTraceId] = useState<string | null>(selectedTraceId);
 
-  // Sync activeTraceId when selectedTraceId changes
   useEffect(() => {
     setActiveTraceId(selectedTraceId);
   }, [selectedTraceId]);
@@ -87,7 +84,6 @@ export default function TraceList({
     ? activeTraceId
     : (filteredTraces[0]?.id || null);
 
-  // Ensure that listbox roving focus behaves correctly
   useEffect(() => {
     if (currentActiveId && listboxRef.current) {
       const activeOption = listboxRef.current.querySelector<HTMLElement>(`[data-trace-id="${currentActiveId}"]`);
@@ -223,10 +219,6 @@ export default function TraceList({
               ? `${durationFormatted} · ${tokensFormatted}`
               : `${tokensFormatted} · ${durationFormatted}`;
 
-            // A captured request that succeeded has nothing to report beyond
-            // its metrics, and DESIGN.md rules out a redundant "OK" here. A slow
-            // one keeps its metrics in the status line — they are the evidence,
-            // and that is exactly when they matter most.
             const statusText = t.status === 'error'
               ? `${translateText('Failed')}${t.diag?.title ? ` · ${t.diag.title}` : ''}`
               : t.status === 'slow' ? `${translateText('Slow')} · ${metrics}` : undefined;

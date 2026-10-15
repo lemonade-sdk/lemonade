@@ -16,7 +16,6 @@ use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 // listener has already populated (or left at the default `BEACON_PORT` if no
 // beacon has been seen yet).
 
-// ---------- Window controls ----------
 
 fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
@@ -64,8 +63,6 @@ pub(crate) fn update_min_width(app: AppHandle, width: f64) {
     }
 }
 
-// Zoom level state is stored on the webview itself via get/set_zoom.
-// We use discrete steps to mirror Electron's main.js behavior.
 const MIN_ZOOM_FACTOR: f64 = 0.5;
 const MAX_ZOOM_FACTOR: f64 = 2.5;
 const ZOOM_STEP: f64 = 0.1;
@@ -74,8 +71,8 @@ fn clamp_zoom(factor: f64) -> f64 {
     factor.max(MIN_ZOOM_FACTOR).min(MAX_ZOOM_FACTOR)
 }
 
-// We track zoom factor in a mutex because Tauri's webview.set_zoom doesn't
-// expose a getter on all platforms.
+// We track zoom factor in a mutex because Tauri's webview.set_zoom doesn't expose a getter on all
+// platforms.
 static CURRENT_ZOOM: std::sync::Mutex<f64> = std::sync::Mutex::new(1.0);
 
 #[tauri::command]
@@ -96,7 +93,6 @@ pub(crate) fn zoom_out(app: AppHandle) {
     }
 }
 
-// ---------- Settings ----------
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ConnectionSettings {
@@ -133,11 +129,6 @@ pub(crate) fn save_app_settings(app: AppHandle, payload: Value) -> Result<AppSet
     Ok(sanitized)
 }
 
-// ---------- Server info ----------
-// /health, /system-stats, and /system-info are fetched directly from the
-// renderer via `serverConfig.fetch(...)` — no Rust proxy needed. The host
-// only owns the connection-settings half (base URL, API key, port) so the
-// renderer knows where to send those requests.
 
 #[tauri::command]
 pub(crate) fn get_server_base_url() -> Option<String> {
@@ -162,25 +153,20 @@ pub(crate) fn discover_server_port(_app: AppHandle) -> Option<u16> {
         return None;
     }
 
-    // Background listener owns the bound socket and is the single source of
-    // truth. No emit here — the listener already fires `server-port-updated`
-    // on actual changes, and unconditionally re-emitting would spam subscribers
-    // with no-op updates.
+    // Background listener owns the bound socket and is the single source of truth. No emit here —
+    // the listener already fires `server-port-updated` on actual changes, and unconditionally
+    // re-emitting would spam subscribers with no-op updates.
     Some(beacon::get_cached_port())
 }
 
-// ---------- Misc ----------
 
 #[tauri::command]
 pub(crate) fn get_platform() -> String {
     std::env::consts::OS.to_string()
 }
 
-// Returns a file:// URL for the bundled marketplace.html if it exists.
-// In dev mode, falls back to <project>/docs/marketplace.html via the resource dir.
 #[tauri::command]
 pub(crate) fn get_local_marketplace_url(app: AppHandle) -> Option<String> {
-    // Try bundled resource first
     if let Ok(resource) = app.path().resource_dir() {
         let candidate = resource.join("docs").join("marketplace.html");
         if candidate.exists() {
@@ -193,12 +179,10 @@ pub(crate) fn get_local_marketplace_url(app: AppHandle) -> Option<String> {
     None
 }
 
-// ---------- Renderer ready + deep-link queue ----------
 
-// Pending deep-link navigation for when the renderer hasn't mounted yet.
-// `RENDERER_READY` flips to true on the first `renderer_ready` command and
-// stays true for the rest of the process lifetime. Use it to decide whether
-// to emit a nav immediately or park it in `PENDING_NAV` for later drain.
+// Pending deep-link navigation for when the renderer hasn't mounted yet. `RENDERER_READY` flips to
+// true on the first `renderer_ready` command and stays true for the rest of the process lifetime.
+// Use it to decide whether to emit a nav immediately or park it in `PENDING_NAV` for later drain.
 static PENDING_NAV: std::sync::Mutex<Option<Value>> = std::sync::Mutex::new(None);
 static RENDERER_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 

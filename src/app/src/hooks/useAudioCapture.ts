@@ -66,7 +66,6 @@ export function useAudioCapture(
       const source = audioContext.createMediaStreamSource(stream);
       sourceRef.current = source;
 
-      // 4096 samples at 48 kHz is ~85 ms, matching Lemonade realtime guidance.
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 

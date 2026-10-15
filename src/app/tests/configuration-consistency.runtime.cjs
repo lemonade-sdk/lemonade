@@ -93,8 +93,6 @@ assert.match(styles, /\.detail-configuration__context-input\s*\{[^}]*padding-inl
 assert.match(styles, /\.input\.detail-configuration__context-input\[type='number'\]\s*\{[^}]*-moz-appearance:\s*textfield\s*!important;[^}]*appearance:\s*textfield\s*!important;/s);
 assert.match(styles, /\.input\.detail-configuration__context-input\[type='number'\]::\-webkit-outer-spin-button,[\s\S]*?\.input\.detail-configuration__context-input\[type='number'\]::\-webkit-inner-spin-button\s*\{[^}]*display:\s*none\s*!important;[^}]*-webkit-appearance:\s*none\s*!important;/s);
 assert.match(styles, /\.detail-configuration__context-stepper\s*\{[^}]*inset-inline-end:\s*5px;[^}]*border-inline-start:/s);
-// A control's value is regular weight everywhere in this panel; semibold is
-// what marks the field headings, and a semibold select outweighed its own.
 assert.match(styles, /\.detail-configuration__select\s*\{[^}]*margin-top:\s*0;[^}]*font-weight:\s*var\(--weight-regular\);/s);
 
 assert.match(detailSource, /const loadedCtxSize = positiveCtxValue\(loadedModel\?\.recipe_options\?\.ctx_size\)/);
@@ -105,8 +103,8 @@ assert.match(detailSource, /className="detail-configuration__context-number"/);
 assert.match(detailSource, /className="detail-configuration__context-stepper"/);
 assert.match(detailSource, /aria-label=\{`Increase context size by \$\{ctxStep\} tokens`\}/);
 assert.match(detailSource, /aria-label=\{`Decrease context size by \$\{ctxStep\} tokens`\}/);
-// The number box reads as the slider's current value, so it sits after it on
-// the same row rather than stacked above it.
+// The number box reads as the slider's current value, so it sits after it on the same row rather
+// than stacked above it.
 const autoTunePosition = detailSource.indexOf('className="detail-configuration__autotune"');
 const contextRowPosition = detailSource.indexOf('className="detail-configuration__context-row"');
 const contextNumberPosition = detailSource.indexOf('className="detail-configuration__context-number"');
@@ -116,18 +114,17 @@ assert.ok(autoTunePosition >= 0 && autoTunePosition < contextRowPosition
   'context size controls must render in checkbox, slider, number field order');
 assert.match(styles, /\.detail-configuration__context-row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;/s);
 
-// Load must apply the configuration on screen, saved or not.
-// Only once the saved options are in hand: an empty draft would otherwise read
-// as an explicit "ignore everything saved".
+// Load must apply the configuration on screen, saved or not. Only once the saved options are in
+// hand: an empty draft would otherwise read as an explicit "ignore everything saved".
 assert.match(detailSource, /loadOptionsRef\.current = serverOptionsLoaded \? buildLoadOptions : null;/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onLoad, model\)\}/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPullAndLoad, model\)\}/);
-// A load states every option the panel shows, sending null where a field is
-// empty so lemond skips the saved value instead of falling back to it.
+// A load states every option the panel shows, sending null where a field is empty so lemond skips
+// the saved value instead of falling back to it.
 assert.match(detailSource, /options\[key\] = Object\.prototype\.hasOwnProperty\.call\(configured, key\) \? configured\[key\] : null;/);
 assert.match(detailSource, /if \(supportsContextSize\) options\.ctx_size = configured\.ctx_size \?\? -1;/);
-// The form already carries the merged args, so lemond must take them verbatim
-// rather than merging the defaults in a second time underneath them.
+// The form already carries the merged args, so lemond must take them verbatim rather than merging
+// the defaults in a second time underneath them.
 assert.match(detailSource, /if \(sendsArgs\) options\.merge_args = false;/);
 assert.match(detailSource, /await onReloadModel\(loadedModel, buildLoadOptions\(\)\)/,
   'reload must apply the settings on screen');
@@ -138,8 +135,8 @@ assert.doesNotMatch(detailSource, /api\.resetModelOptions/,
   'reset must restore lemond defaults into the draft, not write them');
 assert.match(detailSource, /api\.saveModelOptions\(name, patch\)/, 'save must send only what changed');
 
-// Nothing offers to un-apply lemond's defaults, because nothing can: an unset
-// args key resolves back to them, so the control could only ever mislead.
+// Nothing offers to un-apply lemond's defaults, because nothing can: an unset args key resolves
+// back to them, so the control could only ever mislead.
 assert.match(detailSource, /const sendsArgs = argsKeys\.length > 0;/);
 assert.doesNotMatch(detailSource, /mergeArgs/,
   'the merge_args toggle is gone: the form shows the resolved args outright');
@@ -148,15 +145,15 @@ assert.doesNotMatch(detailSource, /previewModelOptions/,
   'the form is the preview: there is no separate resolved card to fetch for');
 assert.doesNotMatch(styles, /detail-configuration__merge-preview/);
 
-// Sampler flags get typed fields of their own, filled from the resolved args, so
-// a value lemond does not set reads as an explicit "default" rather than a gap.
+// Sampler flags get typed fields of their own, filled from the resolved args, so a value lemond
+// does not set reads as an explicit "default" rather than a gap.
 assert.match(detailSource, /^\s+composeSamplerArgs,$/m);
 assert.match(detailSource, /\} from '\.\.\/samplerArgs';/);
 assert.match(detailSource, /const split = useMemo\(\(\) => splitSamplerArgs\(specs, value\), \[specs, value\]\);/);
 
-// Which flags a command line spells this way belongs to the recipe, not to the
-// renderer: the panel asks for the schema and draws whatever comes back, so a
-// backend gains typed fields without this file naming it.
+// Which flags a command line spells this way belongs to the recipe, not to the renderer: the panel
+// asks for the schema and draws whatever comes back, so a backend gains typed fields without this
+// file naming it.
 assert.match(detailSource, /specs=\{samplerFieldsForRecipe\(activeRecipeForModel\(model\)\)\}/);
 assert.doesNotMatch(detailSource, /=== 'llamacpp_args'/,
   'the args renderer must not single out a recipe by name');
@@ -164,19 +161,17 @@ assert.match(samplerSource, /const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgF
 assert.match(detailSource, /placeholder=\{owned \? 'set below' : 'default'\}/);
 // One half owns a flag or the other does; both would send it twice.
 assert.match(detailSource, /const owned = split\.claimedByRest\.has\(spec\.flag\);/);
-// A field lemond resolves a value for cannot be left empty: emptying every one
-// of them would send no args at all, which lemond answers with those same
-// defaults, and "default" would stop meaning one thing across the fields.
+// A field lemond resolves a value for cannot be left empty: emptying every one of them would send
+// no args at all, which lemond answers with those same defaults, and "default" would stop meaning
+// one thing across the fields.
 assert.match(detailSource, /\(\) => splitSamplerArgs\(specs, fallbackArgs\)\.fields,/);
 assert.match(detailSource, /if \(fallback && !\(split\.fields\[spec\.flag\] \|\| ''\)\.trim\(\)\) setSampler\(spec\.flag, fallback\);/);
 
-// That leaves the all-default form reachable only where lemond resolves args
-// no typed field covers, where it still has to say what will load.
 assert.match(detailSource, /className="detail-configuration__args-fallback"/);
 assert.match(styles, /\.detail-configuration__sampler-grid\s*\{/);
 
-// A sampler people set by feel is drawn along that feeling. Which one that is
-// belongs to the recipe's schema, so the renderer asks rather than names it.
+// A sampler people set by feel is drawn along that feeling. Which one that is belongs to the
+// recipe's schema, so the renderer asks rather than names it.
 assert.doesNotMatch(detailSource, /'--temp'/,
   'the axis renderer must not single out a flag by name');
 assert.match(samplerSource, /axis: \{/);
@@ -189,16 +184,13 @@ assert.match(detailSource, /'--axis-advised-start': `\$\{\(\(axis\.advisedMin - 
 assert.match(styles, /\.detail-configuration__axis-slider\s*\{[^}]*repeating-linear-gradient/s);
 assert.match(styles, /\.detail-configuration__axis-slider\s*\{[^}]*var\(--axis-advised-start\)[^}]*var\(--axis-advised-end\)/s);
 
-// The rest fold away, but never silently: the closed row states the flags it
-// holds, and the browser remembers an expert's choice to keep it open.
+// The rest fold away, but never silently: the closed row states the flags it holds, and the browser
+// remembers an expert's choice to keep it open.
 assert.match(detailSource, /aria-expanded=\{detailsOpen\}/);
 assert.match(detailSource, /storageKey\(SAMPLER_DETAILS_OPEN_KEY\)/);
 assert.match(detailSource, /\{foldedFlags \|\| 'All on default'\}/);
 assert.match(styles, /\.detail-configuration__sampler-grid\[hidden\]\s*\{[^}]*display:\s*none;/s);
 
-// The detail pane narrows with the splitter, not with the window, so this
-// panel's breakpoints read the pane. A window-width media query fires at sizes
-// where the pane is at its widest.
 assert.match(styles, /\.detail-configuration\s*\{[^}]*container-type:\s*inline-size;[^}]*container-name:\s*model-configuration;/s);
 assert.match(styles, /\.detail-configuration__section\s*\{[^}]*max-width:\s*var\(--max-content-width\);/s,
   'load settings must stop where the rest of the app stops, not stretch across a wide screen');
@@ -207,22 +199,17 @@ assert.match(styles, /@container model-configuration \(max-width: 340px\)/);
 assert.doesNotMatch(styles, /@media[^{]*\{\s*\.detail-configuration__(selector-grid|sampler-grid|context-row|axis)/s,
   'load settings breakpoints must answer to the pane, not the window');
 
-// An unbounded string of flags in the folded summary must not widen the panel:
-// grid items default to a min-content floor, and `flex-basis: auto` keeps the
-// summary's own max-content in that floor.
+// An unbounded string of flags in the folded summary must not widen the panel: grid items default
+// to a min-content floor, and `flex-basis: auto` keeps the summary's own max-content in that floor.
 assert.match(styles, /\.detail-configuration__sampler-folded\s*\{[^}]*flex:\s*1 1 0;[^}]*min-width:\s*0;/s);
 assert.match(styles, /\.detail-configuration__sampler-toggle\s*\{[^}]*min-width:\s*0;/s);
 assert.match(styles, /\.detail-configuration__args-block\s*\{[^}]*min-width:\s*0;/s);
 
-// An empty field lands on lemond's defaults at load time, not on the effective
-// value the form was seeded from, so that is what its label has to name.
 assert.match(detailSource, /const baseValue = defaultOptionValue\(key\);/);
 assert.match(detailSource, /serverDefaultRecipeOptions\[key\] \?\? baseTuning\.recipe_options\[key\]/);
 assert.doesNotMatch(detailSource, /const baseValue = serverEffectiveRecipeOptions/,
   'Reset must not label an emptied selector with the value it just cleared');
 
-// The draft is seeded once, into the fields the recipe's option list names, so
-// the options fetch waits for the system-info that carries that list.
 assert.match(detailSource, /if \(!systemInfoSettled\) return;/);
 assert.match(detailSource, /\}, \[name, systemInfoSettled\]\);/);
 assert.match(detailSource, /\.finally\(\(\) => \{ if \(alive\) setSystemInfoSettled\(true\); \}\);/);
@@ -234,12 +221,10 @@ assert.match(detailSource, /const reloadWouldChange = recipeKeys\.some\(key => \
 assert.match(detailSource, /loadedModel && onReloadModel && \(reloadWouldChange \? \(/);
 assert.match(detailSource, /className="detail-configuration__running-state"/);
 
-// The context controls stay on screen while auto tuning, showing what it resolved.
 assert.match(detailSource, /value=\{isAutoTuning \? String\(currentCtxSize\) : ctxSizeDraft\}/);
 assert.doesNotMatch(detailSource, /\{!isAutoTuning && \(/,
   'auto tuning must disable the context controls, not remove them');
 
-// The source chip reads as a link out to the registry.
 assert.match(detailSource, /className="model-detail-panel__source"\s*\n\s*emphasis="low"\s*\n\s*icon="globe"/);
 assert.match(styles, /\.model-detail-panel__source > svg\s*\{[^}]*flex:\s*0 0 auto;/s);
 assert.match(detailSource, /import \{ TTS_VOICES \}/);
@@ -266,7 +251,6 @@ assert.doesNotMatch(chatSource, /loadModelTuning\s*\([^)]*\)[^;\n]*recipe_option
 
 
 
-// GUI3 server-defined recipe metadata contract v4.
 assert.doesNotMatch(backendManagerSource, /RECIPE_CAPABILITY/, 'backend sections must not enumerate recipes');
 assert.doesNotMatch(backendManagerSource, /backendSupportsArgs/, 'backend Args availability must not use a recipe allowlist');
 assert.match(backendManagerSource, /llamacpp:\s+'llama\.cpp'/,
@@ -381,7 +365,6 @@ assert.deepEqual(metadata.recipeOptionNames({ recipes: { llamacpp: { backends: {
   'missing descriptor options must not be hidden by a frontend recipe fallback');
 assert.equal(metadata.recipeCapability({ recipes: { strange: { modality: 'New modality' } } }, 'strange'), 'Other',
   'unknown server modalities must not silently fall back to LLM');
-// server-owned pin contract
 assert.match(apiSource, /pinned: typeof model\.pinned === 'boolean'/, 'health normalization must preserve server pin state');
 assert.match(apiSource, /'\/internal\/pin'/, 'pin mutations must use the server endpoint');
 assert.match(managerSource, /loadedModels\.filter\(model => model\.pinned === true\)/, 'GUI pin state must derive from loaded server models');
@@ -397,7 +380,6 @@ assert.doesNotMatch(managerSource, /loadPinnedModelNames|savePinnedModelNames/, 
 assert.doesNotMatch(globalSettingsSource, /pinnedModelsKey|loadPinnedModelNames|savePinnedModelNames|pinned_models/, 'global model settings must not own pin persistence');
 assert.match(storageSource, /`\$\{STORAGE_PREFIX\}pinned_models`/, 'obsolete client pin storage must be cleaned up');
 
-// favorite hover-only row-action contract
 assert.doesNotMatch(modelListSource, /latched:\s*favorited/, 'Favorite must remain hover-only so backend info is visible at rest');
 assert.match(modelListSource, /active:\s*favorited/, 'favorited row action must keep active-state styling while hovered');
 assert.match(styles, /focus-within:not\(\.workspace-list-row--pointer-action\)\s+\.workspace-list-row__action/, 'pointer-only row action must not remain visible from row focus alone');

@@ -67,14 +67,11 @@ export const InspectViewPreloaded = inspectView.Component;
 export const LogViewerPreloaded = logViewer.Component;
 
 export async function preloadModelManagerSecondarySurfaces(): Promise<void> {
-  // Details is the first action inside Models; give it the request/evaluation
-  // slot before lower-frequency editors.
   await modelDetail.preload();
   await Promise.all([routerEditor.preload(), globalModelSettings.preload()]);
 }
 
 export async function preloadMonitorSecondarySurfaces(): Promise<void> {
-  // Telemetry is the common first action inside Monitor; Logs follows.
   await inspectView.preload();
   await logViewer.preload();
 }

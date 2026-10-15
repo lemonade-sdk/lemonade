@@ -83,7 +83,6 @@ export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onCh
       e.preventDefault();
       if (!open) {
         setOpen(true);
-        // Focus first (ArrowDown) or last (ArrowUp) enabled option after open
         window.setTimeout(() => {
           const enabled = optionRefs.current.filter(Boolean) as HTMLButtonElement[];
           const target = e.key === 'ArrowDown' ? enabled[0] : enabled[enabled.length - 1];
@@ -428,8 +427,8 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
   const changeOperator = (operator: RouterGroupNode['operator']) => {
     if (operator === node.operator) return;
     if (operator === 'not' && node.children.length > 1) {
-      // Negate the complete existing expression. Truncating to children[0]
-      // would silently delete conditions when AND/OR is changed to NOT.
+      // Negate the complete existing expression. Truncating to children[0] would silently delete
+      // conditions when AND/OR is changed to NOT.
       const inner: RouterGroupNode = { ...node, id: createRouterNodeId('group') };
       onChange({ ...node, operator: 'not', children: [inner] });
       return;

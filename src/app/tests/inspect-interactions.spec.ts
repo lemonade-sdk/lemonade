@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 test.beforeEach(async ({ page }) => {
-  // Intercept all API requests to handle CORS preflight OPTIONS
   await page.route(/\/api\/v1\//, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({
@@ -19,7 +18,6 @@ test.beforeEach(async ({ page }) => {
     }
   });
 
-  // Mock health check
   await page.route(/\/api\/v1\/health/, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders });
@@ -38,7 +36,6 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
-  // Mock models list
   await page.route(/\/api\/v1\/models/, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders });
@@ -94,7 +91,6 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
-  // Mock chat completions
   await page.route(/\/api\/v1\/chat\/completions/, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders });
@@ -158,8 +154,8 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await expect(optimizerSelector).toHaveValue('mock-tool-downloaded');
     await optimizerSelector.click();
 
-    // Opening the optimizer picker must immediately expose every downloaded
-    // tool-calling model, without requiring the user to clear the current value.
+    // Opening the optimizer picker must immediately expose every downloaded tool-calling model,
+    // without requiring the user to clear the current value.
     await expect(page.getByRole('option', { name: 'mock-tool-hot', exact: true })).toBeVisible();
     await expect(page.getByRole('option', { name: 'mock-tool-downloaded', exact: true })).toBeVisible();
     await expect(page.getByRole('option', { name: 'mock-tool-remote', exact: true })).toHaveCount(0);
@@ -234,8 +230,8 @@ test.describe('Session Inspector - Recent Improvements', () => {
   });
 
   test('Improve optimizer rejects an echoed worked-example response', async ({ page }) => {
-    // Stream a response that reproduces the meta-prompt worked example verbatim instead
-    // of generating real content. The optimizer must reject it as placeholder output.
+    // Stream a response that reproduces the meta-prompt worked example verbatim instead of
+    // generating real content. The optimizer must reject it as placeholder output.
     const exampleEcho = JSON.stringify({
       critique: [
         {
@@ -297,8 +293,8 @@ test.describe('Session Inspector - Recent Improvements', () => {
   });
 
   test('Improve optimizer rejects a partial worked-example echo in user_prompt', async ({ page }) => {
-    // The model echoes only the example's optimized user_prompt while the rest of the
-    // response is genuine. Partial echoes must still be detected, not accepted.
+    // The model echoes only the example's optimized user_prompt while the rest of the response is
+    // genuine. Partial echoes must still be detected, not accepted.
     const partialEcho = JSON.stringify({
       critique: [
         {
@@ -359,9 +355,8 @@ test.describe('Session Inspector - Recent Improvements', () => {
   });
 
   test('Improve optimizer accepts a legitimate prompt that mentions sourdough', async ({ page }) => {
-    // The optimized prompt legitimately mentions "sourdough" but is NOT a verbatim echo
-    // of the worked example. It must be accepted as real output, not rejected as a
-    // placeholder.
+    // The optimized prompt legitimately mentions "sourdough" but is NOT a verbatim echo of the
+    // worked example. It must be accepted as real output, not rejected as a placeholder.
     const legit = JSON.stringify({
       critique: [
         {
@@ -418,15 +413,14 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.getByRole('tab', { name: 'Improve' }).click();
     await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
 
-    // Accepted: the optimization delta modal opens, not the failure modal.
     await expect(page.getByRole('heading', { name: 'Prompt Optimization Delta' })).toBeVisible();
   });
 
   test('Improve optimizer accepts a workable response that preserves example wording from the original prompt', async ({ page }) => {
-    // The ORIGINAL prompt itself contains worked-example wording ("bake a loaf of
-    // sourdough bread"). Since the guardrail requires preserving task content verbatim,
-    // re-using that wording in the optimized prompt is preservation, not an echo — it must
-    // be accepted even though it matches the worked-example literal.
+    // The ORIGINAL prompt itself contains worked-example wording ("bake a loaf of sourdough
+    // bread"). Since the guardrail requires preserving task content verbatim, re-using that wording
+    // in the optimized prompt is preservation, not an echo — it must be accepted even though it
+    // matches the worked-example literal.
     const preserved = JSON.stringify({
       critique: [
         {
@@ -473,9 +467,9 @@ test.describe('Session Inspector - Recent Improvements', () => {
           timestamp: '12:00:00 PM',
           startTimeMs: Date.now(),
           dur: 1500,
-          // The original prompt contains the worked-example wording ("bake a loaf of
-          // sourdough bread", "answer as a numbered list, one step per line") verbatim;
-          // preserving it must not be flagged as an echo.
+          // The original prompt contains the worked-example wording ("bake a loaf of sourdough
+          // bread", "answer as a numbered list, one step per line") verbatim; preserving it must
+          // not be flagged as an echo.
           messages: [{ role: 'user', content: 'Bake a loaf of sourdough bread.\n\nAnswer as a numbered list, one step per line.' }],
           output: 'A response that needs improvement.'
         }],
@@ -486,7 +480,6 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.getByRole('tab', { name: 'Improve' }).click();
     await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
 
-    // Accepted: preserving original wording is not an echo, so the delta modal opens.
     await expect(page.getByRole('heading', { name: 'Prompt Optimization Delta' })).toBeVisible();
   });
 
@@ -543,75 +536,62 @@ test.describe('Session Inspector - Recent Improvements', () => {
       };
 
       (window as any).inspectStore.setState({
-        traces: [trace3, trace2, trace1], // newest first
+        traces: [trace3, trace2, trace1],
         selectedTraceId: 'mock-trace-3'
       });
     });
 
     await page.waitForTimeout(200);
 
-    // Check trace rows are visible
     const traceRows = page.locator('.inspect-rail__list .workspace-list-row');
     await expect(traceRows).toHaveCount(3);
 
-    // Get the first item (which should have tabIndex=0 and be mock-trace-3)
     const firstOption = page.locator('[role="option"][data-trace-id="mock-trace-3"]');
     await expect(firstOption).toBeVisible();
     await firstOption.focus();
     await expect(firstOption).toBeFocused();
 
-    // Verify initial selected state
     let selectedId = await page.evaluate(() => (window as any).inspectStore.getState().selectedTraceId);
     expect(selectedId).toBe('mock-trace-3');
 
-    // ArrowDown should move active focus to mock-trace-2, but NOT select it
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(100);
 
     const secondOption = page.locator('[role="option"][data-trace-id="mock-trace-2"]');
     await expect(secondOption).toBeFocused();
 
-    // Verify selectedTraceId is STILL mock-trace-3 (decoupled)
     selectedId = await page.evaluate(() => (window as any).inspectStore.getState().selectedTraceId);
     expect(selectedId).toBe('mock-trace-3');
     await expect(firstOption).toHaveAttribute('aria-selected', 'true');
     await expect(secondOption).toHaveAttribute('aria-selected', 'false');
 
-    // ArrowDown again to mock-trace-1
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(100);
 
     const thirdOption = page.locator('[role="option"][data-trace-id="mock-trace-1"]');
     await expect(thirdOption).toBeFocused();
 
-    // Verify selectedTraceId is STILL mock-trace-3
     selectedId = await page.evaluate(() => (window as any).inspectStore.getState().selectedTraceId);
     expect(selectedId).toBe('mock-trace-3');
 
-    // Press Enter to trigger selection on the focused mock-trace-1
     await page.keyboard.press('Enter');
     await page.waitForTimeout(100);
 
-    // Verify selectedTraceId is now mock-trace-1
     selectedId = await page.evaluate(() => (window as any).inspectStore.getState().selectedTraceId);
     expect(selectedId).toBe('mock-trace-1');
     await expect(firstOption).toHaveAttribute('aria-selected', 'false');
     await expect(thirdOption).toHaveAttribute('aria-selected', 'true');
 
-    // ArrowUp to mock-trace-2
     await page.keyboard.press('ArrowUp');
     await page.waitForTimeout(100);
     await expect(secondOption).toBeFocused();
 
-    // Verify selectedTraceId is STILL mock-trace-1
     selectedId = await page.evaluate(() => (window as any).inspectStore.getState().selectedTraceId);
     expect(selectedId).toBe('mock-trace-1');
 
-    // Press Space to trigger selection on the focused mock-trace-2
     await page.keyboard.press(' ');
     await page.waitForTimeout(100);
 
-    // Verify selectedTraceId is now mock-trace-2
     selectedId = await page.evaluate(() => (window as any).inspectStore.getState().selectedTraceId);
     expect(selectedId).toBe('mock-trace-2');
     await expect(thirdOption).toHaveAttribute('aria-selected', 'false');
@@ -623,15 +603,12 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
-    // Open Sim Create Modal
     await page.getByRole('button', { name: 'Create', exact: true }).click();
     await page.waitForTimeout(500);
 
-    // Locate the search input
     const input = page.locator('input[placeholder="Search model..."]').first();
     await expect(input).toBeVisible();
 
-    // Select the model
     await input.click();
     await page.waitForTimeout(200);
 
@@ -640,16 +617,13 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await firstItem.click();
     await page.waitForTimeout(200);
 
-    // Verify value is populated
     await expect(input).toHaveValue('mock-model-1');
 
-    // Blur the input
     await input.blur();
     await page.waitForTimeout(100);
 
-    // Focus input and verify highlight text selection + value retained
     await input.focus();
-    await page.waitForTimeout(150); // let setTimeout(..., 0) run
+    await page.waitForTimeout(150);
 
     const selectionInfo = await input.evaluate((el: HTMLInputElement) => ({
       value: el.value,
@@ -659,11 +633,10 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
     expect(selectionInfo.value).toBe('mock-model-1');
     expect(selectionInfo.start).toBe(0);
-    expect(selectionInfo.end).toBe(12); // 'mock-model-1'.length is 12
+    expect(selectionInfo.end).toBe(12);
   });
 
   test('WebSocket Reconnection Security', async ({ page }) => {
-    // Add init script to mock WebSocket before page load
     await page.addInitScript(() => {
       const instances: any[] = [];
       class MockWebSocket {
@@ -695,7 +668,6 @@ test.describe('Session Inspector - Recent Improvements', () => {
         }
 
         send(data: string) {
-          // Dummy send
         }
 
         close() {
@@ -712,27 +684,22 @@ test.describe('Session Inspector - Recent Improvements', () => {
       (window as any).WebSocket = MockWebSocket as any;
     });
 
-    // Handle and verify page errors
     const errors: Error[] = [];
     page.on('pageerror', (err) => {
       errors.push(err);
     });
 
-    // Navigate to inspect view
     await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
-    // Make sure capturing is set to true on store
     await page.evaluate(() => {
       (window as any).inspectStore.setState({ capturing: true });
     });
     await page.waitForTimeout(200);
 
-    // Verify we have active WS instance
     let initialCount = await page.evaluate(() => (window as any).wsInstances.length);
     expect(initialCount).toBeGreaterThan(0);
 
-    // Force close active WebSocket multiple times
     await page.evaluate(() => {
       const instances = (window as any).wsInstances;
       if (instances.length > 0) {
@@ -742,7 +709,6 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
     await page.waitForTimeout(200);
 
-    // Trigger explicit reconnects and check for robustness
     for (let i = 0; i < 5; i++) {
       await page.evaluate(() => {
         (window as any).inspectStore.reconnect();
@@ -751,7 +717,6 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
     await page.waitForTimeout(500);
 
-    // Push simulated Span via websocket messages to make sure it handles incoming messages on new WS
     await page.evaluate(() => {
       const instances = (window as any).wsInstances;
       const ws = instances[instances.length - 1];
@@ -775,20 +740,16 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
     await page.waitForTimeout(500);
 
-    // Ensure trace was captured and added from WebSocket
     const traceRows = page.locator('.inspect-rail__list .workspace-list-row');
     const count = await traceRows.count();
     expect(count).toBeGreaterThan(0);
 
-    // Confirm no errors were thrown
     expect(errors).toHaveLength(0);
   });
 
   test('Telemetry Thinking Parser, Collapse, Copy, and Scroll Constraints', async ({ page, context }) => {
-    // Grant clipboard permissions for copy assertion
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    // Setup WebSocket Mock in this test
     await page.addInitScript(() => {
       const instances: any[] = [];
       class MockWebSocket {
@@ -833,7 +794,6 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
-    // Make sure capturing is set to true on store
     await page.evaluate(() => {
       (window as any).inspectStore.setState({ capturing: true });
     });
@@ -877,7 +837,6 @@ Followed by some normal text.`;
 
     await page.waitForTimeout(500);
 
-    // Push Trace B (second trace to verify render state is not shared/reused)
     await page.evaluate(() => {
       const instances = (window as any).wsInstances;
       const ws = instances[instances.length - 1];
@@ -901,17 +860,14 @@ Followed by some normal text.`;
 
     await page.waitForTimeout(500);
 
-    // Select the first trace
-    await page.locator('.inspect-rail__list .workspace-list-row').last().click(); // newest is first, so trace 1 is last
+    await page.locator('.inspect-rail__list .workspace-list-row').last().click();
     await page.waitForTimeout(200);
 
-    // Click on the Messages tab
     const messagesTabButton = page.locator('button[role="tab"]:has-text("Messages")');
     await expect(messagesTabButton).toBeVisible();
     await messagesTabButton.click();
     await page.waitForTimeout(200);
 
-    // A. Verify Secure-by-Default card posture: Card defaults to Raw, while global is Rendered
     const globalRenderedBtn = page.locator('.messages-toolbar__left button:has-text("Rendered")');
     await expect(globalRenderedBtn).toHaveAttribute('aria-pressed', 'true');
 
@@ -920,12 +876,10 @@ Followed by some normal text.`;
     await expect(cardToggleSegmented.locator('button:has-text("Raw")')).toHaveClass(/active/);
     await expect(assistantCard.locator('pre.raw-text-body')).toBeVisible();
 
-    // B. Verify strict parsing doesn't strip literal <think> inside code blocks
     const rawContentText = await assistantCard.locator('pre.raw-text-body').innerText();
     expect(rawContentText).toContain('<think>\nThis is the leading thinking block.\n</think>');
     expect(rawContentText).toContain('<think>\nliteral inside code\n</think>');
 
-    // C. Click "Rendered" on the card to check collapsible reasoning blocks
     await cardToggleSegmented.locator('button:has-text("Rendered")').click();
     await page.waitForTimeout(200);
 
@@ -937,21 +891,20 @@ Followed by some normal text.`;
     const reasoningBody = assistantCard.locator('.reasoning-block__body');
     await expect(reasoningBody).not.toBeVisible();
 
-    // Toggle reasoning open
     await reasoningHeader.click();
     await page.waitForTimeout(100);
     await expect(reasoningHeader).toHaveAttribute('aria-expanded', 'true');
     await expect(reasoningBody).toBeVisible();
     await expect(reasoningBody).toHaveText('This is the leading thinking block.');
 
-    // Body text in Rendered view mode should NOT show the leading thinking block, but MUST retain the literal code block think tag
+    // Body text in Rendered view mode should NOT show the leading thinking block, but MUST retain
+    // the literal code block think tag
     const renderedBody = assistantCard.locator('.message-card__body .fade-in').first();
     await expect(renderedBody).toBeVisible();
     const renderedText = await renderedBody.innerText();
     expect(renderedText).not.toContain('This is the leading thinking block.');
     expect(renderedText).toContain('<think>\nliteral inside code\n</think>');
 
-    // E. Verify copy/export functionality includes raw unstripped content & explicit thinking
     const copyButton = page.locator('.split-button__action');
     await expect(copyButton).toBeVisible();
     await copyButton.click();
@@ -962,26 +915,20 @@ Followed by some normal text.`;
     const parsedClipboard = JSON.parse(clipboardText);
     expect(parsedClipboard).toHaveLength(3);
     expect(parsedClipboard[2].role).toBe('assistant');
-    // Ensure raw unstripped content is exported
     expect(parsedClipboard[2].content).toContain('<think>\nThis is the leading thinking block.\n</think>');
-    // Ensure thinking property is explicitly exported
     expect(parsedClipboard[2].thinking).toBe('This is the leading thinking block.');
 
-    // F. REGRESSION TEST: Select the second trace and verify that the card rendering state resets to default 'raw'
-    await page.locator('.inspect-rail__list .workspace-list-row').first().click(); // Trace B is the first row
+    await page.locator('.inspect-rail__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
-    // Click on the Messages tab again (as changing selectedTraceId resets activeTab to 'overview')
     await page.locator('button[role="tab"]:has-text("Messages")').click();
     await page.waitForTimeout(200);
 
-    // Card in Trace B should default back to Raw
     const assistantCardB = page.locator('.message-card').last();
     const cardToggleSegmentedB = assistantCardB.locator('.message-card__toggle-segmented');
     await expect(cardToggleSegmentedB.locator('button:has-text("Raw")')).toHaveClass(/active/);
     await expect(assistantCardB.locator('pre.raw-text-body')).toBeVisible();
 
-    // D. Verify height constraints on the layout
     const vcHeight = await page.locator('.view-container').evaluate(el => el.getBoundingClientRect().height);
     const layoutHeight = await page.locator('.inspect-layout').evaluate(el => el.getBoundingClientRect().height);
     const railHeight = await page.locator('.inspect-rail').evaluate(el => el.getBoundingClientRect().height);

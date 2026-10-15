@@ -51,7 +51,6 @@ const {
   composeSamplerArgs: composeWithSpecs,
 } = loadTypeScriptModule(path.join(root, 'src/samplerArgs.ts'));
 
-// Every case below is about llama.cpp's flags, so bind the schema once.
 const SAMPLER_ARG_FIELDS = LLAMACPP_SAMPLER_FIELDS;
 const splitSamplerArgs = args => splitWithSpecs(SAMPLER_ARG_FIELDS, args);
 const composeSamplerArgs = (fields, rest) => composeWithSpecs(SAMPLER_ARG_FIELDS, fields, rest);
@@ -62,8 +61,6 @@ const roundTrip = str => {
   return composeSamplerArgs(split.fields, split.rest);
 };
 
-// A recipe the form has no flag spellings for keeps its arguments whole, which
-// is what lets one code path serve every backend.
 assert.deepEqual(samplerFieldsForRecipe('llamacpp'), LLAMACPP_SAMPLER_FIELDS);
 assert.deepEqual(samplerFieldsForRecipe('whispercpp'), []);
 assert.deepEqual(samplerFieldsForRecipe('sd-cpp'), []);
@@ -72,22 +69,17 @@ assert.deepEqual(unspecced.fields, {});
 assert.equal(unspecced.rest, '--temp 0.6 --no-mmap');
 assert.equal(composeWithSpecs([], {}, unspecced.rest), '--temp 0.6 --no-mmap');
 
-// ── The tokeniser must agree with the C++ one ────────────────────────────────
 
-// keep_quotes wraps the whole accumulated token, so a value quoted from its
-// first character comes back with its quotes intact.
 assert.deepEqual(
   parseCustomArgs('--chat-template-kwargs \'{"preserve_thinking":true}\''),
   ['--chat-template-kwargs', '\'{"preserve_thinking":true}\''],
 );
 
-// A complete negative number is a value; a flag-looking token is a flag.
 assert.deepEqual(buildArgsMap(parseCustomArgs('--presence-penalty -1.5')).get('--presence-penalty'), [['-1.5']]);
 assert.deepEqual(buildArgsMap(parseCustomArgs('--temp -1e-3')).get('--temp'), [['-1e-3']]);
 assert.ok(buildArgsMap(parseCustomArgs('--no-mmap')).has('--no-mmap'), 'a valueless flag is still a flag');
 assert.deepEqual(buildArgsMap(parseCustomArgs('--no-mmap')).get('--no-mmap'), [[]]);
 
-// ── Every shipped per-architecture default survives the round trip ───────────
 
 const archDefaults = JSON.parse(
   fs.readFileSync(path.join(repoRoot, 'src/cpp/resources/architecture_defaults.json'), 'utf8'),
@@ -103,12 +95,9 @@ for (const architecture of architectures) {
     canonical(args),
     `${architecture}: decomposing and recomposing must not change the arguments`,
   );
-  // The whole string is sampler flags, so nothing should be left over.
   assert.equal(splitSamplerArgs(args).rest, '', `${architecture}: every flag must map to a typed field`);
 }
 
-// Every flag the shipped defaults use has a typed field, so no architecture
-// falls back to the freeform box for a value the form claims to cover.
 const specced = new Set(SAMPLER_ARG_FIELDS.map(field => field.flag));
 for (const architecture of architectures) {
   for (const flag of String(archDefaults[architecture].llamacpp_args || '').match(/--[a-z0-9-]+/g) || []) {
@@ -116,8 +105,8 @@ for (const architecture of architectures) {
   }
 }
 
-// Every field is typed well enough to render a stepper, and its id matches the
-// flag it stands for so the two cannot drift apart.
+// Every field is typed well enough to render a stepper, and its id matches the flag it stands for
+// so the two cannot drift apart.
 for (const field of SAMPLER_ARG_FIELDS) {
   assert.ok(field.label, `${field.flag} needs a label`);
   assert.equal(field.id, field.flag.replace(/^-+/, ''), `${field.flag} id must follow its flag`);
@@ -129,7 +118,6 @@ for (const field of SAMPLER_ARG_FIELDS) {
   assert.ok(field.min < field.max, `${field.flag} range must be non-empty`);
 }
 
-// ── Unknown flags stay whole, and ownership is never shared ──────────────────
 
 const mixed = splitSamplerArgs('--temp 0.6 --no-mmap --gpu-layers 35 --top-p 0.9');
 assert.equal(mixed.fields['--temp'], '0.6');
@@ -138,8 +126,8 @@ assert.equal(mixed.rest, '--no-mmap --gpu-layers 35', 'the remainder keeps the o
 assert.equal(canonical(composeSamplerArgs(mixed.fields, mixed.rest)),
   canonical('--temp 0.6 --no-mmap --gpu-layers 35 --top-p 0.9'));
 
-// A sampler flag the fields cannot represent stays in the remainder, and is
-// reported so the form can stop claiming to own it.
+// A sampler flag the fields cannot represent stays in the remainder, and is reported so the form
+// can stop claiming to own it.
 const repeated = splitSamplerArgs('--temp 0.6 --temp 0.7');
 assert.equal(repeated.fields['--temp'], undefined);
 assert.ok(repeated.claimedByRest.has('--temp'));
@@ -148,13 +136,12 @@ const multiValue = splitSamplerArgs('--chat-template-kwargs a b');
 assert.equal(multiValue.fields['--chat-template-kwargs'], undefined);
 assert.ok(multiValue.claimedByRest.has('--chat-template-kwargs'));
 
-// Order is preserved through a full round trip, so the freeform field does not
-// rearrange itself between keystrokes.
+// Order is preserved through a full round trip, so the freeform field does not rearrange itself
+// between keystrokes.
 const ordered = '--zeta 1 --alpha 2 --no-mmap';
 assert.equal(splitSamplerArgs(ordered).rest, ordered);
 assert.equal(splitSamplerArgs(composeSamplerArgs({ '--temp': '0.6' }, ordered)).rest, ordered);
 
-// Only one half may emit a given flag.
 for (const source of ['--temp 0.6 --temp 0.7', '--temp 0.6 --gpu-layers 35']) {
   const split = splitSamplerArgs(source);
   for (const flag of Object.keys(split.fields)) {
@@ -164,24 +151,21 @@ for (const source of ['--temp 0.6 --temp 0.7', '--temp 0.6 --gpu-layers 35']) {
   }
 }
 
-// ── An empty field is an omitted flag, not an empty one ──────────────────────
 
 assert.equal(composeSamplerArgs({ '--temp': '', '--top-p': '0.9' }, ''), '--top-p 0.9');
 assert.equal(composeSamplerArgs({}, ''), '');
 assert.equal(splitSamplerArgs('').rest, '');
 assert.deepEqual(splitSamplerArgs('').fields, {});
 
-// A number input only ever hands over a complete value or an empty string, and
-// every complete value has to survive the trip back out of the composed string.
 for (const value of ['0', '0.0', '0.6', '1.25', '-1.5', '-0.5', '200']) {
   const composed = composeSamplerArgs({ '--presence-penalty': value }, '');
   assert.equal(splitSamplerArgs(composed).fields['--presence-penalty'], value,
     `a field holding "${value}" must round-trip unchanged`);
 }
 
-// A lone "-" would tokenise as a flag and lose the value, which is why the
-// negative-range field has to be a number input: it reports a half-typed sign
-// as an empty value and never puts one in the draft.
+// A lone "-" would tokenise as a flag and lose the value, which is why the negative-range field has
+// to be a number input: it reports a half-typed sign as an empty value and never puts one in the
+// draft.
 assert.equal(splitSamplerArgs(composeSamplerArgs({ '--presence-penalty': '-' }, '')).fields['--presence-penalty'],
   undefined);
 

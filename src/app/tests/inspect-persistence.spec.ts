@@ -7,7 +7,6 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Session-Id',
   };
 
-  // Intercept all API requests to handle CORS preflight OPTIONS
   await page.route(/\/api\/v1\//, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({
@@ -19,7 +18,6 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
     }
   });
 
-  // Mock health check
   await page.route(/\/api\/v1\/health/, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders });
@@ -38,7 +36,6 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
     });
   });
 
-  // Mock models list
   await page.route(/\/api\/v1\/models/, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders });
@@ -56,7 +53,6 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
     });
   });
 
-  // Mock chat completions
   await page.route(/\/api\/v1\/chat\/completions/, async route => {
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders });
@@ -103,18 +99,15 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.waitForTimeout(500);
 
-  // Click the model search box inside the modal
   const modelSearch = page.locator('input[placeholder="Search model..."]').first();
   await modelSearch.click();
   await page.waitForTimeout(200);
 
-  // Select the mocked model option
   const firstItem = page.locator('.model-search-item').first();
   await expect(firstItem).toBeVisible();
   await firstItem.click();
   await page.waitForTimeout(200);
 
-  // Submit the request in modal
   await page.click('.inspect-modal-footer button.primary-simulate');
   await page.evaluate(() => {
     const trace = {
@@ -141,7 +134,6 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   });
   await page.waitForTimeout(1000);
 
-  // Verify a trace was captured in the left rail list
   const traceItems = page.locator('.inspect-rail__list .workspace-list-row');
   await expect(traceItems).toHaveCount(1);
   const originalTraceId = await traceItems.first().getAttribute('data-trace-id');

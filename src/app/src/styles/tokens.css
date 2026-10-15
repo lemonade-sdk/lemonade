@@ -1,7 +1,7 @@
 /* Lemonade GUI design tokens. DESIGN.md defines the roles and usage rules. */
 
 :root {
-  /* ---------- Color roles (dark / Midnight Palette) ---------- */
+  /* Color roles (dark / Midnight Palette) */
   --surface-base:   #0E0E0B;
   --surface-1:      #1A1813;
   --surface-2:      #1F1D17;
@@ -50,7 +50,7 @@
   --border-subtle:  rgba(255, 255, 255, 0.07);
   --border-strong:  rgba(252, 216, 70, 0.18);
 
-  /* ---------- Checkbox ---------- */
+  /* Checkbox */
   --checkbox-fill:   var(--surface-3);
   --checkbox-border: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
   --checkbox-check:  var(--accent-fg);
@@ -66,7 +66,7 @@
   --warning: var(--warn);
   --warning-soft: var(--warn-soft);
 
-  /* ---------- Capability, provider, backend, and monitoring identity ---------- */
+  /* Capability, provider, backend, and monitoring identity */
   /* Task colors are intentionally theme-invariant across dark and light. */
   --cap-chat:       #A77C00;
   --cap-omni:       #8064D8;
@@ -99,7 +99,7 @@
   --chart-series-6: #7BC8C8;
   --chart-cache:    #D9A35B;
 
-  /* ---------- Typography ---------- */
+  /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
                "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC",
                system-ui, "Inter", "Helvetica Neue", sans-serif;
@@ -137,7 +137,7 @@
   --tracking-tight:  -0.01em;
   --tracking-caps:   0.08em;
 
-  /* ---------- Space (4px grid) ---------- */
+  /* Space (4px grid) */
   --space-0:  0;
   --space-0-5: 2px;
   --space-1:  4px;
@@ -151,7 +151,7 @@
   --space-10: 64px;
   --space-12: 80px;
 
-  /* ---------- Radii ---------- */
+  /* Radii */
   --radius-sm:   6px;
   --radius-md:   10px;
   --radius-lg:   14px;
@@ -159,7 +159,7 @@
   --radius-pill: 9999px;
   --control-radius: var(--radius-md);
 
-  /* ---------- Shadows ---------- */
+  /* Shadows */
   --shadow-sm:
     0 1px 2px rgba(0, 0, 0, 0.18),
     0 1px 1px rgba(0, 0, 0, 0.12);
@@ -172,7 +172,7 @@
     0 8px 16px rgba(0, 0, 0, 0.20);
   --shadow-top: 0 -8px 24px rgba(0, 0, 0, 0.24);
 
-  /* ---------- Motion ---------- */
+  /* Motion */
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
@@ -181,7 +181,7 @@
   --duration-normal: 220ms;
   --duration-slow:  380ms;
 
-  /* ---------- Layout constants ---------- */
+  /* Layout constants */
   --titlebar-height:    52px;
   --rail-collapsed:     56px;
   --rail-expanded:      248px;
@@ -215,7 +215,7 @@
   --breakpoint-desktop: 1024px;
 }
 
-/* ---------- Light theme overrides ---------- */
+/* Light theme overrides */
 [data-theme="light"] {
   --surface-base:   #fdfbf6;
   --surface-1:      #fdfbf6;
