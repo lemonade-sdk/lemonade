@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const {
   repoRoot,
   readSource,
@@ -222,6 +224,27 @@ const tests = [
         source,
         /handleEmptyStateModelSelect = useCallback[\s\S]{0,200}?setFallbackModelOverride\(null\)/,
         'An explicit model pick must clear the override.',
+      );
+    },
+  },
+  {
+    // The MCP runtime decides which image every multimodal tool acts on, and
+    // that contract is only enforced by its own fixture. Run it here so the
+    // image-precedence rules cannot drift unnoticed.
+    name: 'MCP runtime image-precedence contract holds',
+    run() {
+      const appDir = path.join(repoRoot, 'src', 'app');
+      if (!fs.existsSync(path.join(appDir, 'node_modules', 'webpack'))) {
+        return { skip: true, reason: 'src/app dependencies are not installed' };
+      }
+      const result = spawnSync(process.execPath, ['tests/mcp-runtime.runtime.cjs'], {
+        cwd: appDir,
+        encoding: 'utf8',
+      });
+      assert.equal(
+        result.status,
+        0,
+        `mcp-runtime suite failed:\n${result.stdout || ''}${result.stderr || ''}`,
       );
     },
   },

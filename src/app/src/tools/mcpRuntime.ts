@@ -472,8 +472,8 @@ async function executeLemonadeMultimodalTool(
         const explicitImage = stringArg(args, 'image');
         let image = explicitImage.startsWith('data:image/')
           ? explicitImage
-          : newestDataImage([...(context.attachedImages || []), ...generated]);
-        if (!image && !prompt) image = newestDataImage(context.previousImages || []);
+          : newestDataImage(context.attachedImages || []);
+        if (!image && !prompt) image = latestImage(context, '', generated);
         const artifacts: ToolArtifact[] = [];
         let imageModelName = '';
 

@@ -270,6 +270,44 @@ async function main(): Promise<void> {
   assert.equal(model3dSource, CHAIN_GENERATED,
     'text-to-3D builds a reference image from the prompt instead of reusing an older image');
 
+  // An image generated earlier in this turn answered a different request, so a
+  // prompt must still win. Generate a cat, then ask for a 3D teapot.
+  const CAT_GENERATED = 'data:image/png;base64,Y2F0Z2Vu';
+  const TEAPOT_REFERENCE = 'data:image/png;base64,dGVhcG90cmVm';
+  (api as any).imageGeneration = async (_name: string, prompt: string) => (
+    prompt.includes('cat') ? [CAT_GENERATED] : [TEAPOT_REFERENCE]
+  );
+  const catThen3d = await buildSelectedMcpRuntime(['lemonade'], {});
+  const catImage = await catThen3d!.execute({
+    id: 'cat-generate', type: 'function',
+    function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a cat' }) },
+  });
+  assert.equal(catImage.artifacts?.[0]?.url, CAT_GENERATED);
+  model3dSource = '';
+  const teapot3d = await catThen3d!.execute({
+    id: 'cat-then-teapot-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({ prompt: 'a teapot' }) },
+  });
+  assert.notEqual(teapot3d.error, true);
+  assert.equal(model3dSource, TEAPOT_REFERENCE,
+    'a prompt outranks an unrelated image that an earlier tool call produced this turn');
+
+  // Without a prompt, a same-turn generated image is still the newest image.
+  const noPromptRuntime = await buildSelectedMcpRuntime(['lemonade'], { previousImages: [PREVIOUS] });
+  await noPromptRuntime!.execute({
+    id: 'cat-generate-2', type: 'function',
+    function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a cat' }) },
+  });
+  model3dSource = '';
+  await noPromptRuntime!.execute({
+    id: 'no-prompt-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({}) },
+  });
+  assert.equal(model3dSource, CAT_GENERATED,
+    'without a prompt the same-turn generated image is the reconstruction source');
+
+  (api as any).imageGeneration = async () => [CHAIN_GENERATED];
+
   // An image attached this turn still outranks the prompt.
   model3dSource = '';
   const imageTo3d = await (await buildSelectedMcpRuntime(
