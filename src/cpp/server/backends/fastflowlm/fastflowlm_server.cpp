@@ -432,12 +432,12 @@ public:
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
                         const BackendOpsContext& ctx) const override {
-        if (ctx.model_manager == nullptr) {
-            throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+        if (ctx.fetch == nullptr) {
+            throw std::runtime_error("No fetch service while resolving the download source for: " +
                                      info.checkpoint());
         }
         flm_download(info.checkpoint(), do_not_upgrade, progress,
-                     ctx.model_manager->download_source_for(info));
+                     ctx.fetch->download_source_for(info));
     }
 
     void remove_self_managed_model(const ModelInfo& info) const override {

@@ -1,5 +1,6 @@
 #include <lemon/models/artifact_resolver.h>
 
+#include <lemon/backends/backend_ops.h>
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
@@ -98,12 +99,15 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
                               ? !hooks_.acquired_lazily(checkpoint_type)
                               : checkpoint_type != "npu_cache";
 
-    if (hooks_.fetches_no_artifacts != nullptr && hooks_.fetches_no_artifacts(info.recipe)) {
+    const backends::DownloadPolicy policy =
+        hooks_.download_policy != nullptr ? hooks_.download_policy(info)
+                                          : backends::DownloadPolicy::Repository;
+
+    if (policy == backends::DownloadPolicy::None) {
         return std::make_unique<NoArtifactsSource>(ArtifactRef{});
     }
 
-    if (hooks_.backend_self_manages_downloads != nullptr &&
-        hooks_.backend_self_manages_downloads(info.recipe)) {
+    if (policy == backends::DownloadPolicy::SelfManaged) {
         ArtifactRef ref = ref_for(info, checkpoint_type, required);
         ref.repo_id = checkpoint;
         return std::make_unique<SelfManagedArtifactSource>(std::move(ref), info.recipe);

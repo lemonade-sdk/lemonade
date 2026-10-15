@@ -7,10 +7,15 @@
 #include <map>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace lemon {
+namespace backends {
+enum class DownloadPolicy : int;
+}  // namespace backends
+
 namespace models {
 
 struct ArtifactSource;
@@ -75,11 +80,16 @@ class ModelArtifactStore {
         // What a checkpoint is, asked before anything touches it.
         std::function<std::unique_ptr<ArtifactSource>(const ModelInfo&, const std::string&)>
             source_for;
+        // A second models directory the operator pointed at with --extra-models-dir.
+        std::function<std::string()> extra_models_dir;
     };
 
     explicit ModelArtifactStore(Hooks hooks);
 
     std::string root() const;
+
+    // See backends::DownloadPolicy.
+    backends::DownloadPolicy download_policy(const ModelInfo& info) const;
 
     // Where one checkpoint resolves inside the managed cache. Empty for a
     // collection, which is a virtual entry with no bytes of its own.
@@ -91,6 +101,15 @@ class ModelArtifactStore {
     std::string resolve_path_in(const ModelInfo& info, const std::string& type,
                                 const std::string& checkpoint,
                                 const std::string& cache_root) const;
+
+    // Resolve every checkpoint of one model.
+    void resolve_all(ModelInfo& info) const;
+
+    // Repoint those checkpoints at a copy found in the alternate models root.
+    // `owned_paths`, when given, collects every file the adoption claims, so
+    // discovery does not offer the shards again.
+    bool adopt_extra_cache(ModelInfo& info,
+                           std::set<std::filesystem::path>* owned_paths = nullptr) const;
 
     // Every required checkpoint present, uninterrupted, and valid to the backend
     // that reads it.

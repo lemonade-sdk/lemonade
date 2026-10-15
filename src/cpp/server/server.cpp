@@ -2552,7 +2552,7 @@ void Server::auto_load_model_if_needed(
     //   - If model is NOT downloaded: Download it from its recorded registry
     //   - If model IS downloaded: Skip the registry API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+    if (model_manager_->download_policy(info) != lemon::backends::DownloadPolicy::SelfManaged &&
         !model_manager_->is_model_downloaded(requested_model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from "
                             << remote_registry_display_name(

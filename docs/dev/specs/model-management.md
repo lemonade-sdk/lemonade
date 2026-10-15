@@ -884,7 +884,8 @@ enum class DownloadPolicy { Repository, SelfManaged, None };
 
 // backend_ops.h forward-declares ModelArtifactStore.
 struct BackendOpsContext {
-    const ModelArtifactStore& artifacts;         // disk state, const calls only
+    const ModelArtifactStore* artifacts;         // disk state, const calls only
+    ArtifactFetchService* fetch;                 // registry choice + download engine
     CloudProviderRegistry* cloud_registry;       // dynamic discovery
 };
 
@@ -904,7 +905,7 @@ public:
 
 1. `plan_download()` states *what* a backend needs fetched; `ModelIngest` performs it. This is where a backend that pulls its own weights declares that fact, and the ingest path has no per-backend branch.
 2. A lazily fetched side cache — the whisper `npu_cache` `.rai` file — is a checkpoint with `required = false`, a repository, an explicit filename, `SiblingLayout`, and the shared engine's traversal guards, retries, resume, hash verification and cancellation. The backend keeps no download code and no path-resolution branch.
-3. `BackendOpsContext` holds `ModelArtifactStore` by const reference. Backend policy reads disk state through `complete()` and holds no reference to the model layer.
+3. `BackendOpsContext` names no model-layer type. `ModelArtifactStore` answers disk state through const calls; `ArtifactFetchService` answers the two fetch questions a backend cannot answer for itself — which registry a model reads from, and the engine that writes bytes into the models directory — and is the seam `ModelIngest` renames.
 
 ## Sync
 

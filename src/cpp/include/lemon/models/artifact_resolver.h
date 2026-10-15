@@ -14,6 +14,10 @@ namespace lemon {
 
 struct ModelInfo;
 
+namespace backends {
+enum class DownloadPolicy : int;
+}  // namespace backends
+
 namespace models {
 
 // A checkpoint binding to no source is broken, not merely absent.
@@ -26,8 +30,7 @@ class RegistrationError : public std::runtime_error {
 class ArtifactSourceResolver {
   public:
     struct Hooks {
-        std::function<bool(const std::string& recipe)> fetches_no_artifacts;
-        std::function<bool(const std::string& recipe)> backend_self_manages_downloads;
+        std::function<backends::DownloadPolicy(const ModelInfo&)> download_policy;
         std::function<std::unique_ptr<FetchableRepository>(const RegistryId& id,
                                                            const ArtifactRef& ref)> repository_for;
         // default_model_source; empty is an error, not a default

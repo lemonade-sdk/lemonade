@@ -19,6 +19,7 @@
 #include "gguf_reader.h"
 #include "model_registry.h"
 #include "model_types.h"
+#include "models/artifact_fetch.h"
 #include "models/change_notifier.h"
 #include "models/download_progress.h"
 #include "models/registry_documents.h"
@@ -28,6 +29,10 @@
 #include "recipe_options.h"
 
 namespace lemon {
+
+namespace backends {
+enum class DownloadPolicy : int;
+}  // namespace backends
 
 using json = nlohmann::json;
 
@@ -170,7 +175,7 @@ struct ModelFileInfo {
 
 class CloudProviderRegistry;
 
-class ModelManager {
+class ModelManager : public models::ArtifactFetchService {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
 
@@ -395,21 +400,20 @@ public:
     json sync_models(const std::vector<std::string>& target_models = {}, bool dry_run = false, bool attach_if_running = false);
 
 
-    // True if the model's backend pulls its own models on demand (e.g. flm) and
-    // so should be skipped by the router's load-time auto-download path.
-    bool backend_self_manages_downloads(const std::string& recipe) const;
+    // The artifact store's answer, exposed for the HTTP and Ollama layers.
+    backends::DownloadPolicy download_policy(const ModelInfo& info) const;
 
-    // A recipe whose models have no local bytes at all, so nothing is fetched,
-    // reported downloaded, or removed.
-    bool fetches_no_artifacts(const std::string& recipe) const;
+    void populate_model_metadata(ModelInfo& info);
 
     // The artifact store's completeness answer for this model.
     bool checkpoints_complete(const ModelInfo& info) const;
 
-    // Shared remote-registry download engine. The default BackendOps::download_model
-    // delegates here; flm/cloud override with their own download.
-    void download_from_registry_engine(const ModelInfo& info,
-                                       DownloadProgressCallback progress_callback = nullptr);
+    // models::ArtifactFetchService — the shared remote-registry download engine the
+    // default BackendOps::download_model delegates to; flm and cloud override with
+    // their own download.
+    void fetch_registry_artifacts(const ModelInfo& info,
+                                  DownloadProgressCallback progress) override;
+
 
     // Source-compatible alias for integrations built against the original API.
     // The model's registry_source still controls which provider is contacted.

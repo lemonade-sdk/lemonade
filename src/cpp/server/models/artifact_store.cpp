@@ -3,12 +3,14 @@
 #include <lemon/backends/backend_ops.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/hf_cache_util.h>
+#include <lemon/gguf_reader.h>
+#include <lemon/gguf_shard_utils.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/artifact_source.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>
-#include <lemon/utils/path_utils.h>
 #include <lemon/utils/json_utils.h>
+#include <lemon/utils/path_utils.h>
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
@@ -715,6 +717,121 @@ void ModelArtifactStore::record_processed_model(const fs::path& repo_cache_dir,
                                  {"snapshot_id", provenance.active_snapshot_id},
                                  {"processed_models", std::move(processed)}},
                             utils::path_to_utf8(provenance_path));
+}
+
+// Resolve the complete family of a registered sharded GGUF. A first shard
+// alone is not a usable model, and its remaining shards must not be discovered
+// as an unrelated extra.* model. Other quantizations remain independent.
+static bool collect_registered_shards(const fs::path& resolved, const fs::path& repo_root,
+                                      std::set<fs::path>& owned_paths) {
+    const fs::path file = resolved.lexically_normal();
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(file.filename().string(), &base, &total)) {
+        owned_paths.insert(file);
+        return true;
+    }
+
+    std::set<int> indices;
+    bool complete = true;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
+        if (ec) return false;
+        const std::string filename = entry.path().filename().string();
+        if (!same_shard_family(filename, base, total)) continue;
+
+        int index = 0;
+        is_gguf_shard_filename(filename, nullptr, nullptr, &index);
+        if (!entry.is_regular_file(ec) || ec ||
+            !path_inside(entry.path(), repo_root)) {
+            return false;
+        }
+        owned_paths.insert(entry.path().lexically_normal());
+        const std::string path = utils::path_to_utf8(entry.path());
+        if (!models::ModelArtifactStore::path_complete(path) ||
+            !backends::ops_for("llamacpp")->validate_checkpoint_file(path).empty()) {
+            complete = false;  // Still scan remaining siblings for discovery exclusion.
+        }
+        indices.insert(index);
+    }
+    return !ec && complete && indices.size() == static_cast<size_t>(total);
+}
+
+// Only complete repository caches can reclaim registered model identities;
+// loose GGUFs remain independent extra.* entries.
+bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
+                                           std::set<fs::path>* registered_paths) const {
+    const std::string extra_dir =
+        hooks_.extra_models_dir != nullptr ? hooks_.extra_models_dir() : std::string();
+    if (extra_dir.empty() || !info.source.empty() ||
+        is_model_collection_recipe(info.recipe)) return false;
+
+    const fs::path root = utils::path_from_utf8(extra_dir);
+    const std::string repo = repo_id_from_checkpoint(info.checkpoint("main"));
+    if (repo.empty()) return false;
+    const fs::path main_repo = root /
+        backends::hf_cache::repo_id_to_cache_dir_name(repo, registry_source_of(info));
+    if (!safe_is_directory(main_repo) || !path_inside(main_repo, root)) {
+        return false;
+    }
+
+    ModelInfo candidate = info;
+    // Discovery must also exclude matched shards when the family is incomplete.
+    // Resolved model paths are still only committed after full validation.
+    std::set<fs::path> local_owned_paths;
+    std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
+    try {
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
+            const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
+            if (checkpoint_repo.empty()) return false;
+            const fs::path expected_repo = root /
+                backends::hf_cache::repo_id_to_cache_dir_name(checkpoint_repo, registry_source_of(info));
+            candidate.resolved_paths[type] =
+                resolve_path_in(info, type, checkpoint, extra_dir);
+            const std::string& resolved = candidate.resolved_paths[type];
+            if (info.recipe == "llamacpp" && type == "main" &&
+                (safe_is_directory(utils::path_from_utf8(resolved)) ||
+                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
+                return false;
+            }
+            // Reject escaped refs/main entries and symlinks, including redirects
+            // into a *different* repository under the same extra models root.
+            const fs::path resolved_path = utils::path_from_utf8(resolved);
+            const bool own_repo = path_inside(expected_repo, root) &&
+                path_inside(resolved_path, expected_repo);
+            const bool legacy_main_repo = type != "main" &&
+                path_inside(resolved_path, main_repo);
+            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
+                !collect_registered_shards(resolved_path,
+                    own_repo ? expected_repo : main_repo, owned_paths)) {
+                return false;
+            }
+        }
+        if (!complete(candidate)) return false;
+    } catch (const std::exception&) {
+        return false;  // An optional directory must never break catalog discovery.
+    }
+    info.resolved_paths = std::move(candidate.resolved_paths);
+    return true;
+}
+
+backends::DownloadPolicy ModelArtifactStore::download_policy(const ModelInfo& info) const {
+    backends::BackendOpsContext ctx;
+    ctx.artifacts = this;
+    return backends::ops_for(info.recipe)->plan_download(info, ctx);
+}
+
+void ModelArtifactStore::resolve_all(ModelInfo& info) const {
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        info.resolved_paths[type] = resolve_path(info, type, checkpoint);
+    }
+
+    // The managed cache wins: a model with a complete copy of its own never looks
+    // at the extra directory.
+    if (download_policy(info) == backends::DownloadPolicy::Repository && !complete(info)) {
+        adopt_extra_cache(info);
+    }
 }
 
 }  // namespace models
