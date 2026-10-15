@@ -168,7 +168,7 @@ of being copied into the docs.
 
 ### `lemonade_list_models`
 
-List models known to the Lemonade server. ALWAYS call this first if you don't already know the exact model name to use for chat/transcribe/image: passing a wrong name may trigger a multi-GB download. Returns a summary text block plus a JSON block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
+List models known to the Lemonade server. ALWAYS call this first if you don't already know the exact model name to use for chat/transcribe/image — passing a wrong name may trigger a multi-GB download. Returns a summary text block plus a JSON block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
 
 **Returns**
 
@@ -181,7 +181,7 @@ Success returns two `text` content blocks: a human-readable summary, then a JSON
 
 ### `lemonade_chat`
 
-Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI chat format). `model` is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a `model` or `allow_download: true` (which downloads the default, Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you want to choose explicitly, since a wrong name may trigger a multi-GB download.
+Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI chat format). `model` is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a `model` or `allow_download: true` (which downloads the default, Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you want to choose explicitly — a wrong name may trigger a multi-GB download.
 
 **Returns**
 
@@ -190,15 +190,15 @@ Success returns one `text` content block with the assistant output. If the model
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
 | `allow_download` | no | `{"type":"boolean"}` | Permit downloading the default model when none is loaded or downloaded. Defaults to false. |
-| `chat_template_kwargs` | no | `{"type":"object"}` | e.g. `{"enable_thinking": true}` to enable reasoning blocks; disabled by default |
+| `chat_template_kwargs` | no | `{"type":"object"}` | e.g. {"enable_thinking": true} to enable reasoning blocks; disabled by default |
 | `max_tokens` | no | `{"type":"integer"}` | Maximum number of output tokens. |
 | `messages` | yes | `{"items":{"type":"object"},"type":"array"}` | Conversation messages in OpenAI chat format. |
 | `model` | no | `{"type":"string"}` | Optional. Omit to auto-select a loaded/downloaded LLM; defaults to Qwen3.5-4B-MTP-GGUF only with allow_download=true. |
 | `response_format` | no | `{"type":"object"}` | OpenAI-compatible response format configuration. |
 | `seed` | no | `{"type":"integer"}` | Optional random seed for reproducible sampling. |
-| `stop` | no | `{}` | Stop sequences: a string or an array of strings. |
+| `stop` | no | `{}` | stop sequences (string or array) |
 | `temperature` | no | `{"type":"number"}` | Sampling temperature. |
-| `tool_choice` | no | `{}` | `auto`, `none`, `required`, or `{"type": "function", ...}`. |
+| `tool_choice` | no | `{}` | auto \| none \| required \| {type: function, ...} |
 | `tools` | no | `{"items":{"type":"object"},"type":"array"}` | OpenAI-compatible tool definitions available to the model. |
 | `top_p` | no | `{"type":"number"}` | Nucleus sampling probability. |
 
@@ -224,7 +224,7 @@ Success returns two `text` content blocks: the transcript, then the JSON-stringi
 
 ### `lemonade_generate_image`
 
-Generate one or more images from a text prompt. The Lemonade MCP server always runs on the same machine as the caller, so PREFER writing the result directly to disk by passing `output_path` (single image) or `output_dir` (one or more). When you do, the tool returns absolute file path(s) as text, with no base64 round-trip and dramatically fewer tokens. Only omit both arguments when you genuinely need the image inline. For safety, disk writes are confined to a sandbox directory (&lt;cache_dir&gt;/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); paths outside it are rejected. `output_dir` writes get unique auto-generated filenames (so concurrent callers never clobber each other); use `output_path` when you need an exact name. `model` is OPTIONAL: when omitted, the server reuses an already-loaded image model, else an already-downloaded one; if neither exists it asks you to pass a `model` or `allow_download: true` (which downloads the default, SD-Turbo).
+Generate one or more images from a text prompt. The Lemonade MCP server always runs on the same machine as the caller, so PREFER writing the result directly to disk by passing `output_path` (single image) or `output_dir` (one or more). When you do, the tool returns absolute file path(s) as text — no base64 round-trip and dramatically fewer tokens. Only omit both arguments when you genuinely need the image inline. For safety, disk writes are confined to a sandbox directory (&lt;cache_dir&gt;/mcp-images, or LEMONADE_MCP_IMAGE_DIR if set); paths outside it are rejected. `output_dir` writes get unique auto-generated filenames (so concurrent callers never clobber each other); use `output_path` when you need an exact name. `model` is OPTIONAL: when omitted, the server reuses an already-loaded image model, else an already-downloaded one; if neither exists it asks you to pass a `model` or `allow_download: true` (which downloads the default, SD-Turbo).
 
 **Returns**
 
@@ -262,9 +262,9 @@ Success always starts with one `text` block containing the final text. Artifacts
 | `output_dir` | no | `{"type":"string"}` | Directory to write produced artifacts into, inside the MCP image sandbox (&lt;cache_dir&gt;/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_{token}_{index}.{ext}); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks. |
 | `response_format` | no | `{"type":"object"}` | OpenAI-compatible response format configuration for the planner. |
 | `seed` | no | `{"type":"integer"}` | Optional random seed forwarded to the planner LLM. |
-| `stop` | no | `{}` | Stop sequences: a string or an array of strings. |
+| `stop` | no | `{}` | stop sequences (string or array) |
 | `temperature` | no | `{"type":"number"}` | Sampling temperature for the planner LLM. |
-| `tool_choice` | no | `{}` | `auto`, `none`, `required`, or `{"type": "function", ...}`. |
+| `tool_choice` | no | `{}` | auto \| none \| required \| {type: function, ...} |
 | `tools` | no | `{"items":{"type":"object"},"type":"array"}` | OpenAI-compatible application tool definitions passed to the planner. |
 | `top_p` | no | `{"type":"number"}` | Nucleus sampling probability for the planner LLM. |
 
