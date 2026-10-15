@@ -350,6 +350,17 @@ int main() {
     }
 
     {
+        auto set = lemon::enumerate_gguf_variants({
+            "Qwen3.8-Flash-Next-UD-Q3_K_XL.gguf",
+            "Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
+        });
+        result.expect("model-prefixed MTP-UD is a draft, not another main variant",
+                      set.variants.size() == 1 && set.draft_files.size() == 1 &&
+                          set.variants[0].draft_file ==
+                              "Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
+                      "got " + join_names(set));
+    }
+    {
         auto set = lemon::enumerate_gguf_variants({"My-MTP-Model-Q8_0.gguf"});
         result.expect("MTP in a main-model name is not treated as a draft",
                       set.variants.size() == 1 && set.variants[0].name == "Q8_0" &&

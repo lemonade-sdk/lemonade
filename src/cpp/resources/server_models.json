@@ -2156,7 +2156,8 @@
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "soft_pixel_cap": 525625
         }
     },
     "SD-Turbo-GGUF": {
@@ -2170,7 +2171,8 @@
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "soft_pixel_cap": 525625
         }
     },
     "SDXL-Turbo": {
@@ -2185,7 +2187,8 @@
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "soft_pixel_cap": 1048576
         }
     },
     "SD-1.5": {
@@ -2200,7 +2203,8 @@
             "steps": 20,
             "cfg_scale": 7.5,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "soft_pixel_cap": 1048576
         }
     },
     "SDXL-Base-1.0": {
@@ -2215,7 +2219,8 @@
             "steps": 20,
             "cfg_scale": 7.5,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 1048576
         }
     },
     "Flux-2-Klein-4B": {
@@ -2235,7 +2240,8 @@
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "Flux-2-Klein-9B-GGUF": {
@@ -2255,7 +2261,8 @@
             "steps": 4,
             "cfg_scale": 1,
             "width": 256,
-            "height": 256
+            "height": 256,
+            "soft_pixel_cap": 2097152
         }
     },
     "Qwen-Image-GGUF": {
@@ -2275,6 +2282,7 @@
             "cfg_scale": 2.5,
             "width": 512,
             "height": 512,
+            "soft_pixel_cap": 2097152,
             "sampling_method": "euler",
             "flow_shift": 3.0
         },
@@ -2299,6 +2307,7 @@
             "cfg_scale": 2.5,
             "width": 512,
             "height": 512,
+            "soft_pixel_cap": 2097152,
             "sampling_method": "euler",
             "flow_shift": 3.0
         },
@@ -2322,7 +2331,8 @@
             "steps": 9,
             "cfg_scale": 1,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "LMX-Omni-52B-Halo": {
@@ -2482,7 +2492,8 @@
             "steps": 30,
             "cfg_scale": 4,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "Anima-Aesthetic": {
@@ -2501,7 +2512,8 @@
             "steps": 30,
             "cfg_scale": 4,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "Anima-Turbo": {
@@ -2520,7 +2532,8 @@
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "Flux-2-Klein-4B-TheNoise": {
@@ -2540,7 +2553,8 @@
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "Flux-2-Klein-9B-TheNoise": {
@@ -2560,7 +2574,29 @@
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
+        }
+    },
+    "Qwen-Image-2.1-Turbo-INT8": {
+        "checkpoints": {
+            "main": "Comfy-Org/Qwen-Image-2.1:diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+            "text_encoder": "Comfy-Org/Qwen-Image-2.1:text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Qwen-Image-2.1:vae/qwen_image_2.1_vae_bf16.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image",
+            "edit"
+        ],
+        "size": 16.1,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 1,
+            "width": 1440,
+            "height": 1440,
+            "soft_pixel_cap": 4194304
         }
     },
     "Krea-2-Turbo": {
@@ -2579,7 +2615,8 @@
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 4194304
         }
     },
     "Z-Image-Turbo-TheNoise": {
@@ -2598,7 +2635,8 @@
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
-            "height": 1024
+            "height": 1024,
+            "soft_pixel_cap": 2097152
         }
     },
     "RealESRGAN-x4plus": {

@@ -1,6 +1,7 @@
 #include "lemon/prometheus_metrics.h"
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/utils/url_utils.h"
 #include "lemon/version.h"
 
 #include <algorithm>
@@ -165,28 +166,6 @@ private:
     std::set<std::string> described_;
 };
 
-bool parse_backend_port(const std::string& backend_url, int& port) {
-    const std::string host = "127.0.0.1:";
-    size_t host_pos = backend_url.find(host);
-    if (host_pos == std::string::npos) {
-        return false;
-    }
-    size_t port_start = host_pos + host.size();
-    size_t port_end = port_start;
-    while (port_end < backend_url.size() && std::isdigit(static_cast<unsigned char>(backend_url[port_end]))) {
-        port_end++;
-    }
-    if (port_end == port_start) {
-        return false;
-    }
-    try {
-        port = std::stoi(backend_url.substr(port_start, port_end - port_start));
-        return port > 0;
-    } catch (...) {
-        return false;
-    }
-}
-
 std::string rewrite_llamacpp_help_or_type_line(const std::string& line,
                                                std::set<std::string>& described_backend_metrics) {
     const bool is_help = line.rfind("# HELP ", 0) == 0;
@@ -280,13 +259,16 @@ void append_llamacpp_backend_metrics(PrometheusBuilder& metrics,
         return;
     }
 
+    std::string backend_host;
     int backend_port = 0;
-    if (!parse_backend_port(model.value("backend_url", ""), backend_port)) {
+    bool backend_ssl = false;
+    utils::parse_target_url(model.value("backend_url", ""), backend_host, backend_port, backend_ssl, false);
+    if (backend_host.empty() || backend_port <= 0) {
         return;
     }
 
     try {
-        httplib::Client backend_client("127.0.0.1", backend_port);
+        httplib::Client backend_client(backend_host, backend_port);
         backend_client.set_connection_timeout(1);
         backend_client.set_read_timeout(1);
         if (auto backend_res = backend_client.Get("/metrics")) {
@@ -439,12 +421,12 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     }
 #endif
 
-    metrics.describe("lemonade_gpu_usage_percent", "GPU utilization percentage.", "gauge");
+    metrics.describe("lemonade_gpu_usage_percent", "Primary GPU utilization percentage.", "gauge");
     if (system_metrics.gpu_percent >= 0 && std::isfinite(system_metrics.gpu_percent)) {
         metrics.sample("lemonade_gpu_usage_percent", {}, system_metrics.gpu_percent);
     }
 
-    metrics.describe("lemonade_vram_used_gb", "GPU memory usage in GiB.", "gauge");
+    metrics.describe("lemonade_vram_used_gb", "Primary GPU memory usage in GiB.", "gauge");
     if (system_metrics.vram_gb >= 0 && std::isfinite(system_metrics.vram_gb)) {
         metrics.sample("lemonade_vram_used_gb", {}, system_metrics.vram_gb);
     }
