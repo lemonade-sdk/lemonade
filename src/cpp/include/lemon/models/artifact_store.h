@@ -29,6 +29,10 @@ using KnownModels = std::map<std::string, ModelInfo>;
 // goes through this, because a row may name the registry in any of its aliases.
 std::string registry_source_of(const ModelInfo& info);
 
+// The managed-cache directory name for one repository, in that registry's namespace.
+std::string repo_id_to_cache_dir_name(const std::string& repo_id,
+                                      const std::string& registry_source);
+
 // What removal did, so the caller only has to decide what to report.
 struct DeleteReport {
     // A backend removed the weights it fetched for itself.
