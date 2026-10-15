@@ -1,3 +1,4 @@
+#include <map>
 #include <optional>
 #include <string>
 
@@ -181,6 +182,7 @@ public:
         }
         const bool has_tools = request_json.value("has_tools", false);
 
+        std::map<std::string, std::string> metadata;
         if (request_json.contains("metadata")) {
             const json& metadata_json = request_json["metadata"];
             if (!metadata_json.is_object()) {
@@ -193,6 +195,7 @@ public:
                         "'metadata' value for key '" + it.key() + "' must be a string");
                     return;
                 }
+                metadata[it.key()] = it.value().get<std::string>();
             }
         }
 
@@ -215,22 +218,16 @@ public:
                 });
             RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
-            // A test prompt is one user turn with no history. Building it as a request
-            // gives the engine the same context a real completion request would.
-            json content = json::array({{{"type", "text"}, {"text", prompt}}});
-            if (has_images) {
-                content.push_back({{"type", "image_url"}, {"image_url", {{"url", ""}}}});
-            }
-            json test_request = {
-                {"messages", json::array({{{"role", "user"}, {"content", content}}})},
-            };
-            if (has_tools) {
-                test_request["tools"] = json::array({json::object()});
-            }
-            if (request_json.contains("metadata")) {
-                test_request["metadata"] = request_json["metadata"];
-            }
-            RouteContext route_context = build_route_context(test_request, "");
+            RouteContext route_context;
+            route_context.input = prompt;
+            route_context.params.chars = prompt.size();
+            // A test prompt is a single turn with no history, so its whole-request
+            // total is the prompt itself. Leaving this at 0 would make every
+            // min_total_chars rule untestable here.
+            route_context.params.total_chars = prompt.size();
+            route_context.params.has_images = has_images;
+            route_context.params.has_tools = has_tools;
+            route_context.metadata = std::move(metadata);
 
             Decision decision = engine.route(route_context, /*want_trace=*/true);
 
