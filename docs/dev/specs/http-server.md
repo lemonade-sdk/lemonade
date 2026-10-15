@@ -107,8 +107,8 @@ struct ExampleStep {
 // gen_api_boilerplate.py sends each example to lemond and records the response into the docs, and
 // --check validates the response against the schema of the example's format.
 struct RouteExample {
-    std::string name;                 // tab label, e.g. "streaming" or "save"; required when a route has several
-    std::string description;          // what this example shows that the route's other text does not; opens its response tab
+    std::string name;                 // subsection heading, e.g. "streaming" or "save"; required when a route has several
+    std::string description;          // what this example shows that the route's other text does not; opens its subsection
     ResponseFormat format;            // the RouteResponse the response is validated against
     nlohmann::json args;              // argument values, e.g. {"id": "$lemonade.jobs_create/id"}
     std::vector<ExampleStep> setup;   // run first, in order
@@ -452,14 +452,14 @@ This section specifies how `docs/api` is generated from the routes, including re
 
 1. Reads every `RouteSpec` from `GET /internal/routes`, a route class in `routes/internal/`.
 2. For each page (a top-level folder), writes the summary table at the top of the page.
-3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, the route's other paths and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Example request and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
-4. Fills the Example request and Response format sections from the response cache, running each example's setup and request against lemond only when its cache entry is invalid.
+3. For each route, writes a region in the API reference layout of the documentation guide: the method and path heading, a status badge, the description, the route's other paths and its auth, a Parameters table with each argument's `Support` badge (`available`, `partial` or `not_available`), the notes, and the Examples and Response format sections described in [Examples](#examples). The route's badge is the first that applies: `experimental` when the route sets `experimental`, `not_available` when `responses` is empty, `fully_available` when every argument is `Support::Available`, and `partially_available` otherwise.
+4. Fills the Examples section from the response cache, running each example's setup and request against lemond only when its cache entry is invalid.
 
 Page intros and concept sections stay hand-written between the regions, such as routing policies, VAD configuration, model labels, and the WebSocket APIs.
 
 ### Examples
 
-The Example request section has PowerShell and Bash tabs for each of the route's `examples`, and the Response format section shows what lemond returned to each. When a route has several examples, the first example's request tabs are unlabeled, every other example's are labeled with its `name`, such as "PowerShell (streaming)", each response gets a tab named after its example, such as "Streaming responses", which opens with the example's `description`. For a JSON format, a Field Descriptions list follows. It opens with the top-level `description` of the format's `RouteResponse::schema`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes lists each shape separately, opening with that shape's top-level `description`. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
+The Examples section gives each of the route's `examples` its own subsection, headed by its `name`, such as "Streaming". The subsection opens with the example's `description`, then has PowerShell and Bash tabs for the request and shows what lemond returned. A route with one example has a single Example section with no subsection. The Response format section then lists each format's Field Descriptions once, under a heading per format when the route has several. The list opens with the top-level `description` of the format's `RouteResponse::schema`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes lists each shape separately, opening with that shape's top-level `description`. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
 
 - **Arguments.** An example's `args` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
 - **Files.** A `@fixtures/<file>` marker is read from `docs/tools/fixtures/`. It is a whole value, or follows a prefix such as `data:image/png;base64,`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
@@ -528,7 +528,7 @@ The author fixes it by running the generator locally and committing the result. 
 Drift Check cannot tell whether a sentence is true, so rule 2 of the [Route Documentation Contract](#route-documentation-contract) is enforced by review. When a PR changes a route's text, schemas, examples or handler, the reviewer reads the route's generated section beside its handler and checks:
 
 - each claim in the description, notes, argument descriptions and field descriptions against the code
-- each example's tab label against its request
+- each example's name and description against its request
 - that behavior a client relies on, such as an error status or a side effect, is stated
 
 A claim that cannot be traced to the code or to a recorded response is fixed or removed before the PR merges.
@@ -555,7 +555,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `stream` | No | Stream tokens as server-sent events. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Return the log probability of each output token. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
-### Example request
+### Examples
+
+#### Non-streaming
 
 === "PowerShell"
 
@@ -575,7 +577,24 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
     ```
 
-=== "PowerShell (streaming)"
+**Response:**
+
+`200`
+
+```json
+{
+  "id": "chatcmpl-a1B2c3D4e5F6",
+  "object": "chat.completion",
+  "created": 1759766400,
+  "model": "Qwen3-0.6B-GGUF",
+  "choices": [{"index": 0, "message": {"role": "assistant", "content": "The capital of France is Paris."}, "finish_reason": "stop"}],
+  "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23}
+}
+```
+
+#### Streaming
+
+=== "PowerShell"
 
     ```powershell
     Invoke-WebRequest `
@@ -585,7 +604,7 @@ Requires `LEMONADE_API_KEY` when it is set.
       -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
     ```
 
-=== "Bash (streaming)"
+=== "Bash"
 
     ```bash
     curl http://localhost:13305/v1/chat/completions \
@@ -593,39 +612,24 @@ Requires `LEMONADE_API_KEY` when it is set.
       -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
     ```
 
+**Response:**
+
+`200`
+
+```text
+data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": "The"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": " capital"}, "finish_reason": null}]}
+...
+data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+data: [DONE]
+```
+
 ### Response format
 
-=== "Non-streaming responses"
+**Field Descriptions:**
 
-    `200`
-
-    ```json
-    {
-      "id": "chatcmpl-a1B2c3D4e5F6",
-      "object": "chat.completion",
-      "created": 1759766400,
-      "model": "Qwen3-0.6B-GGUF",
-      "choices": [{"index": 0, "message": {"role": "assistant", "content": "The capital of France is Paris."}, "finish_reason": "stop"}],
-      "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23}
-    }
-    ```
-
-    **Field Descriptions:**
-
-    - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
-
-=== "Streaming responses"
-
-    `200`
-
-    ```text
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": "The"}, "finish_reason": null}]}
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {"content": " capital"}, "finish_reason": null}]}
-    ...
-    data: {"id": "chatcmpl-a1B2c3D4e5F6", "object": "chat.completion.chunk", "created": 1759766400, "model": "Qwen3-0.6B-GGUF", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
-    data: [DONE]
-    ```
+- `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 <!-- END GENERATED: openai.chat_completions -->
 ````
 
