@@ -1,5 +1,3 @@
-// Built-in defaults intentionally preserve the established renderer presentation.
-
 // =============================================================================
 // Base Option Types
 // =============================================================================

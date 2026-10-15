@@ -31,7 +31,7 @@ struct RoutingHelperTestHook {
     }
 };
 
-} // namespace lemon
+}
 
 namespace {
 
@@ -478,7 +478,7 @@ void check_router_fallback_dispatch(FakeHttpBackend& upstream) {
     }
 }
 
-} // namespace
+}
 
 int main() {
     try {

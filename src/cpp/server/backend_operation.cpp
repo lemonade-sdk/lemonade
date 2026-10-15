@@ -160,7 +160,7 @@ const HandlerRegistration& validate_binding_signature(const OperationBinding& bi
     return handler;
 }
 
-} // namespace
+}
 
 void validate_operation_binding_signatures(const std::vector<OperationBinding>& bindings, bool compiled_compatibility) {
     for (size_t i = 0; i < bindings.size(); ++i) {
@@ -312,4 +312,4 @@ OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, Oper
     return OperationBindings(adapters, std::move(bindings), true, std::move(rejections));
 }
 
-} // namespace lemon
+}

@@ -99,4 +99,4 @@ private:
 
 OperationBindings legacy_operation_bindings(LegacyOperationProfile profile, OperationAdapters adapters);
 
-} // namespace lemon
+}

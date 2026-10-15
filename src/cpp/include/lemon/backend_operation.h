@@ -109,4 +109,4 @@ std::string_view backend_operation_name(BackendOperation operation) noexcept;
 bool parse_backend_operation(std::string_view name, BackendOperation& operation) noexcept;
 bool valid_operation_delivery(BackendOperation operation, OperationDelivery delivery) noexcept;
 
-} // namespace lemon
+}

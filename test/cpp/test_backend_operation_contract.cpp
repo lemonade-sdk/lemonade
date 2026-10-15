@@ -551,7 +551,7 @@ void check_removed_helpers() {
     check(whisper_temp_references == 0 && ryzenai_declarations == 0, "Whisper temp-directory member and RyzenAI availability declaration remain absent");
 }
 
-} // namespace
+}
 
 void* operator new(std::size_t size) {
     if (track_allocations) ++query_allocations;
