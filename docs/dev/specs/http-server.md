@@ -161,7 +161,8 @@ public:
 protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
-    // The same holds for an exception that escapes validate() or run().
+    // A route's error shape is part of its contract, so a route can override how an exception
+    // that escapes validate() or run() is answered, together with the errors that override writes.
     virtual void write_exception(const std::exception& error, httplib::Response& res) const;
     virtual std::vector<RouteError> exception_errors() const;
 };
@@ -236,7 +237,7 @@ schema["properties"]["x_lemonade_route"] = {
 
 This section defines how a route declares its error statuses, so its handler and its docs read each one from the same `RouteError`.
 
-Every function that writes an error status takes a `RouteError` in place of a status, such as `write_plain_error()` and `write_openai_error()`, or picks one of the `RouteError`s it defines, as `ModelLoader::write_load_error()` picks from `ModelLoader::errors()`. `set_error_response()` answers with the backend's status when the backend reports one, and with its `RouteError`'s status otherwise. Each function keeps the body shape its callers write; [Appendix B](#appendix-b-error-format-cleanup) unifies them. A route defines its errors as constants beside its class and lists them in `errors`:
+Every function that writes an error status, such as `write_plain_error()` and `write_openai_error()`, takes a `RouteError` in place of a status, or picks one of the `RouteError`s it defines, as `ModelLoader::write_load_error()` picks from `ModelLoader::errors()`. `set_error_response()` answers with the backend's status when the backend reports one, and with its `RouteError`'s status otherwise. Each function keeps the body shape its callers write; [Appendix B](#appendix-b-error-format-cleanup) unifies them. A route defines its errors as constants beside its class and lists them in `errors`:
 
 ```cpp
 const RouteError kUnknownJob{404, "", "`id` names no job"};
@@ -529,7 +530,7 @@ This section specifies what each route's text says. The generator prints each ro
 | `RouteArg::description` | What the argument controls, its accepted values, its default ("Defaults to `false`."), and when it is required if that depends on other arguments | Where the argument goes, the Required column, the route's behavior |
 | Top-level `description` of a `RouteResponse::schema`, or of one of its shapes | What the response is as a whole: how a stream's lines or events relate, such as which line ends it, or when this shape is returned | A field's meaning |
 | Property `description` in a `RouteResponse::schema` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
-| `RouteError::when` | The condition that produces the error, as a clause such as "`id` names no job", and that the backend's status replaces this one when the error passes a backend's through | The status, the code, the body's message |
+| `RouteError::when` | The condition that produces the error, as a clause such as "`id` names no job". For an error passed through from a backend, also that the backend's status replaces this one | The status, the code, the body's message |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
 | `RouteExample::description` | What this example shows that the route's other text does not, such as which model or file it uses, or a request shape that only this example uses | The route's general behavior, which belongs in `notes` |
 
@@ -688,10 +689,10 @@ A chunk of the assistant's message. The stream ends with `data: [DONE]`.
 
 The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
 
-- `error` - The backend's error.
+- `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
   - `type` - The error's type, such as `backend_error`.
-  - `status_code` - The status the backend answered with.
+  - `status_code` - The status the backend answered with, or `502` when it closed the stream without a response.
 
 ### Errors
 
@@ -699,12 +700,12 @@ The backend failed after the stream started. This event replaces the rest of the
 |--------|------|------|
 | `400` |  | The body is empty or is not valid JSON |
 | `400` |  | The request names no `model` |
-| `404` | `model_not_supported` | `model` is filtered out on this system, such as an NPU model without an NPU |
-| `404` | `model_not_found` | `model` names no model in the registry |
-| `409` | `router_residency_conflict` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `409` | `slots_pinned_error` | Every loaded model of `model`'s type is pinned, so none can be unloaded to make room |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | `model_load_error` | The backend fails to load `model` |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
 <!-- END GENERATED: openai.chat_completions -->
 ````
