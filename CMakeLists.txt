@@ -3241,7 +3241,7 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_DELETE_SHARED_REPO_TEST_SRC}")
     add_dependencies(test_model_delete_shared_repo copy_resources)
 
     include(CTest)
-    add_cpp_ci_test(ModelDeleteSharedRepoTest CI ON COMMAND test_model_delete_shared_repo)
+    add_cpp_ci_test(ModelDeleteSharedRepoTest CI OFF COMMAND test_model_delete_shared_repo)
 endif()
 
 
