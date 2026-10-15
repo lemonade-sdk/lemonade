@@ -1046,6 +1046,7 @@ set(SOURCES_CORE
     src/cpp/server/models/change_notifier.cpp
     src/cpp/server/models/checkpoint_grammar.cpp
     src/cpp/server/models/fetchable_repository.cpp
+    src/cpp/server/models/ingest.cpp
     src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
     src/cpp/server/models/registry_documents.cpp

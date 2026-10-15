@@ -33,7 +33,7 @@ This spec defines how lemond answers three questions: which models exist, what a
 The three goals that decide every design choice here:
 
 - **Two axes.** *Which models exist* and *where the bytes come from* are separate questions with separate interfaces, joined by one value, the `ArtifactRef`. Every component sits on one axis or the other.
-- **Extension is local.** A new catalog, artifact repository, or download source is one `.cpp` file, one registration line, and one descriptor. It documents itself: [Generated Docs](#generated-docs) fails CI when a registered source has no docs.
+- **Extension is local.** A new catalog, artifact repository, or download source is one `.cpp` file, one build line, one registration line, and one descriptor. It documents itself: [Generated Docs](#generated-docs) fails CI when a registered source has no docs.
 - **Clear separation of concerns.** One function resolves a name, one site binds a checkpoint to a source, one component publishes the model set, one counter announces a new set. A caller never re-derives an answer, and no component branches on another's identity to get one.
 
 ## Scope
@@ -1061,7 +1061,7 @@ src/cpp/server/models/
   model_change_notifier.cpp recipe_options_store.cpp alias_manager.cpp
 ```
 
-1. `src/cpp/server/models/*.cpp` is collected by `file(GLOB ... CONFIGURE_DEPENDS)` in the `lemonade-server-core` target, as `docs/api` is, so a new catalog or repository edits no CMake file.
+1. Every `.cpp` under `src/cpp/server/models/` is named in the `lemonade-server-core` source list in the root `CMakeLists.txt`, so a new catalog or repository adds one line there. The CLI compiles its own `COMMON_SOURCES` list in `src/cpp/cli/CMakeLists.txt`; a file that reaches the backend registry stays out of it, which is what lets one binary name a host without being able to pull from it.
 2. `alias_manager.{h,cpp}` moves into `lemon/models/` and `src/cpp/server/models/`, because resolution is the only consumer of its lookup half. Its header includes the standard library alone; `load()` and `save()` keep the file I/O in the `.cpp`.
 3. Headers in `lemon/models/` include the standard library, `nlohmann/json`, and each other. None includes a backend header, `router.h` or `server.h`. Contact with backends is `BackendOps`, `BackendAvailability`, and injected `std::function` seams — the idiom `routing_policy.h` documents.
 4. One component per `.cpp`. A file past roughly 500 lines signals a component that is holding two responsibilities, and `ModelArtifactStore` and `ModelIngest` are the ones to watch.

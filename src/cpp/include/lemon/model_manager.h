@@ -19,9 +19,9 @@
 #include "gguf_reader.h"
 #include "model_registry.h"
 #include "model_types.h"
-#include "models/artifact_fetch.h"
 #include "models/change_notifier.h"
 #include "models/download_progress.h"
+#include "models/ingest.h"
 #include "models/registry_documents.h"
 #include "models/recipe_options_store.h"
 #include "models/sync_service.h"
@@ -175,7 +175,7 @@ struct ModelFileInfo {
 
 class CloudProviderRegistry;
 
-class ModelManager : public models::ArtifactFetchService {
+class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
 
@@ -201,6 +201,8 @@ public:
     // from apply_default_pull_source, so they consult this to honor the default.
     void set_default_model_source_provider(std::function<std::string()> provider);
 
+    // The registry a pull of this model reads: what the model was registered with
+    // wins over the server-wide default.
     RegistryId download_source_for(const ModelInfo& info) const;
 
     // The ArtifactSource for one checkpoint.
@@ -408,13 +410,6 @@ public:
     // The artifact store's completeness answer for this model.
     bool checkpoints_complete(const ModelInfo& info) const;
 
-    // models::ArtifactFetchService — the shared remote-registry download engine the
-    // default BackendOps::download_model delegates to; flm and cloud override with
-    // their own download.
-    void fetch_registry_artifacts(const ModelInfo& info,
-                                  DownloadProgressCallback progress) override;
-
-
     // Source-compatible alias for integrations built against the original API.
     // The model's registry_source still controls which provider is contacted.
     void download_from_huggingface_engine(const ModelInfo& info,
@@ -459,55 +454,14 @@ public:
     void start_directory_watcher();
 
 private:
-    // Cycle-detecting overload used by the collection fan-out in download_model.
-    // `visited` accumulates collection names already entered on the current
-    // call chain; re-entering one throws.
-    void download_model(const std::string& model_name,
-                       const json& model_data,
-                       bool do_not_upgrade,
-                       DownloadProgressCallback progress_callback,
-                       std::set<std::string>& visited,
-                       bool register_only,
-                       bool allow_missing_checkpoint,
-                       bool replace_existing);
-
     static json load_server_models();
     json load_architecture_defaults();
 
     // Remove a user model entry from user_models.json (no file deletion).
-    // Used to roll back a collection registered earlier in the same call when
-    // its component resolution fails.
     void unregister_user_model(const std::string& model_name);
 
     static std::string get_user_models_file();
     std::string get_recipe_options_file();
-
-    // Collection manifests (recipe="collection.omni" with a registry checkpoint):
-    // the full collection definition lives in the configured remote registry as
-    // an exported collection JSON (discovered by content, not filename).
-    nlohmann::json fetch_collection_manifest(const std::string& repo_id,
-                                               const std::string& registry_source,
-                                               bool do_not_upgrade);
-
-    // Resolve a collection's component list against the registry: known names
-    // keep the local definition (local-wins, drift logged); unknown names are
-    // registered as `user.` models from their inline definition in
-    // `component_defs` (the `models` array of a collection file/manifest).
-    // Returns the components as canonical cache names, preserving order.
-    std::vector<std::string> register_components(const nlohmann::json& component_names,
-                                                 const nlohmann::json& component_defs,
-                                                 const std::string& registry_source = "huggingface");
-
-    // Resolve a registry-backed collection's components at pull time: fetch the
-    // manifest, then register_components() against its components/models arrays.
-    std::vector<std::string> resolve_collection_components_from_manifest(
-        const std::string& repo_id,
-        const std::string& registry_source, bool do_not_upgrade);
-
-    // Populate a collection's components from a manifest already cached on disk
-    // (offline, no registration). Used by build_cache so a pulled collection keeps
-    // its components across restarts. No-op if the manifest is not cached.
-    void populate_collection_components_from_cache(ModelInfo& info);
 
     // The authored layer of build_recipe_options()'s ladder, read from the
     // registry row. Takes no store lock.
@@ -525,13 +479,6 @@ private:
     // Fills info.resolved_paths from the artifact store, adopting a complete
     // repository from the extra models directory when the managed cache lacks it.
     void resolve_all_model_paths(ModelInfo& info);
-
-    // Download from a JSON manifest
-    void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
-
-    // Download from the model's configured remote registry
-    void download_from_registry(const ModelInfo& info,
-                                   DownloadProgressCallback progress_callback = nullptr);
 
     // Discover independent GGUF models, excluding complete registered cache files.
     std::map<std::string, ModelInfo> discover_extra_models(
@@ -554,11 +501,6 @@ private:
     // cache patch. The store orders its own state; this keeps the two in step so
     // two concurrent writers cannot leave the cache holding the earlier entry.
     std::mutex recipe_options_write_mutex_;
-
-    // Serializes concurrent downloads that write into the same snapshot
-    // (keyed by checkpoint repo). See download_registered_model.
-    std::mutex download_locks_mutex_;
-    std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
 
     std::function<void(const std::string&)> sync_phase_callback_;
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
@@ -598,6 +540,7 @@ private:
 
     UpdateCheckResult run_update_scan(const std::vector<std::string>& targets);
     models::SyncService::Deps make_sync_deps();
+    models::ModelIngest::Deps make_ingest_deps();
 
     void publish_update_scan(const models::ScanDetermination& settled,
                              models::UpdateScanResult& result);
@@ -606,6 +549,8 @@ private:
     // Declared last so it dies first: the worker joins before the store it
     // publishes to does.
     const std::unique_ptr<models::ModelArtifactStore> artifacts_;
+    // Fetches registry bytes; also the ArtifactFetchService the backends ask.
+    std::unique_ptr<models::ModelIngest> ingest_;
     models::SyncService sync_;
 };
 

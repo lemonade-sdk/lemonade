@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace lemon {
 
@@ -51,6 +52,19 @@ inline const char* canonical_prefix(ModelSource source) {
 
 inline std::string canonical_id(ModelSource source, const std::string& bare_name) {
     return std::string(canonical_prefix(source)) + bare_name;
+}
+
+inline std::string_view user_model_prefix() { return canonical_prefix(ModelSource::Registered); }
+
+inline bool is_user_model_name(const std::string& model_name) {
+    return model_name.rfind(user_model_prefix(), 0) == 0;
+}
+
+inline std::string strip_user_model_prefix(const std::string& model_name) {
+    if (!is_user_model_name(model_name)) {
+        return model_name;
+    }
+    return model_name.substr(user_model_prefix().size());
 }
 
 inline std::string CanonicalId::full() const {
