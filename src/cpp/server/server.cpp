@@ -7348,7 +7348,9 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         cancel_download_jobs();
         stop();
-        std::exit(0);
+        std::cout.flush();
+        std::cerr.flush();
+        std::_Exit(0);
     }).detach();
 }
 

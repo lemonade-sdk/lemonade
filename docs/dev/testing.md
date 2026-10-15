@@ -64,6 +64,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes image generation | `test/server_sd.py` — a new device is a flag on this suite, not a new file |
 | Changes the router or routing policies | `test/cpp/test_routing_*.cpp` and `test/server_router.py`; keep `test/test_schema_lock.py` and `test/test_routing_fixtures.py` green |
 | Changes the jobs engine | `test/cpp/test_job_*.cpp` and `test/server_jobs.py` |
+| Changes server shutdown or lifecycle | `test/server_shutdown.py` (starts its own `lemond`) |
 | Changes WebSocket / Realtime behavior | `test/test_websocket_idle.py`, `test/server_websocket_auth.py` |
 | Changes streaming error handling | `test/server_streaming_errors.py` |
 | Changes model downloads or registry search | `test/server_downloads.py` |
