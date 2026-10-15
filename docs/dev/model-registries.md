@@ -6,11 +6,46 @@ Lemonade supports Hugging Face and ModelScope as remote model registries. This d
 
 Remote provenance is stored separately from local origin:
 
-- `ModelInfo::source` describes a local origin such as `local_upload`, `local_path`, or `extra_models_dir`.
-- `ModelInfo::registry_source` identifies the remote registry: `huggingface` or `modelscope`.
+- `ModelInfo::source` describes a local origin such as <!-- BEGIN GENERATED: local-origin-tokens -->`local_upload`, `local_path` or `extra_models_dir`<!-- END GENERATED: local-origin-tokens -->.
+- `ModelInfo::registry_source` identifies the remote registry: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->.
 - The public registration field is `source`. For a remote model it is canonicalized and persisted as the registry name. `registry_source` is also accepted in exported/internal records.
 
+- `POST /pull` accepts <!-- BEGIN GENERATED: pull-source-values -->`huggingface`, `modelscope`, `local_upload`, `local_path` or `extra_models_dir`<!-- END GENERATED: pull-source-values --> for its `source` field.
+
 Hugging Face is the shipped default for backward compatibility, but the effective default for source-less pulls is the `default_model_source` config key (see [Default source policy](#default-source-policy) below). A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.
+
+## Registry descriptors
+
+Every row below is a descriptor field; `GET /internal/model-sources` serves them and
+`docs/tools/gen_model_source_boilerplate.py` writes these regions.
+
+<!-- BEGIN GENERATED: model-registries -->
+| Registry | Endpoint | Schemes | Environment | Cache prefix | Revision semantics | Staleness basis | Search |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `huggingface` | `https://huggingface.co` | `hf://` | `HF_TOKEN` and `HF_ENDPOINT` | `models--` | branch, tag or commit SHA | the commit SHA the API reports for the revision | yes |
+| `modelscope` | its own API | `ms://` | `MODELSCOPE_API_TOKEN`, `MODELSCOPE_ACCESS_TOKEN` and `MODELSCOPE_ENDPOINT` | `modelscope--models--` | branch, tag or commit SHA | a content hash over the resolved file tree | yes |
+<!-- END GENERATED: model-registries -->
+
+<!-- BEGIN GENERATED: model-registries-notes -->
+**Hugging Face**
+
+The default remote registry: GGUF repositories over HTTPS.
+
+- A token-gated repository needs `HF_TOKEN`.
+- `HF_ENDPOINT` moves the API to a mirror or gateway; the cache layout does not change.
+- URL form: `https://huggingface.co/{repo}`
+- Default revision: `main`.
+
+**ModelScope**
+
+A second remote registry, reached through the provider's own file API.
+
+- A token needs `MODELSCOPE_API_TOKEN`, or `MODELSCOPE_ACCESS_TOKEN`.
+- `MODELSCOPE_ENDPOINT` moves the API to a mirror; the default is `https://modelscope.cn`.
+- The download endpoint is the provider API, so no separate file host is configured.
+- URL form: `https://modelscope.cn/models/{repo}`
+- Default revision: `master`.
+<!-- END GENERATED: model-registries-notes -->
 
 ## Default source policy
 

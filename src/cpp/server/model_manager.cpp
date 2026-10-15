@@ -1065,7 +1065,7 @@ void ModelManager::build_cache() {
                                      "Models an installed backend reports holding.",
                                      {"Nothing is downloaded here: the backend already has them."},
                                      ""},
-                    ""},
+                    "", true},
                 [ops, octx](const models::CatalogAccumulator&) {
                     return ops->discover_models(octx);
                 }));

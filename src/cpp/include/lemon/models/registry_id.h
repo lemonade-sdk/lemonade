@@ -47,8 +47,6 @@ struct RegistryDescriptor {
 
     DocEntry doc;
     std::vector<EnvVar> env;
-    // What naming a revision promises, and what a stale snapshot is measured
-    // against — the two facts a reader needs before trusting refs/main.
     std::string revision_semantics;
     std::string staleness_basis;
     bool supports_search = false;

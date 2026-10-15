@@ -1,5 +1,3 @@
-// Step 12: every source fact the docs render is a compiled field, and the payload
-// the generator reads agrees with the sets the code accepts.
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/model_sources.h>
@@ -88,12 +86,21 @@ int main() {
     check("every catalog that built the set describes itself", catalogs_described);
 
     bool extra_models_configured = false;
+    bool host_rows_flagged = true;
     for (const auto& catalog : payload["catalogs"]) {
-        if (catalog["id"] == "extra_models_dir") {
+        const std::string id = catalog["id"].get<std::string>();
+        const bool host = catalog["host_specific"].get<bool>();
+        if (id == "extra_models_dir") {
             extra_models_configured = catalog["config_key"] == "extra_models_dir";
+        }
+        if (id.rfind("discovered:", 0) == 0 || id.rfind("listed:", 0) == 0) {
+            host_rows_flagged = host_rows_flagged && host;
+        } else {
+            host_rows_flagged = host_rows_flagged && !host;
         }
     }
     check("a configurable catalog names its config key", extra_models_configured);
+    check("only installed backends and providers vary by host", host_rows_flagged);
 
     const json huggingface = payload["registries"][0];
     check("a scheme is rendered from the short form", huggingface["scheme"] == "hf://");

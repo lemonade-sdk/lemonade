@@ -89,15 +89,13 @@ struct RegistryRepository {
     nlohmann::json raw_metadata;
 };
 
-// A `source` value that names where the bytes came from locally rather than a
-// remote host. Written to disk, so a token never changes once shipped.
+// Written to disk, so a token never changes once shipped.
 namespace local_origin {
 inline constexpr const char upload[] = "local_upload";
 inline constexpr const char path[] = "local_path";
 inline constexpr const char extra_models_dir[] = "extra_models_dir";
 }  // namespace local_origin
 
-// The closed set the `/pull` `source` field accepts next to registry ids.
 bool is_local_origin(const std::string& source);
 const std::vector<std::string>& local_origin_tokens();
 

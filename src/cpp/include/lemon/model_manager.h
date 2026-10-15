@@ -204,11 +204,8 @@ public:
         return discover_extra_models();
     }
 
-    // The configured registry, or nullptr when none was configured.
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
 
-    // Every source fact the docs carry: registries, the catalogs behind the
-    // current model set, and the closed token sets `/pull` accepts.
     json model_sources();
 
     // The registry a pull of this model reads: what the model was registered with
