@@ -2,6 +2,7 @@
 
 #include <lemon/model_manager.h>
 #include <lemon/models/catalog.h>
+#include <lemon/models/catalog_locator.h>
 
 #include <nlohmann/json.hpp>
 #include <functional>
@@ -69,13 +70,21 @@ class JsonCatalog : public ModelCatalog {
     JsonCatalog(CatalogDescriptor descriptor, std::shared_ptr<const json> document,
                 RegistryRowRules rules);
 
+    // Read when the catalog enumerates, so a document can be a file the store
+    // knows nothing about. `required()` decides an unreadable body.
+    JsonCatalog(CatalogDescriptor descriptor, std::shared_ptr<const CatalogLocator> locator,
+                RegistryRowRules rules);
+
     const CatalogDescriptor& descriptor() const override { return descriptor_; }
 
     void enumerate(CatalogAccumulator& accumulator) const override;
 
   private:
+    json read_located() const;
+
     CatalogDescriptor descriptor_;
     std::shared_ptr<const json> document_;
+    std::shared_ptr<const CatalogLocator> locator_;
     RegistryRowRules rules_;
 };
 

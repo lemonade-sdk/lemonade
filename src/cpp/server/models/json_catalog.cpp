@@ -186,6 +186,34 @@ json row_recipe_options(const json& row) {
     return row["recipe_options"];
 }
 
+JsonCatalog::JsonCatalog(CatalogDescriptor descriptor,
+                         std::shared_ptr<const CatalogLocator> locator, RegistryRowRules rules)
+    : descriptor_(std::move(descriptor)),
+      locator_(std::move(locator)),
+      rules_(std::move(rules)) {}
+
+// One unreadable document costs its own models, unless it declared it could not.
+json JsonCatalog::read_located() const {
+    try {
+        const std::optional<json> body = locator_->read(nullptr);
+        if (!body) {
+            if (descriptor_.required) {
+                throw std::runtime_error("catalog '" + descriptor_.id +
+                                         "' has no document to read");
+            }
+            return json::object();
+        }
+        return *body;
+    } catch (const std::exception& e) {
+        if (descriptor_.required) {
+            throw;
+        }
+        LOG(ERROR, "ModelManager") << "Catalog '" << descriptor_.id
+                                   << "' contributed nothing: " << e.what() << std::endl;
+        return json::object();
+    }
+}
+
 JsonCatalog::JsonCatalog(CatalogDescriptor descriptor, std::shared_ptr<const json> document,
                          RegistryRowRules rules)
     : descriptor_(std::move(descriptor)),
@@ -193,7 +221,20 @@ JsonCatalog::JsonCatalog(CatalogDescriptor descriptor, std::shared_ptr<const jso
       rules_(std::move(rules)) {}
 
 void JsonCatalog::enumerate(CatalogAccumulator& accumulator) const {
-    for (const auto& [key, row] : document_->items()) {
+    // A pinned document is enumerated where it lives; only a located body lands
+    // in this scope.
+    json located;
+    const json* document = nullptr;
+    if (locator_) {
+        located = read_located();
+        document = &located;
+    } else if (document_) {
+        document = document_.get();
+    } else {
+        return;
+    }
+
+    for (const auto& [key, row] : document->items()) {
         std::optional<ModelInfo> info = parse_registry_row(key, row, rules_);
         if (!info) {
             continue;
