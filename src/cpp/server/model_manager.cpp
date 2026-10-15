@@ -1535,7 +1535,6 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
 
 ModelManager::~ModelManager() {
     directory_watcher_.reset();
-    join_background_syncs();
 }
 
 void ModelManager::start_directory_watcher() {
@@ -2891,45 +2890,6 @@ json ModelManager::get_sync_status_locked() const {
     return j;
 }
 
-nlohmann::ordered_json ModelManager::sync_status_schema() {
-    return nlohmann::ordered_json::parse(R"({
-        "type": "object",
-        "required": ["status", "sync_id", "completed_sync_id", "already_in_progress"],
-        "properties": {
-            "status": {"enum": ["idle", "in_progress", "success", "failed", "not_found"], "description": "`idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`."},
-            "sync_id": {"type": "integer", "description": "The sync this status describes; `0` before any sync."},
-            "completed_sync_id": {"type": "integer", "description": "The most recent sync that finished."},
-            "already_in_progress": {"type": "boolean", "description": "Whether a sync this request did not start is running."},
-            "dry_run": {"type": "boolean", "description": "`true` when the request was a dry run."},
-            "async": {"type": "boolean", "description": "`true` when the sync was started in the background."},
-            "message": {"type": "string", "description": "Present when the sync was started in the background."},
-            "is_full_sync": {"type": "boolean", "description": "Whether the sync covers every downloaded model. Absent in a dry run, and when `status` is `not_found`."},
-            "active_targets": {"type": "array", "items": {"type": "string"}, "description": "Models being updated now. Absent in a dry run, and when `status` is `not_found`."},
-            "pending_targets": {"type": "array", "items": {"type": "string"}, "description": "Models queued for the running sync and not yet started. Absent in a dry run, and when `status` is `not_found`."},
-            "completed_targets": {"type": "array", "items": {"type": "string"}, "description": "Models the sync has updated. Absent in a dry run, and when `status` is `not_found`."},
-            "models_updated": {"type": "array", "items": {"type": "string"}, "description": "Models with an update; downloaded unless `dry_run`. Absent when `status` is `not_found`."},
-            "models_up_to_date": {"type": "array", "items": {"type": "string"}, "description": "Models already at the latest upstream commit; absent when `status` is `not_found`."},
-            "failed_models": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Error message per model that could not be checked or updated; absent when `status` is `not_found`."},
-            "terminal_error": {"type": "string", "description": "Error that stopped the sync; empty when none did. Absent in a dry run, and when `status` is `not_found`."},
-            "checked_count": {"type": "integer", "description": "Number of models checked for updates; absent when `status` is `not_found`."},
-            "updated_count": {"type": "integer", "description": "Number of models in `models_updated`; absent when `status` is `not_found`."},
-            "progress": {
-                "type": "object",
-                "description": "While a sync runs: the file downloading now.",
-                "properties": {
-                    "current_model": {"type": "string", "description": "The model being updated."},
-                    "file": {"type": "string", "description": "The file downloading now."},
-                    "file_index": {"type": "integer", "description": "Its position among the model's files, from `1`."},
-                    "total_files": {"type": "integer", "description": "How many files the model has."},
-                    "bytes_downloaded": {"type": "integer", "description": "Bytes of the current file downloaded so far."},
-                    "bytes_total": {"type": "integer", "description": "Size of the current file in bytes."},
-                    "percent": {"type": "number", "description": "Share of the current file downloaded, from `0` to `100`."}
-                }
-            }
-        }
-    })");
-}
-
 json ModelManager::get_sync_status(uint64_t sync_id) const {
     std::lock_guard<std::mutex> lock(sync_state_.mutex);
     if (sync_id > 0) {
@@ -3013,42 +2973,6 @@ ModelManager::SyncEnqueueResult ModelManager::enqueue_sync(const std::vector<std
         sync_state_.pending_targets.insert(pub);
     }
     return SyncEnqueueResult{/*already_running=*/false, /*sync_id=*/sync_state_.current_generation};
-}
-
-void ModelManager::execute_sync_in_background() {
-    std::lock_guard<std::mutex> lock(background_syncs_mutex_);
-
-    for (auto it = background_syncs_.begin(); it != background_syncs_.end(); ) {
-        if (it->finished->load() && it->thread.joinable()) {
-            it->thread.join();
-            it = background_syncs_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    auto finished_flag = std::make_shared<std::atomic<bool>>(false);
-    std::thread worker([this, finished_flag]() {
-        try {
-            LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
-            execute_sync();
-            LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
-        } catch (const std::exception& e) {
-            LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
-        }
-        finished_flag->store(true);
-    });
-    background_syncs_.push_back({std::move(worker), finished_flag});
-}
-
-void ModelManager::join_background_syncs() {
-    std::lock_guard<std::mutex> lock(background_syncs_mutex_);
-    for (auto& task : background_syncs_) {
-        if (task.thread.joinable()) {
-            task.thread.join();
-        }
-    }
-    background_syncs_.clear();
 }
 
 json ModelManager::execute_sync() {

@@ -2,6 +2,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_sync.h"
 
 namespace lemon {
 
@@ -34,7 +35,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = ModelManager::sync_status_schema();
+        response.schema = model_sync_status_schema();
         s.responses = {response};
 
         RouteExample example;

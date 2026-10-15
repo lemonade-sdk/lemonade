@@ -5,7 +5,9 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
+#include "lemon/server.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_sync.h"
 
 namespace lemon {
 
@@ -56,7 +58,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = ModelManager::sync_status_schema();
+        response.schema = model_sync_status_schema();
         s.responses = {response};
 
         RouteExample example;
@@ -150,7 +152,7 @@ public:
                 return;
             }
 
-            model_manager->execute_sync_in_background();
+            ctx_.server->start_background_sync();
 
             json dispatched_result = model_manager->get_sync_status(enqueue_res.sync_id);
             dispatched_result["message"] = "Model synchronization dispatched in background";

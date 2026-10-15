@@ -2,6 +2,7 @@
 
 #include "lemon/prometheus_metrics.h"
 #include "lemon/router.h"
+#include "lemon/server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/system_metrics_platform.h"
 
@@ -72,7 +73,7 @@ public:
 
         try {
             SystemMetrics system_metrics;
-            system_metrics.cpu_percent = ctx_.metrics->get_cpu_usage();
+            system_metrics.cpu_percent = ctx_.server->get_cpu_usage();
             const SystemGpuMetrics gpu_metrics = ctx_.metrics->get_system_gpu_metrics();
             system_metrics.gpu_percent = gpu_metrics.gpu_percent;
             system_metrics.vram_gb = gpu_metrics.vram_used_gb;

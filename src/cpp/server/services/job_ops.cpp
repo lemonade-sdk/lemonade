@@ -11,6 +11,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
+#include "lemon/server.h"
 #include "lemon/server/model_json.h"
 #include "lemon/server/system_stats.h"
 #include "lemon/system_info.h"
@@ -24,6 +25,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     ModelManager* model_manager = ctx.model_manager;
     ModelJson* model_json = ctx.model_json;
     SystemMetricsPlatform* metrics = ctx.metrics;
+    Server* server = ctx.server;
 
     // A running job remembers which models were loaded before it started (snapshot)
     // and which ones it loaded itself (owned), so pausing it can unload exactly its own
@@ -39,8 +41,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.system_info = [] {
         return lemon::jobs::json::parse(SystemInfoCache::get_system_info_with_cache().dump());
     };
-    providers.system_stats = [metrics] {
-        return lemon::jobs::json::parse(system_stats_json(*metrics).dump());
+    providers.system_stats = [server, metrics] {
+        return lemon::jobs::json::parse(system_stats_json(*server, *metrics).dump());
     };
     providers.models_list = [model_manager, model_json] {
         nlohmann::json data = nlohmann::json::array();

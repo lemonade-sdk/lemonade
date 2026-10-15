@@ -14,7 +14,9 @@ public:
         return "Darwin";
     }
 
-    double get_cpu_usage() override {
+    double get_cpu_usage(std::mutex& cpu_stats_mutex,
+                        uint64_t& last_total,
+                        uint64_t& last_total_idle) override {
         // macOS: Could use host_processor_info or top command
         // Not implemented yet
         return -1.0;

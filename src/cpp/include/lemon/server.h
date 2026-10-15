@@ -8,10 +8,12 @@
 #endif
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <httplib.h>
 
@@ -57,6 +59,12 @@ public:
     // Answers 404 when no route matches.
     void handle_request(const httplib::Request& req, httplib::Response& res);
 
+    // Runs the queued model sync on a thread that stop() joins.
+    void start_background_sync();
+
+    // CPU usage percentage (0-100) since the previous call, -1 if not available.
+    double get_cpu_usage();
+
 private:
     void start_model_cache_warmup();
 
@@ -81,6 +89,21 @@ private:
     std::unique_ptr<HttpListener> listener_;
 
     std::thread model_cache_warmup_thread_;
+    struct SyncTaskThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::vector<SyncTaskThread> background_sync_threads_;
+    std::mutex background_sync_mutex_;
+
+#if defined(__linux__) || defined(_WIN32)
+    struct CpuStats {
+        uint64_t total_idle = 0;
+        uint64_t total = 0;
+    };
+    CpuStats last_cpu_stats_;
+    std::mutex cpu_stats_mutex_;
+#endif
     std::atomic<bool> update_check_done_{false};
 
     std::mutex stop_mutex_;

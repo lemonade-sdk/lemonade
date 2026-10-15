@@ -79,7 +79,7 @@ public:
             return;
         }
 
-        res.set_content(system_stats_json(*ctx_.metrics).dump(), "application/json");
+        res.set_content(system_stats_json(*ctx_.server, *ctx_.metrics).dump(), "application/json");
     }
 };
 

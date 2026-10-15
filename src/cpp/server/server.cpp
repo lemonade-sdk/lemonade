@@ -250,7 +250,52 @@ void Server::stop() {
         model_cache_warmup_thread_.join();
     }
 
-    model_manager_->join_background_syncs();
+    std::lock_guard<std::mutex> sync_lock(background_sync_mutex_);
+    for (auto& task : background_sync_threads_) {
+        if (task.thread.joinable()) {
+            task.thread.join();
+        }
+    }
+    background_sync_threads_.clear();
+}
+
+void Server::start_background_sync() {
+    std::lock_guard<std::mutex> lock(background_sync_mutex_);
+
+    for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end(); ) {
+        if (it->finished->load() && it->thread.joinable()) {
+            it->thread.join();
+            it = background_sync_threads_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto finished_flag = std::make_shared<std::atomic<bool>>(false);
+    std::thread worker([this, finished_flag]() {
+        try {
+            LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
+            model_manager_->execute_sync();
+            LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
+        }
+        finished_flag->store(true);
+    });
+
+    background_sync_threads_.push_back({std::move(worker), finished_flag});
+}
+
+double Server::get_cpu_usage() {
+#if defined(__linux__) || defined(_WIN32)
+    return metrics_platform_->get_cpu_usage(cpu_stats_mutex_,
+                                            last_cpu_stats_.total,
+                                            last_cpu_stats_.total_idle);
+#else
+    uint64_t dummy_total = 0, dummy_idle = 0;
+    std::mutex dummy_mutex;
+    return metrics_platform_->get_cpu_usage(dummy_mutex, dummy_total, dummy_idle);
+#endif
 }
 
 bool Server::should_shutdown() const {

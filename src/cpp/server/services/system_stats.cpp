@@ -1,5 +1,6 @@
 #include "lemon/server/system_stats.h"
 
+#include "lemon/server.h"
 #include "lemon/system_metrics_platform.h"
 
 namespace lemon {
@@ -14,9 +15,9 @@ json reading(double value) {
 
 } // namespace
 
-json system_stats_json(SystemMetricsPlatform& metrics) {
+json system_stats_json(Server& server, SystemMetricsPlatform& metrics) {
     json stats;
-    stats["cpu_percent"] = reading(metrics.get_cpu_usage());
+    stats["cpu_percent"] = reading(server.get_cpu_usage());
     stats["memory_gb"] = metrics.get_memory_usage_gb();
 
     const SystemGpuMetrics gpu_metrics = metrics.get_system_gpu_metrics();
