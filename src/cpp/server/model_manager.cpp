@@ -12,6 +12,7 @@
 #include <lemon/models/ingest.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/listed_catalog.h>
+#include <lemon/models/model_sources.h>
 #include <lemon/models/scan_catalog.h>
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
@@ -228,12 +229,18 @@ std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& mod
     return artifacts_->list_files(get_model_info(model_name));
 }
 
+json ModelManager::model_sources() {
+    build_cache();
+    return models::model_sources_json(*std::atomic_load(&store_snapshot_));
+}
+
 void ModelManager::publish_store_locked() {
     auto next = std::make_shared<models::StoreSnapshot>();
     next->models = models_cache_;
     next->public_model_aliases = public_model_aliases_;
     next->canonical_public_names = canonical_public_names_;
     next->reasons = hardware_filter_;
+    next->catalogs = catalog_descriptors_;
     next->helper_models = collect_helper_models(models_cache_);
     next->valid = cache_valid_;
     next->generation = ++store_generation_;
@@ -940,7 +947,13 @@ void ModelManager::build_cache() {
     models::RegistryRowRules builtin_rows = rows;
     builtin_rows.source_label = "built-in model";
     catalogs.push_back(std::make_unique<models::JsonCatalog>(
-        models::CatalogDescriptor{"server_models.json"}, documents.builtin,
+        models::CatalogDescriptor{
+            "server_models.json", false,
+            models::DocEntry{"server_models", "Built-in registry",
+                             "The model list shipped with the server.",
+                             {"Nothing writes this file back: a new row ships in a release."}, ""},
+            ""},
+        documents.builtin,
         std::move(builtin_rows)));
 
     // Registrations are keyed bare on disk and "user.<name>" in the cache.
@@ -949,12 +962,27 @@ void ModelManager::build_cache() {
     user_rows.suggested_default = true;
     user_rows.source_label = "user model";
     catalogs.push_back(std::make_unique<models::JsonCatalog>(
-        models::CatalogDescriptor{"user_models.json"}, documents.user,
+        models::CatalogDescriptor{
+            "user_models.json", false,
+            models::DocEntry{"user_models", "Registrations",
+                             "Every model the user pulled or registered.",
+                             {"A registration keeps its own provenance, so a later built-in row "
+                              "cannot take its name."},
+                             ""},
+            ""},
+        documents.user,
         std::move(user_rows)));
 
     // A scanning or listing source keeps what an earlier source already claimed.
     catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
-        models::CatalogDescriptor{"extra_models_dir"},
+        models::CatalogDescriptor{
+            "extra_models_dir", false,
+            models::DocEntry{"extra-models", "Extra models directory",
+                             "A scan of the extra models directory; GGUF files are identified "
+                             "by their header, not their name.",
+                             {"A directory watcher requests one rebuild when the tree changes."},
+                             ""},
+            "extra_models_dir"},
         [this](const models::CatalogAccumulator& claimed) {
             std::set<fs::path> registered_extra_paths;
             if (!extra_models_dir_.empty()) {
@@ -1030,11 +1058,24 @@ void ModelManager::build_cache() {
 
             const backends::BackendOps* ops = backends::ops_for(desc->recipe);
             catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
-                models::CatalogDescriptor{"discovered:" + desc->recipe},
+                models::CatalogDescriptor{
+                    "discovered:" + desc->recipe, false,
+                    models::DocEntry{"discovered-" + desc->recipe,
+                                     "Installed backend: " + desc->recipe,
+                                     "Models an installed backend reports holding.",
+                                     {"Nothing is downloaded here: the backend already has them."},
+                                     ""},
+                    ""},
                 [ops, octx](const models::CatalogAccumulator&) {
                     return ops->discover_models(octx);
                 }));
         }
+    }
+
+    std::vector<models::CatalogDescriptor> sources;
+    sources.reserve(catalogs.size());
+    for (const auto& catalog : catalogs) {
+        sources.push_back(catalog->descriptor());
     }
 
     models::CatalogAccumulator accumulated;
@@ -1141,6 +1182,7 @@ void ModelManager::build_cache() {
 
     rebuild_public_model_aliases_locked();
 
+    catalog_descriptors_ = std::move(sources);
     cache_valid_ = true;
 
     // Parse each collection.router model's routing policy while the cache and

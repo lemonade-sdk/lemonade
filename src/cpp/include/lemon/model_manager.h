@@ -20,6 +20,7 @@
 #include "model_registry.h"
 #include "model_types.h"
 #include "models/alias_manager.h"
+#include "models/catalog_descriptor.h"
 #include "models/change_notifier.h"
 #include "models/download_progress.h"
 #include "models/ingest.h"
@@ -205,6 +206,10 @@ public:
 
     // The configured registry, or nullptr when none was configured.
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
+
+    // Every source fact the docs carry: registries, the catalogs behind the
+    // current model set, and the closed token sets `/pull` accepts.
+    json model_sources();
 
     // The registry a pull of this model reads: what the model was registered with
     // wins over the server-wide default.
@@ -533,6 +538,7 @@ private:
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
 
+    std::vector<models::CatalogDescriptor> catalog_descriptors_;
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name

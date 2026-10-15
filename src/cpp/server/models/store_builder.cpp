@@ -1,4 +1,5 @@
 #include <lemon/canonical_id.h>
+#include <lemon/model_registry.h>
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/routing_policy.h>
@@ -89,7 +90,7 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
         }
 
         const bool user_controlled_model = names_a_local_model(name) ||
-                                           info.source == "local_upload";
+                                           info.source == local_origin::upload;
 
         if (!recipe_availability.unsupported_reason.empty()) {
             filter_out = true;

@@ -14,19 +14,16 @@ namespace models {
 
 namespace {
 
-constexpr const char LOCAL_PATH[] = "local_path";
-constexpr const char LOCAL_UPLOAD[] = "local_upload";
-constexpr const char EXTRA_MODELS_DIR[] = "extra_models_dir";
 constexpr const char FILE_SCHEME[] = "file://";
 
 std::optional<LocalPathArtifactSource::Origin> origin_of(const std::string& source) {
-    if (source == LOCAL_PATH) {
+    if (source == local_origin::path) {
         return LocalPathArtifactSource::Origin::LocalPath;
     }
-    if (source == LOCAL_UPLOAD) {
+    if (source == local_origin::upload) {
         return LocalPathArtifactSource::Origin::LocalUpload;
     }
-    if (source == EXTRA_MODELS_DIR) {
+    if (source == local_origin::extra_models_dir) {
         return LocalPathArtifactSource::Origin::ExtraModelsDir;
     }
     return std::nullopt;
