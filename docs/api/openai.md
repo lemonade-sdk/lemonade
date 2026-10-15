@@ -60,45 +60,6 @@ A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, 
 
 To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
 
-#### Example request
-
-```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "Qwen2.5-VL-7B-Instruct-GGUF",
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {"type": "text", "text": "What is in this image?"},
-              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
-            ]
-          }
-        ],
-        "stream": false
-      }'
-```
-
-#### Example response
-
-```json
-{
-  "id": "0",
-  "object": "chat.completion",
-  "created": 1742927481,
-  "model": "Qwen2.5-VL-7B-Instruct-GGUF",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "The image shows a red apple resting on a wooden table."
-    },
-    "finish_reason": "stop"
-  }]
-}
-```
-
 ### Server-Side Tools
 
 Omni collection orchestration is a Lemonade extension to the Chat Completions API; requests to other models are unaffected.
@@ -111,39 +72,6 @@ When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.
 Both non-streaming and `stream: true` are supported. In streaming mode the media arrives in `content` deltas of at most 16,000 characters each, the moment its tool finishes, and an error arrives as `Error: <message>` text in `content` followed by `finish_reason: "stop"`.
 
 **Merge semantics.** The built-in omni system prompt goes before a client-provided one. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
-
-#### Example request
-
-```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "LMX-Omni-52B-Halo",
-        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
-        "stream": false
-      }'
-```
-
-#### Example response
-
-The image tool runs during the loop and its output is embedded as a markdown image in the assistant `content`:
-
-```json
-{
-  "id": "0",
-  "object": "chat.completion",
-  "created": 1742927481,
-  "model": "LMX-Omni-52B-Halo",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)"
-    },
-    "finish_reason": "stop"
-  }]
-}
-```
 
 ### Example request
 
@@ -196,6 +124,84 @@ The image tool runs during the loop and its output is embedded as a markdown ima
           "model": "Qwen3-0.6B-GGUF",
           "messages": [{"role": "user", "content": "What is the population of Paris?"}],
           "stream": true
+        }'
+    ```
+
+=== "PowerShell (vision)"
+
+    ```powershell
+    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
+    $body = @"
+    {
+          "model": "Qwen3.5-0.8B-GGUF",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {"type": "text", "text": "What is in this image?"},
+                {
+                  "type": "image_url",
+                  "image_url": {"url": "data:image/png;base64,$image"}
+                }
+              ]
+            }
+          ],
+          "stream": false
+        }
+    "@
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/chat/completions" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Bash (vision)"
+
+    ```bash
+    curl http://localhost:13305/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "{
+          \"model\": \"Qwen3.5-0.8B-GGUF\",
+          \"messages\": [
+            {
+              \"role\": \"user\",
+              \"content\": [
+                {\"type\": \"text\", \"text\": \"What is in this image?\"},
+                {
+                  \"type\": \"image_url\",
+                  \"image_url\": {\"url\": \"data:image/png;base64,$(base64 -w0 image.png)\"}
+                }
+              ]
+            }
+          ],
+          \"stream\": false
+        }"
+    ```
+
+=== "PowerShell (omni)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/chat/completions" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "LMX-Omni-5.5B-Lite",
+          "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+          "stream": false
+        }'
+    ```
+
+=== "Bash (omni)"
+
+    ```bash
+    curl http://localhost:13305/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "LMX-Omni-5.5B-Lite",
+          "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+          "stream": false
         }'
     ```
 
@@ -297,6 +303,95 @@ The image tool runs during the loop and its output is embedded as a markdown ima
     - `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
     - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
     - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
+
+=== "Vision responses"
+
+    Asks a vision model what `image.png` shows.
+
+    `200`
+
+    ```json
+    {
+      "id": "chatcmpl-CXUhlv8GPMS7biiWtkuu27a3Gy3eNEUS",
+      "object": "chat.completion",
+      "created": 1792076819,
+      "model": "Qwen3.5-0.8B-GGUF",
+      "system_fingerprint": "b11393-dbe4c3ed4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "This image is a **minimalist graphic design**.\n\nHere are the specific details:\n\n*   **Central Element:** There is a solid **red circle** (often described as a \"dot\" or \"target\" symbol) centered on the image.\n*   **Background:** The background is a colorful gradient (transitioning from blue on the left, to grey in the middle, and to purple/grey on the right).\n*   **Style:** It is a simple, flat vector design—no shading, no textures—often used in interfaces or branding to draw immediate attention to a specific focus point.",
+            "reasoning_content": "The user is asking about the content of the image.\n\n1.  **Analyze the image:** T... (2,072 characters)"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 82,
+        "completion_tokens": 619,
+        "total_tokens": 701,
+        "prompt_tokens_details": {"cached_tokens": 0}
+      },
+      "timings": {
+        "cache_n": 0,
+        "predicted_ms": 2706.181,
+        "predicted_n": 619,
+        "predicted_per_second": 228.36609968069394,
+        "predicted_per_token_ms": 4.378933656957929,
+        "prompt_ms": 52.671,
+        "prompt_n": 82,
+        "prompt_per_second": 1556.8339313853924,
+        "prompt_per_token_ms": 0.6423292682926829
+      }
+    }
+    ```
+
+=== "Omni responses"
+
+    Asks the `LMX-Omni-5.5B-Lite` collection for a picture, which its image tool generates during the loop.
+
+    `200`
+
+    ```json
+    {
+      "id": "chatcmpl-i37OtXcuKiFJ82bZjOEJmIDgbbrSLIWk",
+      "object": "chat.completion",
+      "created": 1792076833,
+      "model": "LMX-Omni-5.5B-Lite",
+      "system_fingerprint": "b11393-dbe4c3ed4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "I've generated an image of a red apple on a table for you! The image shows a cla... (393,258 characters)"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1102,
+        "completion_tokens": 63,
+        "total_tokens": 1165,
+        "prompt_tokens_details": {"cached_tokens": 1082}
+      },
+      "timings": {
+        "cache_n": 1082,
+        "draft_n": 69,
+        "draft_n_accepted": 39,
+        "predicted_ms": 706.57,
+        "predicted_n": 63,
+        "predicted_per_second": 87.74785230055055,
+        "predicted_per_token_ms": 11.396290322580645,
+        "prompt_ms": 97.681,
+        "prompt_n": 20,
+        "prompt_per_second": 204.74810863934647,
+        "prompt_per_token_ms": 4.88405
+      }
+    }
+    ```
 <!-- END GENERATED: openai.chat_completions -->
 
 <!-- BEGIN GENERATED: openai.completions -->
@@ -1223,90 +1318,7 @@ A missing `image` or `model`, a model without the `upscaling` label, or one whos
 
 ### Upscale a Generated Image
 
-A typical workflow is to generate an image first, then upscale it:
-
-=== "Bash"
-
-    ```bash
-    # Step 1: Generate an image and save the base64 response
-    RESPONSE=$(curl -s -X POST http://localhost:13305/v1/images/generations \
-      -H "Content-Type: application/json" \
-      -d '{
-            "model": "SD-Turbo",
-            "prompt": "A serene mountain landscape at sunset",
-            "size": "512x512",
-            "steps": 4,
-            "response_format": "b64_json"
-          }')
-
-    # Step 2: Build the upscale JSON payload and pipe it to curl via stdin
-    # (base64 images are too large for command-line interpolation)
-    echo "$RESPONSE" | python3 -c "
-    import sys, json
-    b64 = json.load(sys.stdin)['data'][0]['b64_json']
-    print(json.dumps({'image': b64, 'model': 'RealESRGAN-x4plus'}))
-    " | curl -X POST http://localhost:13305/v1/images/upscale \
-      -H "Content-Type: application/json" \
-      -d @-
-    ```
-
-=== "PowerShell"
-
-    ```powershell
-    # Step 1: Generate an image
-    $genResponse = Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/images/generations" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-        "model": "SD-Turbo",
-        "prompt": "A serene mountain landscape at sunset",
-        "size": "512x512",
-        "steps": 4,
-        "response_format": "b64_json"
-      }'
-
-    # Step 2: Extract the base64 image
-    $imageB64 = ($genResponse.Content | ConvertFrom-Json).data[0].b64_json
-
-    # Step 3: Upscale the image with Real-ESRGAN
-    $body = @{ image = $imageB64; model = "RealESRGAN-x4plus" } | ConvertTo-Json
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/images/upscale" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body $body
-    ```
-
-=== "Python (requests)"
-
-    ```python
-    import requests
-    import base64
-
-    BASE_URL = "http://localhost:13305/v1"
-
-    # Step 1: Generate an image
-    gen_response = requests.post(f"{BASE_URL}/images/generations", json={
-        "model": "SD-Turbo",
-        "prompt": "A serene mountain landscape at sunset",
-        "size": "512x512",
-        "steps": 4,
-        "response_format": "b64_json",
-    })
-    image_b64 = gen_response.json()["data"][0]["b64_json"]
-
-    # Step 2: Upscale the image with Real-ESRGAN (512x512 -> 2048x2048)
-    upscale_response = requests.post(f"{BASE_URL}/images/upscale", json={
-        "image": image_b64,
-        "model": "RealESRGAN-x4plus",
-    })
-
-    # Step 3: Save the upscaled image to a file
-    upscaled_b64 = upscale_response.json()["data"][0]["b64_json"]
-    with open("upscaled.png", "wb") as f:
-        f.write(base64.b64decode(upscaled_b64))
-    ```
+To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgenerations), pass its `b64_json` as `image`.
 
 ### Example request
 

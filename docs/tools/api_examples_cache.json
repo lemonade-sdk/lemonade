@@ -636,8 +636,10 @@
           "prefixes": "Internal",
           "summary": "Force-flush all queued telemetry trace spans",
           "modality": "",
-          "description": "Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.",
-          "notes": [],
+          "description": "Sends every queued telemetry trace span to the configured OTLP collector, and answers once the queue is empty.",
+          "notes": [
+            "A batch the collector rejects or does not receive is dropped without further retries, and the answer is still `flushed`."
+          ],
           "experimental": false,
           "args": [],
           "responses": [
@@ -650,7 +652,8 @@
                 ],
                 "properties": {
                   "status": {
-                    "const": "flushed"
+                    "const": "flushed",
+                    "description": "Always `flushed`."
                   }
                 }
               }
@@ -659,6 +662,7 @@
           "examples": [
             {
               "name": "",
+              "description": "",
               "format": "Json",
               "args": {},
               "setup": []
@@ -1780,6 +1784,58 @@
       ],
       "tail": [],
       "count": 5
+    }
+  },
+  "28979c813ec5a3dfb2a3763afee72d74e1251ffba6e4405930c65f6990acdb94": {
+    "route": "lemonade.pull",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/pull",
+      "query": {},
+      "json": {
+        "model_name": "user.Qwen3-0.6B-Q4",
+        "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "recipe": "llamacpp"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_name": "user.Qwen3-0.6B-Q4",
+        "status": "success"
+      }
+    }
+  },
+  "9f434fead2a1d8c40b99413d31afd0d1ea36ca6140e5db68d18b79d2919f4faf": {
+    "route": "lemonade.pull",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/pull",
+      "query": {},
+      "json": {
+        "model_name": "user.MyKit",
+        "recipe": "collection.omni",
+        "components": [
+          "Qwen3-0.6B-GGUF",
+          "Whisper-Tiny",
+          "SD-Turbo"
+        ]
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_name": "user.MyKit",
+        "status": "success"
+      }
     }
   },
   "ca36b7349ac496db20c49c37bd7a7527f2e78c409d98d5eb9f3ef7cff59483ee": {
@@ -6955,6 +7011,69 @@
       "count": 390
     }
   },
+  "97e6314155061d1a9b3cce50e84da8d432fd2334adee1c732035504a07e5a8b3": {
+    "route": "openai.chat_completions",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "json": {
+        "model": "LMX-Omni-5.5B-Lite",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Draw a red apple on a table."
+          }
+        ],
+        "stream": false
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "I've generated an image of a red apple on a table for you! The image shows a cla... (393,258 characters)",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1792076833,
+        "id": "chatcmpl-i37OtXcuKiFJ82bZjOEJmIDgbbrSLIWk",
+        "model": "LMX-Omni-5.5B-Lite",
+        "object": "chat.completion",
+        "system_fingerprint": "b11393-dbe4c3ed4",
+        "timings": {
+          "cache_n": 1082,
+          "draft_n": 69,
+          "draft_n_accepted": 39,
+          "predicted_ms": 706.57,
+          "predicted_n": 63,
+          "predicted_per_second": 87.74785230055055,
+          "predicted_per_token_ms": 11.396290322580645,
+          "prompt_ms": 97.681,
+          "prompt_n": 20,
+          "prompt_per_second": 204.74810863934647,
+          "prompt_per_token_ms": 4.88405
+        },
+        "usage": {
+          "completion_tokens": 63,
+          "prompt_tokens": 1102,
+          "prompt_tokens_details": {
+            "cached_tokens": 1082
+          },
+          "total_tokens": 1165
+        }
+      }
+    }
+  },
   "1a1f1cee28e3542a26e8eedccf690a487a185811f89469fa62dbfcf45b135f3f": {
     "route": "openai.chat_completions",
     "format": "Json",
@@ -7013,6 +7132,79 @@
             "cached_tokens": 0
           },
           "total_tokens": 270
+        }
+      }
+    }
+  },
+  "730bcee14aa033710b9e494839e215a0241a316b521f234208136a95426595a7": {
+    "route": "openai.chat_completions",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "json": {
+        "model": "Qwen3.5-0.8B-GGUF",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What is in this image?"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,@fixtures/image.png"
+                }
+              }
+            ]
+          }
+        ],
+        "stream": false
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "This image is a **minimalist graphic design**.\n\nHere are the specific details:\n\n*   **Central Element:** There is a solid **red circle** (often described as a \"dot\" or \"target\" symbol) centered on the image.\n*   **Background:** The background is a colorful gradient (transitioning from blue on the left, to grey in the middle, and to purple/grey on the right).\n*   **Style:** It is a simple, flat vector design—no shading, no textures—often used in interfaces or branding to draw immediate attention to a specific focus point.",
+              "reasoning_content": "The user is asking about the content of the image.\n\n1.  **Analyze the image:** T... (2,072 characters)",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1792076819,
+        "id": "chatcmpl-CXUhlv8GPMS7biiWtkuu27a3Gy3eNEUS",
+        "model": "Qwen3.5-0.8B-GGUF",
+        "object": "chat.completion",
+        "system_fingerprint": "b11393-dbe4c3ed4",
+        "timings": {
+          "cache_n": 0,
+          "predicted_ms": 2706.181,
+          "predicted_n": 619,
+          "predicted_per_second": 228.36609968069394,
+          "predicted_per_token_ms": 4.378933656957929,
+          "prompt_ms": 52.671,
+          "prompt_n": 82,
+          "prompt_per_second": 1556.8339313853924,
+          "prompt_per_token_ms": 0.6423292682926829
+        },
+        "usage": {
+          "completion_tokens": 619,
+          "prompt_tokens": 82,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 701
         }
       }
     }

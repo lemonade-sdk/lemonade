@@ -841,8 +841,10 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     "prefixes": "Internal",
     "summary": "Force-flush all queued telemetry trace spans",
     "modality": "",
-    "description": "Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.",
-    "notes": [],
+    "description": "Sends every queued telemetry trace span to the configured OTLP collector, and answers once the queue is empty.",
+    "notes": [
+      "A batch the collector rejects or does not receive is dropped without further retries, and the answer is still `flushed`."
+    ],
     "experimental": false,
     "args": [],
     "responses": [
@@ -851,11 +853,11 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
         "schema": {
           "type": "object",
           "required": ["status"],
-          "properties": {"status": {"const": "flushed"}}
+          "properties": {"status": {"const": "flushed", "description": "Always `flushed`."}}
         }
       }
     ],
-    "examples": [{"name": "", "format": "Json", "args": {}, "setup": []}],
+    "examples": [{"name": "", "description": "", "format": "Json", "args": {}, "setup": []}],
     "request_format": "Raw",
     "quiet_log": false
   }
@@ -885,6 +887,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `schema` - JSON Schema of the body, each NDJSON line, or each event's data; null for other formats.
 - `examples` - The first is the route's main example.
   - `name` - Tab label; empty when the route has one example.
+  - `description` - What the example shows, printed above its request; empty when the route's other text covers it.
   - `format` - The response format the reply is validated against.
   - `args` - Argument values of the request.
   - `setup` - Requests that run first to put `lemond` in the state this example needs.

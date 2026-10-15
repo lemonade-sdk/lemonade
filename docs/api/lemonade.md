@@ -334,29 +334,9 @@ In offline mode the request still registers a new definition, then answers `400`
 
 Registering writes the model to `user_models.json` in the Lemonade config directory (`~/.config/lemonade` by default), after which [`GET /v1/models`](./openai.md#get-v1models) lists it beside the built-in models. The definition needs a `main` checkpoint, given as `checkpoint` or as the `main` key of `checkpoints`.
 
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model_name": "user.Phi-4-Mini-GGUF",
-    "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
-    "recipe": "llamacpp"
-  }'
-```
-
 ### Register an Omni Collection
 
 An omni collection bundles several models into one entry that is loaded and pulled as a unit. Register it with `recipe: "collection.omni"` and `components` instead of a checkpoint. The same call pulls each component.
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model_name": "user.MyKit",
-    "recipe": "collection.omni",
-    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
-  }'
-```
 
 ### Import an Exported Model File
 
@@ -416,6 +396,58 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
     curl http://localhost:13305/v1/pull \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true}'
+    ```
+
+=== "PowerShell (register)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/pull" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model_name": "user.Qwen3-0.6B-Q4",
+          "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+          "recipe": "llamacpp"
+        }'
+    ```
+
+=== "Bash (register)"
+
+    ```bash
+    curl http://localhost:13305/v1/pull \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model_name": "user.Qwen3-0.6B-Q4",
+          "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+          "recipe": "llamacpp"
+        }'
+    ```
+
+=== "PowerShell (collection)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/pull" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model_name": "user.MyKit",
+          "recipe": "collection.omni",
+          "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+        }'
+    ```
+
+=== "Bash (collection)"
+
+    ```bash
+    curl http://localhost:13305/v1/pull \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model_name": "user.MyKit",
+          "recipe": "collection.omni",
+          "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+        }'
     ```
 
 ### Response format
@@ -518,6 +550,26 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
     - `status` - Only on a complete event for an operation that had nothing to download.
     - `error` - Only on an error event.
     - `code` - `unknown_model` when the model is not in the registry.
+
+=== "Register responses"
+
+    Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
+
+    `200`
+
+    ```json
+    {"status": "success", "model_name": "user.Qwen3-0.6B-Q4"}
+    ```
+
+=== "Collection responses"
+
+    Registers `user.MyKit`, an omni collection of three built-in models, and pulls each of them.
+
+    `200`
+
+    ```json
+    {"status": "success", "model_name": "user.MyKit"}
+    ```
 <!-- END GENERATED: lemonade.pull -->
 
 <!-- BEGIN GENERATED: lemonade.downloads -->

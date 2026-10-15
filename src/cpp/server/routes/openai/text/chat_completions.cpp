@@ -134,46 +134,7 @@ public:
             "\n"
             "To send images to `chat/completions`, pass a `messages[*].content` array that mixes "
             "`text` and `image_url` items. The image can be provided as a base64 data URL (for "
-            "example, from `FileReader.readAsDataURL(...)` in web apps).\n"
-            "\n"
-            "#### Example request\n"
-            "\n"
-            "```bash\n"
-            "curl -X POST http://localhost:13305/v1/chat/completions \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d '{\n"
-            "        \"model\": \"Qwen2.5-VL-7B-Instruct-GGUF\",\n"
-            "        \"messages\": [\n"
-            "          {\n"
-            "            \"role\": \"user\",\n"
-            "            \"content\": [\n"
-            "              {\"type\": \"text\", \"text\": \"What is in this image?\"},\n"
-            "              {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...\"}}\n"
-            "            ]\n"
-            "          }\n"
-            "        ],\n"
-            "        \"stream\": false\n"
-            "      }'\n"
-            "```\n"
-            "\n"
-            "#### Example response\n"
-            "\n"
-            "```json\n"
-            "{\n"
-            "  \"id\": \"0\",\n"
-            "  \"object\": \"chat.completion\",\n"
-            "  \"created\": 1742927481,\n"
-            "  \"model\": \"Qwen2.5-VL-7B-Instruct-GGUF\",\n"
-            "  \"choices\": [{\n"
-            "    \"index\": 0,\n"
-            "    \"message\": {\n"
-            "      \"role\": \"assistant\",\n"
-            "      \"content\": \"The image shows a red apple resting on a wooden table.\"\n"
-            "    },\n"
-            "    \"finish_reason\": \"stop\"\n"
-            "  }]\n"
-            "}\n"
-            "```",
+            "example, from `FileReader.readAsDataURL(...)` in web apps).",
             "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
@@ -200,41 +161,7 @@ public:
             "returned in a `finish_reason: \"tool_calls\"` response for the client to execute and "
             "resume. Targeting a collection name invokes the server-side loop; targeting a "
             "component LLM name bypasses it and returns a plain completion. See [Lemonade Omni "
-            "Models](../dev/lemonade-omni.md) for details.\n"
-            "\n"
-            "#### Example request\n"
-            "\n"
-            "```bash\n"
-            "curl -X POST http://localhost:13305/v1/chat/completions \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d '{\n"
-            "        \"model\": \"LMX-Omni-52B-Halo\",\n"
-            "        \"messages\": [{\"role\": \"user\", \"content\": \"Draw a red apple on a table.\"}],\n"
-            "        \"stream\": false\n"
-            "      }'\n"
-            "```\n"
-            "\n"
-            "#### Example response\n"
-            "\n"
-            "The image tool runs during the loop and its output is embedded as a markdown image in "
-            "the assistant `content`:\n"
-            "\n"
-            "```json\n"
-            "{\n"
-            "  \"id\": \"0\",\n"
-            "  \"object\": \"chat.completion\",\n"
-            "  \"created\": 1742927481,\n"
-            "  \"model\": \"LMX-Omni-52B-Halo\",\n"
-            "  \"choices\": [{\n"
-            "    \"index\": 0,\n"
-            "    \"message\": {\n"
-            "      \"role\": \"assistant\",\n"
-            "      \"content\": \"Here is a red apple on a table.\\n\\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)\"\n"
-            "    },\n"
-            "    \"finish_reason\": \"stop\"\n"
-            "  }]\n"
-            "}\n"
-            "```",
+            "Models](../dev/lemonade-omni.md) for details.",
         };
         s.args = {
             {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
@@ -306,7 +233,32 @@ public:
             "stream": true
         })");
 
-        s.examples = {completion_example, stream_example};
+        RouteExample vision_example;
+        vision_example.name = "vision";
+        vision_example.description = "Asks a vision model what `image.png` shows.";
+        vision_example.format = ResponseFormat::Json;
+        vision_example.args = ordered_json::parse(R"({
+            "model": "Qwen3.5-0.8B-GGUF",
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": "What is in this image?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,@fixtures/image.png"}}
+            ]}],
+            "stream": false
+        })");
+
+        RouteExample omni_example;
+        omni_example.name = "omni";
+        omni_example.description =
+            "Asks the `LMX-Omni-5.5B-Lite` collection for a picture, which its image tool "
+            "generates during the loop.";
+        omni_example.format = ResponseFormat::Json;
+        omni_example.args = ordered_json::parse(R"({
+            "model": "LMX-Omni-5.5B-Lite",
+            "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+            "stream": false
+        })");
+
+        s.examples = {completion_example, stream_example, vision_example, omni_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

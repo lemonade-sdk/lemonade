@@ -180,6 +180,7 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
         }
         examples.push_back({
             {"name", example.name},
+            {"description", example.description},
             {"format", to_string(example.format)},
             {"args", example.args},
             {"setup", setup},

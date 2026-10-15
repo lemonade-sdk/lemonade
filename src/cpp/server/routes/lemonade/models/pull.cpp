@@ -60,29 +60,11 @@ public:
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
             "(`~/.config/lemonade` by default), after which [`GET /v1/models`](./openai.md#get-v1models) lists it beside the "
             "built-in models. The definition needs a `main` checkpoint, given as `checkpoint` or "
-            "as the `main` key of `checkpoints`.\n\n"
-            "```bash\n"
-            "curl -X POST http://localhost:13305/v1/pull \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d '{\n"
-            "    \"model_name\": \"user.Phi-4-Mini-GGUF\",\n"
-            "    \"checkpoint\": \"unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M\",\n"
-            "    \"recipe\": \"llamacpp\"\n"
-            "  }'\n"
-            "```",
+            "as the `main` key of `checkpoints`.",
             "### Register an Omni Collection\n\n"
             "An omni collection bundles several models into one entry that is loaded and pulled as "
             "a unit. Register it with `recipe: \"collection.omni\"` and `components` "
-            "instead of a checkpoint. The same call pulls each component.\n\n"
-            "```bash\n"
-            "curl -X POST http://localhost:13305/v1/pull \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d '{\n"
-            "    \"model_name\": \"user.MyKit\",\n"
-            "    \"recipe\": \"collection.omni\",\n"
-            "    \"components\": [\"Qwen3-0.6B-GGUF\", \"Whisper-Tiny\", \"SD-Turbo\"]\n"
-            "  }'\n"
-            "```",
+            "instead of a checkpoint. The same call pulls each component.",
             "### Import an Exported Model File\n\n"
             "Files written by `lemonade export` and the desktop app's Export button are `/v1/pull` "
             "request bodies: POST a file's contents as is to register and install its model. See "
@@ -182,7 +164,31 @@ public:
             "model_name": "Qwen3-0.6B-GGUF"
         })");
 
-        s.examples = {job_example, success_example, events_example};
+        RouteExample register_example;
+        register_example.name = "register";
+        register_example.description =
+            "Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.";
+        register_example.format = ResponseFormat::Json;
+        register_example.args = ordered_json::parse(R"({
+            "model_name": "user.Qwen3-0.6B-Q4",
+            "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+            "recipe": "llamacpp"
+        })");
+
+        RouteExample collection_example;
+        collection_example.name = "collection";
+        collection_example.description =
+            "Registers `user.MyKit`, an omni collection of three built-in models, and pulls each "
+            "of them.";
+        collection_example.format = ResponseFormat::Json;
+        collection_example.args = ordered_json::parse(R"({
+            "model_name": "user.MyKit",
+            "recipe": "collection.omni",
+            "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+        })");
+
+        s.examples = {job_example, success_example, events_example, register_example,
+                      collection_example};
         s.request_format = RequestFormat::Json;
         return s;
     }

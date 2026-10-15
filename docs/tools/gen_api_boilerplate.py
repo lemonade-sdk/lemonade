@@ -46,6 +46,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 API_DOCS = REPO_ROOT / "docs" / "api"
 CACHE_FILE = REPO_ROOT / "docs" / "tools" / "api_examples_cache.json"
 FIXTURES = REPO_ROOT / "docs" / "tools" / "fixtures"
+# A fixture can stand for a whole value or follow a prefix, as in a data URL.
+FIXTURE = re.compile(r"@fixtures/[\w.-]+")
 BACKEND_VERSIONS = REPO_ROOT / "src" / "cpp" / "resources" / "backend_versions.json"
 SERVER_MODELS = REPO_ROOT / "src" / "cpp" / "resources" / "server_models.json"
 
@@ -256,8 +258,9 @@ def check_args(specs: dict, route_id: str, values, where: str) -> None:
         if name not in args:
             raise GenerationError(f"{where}: names unknown argument {route_id} {name}")
     for value in iter_strings(values):
-        if value.startswith("@fixtures/") and not (FIXTURES / value[10:]).exists():
-            raise GenerationError(f"{where}: missing fixture {value}")
+        for marker in FIXTURE.findall(value):
+            if not (FIXTURES / marker[10:]).exists():
+                raise GenerationError(f"{where}: missing fixture {marker}")
 
 
 def iter_strings(value):
@@ -299,6 +302,9 @@ def route_texts(spec: dict):
         yield f"notes[{index}]", note
     for arg in spec["args"]:
         yield f"argument {arg['name']}", arg["description"]
+    for example in spec["examples"]:
+        if example["description"]:
+            yield f"example {example['name'] or '(main)'}", example["description"]
 
     def walk(schema, path):
         if not isinstance(schema, dict):
@@ -526,8 +532,13 @@ def json_scalar(value) -> str:
 
 
 def embed_fixtures(value):
-    if isinstance(value, str) and value.startswith("@fixtures/"):
-        return base64.b64encode((FIXTURES / value[10:]).read_bytes()).decode("ascii")
+    if isinstance(value, str):
+        return FIXTURE.sub(
+            lambda marker: base64.b64encode(
+                (FIXTURES / marker.group(0)[10:]).read_bytes()
+            ).decode("ascii"),
+            value,
+        )
     if isinstance(value, dict):
         return {key: embed_fixtures(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -879,9 +890,8 @@ def fixture_variables(value) -> dict[str, str]:
     """Fixture files in a JSON body, by the shell variable that holds their base64."""
     names = {}
     for item in iter_strings(value):
-        if item.startswith("@fixtures/"):
-            filename = item[10:]
-            names[item] = re.sub(r"\W", "_", Path(filename).stem)
+        for marker in FIXTURE.findall(item):
+            names[marker] = re.sub(r"\W", "_", Path(marker[10:]).stem)
     return names
 
 
@@ -1274,6 +1284,8 @@ def render_response_format(spec: dict, entries: list[dict], labels: list[str]) -
             response["format"], dereferenced(response["schema"])
         )
         body = render_recorded(response["format"], entry, schema)
+        if example["description"]:
+            body = f"{example['description']}\n\n{body}"
         if shared:
             fields = render_fields(schema) if schema else ""
             bodies.append(body)
