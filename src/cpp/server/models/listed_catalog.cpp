@@ -11,7 +11,7 @@ ListedCatalog::ListedCatalog(std::string provider, List list)
           DocEntry{"listed-" + provider, "Cloud: " + provider,
                    "A cloud provider's own model listing.",
                    {"A provider that will not answer costs only its own entries."}, ""},
-          ""},
+          "", true},
       list_(std::move(list)) {}
 
 void ListedCatalog::enumerate(CatalogAccumulator& accumulator) const {

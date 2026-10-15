@@ -1,5 +1,3 @@
-// Step 11: one config builds the whole facade, and a caller can hand it fixture
-// catalogs — the injection point tests and embedders use.
 #include <lemon/model_manager.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/registry_descriptors.h>

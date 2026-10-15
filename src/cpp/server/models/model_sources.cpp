@@ -44,6 +44,7 @@ json catalog_json(const CatalogDescriptor& descriptor) {
         {"example", descriptor.doc.example},
         {"required", descriptor.required},
         {"config_key", descriptor.config_key},
+        {"host_specific", descriptor.host_specific}
     };
 }
 
