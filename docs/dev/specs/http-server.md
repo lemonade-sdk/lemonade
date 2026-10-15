@@ -431,7 +431,7 @@ This section lists the core components, each with an interface of a few calls:
 | `RequestMiddleware` | One pre-routing function | Origin check and CORS, API and admin keys, per-request telemetry and session context |
 | `RouteRegistry` | `add()`, `apply(httplib::Server&)`, `list()` | Prefix expansion, 405 stubs, registration order, the route list for the docs |
 | `ConfigEffects` | `apply(key)`, called at startup and on every config change | Applies each config key's side effects, at startup and on change |
-| `WebUi` | `register_routes(httplib::Server&)`, called last | The SPA, the legacy status page, static assets and the SPA fallback. Its mock `window.api` lives in the web-app sources |
+| `WebUi` | `register_routes(httplib::Server&)`, called last | The SPA, the legacy status page, static assets and the SPA fallback |
 | `ModelLoader` | `ensure_loaded()`, `write_load_error()` | Auto-load, collection loading, load errors. Used by `ModelRoute` and the gateways |
 | `ModelJson` | `to_json(id, info)`, `schema()` | Builds the model JSON for the models routes, the status page and the job engine |
 | `DownloadManager` | `start()`, `list()`, `control()`, `cancel_all()`, `stream()`, `job_schema()`, `event_schema()` | Server-owned download jobs and their threads, and the download event stream that pull and install send |
