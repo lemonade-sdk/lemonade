@@ -69,6 +69,10 @@ json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition
         {"source", external ? "external" : "builtin"}, {"display_name", descriptor.display_name},
         {"supported_modes", descriptor.supported_modes}, {"options", options}, {"operations_complete", definition != nullptr},
         {"operations", json::array()}, {"support", support}};
+    if (external) {
+        const auto& backend = definition->records["launch"]["backend"];
+        row["backend_option"] = backend.contains("option") ? backend["option"] : json();
+    }
     row["definition_hash"] = definition ? definition->digest : schema_digest(row.dump());
     return row;
 }

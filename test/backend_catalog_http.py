@@ -235,6 +235,7 @@ def main(binary):
                     json.dumps(alpha, sort_keys=True, separators=(",", ":")).encode()
                 ).hexdigest(),
                 "source": "external",
+                "backend_option": None,
                 "display_name": "HTTP Alpha",
                 "supported_modes": ["chat"],
                 "options": [
@@ -489,6 +490,57 @@ def main(binary):
                 == catalog_id,
                 "restart digest excludes port/path and formatting",
             )
+        alpha["metadata"]["options"].append(
+            {"name": "constructor", "value_type": "string", "default_value": "cpu"}
+        )
+        alpha["launch"]["backend"] = {
+            "option": "constructor",
+            "fallback": "first_supported",
+            "on_empty": {"operation": "load", "target": "fixture"},
+        }
+        (directory / "a.json").write_text(json.dumps(alpha))
+        with Server(binary, root) as server:
+            selected_schema = request(server.port, "/v1/backends/schema")[1]
+            check(
+                selected_schema["recipes"][-2]["backend_option"] == "constructor",
+                "selector export without UI hints or suffix",
+            )
+            check(
+                selected_schema["catalog_id"] != catalog_id,
+                "selector metadata changes hash and ETag",
+            )
+            frozen_cli = os.environ.get("LEMONADE_FROZEN_CLI")
+            if frozen_cli:
+                cli_env = os.environ.copy()
+                cli_env.pop("LEMONADE_ADMIN_API_KEY", None)
+                cli_env["LEMONADE_API_KEY"] = "regular-test-key"
+                cli_env["XDG_CONFIG_HOME"] = str(root / "cli-config")
+                reply = subprocess.run(
+                    [
+                        frozen_cli,
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(server.port),
+                        "--no-discovery",
+                        "backends",
+                        "schema",
+                        "http-alpha",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=cli_env,
+                    timeout=12,
+                )
+                check(reply.returncode == 0, reply.stderr)
+                check(
+                    json.loads(reply.stdout)["recipes"][-1]["backend_option"]
+                    == "constructor",
+                    "frozen CLI accepts additive selector metadata",
+                )
+        alpha["metadata"]["options"].pop()
+        alpha["launch"]["backend"] = {"fixed": "cpu"}
+        (directory / "a.json").write_text(json.dumps(alpha))
         optins = (
             "LEMONADE_THINKSOUND_CONFIGURED",
             "LEMONADE_DS4_CONFIGURED",

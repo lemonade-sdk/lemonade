@@ -60,6 +60,18 @@ int main(int argc, char** argv) {
     auto schema = local.export_schema();
     check(schema["recipes"].size() == 19 && schema["recipes"][17]["recipe"] == "catalog-alpha" && schema["recipes"][18]["recipe"] == "catalog-beta", "17 built-ins then two external identities");
     const auto alpha_row = local.export_schema("catalog-alpha")["recipes"][0];
+    check(alpha_row["backend_option"].is_null(), "fixed external backend has explicit null selector");
+    auto selectable = alpha;
+    selectable["metadata"]["options"].push_back({{"name", "constructor"}, {"value_type", "string"}, {"default_value", "cpu"}});
+    selectable["launch"]["backend"] = {{"option", "constructor"}, {"fallback", "first_supported"}, {"on_empty", {{"operation", "load"}, {"target", "fixture"}}}};
+    const auto selectable_schema = BackendCatalog({source(selectable)}).export_schema();
+    check(selectable_schema["recipes"][17]["backend_option"] == "constructor", "exact selector exported independently of suffix or UI hints");
+    auto fixed = selectable;
+    fixed["launch"]["backend"] = {{"fixed", "cpu"}};
+    check(BackendCatalog({source(fixed)}).export_schema()["catalog_id"] != selectable_schema["catalog_id"], "selector change invalidates catalog identity");
+    for (size_t i = 0; i < 17; ++i) check(!schema["recipes"][i].contains("backend_option"), "built-in export remains unchanged");
+    auto sanitized = selectable_schema["recipes"][17];
+    check(!sanitized.contains("launch") && !sanitized.contains("argv") && !sanitized.contains("environment") && !sanitized.contains("install"), "selector export exposes no execution records");
     check(alpha_row["options"][0] == json{{"name", "alpha_batch"}, {"value_type", "integer"}, {"default_value", 2}, {"unset_values", {nullptr}}, {"minimum", 1}, {"maximum", 8}, {"help", "Batch size"}, {"group", "Alpha"}, {"ui", {{"label", "Batch size"}, {"control", "number"}, {"order", 10}}}}, "hand-authored public option contract");
     check(alpha_row["operations"] == json::array({{{"operation", "chat_completion"}, {"delivery", "buffered"}, {"model_modes", {"chat"}}, {"provenance", "implemented"}}}), "hand-authored executable operation projection");
     check(alpha_row["source"] == "external" && alpha_row["definition_id"] == "catalog-alpha" && alpha_row["support"] == json::array() && alpha_row["operations_complete"] == true, "external row fields");
