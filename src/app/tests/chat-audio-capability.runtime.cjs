@@ -237,6 +237,6 @@ assert.equal(updateDraftWithDictation('Draft speaking', 'speaking', 'spoken word
 assert.equal(updateDraftWithDictation('Draft spoken words !', 'spoken words', 'final words'), 'Draft final words !');
 assert.match(chatViewSource, /const supportsDictation = currentCapability === 'chat' && canUseMicrophone\(\)/);
 assert.match(chatViewSource, /selectDictationModel\(/);
-assert.match(chatViewSource, /Icon name=\{currentCapability === 'chat' \? 'mic' : 'audio'\}/);
+assert.match(chatViewSource, /Icon name=\{isLiveRecording \? 'stop' : currentCapability === 'chat' \? 'mic' : 'audio'\}/);
 
 console.log('Chat + audio capability contract checks passed.');

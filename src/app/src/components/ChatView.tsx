@@ -4580,7 +4580,7 @@ ${finalText}`
               aria-label={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat' ? t('Dictate message') : t('Start live audio transcription')}
               aria-pressed={isLiveRecording}
             >
-              <Icon name={currentCapability === 'chat' ? 'mic' : 'audio'} size={16} />
+              <Icon name={isLiveRecording ? 'stop' : currentCapability === 'chat' ? 'mic' : 'audio'} size={16} />
             </button>
           )}
           {isStreaming ? (
