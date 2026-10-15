@@ -227,6 +227,12 @@ export function useChatStreaming(
                 return;
               }
 
+              if (controller.signal.aborted) {
+                delete tokenBufferRef.current[convoId];
+                resolve();
+                return;
+              }
+
               // Show tool status in the stream and add running entries
               const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
               const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
@@ -250,6 +256,14 @@ export function useChatStreaming(
               const results = await Promise.all(
                 toolCalls.map(tc => runtime!.execute(tc as ToolCall))
               );
+
+              // Tool execution takes no abort signal, so a stop mid-call lands
+              // here with a dead controller.
+              if (controller.signal.aborted) {
+                delete tokenBufferRef.current[convoId];
+                resolve();
+                return;
+              }
 
               // Update entries with results
               for (let j = 0; j < runningEntries.length; j++) {
@@ -298,6 +312,12 @@ export function useChatStreaming(
                 reject(err);
               }
             } catch (err: unknown) {
+              if (controller.signal.aborted) {
+                delete tokenBufferRef.current[convoId];
+                cleanup(convoId);
+                resolve();
+                return;
+              }
               // Mark any still-running tool call entries as errored so the user sees what happened.
               const msg = err instanceof Error ? err.message : String(err);
               for (const entry of allToolCalls) {
@@ -323,7 +343,7 @@ export function useChatStreaming(
             resolve();
           },
           onError: (err) => {
-            if (err.name === 'AbortError') { resolve(); return; }
+            if (err.name === 'AbortError') { cleanup(convoId); resolve(); return; }
             delete tokenBufferRef.current[convoId];
             onError(convoId, err.message);
             cleanup(convoId);
