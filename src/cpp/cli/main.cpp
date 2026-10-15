@@ -806,6 +806,10 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
+    if (config.agent == "opencode" && lemon_tray::opencode_needs_standalone(agent_binary)) {
+        agent_config.extra_args.insert(agent_config.extra_args.begin(), "--standalone");
+    }
+
     std::cout << "Loading model in background: " << config.model << std::endl;
 
     // Trigger load asynchronously so launch is non-blocking for agent startup.
