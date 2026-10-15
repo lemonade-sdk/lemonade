@@ -296,16 +296,29 @@ bool sync_pi_mcp_server(const std::string& server_origin,
         server = nlohmann::json::object();
     }
     server["url"] = server_origin + "/mcp";
+    // Pi rejects a url entry whose type is not an HTTP one, and leftover
+    // stdio keys would make the entry look like a local command.
+    if (server.contains("type") && server["type"] != "http" &&
+        server["type"] != "streamable-http") {
+        server.erase("type");
+    }
+    for (const char* stdio_key : {"command", "args", "env", "cwd"}) {
+        server.erase(stdio_key);
+    }
 
     // Pi fails the whole connection when a header references an unset
     // variable, so the header exists only when launch exports the key.
+    const std::string key_header = "Bearer ${LEMONADE_API_KEY}";
     if (has_api_key) {
         if (!server.contains("headers") || !server["headers"].is_object()) {
             server["headers"] = nlohmann::json::object();
         }
-        server["headers"]["Authorization"] = "Bearer ${LEMONADE_API_KEY}";
+        server["headers"]["Authorization"] = key_header;
     } else if (server.contains("headers") && server["headers"].is_object()) {
-        server["headers"].erase("Authorization");
+        const auto auth = server["headers"].find("Authorization");
+        if (auth != server["headers"].end() && *auth == key_header) {
+            server["headers"].erase(auth);
+        }
         if (server["headers"].empty()) {
             server.erase("headers");
         }

@@ -121,6 +121,37 @@ void test_mcp_server(const fs::path& mcp_path) {
           mcp == json::parse(R"({"autoEnableCodemode": false,
                                  "mcpServers": {"other": {"url": "http://other/mcp"}}})"));
 
+    // Pi rejects an entry whose type is not an HTTP one even when it has a url.
+    write_file(mcp_path, R"({"mcpServers": {"lemonade": {
+        "type": "stdio", "command": "npx", "args": ["lemonade-mcp"],
+        "env": {"A": "1"}, "cwd": "/tmp", "timeout": 30
+    }}})");
+    lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
+    mcp = json::parse(read_file(mcp_path));
+    const json& migrated = mcp["mcpServers"]["lemonade"];
+    check("refresh turns a stdio entry into an HTTP one and keeps user settings",
+          migrated["url"] == "http://localhost:13305/mcp" && !migrated.contains("type") &&
+              !migrated.contains("command") && !migrated.contains("args") &&
+              !migrated.contains("env") && !migrated.contains("cwd") &&
+              migrated["timeout"] == 30);
+
+    write_file(mcp_path, R"({"mcpServers": {"lemonade": {
+        "type": "streamable-http", "url": "http://old:1/mcp"
+    }}})");
+    lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
+    mcp = json::parse(read_file(mcp_path));
+    check("refresh keeps an HTTP type the user set",
+          mcp["mcpServers"]["lemonade"]["type"] == "streamable-http");
+
+    write_file(mcp_path, R"({"mcpServers": {"lemonade": {
+        "url": "http://old:1/mcp", "headers": {"Authorization": "Bearer my-own-token"}
+    }}})");
+    lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
+    mcp = json::parse(read_file(mcp_path));
+    check("refresh without a key keeps an Authorization header the user set",
+          mcp["mcpServers"]["lemonade"]["headers"] ==
+              json{{"Authorization", "Bearer my-own-token"}});
+
     write_file(mcp_path, "{ not json");
     check("malformed mcp.json is refused and left untouched",
           !lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error) &&
