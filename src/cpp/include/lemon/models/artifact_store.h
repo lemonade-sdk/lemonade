@@ -100,8 +100,7 @@ class ModelArtifactStore {
     std::string resolve_path(const ModelInfo& info, const std::string& type,
                              const std::string& checkpoint) const;
 
-    // The same resolution against another cache root, for a registered model that
-    // finds a complete copy of its repository somewhere else on disk.
+    // The same resolution against another cache root.
     std::string resolve_path_in(const ModelInfo& info, const std::string& type,
                                 const std::string& checkpoint,
                                 const std::string& cache_root) const;

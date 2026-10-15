@@ -31,9 +31,7 @@ std::string bare_component_name(const std::string& name);
 // False when the definition would fail partway through its own fetch.
 bool collection_component_def_is_valid(const nlohmann::json& def);
 
-// How a model comes to exist here. One component settles a definition, its
-// registration, its recipe options and the bytes it needs, so a pull and an import
-// cannot disagree about what "installed" was promised.
+// Pull and import settle through one path, so neither redefines "installed".
 class ModelIngest : public ArtifactFetchService {
   public:
     struct Deps {

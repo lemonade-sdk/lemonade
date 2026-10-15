@@ -176,11 +176,6 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                 continue;
             }
 
-            // Only Hugging Face pins refs/main to a previous snapshot when the
-            // selected artifacts are unchanged, so only it can distinguish a
-            // commit that touches this model from one that does not. ModelScope
-            // snapshots are tree fingerprints with no commit pin, so they keep
-            // the snapshot-id comparison.
             const bool artifact_aware = source == models::huggingface_descriptor().id;
             const fs::path cache_path =
                 utils::path_from_utf8(deps.hf_cache_dir()) /

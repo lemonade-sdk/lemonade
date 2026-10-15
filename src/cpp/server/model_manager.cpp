@@ -281,9 +281,9 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
 models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     models::ModelIngest::Deps deps;
     deps.artifacts = artifacts_.get();
-    deps.default_registry_source = [this] -> std::optional<RegistryId> {
-        if (!default_model_source_provider_) return std::nullopt;
-        return parse_remote_registry_source(default_model_source_provider_());
+    deps.default_registry_source = [this] {
+        if (!default_model_source_provider_) return std::optional<RegistryId>{};
+        return std::make_optional(parse_remote_registry_source(default_model_source_provider_()));
     };
     deps.model_exists = [this](const std::string& name) { return model_exists(name); };
     deps.model_exists_unfiltered =
@@ -950,13 +950,7 @@ void ModelManager::build_cache() {
         models::CatalogDescriptor{"user_models.json"}, documents.user,
         std::move(user_rows)));
 
-    // The sources that scan or list rather than read a JSON document. A scanning
-    // or listing source keeps what an earlier one claimed.
-
-    // An --extra-models-dir scan plus GGUF identification. A registered model
-    // stays attached to its catalog id when a complete repository cache also
-    // lives in the directory, which also suppresses duplicates across cache
-    // roots; unrelated GGUFs are still discovered.
+    // A scanning or listing source keeps what an earlier source already claimed.
     catalogs.push_back(std::make_unique<models::EnumeratedCatalog>(
         models::CatalogDescriptor{"extra_models_dir"},
         [this](const models::CatalogAccumulator& claimed) {
@@ -1803,11 +1797,8 @@ void ModelManager::register_user_model(const std::string& model_name,
         model_entry["source"] = source;
     }
 
-    // Single source of truth for registry-backed collections: the component list lives
-    // in the cached remote-registry manifest, so the registry entry stores only the
-    // repo pointer (checkpoint). Persisting `components` here would let a stale
-    // local copy shadow a refreshed manifest. A pure inline collection has no
-    // checkpoint pointer and keeps its authored components.
+    // A registry-backed collection persists only its repo pointer, so a refreshed
+    // manifest cannot be shadowed by a stale local list.
     if (is_model_collection_recipe(recipe)) {
         std::string pointer = model_entry.value("checkpoint", std::string());
         if (pointer.empty() && model_entry.contains("checkpoints") &&

@@ -44,10 +44,7 @@ std::string bare_component_name(const std::string& name) {
     return is_user_model_name(name) ? strip_user_model_prefix(name) : name;
 }
 
-// A collection component's inline definition must be a usable model
-// registration before we register it: a non-empty recipe plus at least one
-// non-empty checkpoint. Fails an inline import closed instead of persisting a
-// half-defined component that only blows up later during download.
+// Fails an inline import closed rather than persisting a half-defined component.
 bool collection_component_def_is_valid(const json& def) {
     if (!def.is_object() || !def.contains("recipe") || !def["recipe"].is_string()) {
         return false;
@@ -352,10 +349,8 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         repo_download_paths[repo_id] = path_to_utf8(snapshot);
     }
 
-    // Preserve the existing HF optimization: if every selected artifact is
-    // byte-identical at the new commit, keep refs/main on the previous snapshot.
-    // ModelScope snapshots are tree fingerprints and currently advance together
-    // with the reported tree, because its branch API has no HF-style commit pin.
+    // Unchanged artifacts keep refs/main on the previous snapshot; ModelScope has no
+    // commit pin, so its snapshots advance with the tree.
     std::set<std::string> repos_reusing_previous_snapshot;
     if (source == models::huggingface_descriptor().id) {
         for (const auto& [repo_id, files] : files_to_download) {
@@ -722,10 +717,7 @@ void ModelIngest::pull(const std::string& model_name,
                 components = register_components(model_data["components"], model_data["models"],
                                                 models::registry_source_of(info));
 
-                // The first write stored the names as authored; write the canonical
-                // list so later lookups match after a rebuild. The bulky payload is
-                // dropped, and a registry-backed collection also drops the list so the
-                // cached manifest stays the sole source of truth.
+                // Rewrite with canonical names; the bulky payload is dropped.
                 if (is_user_model_name(model_name) && !components.empty()) {
                     json reg = registration_data;
                     reg["components"] = components;
@@ -1093,10 +1085,6 @@ std::vector<std::string> ModelIngest::resolve_components_from_manifest(
 
 std::optional<std::string> ModelIngest::validate_collection(
     const std::string& model_name, const json& model_data) {
-    // A registry-backed collection is registered as a pointer: recipe + a checkpoint
-    // that names the HF repo, with no inline components. /pull downloads the
-    // repo's manifest to disk and resolves the components from it, so there is
-    // nothing to validate here - accept the pointer body.
     std::string checkpoint_pointer = model_data.value("checkpoint", std::string());
     if (checkpoint_pointer.empty() && model_data.contains("checkpoints") &&
         model_data["checkpoints"].is_object()) {
