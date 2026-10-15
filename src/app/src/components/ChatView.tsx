@@ -4292,9 +4292,11 @@ ${finalText}`
                 : isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone'))}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
-            <div className="composer__live-text">
-              {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
-            </div>
+            {!micPreparation && (
+              <div className="composer__live-text">
+                {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+              </div>
+            )}
           </div>
         )}
         <div className="composer__bar">
