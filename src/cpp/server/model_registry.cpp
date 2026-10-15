@@ -855,6 +855,18 @@ std::string remote_registry_scheme_prefix(RegistryId source) {
     return require_descriptor(source).scheme_prefix;
 }
 
+bool is_local_origin(const std::string& source) {
+    static const std::vector<std::string> kTokens = {
+        local_origin::upload, local_origin::path, local_origin::extra_models_dir};
+    return std::find(kTokens.begin(), kTokens.end(), source) != kTokens.end();
+}
+
+const std::vector<std::string>& local_origin_tokens() {
+    static const std::vector<std::string> kTokens = {
+        local_origin::upload, local_origin::path, local_origin::extra_models_dir};
+    return kTokens;
+}
+
 bool is_remote_registry_source(const std::string& source) {
     // Unlike parse, which reads an absent source as the default host, this asks
     // whether the caller named one.
@@ -943,9 +955,7 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     }
     if (request_json.contains("source") && request_json["source"].is_string()) {
         const auto& src = request_json["source"].get<std::string>();
-        if (!is_remote_registry_source(src) &&
-            src != "local_upload" && src != "local_path" &&
-            src != "extra_models_dir") {
+        if (!is_remote_registry_source(src) && !is_local_origin(src)) {
             throw std::invalid_argument(
                 "Unsupported model source '" + src +
                 "' (expected remote registry or local import type)");

@@ -1051,6 +1051,7 @@ set(SOURCES_CORE
     src/cpp/server/models/ingest.cpp
     src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
+    src/cpp/server/models/model_sources.cpp
     src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
@@ -3215,6 +3216,20 @@ if(BUILD_TESTING AND EXISTS "${_ARTIFACT_RESOLVER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ArtifactResolverTest CI ON COMMAND test_artifact_resolver)
+endif()
+
+set(_MODEL_SOURCE_DESCRIPTORS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_source_descriptors.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_SOURCE_DESCRIPTORS_TEST_SRC}")
+    add_executable(test_model_source_descriptors
+        test/cpp/test_model_source_descriptors.cpp
+    )
+    target_link_libraries(test_model_source_descriptors PRIVATE lemonade-server-core)
+    add_dependencies(test_model_source_descriptors copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelSourceDescriptorsTest CI ON COMMAND test_model_source_descriptors)
 endif()
 
 set(_MODEL_MANAGER_SHIM_TEST_SRC

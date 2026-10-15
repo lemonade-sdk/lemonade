@@ -6,7 +6,13 @@ namespace lemon {
 namespace models {
 
 ListedCatalog::ListedCatalog(std::string provider, List list)
-    : descriptor_{"listed:" + provider}, list_(std::move(list)) {}
+    : descriptor_{
+          "listed:" + provider, false,
+          DocEntry{"listed-" + provider, "Cloud: " + provider,
+                   "A cloud provider's own model listing.",
+                   {"A provider that will not answer costs only its own entries."}, ""},
+          ""},
+      list_(std::move(list)) {}
 
 void ListedCatalog::enumerate(CatalogAccumulator& accumulator) const {
     std::vector<ModelInfo> listed;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lemon/model_manager.h>
+#include <lemon/models/catalog_descriptor.h>
 
 #include <functional>
 #include <map>
@@ -10,13 +11,6 @@
 
 namespace lemon {
 namespace models {
-
-// What a catalog declares at construction. The docs-facing fields arrive with
-// the generator that reads them.
-struct CatalogDescriptor {
-    std::string id;
-    bool required = false;
-};
 
 // One catalog's contribution. `id` is stable, used for provenance.
 struct CatalogEntry {

@@ -323,7 +323,7 @@ std::string ModelArtifactStore::resolve_path(const ModelInfo& info, const std::s
     }
 
     // Local-path models use the checkpoint as-is (absolute path to a file).
-    if (info.source == "local_path") {
+    if (info.source == local_origin::path) {
         return checkpoint;
     }
 
@@ -332,7 +332,7 @@ std::string ModelArtifactStore::resolve_path(const ModelInfo& info, const std::s
     // Local uploads: the checkpoint is a path relative to the cache root. Joined
     // rather than concatenated, so a row naming an absolute path resolves to that
     // path and the delete proof can see it is not ours to remove.
-    if (info.source == "local_upload") {
+    if (info.source == local_origin::upload) {
         std::string normalized = checkpoint;
         std::replace(normalized.begin(), normalized.end(), '\\', '/');
         return utils::path_to_utf8(utils::path_from_utf8(cache) / utils::path_from_utf8(normalized));
@@ -646,7 +646,7 @@ DeleteReport ModelArtifactStore::delete_artifacts(const ModelInfo& info,
             continue;
         }
 
-        if (info.source == "local_upload") {
+        if (info.source == local_origin::upload) {
             remove_path_or_throw(resolved, "uploaded copy");
             cleanup_empty_parents(resolved, managed_root);
             continue;

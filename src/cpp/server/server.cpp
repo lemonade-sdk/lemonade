@@ -1496,6 +1496,11 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_models_sync_status(req, res);
     });
 
+    web_server.Get("/internal/model-sources",
+                   [this](const httplib::Request& req, httplib::Response& res) {
+                       res.set_content(model_manager_->model_sources().dump(2), "application/json");
+                   });
+
     web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
         handle_aliases_get(req, res);
     });
@@ -2987,9 +2992,7 @@ void Server::normalize_model_registration_source(nlohmann::json& request_json,
             }
             normalized_registry = normalized_public;
             request_json["source"] = normalized_public;
-        } else if (!local_import && public_source != "local_upload" &&
-                   public_source != "local_path" &&
-                   public_source != "extra_models_dir") {
+        } else if (!local_import && !is_local_origin(public_source)) {
             throw std::invalid_argument(
                 "Unsupported model source '" + public_source +
                 "' (expected 'huggingface', 'modelscope', or a local source)");
@@ -6863,7 +6866,7 @@ void Server::resolve_and_register_local_model(
     model_manager_->register_user_model(
         model_name,
         actual_model_data,
-        "local_upload"
+        local_origin::upload
     );
 
     LOG(INFO, "Server") << "Model registered successfully" << std::endl;

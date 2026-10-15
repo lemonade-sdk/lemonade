@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lemon/model_manager.h>
+#include <lemon/models/catalog_descriptor.h>
 #include <lemon/models/store_builder.h>
 
 #include <cstdint>
@@ -31,6 +32,8 @@ struct StoreSnapshot {
     // Canonical id -> the name it is listed under.
     std::map<std::string, std::string> canonical_public_names;
     std::shared_ptr<const FilterReasons> reasons;
+    // Every catalog that contributed to `models`, in precedence order.
+    std::vector<CatalogDescriptor> catalogs;
     // What the policies in `models` need; see collect_helper_models().
     std::set<std::string> helper_models;
     // False until the first build; readers rebuild when they see it.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "doc_entry.h"
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -42,6 +44,14 @@ struct RegistryDescriptor {
     // Empty when the host serves files only through its own API.
     std::string endpoint_default;
     std::string download_protocol;
+
+    DocEntry doc;
+    std::vector<EnvVar> env;
+    // What naming a revision promises, and what a stale snapshot is measured
+    // against — the two facts a reader needs before trusting refs/main.
+    std::string revision_semantics;
+    std::string staleness_basis;
+    bool supports_search = false;
 };
 
 // Resolves any accepted spelling. Empty means the default host.
