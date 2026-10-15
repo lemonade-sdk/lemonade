@@ -190,6 +190,10 @@ export function useChatStreaming(
     const controller = new AbortController();
     controllersRef.current.set(convoId, controller);
 
+    const ownsConversation = () => controllersRef.current.get(convoId) === controller;
+    const cleanupIfOwned = () => { if (ownsConversation()) cleanup(convoId); };
+    const dropTokenBufferIfOwned = () => { if (ownsConversation()) delete tokenBufferRef.current[convoId]; };
+
     let fullMessages = [...messages];
     // When a small context is exhausted by tool schemas, retry with exactly
     // the original conversation and attachments, omitting the tool-only prompt.
@@ -211,6 +215,7 @@ export function useChatStreaming(
           params: chatThinkingParams(thinkingMode),
           tools: !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
+            if (!ownsConversation()) return;
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].thinking = fullReasoning;
@@ -218,12 +223,14 @@ export function useChatStreaming(
             if (!thinkingExpanded) setThinkingExpanded(true);
           },
           onToken: (_token, full) => {
+            if (!ownsConversation()) return;
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].content = full;
             scheduleTokenFlush();
           },
           onStats: (stats) => {
+            if (!ownsConversation()) return;
             setLiveStats(prev => ({ ...prev, [convoId]: stats }));
           },
           onToolCalls: async (toolCalls) => {
@@ -231,7 +238,13 @@ export function useChatStreaming(
               toolRound++;
               if (toolRound > MAX_TOOL_ROUNDS) {
                 onError(convoId, 'Too many tool call rounds. Stopping to prevent loops.');
-                cleanup(convoId);
+                cleanupIfOwned();
+                resolve();
+                return;
+              }
+
+              if (controller.signal.aborted) {
+                dropTokenBufferIfOwned();
                 resolve();
                 return;
               }
@@ -259,6 +272,14 @@ export function useChatStreaming(
               const results = await Promise.all(
                 toolCalls.map(tc => runtime!.execute(tc as ToolCall))
               );
+
+              // Tool execution takes no abort signal, so a stop mid-call lands
+              // here with a dead controller.
+              if (controller.signal.aborted) {
+                dropTokenBufferIfOwned();
+                resolve();
+                return;
+              }
 
               // Update entries with results
               for (let j = 0; j < runningEntries.length; j++) {
@@ -307,6 +328,12 @@ export function useChatStreaming(
                 reject(err);
               }
             } catch (err: unknown) {
+              if (controller.signal.aborted) {
+                dropTokenBufferIfOwned();
+                cleanupIfOwned();
+                resolve();
+                return;
+              }
               // Mark any still-running tool call entries as errored so the user sees what happened.
               const msg = err instanceof Error ? err.message : String(err);
               for (const entry of allToolCalls) {
@@ -319,24 +346,35 @@ export function useChatStreaming(
                 ...prev,
                 [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
               }));
-              delete tokenBufferRef.current[convoId];
+              dropTokenBufferIfOwned();
               onError(convoId, `Tool execution failed: ${msg}`);
-              cleanup(convoId);
+              cleanupIfOwned();
               resolve();
             }
           },
           onDone: (stats) => {
-            delete tokenBufferRef.current[convoId];
-            if (controller.signal.aborted) {
-              cleanup(convoId);
+            if (!ownsConversation()) {
               resolve();
               return;
             }
-            // The selected tools can consume almost the entire vision context.
-            // Do not re-run executed tools, and never retry more than once.
-            if (!retriedWithoutTools && hasImageInput && runtime?.tools?.length && allToolCalls.length === 0
-                && (!stats.content.trim() || stats.finishReason === 'length')) {
+
+            dropTokenBufferIfOwned();
+
+            if (controller.signal.aborted) {
+              cleanupIfOwned();
+              resolve();
+              return;
+            }
+
+            if (
+              !retriedWithoutTools &&
+              hasImageInput &&
+              runtime?.tools?.length &&
+              allToolCalls.length === 0 &&
+              (!stats.content.trim() || stats.finishReason === 'length')
+            ) {
               retriedWithoutTools = true;
+
               setActiveStreams(prev => ({
                 ...prev,
                 [convoId]: { content: '', thinking: '', toolCalls: [] },
@@ -347,9 +385,11 @@ export function useChatStreaming(
                 return next;
               });
               setThinkingExpanded(false);
+
               void runCompletion().then(resolve, reject);
               return;
             }
+
             if (stats.finishReason === 'length') {
               onError(convoId, 'The model reached its context or output token limit (finish_reason=length). Increase context size or reduce chat history/tools.');
             } else if (!stats.content.trim() && allToolCalls.length === 0) {
@@ -357,14 +397,15 @@ export function useChatStreaming(
             } else {
               onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
             }
-            cleanup(convoId);
+
+            cleanupIfOwned();
             resolve();
           },
           onError: (err) => {
-            if (err.name === 'AbortError') { resolve(); return; }
-            delete tokenBufferRef.current[convoId];
+            if (err.name === 'AbortError') { cleanupIfOwned(); resolve(); return; }
+            dropTokenBufferIfOwned();
             onError(convoId, err.message);
-            cleanup(convoId);
+            cleanupIfOwned();
             resolve();
           },
           signal: controller.signal,
