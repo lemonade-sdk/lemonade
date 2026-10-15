@@ -1,4 +1,4 @@
-#include "lemon/alias_manager.h"
+#include <lemon/models/alias_manager.h>
 #include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/aixlog.hpp"
@@ -6,6 +6,8 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <set>
 #include <system_error>
 
 #ifndef _WIN32
@@ -16,6 +18,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace lemon {
+namespace models {
 
 AliasManager::AliasManager(std::string cache_dir)
     : cache_dir_(std::move(cache_dir)) {
@@ -59,7 +62,7 @@ bool AliasManager::set_alias(const std::string& alias, const std::string& target
         return false;
     }
 
-    std::unordered_map<std::string, std::string> temp_aliases;
+    std::map<std::string, std::string> temp_aliases;
     {
         std::unique_lock lock(mutex_);
         temp_aliases = aliases_;
@@ -67,7 +70,7 @@ bool AliasManager::set_alias(const std::string& alias, const std::string& target
 
         // Cycle detection check
         std::string current = clean_target;
-        std::unordered_set<std::string> visited;
+        std::set<std::string> visited;
         visited.insert(clean_alias);
 
         size_t depth = 0;
@@ -122,7 +125,7 @@ std::optional<std::string> AliasManager::resolve_alias(const std::string& alias_
         return std::nullopt;
     }
 
-    std::unordered_set<std::string> visited;
+    std::set<std::string> visited;
     visited.insert(current);
     size_t depth = 0;
 
@@ -152,7 +155,7 @@ bool AliasManager::has_alias(const std::string& alias) const {
     return aliases_.find(clean_alias) != aliases_.end();
 }
 
-std::unordered_map<std::string, std::string> AliasManager::get_all_aliases() const {
+std::map<std::string, std::string> AliasManager::get_all_aliases() const {
     std::shared_lock lock(mutex_);
     return aliases_;
 }
@@ -177,7 +180,7 @@ void AliasManager::load() {
         return;
     }
 
-    std::unordered_map<std::string, std::string> loaded_aliases;
+    std::map<std::string, std::string> loaded_aliases;
     bool parse_failed = false;
 
     {
@@ -219,9 +222,9 @@ void AliasManager::load() {
     }
 
     // Prune cyclic dependencies loaded from disk
-    std::unordered_map<std::string, std::string> sanitized_aliases;
+    std::map<std::string, std::string> sanitized_aliases;
     for (const auto& [alias_k, target_v] : loaded_aliases) {
-        std::unordered_set<std::string> visited;
+        std::set<std::string> visited;
         visited.insert(alias_k);
         std::string curr = target_v;
         bool is_cyclic = false;
@@ -257,7 +260,7 @@ void AliasManager::load() {
 
 void AliasManager::save() {
     std::string current_cache_dir;
-    std::unordered_map<std::string, std::string> aliases_copy;
+    std::map<std::string, std::string> aliases_copy;
     {
         std::shared_lock lock(mutex_);
         current_cache_dir = cache_dir_;
@@ -314,4 +317,5 @@ void AliasManager::save() {
     }
 }
 
-} // namespace lemon
+}  // namespace models
+}  // namespace lemon

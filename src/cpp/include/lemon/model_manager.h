@@ -19,6 +19,7 @@
 #include "gguf_reader.h"
 #include "model_registry.h"
 #include "model_types.h"
+#include "models/alias_manager.h"
 #include "models/change_notifier.h"
 #include "models/download_progress.h"
 #include "models/ingest.h"
@@ -75,6 +76,7 @@ namespace models {
 class ArtifactSource;
 class ModelArtifactStore;
 struct FilterReasons;
+struct ResolvedModel;
 struct StoreSnapshot;
 }  // namespace models
 
@@ -286,6 +288,17 @@ public:
     // Delete a model
     void delete_model(const std::string& model_name);
 
+    // One requested name to one model: normalize, snapshot precedence, then the
+    // alias map. Every surface that accepts a model name answers through this.
+    std::optional<models::ResolvedModel> resolve(const std::string& requested);
+
+    // Aliases: one map, held here, delegated everywhere.
+    std::map<std::string, std::string> aliases() const;
+    bool set_alias(const std::string& alias, const std::string& target, std::string& err_msg);
+    bool remove_alias(const std::string& alias);
+    std::optional<std::string> resolve_alias(const std::string& alias_or_name) const;
+    bool has_alias(const std::string& alias) const;
+
     // Clean up orphaned files from multi-repo models downloaded in old layout
     nlohmann::json cleanup_orphaned_cache(bool dry_run);
 
@@ -488,6 +501,7 @@ private:
     RecipeOptionsStore recipe_options_;
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
+    models::AliasManager alias_manager_;
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::function<std::string()> default_model_source_provider_;
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
