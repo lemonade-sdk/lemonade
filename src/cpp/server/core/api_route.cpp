@@ -1,5 +1,6 @@
 #include "lemon/server/api_route.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <stdexcept>
@@ -366,7 +367,13 @@ std::vector<RouteError> ModelRoute::inherited_errors(const RouteSpec& spec) cons
         errors.push_back(kNotMultipart);
         errors.push_back(kInvalidFormValue);
     }
-    errors.push_back(kMissingModel);
+    // A route whose model is optional fills it in during validate(), so step 4 never fires.
+    const bool model_required =
+        std::any_of(spec.args.begin(), spec.args.end(),
+                    [](const RouteArg& arg) { return arg.name == "model" && arg.required; });
+    if (model_required) {
+        errors.push_back(kMissingModel);
+    }
     for (const auto& list : {ModelLoader::errors(), exception_errors()}) {
         errors.insert(errors.end(), list.begin(), list.end());
     }

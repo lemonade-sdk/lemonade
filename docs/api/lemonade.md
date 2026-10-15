@@ -132,7 +132,6 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
 | `400` |  | The backend rejects the request, for example because `model` is not a classification model, which is found only after it loads |
 | `400` |  | The body is empty or is not valid JSON |
-| `400` |  | The request names no `model` |
 | `404` |  | The model is unloaded between its load and the classification |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
