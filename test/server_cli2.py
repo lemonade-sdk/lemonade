@@ -1769,7 +1769,9 @@ sys.exit(0)
 
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             capture_path = os.path.join(temp_dir, "opencode_capture.json")
-            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            self._write_fake_agent(
+                temp_dir, "opencode", capture_path, version_output="1.19.0"
+            )
             env = self._build_stubbed_agent_env(temp_dir)
 
             result = run_cli_command(
@@ -1788,6 +1790,10 @@ sys.exit(0)
                 payload = json.load(f)
 
             self.assertEqual(payload["argv"], [])
+            self.assertNotIn(
+                "Could not determine the opencode version",
+                result.stdout + result.stderr,
+            )
             inline_config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
             self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
 
@@ -1857,7 +1863,7 @@ sys.exit(0)
 
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             result, payload = self._launch_opencode_stub(
-                temp_dir, "1.19.0", version_stderr="(node:123) warning on v22.1.0"
+                temp_dir, "1.19.0", version_stderr="opencode v2.0.29"
             )
 
             self.assertEqual(result.returncode, 0)
