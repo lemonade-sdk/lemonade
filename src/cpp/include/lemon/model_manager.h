@@ -75,9 +75,11 @@ struct RoutePolicy;
 
 namespace models {
 class ArtifactSource;
+class CatalogAccumulator;
 class CatalogSet;
 class ModelArtifactStore;
 class ModelCatalog;
+struct CatalogSetDeps;
 struct FilterReasons;
 struct ResolvedModel;
 struct StoreSnapshot;
@@ -498,6 +500,10 @@ private:
 
     // Cache management
     void build_cache();
+
+    // The host reads a catalog set needs; see models::CatalogSetDeps.
+    models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
+    std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
     void add_model_to_cache(const std::string& model_name);
     // Caller must hold models_cache_mutex_.
     void update_model_options_in_cache_locked(const ModelInfo& info);
