@@ -100,6 +100,11 @@ public:
                 }
             }
 
+            if (!ctx_.alias_manager) {
+                write_alias_error(res, 500, "AliasManager uninitialized", "internal_error", "server_error");
+                return;
+            }
+
             std::string err_msg;
             if (!ctx_.alias_manager->set_alias(alias, target, err_msg)) {
                 write_alias_error(res, 409, err_msg, "alias_conflict");

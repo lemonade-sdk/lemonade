@@ -174,6 +174,10 @@ Server::~Server() {
 }
 
 void Server::start_model_cache_warmup() {
+    if (model_cache_warmup_thread_.joinable()) {
+        return;
+    }
+
     model_cache_warmup_thread_ = std::thread([this]() {
         try {
             LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
@@ -303,9 +307,7 @@ bool Server::should_shutdown() const {
 }
 
 void Server::set_shutdown_requested(bool requested) {
-    if (requested) {
-        listener_->request_shutdown();
-    }
+    listener_->set_shutdown_requested(requested);
 }
 
 bool Server::is_running() const {

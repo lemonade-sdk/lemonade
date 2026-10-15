@@ -59,7 +59,7 @@ public:
             }}}.dump(), "application/json");
         };
         try {
-            if (!ctx_.alias_manager->remove_alias(alias)) {
+            if (!ctx_.alias_manager || !ctx_.alias_manager->remove_alias(alias)) {
                 write_error(404, "Alias not found: " + alias, "alias_not_found",
                             "invalid_request_error");
                 return;

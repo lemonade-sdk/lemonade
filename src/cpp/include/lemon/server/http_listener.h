@@ -34,7 +34,7 @@ public:
                  std::function<void()> stop_server, bool api_key_set, bool admin_api_key_set);
     ~HttpListener();
 
-    // Binds and serves until stop() or request_shutdown(), rebinding whenever rebind()
+    // Binds and serves until stop() or set_shutdown_requested(true), rebinding whenever rebind()
     // asks.
     void start();
 
@@ -51,7 +51,7 @@ public:
     bool is_running() const { return running_.load(); }
     bool startup_failed() const { return startup_failed_; }
 
-    void request_shutdown() { shutdown_requested_.store(true); }
+    void set_shutdown_requested(bool requested) { shutdown_requested_.store(requested); }
     bool shutdown_requested() const { return shutdown_requested_.load(); }
 
 private:

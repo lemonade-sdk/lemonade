@@ -61,23 +61,25 @@ public:
     void handle(RouteRequest&, httplib::Response& res) override {
         try {
             json alias_list = json::array();
-            for (const auto& [alias, target] : ctx_.alias_manager->get_all_aliases()) {
-                bool downloaded = false;
-                std::string recipe = "llamacpp";
-                try {
-                    if (ctx_.model_manager->model_exists(target)) {
-                        std::string canonical = ctx_.model_manager->resolve_model_name(target);
-                        downloaded = ctx_.model_manager->is_model_downloaded(canonical);
-                        ModelInfo info = ctx_.model_manager->get_model_info(canonical);
-                        recipe = info.recipe;
-                    }
-                } catch (...) {}
-                alias_list.push_back({
-                    {"alias", alias},
-                    {"target", target},
-                    {"downloaded", downloaded},
-                    {"recipe", recipe}
-                });
+            if (ctx_.alias_manager) {
+                for (const auto& [alias, target] : ctx_.alias_manager->get_all_aliases()) {
+                    bool downloaded = false;
+                    std::string recipe = "llamacpp";
+                    try {
+                        if (ctx_.model_manager->model_exists(target)) {
+                            std::string canonical = ctx_.model_manager->resolve_model_name(target);
+                            downloaded = ctx_.model_manager->is_model_downloaded(canonical);
+                            ModelInfo info = ctx_.model_manager->get_model_info(canonical);
+                            recipe = info.recipe;
+                        }
+                    } catch (...) {}
+                    alias_list.push_back({
+                        {"alias", alias},
+                        {"target", target},
+                        {"downloaded", downloaded},
+                        {"recipe", recipe}
+                    });
+                }
             }
             res.set_content(json{{"aliases", alias_list}}.dump(), "application/json");
         } catch (const std::exception& e) {
