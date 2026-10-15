@@ -18,7 +18,20 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+const RouteError kBackendError{
+    500, "", "The backend reports an error; the backend's own status replaces this one when it sends one"};
+const RouteError kNoOutputError{
+    502, "", "The backend produces no output, for example after it crashes or runs out of GPU memory"};
+
 namespace {
+
+const RouteError kInvalidBody{400, "", "The body is empty or is not valid JSON"};
+const RouteError kNotMultipart{400, "", "The request is not `multipart/form-data`"};
+const RouteError kInvalidFormValue{
+    400, "", "A numeric form field does not parse as its parameter's type"};
+const RouteError kMissingModel{400, "", "The request names no `model`"};
+const RouteError kRouteException{
+    500, "", "The request fails unexpectedly, for example on a parameter of the wrong JSON type"};
 
 const char* to_string(Prefixes prefixes) {
     switch (prefixes) {
@@ -141,7 +154,7 @@ int get_error_status_code(const json& response, int default_status_code) {
 }
 
 void set_router_residency_conflict_response(const std::exception& error, httplib::Response& res) {
-    res.status = 409;
+    res.status = ModelLoader::kRouterResidencyConflict.status;
     const json response = {
         {"error", {
             {"message", error.what()},
@@ -186,6 +199,10 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
             {"setup", setup},
         });
     }
+    ordered_json errors = ordered_json::array();
+    for (const auto& error : spec.errors) {
+        errors.push_back({{"status", error.status}, {"code", error.code}, {"when", error.when}});
+    }
     return {
         {"id", spec.id},
         {"methods", spec.methods},
@@ -199,6 +216,7 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
         {"args", args},
         {"responses", responses},
         {"examples", examples},
+        {"errors", errors},
         {"request_format", to_string(spec.request_format)},
         {"quiet_log", spec.quiet_log},
     };
@@ -230,10 +248,22 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
 void ApiRoute::write_invalid_body(const RouteRequest& req, const std::exception& error,
                                   httplib::Response& res) const {
     if (req.http.body.empty()) {
-        write_plain_error(res, 400, "Request body is required but was empty");
+        write_plain_error(res, kInvalidBody, "Request body is required but was empty");
         return;
     }
-    write_plain_error(res, 400, std::string("Invalid JSON in request body: ") + error.what());
+    write_plain_error(res, kInvalidBody, std::string("Invalid JSON in request body: ") + error.what());
+}
+
+std::vector<RouteError> ApiRoute::invalid_body_errors() const {
+    return {kInvalidBody};
+}
+
+std::vector<RouteError> ApiRoute::inherited_errors(const RouteSpec& spec) const {
+    if (spec.request_format == RequestFormat::Json ||
+        spec.request_format == RequestFormat::OptionalJson) {
+        return invalid_body_errors();
+    }
+    return {};
 }
 
 void ApiRoute::stream_response(RouteRequest& req, httplib::Response& res, StreamFn fn,
@@ -288,7 +318,7 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
         }
 
         if (!req.body.contains("model")) {
-            write_openai_error(res, 400, "Missing 'model' field in request");
+            write_openai_error(res, kMissingModel, "Missing 'model' field in request");
             return;
         }
 
@@ -323,12 +353,29 @@ void ModelRoute::write_exception(const std::exception& error, httplib::Response&
         return;
     }
     LOG(ERROR, "Server") << "Request failed: " << error.what() << std::endl;
-    write_plain_error(res, 500, error.what());
+    write_plain_error(res, kRouteException, error.what());
+}
+
+std::vector<RouteError> ModelRoute::exception_errors() const {
+    return {ModelLoader::kRouterResidencyConflict, kRouteException};
+}
+
+std::vector<RouteError> ModelRoute::inherited_errors(const RouteSpec& spec) const {
+    std::vector<RouteError> errors = ApiRoute::inherited_errors(spec);
+    if (spec.request_format == RequestFormat::Form) {
+        errors.push_back(kNotMultipart);
+        errors.push_back(kInvalidFormValue);
+    }
+    errors.push_back(kMissingModel);
+    for (const auto& list : {ModelLoader::errors(), exception_errors()}) {
+        errors.insert(errors.end(), list.begin(), list.end());
+    }
+    return errors;
 }
 
 bool ModelRoute::build_form_body(RouteRequest& req, httplib::Response& res) {
     if (!req.http.is_multipart_form_data()) {
-        write_openai_error(res, 400, "Request must be multipart/form-data");
+        write_openai_error(res, kNotMultipart, "Request must be multipart/form-data");
         return false;
     }
     req.body = json::object();
@@ -355,7 +402,7 @@ bool ModelRoute::build_form_body(RouteRequest& req, httplib::Response& res) {
                 req.body[arg.name] = value;
             }
         } catch (const std::exception&) {
-            write_openai_error(res, 400,
+            write_openai_error(res, kInvalidFormValue,
                                "Invalid value for '" + arg.name + "': must be " +
                                    (type == "integer" ? "an integer" : "a number"));
             return false;
@@ -428,8 +475,8 @@ void ApiRoute::record_usage(const json& response, const RouteRequest& req) const
     ctx_.router->update_request_telemetry(model_name, telemetry);
 }
 
-void set_error_response(const json& response, httplib::Response& res, int default_status_code) {
-    res.status = get_error_status_code(response, default_status_code);
+void set_error_response(const json& response, httplib::Response& res, const RouteError& fallback) {
+    res.status = get_error_status_code(response, fallback.status);
     res.set_content(response.dump(), "application/json");
 }
 
@@ -442,7 +489,7 @@ void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
     sink.done = []() {};
     generate(sink);
     if (buf.empty()) {
-        res.status = 502;
+        res.status = kNoOutputError.status;
         res.set_content(json{{"error", {
             {"message", "Generation failed: the backend produced no output (it likely crashed or ran "
                         "out of GPU memory). Check the server logs."},
@@ -450,7 +497,7 @@ void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
         return;
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
-        res.status = get_error_status_code(error_payload, 500);
+        res.status = get_error_status_code(error_payload, kBackendError.status);
         res.set_content(error_payload.dump(), "application/json");
         return;
     }
@@ -474,18 +521,18 @@ const httplib::FormData* find_form_file(const httplib::Request& http,
     return nullptr;
 }
 
-void write_openai_error(httplib::Response& res, int status, const std::string& message,
-                        const std::string& type, const std::string& code) {
+void write_openai_error(httplib::Response& res, const RouteError& route_error,
+                        const std::string& message, const std::string& type) {
     json error = {{"message", message}, {"type", type}};
-    if (!code.empty()) {
-        error["code"] = code;
+    if (!route_error.code.empty()) {
+        error["code"] = route_error.code;
     }
-    res.status = status;
+    res.status = route_error.status;
     res.set_content(json{{"error", error}}.dump(), "application/json");
 }
 
-void write_plain_error(httplib::Response& res, int status, const std::string& message) {
-    res.status = status;
+void write_plain_error(httplib::Response& res, const RouteError& error, const std::string& message) {
+    res.status = error.status;
     res.set_content(json{{"error", message}}.dump(), "application/json");
 }
 

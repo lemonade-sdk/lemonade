@@ -1,5 +1,6 @@
 #include "lemon/server/route_registry.h"
 
+#include <algorithm>
 #include <map>
 #include <regex>
 #include <stdexcept>
@@ -79,6 +80,18 @@ void method_not_allowed(const httplib::Request&, httplib::Response& res) {
 void RouteRegistry::add(std::unique_ptr<ApiRoute> route) {
     auto entry = std::make_shared<Entry>();
     entry->spec = route->spec();
+    for (const auto& error : route->inherited_errors(entry->spec)) {
+        // A base-class step can write an error the route also writes, such as a residency
+        // conflict from both a failed load and run().
+        const bool listed = std::any_of(
+            entry->spec.errors.begin(), entry->spec.errors.end(), [&](const RouteError& other) {
+                return other.status == error.status && other.code == error.code &&
+                       other.when == error.when;
+            });
+        if (!listed) {
+            entry->spec.errors.push_back(error);
+        }
+    }
     const RouteSpec& spec = entry->spec;
 
     if (spec.id.empty() || spec.methods.empty() || spec.paths.empty()) {

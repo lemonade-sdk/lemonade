@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -8,6 +9,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/model_residency.h"
 #include "lemon/router.h"
+#include "lemon/server/route_error.h"
 
 namespace lemon {
 
@@ -38,7 +40,14 @@ public:
     void write_load_error(httplib::Response& res, const std::string& model,
                           const std::string& message) const;
 
-    static int load_error_status(const std::string& error_code);
+    // The errors model_error() reports, by the code its body carries.
+    static const RouteError kModelNotSupported;
+    static const RouteError kModelNotFound;
+    static const RouteError kRouterResidencyConflict;
+    static const RouteError kSlotsPinned;
+    static const RouteError kModelLoadError;
+    static std::vector<RouteError> errors();
+    static const RouteError& load_error(const std::string& error_code);
 
 private:
     Router* router_;
