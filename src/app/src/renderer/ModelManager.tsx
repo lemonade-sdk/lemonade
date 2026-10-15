@@ -1,10 +1,11 @@
+import { own } from './recipes/backendSchema';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
 import { ModelInfo, USER_MODEL_PREFIX } from './utils/modelData';
 import { CANONICAL_PREFIXES, getModelDisplayName } from './utils/modelDisplayName';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
-import { serverFetch } from './utils/serverConfig';
+import { serverConfig, serverFetch } from './utils/serverConfig';
 import { pullModel, DownloadAbortError, ensureModelReady, deleteModel, ensureBackendForRecipe, installBackend } from './utils/backendInstaller';
 import { fetchSystemInfoData, BackendInfo } from './utils/systemData';
 import type { ModelRegistrationData } from './utils/backendInstaller';
@@ -12,7 +13,7 @@ import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
 import { useSystem } from './hooks/useSystem';
 import ModelOptionsModal from "./ModelOptionsModal";
-import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
+import { RecipeOptions, RecipeSubmission, recipeOptionsToApi } from "./recipes/recipeOptions";
 import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
@@ -635,7 +636,7 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const groupModelsByRecipe = () => {
-    const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
+    const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = Object.create(null);
     const filteredModels = getFilteredModels();
 
     filteredModels.forEach(model => {
@@ -668,7 +669,7 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const groupModelsByCategory = () => {
-    const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
+    const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = Object.create(null);
     const filteredModels = getFilteredModels();
 
     filteredModels.forEach(model => {
@@ -787,7 +788,7 @@ const [searchQuery, setSearchQuery] = useState('');
       'custom': 'Custom',
       'uncategorized': 'Uncategorized'
     };
-    return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
+    return own(labels, category) || category.charAt(0).toUpperCase() + category.slice(1);
   };
 
   const shouldShowCategory = (category: string): boolean => {
@@ -1607,7 +1608,7 @@ const [searchQuery, setSearchQuery] = useState('');
     };
   }, [handleDownloadModel]);
 
-  const handleLoadModel = async (modelName: string, options?: RecipeOptions) => {
+  const handleLoadModel = async (modelName: string, submission?: RecipeSubmission) => {
     try {
       const modelData = modelsData[modelName];
       if (!modelData) {
@@ -1649,14 +1650,16 @@ const [searchQuery, setSearchQuery] = useState('');
       setLoadingModels(prev => new Set(prev).add(modelName));
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
 
-      const loadBody = options ? recipeOptionsToApi(options) : undefined;
+      const loadBody = submission?.kind === 'catalog' ? submission.options : submission ? recipeOptionsToApi(submission.options) : undefined;
 
       await ensureModelReady(modelName, modelsData, {
         onModelLoading: () => {}, // already set loading above
-        skipHealthCheck: !!options, // Force re-load when options are provided (Load Options modal)
+        skipHealthCheck: !!submission, // Force re-load when options are provided (Load Options modal)
         loadBody,
+        catalog: submission?.kind === 'catalog' ? submission.context : undefined,
       });
 
+      if (submission?.kind === 'catalog') serverConfig.assertCurrent(submission.context.connection);
       await fetchCurrentLoadedModel();
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
       window.dispatchEvent(new CustomEvent('modelsUpdated'));
@@ -1682,6 +1685,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return next;
       });
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+      if (submission?.kind === 'catalog') throw error;
     }
   };
 
@@ -2169,8 +2173,8 @@ const [searchQuery, setSearchQuery] = useState('');
     action?: string;
   } | null => {
     const recipes = systemInfo?.recipes;
-    if (!recipes || !recipes[recipe]) return null;
-    const recipeInfo = recipes[recipe];
+    const recipeInfo = own(recipes, recipe);
+    if (!recipeInfo) return null;
     const defaultBackend = recipeInfo.default_backend;
     if (!defaultBackend || !recipeInfo.backends[defaultBackend]) return null;
     const info = recipeInfo.backends[defaultBackend];
@@ -2244,10 +2248,11 @@ const [searchQuery, setSearchQuery] = useState('');
                                      setShowModelOptionsModal(false);
                                      setOptionsModel(null);
                                    }}
-                                   onSubmit={(modelName, options) => {
+                                   onSubmit={async (modelName, submission) => {
+                                     if (submission.kind === 'catalog') await handleLoadModel(modelName, submission);
+                                     else void handleLoadModel(modelName, submission);
                                      setShowModelOptionsModal(false);
                                      setOptionsModel(null);
-                                     handleLoadModel(modelName, options);
                                    }}/>
                 {listItems.map(item => {
                   if (item.type === 'family') {

@@ -1,3 +1,5 @@
+import { useBackendCatalog } from './hooks/useBackendCatalog';
+import { own } from './recipes/backendSchema';
 import React, { useState, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
 import { COLLECTION_OMNI_MODEL_RECIPE, useRecipeDisplayNames } from './utils/recipeNames';
@@ -88,7 +90,7 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
   },
 };
 
-const getRecipeExample = (recipe: string): RecipeExample => RECIPE_EXAMPLES[recipe] ?? RECIPE_EXAMPLES.llamacpp;
+const getRecipeExample = (recipe: string): RecipeExample => own(RECIPE_EXAMPLES, recipe) ?? { name: 'Custom model', checkpoint: 'Checkpoint accepted by this server recipe' };
 
 type AddModelFormState = {
   name: string;
@@ -129,10 +131,12 @@ const hasRepoRelativeFilePath = (checkpoint: string): boolean => {
 const isGgufCheckpoint = (checkpoint: string): boolean => checkpoint.toLowerCase().includes('gguf');
 
 const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initialValues }) => {
+  const catalog = useBackendCatalog();
   const recipeDisplayNames = useRecipeDisplayNames();
   const getRecipeLabel = (recipe: string): string => recipeDisplayNames[recipe] ?? recipe;
   const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [form, setForm] = useState(() => createEmptyForm(initialValues));
+  const isExternal = catalog.recipe(form.recipe)?.source === 'external';
   const [error, setError] = useState<string | null>(null);
 
   const mmprojOptions = initialValues?.mmprojOptions ?? [];
@@ -144,6 +148,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
 
   useEffect(() => {
     void ensureSystemInfoLoaded();
+    void catalog.refresh().catch(() => {});
   }, [ensureSystemInfoLoaded]);
 
   useEffect(() => {
@@ -165,7 +170,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
   const handleInstall = () => {
     const name = form.name.trim();
     const checkpoint = form.checkpoint.trim();
-    const recipe = form.recipe.trim();
+    const recipe = form.recipe;
     const source = form.source;
     const textEncoderCheckpoint = form.textEncoderCheckpoint.trim();
     const vaeCheckpoint = form.vaeCheckpoint.trim();
@@ -187,7 +192,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       setError('StableDiffusion.cpp checkpoints must include the full file path relative to the selected registry repo, for example repo/model:path/to/model.safetensors or repo/model:path/to/model.gguf.');
       return;
     }
-    if (recipe !== 'sd-cpp' && isGgufCheckpoint(checkpoint) && !checkpoint.includes(':')) {
+    if (!isExternal && recipe !== 'sd-cpp' && isGgufCheckpoint(checkpoint) && !checkpoint.includes(':')) {
       setError('GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax.');
       return;
     }
@@ -225,7 +230,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     });
   };
 
-  const supportedRecipeOptions = Object.keys(supportedRecipes)
+  const supportedRecipeOptions = [...new Set([...Object.keys(supportedRecipes), ...(catalog.state.status === 'ready' ? catalog.state.catalog.recipes.filter(row => row.source === 'external').map(row => row.recipe) : [])])]
     .filter(recipe => !HIDDEN_RECIPE_OPTIONS.has(recipe))
     .sort((a, b) => getRecipeLabel(a).localeCompare(getRecipeLabel(b)));
   const recipeOptions = supportedRecipeOptions.length > 0
@@ -237,7 +242,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     return React.createElement('option', { key: f, value: f }, label);
   });
 
-  const showMmproj = !isSdCpp && (mmprojOptions.length > 0 || !initialValues);
+  const showMmproj = !isExternal && !isSdCpp && (mmprojOptions.length > 0 || !initialValues);
   const mmprojField: React.ReactNode = showMmproj
     ? React.createElement(
         'div',

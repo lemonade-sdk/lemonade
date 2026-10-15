@@ -23,6 +23,9 @@ export {
 
   // Union type
   RecipeOptions,
+  LegacyRecipeOptions,
+  LegacyRecipeName,
+  isLegacyRecipe,
 
   // Constants
   RYZENAI_RECIPES,
@@ -42,3 +45,11 @@ export {
   OPTION_DEFINITIONS,
   RECIPE_OPTIONS_MAP,
 } from './recipeOptionsConfig';
+
+import type { LegacyRecipeOptions } from './recipeOptionsConfig';
+import type { CatalogLoadContext } from '../utils/backendInstaller';
+import type { Scalar } from './backendSchema';
+
+export type RecipeSubmission =
+  | { kind: 'legacy'; options: LegacyRecipeOptions }
+  | { kind: 'catalog'; options: Record<string, Scalar>; context: CatalogLoadContext };

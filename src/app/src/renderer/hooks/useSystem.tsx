@@ -14,11 +14,12 @@ export interface SupportedRecipes { [recipeName: string]: string[]; }
 const SystemContext = createContext<SystemContextValue | null>(null);
 
 export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [data, setData] = useState<{ generation: number; info?: SystemInfo }>();
+  const [data, setData] = useState<{ generation: number; epoch: number; info?: SystemInfo }>();
   const [isLoading, setIsLoading] = useState(false);
-  const loaded = useRef<number | undefined>(undefined);
-  const pending = useRef<{ generation: number; promise: Promise<void> } | undefined>(undefined);
-  const systemInfo = data?.generation === serverConfig.getSnapshot().generation ? data.info : undefined;
+  const epoch = useRef(0);
+  const loaded = useRef<string | undefined>(undefined);
+  const pending = useRef<{ generation: number; epoch: number; promise: Promise<void> } | undefined>(undefined);
+  const systemInfo = data?.generation === serverConfig.getSnapshot().generation && data.epoch === epoch.current ? data.info : undefined;
   const supportedRecipes = useMemo<SupportedRecipes>(() => {
     const result: SupportedRecipes = Object.create(null);
     for (const [name, recipe] of Object.entries(systemInfo?.recipes ?? {})) {
@@ -30,34 +31,37 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const refresh = useCallback(async () => {
     await serverConfig.waitForInit();
     const connection = serverConfig.getSnapshot();
-    if (pending.current?.generation === connection.generation) return pending.current.promise;
+    const requestEpoch = epoch.current;
+    if (pending.current?.generation === connection.generation && pending.current.epoch === requestEpoch) return pending.current.promise;
     setIsLoading(true);
     const promise = (async () => {
       try {
         const result = await fetchSystemInfoData(connection);
         serverConfig.assertCurrent(connection);
-        setData({ generation: connection.generation, info: result.info });
-        loaded.current = connection.generation;
+        if (requestEpoch !== epoch.current) return;
+        setData({ generation: connection.generation, epoch: requestEpoch, info: result.info });
+        loaded.current = `${connection.generation}:${requestEpoch}`;
         replaceRecipeDisplayNames('system', result.info?.recipes, connection);
       } catch {
-        if (serverConfig.getSnapshot().generation === connection.generation) {
+        if (serverConfig.getSnapshot().generation === connection.generation && requestEpoch === epoch.current) {
           setData(undefined);
           loaded.current = undefined;
           replaceRecipeDisplayNames('system', undefined, connection);
         }
       } finally {
-        if (pending.current?.generation === connection.generation) { pending.current = undefined; setIsLoading(false); }
+        if (pending.current?.generation === connection.generation && pending.current.epoch === requestEpoch) { pending.current = undefined; setIsLoading(false); }
       }
     })();
-    pending.current = { generation: connection.generation, promise };
+    pending.current = { generation: connection.generation, epoch: requestEpoch, promise };
     return promise;
   }, []);
   const ensureSystemInfoLoaded = useCallback(async () => {
-    if (loaded.current !== serverConfig.getSnapshot().generation) await refresh();
+    if (loaded.current !== `${serverConfig.getSnapshot().generation}:${epoch.current}`) await refresh();
   }, [refresh]);
   useEffect(() => {
     const update = () => { void refresh(); };
     const invalidate = () => {
+      epoch.current += 1;
       setData(undefined);
       loaded.current = undefined;
       replaceRecipeDisplayNames('system', undefined, serverConfig.getSnapshot());
