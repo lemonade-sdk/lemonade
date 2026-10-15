@@ -18,6 +18,7 @@ struct GpuMemoryPool {
     double used_gb = -1.0;
     std::string label;
     GpuMemoryVendor vendor = GpuMemoryVendor::Any;
+    bool unified = false; // GPU memory shares physical system RAM (AMD iGPU).
 };
 
 struct GpuTargetIndices {
@@ -99,7 +100,7 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                 : -1.0;
         }
         return GpuMemoryPool{gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0),
-                             used_gb, label, vendor};
+                             used_gb, label, vendor, unified};
     };
     auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
         GpuMemoryPool result;

@@ -3,6 +3,7 @@
 // Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_auto_tune.cpp -o test_auto_tune
 
 #include "lemon/gguf_reader.h"
+#include "lemon/auto_context_budget.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -294,7 +295,63 @@ static void test_varying_heads_swa() {
           !approx_eq(bytes, old_approx, 1000.0));
 }
 
+
+static void test_auto_context_budget() {
+    using lemon::estimate_auto_context_budget;
+    // 5090 (32 GiB), Qwen3.8-27B Q4 (16.5 GiB), vision projector and MTP.
+    auto qwen = estimate_auto_context_budget(32.0, 16.5, 1.5, 65536.0 * 1.07,
+                                             true, true);
+    check("auto ctx: CUDA uses most VRAM without exhausting it",
+          qwen.max_tokens >= 170000 && qwen.max_tokens < 215000);
+    check("auto ctx: dGPU runtime reserve is bounded",
+          qwen.reserve_gib >= 1.5 && qwen.reserve_gib <= 3.0);
+    check("auto ctx: GGUF weights counted once",
+          approx_eq(qwen.model_gib, 18.0));
+    using lemon::auto_context_total_weights_gib;
+    check("auto ctx: model registry already includes mmproj",
+          approx_eq(auto_context_total_weights_gib(18.0, 16.5, 1.5, 0.0), 18.0));
+    check("auto ctx: incomplete registry gets resolved extras",
+          approx_eq(auto_context_total_weights_gib(16.5, 16.5, 1.5, 0.0), 18.0));
+    check("auto ctx: sharded total is not replaced by first shard",
+          approx_eq(auto_context_total_weights_gib(21.0, 1.1, 0.0, 0.0), 21.0));
+
+    auto no_extra = estimate_auto_context_budget(32.0, 16.5, 0.0, 65536.0,
+                                                 true, false);
+    check("auto ctx: mmproj and MTP reduce available context",
+          qwen.max_tokens < no_extra.max_tokens);
+
+    auto apu = estimate_auto_context_budget(110.0, 18.0, 0.0, 65536.0,
+                                            true, false, true);
+    check("auto ctx: 128 GB APU still supports long context",
+          apu.max_tokens >= 262144);
+    check("auto ctx: UMA retains OS memory headroom",
+          apu.reserve_gib >= 8.0 && apu.reserve_gib < 14.0);
+
+    auto discrete = estimate_auto_context_budget(110.0, 18.0, 0.0, 65536.0,
+                                                 true, false, false);
+    check("auto ctx: discrete and UMA budgets differ",
+          discrete.reserve_gib < apu.reserve_gib);
+
+    auto small = estimate_auto_context_budget(8.0, 3.0, 0.0, 65536.0,
+                                              true, false);
+    check("auto ctx: 8 GiB GPU has compute headroom",
+          small.reserve_gib >= 1.0 && small.reserve_gib <= 2.5);
+    check("auto ctx: 8 GiB GPU provides useful context",
+          small.max_tokens >= 32768);
+
+    auto no_space = estimate_auto_context_budget(4.0, 5.0, 0.0, 65536.0,
+                                                 true, false);
+    check("auto ctx: weights exceeding VRAM cannot claim KV", no_space.max_tokens == 0);
+    auto missing_model = estimate_auto_context_budget(32.0, 0.0, 0.0, 65536.0,
+                                                      true, false);
+    check("auto ctx: missing model size handled", missing_model.max_tokens == 0);
+    auto invalid_kv = estimate_auto_context_budget(32.0, 16.5, 0.0, 0.0,
+                                                   true, false);
+    check("auto ctx: invalid KV metadata handled", invalid_kv.max_tokens == 0);
+}
+
 int main() {
+    test_auto_context_budget();
     test_scalar_head_count_kv();
     test_array_head_count_kv();
     test_swa_pattern_derivation();

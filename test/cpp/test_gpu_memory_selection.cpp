@@ -72,6 +72,11 @@ int main() {
         unavailable, "ROCm1");
     check(rocm1.total_gb == 16.0 && rocm1.used_gb == 3.0 && rocm1.label == "AMD ROCm1",
           "ROCm1 selects AMD device 1");
+    check(!rocm1.unified, "ROCm dGPU pool is discrete");
+    auto rocm0 = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, amd_igpu, two_amd, nvidia, unavailable, "ROCm0");
+    check(rocm0.unified && rocm0.total_gb == 8.0,
+          "ROCm iGPU pool marks unified physical RAM");
 
     auto cuda_list = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "CUDA0,CUDA1"), unavailable, amd, two_nvidia,
