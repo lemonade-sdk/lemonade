@@ -1,0 +1,114 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp-hrx/hrx": "hrx-b99"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 32.0
+      }
+    ],
+    "lemonade_version": "2026.42.1",
+    "os": "linux",
+    "ram_gb": 30.98
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "mistralai/Ministral-3-3B-Instruct-2512-GGUF:Ministral-3-3B-Instruct-2512-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 5,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Ministral-3-3B-Instruct-2512-HRX",
+      "results": [
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "chat",
+              "duration_ms": {
+                "max": 403.86656,
+                "mean": 389.2588838,
+                "min": 383.16589,
+                "p50": 387.228712,
+                "p95": 400.68506179999997
+              },
+              "failed_runs": 0,
+              "input_tokens": 19,
+              "memory_peak_gb": 3.3,
+              "name": "chat-short",
+              "output_tokens": 20,
+              "tps": {
+                "max": 70.17519236774608,
+                "mean": 69.69312462426866,
+                "min": 69.41793065148728,
+                "p50": 69.6706320868096,
+                "p95": 70.0925066096735
+              },
+              "ttft_ms": {
+                "max": 97.412,
+                "mean": 95.3158,
+                "min": 93.144,
+                "p50": 95.121,
+                "p95": 97.11800000000001
+              },
+              "vram_peak_gb": 5.354942321777344
+            },
+            {
+              "category": "coding",
+              "duration_ms": {
+                "max": 852.214179,
+                "mean": 846.0490484,
+                "min": 839.002704,
+                "p50": 845.861751,
+                "p95": 851.9107474
+              },
+              "failed_runs": 0,
+              "input_tokens": 27,
+              "memory_peak_gb": 3.3,
+              "name": "code-short",
+              "output_tokens": 60,
+              "tps": {
+                "max": 81.47790047746051,
+                "mean": 81.26277998692103,
+                "min": 80.8612259640006,
+                "p50": 81.30797427957748,
+                "p95": 81.45710382563121
+              },
+              "ttft_ms": {
+                "max": 103.523,
+                "mean": 98.1016,
+                "min": 95.72,
+                "p50": 97.055,
+                "p95": 102.3552
+              },
+              "vram_peak_gb": 5.356891632080078
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-10-14T23:18:57Z"
+    }
+  ],
+  "timestamp": "2026-10-14T23:17:40Z",
+  "fork_id": "llamacpp-hrx",
+  "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+  "fork_repo": "ROCm/ggml-staging-automation",
+  "fork_version": "hrx-b115",
+  "fork_backend": "hrx",
+  "experimental": true,
+  "run_id": "38669158468",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/38669158468",
+  "commit": "0100ec6ddd614bf8080d22ab3a74c648b0a4366a",
+  "lemonade_version": "v2026.42.1"
+}
