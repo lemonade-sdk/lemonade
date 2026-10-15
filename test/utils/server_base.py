@@ -11,6 +11,7 @@ runtime configuration via POST /internal/set.
 
 import unittest
 import contextlib
+import json
 import socket
 import time
 import sys
@@ -305,25 +306,49 @@ def _pull_model_streaming(model_name, port):
                 event = line[len("event:") :].strip()
             elif line.startswith("data:") and event == "error":
                 body = line[len("data:") :].strip()[:1000]
-                status = 400 if "unknown_model" in body else 500
+                if "unknown_model" in body:
+                    status = 400
+                elif "registry_unavailable" in body:
+                    status = 503
+                else:
+                    status = 500
                 return status, body
             elif line.startswith("data:") and event == "complete":
                 return 200, ""
         return 500, "SSE stream ended without a 'complete' event"
 
 
-def pull_model_with_retry(model_name, attempts=3, port=PORT):
+def _retry_after_seconds(body):
+    """Server-suggested delay from a registry_unavailable error body."""
+    try:
+        return max(1, int(json.loads(body).get("retry_after", 0)))
+    except (ValueError, TypeError, AttributeError):
+        return 0
+
+
+def pull_model_with_retry(model_name, attempts=3, port=PORT, rate_limit_budget=60):
     """Pull a model with bounded retry for transient setup failures.
 
     Test setup should tolerate one-off transient pull failures, but persistent
     failures and permanent client errors should still fail with useful details.
+
+    A throttled registry (503) gets its own, longer budget: the exponential
+    backoff below tops out around 6s, which is far shorter than a rate-limit
+    window.
     """
     last_status = None
     last_body = ""
     last_error = None
+    next_delay = 0
 
-    for attempt in range(1, attempts + 1):
-        if attempt > 1:
+    attempt = 0
+    while attempt < attempts:
+        attempt += 1
+        if next_delay:
+            print(f"Waiting {next_delay}s before retrying /pull for {model_name}...")
+            time.sleep(next_delay)
+            next_delay = 0
+        elif attempt > 1:
             time.sleep(min(30, 2 ** (attempt - 1)))
 
         try:
@@ -343,6 +368,17 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
 
         last_status = status
         last_body = body
+
+        if status == 503 and rate_limit_budget > 0:
+            delay = min(_retry_after_seconds(body) or 10, rate_limit_budget)
+            rate_limit_budget -= delay
+            next_delay = delay
+            attempts += 1
+            print(
+                f"Registry unavailable for {model_name} (attempt {attempt}). "
+                f"{rate_limit_budget}s of retry budget left."
+            )
+            continue
 
         if _is_transient_pull_status(status) and attempt < attempts:
             print(

@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <chrono>
@@ -327,6 +328,45 @@ static std::string read_processed_registry_snapshot_id(
     } catch (const std::exception&) {
         return "";
     }
+}
+
+// Rebuild a repository listing from the files already materialized under
+// snapshots/<refs/main>. Only safe to use when the registry is unreachable:
+// it cannot see files added upstream since the last pull.
+static std::optional<RegistryRepository> local_repository_snapshot(
+    const fs::path& cache_root,
+    const std::string& repo_id,
+    RemoteRegistrySource source) {
+    const fs::path repo_cache = cache_root / registry_repo_cache_dir_name(repo_id, source);
+    const std::string ref = read_hf_ref_main(repo_cache);
+    if (ref.empty()) {
+        return std::nullopt;
+    }
+    const fs::path snapshot = repo_cache / "snapshots" / ref;
+    if (!safe_exists(snapshot)) {
+        return std::nullopt;
+    }
+
+    RegistryRepository repo;
+    repo.repo_id = repo_id;
+    repo.revision = ref;
+    repo.snapshot_id = ref;
+
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(snapshot, ec), end; it != end && !ec; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        RegistryFile file;
+        file.path = fs::relative(it->path(), snapshot, ec).generic_string();
+        if (ec || file.path.empty()) continue;
+        file.size = static_cast<std::uint64_t>(it->file_size(ec));
+        if (ec) file.size = 0;
+        repo.files.push_back(std::move(file));
+    }
+
+    if (repo.files.empty()) {
+        return std::nullopt;
+    }
+    return repo;
 }
 
 static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
@@ -6393,8 +6433,23 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     LOG(INFO, "ModelManager") << "Fetching repository file list from "
                                << source_display << ": " << main_repo_id << std::endl;
 
+    // A throttled or down registry must not fail a pull whose files are already
+    // cached. Anything missing locally still propagates so the caller can retry.
+    auto fetch_or_local = [&](const std::string& repo_id) {
+        try {
+            return registry.fetch_repository(repo_id);
+        } catch (const RegistryRateLimitError& e) {
+            auto cached = local_repository_snapshot(cache_root, repo_id, source);
+            if (!cached) throw;
+            LOG(WARNING, "ModelManager") << source_display << " unavailable (" << e.what()
+                                         << "); using the cached file list for " << repo_id
+                                         << std::endl;
+            return *cached;
+        }
+    };
+
     std::map<std::string, RegistryRepository> repositories;
-    repositories.emplace(main_repo_id, registry.fetch_repository(main_repo_id));
+    repositories.emplace(main_repo_id, fetch_or_local(main_repo_id));
 
     std::map<std::string, std::vector<std::string>> files_to_download;
     std::vector<std::string> main_repo_files;
@@ -6423,7 +6478,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     for (const auto& [repo_id, variants] :
          registry_files::group_aux_checkpoint_variants(info.checkpoints)) {
         if (!repositories.count(repo_id)) {
-            repositories.emplace(repo_id, registry.fetch_repository(repo_id));
+            repositories.emplace(repo_id, fetch_or_local(repo_id));
         }
         const auto& repo = repositories.at(repo_id);
         for (const auto& variant : variants) {
