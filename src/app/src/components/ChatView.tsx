@@ -124,6 +124,7 @@ const CHAT_LOGS_WIDTH_KEY = 'chat_logs_split_width';
 const CHAT_THINKING_MODE_KEY = 'chat_thinking_mode';
 const CHAT_COMPOSER_INPUT_MIN_HEIGHT = 40;
 const CHAT_COMPOSER_INPUT_MAX_HEIGHT = 200;
+const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = 12;
 
 const CHAT_LOGS_DEFAULT_WIDTH = 520;
 const CHAT_LOGS_DEFAULT_EDGE_RATIO = 0.60;
@@ -971,6 +972,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [currentModelRecipeOptions, setCurrentModelRecipeOptions] = useState<Record<string, unknown> | null>(null);
   const chatRootRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const threadFollowBottomRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
@@ -2173,18 +2175,38 @@ const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [activeId, conversations]);
 
+  const handleThreadScroll = useCallback(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    // Only follow new output while the reader is still near the bottom.
+    threadFollowBottomRef.current =
+      thread.scrollHeight - thread.scrollTop - thread.clientHeight <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
+  }, []);
+
   const scrollToBottom = useCallback(() => {
+    if (!threadFollowBottomRef.current) return;
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
-      if (threadRef.current) {
-        threadRef.current.scrollTop = threadRef.current.scrollHeight;
-      }
+      scrollRafRef.current = 0;
+      if (!threadFollowBottomRef.current) return;
+      const thread = threadRef.current;
+      if (thread) thread.scrollTop = thread.scrollHeight;
     });
   }, []);
+
+  // Opening another conversation always starts at its latest message.
+  useEffect(() => {
+    threadFollowBottomRef.current = true;
+    scrollToBottom();
+  }, [activeId, scrollToBottom]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingContent, streamingThinking, capabilityBusy, scrollToBottom]);
+
+  useEffect(() => () => {
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+  }, []);
 
   // Auto-scroll the thinking content box when sticky
   useEffect(() => {
@@ -2976,6 +2998,8 @@ ${finalText}`
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
 
+    // Sending a new message explicitly resumes following the latest reply.
+    threadFollowBottomRef.current = true;
     let convoId = activeId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
@@ -3064,6 +3088,7 @@ ${finalText}`
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'assistant') return;
 
+    threadFollowBottomRef.current = true;
     let userIndex = messageIndex - 1;
     while (userIndex >= 0 && convo.messages[userIndex].role !== 'user') userIndex--;
     if (userIndex < 0) return;
@@ -3108,6 +3133,7 @@ ${finalText}`
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
 
+    threadFollowBottomRef.current = true;
     const originalMessage = convo.messages[messageIndex];
     const priorMessages = convo.messages.slice(0, messageIndex);
     const editedUserMessage: Message = {
@@ -3627,7 +3653,7 @@ ${finalText}`
       </div>
 
       {/* Main pane */}
-      <div className="chat__main" ref={threadRef}>
+      <div className="chat__main" ref={threadRef} onScroll={handleThreadScroll}>
         <WorkspaceMobileMenuButton
           menuLabel={t('Open conversation history')}
           panelId="conversation-history-panel"

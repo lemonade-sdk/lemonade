@@ -538,8 +538,7 @@ const App: React.FC = () => {
         }
         if (!cancelled) {
           void api.connect();
-          if (routeRef.current.view === 'dashboard') api.stopPolling();
-          else api.startPolling(15000);
+          api.startPolling(15000);
         }
       } catch (error) {
         console.warn('Host bootstrap failed:', error);
@@ -549,8 +548,7 @@ const App: React.FC = () => {
               apiClientRef.current = api;
               attachServerModelState(api);
               void api.connect();
-              if (routeRef.current.view === 'dashboard') api.stopPolling();
-              else api.startPolling(15000);
+              api.startPolling(15000);
             })
             .catch(apiError => console.warn('API bootstrap failed:', apiError));
         }
@@ -940,16 +938,6 @@ const App: React.FC = () => {
     window.addEventListener('lemonade:navigate', onAppNavigate as EventListener);
     return () => window.removeEventListener('lemonade:navigate', onAppNavigate as EventListener);
   }, [navigateToRoute]);
-
-  // The host bootstrap owns the API import and starts polling after its
-  // first connection attempt. Route changes only toggle that already-loaded
-  // client, avoiding a second API import request during the first React commit.
-  useEffect(() => {
-    const api = apiClientRef.current;
-    if (!api) return;
-    if (view === 'dashboard') api.stopPolling();
-    else api.startPolling(15000);
-  }, [view]);
 
   const handleRefreshModels = useCallback(async () => {
     const { default: api } = await import(/* webpackChunkName: "api-client" */ './api');
