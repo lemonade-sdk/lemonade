@@ -754,7 +754,7 @@ An alias stands in for its target in the `model` field of inference requests and
 
 | Status | Code | When |
 |--------|------|------|
-| `500` | `internal_error` | Reading the alias list fails |
+| `500` | `internal_error` | The alias manager is not initialized, or reading or checking the alias file fails |
 <!-- END GENERATED: internal.aliases_list -->
 
 <!-- BEGIN GENERATED: internal.aliases_create -->
@@ -818,7 +818,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `400` | `invalid_alias` | `alias` starts with `user.`, `extra.` or `builtin.` |
 | `409` | `alias_conflict` | `alias` is already a registered model's name |
 | `409` | `alias_conflict` | The alias would form a cycle or an alias chain deeper than 10 links |
-| `500` | `internal_error` | The alias manager is not initialized |
+| `500` | `internal_error` | The alias manager is not initialized, or reading or checking the alias file fails |
 <!-- END GENERATED: internal.aliases_create -->
 
 <!-- BEGIN GENERATED: internal.aliases_delete -->
@@ -869,7 +869,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Status | Code | When |
 |--------|------|------|
 | `404` | `alias_not_found` | `alias` names no alias |
-| `500` | `internal_error` | Checking the alias file on disk fails |
+| `500` | `internal_error` | The alias manager is not initialized, or reading or checking the alias file fails |
 <!-- END GENERATED: internal.aliases_delete -->
 
 <!-- BEGIN GENERATED: internal.routes -->

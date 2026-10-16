@@ -9,7 +9,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kListFailed{500, "internal_error", "Reading the alias list fails"};
 
 class AliasesListRoute : public ApiRoute {
 public:
@@ -58,7 +57,7 @@ public:
         example.setup = {{"internal.aliases_create", ""}};
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kListFailed};
+        s.errors = {kAliasStoreFailed};
         return s;
     }
 
@@ -87,7 +86,7 @@ public:
             }
             res.set_content(json{{"aliases", alias_list}}.dump(), "application/json");
         } catch (const std::exception& e) {
-            write_alias_error(res, kListFailed, e.what(), "server_error");
+            write_alias_error(res, kAliasStoreFailed, e.what(), "server_error");
         }
     }
 };

@@ -18,7 +18,6 @@ const RouteError kNameConflict{409, "alias_conflict", "`alias` is already a regi
 const RouteError kAliasChain{
     409, "alias_conflict",
     "The alias would form a cycle or an alias chain deeper than 10 links"};
-const RouteError kNoAliasManager{500, "internal_error", "The alias manager is not initialized"};
 
 class AliasesCreateRoute : public ApiRoute {
 public:
@@ -60,7 +59,7 @@ public:
         example.args = {{"alias", "my-alias-1"}, {"target", "user.custom-llama"}};
         s.examples = {example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kBlankField, kSelfAlias, kReservedPrefix,
-                    kNameConflict, kAliasChain, kNoAliasManager};
+                    kNameConflict, kAliasChain, kAliasStoreFailed};
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
@@ -95,7 +94,7 @@ public:
         }
 
         if (!ctx_.alias_manager) {
-            write_alias_error(res, kNoAliasManager, "AliasManager uninitialized", "server_error");
+            write_alias_error(res, kAliasStoreFailed, "AliasManager uninitialized", "server_error");
             return;
         }
 

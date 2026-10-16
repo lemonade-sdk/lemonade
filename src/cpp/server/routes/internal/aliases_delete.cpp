@@ -10,7 +10,6 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kAliasNotFound{404, "alias_not_found", "`alias` names no alias"};
-const RouteError kSaveFailed{500, "internal_error", "Checking the alias file on disk fails"};
 
 class AliasesDeleteRoute : public ApiRoute {
 public:
@@ -46,7 +45,7 @@ public:
         example.setup = {{"internal.aliases_create", ""}};
         example.args = {{"alias", "$internal.aliases_create/alias"}};
         s.examples = {example};
-        s.errors = {kAliasNotFound, kSaveFailed};
+        s.errors = {kAliasNotFound, kAliasStoreFailed};
         return s;
     }
 
@@ -63,7 +62,7 @@ public:
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
-            write_alias_error(res, kSaveFailed, e.what(), "server_error");
+            write_alias_error(res, kAliasStoreFailed, e.what(), "server_error");
         }
     }
 };
