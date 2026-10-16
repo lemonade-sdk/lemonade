@@ -15,8 +15,6 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kMalformedImage{
     400, "", "`image` is not base64 data, or is a `data:` URL without a base64 payload"};
 const RouteError kUnsupportedImage{400, "", "`image` is not a PNG, JPEG, BMP or GIF"};
-const RouteError kGenerationException{
-    500, "", "`model` is not a 3D model, or generation fails unexpectedly"};
 
 class Generations3dRoute : public ModelRoute {
 public:
@@ -75,7 +73,7 @@ public:
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kMalformedImage,
                                  kUnsupportedImage, kNoOutputError,
-                                 kBackendError, kGenerationException},
+                                 kBackendError, kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
@@ -132,7 +130,7 @@ protected:
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << error.what() << std::endl;
-        write_openai_error(res, kGenerationException, error.what(), "internal_error");
+        write_openai_error(res, kUnexpectedException, error.what(), "internal_error");
     }};
 
 } // namespace

@@ -623,7 +623,7 @@ The backend failed after the stream started. This event replaces the rest of the
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The backend's response has no `choices` |
+| `500` |  | The backend's response lacks a field the route returns, such as `choices` or `labels` |
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.completions -->
@@ -2180,7 +2180,7 @@ A running model keeps its current options until it is next loaded.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The body names an option that the model's recipe does not accept |
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
-| `400` |  | A recipe option not listed above has the wrong JSON type |
+| `400` |  | A field not listed above has the wrong JSON type |
 | `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |

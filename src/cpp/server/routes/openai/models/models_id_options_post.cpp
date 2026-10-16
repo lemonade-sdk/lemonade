@@ -59,7 +59,6 @@ std::string validate_option_value(const std::string& key, const json& expected,
 const RouteError kUnknownOption{400, "", "The body names an option that the model's recipe does not accept"};
 const RouteError kLiveProcessOption{
     400, "", "The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin`"};
-const RouteError kOptionWrongType{400, "", "A recipe option not listed above has the wrong JSON type"};
 const RouteError kInvalidOptionValue{
     400, "",
     "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};
@@ -114,7 +113,7 @@ public:
         example.args = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgInvalid, kUnknownOption, kLiveProcessOption,
-                                 kOptionWrongType, kInvalidOptionValue},
+                                 kUnlistedFieldInvalid, kInvalidOptionValue},
                                 model_options_errors()});
         s.request_format = RequestFormat::Json;
         return s;
@@ -160,7 +159,7 @@ public:
                     }
                     const json expected = unset.get_option(key);
                     if (!option_type_matches(expected, value)) {
-                        write_plain_error(r, kOptionWrongType,
+                        write_plain_error(r, kUnlistedFieldInvalid,
                                           "Invalid type for option '" + key + "'");
                         return false;
                     }

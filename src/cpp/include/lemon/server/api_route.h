@@ -181,6 +181,11 @@ void attach_route_decision(nlohmann::json& response, httplib::Response& res,
                            const std::optional<RouterDispatchResult>& decision);
 
 extern const RouteError kBackendError;
+extern const RouteError kMalformedBackendResponse;
+
+// Fields a route forwards without declaring them, such as a model definition's, are not
+// checked by the validator, so the step that reads one answers a wrong type with this.
+extern const RouteError kUnlistedFieldInvalid;
 extern const RouteError kModelUnloaded;
 
 // Maps a backend error body to its HTTP status.

@@ -134,7 +134,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The backend's response has no `labels` object |
+| `500` |  | The backend's response lacks a field the route returns, such as `choices` or `labels` |
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: lemonade.classify -->
@@ -321,7 +321,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The definition is malformed and nothing is registered, for example a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, an empty `recipe` where one is required, `checkpoints` without `main`, an unsupported `source`, `components` that are empty or name the collection itself, another collection or an unregistered model, or an invalid routing policy |
-| `400` |  | A definition field not listed above has the wrong JSON type |
+| `400` |  | A field not listed above has the wrong JSON type |
 | `500` |  | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
 
@@ -1495,7 +1495,7 @@ Errors carry a JSON `error` object.
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | `model` is not a 3D model, or generation fails unexpectedly |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.3d_generations -->

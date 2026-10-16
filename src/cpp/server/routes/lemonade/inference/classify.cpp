@@ -15,7 +15,6 @@ const RouteError kBackendRejected{
     400, "",
     "The backend rejects the request, for example because `model` is not a classification "
     "model, which is found only after it loads"};
-const RouteError kUnexpectedResponse{500, "", "The backend's response has no `labels` object"};
 
 class ClassifyRoute : public ModelRoute {
 public:
@@ -88,7 +87,7 @@ public:
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid,
                                  kNoSoleClassifier,
                                  kBackendRejected, kModelUnloaded, kBackendError,
-                                 kUnexpectedResponse, kUnexpectedException},
+                                 kMalformedBackendResponse, kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
@@ -148,7 +147,7 @@ protected:
         // The envelope pins the public API shape; the backend subprocess's raw
         // output is not the contract.
         if (!response.contains("labels") || !response["labels"].is_object()) {
-            write_openai_error(res, kUnexpectedResponse,
+            write_openai_error(res, kMalformedBackendResponse,
                                "Classification backend returned an unexpected response",
                                "classification_error");
             return;

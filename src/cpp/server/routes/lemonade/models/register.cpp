@@ -11,8 +11,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kWrongFieldType{
-    400, "", "A definition field not listed above has the wrong JSON type"};
 const RouteError kRegisterFailed{
     500, "",
     "The definition is invalid in another way and nothing is registered, for example a GGUF "
@@ -81,7 +79,7 @@ public:
             "recipe": "llamacpp"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidModelDefinition, kWrongFieldType,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidModelDefinition, kUnlistedFieldInvalid,
                     kRegisterFailed};
         s.request_format = RequestFormat::Json;
         return s;
@@ -118,7 +116,7 @@ public:
 
             res.set_content(response.dump(), "application/json");
         } catch (const json::exception& e) {
-            write_plain_error(res, kWrongFieldType, e.what());
+            write_plain_error(res, kUnlistedFieldInvalid, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_model_register: " << e.what() << std::endl;
             write_plain_error(res, kRegisterFailed, e.what());

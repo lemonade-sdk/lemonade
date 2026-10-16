@@ -23,6 +23,9 @@ using json = nlohmann::json;
 
 const RouteError kBackendError{
     500, "", "The backend reports an error; the backend's own status replaces this one when it sends one"};
+const RouteError kMalformedBackendResponse{
+    500, "", "The backend's response lacks a field the route returns, such as `choices` or `labels`"};
+const RouteError kUnlistedFieldInvalid{400, "", "A field not listed above has the wrong JSON type"};
 const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
 const RouteError ApiRoute::kBodyNotJson{400, "invalid_json", "The body is not a JSON object"};
 const RouteError ApiRoute::kArgMissing{400, "missing_argument", "A required argument is missing"};

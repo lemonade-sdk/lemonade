@@ -12,7 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNoChoices{500, "", "The backend's response has no `choices`"};
 
 ordered_json text_completion_schema(bool chunk) {
     auto schema = ordered_json::parse(R"({
@@ -160,7 +159,7 @@ public:
 
         s.examples = {completion_example, stream_example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlm, kBackendError,
-                                 kNoChoices, kUnexpectedException},
+                                 kMalformedBackendResponse, kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
@@ -200,7 +199,7 @@ protected:
 
         if (!response.contains("choices")) {
             LOG(ERROR, "Server") << "Response missing 'choices' field. Response: " << response.dump() << std::endl;
-            write_plain_error(res, kNoChoices, "Backend returned invalid response format");
+            write_plain_error(res, kMalformedBackendResponse, "Backend returned invalid response format");
             return;
         }
 
