@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount, friendlyErrorMessage } from '../api';
+import { decodedTokensInSlot, isSlotProcessing, sampledSlotTps, selectGenerationTps } from '../features/dashboard/throughput';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -163,6 +164,7 @@ export function useDashboardData(isActive = true): DashboardData {
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failureCountRef = useRef(0);
+  const previousRequestCountRef = useRef<number | null>(null);
   const slotWindowRef = useRef(new Map<number, { ts: number; decoded: number; prompted: number }[]>());
   const targetAggRef = useRef({
     tps: 0, ppTps: 0,
@@ -186,7 +188,7 @@ export function useDashboardData(isActive = true): DashboardData {
     const cutoff = now - WINDOW_MS;
 
     for (const s of slotData) {
-      const currDecoded = s.n_decoded || 0;
+      const currDecoded = decodedTokensInSlot(s);
       const currPrompted = s.n_prompt_tokens_processed || 0;
       const prev = c.prevSlotTokens.get(s.id);
 
@@ -211,13 +213,22 @@ export function useDashboardData(isActive = true): DashboardData {
         }
       }
 
-      // Fallback: use llama.cpp's own prompt_per_second when our delta is 0
-      // (n_prompt_tokens_processed can reset between requests in some versions)
-      if (slotPpTps < 0.05 && s.is_processing && s.timings?.prompt_per_second > 0) {
-        slotPpTps = s.timings.prompt_per_second;
+      const slotActive = isSlotProcessing(s, slotTps);
+      if (!slotActive) {
+        // An idle snapshot can still contain deltas from the previous request.
+        slotTps = 0;
+        slotPpTps = 0;
+        winMap.set(s.id, samples.slice(-1));
       }
 
-      const slotActive = slotTps > 0.05 || s.is_processing;
+      // Prefill is over once decoding has begun. The rolling slot counter may
+      // still cover prefill tokens, but they are not current prompt throughput.
+      if (currDecoded > 0) slotPpTps = 0;
+
+      const backendPromptTps = s.timings?.prompt_per_second ?? 0;
+      if (slotPpTps < 0.05 && slotActive && currDecoded === 0 && backendPromptTps > 0) {
+        slotPpTps = backendPromptTps;
+      }
       perSlotLive.set(s.id, { tps: slotTps, ppTps: slotPpTps, isActive: slotActive });
 
       aggTps += slotTps;
@@ -280,11 +291,14 @@ export function useDashboardData(isActive = true): DashboardData {
       setSlots(slotData);
 
       const { aggTps, aggPromptTps, perSlotLive } = computeAggregates(slotData);
-      // Prefer slot telemetry; use live estimates for backends without slots.
-      const liveTps = st?.live?.estimated_tokens_per_second ?? 0;
-      const totalTps = supportsSlots
-        ? aggTps
-        : (Number.isFinite(liveTps) ? Math.max(0, liveTps) : 0);
+      // Count completions rather than resampling stale last-request TPS.
+      const requestCount = st?.request_count_total;
+      const validCount = typeof requestCount === 'number' && Number.isFinite(requestCount);
+      const newCompletion = validCount && previousRequestCountRef.current !== null
+        && requestCount > previousRequestCountRef.current;
+      if (validCount) previousRequestCountRef.current = requestCount;
+
+      const totalTps = selectGenerationTps(aggTps, st, newCompletion, supportsSlots);
       countersRef.current.peakTps = Math.max(countersRef.current.peakTps, totalTps);
 
       const liveObj: Record<number, SlotLiveTps> = {};
@@ -295,23 +309,28 @@ export function useDashboardData(isActive = true): DashboardData {
         const live = perSlotLive.get(s.id);
         const cacheLen = getCacheTokenCount(s);
         const cu = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
-        const prev = targetSlotRef.current.get(s.id);
+        const active = live?.isActive === true;
         targetSlotRef.current.set(s.id, {
-          tps: smoothTarget(prev?.tps || 0, live?.tps || 0),
-          ppTps: smoothTarget(prev?.ppTps || 0, live?.ppTps || 0),
-          decoded: s.n_decoded || 0,
+          tps: sampledSlotTps(live?.tps ?? 0, active),
+          ppTps: sampledSlotTps(live?.ppTps ?? 0, active),
+          decoded: decodedTokensInSlot(s),
           cacheUtil: cu,
-          isActive: live?.isActive || s.is_processing,
+          isActive: active,
         });
       }
       const currentSlotIds = new Set(slotData.map(s => s.id));
       for (const slotId of targetSlotRef.current.keys()) {
-        if (!currentSlotIds.has(slotId)) targetSlotRef.current.delete(slotId);
+        if (!currentSlotIds.has(slotId)) {
+          targetSlotRef.current.delete(slotId);
+          interpSlotRef.current.delete(slotId);
+          slotWindowRef.current.delete(slotId);
+          countersRef.current.prevSlotTokens.delete(slotId);
+        }
       }
 
       const activeSlots = slotData.filter(s => {
         const live = perSlotLive.get(s.id);
-        return live?.isActive || s.is_processing;
+        return live?.isActive === true;
       }).length;
       const totalSlots = slotData.length;
       const totalCache = slotData.reduce((a, s) => a + getCacheTokenCount(s), 0);
@@ -319,14 +338,14 @@ export function useDashboardData(isActive = true): DashboardData {
       const cacheUtil = totalCtx > 0 ? (totalCache / totalCtx) * 100 : null;
 
       const tgt = targetAggRef.current;
-      if (!supportsSlots && !(st?.live?.active_requests ?? 0)) {
-        // No current output: clear the live reading immediately, not over multiple polls.
+      if (totalTps === 0 && !(st?.live?.active_requests ?? 0) && !slotData.some(s => isSlotProcessing(s))) {
+        // No current output: reset the live value without a release tail.
         tgt.tps = 0;
         interpAggRef.current.tps = 0;
       } else {
         tgt.tps = smoothTarget(tgt.tps, totalTps);
       }
-      tgt.ppTps = smoothTarget(tgt.ppTps, aggPromptTps);
+      tgt.ppTps = aggPromptTps;
       tgt.cpu = ss?.cpu_percent ?? null;
       tgt.ram = ss?.memory_gb ?? null;
       tgt.gpu = ss?.gpu_percent ?? null;
@@ -441,17 +460,8 @@ export function useDashboardData(isActive = true): DashboardData {
           if (aggTps > c.peakTps) c.peakTps = aggTps;
           if (aggPp > c.peakPromptTps) c.peakPromptTps = aggPp;
 
-          const tgt = targetAggRef.current;
-          tgt.tps = smoothTarget(tgt.tps, aggTps);
-          tgt.ppTps = smoothTarget(tgt.ppTps, aggPp);
-
-          for (const [slotId, v] of map) {
-            const existing = targetSlotRef.current.get(slotId);
-            if (existing) {
-              existing.tps = smoothTarget(existing.tps, v.tg);
-              existing.ppTps = smoothTarget(existing.ppTps, v.pp);
-            }
-          }
+          // Final llama.cpp timings update session peaks only; /slots polling
+          // owns the live chart to avoid resetting active slots between polls.
         },
         onDisconnected: () => {
           wsHandleRef.current = null;
@@ -483,7 +493,7 @@ export function useDashboardData(isActive = true): DashboardData {
       const aI = interpAggRef.current;
 
       aI.tps += (aTarget.tps - aI.tps) * LERP_SPEED;
-      aI.ppTps += (aTarget.ppTps - aI.ppTps) * LERP_SPEED;
+      aI.ppTps = aTarget.ppTps;
       if (Math.abs(aI.tps) < 0.05) aI.tps = 0;
       if (Math.abs(aI.ppTps) < 0.05) aI.ppTps = 0;
 
@@ -512,10 +522,8 @@ export function useDashboardData(isActive = true): DashboardData {
         const next = { ...prev };
         for (const [slotId, target] of sT) {
           const interp = sI.get(slotId) || { tps: 0, ppTps: 0 };
-          interp.tps += (target.tps - interp.tps) * LERP_SPEED;
-          interp.ppTps += (target.ppTps - interp.ppTps) * LERP_SPEED;
-          if (Math.abs(interp.tps) < 0.05) interp.tps = 0;
-          if (Math.abs(interp.ppTps) < 0.05) interp.ppTps = 0;
+          interp.tps = sampledSlotTps(target.tps, target.isActive);
+          interp.ppTps = sampledSlotTps(target.ppTps, target.isActive);
           sI.set(slotId, interp);
 
           const point: SlotHistoryPoint = {

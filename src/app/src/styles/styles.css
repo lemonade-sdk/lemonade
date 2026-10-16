@@ -4063,6 +4063,10 @@ optgroup {
   gap: var(--space-5, 24px);
 }
 
+.dash2-scroll:focus-visible {
+  outline-offset: -2px;
+}
+
 /* ── Cards ─────────────────────────────────────────────── */
 
 .dash2-card {
@@ -4822,6 +4826,16 @@ optgroup {
   color: var(--error);
   font-size: 0.85rem;
   margin-bottom: var(--space-2);
+}
+
+.mermaid-block__error-details {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
 }
 
 .mermaid-block__source {

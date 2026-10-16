@@ -70,9 +70,12 @@ export default defineConfig({
   // Only genuinely external URLs opt out of Playwright-managed startup.
   ...(!externalBaseURL || isLoopbackURL ? {
     webServer: {
-      command: `npm run dev:renderer -- --host 127.0.0.1 --port ${serverPort} --no-hot`,
+      // Playwright needs the renderer but not the dev-server browser client;
+      // its full-screen runtime-error iframe can intercept otherwise valid clicks.
+      command: `npm run dev:renderer -- --host 127.0.0.1 --port ${serverPort} --no-hot --no-client`,
       url: baseURL,
-      reuseExistingServer: !process.env.CI,
+      // An unrelated/stale dev server must not silently replace the test build.
+      reuseExistingServer: !process.env.CI && process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === '1',
       timeout: 120000,
     },
   } : {}),

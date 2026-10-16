@@ -205,7 +205,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
 
     const origSys = selectedTrace.messages.find((m) => m.role === 'system')?.content || '';
     const origUser = selectedTrace.messages
-      .filter((m) => m.role !== 'system')
+      .filter((m) => m.role !== 'system' && !m.capturedOutput)
       .map((m) => m.content)
       .join('\n\n');
 
@@ -366,7 +366,7 @@ Worked example (structural template only — do not echo its content):
     const sysMsg = selectedTrace.messages.find((m) => m.role === 'system');
     const systemPromptText = sysMsg ? truncateText(sysMsg.content || '', 2500) : '[None]';
     const userMsgsText = selectedTrace.messages
-      .filter((m) => m.role !== 'system')
+      .filter((m) => m.role !== 'system' && !m.capturedOutput)
       .map((m) => `[${m.role.toUpperCase()}]: ${truncateText(m.content || '', 2000)}`)
       .join('\n\n');
 
@@ -614,7 +614,7 @@ ${truncatedOutput}
     const sysMsg = trace.messages.find((m) => m.role === 'system');
     const originalSystem = sysMsg ? sysMsg.content : '';
     const originalUser = trace.messages
-      .filter((m) => m.role !== 'system')
+      .filter((m) => m.role !== 'system' && !m.capturedOutput)
       .map((m) => m.content)
       .join('\n\n');
 

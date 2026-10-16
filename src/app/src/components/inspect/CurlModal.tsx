@@ -34,7 +34,7 @@ export default function CurlModal({
   const curlCommand = useMemo(() => {
     if (!selectedTrace) return '';
     const userMsgs = selectedTrace.messages
-      .filter((m) => m.role !== 'system')
+      .filter((m) => m.role !== 'system' && !m.capturedOutput)
       .map((m) => ({ role: m.role, content: m.content }));
     const systemContent = replaySystemPrompt.trim();
 
@@ -61,7 +61,7 @@ export default function CurlModal({
       body = {
         model: selectedTrace.model,
         instructions: systemContent || undefined,
-        input: userMsgs.map((m) => m.content),
+        input: userMsgs,
         temperature: replayTemp,
         top_p: replayTopP,
         max_output_tokens: replayMaxTokens,

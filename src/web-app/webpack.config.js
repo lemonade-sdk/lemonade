@@ -92,10 +92,14 @@ module.exports = (env, argv) => {
     }
   }
 
+  const systemDomPurifyPath = '/usr/share/nodejs/dompurify/dist/purify.cjs.js';
+  if (useSystemPackages && !fs.existsSync(systemDomPurifyPath)) {
+    throw new Error('System web build requires node-dompurify: ' + systemDomPurifyPath);
+  }
+
   const systemPackageAliases = useSystemPackages ? {
-    'dompurify$': path.resolve(__dirname, 'system-stubs/dompurify.ts'),
+    'dompurify$': systemDomPurifyPath,
     'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
-    'recharts$': path.resolve(__dirname, 'system-stubs/recharts.tsx'),
   } : {};
 
   let bufferPolyfill = false;
@@ -265,7 +269,7 @@ module.exports = (env, argv) => {
             enforce: true,
           },
           charts: {
-            test: /[\\/]node_modules[\\/](recharts|victory-vendor|d3|d3-.*)[\\/]/,
+            test: /[\\/]node_modules[\\/](d3|d3-.*)[\\/]/,
             name: 'charts',
             chunks: 'async',
             priority: 55,

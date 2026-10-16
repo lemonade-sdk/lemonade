@@ -312,6 +312,8 @@ export interface DirectorySettings {
 export interface ChatCompletionStats {
   content: string;
   reasoning: string;
+  /** Backend stop reason (e.g. "stop", "tool_calls", "length"). */
+  finishReason?: string | null;
   id: string | null;
   tps: string;
   ttft: string | null;
@@ -439,6 +441,7 @@ function downloadPayloadCompleted(data: unknown): boolean {
 export interface PullVariant {
   name: string;
   primary_file: string;
+  draft_file?: string;
   files: string[];
   sharded: boolean;
   size_bytes: number;
@@ -467,6 +470,7 @@ export interface StatsData {
   output_tokens: number;
   time_to_first_token: number;
   tokens_per_second: number;
+  request_count_total?: number;
   decode_token_times: number[];
   prompt_tokens: number;
   live?: {
@@ -519,18 +523,19 @@ export interface JobRecord {
 export interface SlotData {
   id: number;
   n_ctx: number;
-  n_decoded: number;
+  n_decoded?: number;
+  next_token?: { n_decoded?: number } | Array<{ n_decoded?: number }>;
   n_prompt_tokens: number;
   n_prompt_tokens_processed: number;
-  state: number;
-  is_processing: boolean;
+  state: number | string;
+  is_processing?: boolean;
   model: string;
   temperature: number;
   top_k: number;
   top_p: number;
-  cache_tokens: number[];
+  cache_tokens: number[] | number;
   n_cache_tokens?: number;
-  timings: SlotTimings;
+  timings?: SlotTimings;
   prompt: string;
   truncated: boolean;
   stopped_eos: boolean;
@@ -541,7 +546,8 @@ export interface SlotData {
 /** Get usable cache token count — prefers n_cache_tokens (number) over cache_tokens array length */
 export function getCacheTokenCount(s: SlotData): number {
   if (typeof s.n_cache_tokens === 'number') return s.n_cache_tokens;
-  return s.cache_tokens?.length || 0;
+  if (typeof s.cache_tokens === 'number') return s.cache_tokens;
+  return Array.isArray(s.cache_tokens) ? s.cache_tokens.length : 0;
 }
 
 export interface LogEntry {
@@ -2353,6 +2359,7 @@ class LemonadeAPI {
     let reasoningEndTime: number | null = null;
     let reasoningClosed = false;
     let routeDecision: Record<string, unknown> | null = null;
+    let finishReason: string | null = null;
 
     const reasoningElapsedMs = (now: number): number | null => {
       if (reasoningStartTime == null) return null;
@@ -2369,6 +2376,7 @@ class LemonadeAPI {
       return {
         content: full,
         reasoning,
+        finishReason,
         id: respId,
         tps: totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0',
         ttft: firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null,
@@ -2436,8 +2444,9 @@ class LemonadeAPI {
           const payload = t.slice(6);
           if (payload === '[DONE]') {
             clearInterval(statsInterval);
-            // If we accumulated tool calls, emit them instead of content
-            if (pendingToolCalls.size > 0) {
+            // A length-limited stream may contain an incomplete function call.
+            // Let the caller report the limit instead of executing it.
+            if (pendingToolCalls.size > 0 && finishReason !== 'length') {
               onToolCalls?.(Array.from(pendingToolCalls.values()));
               return;
             }
@@ -2457,7 +2466,9 @@ class LemonadeAPI {
               return;
             }
             respId = chunk.id || respId;
-            const delta = chunk.choices?.[0]?.delta;
+            const choice = chunk.choices?.[0];
+            if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+            const delta = choice?.delta;
             // Handle reasoning/thinking tokens (Qwen3.5, etc.)
             if (delta?.reasoning_content) {
               const now = performance.now();
@@ -2500,14 +2511,20 @@ class LemonadeAPI {
           } catch {}
         }
       }
-      // Stream ended without [DONE]
-      clearInterval(statsInterval);
-      if (pendingToolCalls.size > 0) {
-        onToolCalls?.(Array.from(pendingToolCalls.values()));
-      } else {
-        const now = performance.now();
-        onDone?.(buildDoneStats(now, full, reasoning, respId));
+      // Accept an explicit final [DONE] even without the usual trailing newline.
+      if (buf.trim() === 'data: [DONE]') {
+        clearInterval(statsInterval);
+        if (pendingToolCalls.size > 0 && finishReason !== 'length') {
+          onToolCalls?.(Array.from(pendingToolCalls.values()));
+        } else {
+          onDone?.(buildDoneStats(performance.now(), full, reasoning, respId));
+        }
+        return;
       }
+      // An incomplete SSE transport is not a successful completion, even if
+      // some content or tool-call arguments were already streamed.
+      clearInterval(statsInterval);
+      onError?.(new Error('Chat stream ended before [DONE]; the response may be incomplete.'));
     } catch (err) {
       clearInterval(statsInterval);
       onError?.(err as Error);

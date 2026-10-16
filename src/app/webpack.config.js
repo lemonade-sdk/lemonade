@@ -59,7 +59,7 @@ module.exports = (env, argv) => ({
       chunks: 'all',
       cacheGroups: {
         charts: {
-          test: /[\\/]node_modules[\\/](recharts|d3-.*|victory-vendor)[\\/]/,
+          test: /[\\/]node_modules[\\/](d3|d3-.*)[\\/]/,
           name: 'charts',
           priority: 20,
         },

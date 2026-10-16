@@ -169,9 +169,8 @@ const RingGauge = React.memo<{
 
 /* ── Smooth chart wrapper ───────────────────────────────────── */
 
-// Recharts is by far the heaviest dependency of the default Monitor section.
-// Render the dashboard shell immediately and hydrate charts in a nested async
-// chunk so opening/reloading Monitor never waits for the charting library.
+// Keep chart rendering in a nested async chunk so opening Monitor does not
+// delay the dashboard shell.
 const LazyDashboardChart = lazy(() =>
   import(/* webpackChunkName: "monitor-charts" */ './DashboardChart')
 );
@@ -319,7 +318,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
 
       {lastError && <div className="dash2-err">{t('Warning')}: {lastError}</div>}
 
-      <div className="dash2-scroll">
+      <div className="dash2-scroll" role="region" aria-label={t('Performance')} tabIndex={0}>
         {/* ═══ HERO — Aggregate Throughput ═══ */}
         <div className="dash2-card">
           <h2 className="dash2-card__h">{t('Aggregate Throughput')}</h2>

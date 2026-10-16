@@ -39,8 +39,10 @@
     "test:model-nav-filters": "node tests/model-nav-filter-layout.runtime.cjs",
     "test:model-state": "node tests/model-state-deduplication.runtime.cjs",
     "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs",
+    "test:dashboard-throughput": "node tests/dashboard-throughput.runtime.cjs",
     "test:router-load": "node tests/router-load-regression.runtime.cjs",
-    "test:i18n-coverage": "node tests/i18n-coverage.runtime.cjs"
+    "test:i18n-coverage": "node tests/i18n-coverage.runtime.cjs",
+    "test:inspect-replay": "node tests/inspect-replay-captured-output.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
@@ -73,8 +75,7 @@
     "markdown-it-texmath": "^1.0.0",
     "mermaid": "^11.15.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "recharts": "^3.8.1"
+    "react-dom": "^19.2.0"
   },
   "overrides": {
     "@tauri-apps/api": "2.10.1"
