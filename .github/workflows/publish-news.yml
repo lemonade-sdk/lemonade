@@ -1,0 +1,50 @@
+name: Publish News
+
+# Publishes news posts to lemonade-server.ai as soon as they merge, without
+# waiting for a release. Only commits that change nothing but news files are
+# published; see .github/scripts/publish_news.py.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/news/**"
+      - "docs/assets/news-data.js"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-news
+  cancel-in-progress: false
+
+jobs:
+  publish-news:
+    name: Publish news to lemonade-server.ai
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config --global user.name "Lemonade Bot"
+          git config --global user.email "lemonade@amd.com"
+      # The website branch carries the script only from the last release.
+      - name: Stage publish script
+        run: cp .github/scripts/publish_news.py "$RUNNER_TEMP/"
+      # Retries cover a release publish pushing to website mid-run.
+      - name: Publish news
+        run: |
+          for attempt in 1 2 3; do
+            git fetch -q origin main website
+            git checkout -q -B website origin/website
+            python3 "$RUNNER_TEMP/publish_news.py" origin/main
+            if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/website)" ]; then
+              echo "Nothing to publish"
+              exit 0
+            fi
+            git push origin website && exit 0
+          done
+          exit 1
