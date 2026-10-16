@@ -67,7 +67,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | experimental | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
