@@ -38,6 +38,7 @@ struct GPUInfo : DeviceInfo {
     double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;
     double virtual_used_gb = -1.0;
+    bool unified_memory = false;
 };
 
 struct NPUInfo : DeviceInfo {
