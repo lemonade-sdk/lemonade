@@ -222,7 +222,7 @@ assert.doesNotMatch(styles, /model-nav-rail__section--providers\s*\{[\s\S]*borde
   'Online Catalogs must not add a divider below Backends');
 assert.match(styles, /\.model-nav-rail__provider-list \{[\s\S]*padding: 2px var\(--space-2\) 0;/,
   'catalog checkboxes must align horizontally with the task/backend controls');
-assert.match(styles, /input\[type="checkbox"\] \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 4px;/,
+assert.match(styles, /input\[type="checkbox"\] \{[^}]*width: 16px;[^}]*height: 16px;[^}]*border-radius: 4px;/,
   'catalog checkboxes must inherit the exact Backends checkbox geometry, now shared by one global rule');
 assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{searchActive\}/,
   'ModelManager must pass the existing search activity signal to the nav rail');
