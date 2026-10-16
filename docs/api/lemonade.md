@@ -1298,7 +1298,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `404` |  | The named model is not loaded, which includes an omni collection, whose components are unloaded by their own names |
-| `500` |  | Unloading fails for another reason |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: lemonade.unload -->
 
 <!-- BEGIN GENERATED: lemonade.audio_generations -->
@@ -2464,7 +2464,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 | `400` |  | `base_url` does not start with `https://` or `http://`, has no host, or contains whitespace |
 | `400` |  | `auth_header_name` is empty, over 128 characters or not a valid HTTP header name, or `auth_header_prefix` is over 128 characters or contains a control character |
 | `400` | `insecure_http_requires_opt_in` | The provider's base URL is `http://`, an API key would be sent to it, and neither this request nor an earlier install sets `allow_insecure_http` |
-| `500` |  | The install fails |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: lemonade.install -->
 
 <!-- BEGIN GENERATED: lemonade.install_dry_run -->
@@ -2651,7 +2651,7 @@ A cloud provider removed.
 | `400` |  | A cloud uninstall has no `provider`, or an empty one |
 | `400` |  | A local request has no `recipe` |
 | `404` |  | `provider` was not installed with [`POST /v1/install`](#post-v1install) |
-| `500` |  | Unloading a model or removing the backend fails |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: lemonade.uninstall -->
 
 <!-- BEGIN GENERATED: lemonade.cloud_auth -->

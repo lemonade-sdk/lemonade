@@ -33,7 +33,6 @@ const RouteError kInvalidCloudOption{
     400, "",
     "`auth_header_name` is empty, over 128 characters or not a valid HTTP header name, or "
     "`auth_header_prefix` is over 128 characters or contains a control character"};
-const RouteError kInstallFailed{500, "", "The install fails"};
 
 ordered_json install_schema() {
     auto local = ordered_json::parse(R"({
@@ -206,7 +205,7 @@ public:
         s.examples = {local_example, stream_example, job_example, cloud_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingRecipe,
                     kUnsupportedBackend, kMissingCloudFields, kInvalidProviderName,
-                    kInvalidBaseUrl, kInvalidCloudOption, kInsecureHttpError, kInstallFailed};
+                    kInvalidBaseUrl, kInvalidCloudOption, kInsecureHttpError, kUnexpectedException};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -306,7 +305,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_install: " << e.what() << std::endl;
-            write_plain_error(res, kInstallFailed, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 

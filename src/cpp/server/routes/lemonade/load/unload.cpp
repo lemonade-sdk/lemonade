@@ -13,7 +13,6 @@ const RouteError kNotLoaded{
     404, "",
     "The named model is not loaded, which includes an omni collection, whose components are "
     "unloaded by their own names"};
-const RouteError kUnloadFailed{500, "", "Unloading fails for another reason"};
 
 class UnloadRoute : public ApiRoute {
 public:
@@ -50,7 +49,7 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kNotLoaded, kUnloadFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kNotLoaded, kUnexpectedException};
         s.request_format = RequestFormat::OptionalJson;
         return s;
     }
@@ -91,7 +90,7 @@ public:
 
             std::string error_msg = e.what();
             res.status = error_msg.find("not loaded") != std::string::npos ? kNotLoaded.status
-                                                                         : kUnloadFailed.status;
+                                                                         : kUnexpectedException.status;
             json error = {{"error", e.what()}};
             res.set_content(error.dump(), "application/json");
         }

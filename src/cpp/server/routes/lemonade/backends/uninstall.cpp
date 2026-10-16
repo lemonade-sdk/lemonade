@@ -18,8 +18,6 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
-const RouteError kUninstallFailed{
-    500, "", "Unloading a model or removing the backend fails"};
 
 class UninstallRoute : public ApiRoute {
 public:
@@ -96,7 +94,7 @@ public:
         })");
         s.examples = {local_example, cloud_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingProvider,
-                    kProviderNotInstalled, kMissingRecipe, kUninstallFailed};
+                    kProviderNotInstalled, kMissingRecipe, kUnexpectedException};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -178,7 +176,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_uninstall: " << e.what() << std::endl;
-            write_plain_error(res, kUninstallFailed, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 };
