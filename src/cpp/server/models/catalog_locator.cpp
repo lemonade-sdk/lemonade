@@ -147,7 +147,7 @@ class HttpCatalogLocator final : public CatalogLocator {
             if (response->status_code >= 200 && response->status_code < 300) {
                 try {
                     nlohmann::json document = parse_document(id_, response->body);
-                    // Only a body that parses becomes the last good one.
+                    // A body that does not parse never becomes the last good one.
                     write_cache(*response);
                     if (observed) {
                         *observed = state_of(*response);
@@ -170,8 +170,7 @@ class HttpCatalogLocator final : public CatalogLocator {
         try {
             response = utils::HttpClient::head(source_.url, conditional(known), 0, policy());
         } catch (const std::exception& e) {
-            // A host that will not answer offers no document, and a rebuild would
-            // fall back to the cached one anyway.
+            // Nothing to take: a rebuild would serve the cached body anyway.
             LOG(DEBUG, kLog) << "'" << id_ << "' is not reachable: " << e.what() << std::endl;
             return false;
         }
@@ -209,15 +208,14 @@ class HttpCatalogLocator final : public CatalogLocator {
     }
 
     utils::HttpSecurityPolicy policy() const {
-        // The opt-in is honoured only for a plaintext url, so a stale flag can
-        // never downgrade a catalog that was configured over https.
+        // A stale opt-in cannot downgrade an https catalog.
         return source_.allow_insecure_http && source_.url.rfind("http://", 0) == 0
                    ? utils::HttpSecurityPolicy::AllowInsecureHttp
                    : utils::HttpSecurityPolicy::ExternalHttpsOnly;
     }
 
     std::map<std::string, std::string> conditional(const CatalogState& state) const {
-        std::map<std::string, std::string> request = source_.headers;
+        std::map<std::string, std::string> request;
         if (!state.etag.empty()) {
             request["If-None-Match"] = state.etag;
         }
@@ -245,7 +243,7 @@ class HttpCatalogLocator final : public CatalogLocator {
                 state.etag = recorded.value("etag", std::string());
                 state.last_modified = recorded.value("last_modified", std::string());
             } catch (const std::exception&) {
-                // Nothing to revalidate with, so the next read is unconditional.
+                // Nothing to revalidate with.
             }
         }
         return state;
@@ -267,13 +265,11 @@ class HttpCatalogLocator final : public CatalogLocator {
         recorded["etag"] = header_value(response, "etag");
         recorded["last_modified"] = header_value(response, "last-modified");
         try {
-            // Body before validators: a write interrupted between the two leaves a
-            // cached body the next read will re-fetch, not a body pinned to the
-            // validators of a document that never landed.
+            // Body first: an interrupted pair re-fetches, rather than answering 304
+            // for a body that never landed.
             write_atomically(body_path(), response.body);
             write_atomically(validators_path(), recorded.dump());
         } catch (const std::exception& e) {
-            // A cache that cannot be written costs the fallback, not the catalog.
             LOG(WARNING, kLog) << "'" << id_ << "' could not cache its body: " << e.what()
                                << std::endl;
         }

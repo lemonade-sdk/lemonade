@@ -279,6 +279,7 @@ The catalogs lemond ships, with the policy each one carries:
 | `JsonCatalog(ResourceLocator{"resources/server_models.json"}, true)` | the built-in registry shipped with lemond | true | contents digest of the installed resource |
 | `JsonCatalog(FileLocator{config_dir + "/user_models.json"}, false)` | `lemonade pull` and `POST /pull` | false | file mtime |
 | `JsonCatalog(FileLocator{<path>}, bool)` | any other JSON document of the same shape, added by code | per construction | file mtime |
+| `ConfiguredCatalog` (`config.json`'s `model_catalogs`) | a file or an HTTP URL naming a document of the same shape | per record | file mtime, or the ETag / Last-Modified pair |
 | `ScanCatalog(extra_models_dir)` | an `--extra-models-dir` scan plus GGUF identification | false | a `DirectoryWatcher` callback for the directory |
 | `ListedCatalog(provider)` | a cloud provider's model listing | false | digest of the listing |
 | `DiscoveredCatalog(recipe)` | a backend's `BackendOps::discover_models()`, used by cloud providers and `dynamic_models` descriptors | false | the backend reports a change, or a refresh interval elapses |

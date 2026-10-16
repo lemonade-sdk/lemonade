@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -411,6 +412,15 @@ void RuntimeConfig::set_log_max_files_override(std::optional<int> override_val) 
 std::string RuntimeConfig::extra_models_dir() const {
     std::shared_lock lock(mutex_);
     return config_["extra_models_dir"].get<std::string>();
+}
+
+json RuntimeConfig::model_catalogs() const {
+    std::shared_lock lock(mutex_);
+    const auto found = config_.find("model_catalogs");
+    if (found == config_.end() || !found->is_array()) {
+        return json::array();
+    }
+    return *found;
 }
 
 bool RuntimeConfig::broadcast() const {
@@ -863,6 +873,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (n < 0 || n > 100) {
             throw std::invalid_argument("'log_max_files' must be between 0 and 100");
         }
+    } else if (key == "model_catalogs") {
+        models::reject_refused_catalogs(value);
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");

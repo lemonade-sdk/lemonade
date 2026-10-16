@@ -482,6 +482,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     manager_config.extra_models_dir = config_->extra_models_dir();
     manager_config.cloud_providers = cloud_registry_.get();
     manager_config.default_model_source = [this]() { return config_->default_model_source(); };
+    manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
     model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
     backend_manager_ = std::make_unique<BackendManager>();
@@ -7391,6 +7392,9 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     udp_beacon_.startBroadcasting(13305, port_, 2);
                 }
             }
+        } else if (key == "model_catalogs") {
+            LOG(INFO, "Server") << "Configured model catalogs changed" << std::endl;
+            model_manager_->catalog_set_changed();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;

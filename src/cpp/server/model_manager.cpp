@@ -432,11 +432,14 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
         start_directory_watcher();
     }
 
+    catalog_set_changed();
+}
+
+void ModelManager::catalog_set_changed() {
     {
         StoreWrite store_write(*this);
         cache_valid_ = false;
     }
-
     notify_models_changed();
 }
 
@@ -951,6 +954,21 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
     deps.scan_extra_models = [this](const models::CatalogAccumulator& claimed) {
         return scan_extra_models(claimed);
     };
+
+    deps.catalog_cache_dir =
+        config_.cache_dir.empty() ? utils::get_cache_dir() : config_.cache_dir;
+    if (config_.model_catalogs) {
+        models::ParsedCatalogs parsed;
+        try {
+            parsed = models::parse_configured_catalogs(config_.model_catalogs());
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager") << "'model_catalogs' is not usable: " << e.what() << std::endl;
+        }
+        for (const auto& refusal : parsed.refusals) {
+            LOG(ERROR, "ModelManager") << "Ignoring a configured catalog: " << refusal << std::endl;
+        }
+        deps.configured_catalogs = std::move(parsed.catalogs);
+    }
 
     auto* config = RuntimeConfig::global();
     deps.offline = config != nullptr && config->offline();

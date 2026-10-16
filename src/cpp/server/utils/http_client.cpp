@@ -527,8 +527,6 @@ bool apply_http_security_policy(
 
 namespace {
 
-// One request whose whole payload is its status line and headers; `headers_only`
-// is the HEAD case.
 HttpResponse perform_request(const std::string& url,
                              const std::map<std::string, std::string>& headers,
                              long timeout_seconds,

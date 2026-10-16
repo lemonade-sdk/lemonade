@@ -142,6 +142,7 @@ static void test_a_bad_row_costs_one_model() {
     CatalogAccumulator acc;
     const json document = {
         {"Bad", {{"source", "huggingface"}, {"registry_source", "modelscope"}}},
+        {"Malformed", {{"recipe", "llamacpp"}, {"checkpoints", {{"main", {{"key", "value"}}}}}}},
         {"Good", {{"recipe", "llamacpp"}}},
     };
     const JsonCatalog catalog(CatalogDescriptor{"user_models.json"},
@@ -149,6 +150,18 @@ static void test_a_bad_row_costs_one_model() {
     catalog.enumerate(acc);
     check("the readable rows of a broken document survive", acc.size() == 1);
     check("and one is keyed by its minted name", acc.contains("user.Good"));
+
+    // A value of the wrong type throws inside the ingest, not out of the build.
+    CatalogAccumulator typed;
+    const json mistyped = {
+        {"NotAString", {{"checkpoints", {{"main", json::object()}}}}},
+        {"AlsoGood", {{"recipe", "llamacpp"}}},
+    };
+    const JsonCatalog typed_catalog(CatalogDescriptor{"user_models.json"},
+                                   std::make_shared<const json>(mistyped), rules(rec, "user."));
+    typed_catalog.enumerate(typed);
+    check("a checkpoint of the wrong type costs its own row",
+          typed.size() == 1 && typed.contains("user.AlsoGood"));
 }
 
 static void test_the_labels_hook_decides() {

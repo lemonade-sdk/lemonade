@@ -1054,6 +1054,7 @@ set(SOURCES_CORE
     src/cpp/server/models/model_sources.cpp
     src/cpp/server/models/catalog_set.cpp
     src/cpp/server/models/catalog_locator.cpp
+    src/cpp/server/models/configured_catalog.cpp
     src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/models/store_builder.cpp
@@ -3218,6 +3219,20 @@ if(BUILD_TESTING AND EXISTS "${_ARTIFACT_RESOLVER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ArtifactResolverTest CI ON COMMAND test_artifact_resolver)
+endif()
+
+set(_CONFIGURED_CATALOG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_configured_catalog.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIGURED_CATALOG_TEST_SRC}")
+    add_executable(test_configured_catalog
+        test/cpp/test_configured_catalog.cpp
+    )
+    target_link_libraries(test_configured_catalog PRIVATE lemonade-server-core)
+    add_dependencies(test_configured_catalog copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ConfiguredCatalogTest CI ON COMMAND test_configured_catalog)
 endif()
 
 set(_CATALOG_LOCATOR_TEST_SRC
