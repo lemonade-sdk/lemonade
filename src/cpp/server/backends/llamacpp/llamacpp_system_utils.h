@@ -16,9 +16,20 @@ namespace backends {
 namespace llamacpp {
 namespace detail {
 
-// Private, deterministic pieces of the system llama.cpp HIP lookup. The full
-// production availability check stays in llamacpp_server.cpp so this header is
-// only a narrow test seam, not a second implementation of the policy.
+// Private, deterministic pieces of the llama.cpp system backend and launch policy.
+// The production availability check stays in llamacpp_server.cpp.
+inline const char* rocm_visibility_override_env_name(
+    const char* rocr_visible_devices,
+    const char* hip_visible_devices) {
+    if (rocr_visible_devices) {
+        return "ROCR_VISIBLE_DEVICES";
+    }
+    if (hip_visible_devices) {
+        return "HIP_VISIBLE_DEVICES";
+    }
+    return nullptr;
+}
+
 inline bool is_valid_ggml_hip_plugin_path(const std::filesystem::path& path) {
 #ifdef __linux__
     std::string name = path.filename().string();
