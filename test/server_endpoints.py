@@ -7382,6 +7382,67 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(response.status_code, 200, response.text)
 
+    def test_021ymb_empty_draft_does_not_expose_main_shards(self):
+        """An invalid auxiliary role must not expose registered main shards."""
+        suffix = uuid.uuid4().hex[:8]
+        model_base = f"EarlyAux-{suffix}"
+        repo_name = f"{model_base}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        first = f"{model_base}-Q4_K_M-00001-of-00002.gguf"
+        second = f"{model_base}-Q4_K_M-00002-of-00002.gguf"
+        other = f"{model_base}-Q8_0.gguf"
+        unrelated = f"{model_base}-Q5_K_M.gguf"
+        name = f"user.{model_base}"
+
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "draft": "",
+                    "main": f"lemon-test/{repo_name}:{first}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            for main_files in ([first, second], [first]):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{file}" for file in [*main_files, other, unrelated]
+                    ],
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            f"{model_base}-Q8_0": f"{snap}/{other}",
+                            f"{model_base}-Q5_K_M": f"{snap}/{unrelated}",
+                        },
+                    )
+        finally:
+            # A blank draft checkpoint makes the registration undeletable.
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": name,
+                    "recipe": "llamacpp",
+                    "checkpoint": f"lemon-test/{repo_name}:{first}",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
     def test_021yn_external_ref_cannot_escape_its_repository(self):
         """A refs/main redirect into a sibling cache may not adopt its files."""
         name = f"user.Ref-Escape-{uuid.uuid4().hex[:8]}"
