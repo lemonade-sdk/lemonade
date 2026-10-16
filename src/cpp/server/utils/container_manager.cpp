@@ -179,6 +179,21 @@ std::optional<ContainerTool> ContainerManager::tool() const {
     return std::nullopt;
 }
 
+std::optional<bool> ContainerManager::podman_info_rootless() const {
+    std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+    if (podman_rootless_) return podman_rootless_;
+    const CommandResult info =
+        host_.run({"podman", "info", "--format", "{{.Host.Security.Rootless}}"},
+                  kCommandTimeoutSeconds);
+    if (info.exit_code != 0) return std::nullopt;
+    podman_rootless_ = trim(info.output) == "true";
+    return podman_rootless_;
+}
+
+bool ContainerManager::rootless_podman() const {
+    return tool() == ContainerTool::Podman && podman_info_rootless().value_or(true);
+}
+
 std::optional<SetupFailure> ContainerManager::check_setup() const {
     const std::optional<ContainerTool> chosen = tool();
     if (!chosen) {
@@ -190,10 +205,6 @@ std::optional<SetupFailure> ContainerManager::check_setup() const {
     const std::string member = service ? kServiceAccount : "$USER";
     const std::string apply = service ? "2. sudo systemctl restart lemond" : "2. Log out and back in";
     if (*chosen == ContainerTool::Podman) {
-        if (!host_.in_group("video") || !host_.in_group("render")) {
-            return SetupFailure{"The " + account + " is not in both video and render",
-                                "1. sudo usermod -aG video,render " + member + "\n" + apply};
-        }
         if (service && host_.on_path("getsubids")) {
             const auto has_range = [this](const std::vector<std::string>& argv) {
                 const CommandResult result = host_.run(argv, kCommandTimeoutSeconds);
@@ -207,6 +218,15 @@ std::optional<SetupFailure> ContainerManager::check_setup() const {
                     "to lemonade\n" +
                         apply};
             }
+        }
+        const std::optional<bool> rootless = podman_info_rootless();
+        if (!rootless) {
+            return SetupFailure{"Podman does not answer `podman info`",
+                                "Run `podman info` and fix the error it prints"};
+        }
+        if (*rootless && (!host_.in_group("video") || !host_.in_group("render"))) {
+            return SetupFailure{"The " + account + " is not in both video and render",
+                                "1. sudo usermod -aG video,render " + member + "\n" + apply};
         }
         return std::nullopt;
     }
@@ -234,7 +254,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
     if (!chosen) {
         throw std::runtime_error("Neither podman nor docker is on PATH");
     }
-    const bool podman = *chosen == ContainerTool::Podman;
+    const bool rootless = rootless_podman();
 
     std::vector<std::string> argv = {
         tool_name(*chosen), "run", "--rm", "--init", "--name", spec.name,
@@ -254,7 +274,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back(device);
     }
     if (!spec.devices.empty()) {
-        if (podman) {
+        if (rootless) {
             argv.push_back("--group-add");
             argv.push_back("keep-groups");
         } else {
@@ -287,9 +307,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back("--env");
         argv.push_back(key + "=" + value);
     }
-    // Docker publishes no port from an --internal network, so lemond reaches
-    // a Docker container at its own address instead.
-    if (podman) {
+    if (rootless) {
         const std::string port = std::to_string(spec.port);
         argv.push_back("-p");
         argv.push_back("127.0.0.1:" + port + ":" + port);

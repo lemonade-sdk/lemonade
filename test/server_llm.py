@@ -31,6 +31,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     load_model,
+    pull_model_with_retry,
     OpenAI,
     AsyncOpenAI,
     httpx,
@@ -70,8 +71,25 @@ class LLMTests(ServerTestBase):
 
     @classmethod
     def setUpClass(cls):
-        """Verify server and apply multi-model config."""
+        """Verify server, apply multi-model config, and pre-pull the test models."""
         super().setUpClass()
+        for model in cls._required_models():
+            print(f"\n[SETUP] Ensuring {model} is pulled...")
+            pull_model_with_retry(model)
+            print(f"[SETUP] {model} is ready")
+
+    @staticmethod
+    def _required_models():
+        models = [get_test_model("llm")]
+        if supports("tool_calls") or supports("tool_calls_streaming"):
+            models.append(get_test_model("tool_calling"))
+        if supports("embeddings"):
+            models.append(get_test_model("embedding"))
+        if supports("reranking"):
+            models.append(get_test_model("reranking"))
+        if supports("multi_model"):
+            models += [MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY]
+        return list(dict.fromkeys(models))
 
     @skip_if_unsupported("static_max_context_window")
     def test_000_model_info_includes_max_context_window(self):

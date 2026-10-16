@@ -24,6 +24,7 @@ namespace {
 
 constexpr const char* kModelsDir = "/mnt/models";
 constexpr int kAddressTimeoutSeconds = 30;
+constexpr int kClientExitSeconds = 5;
 
 std::string join_command_line(const std::vector<std::string>& argv) {
     std::string out;
@@ -114,8 +115,6 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " names the image " + policy_.image +
                                  ", which is not one Lemonade runs container backends from");
     }
-    const auto tool = manager.tool();
-
     name_ = ContainerManager::container_name(recipe_, backend_, model_);
     manager.remove_container(name_);
 
@@ -175,10 +174,10 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                                   << join_command_line(command_line) << std::endl;
     spawn(std::move(command_line), "", {});
 
-    if (tool == utils::ContainerTool::Podman) {
+    if (manager.rootless_podman()) {
         return "127.0.0.1";
     }
-    // Docker attaches the container's address asynchronously after `run` starts.
+    // The tool attaches the container's address asynchronously after `run` starts.
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(kAddressTimeoutSeconds);
     while (running() && std::chrono::steady_clock::now() < deadline) {
@@ -194,8 +193,12 @@ std::string ContainerProcess::start(const ServerCommand& command) {
 
 void ContainerProcess::stop() {
     if (!name_.empty()) {
+        const bool client_running = running();
         ContainerManager::global().stop(name_);
         name_.clear();
+        if (client_running && ProcessManager::wait_for_exit(handle_, kClientExitSeconds) != -1) {
+            handle_ = {nullptr, 0};
+        }
     }
     ServerProcess::stop();
 }

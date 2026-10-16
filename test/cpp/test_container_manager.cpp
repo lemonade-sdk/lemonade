@@ -46,6 +46,9 @@ struct FakeHost {
     std::string account = "alice";
     std::map<std::string, std::string> subids;  // getsubids arguments -> output
     bool docker_socket = true;
+    // `podman info`'s exit code and its Host.Security.Rootless answer.
+    int podman_info_exit = 0;
+    std::string podman_rootless = "true";
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
 
     ContainerHost host() const {
@@ -63,7 +66,10 @@ struct FakeHost {
         };
         h.run = [this](const std::vector<std::string>& argv, int) {
             lemon::utils::CommandResult result;
-            if (argv.front() == "getsubids") {
+            if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
+                result.exit_code = podman_info_exit;
+                result.output = podman_rootless + "\n";
+            } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
                 if (it != subids.end()) result.output = it->second;
@@ -124,11 +130,21 @@ void test_run_command() {
           docker_command == "docker" + common + " --group-add 44 --group-add 990" +
                                 mount_and_home + image_and_program);
 
-    ContainerRunSpec ds4 = example_spec();
-    ds4.devices = {"/dev/dri", "/dev/kfd"};
-    ds4.cap_add = {"SYS_PTRACE"};
-    ds4.env = {{"HIP_VISIBLE_DEVICES", "0"}, {"ROCBLAS_USE_HIPBLASLT", "1"}};
-    const std::string policy_command = join(ContainerManager(podman.host()).run_command(ds4));
+    FakeHost rootful;
+    rootful.tools = {"podman"};
+    rootful.podman_rootless = "false";
+    const ContainerManager rootful_manager(rootful.host());
+    check("rootful podman run takes Docker's group IDs and publishes no port",
+          !rootful_manager.rootless_podman() &&
+              join(rootful_manager.run_command(example_spec())) ==
+                  "podman" + common + " --group-add 44 --group-add 990" + mount_and_home +
+                      image_and_program);
+
+    ContainerRunSpec policy = example_spec();
+    policy.devices = {"/dev/dri", "/dev/kfd"};
+    policy.cap_add = {"SYS_PTRACE"};
+    policy.env = {{"HIP_VISIBLE_DEVICES", "0"}, {"ROCBLAS_USE_HIPBLASLT", "1"}};
+    const std::string policy_command = join(ContainerManager(podman.host()).run_command(policy));
     check("a policy's permissions and the command's variables follow the devices",
           policy_command.find(" --device /dev/dri --device /dev/kfd --group-add keep-groups"
                               " --cap-add SYS_PTRACE -v ") != std::string::npos &&
@@ -171,6 +187,20 @@ void test_tool_choice_and_setup() {
     both.groups = {"video", "render"};
     check("Podman passes with both groups", !ContainerManager(both.host()).check_setup());
 
+    FakeHost rootful;
+    rootful.tools = {"podman"};
+    rootful.podman_rootless = "false";
+    check("rootful Podman needs neither group", !ContainerManager(rootful.host()).check_setup());
+
+    FakeHost broken;
+    broken.tools = {"podman"};
+    broken.groups = {"video", "render"};
+    broken.podman_info_exit = 125;
+    const auto silent = ContainerManager(broken.host()).check_setup();
+    check("Podman must answer podman info",
+          silent && silent->message == "Podman does not answer `podman info`" &&
+              silent->action == "Run `podman info` and fix the error it prints");
+
     FakeHost docker;
     docker.tools = {"docker"};
     docker.docker_socket = false;
@@ -192,13 +222,6 @@ void test_system_service_setup() {
     podman.account = "lemonade";
     podman.tools = {"podman", "getsubids"};
     podman.groups = {"render"};
-    const auto groups = ContainerManager(podman.host()).check_setup();
-    check("the service's group fix names lemonade and restarts lemond",
-          groups && groups->message == "The lemonade account is not in both video and render" &&
-              groups->action == "1. sudo usermod -aG video,render lemonade\n"
-                                "2. sudo systemctl restart lemond");
-
-    podman.groups = {"video", "render"};
     podman.subids = {{"lemonade", "0: lemonade 165536 65536\n"}};
     const auto subids = ContainerManager(podman.host()).check_setup();
     check("the service needs subordinate GIDs as well as UIDs",
@@ -206,8 +229,16 @@ void test_system_service_setup() {
               subids->action == "1. Ask the host's administrator to allocate 65,536 subordinate "
                                 "UIDs and GIDs to lemonade\n"
                                 "2. sudo systemctl restart lemond");
+
     podman.subids["-g lemonade"] = "0: lemonade 165536 65536\n";
-    check("the service passes with both ranges", !ContainerManager(podman.host()).check_setup());
+    const auto groups = ContainerManager(podman.host()).check_setup();
+    check("the service's group fix names lemonade and restarts lemond",
+          groups && groups->message == "The lemonade account is not in both video and render" &&
+              groups->action == "1. sudo usermod -aG video,render lemonade\n"
+                                "2. sudo systemctl restart lemond");
+    podman.groups = {"video", "render"};
+    check("the service passes with both ranges and both groups",
+          !ContainerManager(podman.host()).check_setup());
 
     FakeHost user = podman;
     user.account = "alice";
@@ -276,7 +307,7 @@ void test_helpers() {
     check("no index when no GPU matches", ContainerManager::gpu_index({0, 120001}, "gfx1151").empty());
 
     check("docker.io/kyuz0 is allowed",
-          ContainerManager::allowed_image("docker.io/kyuz0/strix-halo-ds4-toolbox"));
+          ContainerManager::allowed_image("docker.io/kyuz0/amd-strix-halo-toolboxes"));
     check("ghcr.io/peonist-ai is allowed",
           ContainerManager::allowed_image("ghcr.io/peonist-ai/halogen-flash-server"));
     check("other publishers are refused",
@@ -285,13 +316,13 @@ void test_helpers() {
               !ContainerManager::allowed_image("docker.io/kyuz0/"));
 
     const std::string digest =
-        "sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291";
-    const auto pin = lemon::backends::parse_container_pin("rocm-10.0@" + digest);
+        "sha256:e79f876de3be84200172552b7abe5686a230f1fce02caa65dbba90372e3255c6";
+    const auto pin = lemon::backends::parse_container_pin("vulkan-radv-performance@" + digest);
     check("a pin splits into tag and digest",
-          pin && pin->tag == "rocm-10.0" && pin->digest == digest);
+          pin && pin->tag == "vulkan-radv-performance" && pin->digest == digest);
     check("a pin needs a full sha256 digest",
-          !lemon::backends::parse_container_pin("rocm-10.0@sha256:1277") &&
-              !lemon::backends::parse_container_pin("rocm-10.0") &&
+          !lemon::backends::parse_container_pin("vulkan-radv-performance@sha256:e79f") &&
+              !lemon::backends::parse_container_pin("vulkan-radv-performance") &&
               !lemon::backends::parse_container_pin("b0001"));
 }
 
