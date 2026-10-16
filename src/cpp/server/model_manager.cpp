@@ -298,17 +298,7 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.filter_reason = [this](const std::string& name) { return get_model_filter_reason(name); };
     deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
     deps.is_downloaded = [this](const std::string& name) { return is_model_downloaded(name); };
-    deps.resolved_paths = [this](const std::string& name) {
-        StoreWrite store_write(*this);
-        std::map<std::string, std::filesystem::path> paths;
-        const auto model = models_cache_.find(name);
-        if (model != models_cache_.end()) {
-            for (const auto& [type, path] : model->second.resolved_paths) {
-                paths[type] = path_from_utf8(path).lexically_normal();
-            }
-        }
-        return paths;
-    };
+    deps.resolved_paths = [this](const std::string& name) { return resolved_paths_for(name); };
     deps.register_model = [this](const std::string& name, const json& model_data) {
         register_user_model(name, model_data);
     };
@@ -2059,8 +2049,20 @@ void ModelManager::delete_model(const std::string& model_name) {
 }
 
 std::map<std::string, ModelInfo> ModelManager::all_models() const {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return models_cache_;
+    return std::atomic_load(&store_snapshot_)->models;
+}
+
+std::map<std::string, std::filesystem::path> ModelManager::resolved_paths_for(
+    const std::string& canonical_model_name) const {
+    const ModelInfo* info = std::atomic_load(&store_snapshot_)->find(canonical_model_name);
+    std::map<std::string, std::filesystem::path> paths;
+    if (info == nullptr) {
+        return paths;
+    }
+    for (const auto& [type, path] : info->resolved_paths) {
+        paths[type] = path_from_utf8(path).lexically_normal();
+    }
+    return paths;
 }
 
 // Drop the model's own registration, if it has one. Rows the catalog re-creates

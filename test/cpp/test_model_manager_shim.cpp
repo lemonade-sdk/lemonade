@@ -7,10 +7,13 @@
 
 #include "support/test_state_isolation.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -79,6 +82,33 @@ int main() {
         std::printf("    [read back threw] %s\n", e.what());
     }
     check("the facade hands the fixture model back", read_back);
+
+    const std::uint64_t generation_before_reads = manager.generation();
+    manager.all_models();
+    manager.resolved_paths_for("Shim-Model");
+    manager.model_exists("Shim-Model");
+    manager.is_model_downloaded("Shim-Model");
+    check("a batch of reads leaves the generation where it was",
+          manager.generation() == generation_before_reads);
+    check("a model nobody recorded paths for has none", manager.resolved_paths_for("Nobody-Here").empty());
+
+    std::atomic<bool> writer_holds{false};
+    std::thread writer([&manager, &writer_holds] {
+        ModelManager::StoreWrite store_write(manager);
+        writer_holds = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    });
+    while (!writer_holds.load()) {
+        std::this_thread::yield();
+    }
+    const auto read_start = std::chrono::steady_clock::now();
+    const auto published = manager.all_models();
+    manager.resolved_paths_for("Shim-Model");
+    const auto read_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now() - read_start).count();
+    writer.join();
+    check("a read answers while a writer holds the store", read_us < 150000);
+    check("and answers with the published set", !published.empty());
 
     const fs::path bodies = scratch / "catalogs";
     fs::create_directories(bodies);
