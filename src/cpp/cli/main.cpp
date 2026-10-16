@@ -678,12 +678,40 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     return models;
 }
 
+// Auto-tune sizes the context only when the model loads, so the window is
+// read from the server after loading. Returns 0 when it can't be read.
+static int load_for_context_window(lemonade::LemonadeClient& client, const CliConfig& config) {
+    std::cout << "Loading " << config.model << " to read its context size..." << std::endl;
+    try {
+        nlohmann::json request_body =
+            config.recipe_options.is_object() ? config.recipe_options : nlohmann::json::object();
+        request_body["model_name"] = config.model;
+        request_body["save_options"] = false;
+        constexpr time_t load_timeout_ms = 86400000;
+        client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
+                            load_timeout_ms, load_timeout_ms);
+        const nlohmann::json model = nlohmann::json::parse(client.make_request(
+            "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+        const auto context_length = model.find("context_length");
+        if (context_length != model.end() && context_length->is_number_integer() &&
+            context_length->get<int>() > 0) {
+            return context_length->get<int>();
+        }
+    } catch (const lemonade::HttpError& e) {
+        std::cerr << "Warning: Failed to load " << config.model << ": "
+                  << lemonade::extract_server_error_message(e) << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to load " << config.model << ": " << e.what() << std::endl;
+    }
+    return 0;
+}
+
 // Returns false when launch must not start the agent.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config) {
     constexpr int default_context_window = 40960;
-    std::vector<lemon_cli::AgentModelEntry> models =
-        fetch_llm_models_for_sync(client, default_context_window);
+    // A window of 0 marks a model without a saved size until the fallback is applied.
+    std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
 
     bool selected_present = false;
     for (const auto& model : models) {
@@ -709,8 +737,7 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         if (!selected.is_object()) {
             selected = nlohmann::json::object();
         }
-        models.push_back(
-            agent_model_entry_from_json(config.model, selected, default_context_window));
+        models.push_back(agent_model_entry_from_json(config.model, selected, 0));
     }
 
     // Launch loads the selected model with its own ctx_size, which outranks the saved one.
@@ -718,9 +745,24 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         const int launch_ctx_size = config.recipe_options["ctx_size"].get<int>();
         for (auto& model : models) {
             if (model.id == config.model) {
-                model.context_window =
-                    launch_ctx_size > 0 ? launch_ctx_size : default_context_window;
+                model.context_window = launch_ctx_size > 0 ? launch_ctx_size : 0;
             }
+        }
+    }
+
+    // Pi compacts by contextWindow, so it waits for the load rather than
+    // guessing a window the auto-tuned model may not have.
+    if (config.agent == "pi" && !selected_unknown) {
+        for (auto& model : models) {
+            if (model.id == config.model && model.context_window <= 0) {
+                model.context_window = load_for_context_window(client, config);
+            }
+        }
+    }
+
+    for (auto& model : models) {
+        if (model.context_window <= 0) {
+            model.context_window = default_context_window;
         }
     }
 

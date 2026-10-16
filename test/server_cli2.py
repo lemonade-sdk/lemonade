@@ -2260,14 +2260,13 @@ sys.exit(0)
             self.assertEqual(model["contextWindow"], 4096)
             self.assertEqual(model["maxTokens"], 4096)
 
-    def test_132_launch_pi_auto_ctx_size_uses_fallback(self):
-        """A saved auto ctx_size (-1) gets the fallback window, not pi's own defaults."""
+    def test_132_launch_pi_auto_ctx_size_waits_for_the_load(self):
+        """An auto ctx_size is only known after the load, so pi gets the loaded window."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
-        options_url = (
-            f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options"
-        )
+        model_url = f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}"
+        options_url = f"{model_url}/options"
 
         def save_ctx_size(ctx_size):
             response = requests.post(
@@ -2283,13 +2282,18 @@ sys.exit(0)
         ).json()["saved"]
         save_ctx_size(-1)
         try:
+            run_cli_command(["unload", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_DEFAULT)
             with tempfile.TemporaryDirectory(
                 prefix="lemonade-launch-stub-"
             ) as temp_dir:
                 self._launch_pi(temp_dir)
                 model = self._pi_model_entry(temp_dir, ENDPOINT_TEST_MODEL)
-                self.assertEqual(model.get("contextWindow"), 40960)
-                self.assertEqual(model.get("maxTokens"), 40960)
+                loaded_ctx = requests.get(
+                    model_url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+                ).json()["context_length"]
+                self.assertNotEqual(loaded_ctx, 40960)
+                self.assertEqual(model.get("contextWindow"), loaded_ctx)
+                self.assertEqual(model.get("maxTokens"), loaded_ctx)
         finally:
             save_ctx_size(saved.get("ctx_size"))
 
