@@ -1769,6 +1769,19 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
     return cleared;
 }
 
+bool SystemInfo::is_backend_installed(const std::string& recipe, const std::string& backend) {
+    const auto* desc = backends::descriptor_for(recipe);
+    if (!desc) return false;
+    const std::string current_os = get_current_os();
+    const bool runs_here = std::any_of(desc->support.begin(), desc->support.end(),
+                                       [&](const BackendSupport& row) {
+                                           return row.backend == backend &&
+                                                  row.supported_os.count(current_os) > 0;
+                                       });
+    std::string ignored;
+    return runs_here && is_recipe_installed(recipe, backend, ignored);
+}
+
 std::string SystemInfo::check_guest_backend_installed(const std::string& recipe,
                                                       const json& system_info) {
     if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
