@@ -3818,11 +3818,13 @@ ${finalText}`
                 )}
                 {!currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
+                  <Icon name={currentDefaultModel.icon} size={14} />
                   </span>
                 )}
                 <span className="composer__model-button-name">{currentModel}</span>
                 {currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
+                  <Icon name={currentDefaultModel.icon} size={14} />
                   </span>
                 )}
                 {selectableModels.length > 0 && (
