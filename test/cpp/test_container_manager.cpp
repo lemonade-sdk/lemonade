@@ -110,11 +110,11 @@ void test_run_command() {
           docker_command == "docker" + common + " --group-add 44 --group-add 990" +
                                 mount_and_home + image_and_program);
 
-    ContainerRunSpec ds4 = example_spec();
-    ds4.devices = {"/dev/dri", "/dev/kfd"};
-    ds4.cap_add = {"SYS_PTRACE"};
-    ds4.env = {{"HIP_VISIBLE_DEVICES", "0"}, {"ROCBLAS_USE_HIPBLASLT", "1"}};
-    const std::string policy_command = join(ContainerManager(podman.host()).run_command(ds4));
+    ContainerRunSpec policy = example_spec();
+    policy.devices = {"/dev/dri", "/dev/kfd"};
+    policy.cap_add = {"SYS_PTRACE"};
+    policy.env = {{"HIP_VISIBLE_DEVICES", "0"}, {"ROCBLAS_USE_HIPBLASLT", "1"}};
+    const std::string policy_command = join(ContainerManager(podman.host()).run_command(policy));
     check("a policy's permissions and the command's variables follow the devices",
           policy_command.find(" --device /dev/dri --device /dev/kfd --group-add keep-groups"
                               " --cap-add SYS_PTRACE -v ") != std::string::npos &&
@@ -221,7 +221,7 @@ void test_helpers() {
     check("no index when no GPU matches", ContainerManager::gpu_index({0, 120001}, "gfx1151").empty());
 
     check("docker.io/kyuz0 is allowed",
-          ContainerManager::allowed_image("docker.io/kyuz0/strix-halo-ds4-toolbox"));
+          ContainerManager::allowed_image("docker.io/kyuz0/amd-strix-halo-toolboxes"));
     check("ghcr.io/peonist-ai is allowed",
           ContainerManager::allowed_image("ghcr.io/peonist-ai/halogen-flash-server"));
     check("other publishers are refused",
@@ -230,13 +230,13 @@ void test_helpers() {
               !ContainerManager::allowed_image("docker.io/kyuz0/"));
 
     const std::string digest =
-        "sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291";
-    const auto pin = lemon::backends::parse_container_pin("rocm-10.0@" + digest);
+        "sha256:e79f876de3be84200172552b7abe5686a230f1fce02caa65dbba90372e3255c6";
+    const auto pin = lemon::backends::parse_container_pin("vulkan-radv-performance@" + digest);
     check("a pin splits into tag and digest",
-          pin && pin->tag == "rocm-10.0" && pin->digest == digest);
+          pin && pin->tag == "vulkan-radv-performance" && pin->digest == digest);
     check("a pin needs a full sha256 digest",
-          !lemon::backends::parse_container_pin("rocm-10.0@sha256:1277") &&
-              !lemon::backends::parse_container_pin("rocm-10.0") &&
+          !lemon::backends::parse_container_pin("vulkan-radv-performance@sha256:e79f") &&
+              !lemon::backends::parse_container_pin("vulkan-radv-performance") &&
               !lemon::backends::parse_container_pin("b0001"));
 }
 
