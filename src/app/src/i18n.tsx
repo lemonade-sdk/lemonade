@@ -827,6 +827,8 @@ const ZH_CN: Record<string, string> = {
   'A session override is active.': '会话覆盖已生效。',
   'Loading diagram…': '正在加载图表…',
   'Diagram syntax error': '图表语法错误',
+  'Diagram rendering failed': '图表渲染失败',
+  'Copy diagnostics': '复制诊断信息',
   'Show diagram': '显示图表',
   'Show source': '显示源码',
   'Copy code': '复制代码',
