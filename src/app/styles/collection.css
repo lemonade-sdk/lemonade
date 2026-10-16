@@ -274,6 +274,73 @@
     background: var(--bg-secondary);
 }
 
+.router-candidates-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.router-new-model-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.router-new-model-btn {
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    border: 1px dashed var(--border-primary);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.1s, color 0.1s;
+}
+
+.router-new-model-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+}
+
+/* Above the surrounding modal (z-index 10000) so the first click anywhere
+   closes the menu instead of landing on the form behind it. */
+.router-new-model-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10700;
+}
+
+.router-new-model-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 10800;
+    background: var(--settings-bg, var(--bg-secondary));
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 140px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.router-new-model-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.router-new-model-item:hover {
+    background: var(--bg-alpha-1);
+}
+
 .router-candidate-row {
     display: flex;
     align-items: center;
