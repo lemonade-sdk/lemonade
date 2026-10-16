@@ -513,7 +513,7 @@ Page intros and concept sections stay hand-written between the regions, such as 
 
 ### Examples
 
-The Examples section gives each of the route's `examples` its own subsection, headed by its `name`, such as "Streaming". The subsection opens with the example's `description`, then has PowerShell and Bash tabs for the request and shows what lemond returned. A route with one example has a single Example section with no subsection. The Response format section then lists each format's Field Descriptions once, under a heading per format when the route has several. The list opens with the top-level `description` of the format's `RouteResponse::schema`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes lists each shape separately, opening with that shape's top-level `description`. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
+The Examples section gives each of the route's `examples` its own subsection, headed by its `name`, such as "Streaming". The subsection opens with the example's `description`, then has PowerShell and Bash tabs for the request and shows what lemond returned. A route with one example has a single Example section with no subsection. The Response format section then describes each format once, under a heading per format when the route has several. It opens with the top-level `description` of the format's `RouteResponse::schema`, then lists each property's `description`, with nested properties indented under their parent. A format with several shapes gives each shape a heading from its `title`, such as "Error event", then that shape's `description` and properties. A schema shared between routes, such as the routing decision, is listed in full wherever it appears. The generator builds and records examples by these rules:
 
 - **Arguments.** An example's `args` maps argument names to values, and each value goes where its `RouteArg::in` says: the path, the query string, the JSON body or the multipart form.
 - **Files.** A `@fixtures/<file>` marker is read from `docs/tools/fixtures/`. It is a whole value, or follows a prefix such as `data:image/png;base64,`. A JSON body argument shows it in curl as `$(base64 -w0 <file>)`, and a form argument as `-F <name>=@<file>`.
@@ -534,6 +534,7 @@ This section specifies what each route's text says. The generator prints each ro
 | `notes` | Behavior no argument, field or error can carry: side effects, interactions between arguments, or a concept that belongs to this route alone, under a `###` heading. One topic per note | The description, another note, a parameter row, a field description, a request or response, which belongs in `examples` |
 | `RouteArg::description` | What the argument controls, its accepted values, its default ("Defaults to `false`."), and when it is required if that depends on other arguments | Where the argument goes, the Required column, the route's behavior |
 | Top-level `description` of a `RouteResponse::schema`, or of one of its shapes | What the response is as a whole: how a stream's lines or events relate, such as which line ends it, or when this shape is returned | A field's meaning |
+| `title` of a shape | A short name for the shape, such as "Chunk" or "Error event" | The format, when the shape is returned |
 | Property `description` in a `RouteResponse::schema` | What the field means, and when it is present if it is not always | Its type, the route's behavior |
 | `RouteError::when` | The condition that produces the error, as a clause such as "`id` names no job". For an error passed through from a backend, also that the backend's status replaces this one | The status, the code, the body's message |
 | `RouteExample::name` | A lowercase label for what differs, such as `streaming` or `save` | Formats the name already implies |
@@ -569,7 +570,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - any generated text is stale
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
-- a JSON format has no `schema`, or another format has one
+- a JSON format has no `schema`, or another format has one, or a shape in a `oneOf` has no `title`
 - a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it or lists one its base class never writes for it
 - a route's `description`, `notes` or argument descriptions name an error status, such as `404`
 - a `Raw` route other than MCP's JSON-RPC endpoint reads its request body
@@ -680,8 +681,6 @@ data: [DONE]
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
