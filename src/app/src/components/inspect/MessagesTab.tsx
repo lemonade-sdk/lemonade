@@ -139,7 +139,7 @@ export default function MessagesTab({
     } else {
       const payload = {
         input: {
-          value: selectedTrace.messages.map((m) => ({
+          value: selectedTrace.messages.filter((m) => !m.capturedOutput).map((m) => ({
             role: m.role,
             content: m.content,
             ...(m.thinking ? { thinking: m.thinking } : {})
