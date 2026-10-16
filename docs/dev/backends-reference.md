@@ -13,7 +13,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
-| `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
@@ -37,7 +37,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
+| `ds4` | rocm | guest | native | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
@@ -47,6 +47,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | core | native | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
@@ -62,7 +63,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | experimental | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |

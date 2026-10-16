@@ -4,9 +4,9 @@ A container backend runs its server from a container image instead of a download
 
 Container backends run on Linux with Podman or Docker. Lemonade uses Podman when it is installed, and Docker otherwise.
 
-| Backend | Image |
-|---------|-------|
-| `ds4:rocm` | `docker.io/kyuz0/strix-halo-ds4-toolbox` |
+| Backend | Engine | Image |
+|---------|--------|-------|
+| `llamacpp:nathanw` | llama.cpp Vulkan performance fork | `docker.io/kyuz0/amd-strix-halo-toolboxes` |
 
 ## Setup
 
@@ -38,11 +38,11 @@ Until setup is complete, the backend's state is `action_required`. `lemonade bac
 ## Install and Run
 
 ```bash
-lemonade backends install ds4:rocm
-lemonade run DeepSeek-V4-Flash-Vision-IQ2XXS-DS4
+lemonade backends install llamacpp:nathanw
+lemonade run Qwen3-4B-GGUF --llamacpp nathanw
 ```
 
-Install pulls the image, so loading a model starts from the image already on disk. `lemonade backends uninstall ds4:rocm` removes it.
+Install pulls the image, so loading a model starts from the image already on disk. `lemonade backends uninstall llamacpp:nathanw` removes it.
 
 ## How Containers Run
 

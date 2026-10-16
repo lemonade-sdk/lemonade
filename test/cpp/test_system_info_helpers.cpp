@@ -5,8 +5,10 @@
 // Build: cmake --build --preset default --target test_system_info_helpers
 // Run:   ctest --test-dir build -R '^SystemInfoHelpersTest$' --output-on-failure
 
+#include "platform/nvidia_metrics.h"
 #include "system_info_utils.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -44,6 +46,13 @@ static bool expect_bool(const char* name, bool actual, bool expected) {
                     actual ? "true" : "false",
                     expected ? "true" : "false");
     }
+    return ok;
+}
+
+static bool expect_double(const char* name, double actual, double expected) {
+    const bool ok = std::fabs(actual - expected) <= 1e-9;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) std::printf("  got: %.6f, expected: %.6f\n", actual, expected);
     return ok;
 }
 
@@ -357,6 +366,89 @@ int main() {
     failures += !expect_string(
         "neither half available yields an empty name",
         gpu_display_name("", ""), "");
+
+    // The largest GPU-accessible memory pool is the stable primary, not the
+    // GPU with the highest instantaneous utilization or VRAM usage.
+    {
+        lemon::GpuMetricsTracker tracker;
+        std::vector<lemon::GpuDeviceMetrics> devices = {
+            {"amd:0000:c1:00.0", "amd", "Strix Halo", "shared", 25.0, 120.0, 18.0},
+            {"nvidia:GPU-1", "nvidia", "RTX", "dedicated", 95.0, 24.0, 12.0},
+            {"amd:0000:01:00.0", "amd", "small dGPU", "dedicated", 100.0, 2.0, 1.0}
+        };
+        auto stats = tracker.update(devices);
+        failures += !expect_string("Strix Halo ranks first by capacity",
+                                   stats.primary_gpu_id, "amd:0000:c1:00.0");
+        failures += !expect_double("primary utilization belongs to Strix Halo",
+                                   stats.gpu_percent, 25.0);
+        failures += !expect_double("primary memory belongs to Strix Halo",
+                                   stats.vram_used_gb, 18.0);
+        failures += !expect_bool("three devices are individually represented",
+                                 stats.gpus.size() == 3, true);
+        failures += !expect_string("NVIDIA remains slot two",
+                                   stats.gpus.at(1).id, "nvidia:GPU-1");
+
+        devices[0].gpu_percent = 0.0;
+        devices[1].gpu_percent = 100.0;
+        devices[2].gpu_percent = 0.0;
+        stats = tracker.update(devices);
+        failures += !expect_string("utilization changes never switch primary",
+                                   stats.primary_gpu_id, "amd:0000:c1:00.0");
+        failures += !expect_double("primary utilization is valid zero",
+                                   stats.gpu_percent, 0.0);
+
+        // Simulate one poll with only NVIDIA data: retain device identity and
+        // memory capacity, but do not reuse stale live values.
+        stats = tracker.update({devices[1]});
+        failures += !expect_string("transient telemetry loss preserves primary",
+                                   stats.primary_gpu_id, "amd:0000:c1:00.0");
+        failures += !expect_double("unavailable primary utilization stays unknown",
+                                   stats.gpu_percent, -1.0);
+        failures += !expect_double("unavailable primary usage stays unknown",
+                                   stats.vram_used_gb, -1.0);
+        failures += !expect_double("remembered primary capacity remains stable",
+                                   stats.gpus.at(0).memory_total_gb, 120.0);
+    }
+    {
+        lemon::GpuMetricsTracker tracker;
+        const auto stats = tracker.update({
+            {"nvidia:GPU-a", "nvidia", "GPU A", "dedicated", 90.0, 8.0, 1.0},
+            {"nvidia:GPU-b", "nvidia", "GPU B", "dedicated", 3.0, 24.0, 20.0}
+        });
+        failures += !expect_string("NVIDIA multi GPU selects capacity, not activity",
+                                   stats.primary_gpu_id, "nvidia:GPU-b");
+        failures += !expect_double("paired utilization comes from selected GPU",
+                                   stats.gpu_percent, 3.0);
+        failures += !expect_double("paired memory comes from selected GPU",
+                                   stats.vram_used_gb, 20.0);
+    }
+    {
+        lemon::GpuMetricsTracker tracker;
+        const auto stats = tracker.update({
+            {"nvidia:GPU-unknown", "nvidia", "unified GPU", "unknown", 40.0, -1.0, -1.0},
+            {"amd:card0", "amd", "dGPU", "dedicated", 0.0, 2.0, 0.0}
+        });
+        failures += !expect_string("unknown capacity is not assumed zero",
+                                   stats.gpus.back().id, "nvidia:GPU-unknown");
+        failures += !expect_double("valid zero GPU memory is preserved",
+                                   stats.vram_used_gb, 0.0);
+    }
+    {
+        lemon::NvidiaNvmlDevice gpu;
+        gpu.index = 7;
+        gpu.uuid = "GPU-test";
+        gpu.name = "RTX";
+        gpu.vram_total_gb = 32.0;
+        gpu.vram_used_gb = 14.0;
+        gpu.gpu_percent = -1.0;
+        const auto sample = lemon::nvidia_device_metrics(gpu);
+        failures += !expect_string("NVIDIA UUID creates stable device id",
+                                   sample.id, "nvidia:GPU-test");
+        failures += !expect_double("NVML used memory survives failed utilization",
+                                   sample.memory_used_gb, 14.0);
+        failures += !expect_string("NVML memory totals do not prove dedicated VRAM",
+                                   sample.memory_type, "unknown");
+    }
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

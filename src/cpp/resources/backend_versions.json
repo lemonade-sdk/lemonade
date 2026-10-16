@@ -41,6 +41,11 @@
           "trellis-cuda-windows-x64.zip": "sha256:47b87271f8b644a8e50767f6d58d5baf597e1aa6bb46b809a5e5d5b0ac741b29"
         }
       },
+      "lemonade-sdk/ds4-rocm": {
+        "b0001": {
+          "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz": "sha256:e63b7c9428fd10de75b3f69164eccd564a8e7261c2f9087cd8bec2b4b19a8ad1"
+        }
+      },
       "ROCm/ggml-staging-automation": {
         "hrx-b99": {
           "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
@@ -50,11 +55,12 @@
   },
   "llamacpp": {
     "vulkan": "b11393",
-    "rocm-stable": "b11395",
+    "rocm-stable": "b11580",
     "rocm-nightly": "b1338",
     "cuda": "b11395",
     "metal": "b11393",
-    "cpu": "b11393"
+    "cpu": "b11393",
+    "nathanw": "vulkan-radv-performance@sha256:e79f876de3be84200172552b7abe5686a230f1fce02caa65dbba90372e3255c6"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b99"
@@ -67,17 +73,17 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-894-017cc8e",
-    "rocm-stable": "master-894-017cc8e",
-    "vulkan": "master-894-017cc8e",
-    "cuda": "master-894-017cc8e",
-    "metal": "master-894-017cc8e"
+    "cpu": "master-957-90e86d1",
+    "rocm-stable": "master-957-90e86d1",
+    "vulkan": "master-957-90e86d1",
+    "cuda": "master-957-90e86d1",
+    "metal": "master-957-90e86d1"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291"
+    "rocm": "b0001"
   },
   "therock": {
-    "version": "10.0.0",
+    "version": "10.1.0",
     "architectures": [
       "gfx908",
       "gfx90a",
@@ -139,7 +145,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.7"
+    "npu": "v1.0.9"
   },
   "kokoro": {
     "cpu": "b21",

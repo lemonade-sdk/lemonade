@@ -238,7 +238,7 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
     auto result = SystemInfo::get_supported_backends(recipe);
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
-        == result.backends.end()) {
+        == result.backends.end() && !SystemInfo::is_backend_installed(recipe, value)) {
         std::string allowed = "auto";
         for (const auto& b : result.backends) {
             allowed += ", " + b;
