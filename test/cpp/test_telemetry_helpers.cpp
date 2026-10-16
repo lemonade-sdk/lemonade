@@ -226,6 +226,35 @@ int main() {
             check_int("extract_telemetry: responses output_tokens", tel.output_tokens, 40);
         }
 
+        // 1a-2. Engine timings beyond the core counts, plus the response id.
+        {
+            nlohmann::json gufo_body = nlohmann::json::parse(
+                "{\"id\": \"chatcmpl-7\", \"timings\": {\"prompt_n\": 1000, \"predicted_n\": 50, "
+                "\"prompt_ms\": 1200.0, \"prompt_per_second\": 833.33, "
+                "\"predicted_per_second\": 41.25, \"cache_n\": 900, "
+                "\"draft_n\": 86, \"draft_n_accepted\": 70}}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(gufo_body);
+            check_eq("extract_telemetry: response id captured", tel.upstream_id, std::string("chatcmpl-7"));
+            check_double_val("extract_telemetry: prompt_per_second", tel.prompt_per_second, 833.33);
+            check_int("extract_telemetry: draft_n", tel.draft_tokens, 86);
+            check_int("extract_telemetry: draft_n_accepted", tel.draft_tokens_accepted, 70);
+            check_eq("extract_telemetry: no detail without a task id", tel.detail_suffix(), std::string(""));
+            tel.task_id = 5;
+            check_eq("extract_telemetry: detail fields render as trailing key=value",
+                     tel.detail_suffix(),
+                     std::string(", task=5 (id=chatcmpl-7), pp=833.33 t/s, cached=900, draft=70/86 (81.4%)"));
+        }
+
+        // 1a-3. A provider reporting neither timings nor drafts keeps the plain line.
+        {
+            nlohmann::json plain_body = nlohmann::json::parse(
+                "{\"id\": \"chatcmpl-1\", \"usage\": {\"prompt_tokens\": 12, \"completion_tokens\": 5}}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(plain_body);
+            tel.task_id = 9;
+            check_eq("extract_telemetry: only task and id when nothing else reported",
+                     tel.detail_suffix(), std::string(", task=9 (id=chatcmpl-1)"));
+        }
+
         // 1b. Cached tokens from usage.prompt_tokens_details (OpenAI-wire)
         {
             std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 8}}}\n";

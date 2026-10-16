@@ -10,9 +10,10 @@
 
 namespace lemon {
 
-namespace {
-
-void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
+void StreamingProxy::extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
+    if (chunk.contains("id") && chunk["id"].is_string() && telemetry.upstream_id.empty()) {
+        telemetry.upstream_id = chunk["id"].get<std::string>();
+    }
     nlohmann::json usage;
     if (chunk.contains("usage")) {
         usage = chunk["usage"];
@@ -72,11 +73,22 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         if (timings.contains("predicted_per_second")) {
             telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
         }
+        if (timings.contains("prompt_per_second") && timings["prompt_per_second"].is_number()) {
+            telemetry.prompt_per_second = timings["prompt_per_second"].get<double>();
+        }
+        if (timings.contains("draft_n") && timings["draft_n"].is_number()) {
+            telemetry.draft_tokens = timings["draft_n"].get<int>();
+        }
+        if (timings.contains("draft_n_accepted") && timings["draft_n_accepted"].is_number()) {
+            telemetry.draft_tokens_accepted = timings["draft_n_accepted"].get<int>();
+        }
         if (timings.contains("cache_n") && timings["cache_n"].is_number()) {
             telemetry.cache_tokens = timings["cache_n"].get<int>();
         }
     }
 }
+
+namespace {
 
 struct Field {
     std::string_view name;
