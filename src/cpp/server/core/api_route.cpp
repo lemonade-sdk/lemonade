@@ -385,6 +385,16 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                 return false;
             }
         }
+        if (arg.in == ArgIn::JsonBody) {
+            for (const auto& alias : arg.aliases) {
+                auto it = req.body.find(alias);
+                if (it == req.body.end()) continue;
+                if (!req.body.contains(arg.name)) {
+                    req.body[arg.name] = std::move(*it);
+                }
+                req.body.erase(alias);
+            }
+        }
         if (!present && arg.required) {
             std::string message = "Missing required argument '" + arg.name + "'";
             for (const auto& alias : arg.aliases) {

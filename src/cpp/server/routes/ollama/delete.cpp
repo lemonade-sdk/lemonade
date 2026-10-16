@@ -36,7 +36,7 @@ public:
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to delete. `name` is its older name, and wins when both are given.",
+             "Model to delete.",
              {"name"}},
         };
 
@@ -60,7 +60,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
             const json& request_json = req.body;
-            std::string name = strip_latest_tag(request_json.value("name", request_json.value("model", "")));
+            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
 
             if (name.empty()) {
                 res.status = kNameRequired.status;

@@ -81,7 +81,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         const json& req_json = req.body;
         std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
-        std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
+        std::string target = utils::normalize_model_name(req_json.value("target", ""));
 
         if (alias.empty() || target.empty()) {
             write_alias_error(res, kBlankField, "Alias and target fields are required");

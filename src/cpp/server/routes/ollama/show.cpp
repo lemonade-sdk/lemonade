@@ -55,7 +55,7 @@ public:
         s.description = "Describes one registered model in Ollama's format.";
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Model to describe. `name` is its older name, and wins when both are given.",
+             "Model to describe.",
              {"name"}},
         };
 
@@ -90,8 +90,7 @@ public:
         try {
             const json& request_json = req.body;
 
-            std::string name = strip_latest_tag((!request_json.value("model", "").empty() && request_json.value("name", "").empty()) ?
-            request_json.value("model", "") : request_json.value("name", ""));
+            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
 
             if (name.empty()) {
                 res.status = kNameRequired.status;

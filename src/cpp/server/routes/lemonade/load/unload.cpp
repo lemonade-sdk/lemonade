@@ -64,12 +64,7 @@ public:
 
             json& request_json = req.body;
             resolve_model_name(ctx_, request_json);
-            std::string model_name;
-            if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
-                model_name = request_json["model_name"].get<std::string>();
-            } else if (request_json.contains("model") && request_json["model"].is_string()) {
-                model_name = request_json["model"].get<std::string>();
-            }
+            std::string model_name = request_json.value("model_name", "");
 
             ctx_.router->unload_model(model_name);  // Empty string = unload all
 

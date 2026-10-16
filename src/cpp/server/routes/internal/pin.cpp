@@ -33,7 +33,7 @@ public:
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Loaded model to pin or unpin. `model` wins when both are sent.", {"model"}},
+             "Loaded model to pin or unpin.", {"model"}},
             {"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, true, Support::Available,
              "`true` pins the model; `false` unpins it."},
         };
@@ -65,9 +65,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
             const json& request_json = req.body;
-            std::string model_name = request_json.contains("model") ?
-                request_json["model"].get<std::string>() :
-                request_json["model_name"].get<std::string>();
+            std::string model_name = request_json["model_name"].get<std::string>();
             bool pinned = request_json["pinned"].get<bool>();
 
             std::string canonical_name = ctx_.model_manager->resolve_model_name(model_name);

@@ -448,7 +448,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` or `name` | Yes | Model to describe. `name` is its older name, and wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to describe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -537,7 +537,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` or `name` | Yes | Model to delete. `name` is its older name, and wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to delete. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Success answers `200` with an empty body, as Ollama does.
 
@@ -587,7 +587,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` or `name` | Yes | Model to download. `name` is its older name, and wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to download. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.

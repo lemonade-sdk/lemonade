@@ -214,10 +214,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         json& request_json = req.body;
         try {
-            // Accept both "model" and "model_name" for compatibility
-            std::string model_name = request_json.contains("model") ?
-                request_json["model"].get<std::string>() :
-                request_json["model_name"].get<std::string>();
+            std::string model_name = request_json["model_name"].get<std::string>();
 
             std::string checkpoint = request_json.value("checkpoint", "");
             std::string recipe = request_json.value("recipe", "");
