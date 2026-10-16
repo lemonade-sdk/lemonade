@@ -119,6 +119,13 @@ bool matches_schema(const json& value, const json& schema, bool from_query) {
     return true;
 }
 
+bool allows_null(const json& schema) {
+    if (!schema.contains("type")) return false;
+    const json& types = schema["type"];
+    return types.is_array() ? std::find(types.begin(), types.end(), "null") != types.end()
+                            : types == "null";
+}
+
 std::string describe_schema(const json& schema) {
     if (schema.contains("enum")) return "one of " + schema["enum"].dump();
     if (schema.contains("const")) return schema["const"].dump();
@@ -360,7 +367,7 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                 auto it = req.body.find(name);
                 if (it == req.body.end()) continue;
                 if (it->is_null()) {
-                    if (!matches_schema(*it, arg.schema, false)) {
+                    if (!allows_null(arg.schema)) {
                         req.body.erase(it);
                     }
                     continue;
