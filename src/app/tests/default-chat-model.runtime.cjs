@@ -56,12 +56,12 @@ function loadModule() {
 
 const defaults = loadModule();
 assert.deepEqual(
-  defaults.LEMONADE_DEFAULT_CHAT_MODELS.map(model => [model.name, model.tier, model.label, model.icon]),
+  defaults.LEMONADE_DEFAULT_CHAT_MODELS.map(model => [model.name, model.tier, model.label]),
   [
-    ['Bonsai-8B-gguf', 'tiny', 'default tiny', 'minimize-2'],
-    ['Qwen3.5-4B-GGUF', 'quality', 'default quality', 'gem'],
+    ['Bonsai-8B-gguf', 'tiny', 'default tiny'],
+    ['Qwen3.5-4B-GGUF', 'quality', 'default quality'],
   ],
-  'the two replaceable Lemonade defaults and their hover roles must stay centralized',
+  'the two replaceable Lemonade defaults and their roles must stay centralized',
 );
 assert.equal(defaults.loadPreferredDefaultModelName(), 'Bonsai-8B-gguf');
 assert.equal(defaults.savePreferredDefaultModelName('Qwen3.5-4B-GGUF'), 'Qwen3.5-4B-GGUF');
@@ -96,7 +96,7 @@ assert.match(chatSource, /resolveLastReadyChatModel\(knownModelInfos, lastReadyM
 assert.match(chatSource, /const currentModel = fallbackModelOverride\s*\|\| selectedModel/,
   'an explicitly selected deferred default must not be displaced by a background health refresh');
 assert.match(chatSource, /\|\| preferredDefaultModelName/);
-assert.match(chatSource, /const preparedSnapshot = await ensureChatModelReady\(currentModel, currentKnownModelInfo\)/);
+assert.match(chatSource, /const preparedSnapshot = await ensureChatModelReady\(currentModel, currentKnownModelInfo/);
 assert.match(chatSource, /await api\.pullModel\(modelName/);
 assert.match(chatSource, /if \(!sawDownload\) return false;[\s\S]*terminal\?\.status === 'error'/,
   'a previous failed download must remain retryable on the next send');
@@ -104,10 +104,17 @@ assert.match(chatSource, /messages: \[userMessage\]/,
   'the user message must become visible before a potentially long first download');
 assert.match(chatSource, /Lemonade Server is not connected[\s\S]*isError: true/,
   'send failures must produce an assistant response instead of returning silently');
-assert.match(chatSource, /title=\{option\.defaultLabel\}/,
-  'Tiny and Quality roles must be exposed through an icon hover title');
+assert.match(chatSource,
+  /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);/,
+  'the Tiny/Quality role must travel in the picker row detail parts');
+assert.match(chatSource,
+  /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);[\s\S]*?meta=\{detailParts\}/,
+  'those detail parts must reach the picker row as its meta line');
 assert.doesNotMatch(chatSource, /Bonsai-8B-gguf|Qwen3\.5-4B-GGUF/,
   'default model names must remain isolated in the replaceable configuration module');
-assert.match(stylesSource, /\.composer__model-default-icon/);
+assert.doesNotMatch(chatSource, /composer__model-default-icon/,
+  'the Tiny/Quality icon treatment was dropped by design and must not come back');
+assert.doesNotMatch(stylesSource, /\.composer__model-default-icon/,
+  'the dropped Tiny/Quality icon must not leave dead styles behind');
 
 console.log('Default chat model fallback contract checks passed.');

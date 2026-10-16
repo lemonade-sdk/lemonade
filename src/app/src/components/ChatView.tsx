@@ -1219,7 +1219,6 @@ const ChatView: React.FC<ChatViewProps> = ({
     && !isCollectionModel(currentEffectiveSettingsModelInfo);
   // A collection deploys as chat; its Omni surface comes from the recipe.
   const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
-  const currentDefaultModel = lemonadeDefaultModel(currentModel);
 
   useEffect(() => {
     if (!currentLoadedModel || currentCapability !== 'chat') return;
@@ -3816,15 +3815,7 @@ ${finalText}`
                 ) : (
                   <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
                 )}
-                {!currentLoadedModel && currentDefaultModel && (
-                  <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                  </span>
-                )}
                 <span className="composer__model-button-name">{currentModel}</span>
-                {currentLoadedModel && currentDefaultModel && (
-                  <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                  </span>
-                )}
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
                 )}

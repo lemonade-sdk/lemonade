@@ -3,7 +3,6 @@ import { capabilityFromModelInfo } from '../modelCapabilities';
 import { storageKey } from '../storage';
 
 export type LemonadeDefaultModelTier = 'tiny' | 'quality';
-export type LemonadeDefaultModelIcon = 'minimize-2' | 'gem';
 
 export interface LemonadeDefaultChatModel {
   name: string;
