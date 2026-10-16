@@ -29,14 +29,13 @@ Comment: Tauri application and installer artwork with dependencies:
  - markdown-it-texmath (Expat/MIT)
  - mermaid (Expat/MIT)
  - react and react-dom (Expat/MIT)
- - recharts (Expat/MIT)
 
 Files: src/web-app/system-stubs/*
 Copyright: 2026 Advanced Micro Devices, Inc. (AMD)
 License: Apache-2.0
 Comment: Original conservative fallback implementations used only by distro
  system-node builds when selected npm packages are unavailable as system
- packages. These files are not copied from DOMPurify, Mermaid, Recharts, or
+ packages. These files are not copied from DOMPurify, Mermaid, or
  highlight.js upstream source code.
 
 Files: docs/assets/favicon.ico
