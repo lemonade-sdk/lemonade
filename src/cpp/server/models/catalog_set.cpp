@@ -40,7 +40,8 @@ std::vector<std::shared_ptr<ModelCatalog>> product_catalogs(const CatalogSetDeps
 
     for (const auto& configured : deps.configured_catalogs) {
         catalogs.push_back(make_configured_catalog(configured, deps.registry_rows,
-                                                   deps.catalog_cache_dir));
+                                                   deps.catalog_cache_dir,
+                                                   deps.catalog_fetch_clock));
     }
 
     if (deps.scan_extra_models) {

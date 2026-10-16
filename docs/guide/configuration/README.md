@@ -293,13 +293,13 @@ Backend-specific settings are nested under their backend name:
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
-**model_catalogs** — Extra model registries, read every time the model set is built. Array, one object per catalog:
+**model_catalogs** — Extra model registries. Array, one object per catalog. A file is read on every rebuild; a fetched document answers from its cached body for a minute after a fetch, so a rebuild caused by a local event (a pull, a delete, a file in the scan directory) costs no round trip. Changing `model_catalogs` asks every origin again:
 
 | Key | Description |
 |-----|-------------|
 | `id` | Stable name: letters, digits, `.`, `_`, `-`. Keys the catalog set, and a fetched body is kept under it. |
 | `path` | A JSON file with the same shape as `user_models.json`. Name exactly one of `path` or `url`. |
-| `url` | An HTTP(S) URL serving such a document. A body that answers once is kept, and an outage lists what the catalog listed last instead of nothing. |
+| `url` | An HTTP(S) URL serving such a document. A body that answers once is kept, and an outage lists what the catalog listed last instead of nothing. An edit at the origin appears once the window above passes, or on the next `model_catalogs` change. |
 | `required` | True: a catalog that cannot be read fails the build. Default false: it contributes nothing. |
 | `allow_insecure_http` | Needed for an `http://` URL; an `https://` URL never asks for it. |
 

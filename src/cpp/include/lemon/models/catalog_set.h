@@ -29,6 +29,7 @@ struct CatalogSetDeps {
 
     std::vector<ConfiguredCatalog> configured_catalogs;
     std::string catalog_cache_dir;
+    std::shared_ptr<const CatalogFetchClock> catalog_fetch_clock;
 
     bool offline = false;
     std::function<std::vector<std::string>()> dynamic_recipes;

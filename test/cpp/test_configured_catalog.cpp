@@ -8,6 +8,7 @@
 #include "support/test_state_isolation.h"
 
 #include <cstdio>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -18,6 +19,7 @@ using lemon::json;
 using lemon::ModelInfo;
 using lemon::models::CatalogAccumulator;
 using lemon::models::CatalogSet;
+using lemon::models::CatalogFetchClock;
 using lemon::models::CatalogSetDeps;
 using lemon::models::ConfiguredCatalog;
 using lemon::models::Conflict;
@@ -51,6 +53,17 @@ static std::string refusal_for(const json& entry) {
     return parsed.refusals.empty() ? std::string() : parsed.refusals.front();
 }
 
+static std::shared_ptr<lemon::models::ModelCatalog> pick(
+    const std::vector<std::shared_ptr<lemon::models::ModelCatalog>>& catalogs,
+    const std::string& id) {
+    for (const auto& catalog : catalogs) {
+        if (catalog->id() == id) {
+            return catalog;
+        }
+    }
+    return nullptr;
+}
+
 static std::size_t enumerate(const std::shared_ptr<lemon::models::ModelCatalog>& catalog) {
     CatalogAccumulator accumulator;
     catalog->enumerate(accumulator);
@@ -60,6 +73,7 @@ static std::size_t enumerate(const std::shared_ptr<lemon::models::ModelCatalog>&
 struct CatalogHost {
     httplib::Server svr;
     std::thread thread;
+    std::atomic<int> reads{0};
     int port = 0;
     std::string body = R"({"Fetched-Model":{"recipe":"llamacpp","labels":["chat"]}})";
 
@@ -69,6 +83,7 @@ struct CatalogHost {
             return;
         }
         svr.Get("/models.json", [this](const httplib::Request&, httplib::Response& res) {
+            ++reads;
             res.set_content(body, "application/json");
         });
         thread = std::thread([this] { svr.listen_after_bind(); });
@@ -204,6 +219,30 @@ static void http_catalog_tests(const fs::path& scratch) {
     check("a configured url contributes its models", enumerate(catalog) == 1);
     check("a fetched body is cached under the catalog id",
           fs::exists(cache / "catalogs" / "fleet.json"));
+
+    const auto clock = std::make_shared<CatalogFetchClock>();
+    const auto record =
+        parse_one(json{{"id", "fleet"}, {"url", host.url()}, {"allow_insecure_http", true}});
+
+    CatalogSetDeps shared;
+    shared.catalog_cache_dir = (scratch / "shared-clock").string();
+    shared.configured_catalogs = {record};
+    shared.catalog_fetch_clock = clock;
+
+    const int before_build = host.reads.load();
+    check("a configured catalog reaches the build through its deps",
+          enumerate(pick(product_catalogs(shared), "fleet")) == 1 &&
+          host.reads == before_build + 1);
+    check("the next build with the same clock asks nothing",
+          enumerate(pick(product_catalogs(shared), "fleet")) == 1 &&
+          host.reads == before_build + 1);
+
+    CatalogSetDeps unclocked = shared;
+    unclocked.catalog_fetch_clock.reset();
+    unclocked.catalog_cache_dir = (scratch / "no-clock").string();
+    check("a build with no clock reads the document",
+          enumerate(pick(product_catalogs(unclocked), "fleet")) == 1 &&
+          host.reads == before_build + 2);
 
     const std::string unreachable = "http://127.0.0.1:9/models.json";
     const auto missing = make_configured_catalog(

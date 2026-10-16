@@ -1053,6 +1053,7 @@ set(SOURCES_CORE
     src/cpp/server/models/listed_catalog.cpp
     src/cpp/server/models/model_sources.cpp
     src/cpp/server/models/catalog_set.cpp
+    src/cpp/server/models/catalog_fetch_clock.cpp
     src/cpp/server/models/catalog_locator.cpp
     src/cpp/server/models/configured_catalog.cpp
     src/cpp/server/models/registry_documents.cpp

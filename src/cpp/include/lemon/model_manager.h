@@ -21,6 +21,7 @@
 #include "model_types.h"
 #include "models/alias_manager.h"
 #include "models/catalog_descriptor.h"
+#include "models/catalog_fetch_clock.h"
 #include "models/change_notifier.h"
 #include "models/download_progress.h"
 #include "models/ingest.h"
@@ -547,6 +548,8 @@ private:
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
 
     std::unique_ptr<models::CatalogSet> catalog_set_;
+    std::shared_ptr<const models::CatalogFetchClock> catalog_fetch_clock_ =
+        std::make_shared<models::CatalogFetchClock>();
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name

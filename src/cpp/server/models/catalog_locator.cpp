@@ -132,6 +132,11 @@ class HttpCatalogLocator final : public CatalogLocator {
             *observed = CatalogState{};
         }
         const CatalogState cached = cached_state();
+        if (cached.present && served_from_this_process()) {
+            if (auto document = serve_cache(observed, cached)) {
+                return document;
+            }
+        }
 
         std::optional<utils::HttpResponse> response;
         try {
@@ -142,6 +147,7 @@ class HttpCatalogLocator final : public CatalogLocator {
 
         if (response) {
             if (response->status_code == 304) {
+                mark_fetched();
                 return serve_cache(observed, cached);
             }
             if (response->status_code >= 200 && response->status_code < 300) {
@@ -149,6 +155,7 @@ class HttpCatalogLocator final : public CatalogLocator {
                     nlohmann::json document = parse_document(id_, response->body);
                     // A body that does not parse never becomes the last good one.
                     write_cache(*response);
+                    mark_fetched();
                     if (observed) {
                         *observed = state_of(*response);
                     }
@@ -201,6 +208,16 @@ class HttpCatalogLocator final : public CatalogLocator {
     }
 
   private:
+    bool served_from_this_process() const {
+        return source_.clock && source_.clock->fresh(id_, source_.fresh_for);
+    }
+
+    void mark_fetched() const {
+        if (source_.clock) {
+            source_.clock->mark_fetched(id_);
+        }
+    }
+
     fs::path body_path() const { return utils::path_from_utf8(source_.cache_path); }
 
     fs::path validators_path() const {
