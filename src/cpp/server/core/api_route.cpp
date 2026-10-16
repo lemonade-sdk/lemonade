@@ -1,6 +1,5 @@
 #include "lemon/server/api_route.h"
 
-#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <stdexcept>
@@ -21,18 +20,17 @@ using json = nlohmann::json;
 
 const RouteError kBackendError{
     500, "", "The backend reports an error; the backend's own status replaces this one when it sends one"};
+const RouteError ApiRoute::kBodyNotJson{400, "", "The body is empty or is not valid JSON"};
+const RouteError ModelRoute::kFormNotMultipart{400, "", "The request is not `multipart/form-data`"};
+const RouteError ModelRoute::kFormValueInvalid{
+    400, "", "A numeric form field does not parse as its parameter's type"};
+const RouteError ModelRoute::kModelMissing{400, "", "The request names no `model`"};
+const RouteError ModelRoute::kUnexpectedException{
+    500, "", "The request fails unexpectedly, for example on a parameter of the wrong JSON type"};
 const RouteError kNoOutputError{
     502, "", "The backend produces no output, for example after it crashes or runs out of GPU memory"};
 
 namespace {
-
-const RouteError kInvalidBody{400, "", "The body is empty or is not valid JSON"};
-const RouteError kNotMultipart{400, "", "The request is not `multipart/form-data`"};
-const RouteError kInvalidFormValue{
-    400, "", "A numeric form field does not parse as its parameter's type"};
-const RouteError kMissingModel{400, "", "The request names no `model`"};
-const RouteError kRouteException{
-    500, "", "The request fails unexpectedly, for example on a parameter of the wrong JSON type"};
 
 const char* to_string(Prefixes prefixes) {
     switch (prefixes) {
@@ -249,22 +247,10 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
 void ApiRoute::write_invalid_body(const RouteRequest& req, const std::exception& error,
                                   httplib::Response& res) const {
     if (req.http.body.empty()) {
-        write_plain_error(res, kInvalidBody, "Request body is required but was empty");
+        write_plain_error(res, kBodyNotJson, "Request body is required but was empty");
         return;
     }
-    write_plain_error(res, kInvalidBody, std::string("Invalid JSON in request body: ") + error.what());
-}
-
-std::vector<RouteError> ApiRoute::invalid_body_errors() const {
-    return {kInvalidBody};
-}
-
-std::vector<RouteError> ApiRoute::inherited_errors(const RouteSpec& spec) const {
-    if (spec.request_format == RequestFormat::Json ||
-        spec.request_format == RequestFormat::OptionalJson) {
-        return invalid_body_errors();
-    }
-    return {};
+    write_plain_error(res, kBodyNotJson, std::string("Invalid JSON in request body: ") + error.what());
 }
 
 void ApiRoute::stream_response(RouteRequest& req, httplib::Response& res, StreamFn fn,
@@ -319,7 +305,7 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
         }
 
         if (!req.body.contains("model")) {
-            write_openai_error(res, kMissingModel, "Missing 'model' field in request");
+            write_openai_error(res, kModelMissing, "Missing 'model' field in request");
             return;
         }
 
@@ -354,35 +340,12 @@ void ModelRoute::write_exception(const std::exception& error, httplib::Response&
         return;
     }
     LOG(ERROR, "Server") << "Request failed: " << error.what() << std::endl;
-    write_plain_error(res, kRouteException, error.what());
-}
-
-std::vector<RouteError> ModelRoute::exception_errors() const {
-    return {ModelLoader::kRouterResidencyConflict, kRouteException};
-}
-
-std::vector<RouteError> ModelRoute::inherited_errors(const RouteSpec& spec) const {
-    std::vector<RouteError> errors = ApiRoute::inherited_errors(spec);
-    if (spec.request_format == RequestFormat::Form) {
-        errors.push_back(kNotMultipart);
-        errors.push_back(kInvalidFormValue);
-    }
-    // A route whose model is optional fills it in during validate(), so step 4 never fires.
-    const bool model_required =
-        std::any_of(spec.args.begin(), spec.args.end(),
-                    [](const RouteArg& arg) { return arg.name == "model" && arg.required; });
-    if (model_required) {
-        errors.push_back(kMissingModel);
-    }
-    for (const auto& list : {ModelLoader::errors(), exception_errors()}) {
-        errors.insert(errors.end(), list.begin(), list.end());
-    }
-    return errors;
+    write_plain_error(res, kUnexpectedException, error.what());
 }
 
 bool ModelRoute::build_form_body(RouteRequest& req, httplib::Response& res) {
     if (!req.http.is_multipart_form_data()) {
-        write_openai_error(res, kNotMultipart, "Request must be multipart/form-data");
+        write_openai_error(res, kFormNotMultipart, "Request must be multipart/form-data");
         return false;
     }
     req.body = json::object();
@@ -409,7 +372,7 @@ bool ModelRoute::build_form_body(RouteRequest& req, httplib::Response& res) {
                 req.body[arg.name] = value;
             }
         } catch (const std::exception&) {
-            write_openai_error(res, kInvalidFormValue,
+            write_openai_error(res, kFormValueInvalid,
                                "Invalid value for '" + arg.name + "': must be " +
                                    (type == "integer" ? "an integer" : "a number"));
             return false;
@@ -526,6 +489,14 @@ const httplib::FormData* find_form_file(const httplib::Request& http,
         }
     }
     return nullptr;
+}
+
+std::vector<RouteError> join_errors(std::initializer_list<std::vector<RouteError>> lists) {
+    std::vector<RouteError> errors;
+    for (const auto& list : lists) {
+        errors.insert(errors.end(), list.begin(), list.end());
+    }
+    return errors;
 }
 
 void write_openai_error(httplib::Response& res, const RouteError& route_error,

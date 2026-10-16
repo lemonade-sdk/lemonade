@@ -3,6 +3,7 @@
 #include "lemon/audio_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -84,8 +85,10 @@ public:
                         {"response_format", "text"}};
 
         s.examples = {transcript_example, text_example};
-        s.errors = {kUnsupportedResponseFormat, kMissingFile, kCannotTranscribe, kNoTimestamps,
-                    kBackendError};
+        s.errors = join_errors({{kFormNotMultipart, kFormValueInvalid, kModelMissing,
+                                 kUnsupportedResponseFormat, kMissingFile, kCannotTranscribe,
+                                 kNoTimestamps, kBackendError, kTranscriptionFailure},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Form;
         return s;
     }
@@ -135,9 +138,7 @@ protected:
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in audio transcriptions: " << error.what() << std::endl;
         write_openai_error(res, kTranscriptionFailure, error.what(), "internal_error");
-    }
-    std::vector<RouteError> exception_errors() const override { return {kTranscriptionFailure}; }
-};
+    }};
 
 } // namespace
 

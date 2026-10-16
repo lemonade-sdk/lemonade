@@ -350,6 +350,12 @@ def lint_spec(spec: dict) -> list[str]:
             problems.append(
                 f"{where} names an error status, which belongs in a RouteError"
             )
+    listed = [
+        (error["status"], error["code"], error["when"]) for error in spec["errors"]
+    ]
+    for error, count in collections.Counter(listed).items():
+        if count > 1:
+            problems.append(f"lists error {error[0]} {error[2]!r} {count} times")
     if len(spec["summary"].split()) > MAX_SUMMARY_WORDS:
         problems.append(f"summary runs over {MAX_SUMMARY_WORDS} words")
     if len(sentences(spec["description"])) > MAX_DESCRIPTION_SENTENCES:
@@ -381,12 +387,8 @@ LITERAL_ERROR_STATUS = re.compile(
 ROUTE_ERROR_NAME = re.compile(
     r"\b(?:extern |static )?const RouteError (?:\w+::)?(k[A-Z]\w*)"
 )
-ERROR_LISTS = re.compile(
-    r"errors\s*=\s*\{.*?\};"
-    r"|_errors\([^)]*\)\s*const(?:\s+override)?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}"
-    r"|errors\.(?:push_back|insert)\(.*?\);",
-    re.S,
-)
+ERROR_LISTS = re.compile(r"\berrors\s*=\s*[^;]*;", re.S)
+REQUIRED_MODEL_ARG = re.compile(r'\{"model", ArgIn::\w+, [^\n]*?, true,')
 ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
 
 
@@ -417,7 +419,25 @@ def lint_sources() -> list[str]:
         if path.parent.name == "services" or "RouteSpec spec()" not in text:
             continue
         lists = " ".join(m.group(0) for m in ERROR_LISTS.finditer(text))
-        inherited = "public ModelRoute" in text or "ModelLoader::errors()" in lists
+        inherited = "ModelLoader::errors()" in lists
+        base_errors = []
+        if re.search(r"RequestFormat::(?:Json|OptionalJson)\b", text) and (
+            "void write_invalid_body" not in text
+        ):
+            base_errors.append("kBodyNotJson")
+        if "public ModelRoute" in text:
+            base_errors.append("ModelLoader::errors()")
+            if "void write_exception" not in text:
+                base_errors.append("kUnexpectedException")
+            if "RequestFormat::Form" in text:
+                base_errors += ["kFormNotMultipart", "kFormValueInvalid"]
+            if REQUIRED_MODEL_ARG.search(text):
+                base_errors.append("kModelMissing")
+        for name in base_errors:
+            if name not in lists:
+                problems.append(
+                    f"{where} leaves {name}, which its base class writes, out of its errors"
+                )
         used = {name for name in ROUTE_ERROR_USE.findall(text) if name in declared}
         for name in sorted(used):
             if re.search(rf"\b{name}\b", lists):

@@ -11,6 +11,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/utils/json_utils.h"
 
 namespace lemon {
@@ -180,9 +181,10 @@ public:
             "image": "@fixtures/image.png"
         })");
         s.examples = {example};
-        s.errors = attach_form_image_errors(/*allow_multiple=*/true);
-        s.errors.push_back(kMissingPrompt);
-        s.errors.push_back(kImageBackendError);
+        s.errors = join_errors({{kFormNotMultipart, kFormValueInvalid, kModelMissing, kMissingPrompt,
+                                 kImageBackendError},
+                                attach_form_image_errors(/*allow_multiple=*/true),
+                                image_route_exception_errors(), ModelLoader::errors()});
         s.request_format = RequestFormat::Form;
         return s;
     }
@@ -238,11 +240,7 @@ protected:
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         write_image_route_exception(error, res, "server_error");
-    }
-    std::vector<RouteError> exception_errors() const override {
-        return image_route_exception_errors();
-    }
-};
+    }};
 
 } // namespace
 

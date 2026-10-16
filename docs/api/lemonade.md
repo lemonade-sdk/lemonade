@@ -124,6 +124,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 
 | Status | Code | When |
 |--------|------|------|
+| `400` |  | The body is empty or is not valid JSON |
 | `400` |  | `model` is not a string |
 | `400` |  | Neither `input` nor `text` is present |
 | `400` |  | `input` or `text` is not a string |
@@ -131,7 +132,6 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `400` |  | `top_k` is not an integer from 1 to 1,000,000 |
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
 | `400` |  | The backend rejects the request, for example because `model` is not a classification model, which is found only after it loads |
-| `400` |  | The body is empty or is not valid JSON |
 | `404` |  | The model is unloaded between its load and the classification |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -139,8 +139,8 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The backend's response has no `labels` object |
-| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: lemonade.classify -->
 
 <!-- BEGIN GENERATED: lemonade.models_check_updates -->
@@ -321,11 +321,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | When |
 |--------|------|
+| `400` | The body is empty or is not valid JSON |
 | `400` | The body is not a JSON object |
 | `400` | `model_name` is missing or not a string |
 | `400` | The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, `recipe` is missing, the body embeds a `models` array, or `checkpoint`, `checkpoints`, `source` or `components` is malformed |
 | `400` | A definition field has the wrong JSON type |
-| `400` | The body is empty or is not valid JSON |
 | `500` | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
 
@@ -611,12 +611,12 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 
 | Status | Code | When |
 |--------|------|------|
+| `400` |  | The body is empty or is not valid JSON |
 | `400` |  | `source` or `registry_source` is not a string or names an unsupported source, or the checkpoint URLs disagree with it or with each other |
 | `400` |  | A new definition has a reserved or non-`user.*` name, or a malformed `checkpoint`, `checkpoints`, `source` or `components`; nothing is registered |
 | `400` | `lemond_offline` | `offline` is set to `true`; a new definition is still registered, but nothing is downloaded |
 | `400` | `unknown_model` | Without `stream`, the model is not registered and its name has no `user.` prefix |
 | `400` |  | Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, or name two |
-| `400` |  | The body is empty or is not valid JSON |
 | `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a missing `model_name`, a field of the wrong type, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
 <!-- END GENERATED: lemonade.pull -->
 
@@ -1231,8 +1231,8 @@ A collection, which has no checkpoint of its own.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` | `invalid_request` | `model_name` is missing or not a string, or the body is not a JSON object |
 | `400` |  | The body is empty or is not valid JSON |
+| `400` | `invalid_request` | `model_name` is missing or not a string, or the body is not a JSON object |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1411,19 +1411,19 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 
 | Status | Code | When |
 |--------|------|------|
+| `400` |  | The request names no `model` |
 | `400` |  | `prompt` is missing |
 | `400` |  | `prompt`, `lyrics` or `vocal_language` is not a string |
 | `400` | `model_not_applicable` | `model` is not an audio-generation model |
 | `400` |  | `response_format` is not a format the model's backend produces |
-| `400` |  | The request names no `model` |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | `model` is not a string, or generation fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.audio_generations -->
 
@@ -1483,6 +1483,7 @@ Errors carry a JSON `error` object.
 
 | Status | Code | When |
 |--------|------|------|
+| `400` |  | The request names no `model` |
 | `400` |  | `model` is missing or not a string |
 | `400` |  | `image` is missing or not a string |
 | `400` |  | `image` is not base64 data, or is a `data:` URL without a base64 payload |
@@ -1492,15 +1493,14 @@ Errors carry a JSON `error` object.
 | `400` |  | `bg_removal` is not `threshold` or `birefnet` |
 | `400` |  | `seed` is not an integer |
 | `400` |  | `uv` is not `box` or `xatlas` |
-| `400` |  | The request names no `model` |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | `model` is not a 3D model, or generation fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.3d_generations -->
 

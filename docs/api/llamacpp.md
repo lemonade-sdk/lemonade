@@ -94,16 +94,16 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | `model` is not a llama.cpp model |
 | `400` |  | The request names no `model` |
+| `400` |  | `model` is not a llama.cpp model |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The body is empty or is not valid JSON |
-| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: llamacpp.rerank -->
 
 <!-- BEGIN GENERATED: llamacpp.slots -->

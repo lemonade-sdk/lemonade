@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -75,7 +76,9 @@ public:
             "encoding_format": "float"
         })");
         s.examples = {example};
-        s.errors = {kCannotEmbed, kNotEmbeddingModel, kBackendError};
+        s.errors = join_errors({{kUnparsableBody, kModelMissing, kCannotEmbed, kNotEmbeddingModel,
+                                 kBackendError, kUnexpectedException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -94,8 +97,6 @@ protected:
                             httplib::Response& res) const override {
         write_plain_error(res, kUnparsableBody, error.what());
     }
-
-    std::vector<RouteError> invalid_body_errors() const override { return {kUnparsableBody}; }
 
     LoadSpan load_span() const override { return {"EMBEDDING", "embeddings"}; }
 };

@@ -4,6 +4,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/audio_formats.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -109,8 +110,10 @@ public:
         })");
 
         s.examples = {sound, song};
-        s.errors = {kMissingPrompt, kNonStringField, kNotAudioModel, kUnsupportedFormat,
-                    kNoOutputError, kBackendError};
+        s.errors = join_errors({{kInvalidAudioBody, kModelMissing, kMissingPrompt, kNonStringField,
+                                 kNotAudioModel, kUnsupportedFormat, kNoOutputError, kBackendError,
+                                 kGenerationException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -165,14 +168,10 @@ protected:
                             httplib::Response& res) const override {
         write_openai_error(res, kInvalidAudioBody, error.what(), "internal_error");
     }
-    std::vector<RouteError> invalid_body_errors() const override { return {kInvalidAudioBody}; }
-
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << error.what() << std::endl;
         write_openai_error(res, kGenerationException, error.what(), "internal_error");
-    }
-    std::vector<RouteError> exception_errors() const override { return {kGenerationException}; }
-};
+    }};
 
 } // namespace
 

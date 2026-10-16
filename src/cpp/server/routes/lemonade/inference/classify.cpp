@@ -95,9 +95,11 @@ public:
             "input": "Please verify your account at http://secure-login.example now."
         })");
         s.examples = {example};
-        s.errors = {kNonStringModel, kMissingInput, kNonStringInput, kBlankInput, kInvalidTopK,
-                    kNoSoleClassifier, kBackendRejected, kModelNotLoaded, kBackendError,
-                    kUnexpectedResponse};
+        s.errors = join_errors({{kInvalidClassifyBody, kNonStringModel, kMissingInput,
+                                 kNonStringInput, kBlankInput, kInvalidTopK, kNoSoleClassifier,
+                                 kBackendRejected, kModelNotLoaded, kBackendError,
+                                 kUnexpectedResponse, kUnexpectedException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -204,8 +206,6 @@ protected:
         write_openai_error(res, kInvalidClassifyBody,
                            std::string("Invalid JSON in request body: ") + error.what());
     }
-    std::vector<RouteError> invalid_body_errors() const override { return {kInvalidClassifyBody}; }
-
     LoadSpan load_span() const override { return {"CLASSIFIER", "classify"}; }
 };
 

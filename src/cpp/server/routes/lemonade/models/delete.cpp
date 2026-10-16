@@ -62,7 +62,7 @@ public:
         example.setup = {{"lemonade.models_register", ""}};
         example.args = {{"model_name", "$lemonade.models_register/canonical_model_name"}};
         s.examples = {example};
-        s.errors = {kUnknownModel, kDeleteFailed};
+        s.errors = {kBodyNotJson, kUnknownModel, kDeleteFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }

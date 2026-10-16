@@ -205,8 +205,8 @@ public:
 
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
-        s.errors = {kInvalidSource, kInvalidDefinition, kOffline, kUnknownModel, kIllegalLabels,
-                    kPullFailed};
+        s.errors = {kBodyNotJson, kInvalidSource, kInvalidDefinition, kOffline, kUnknownModel,
+                    kIllegalLabels, kPullFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }

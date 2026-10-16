@@ -195,11 +195,11 @@ Match `decision.matched_rule` against this document: a policy written with only 
 
 | Status | When |
 |--------|------|
+| `400` | The body is empty or is not valid JSON |
 | `400` | `policy` is missing or not a JSON object |
 | `400` | `prompt` is not a string |
 | `400` | `has_images` is not a boolean |
 | `400` | `has_tools` is not a boolean |
 | `400` | `metadata` is not an object of string values |
 | `400` | `policy` is invalid or internally inconsistent |
-| `400` | The body is empty or is not valid JSON |
 <!-- END GENERATED: router.routing_validate -->

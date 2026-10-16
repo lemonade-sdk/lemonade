@@ -119,9 +119,10 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
         s.examples = {example};
-        s.errors = {kEmptyBody, kInvalidJsonBody, kBodyNotObject, kDryRunNotBoolean,
-                    kUnknownOption, kLiveProcessOption, kOptionWrongType, kInvalidOptionValue};
-        for (const auto& e : model_options_errors()) s.errors.push_back(e);
+        s.errors = join_errors({{kEmptyBody, kInvalidJsonBody, kBodyNotObject, kDryRunNotBoolean,
+                                 kUnknownOption, kLiveProcessOption, kOptionWrongType,
+                                 kInvalidOptionValue},
+                                model_options_errors()});
         return s;
     }
 

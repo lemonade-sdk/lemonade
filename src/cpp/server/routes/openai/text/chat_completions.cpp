@@ -3,6 +3,7 @@
 #include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/server/omni_collection.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/thinking_controls.h"
@@ -256,7 +257,9 @@ public:
         })");
 
         s.examples = {completion_example, stream_example, image_example, tools_example};
-        s.errors = {kNotLlm, kBackendError};
+        s.errors = join_errors({{kBodyNotJson, kModelMissing, kNotLlm, kBackendError,
+                                 kUnexpectedException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }

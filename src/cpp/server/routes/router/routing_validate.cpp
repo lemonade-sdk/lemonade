@@ -156,8 +156,8 @@ public:
             "prompt": "please write a def to reverse a list"
         })");
         s.examples = {example};
-        s.errors = {kBadPolicy, kBadPrompt, kBadHasImages, kBadHasTools, kBadMetadata,
-                    kInvalidPolicy};
+        s.errors = {kBodyNotJson, kBadPolicy, kBadPrompt, kBadHasImages, kBadHasTools,
+                    kBadMetadata, kInvalidPolicy};
         s.request_format = RequestFormat::Json;
         return s;
     }

@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/streaming_proxy.h"
 
 namespace lemon {
@@ -151,7 +152,9 @@ public:
         })");
 
         s.examples = {response_example, stream_example};
-        s.errors = {kNoResponsesApi, kNotLlm, kBackendError};
+        s.errors = join_errors({{kUnparsableBody, kModelMissing, kNoResponsesApi, kNotLlm,
+                                 kBackendError, kUnexpectedException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -196,8 +199,6 @@ protected:
                             httplib::Response& res) const override {
         write_plain_error(res, kUnparsableBody, error.what());
     }
-
-    std::vector<RouteError> invalid_body_errors() const override { return {kUnparsableBody}; }
 };
 
 } // namespace

@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -76,7 +77,9 @@ public:
             ]
         })");
         s.examples = {example};
-        s.errors = {kNotLlamaCpp, kBackendError};
+        s.errors = join_errors({{kInvalidJson, kModelMissing, kNotLlamaCpp, kBackendError,
+                                 kUnexpectedException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -95,8 +98,6 @@ protected:
                             httplib::Response& res) const override {
         write_plain_error(res, kInvalidJson, error.what());
     }
-    std::vector<RouteError> invalid_body_errors() const override { return {kInvalidJson}; }
-
     LoadSpan load_span() const override { return {"RERANKER", "reranking"}; }
 };
 

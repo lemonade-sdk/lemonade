@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 
@@ -80,9 +81,11 @@ public:
             "seed": 42
         })");
         s.examples = {example};
-        s.errors = {kInvalidModelField, kMissingImage, kMalformedImage, kUnsupportedImage,
-                    kInvalidResponseFormat, kInvalidResolution, kInvalidBgRemoval, kInvalidSeed,
-                    kInvalidUv, kNoOutputError, kBackendError};
+        s.errors = join_errors({{kInvalid3dBody, kModelMissing, kInvalidModelField, kMissingImage,
+                                 kMalformedImage, kUnsupportedImage, kInvalidResponseFormat,
+                                 kInvalidResolution, kInvalidBgRemoval, kInvalidSeed, kInvalidUv,
+                                 kNoOutputError, kBackendError, kGenerationException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -183,14 +186,10 @@ protected:
                             httplib::Response& res) const override {
         write_openai_error(res, kInvalid3dBody, error.what(), "internal_error");
     }
-    std::vector<RouteError> invalid_body_errors() const override { return {kInvalid3dBody}; }
-
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << error.what() << std::endl;
         write_openai_error(res, kGenerationException, error.what(), "internal_error");
-    }
-    std::vector<RouteError> exception_errors() const override { return {kGenerationException}; }
-};
+    }};
 
 } // namespace
 

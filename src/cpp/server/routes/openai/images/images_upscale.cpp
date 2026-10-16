@@ -68,9 +68,9 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
         s.examples = {example};
-        s.errors = {kMissingImageField, kMissingModelField, kNotUpscalingModel, kUnknownUpscaleModel,
-                    kRecipeCannotUpscale, kUpscaleFailed};
-        for (const auto& e : image_route_exception_errors()) s.errors.push_back(e);
+        s.errors = join_errors({{kMissingImageField, kMissingModelField, kNotUpscalingModel,
+                                 kUnknownUpscaleModel, kRecipeCannotUpscale, kUpscaleFailed},
+                                image_route_exception_errors()});
         return s;
     }
 

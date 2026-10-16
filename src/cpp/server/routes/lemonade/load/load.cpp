@@ -160,8 +160,7 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
-        s.errors = {kInvalidLoadRequest};
-        for (const auto& error : ModelLoader::errors()) s.errors.push_back(error);
+        s.errors = join_errors({{kBodyNotJson, kInvalidLoadRequest}, ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }

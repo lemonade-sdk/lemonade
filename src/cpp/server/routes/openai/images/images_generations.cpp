@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 
@@ -65,7 +66,8 @@ public:
             "response_format": "b64_json"
         })");
         s.examples = {example};
-        s.errors = {kMissingPrompt, kImageBackendError};
+        s.errors = join_errors({{kModelMissing, kMissingPrompt, kImageBackendError},
+                                image_route_exception_errors(), ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -96,17 +98,9 @@ protected:
                             httplib::Response& res) const override {
         write_exception(error, res);
     }
-    std::vector<RouteError> invalid_body_errors() const override {
-        return image_route_exception_errors();
-    }
-
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         write_image_route_exception(error, res, "internal_error");
-    }
-    std::vector<RouteError> exception_errors() const override {
-        return image_route_exception_errors();
-    }
-};
+    }};
 
 } // namespace
 

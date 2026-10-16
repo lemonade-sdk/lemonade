@@ -84,7 +84,7 @@ public:
             "recipe": "llamacpp"
         })");
         s.examples = {example};
-        s.errors = {kNotObject, kMissingModelName, kInvalidDefinition, kWrongFieldType,
+        s.errors = {kBodyNotJson, kNotObject, kMissingModelName, kInvalidDefinition, kWrongFieldType,
                     kRegisterFailed};
         s.request_format = RequestFormat::Json;
         return s;

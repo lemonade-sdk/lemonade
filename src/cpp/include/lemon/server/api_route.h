@@ -110,7 +110,7 @@ public:
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 
-    virtual std::vector<RouteError> inherited_errors(const RouteSpec& spec) const;
+    static const RouteError kBodyNotJson;
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
     // says, then calls handle().
@@ -128,7 +128,6 @@ protected:
     // default is a 400 with a plain-string error; a route with another shape overrides it.
     virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
                                     httplib::Response& res) const;
-    virtual std::vector<RouteError> invalid_body_errors() const;
 
     void record_usage(const nlohmann::json& response, const RouteRequest& req) const;
 
@@ -139,7 +138,11 @@ class ModelRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
     void handle(RouteRequest& req, httplib::Response& res) final;  // resolve, validate, load, run
-    std::vector<RouteError> inherited_errors(const RouteSpec& spec) const override;
+
+    static const RouteError kFormNotMultipart;
+    static const RouteError kFormValueInvalid;
+    static const RouteError kModelMissing;
+    static const RouteError kUnexpectedException;
 
 protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
@@ -149,7 +152,6 @@ protected:
     // conflict with 409 and anything else with a 500 plain-string error; a route whose clients
     // parse another shape overrides it.
     virtual void write_exception(const std::exception& error, httplib::Response& res) const;
-    virtual std::vector<RouteError> exception_errors() const;
 
     // Telemetry consumers match a failed auto-load's span by these names, which predate route
     // ids. A route that recorded no span returns an empty kind.
@@ -197,6 +199,8 @@ bool write_sse_event(httplib::DataSink& sink, const std::string& event,
 // The one form file a route accepts under any of names, or nullptr.
 const httplib::FormData* find_form_file(const httplib::Request& http,
                                         std::initializer_list<const char*> names);
+
+std::vector<RouteError> join_errors(std::initializer_list<std::vector<RouteError>> lists);
 
 void write_openai_error(httplib::Response& res, const RouteError& error, const std::string& message,
                         const std::string& type = "invalid_request_error");
