@@ -312,6 +312,8 @@ export interface DirectorySettings {
 export interface ChatCompletionStats {
   content: string;
   reasoning: string;
+  /** Backend stop reason (e.g. "stop", "tool_calls", "length"). */
+  finishReason?: string | null;
   id: string | null;
   tps: string;
   ttft: string | null;
@@ -2353,6 +2355,7 @@ class LemonadeAPI {
     let reasoningEndTime: number | null = null;
     let reasoningClosed = false;
     let routeDecision: Record<string, unknown> | null = null;
+    let finishReason: string | null = null;
 
     const reasoningElapsedMs = (now: number): number | null => {
       if (reasoningStartTime == null) return null;
@@ -2369,6 +2372,7 @@ class LemonadeAPI {
       return {
         content: full,
         reasoning,
+        finishReason,
         id: respId,
         tps: totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0',
         ttft: firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null,
@@ -2436,8 +2440,9 @@ class LemonadeAPI {
           const payload = t.slice(6);
           if (payload === '[DONE]') {
             clearInterval(statsInterval);
-            // If we accumulated tool calls, emit them instead of content
-            if (pendingToolCalls.size > 0) {
+            // A length-limited stream may contain an incomplete function call.
+            // Let the caller report the limit instead of executing it.
+            if (pendingToolCalls.size > 0 && finishReason !== 'length') {
               onToolCalls?.(Array.from(pendingToolCalls.values()));
               return;
             }
@@ -2457,7 +2462,9 @@ class LemonadeAPI {
               return;
             }
             respId = chunk.id || respId;
-            const delta = chunk.choices?.[0]?.delta;
+            const choice = chunk.choices?.[0];
+            if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+            const delta = choice?.delta;
             // Handle reasoning/thinking tokens (Qwen3.5, etc.)
             if (delta?.reasoning_content) {
               const now = performance.now();
@@ -2500,14 +2507,20 @@ class LemonadeAPI {
           } catch {}
         }
       }
-      // Stream ended without [DONE]
-      clearInterval(statsInterval);
-      if (pendingToolCalls.size > 0) {
-        onToolCalls?.(Array.from(pendingToolCalls.values()));
-      } else {
-        const now = performance.now();
-        onDone?.(buildDoneStats(now, full, reasoning, respId));
+      // Accept an explicit final [DONE] even without the usual trailing newline.
+      if (buf.trim() === 'data: [DONE]') {
+        clearInterval(statsInterval);
+        if (pendingToolCalls.size > 0 && finishReason !== 'length') {
+          onToolCalls?.(Array.from(pendingToolCalls.values()));
+        } else {
+          onDone?.(buildDoneStats(performance.now(), full, reasoning, respId));
+        }
+        return;
       }
+      // An incomplete SSE transport is not a successful completion, even if
+      // some content or tool-call arguments were already streamed.
+      clearInterval(statsInterval);
+      onError?.(new Error('Chat stream ended before [DONE]; the response may be incomplete.'));
     } catch (err) {
       clearInterval(statsInterval);
       onError?.(err as Error);

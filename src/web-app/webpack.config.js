@@ -101,7 +101,6 @@ module.exports = (env, argv) => {
     'dompurify$': systemDomPurifyPath,
     'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
     'recharts$': path.resolve(__dirname, 'system-stubs/recharts.tsx'),
-    'highlight.js/styles/github-dark.css$': path.resolve(__dirname, 'system-stubs/highlight-github-dark.css'),
   } : {};
 
   let bufferPolyfill = false;
