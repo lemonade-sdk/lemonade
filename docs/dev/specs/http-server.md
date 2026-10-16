@@ -175,7 +175,7 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 
 This section defines how `ApiRoute::serve()` checks a request against the route's `RouteArg`s before it calls `handle()`, so a handler never receives a value its schema does not allow.
 
-- **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument. A `required` argument must be present, and a value must match its schema's `type`, `enum` and `const`, as must each value nested in it under `items`, `properties` or `additionalProperties`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
+- **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument, and for a `Form` route, `ModelRoute` checks every `Form` argument once it has built `req.body`. A `required` argument or file must be present, and a value must match its schema's `type`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength` and `pattern`, as must each value nested in it under `items`, `properties` or `additionalProperties`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
 - **Aliases.** A client may send an argument under any of its `aliases`, such as `model` for `/delete`'s `model_name`. `serve()` renames an alias to the argument's name, so a handler reads only the name, and the name wins when a request sends both. The docs list the aliases beside the name.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
@@ -184,7 +184,7 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 | --- | --- |
 | `Plain` | `{"error": "message", "code": "missing_argument"}` |
 | `OpenAi` | `{"error": {"message", "type": "invalid_request_error", "code"}}` |
-| `Anthropic` | `{"type": "error", "error": {"type": "invalid_request_error", "message"}}` |
+| `Anthropic` | `{"type": "error", "error": {"type": "invalid_request_error", "message", "code"}}` |
 
 ```cpp
 {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -197,7 +197,7 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 
 `ModelRoute` is the base for routes that run a loaded model: chat/completions, images/generations, etc. Its `handle()` is final and runs these steps:
 
-1. Builds `req.body`. For a `RequestFormat::Form` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, and answers 400 when the request is not `multipart/form-data` or a value does not convert. File parts stay on the httplib request. Registration rejects a `ModelRoute` whose `request_format` is `Raw`, since step 2 reads the model from `req.body`.
+1. Builds `req.body`. For a `RequestFormat::Form` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, answers 400 when the request is not `multipart/form-data`, and checks the arguments as [Argument Validation](#argument-validation) describes. File parts stay on the httplib request. Registration rejects a `ModelRoute` whose `request_format` is `Raw`, since step 2 reads the model from `req.body`.
 2. Resolves the model name.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
 4. Requires a model. With no `model` in the request, it answers 400.
