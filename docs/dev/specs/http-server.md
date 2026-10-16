@@ -132,7 +132,7 @@ struct RouteSpec {
     std::vector<RouteArg> args;       // every argument
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
     std::vector<RouteExample> examples;    // the first is the route's main example
-    std::vector<RouteError> errors;        // every error the route writes, besides those its base class adds
+    std::vector<RouteError> errors;        // every error response, including those its base class writes
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
     bool quiet_log = false;           // leave out of the access log
 };
@@ -228,7 +228,7 @@ This section defines how a route declares the error responses it can answer with
 
 - **In the route class.** Each error response a route writes is a `RouteError` constant beside its handler. The handler passes it to an error writer such as `write_plain_error()`, which takes the status and code from it, and `spec()` lists it.
 - **Shared error responses.** An error response that more than one route writes is declared beside the function that writes it, such as `ModelLoader::errors()` beside `ModelLoader::write_load_error()`.
-- **Base classes.** `RouteRegistry::add()` adds the error responses a route's base class writes, such as `ModelRoute`'s missing-`model` 400 and `ModelLoader::errors()`. A route that overrides `write_invalid_body()` or `write_exception()` also overrides `invalid_body_errors()` or `exception_errors()`.
+- **Base classes.** A base class declares the error responses its own steps write, such as `ModelRoute::kModelMissing` for step 4, and a route lists the ones its base class writes for it. A route that overrides `write_invalid_body()` or `write_exception()` lists what its override writes instead.
 - **Backend errors.** A route that passes a backend's error through lists `kBackendError`, and also the backend error responses a client can act on, such as llama.cpp's 501 for a model that cannot embed.
 
 An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`. `docs/api/README.md` lists the error responses no route class writes: the 401 and 403 answers, the 405 stubs and the 404 for an unknown path. Body shapes differ by route; [Appendix B](#appendix-b-error-format-cleanup) unifies them.
@@ -361,7 +361,8 @@ public:
         })");
 
         s.examples = {completion, stream};
-        s.errors = {kBackendError};
+        s.errors = join_errors({{kBodyNotJson, kModelMissing, kBackendError, kUnexpectedException},
+                                ModelLoader::errors()});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -542,7 +543,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
-- a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list
+- a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it
 - a route's `description`, `notes` or argument descriptions name an error status, such as `404`
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
 - a JSON format, or one of its shapes, has no example whose response it validates, unless the shape sets `x-no-example` to the reason no recording machine can return it
