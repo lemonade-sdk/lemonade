@@ -694,13 +694,16 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
 
     // The list holds only downloaded models; a selected model that is not
     // downloaded yet still needs its labels and saved window.
+    bool selected_unknown = false;
     if (!selected_present) {
         nlohmann::json selected = nlohmann::json::object();
         try {
             selected = nlohmann::json::parse(client.make_request(
                 "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+        } catch (const lemonade::HttpError& e) {
+            selected_unknown = e.status_code() == 404;
         } catch (const std::exception&) {
-            // Unknown to the server: the model goes in without labels.
+            // Other failures: the model goes in without labels.
         }
         if (!selected.is_object()) {
             selected = nlohmann::json::object();
@@ -781,6 +784,11 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 
     if (config.agent == "pi") {
+        if (selected_unknown) {
+            std::cerr << "Warning: " << config.model
+                      << " is not a model on the Lemonade server; check the name with"
+                      << " `lemonade list`." << std::endl;
+        }
         for (const auto& model : models) {
             if (model.id == config.model && !model.labels.empty() &&
                 std::find(model.labels.begin(), model.labels.end(), "tool-calling") ==

@@ -2339,6 +2339,19 @@ sys.exit(0)
         finally:
             run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
 
+    def test_134_launch_pi_warns_on_unknown_model(self):
+        """A model name the server does not know gets a warning instead of the tool-calling one."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        model_name = "PiLaunchUnknownProbe-GGUF"
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, model=model_name)
+            self.assertIn(
+                f"{model_name} is not a model on the Lemonade server", payload["stderr"]
+            )
+            self.assertNotIn("is not labeled tool-calling", payload["stderr"])
+
     # =============================================================================
     # Unload Tests
     # =============================================================================

@@ -109,6 +109,7 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
 
 - Models labeled `vision` accept images: paste one, or reference it with `@image.png`. Other models get a note that the image was left out.
 - Launch warns when the model is not labeled `tool-calling`. Pi needs tool calls to read and edit files.
+- Launch also warns when the model name is not on the Lemonade server, for example a typo.
 
 ## How it works
 
