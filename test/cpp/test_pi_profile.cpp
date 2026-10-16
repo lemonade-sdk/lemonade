@@ -88,6 +88,23 @@ void test_server_origin() {
               "http://localhost:13305");
 }
 
+void test_pi_version() {
+    const auto parsed = [](const std::string& output, int major, int minor) {
+        int found_major = -1;
+        int found_minor = -1;
+        return lemon_cli::parse_pi_version(output, found_major, found_minor) &&
+               found_major == major && found_minor == minor;
+    };
+    check("pi --version output is parsed", parsed("1.1.0\n", 1, 1));
+    check("an older pi version is parsed", parsed("0.99.2", 0, 99));
+    check("a prefixed version is parsed", parsed("pi v1.0.4", 1, 0));
+    int major = 0;
+    int minor = 0;
+    check("output without a version is not parsed",
+          !lemon_cli::parse_pi_version("fake-agent-ok\n", major, minor) &&
+              !lemon_cli::parse_pi_version("", major, minor));
+}
+
 void test_mcp_server(const fs::path& mcp_path) {
     std::string error;
     write_file(mcp_path, R"({
@@ -250,6 +267,7 @@ int main() {
     test_provider_block();
     test_api_key();
     test_server_origin();
+    test_pi_version();
     test_mcp_server(agent_dir / "mcp.json");
 #ifndef _WIN32
     test_mcp_file_kept(agent_dir);

@@ -12,7 +12,7 @@ This guide focuses on the most common launch flows.
     npm install -g @earendil-works/pi-coding-agent
     ```
 
-    `--mcp` needs Pi 1.0 or newer, and `--codemode` needs Pi 1.1 or newer. Check with `pi --version`, and update with the same install command.
+    `--mcp` needs Pi 1.0 or newer, and `--codemode` needs Pi 1.1 or newer. Launch checks this when you pass either flag: it stops with an older Pi for `--codemode` and warns for `--mcp`. Check with `pi --version`, and update with the same install command.
 
 2. Make sure Lemonade Server is running (`lemond`).
 

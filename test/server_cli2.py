@@ -316,13 +316,17 @@ class PersistentServerCLIClientTests(unittest.TestCase):
         )
         return result
 
-    def _write_fake_agent(self, directory, agent_name, capture_file):
+    def _write_fake_agent(self, directory, agent_name, capture_file, version=None):
         """Create a tiny fake agent binary that captures argv and selected env vars."""
         exe_path = os.path.join(directory, agent_name)
         script = f"""#!/usr/bin/env python3
 import json
 import os
 import sys
+
+if sys.argv[1:] == ["--version"]:
+    print({(version or "fake-agent-ok")!r})
+    sys.exit(0)
 
 payload = {{
     "argv": sys.argv[1:],
@@ -2160,10 +2164,12 @@ sys.exit(0)
                 "junie.bat was not executed",
             )
 
-    def _launch_pi(self, temp_dir, extra_args=None, model=ENDPOINT_TEST_MODEL):
+    def _launch_pi(
+        self, temp_dir, extra_args=None, model=ENDPOINT_TEST_MODEL, version=None
+    ):
         """Launch a fake pi from temp_dir and return its captured argv/env payload and stderr."""
         capture_path = os.path.join(temp_dir, "pi_capture.json")
-        self._write_fake_agent(temp_dir, "pi", capture_path)
+        self._write_fake_agent(temp_dir, "pi", capture_path, version)
         result = run_cli_command(
             ["launch", "pi", "--model", model] + (extra_args or []),
             timeout=TIMEOUT_DEFAULT,
@@ -2524,6 +2530,41 @@ sys.exit(0)
                 self.assertFalse(os.path.exists(capture_path), "pi was started")
         finally:
             run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
+
+    def test_140_launch_pi_codemode_needs_pi_1_1(self):
+        """--codemode on a pi older than 1.1 stops launch instead of breaking pi's tools."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path, "1.0.4")
+            result = run_cli_command(
+                ["launch", "pi", "--model", ENDPOINT_TEST_MODEL, "--codemode"],
+                timeout=TIMEOUT_DEFAULT,
+                env=self._build_stubbed_agent_env(temp_dir),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "--codemode needs pi 1.1 or newer (found 1.0.4)", result.stderr
+            )
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--codemode"], version="1.1.0")
+            self.assertIn("+codemode", payload["argv"])
+            self.assertNotIn("needs pi", payload["stderr"])
+
+    def test_141_launch_pi_mcp_warns_on_pi_before_1_0(self):
+        """--mcp on a pi older than 1.0 warns, since that pi ignores mcp.json."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            payload = self._launch_pi(temp_dir, ["--mcp"], version="0.99.2")
+            self.assertIn(
+                "--mcp needs pi 1.0 or newer (found 0.99.2)", payload["stderr"]
+            )
 
     # =============================================================================
     # Unload Tests

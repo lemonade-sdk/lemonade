@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -275,6 +276,17 @@ bool pi_has_mcp_server() {
     }
     const auto servers = mcp.find("mcpServers");
     return servers != mcp.end() && servers->is_object() && servers->contains(kPiMcpServerName);
+}
+
+bool parse_pi_version(const std::string& output, int& major, int& minor) {
+    static const std::regex version_pattern(R"((\d{1,6})\.(\d{1,6}))");
+    std::smatch match;
+    if (!std::regex_search(output, match, version_pattern)) {
+        return false;
+    }
+    major = std::stoi(match[1].str());
+    minor = std::stoi(match[2].str());
+    return true;
 }
 
 bool pi_mcp_config_readable(std::string& error_out) {

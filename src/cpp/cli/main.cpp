@@ -720,6 +720,47 @@ static bool load_for_context_window(lemonade::LemonadeClient& client, const CliC
     return true;
 }
 
+// Older pi starts fine with these flags but without what they enable, so
+// the version is checked only when one is passed. Returns false when launch
+// must not start pi.
+static bool check_pi_version_for_flags(const std::string& pi_binary, const CliConfig& config,
+                                       const std::string& install_instructions) {
+    if (!config.pi_codemode && !config.pi_mcp.value_or(false)) {
+        return true;
+    }
+
+    std::string output;
+    try {
+        lemon::utils::ProcessManager::run_process_with_output(
+            pi_binary, {"--version"},
+            [&output](const std::string& line) {
+                output += line + "\n";
+                return true;
+            },
+            "", 10, false);
+    } catch (const std::exception&) {
+        return true;
+    }
+    int major = 0;
+    int minor = 0;
+    if (!lemon_cli::parse_pi_version(output, major, minor)) {
+        return true;
+    }
+    const std::string found = output.substr(0, output.find('\n'));
+
+    if (config.pi_codemode && (major < 1 || (major == 1 && minor < 1))) {
+        std::cerr << "Error: --codemode needs pi 1.1 or newer (found " << found
+                  << "). Reinstall pi to update it." << std::endl;
+        std::cerr << install_instructions << std::endl;
+        return false;
+    }
+    if (config.pi_mcp.value_or(false) && major < 1) {
+        std::cerr << "Warning: --mcp needs pi 1.0 or newer (found " << found
+                  << "); this pi ignores mcp.json." << std::endl;
+    }
+    return true;
+}
+
 // Returns false when launch must not start the agent.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config) {
@@ -985,6 +1026,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         if (!agent_config.install_instructions.empty()) {
             LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
         }
+        return 1;
+    }
+
+    if (config.agent == "pi" &&
+        !check_pi_version_for_flags(agent_binary, config, agent_config.install_instructions)) {
         return 1;
     }
 

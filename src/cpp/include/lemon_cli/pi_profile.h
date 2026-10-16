@@ -39,4 +39,8 @@ bool sync_pi_mcp_server(const std::string& server_origin,
 // Remove the "lemonade" server from pi's mcp.json, leaving everything else.
 bool remove_pi_mcp_server(std::string& error_out);
 
+// Reads the major and minor version from `pi --version` output; false when
+// the output has no version.
+bool parse_pi_version(const std::string& output, int& major, int& minor);
+
 } // namespace lemon_cli
