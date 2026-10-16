@@ -385,6 +385,13 @@ static void test_auto_context_budget() {
     auto shared_free = auto_context_available_gpu_gib(24.0, 2.0, true, 32.0, 25.0);
     check("auto ctx: shared GPU applies tighter RAM limit",
           shared_free && approx_eq(*shared_free, 7.0));
+    check("auto ctx: GPU usage alone cannot establish shared RAM availability",
+          !auto_context_available_gpu_gib(24.0, 2.0, true, 32.0, 0.0));
+    check("auto ctx: unified GPU requires known physical RAM capacity",
+          !auto_context_available_gpu_gib(24.0, 2.0, true, 0.0, 20.0));
+    check("auto ctx: unified GPU rejects nonfinite RAM usage",
+          !auto_context_available_gpu_gib(24.0, 2.0, true, 32.0,
+                                          std::numeric_limits<double>::quiet_NaN()));
 
     auto huge = estimate_auto_context_budget(110.0, 18.0, 1e-12,
                                               true, false);

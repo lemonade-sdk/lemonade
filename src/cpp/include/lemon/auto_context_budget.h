@@ -76,8 +76,8 @@ inline std::optional<double> auto_context_available_gpu_gib(
         physical_total_gib > 0.0 && std::isfinite(physical_used_gib) &&
         physical_used_gib > 0.0;
 
-    // On shared-memory GPUs, measured system RAM can bound an unknown GPU footprint.
-    if (!gpu_usage_known && !(unified && ram_usage_known))
+    // Shared-memory GPUs also need RAM usage to account for other processes.
+    if ((unified && !ram_usage_known) || (!unified && !gpu_usage_known))
         return std::nullopt;
 
     double available = gpu_usage_known
