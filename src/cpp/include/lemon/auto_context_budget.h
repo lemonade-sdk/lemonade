@@ -19,6 +19,17 @@ inline double auto_context_total_weights_gib(double registry_gib,
                      positive(mmproj_gib) + positive(draft_gib));
 }
 
+inline int64_t auto_context_clamp_tokens(int64_t memory_max,
+                                          int64_t model_max,
+                                          int64_t unknown_max,
+                                          int64_t runtime_minimum = 0) {
+    if (memory_max <= 0 || runtime_minimum < 0 || memory_max < runtime_minimum)
+        return 0;
+    const int64_t metadata_limit = model_max > 0 ? model_max : unknown_max;
+    if (metadata_limit <= 0) return 0;
+    return (std::min)(memory_max, (std::max)(metadata_limit, runtime_minimum));
+}
+
 struct AutoContextBudget {
     double model_gib = 0.0;
     double reserve_gib = 0.0;
@@ -46,7 +57,7 @@ struct AutoContextReservePolicy {
 inline constexpr AutoContextReservePolicy AUTO_CTX_DISCRETE_GPU_RESERVE{
     {0.045, 0.75, 2.0}, {0.05, 0.5, 1.75}};
 inline constexpr AutoContextReservePolicy AUTO_CTX_UNIFIED_GPU_RESERVE{
-    {0.08, 2.0, 10.0}, {0.04, 0.5, 3.0}};
+    {0.08, 0.75, 10.0}, {0.04, 0.5, 3.0}};
 inline constexpr AutoContextReservePolicy AUTO_CTX_HOST_RESERVE{
     {0.05, 1.0, std::numeric_limits<double>::max()},
     {0.05, 1.0, std::numeric_limits<double>::max()}};

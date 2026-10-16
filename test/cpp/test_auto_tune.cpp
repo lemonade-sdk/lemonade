@@ -333,6 +333,21 @@ static void test_auto_context_budget() {
     check("auto ctx: discrete and UMA budgets differ",
           discrete.reserve_gib < apu.reserve_gib);
 
+    auto small_mac = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
+                                                   true, false, true);
+    check("auto ctx: 7 GiB Mac with 3.2 GiB free can load a small model",
+          small_mac.max_tokens >= 8192);
+    check("auto ctx: small UMA pool retains runtime headroom",
+          small_mac.reserve_gib >= 1.0 && small_mac.reserve_gib < 2.0);
+    auto constrained_mac = estimate_auto_context_budget(1.3, 0.73, 128.0 * 1024.0,
+                                                         true, false, true);
+    check("auto ctx: small UMA pool still rejects genuine memory exhaustion",
+          constrained_mac.max_tokens == 0);
+    auto larger_uma = estimate_auto_context_budget(24.0, 0.73, 128.0 * 1024.0,
+                                                   true, false, true);
+    check("auto ctx: larger UMA pool retains proportional headroom",
+          larger_uma.reserve_gib > 2.0);
+
     auto small = estimate_auto_context_budget(8.0, 3.0, 65536.0,
                                               true, false);
     check("auto ctx: 8 GiB GPU has compute headroom",
@@ -358,6 +373,23 @@ static void test_auto_context_budget() {
                                                      true, false);
     check("auto ctx: low but positive budget is not raised to a fallback",
           tiny_budget.max_tokens > 0 && tiny_budget.max_tokens < 4096);
+
+    using lemon::auto_context_clamp_tokens;
+    auto embedding_budget = estimate_auto_context_budget(41.4, 0.51,
+                                                          128.0 * 1024.0,
+                                                          true, false, true);
+    check("auto ctx: embedding budget can hold 8192 tokens on 41.4 GiB UMA",
+          embedding_budget.max_tokens > 8192);
+    check("auto ctx: model maximum smaller than runtime floor is not OOM",
+          auto_context_clamp_tokens(embedding_budget.max_tokens, 512, 32768, 8192) == 8192);
+    check("auto ctx: runtime minimum requires actual capacity",
+          auto_context_clamp_tokens(4096, 512, 32768, 8192) == 0);
+    check("auto ctx: model maximum is honored for normal LLMs",
+          auto_context_clamp_tokens(100000, 512, 32768) == 512);
+    check("auto ctx: unknown maximum has a bounded default",
+          auto_context_clamp_tokens(100000, 0, 32768) == 32768);
+    check("auto ctx: model maximum above runtime minimum remains capped",
+          auto_context_clamp_tokens(100000, 16384, 32768, 8192) == 16384);
 
     using lemon::auto_context_cap_shared_memory_gib;
     check("auto ctx: unified RAM cap uses physical RAM total",

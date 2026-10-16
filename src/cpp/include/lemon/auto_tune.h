@@ -296,18 +296,14 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         return AUTO_CTX_NO_CAPACITY;
     }
 
-    // Clamp to model's declared maximum context window
-    int64_t ctx_size = max_ctx_from_memory;
-    std::string clamp_note;
-    if (model_info.max_context_window > 0 && ctx_size > model_info.max_context_window) {
-        ctx_size = model_info.max_context_window;
-        clamp_note = " (clamped to model max)";
-    } else if (model_info.max_context_window <= 0 && ctx_size > AUTO_CTX_UNKNOWN_MAX) {
-        ctx_size = AUTO_CTX_UNKNOWN_MAX;
-        clamp_note = " (clamped to unknown-max default)";
-    }
-
-    if (is_embedding && ctx_size < EMBEDDING_CTX_SIZE) {
+    const int64_t runtime_minimum = is_embedding ? EMBEDDING_CTX_SIZE : 0;
+    const int64_t ctx_size = auto_context_clamp_tokens(
+        max_ctx_from_memory, model_info.max_context_window,
+        AUTO_CTX_UNKNOWN_MAX, runtime_minimum);
+    if (ctx_size == AUTO_CTX_NO_CAPACITY) {
+        LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
+                               << " — budget fits " << max_ctx_from_memory
+                               << " tokens, runtime requires " << runtime_minimum;
         return AUTO_CTX_NO_CAPACITY;
     }
 
@@ -324,8 +320,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                            << budget.model_gib << " GiB model, "
                            << budget.reserve_gib << " GiB runtime reserve, "
                            << budget.kv_gib << " GiB for KV"
-                           << " | ctx=" << max_ctx_from_memory << " → " << ctx_size
-                           << clamp_note << " ";
+                           << " | ctx=" << max_ctx_from_memory << " → " << ctx_size << " ";
     return ctx_size;
 }
 
