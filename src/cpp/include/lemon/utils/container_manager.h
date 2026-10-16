@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -81,6 +82,9 @@ public:
 
     // Podman when it is on PATH, Docker otherwise, nullopt when neither is.
     std::optional<ContainerTool> tool() const;
+    // Only rootless Podman publishes a port from an --internal network; under
+    // rootful Podman or Docker, lemond connects at the container's address.
+    bool rootless_podman() const;
 
     // The first setup check that fails for a container backend, or nullopt
     // when every check passes. Rerun on each call, so a fix takes effect
@@ -137,8 +141,13 @@ public:
 private:
     CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds) const;
     void remove_network(const std::string& name) const;
+    // `podman info`'s answer, nullopt while it fails. Cached once it answers,
+    // since setup checks run on every /system-info request.
+    std::optional<bool> podman_info_rootless() const;
 
     ContainerHost host_;
+    mutable std::mutex podman_mode_mutex_;
+    mutable std::optional<bool> podman_rootless_;
 };
 
 }  // namespace utils

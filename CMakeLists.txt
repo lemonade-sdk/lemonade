@@ -122,6 +122,25 @@ function(add_cpp_ci_test test_name)
     # helper stays exempt from the direct-add_test() ban it enforces.
     _add_test(NAME ${test_name} COMMAND ${ACT_COMMAND})
 
+    # get_config_dir() lives in the server core, so a test that does not link the
+    # core cannot reach the real config dir and has nothing to redirect. That is
+    # the exact set, not a heuristic: linking the isolation TU into the others
+    # only breaks their link with undefined path_utils symbols.
+    list(GET ACT_COMMAND 0 _act_target)
+    if(TARGET ${_act_target})
+        get_target_property(_act_libs ${_act_target} LINK_LIBRARIES)
+        if(_act_libs AND "lemonade-server-core" IN_LIST _act_libs)
+            if(NOT TARGET lemonade-test-isolation)
+                message(FATAL_ERROR
+                    "add_cpp_ci_test(${test_name}): lemonade-test-isolation does not exist, "
+                    "so this test would run against the real config dir. Its source is pruned "
+                    "from trees that carry no tests (see .dockerignore), which is also where "
+                    "no test target is declared, so reaching here means the two disagree.")
+            endif()
+            target_link_libraries(${_act_target} PRIVATE lemonade-test-isolation)
+        endif()
+    endif()
+
     if(_act_ci STREQUAL "ON")
         if(ACT_DEPENDS)
             register_cpp_ci_test(${test_name} ${ACT_DEPENDS})
@@ -469,12 +488,17 @@ if(APPLE)
 endif()
 
 # === httplib ===
+# Defined before httplib is added so its compiled library uses the same value as our code.
+add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
         GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
         GIT_SHALLOW TRUE
     )
+    # Header-only mode compiles httplib's whole server, client and TLS code into
+    # every file that includes httplib.h. Compiled mode builds it once.
+    set(HTTPLIB_COMPILE ON CACHE INTERNAL "")
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
     set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
     set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")
@@ -482,8 +506,12 @@ if(NOT USE_SYSTEM_HTTPLIB)
     set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")
     set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")
     FetchContent_MakeAvailable(httplib)
+    if(MSVC)
+        # httplib parses network input, so it keeps the Control Flow Guard our code is built with.
+        target_compile_options(httplib PRIVATE /guard:cf)
+    endif()
     if(NOT USE_SYSTEM_ZSTD)
-        target_include_directories(httplib INTERFACE
+        target_include_directories(httplib PUBLIC
             ${zstd_SOURCE_DIR}/lib
             ${zstd_SOURCE_DIR}/lib/common
         )
@@ -567,13 +595,15 @@ endif()
 add_library(lemonade-httplib INTERFACE)
 
 if(NOT USE_SYSTEM_HTTPLIB)
-    # Bundled cpp-httplib path: wraps httplib::httplib and attaches MbedTLS support
-    target_link_libraries(lemonade-httplib INTERFACE httplib::httplib lemonade-digest-crypto)
-    target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+    # Bundled cpp-httplib path: MbedTLS support goes on the compiled httplib library,
+    # which passes it on to every target that includes httplib.h
+    target_compile_definitions(httplib PUBLIC CPPHTTPLIB_MBEDTLS_SUPPORT)
+    target_link_libraries(httplib PUBLIC lemonade-digest-crypto)
     if(APPLE)
         find_library(SECURITY_FRAMEWORK Security REQUIRED)
-        target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+        target_link_libraries(httplib PUBLIC ${SECURITY_FRAMEWORK})
     endif()
+    target_link_libraries(lemonade-httplib INTERFACE httplib::httplib)
 else()
     # System cpp-httplib path
     if(HTTPLIB_INCLUDE_DIRS)
@@ -757,10 +787,6 @@ set(EXECUTABLE_NAME "lemond")
 # ============================================================
 # Compilation configurations
 # ============================================================
-
-# Common compiler definitions
-# Enable httplib thread pool with 8 threads
-add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Platform-specific compiler definitions
 if(WIN32)
@@ -1213,6 +1239,28 @@ function(add_test)
         "Direct add_test() is disabled in this project. Declare the test with "
         "add_cpp_ci_test(<Name> CI <ON|OFF> COMMAND <...>) so its CI status is explicit.")
 endfunction()
+
+# Points get_cache_dir()/get_config_dir() at a throwaway directory before main()
+# runs. add_cpp_ci_test() links it into every test executable, so isolating a
+# test from the developer's real ~/.config/lemonade is not something a test
+# author can forget to do. An OBJECT library because a static one would let the
+# linker drop the translation unit: nothing references it.
+set(_TEST_ISOLATION_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/support/test_state_isolation.cpp")
+if(BUILD_TESTING AND EXISTS "${_TEST_ISOLATION_SRC}")
+    add_library(lemonade-test-isolation OBJECT test/cpp/support/test_state_isolation.cpp)
+    target_include_directories(lemonade-test-isolation PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp"
+    )
+endif()
+
+set(_TEST_ISOLATION_GUARD_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_state_isolation_guard.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_TEST_ISOLATION_GUARD_SRC}")
+    add_executable(test_state_isolation_guard ${_TEST_ISOLATION_GUARD_SRC})
+    target_link_libraries(test_state_isolation_guard PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StateIsolationGuardTest CI ON COMMAND test_state_isolation_guard)
+endif()
 
 set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
 if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
@@ -2328,6 +2376,7 @@ set(_SYSTEM_INFO_HELPERS_TEST_SRC
 if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
     add_executable(test_system_info_helpers ${_SYSTEM_INFO_HELPERS_TEST_SRC})
     target_include_directories(test_system_info_helpers PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
     )
     add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)
@@ -2900,6 +2949,7 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     )
     target_include_directories(test_routing_conformance_corpus PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
     target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
@@ -2914,6 +2964,24 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RoutingConformanceCorpusTest CI ON COMMAND test_routing_conformance_corpus)
+endif()
+
+# Self-test for the conformance corpus runner's pure checks (issue #2425): locks the
+# in-memory row guards (unknown key / missing, duplicate or malformed name / unknown
+# service) and the Decision comparison, so a regression that neutered one fails CI
+# instead of silently eroding coverage.
+set(_ROUTING_CONFORMANCE_HARNESS_CHECKS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_conformance_harness_checks.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_HARNESS_CHECKS_TEST_SRC}")
+    add_executable(test_conformance_harness_checks test/cpp/test_conformance_harness_checks.cpp)
+    target_include_directories(test_conformance_harness_checks PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+    )
+    target_link_libraries(test_conformance_harness_checks PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(ConformanceHarnessChecksTest CI ON COMMAND test_conformance_harness_checks)
 endif()
 
 # ModelManager collection validation for collection.router registration:
@@ -2959,6 +3027,20 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_DOWNLOAD_STATE_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelDownloadStateTest CI ON COMMAND test_model_download_state)
+endif()
+
+set(_MODEL_DELETE_SHARED_REPO_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_delete_shared_repo.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_DELETE_SHARED_REPO_TEST_SRC}")
+    add_executable(test_model_delete_shared_repo
+        test/cpp/test_model_delete_shared_repo.cpp
+    )
+    target_link_libraries(test_model_delete_shared_repo PRIVATE lemonade-server-core)
+    add_dependencies(test_model_delete_shared_repo copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelDeleteSharedRepoTest CI ON COMMAND test_model_delete_shared_repo)
 endif()
 
 
@@ -3072,6 +3154,12 @@ if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     target_include_directories(test_telemetry_helpers PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server")
     target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
     add_cpp_ci_test(TelemetryHelpersTest CI ON COMMAND test_telemetry_helpers)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_live_throughput.cpp")
+    add_executable(test_live_throughput test/cpp/test_live_throughput.cpp)
+    target_include_directories(test_live_throughput PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include")
+    add_cpp_ci_test(LiveThroughputTest CI ON COMMAND test_live_throughput)
 endif()
 
 set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")

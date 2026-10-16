@@ -39,11 +39,11 @@ Until setup is complete, the backend's state is `action_required`. `lemonade bac
 ## Install and Run
 
 ```bash
-lemonade backends install ds4:rocm
-lemonade run DeepSeek-V4-Flash-Vision-IQ2XXS-DS4
+lemonade backends install llamacpp:nathanw
+lemonade run Qwen3-4B-GGUF --llamacpp nathanw
 ```
 
-Install pulls the image, so loading a model starts from the image already on disk. `lemonade backends uninstall ds4:rocm` removes it.
+Install pulls the image, so loading a model starts from the image already on disk. `lemonade backends uninstall llamacpp:nathanw` removes it.
 
 ## How Containers Run
 
