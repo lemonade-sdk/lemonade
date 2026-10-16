@@ -6873,11 +6873,11 @@ optgroup {
   display: flex;
   flex-direction: column;
   gap: var(--space-0-5);
+  flex-shrink: 0;
 }
 
 .model-nav-rail__primary.workspace-filter-list {
-  margin-inline: calc(-1 * var(--space-2));
-  padding-bottom: 0;
+  padding-bottom: var(--space-3);
 }
 
 .model-nav-rail__nav-item {
@@ -11163,6 +11163,22 @@ optgroup {
   padding: var(--space-3);
 }
 
+@media (min-width: 769px) {
+  .workspace-rail > .workspace-nav,
+  .workspace-catalog-layout .workspace-rail > .workspace-filter-list {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .workspace-rail > .workspace-nav {
+    flex: 1 1 auto;
+  }
+
+  .workspace-catalog-layout .workspace-rail > .workspace-filter-list {
+    flex: 0 1 auto;
+  }
+}
+
 .workspace-nav button {
   width: 100%;
   min-height: 52px;
@@ -11955,8 +11971,6 @@ a.backend-card__version:focus-visible {
 .monitor-workspace.workspace--rail-collapsed {
   grid-template-columns: var(--rail-collapsed) minmax(0, 1fr);
 }
-
-.monitor-nav { flex: 0 0 auto; }
 
 .monitor-content,
 .monitor-section {
