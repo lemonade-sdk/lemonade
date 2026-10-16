@@ -3,7 +3,9 @@
 #include <lemon/models/catalog.h>
 #include <lemon/models/json_catalog.h>
 
+#include <lemon/models/catalog_fetch_clock.h>
 #include <nlohmann/json.hpp>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -37,7 +39,8 @@ nlohmann::json configured_catalogs_to_config(const std::vector<ConfiguredCatalog
 // The catalog the record names. A fetched body is kept under `cache_dir`.
 std::shared_ptr<ModelCatalog> make_configured_catalog(const ConfiguredCatalog& catalog,
                                                       const RegistryRowRules& rules,
-                                                      const std::string& cache_dir);
+                                                      const std::string& cache_dir,
+                                                      std::shared_ptr<const CatalogFetchClock> clock = nullptr);
 
 }  // namespace models
 }  // namespace lemon

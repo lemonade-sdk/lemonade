@@ -1,7 +1,9 @@
 #pragma once
 
+#include <lemon/models/catalog_fetch_clock.h>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -44,6 +46,9 @@ struct HttpCatalogSource {
     std::string url;
     std::string cache_path;
     bool allow_insecure_http = false;
+    // Inside this window the cached body answers and the url is not asked.
+    std::chrono::seconds fresh_for{0};
+    std::shared_ptr<const CatalogFetchClock> clock;
 };
 
 std::shared_ptr<CatalogLocator> http_catalog_locator(std::string id, HttpCatalogSource source);

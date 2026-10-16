@@ -436,6 +436,8 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
 }
 
 void ModelManager::catalog_set_changed() {
+    // The set itself moved, so every origin is asked again.
+    catalog_fetch_clock_->forget_all();
     {
         StoreWrite store_write(*this);
         cache_valid_ = false;
@@ -957,6 +959,7 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
 
     deps.catalog_cache_dir =
         config_.cache_dir.empty() ? utils::get_cache_dir() : config_.cache_dir;
+    deps.catalog_fetch_clock = catalog_fetch_clock_;
     if (config_.model_catalogs) {
         models::ParsedCatalogs parsed;
         try {

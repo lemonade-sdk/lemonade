@@ -527,7 +527,7 @@ This section separates the two change questions a client can ask.
 | Question | did the list of models change? | did a model's bytes change? |
 | Signals | file mtime, contents digest, HTTP ETag / Last-Modified, listing digest | commit SHA, LFS content id, tree fingerprint |
 | Cost | one stat call or one metadata request | one or more network round trips per repository |
-| Detector | `ModelCatalog::enumeration_changed()` | `FetchableRepository::compare()` |
+| Detector | a stat against the last read `CatalogState`, or an in-process window on a fetched body | `FetchableRepository::compare()` |
 | Result | a rebuild, then one `models changed` notification carrying the new generation | `update_available` in the snapshot |
 | Client surface | none; an event inside lemond | `/v1/models`, `POST /models/check-updates`, `POST /internal/models/sync` |
 
@@ -975,7 +975,7 @@ Rules:
 2. `StoreSnapshot::generation` is the change signal for everything else. A reader compares generations to decide whether to re-read, a rebuild coalesces on it, and `ModelManager::generation()` exposes it without a callback.
 3. Callbacks run outside every lock. A subscriber reads the snapshot published at the generation it was handed, never a draft: the notification follows the atomic swap.
 4. Producers of `models_changed`: a catalog whose `enumeration_changed()` returned true, a completed ingest, deletion or sync scan, and a config change that alters the catalog set. Producers of `model_updated`: a completed re-download whose resolved checkpoint paths differ from the paths in the published snapshot. An alias mutation produces neither.
-5. Catalog change detection is polled, not pushed. A rebuild asks each catalog `enumeration_changed()`, and a `DirectoryWatcher` callback only requests a rebuild — the watcher publishes nothing and holds no subscriber list.
+5. Catalog change detection is polled, not pushed. A file catalog answers from a stat of its document (`CatalogLocator::changed()`), and a fetched one answers from an in-process window over its cached body — `CatalogFetchClock`, one minute — because a rebuild is triggered by local events that cannot have changed what a remote host serves. The window is in-memory, so a restart always asks the origin, and a change to the catalog set clears it. A `DirectoryWatcher` callback holds no subscriber list and carries no data: it invalidates, and the rebuild that follows is what notifies.
 6. A subscriber is added only where the snapshot cannot carry the answer. A consumer that needs currency rather than a signal compares `generation()`.
 
 ## Recipe Options

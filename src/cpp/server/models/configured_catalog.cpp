@@ -4,6 +4,7 @@
 #include <lemon/utils/path_utils.h>
 
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <stdexcept>
 #include <utility>
@@ -14,6 +15,10 @@ namespace lemon {
 namespace models {
 
 namespace {
+
+// A rebuild is triggered by local events — a pull, a delete, a file in the scan
+// directory — none of which change what a remote host serves.
+constexpr std::chrono::seconds kFetchedCatalogFreshness{60};
 
 fs::path body_cache_path(const std::string& cache_dir, const std::string& id) {
     const std::string& root = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
@@ -164,7 +169,8 @@ nlohmann::json configured_catalogs_to_config(const std::vector<ConfiguredCatalog
 
 std::shared_ptr<ModelCatalog> make_configured_catalog(const ConfiguredCatalog& catalog,
                                                       const RegistryRowRules& rules,
-                                                      const std::string& cache_dir) {
+                                                      const std::string& cache_dir,
+                                                      std::shared_ptr<const CatalogFetchClock> clock) {
     std::shared_ptr<CatalogLocator> locator;
     const std::string source = !catalog.path.empty()
                                    ? "file " + utils::path_to_utf8(fs::path(catalog.path))
@@ -176,6 +182,8 @@ std::shared_ptr<ModelCatalog> make_configured_catalog(const ConfiguredCatalog& c
         http.url = catalog.url;
         http.cache_path = body_cache_path(cache_dir, catalog.id).string();
         http.allow_insecure_http = catalog.allow_insecure_http;
+        http.fresh_for = kFetchedCatalogFreshness;
+        http.clock = std::move(clock);
         locator = http_catalog_locator(catalog.id, std::move(http));
     }
 

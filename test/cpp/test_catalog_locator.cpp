@@ -1,4 +1,5 @@
 #include <lemon/models/catalog.h>
+#include <lemon/models/catalog_fetch_clock.h>
 #include <lemon/models/catalog_locator.h>
 #include <lemon/models/json_catalog.h>
 #include <httplib.h>
@@ -19,6 +20,7 @@ namespace fs = std::filesystem;
 using lemon::json;
 using lemon::ModelInfo;
 using lemon::models::CatalogAccumulator;
+using lemon::models::CatalogFetchClock;
 using lemon::models::CatalogLocator;
 using lemon::models::CatalogState;
 using lemon::models::file_catalog_locator;
@@ -69,6 +71,7 @@ struct ServingDocument {
     bool send_validators = true;
     std::atomic<bool> refuses_head{false};
     std::atomic<int> conditional_reads{0};
+    std::atomic<int> reads{0};
     std::string body = R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]}})";
     std::string etag = "\"v1\"";
 
@@ -78,6 +81,9 @@ struct ServingDocument {
             return;
         }
         svr.Get("/catalog.json", [this](const httplib::Request& req, httplib::Response& res) {
+            if (req.method != "HEAD") {
+                ++reads;
+            }
             if (req.method == "HEAD") {
                 if (refuses_head.load()) {
                     res.status = 405;
@@ -245,8 +251,88 @@ static void http_catalog_tests(const fs::path& scratch) {
     document.stop();
 }
 
+// Each read builds its own locator, the way a store build does.
+static void fetch_clock_tests(const fs::path& scratch) {
+    ServingDocument document;
+    document.start();
+    if (document.port <= 0) {
+        check("the catalog server bound a port for the fetch clock", false);
+        return;
+    }
+
+    const auto clock = std::make_shared<CatalogFetchClock>();
+    const fs::path cache = scratch / "fetched" / "clock.json";
+
+    HttpCatalogSource source = serving(document, "/catalog.json", cache);
+    source.fresh_for = std::chrono::seconds(60);
+    source.clock = clock;
+
+    const json first = http_catalog_locator("clocked", source)->read(nullptr).value_or(json());
+    check("a remote catalog is fetched once", document.reads == 1 && first.contains("HTTP-Model"));
+
+    const json again = http_catalog_locator("clocked", source)->read(nullptr).value_or(json());
+    check("a rebuild inside the window asks no question", document.reads == 1);
+    check("a rebuild inside the window still contributes its models", again.contains("HTTP-Model"));
+
+    document.rewrite(R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]},
+                        "Late":{"recipe":"llamacpp","labels":["chat"]}})", "\"v2\"");
+    const json held = http_catalog_locator("clocked", source)->read(nullptr).value_or(json());
+    check("an edit inside the window is not picked up", held.size() == 1);
+
+    clock->forget_all();
+    const json after_forget = http_catalog_locator("clocked", source)->read(nullptr).value_or(json());
+    check("forgetting the clock asks again", document.reads == 2 && after_forget.size() == 2);
+
+    HttpCatalogSource other = source;
+    other.cache_path = (scratch / "fetched" / "other.json").string();
+    const int before_other = document.reads.load();
+    http_catalog_locator("other", other)->read(nullptr);
+    check("one catalog's window does not cover another's", document.reads == before_other + 1);
+    http_catalog_locator("clocked", source)->read(nullptr);
+    check("the first catalog is still inside its window", document.reads == before_other + 1);
+
+    clock->mark_fetched("clocked");
+    fs::remove(cache);
+    const int before_missing = document.reads.load();
+    http_catalog_locator("clocked", source)->read(nullptr);
+    check("a window with no cached body fetches", document.reads == before_missing + 1);
+
+    HttpCatalogSource brief = serving(document, "/catalog.json", scratch / "fetched" / "brief.json");
+    brief.fresh_for = std::chrono::seconds(1);
+    brief.clock = clock;
+    http_catalog_locator("brief", brief)->read(nullptr);
+    const int after_brief = document.reads.load();
+    http_catalog_locator("brief", brief)->read(nullptr);
+    check("a window that has not expired asks nothing", document.reads == after_brief);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    http_catalog_locator("brief", brief)->read(nullptr);
+    check("an expired window asks again", document.reads == after_brief + 1);
+    http_catalog_locator("brief", brief)->read(nullptr);
+    check("a 304 restarts the window", document.reads == after_brief + 1);
+
+    HttpCatalogSource unclocked = serving(document, "/catalog.json", scratch / "fetched" / "unclocked.json");
+    unclocked.fresh_for = std::chrono::seconds(60);
+    const int before_unclocked = document.reads.load();
+    http_catalog_locator("unclocked", unclocked)->read(nullptr);
+    http_catalog_locator("unclocked", unclocked)->read(nullptr);
+    check("a locator with no clock reads every time",
+          document.reads == before_unclocked + 2);
+
+    HttpCatalogSource nowindow = unclocked;
+    nowindow.fresh_for = std::chrono::seconds(0);
+    nowindow.clock = clock;
+    nowindow.cache_path = (scratch / "fetched" / "nowindow.json").string();
+    const int before_nowindow = document.reads.load();
+    http_catalog_locator("nowindow", nowindow)->read(nullptr);
+    http_catalog_locator("nowindow", nowindow)->read(nullptr);
+    check("a window of zero reads every time", document.reads == before_nowindow + 2);
+
+    document.stop();
+}
+
 int main() {
     const fs::path scratch = lemon::test::make_scratch_dir("catalog_locator");
+    fetch_clock_tests(scratch);
     const fs::path document = scratch / "catalog.json";
     const std::string id = "file:" + document.string();
 
