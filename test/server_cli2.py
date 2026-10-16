@@ -2181,6 +2181,26 @@ sys.exit(0)
         ]
         return next(m for m in provider["models"] if m["id"] == model)
 
+    def _save_ctx_size(self, ctx_size):
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
+            json={"ctx_size": ctx_size},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def _saved_ctx_size(self):
+        return (
+            requests.get(
+                f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            .json()["saved"]
+            .get("ctx_size")
+        )
+
     @staticmethod
     def _read_pi_agent_json(temp_dir, name, default=None):
         path = os.path.join(temp_dir, ".pi", "agent", name)
@@ -2266,21 +2286,8 @@ sys.exit(0)
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
         model_url = f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}"
-        options_url = f"{model_url}/options"
-
-        def save_ctx_size(ctx_size):
-            response = requests.post(
-                options_url,
-                json={"ctx_size": ctx_size},
-                headers=_auth_headers(),
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(response.status_code, 200, response.text)
-
-        saved = requests.get(
-            options_url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
-        ).json()["saved"]
-        save_ctx_size(-1)
+        saved = self._saved_ctx_size()
+        self._save_ctx_size(-1)
         try:
             run_cli_command(["unload", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_DEFAULT)
             with tempfile.TemporaryDirectory(
@@ -2295,7 +2302,7 @@ sys.exit(0)
                 self.assertEqual(model.get("contextWindow"), loaded_ctx)
                 self.assertEqual(model.get("maxTokens"), loaded_ctx)
         finally:
-            save_ctx_size(saved.get("ctx_size"))
+            self._save_ctx_size(saved)
 
     def test_133_launch_pi_not_downloaded_model_keeps_labels(self):
         """A model that is not downloaded yet still gets its labels' image and tool settings."""
@@ -2461,6 +2468,34 @@ sys.exit(0)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("mcp.json", result.stderr)
             self.assertFalse(os.path.exists(capture_path), "pi was started")
+
+    def test_138_launch_pi_missing_binary_does_not_load_the_model(self):
+        """Launch checks that pi is installed before loading a model for its window."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        saved = self._saved_ctx_size()
+        self._save_ctx_size(-1)
+        try:
+            run_cli_command(["unload", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_DEFAULT)
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                result = run_cli_command(
+                    ["launch", "pi", "--model", ENDPOINT_TEST_MODEL],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_missing_agent_env(temp_dir),
+                )
+            self.assertNotEqual(result.returncode, 0)
+            health = requests.get(
+                f"http://localhost:{PORT}/api/v1/health",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            loaded = [m.get("model_name") for m in health.get("all_models_loaded", [])]
+            self.assertNotIn(ENDPOINT_TEST_MODEL, loaded)
+        finally:
+            self._save_ctx_size(saved)
 
     # =============================================================================
     # Unload Tests

@@ -918,7 +918,10 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
     }
 
-    if (lemon_tray::agent_needs_config_sync(config.agent) &&
+    // Pi's config sync can load the model, so it waits until pi is found.
+    const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
+    const bool sync_after_binary_check = config.agent == "pi";
+    if (needs_config_sync && !sync_after_binary_check &&
         !sync_agent_config_for_launch(client, config)) {
         return 1;
     }
@@ -961,6 +964,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         if (!agent_config.install_instructions.empty()) {
             LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
         }
+        return 1;
+    }
+
+    if (needs_config_sync && sync_after_binary_check &&
+        !sync_agent_config_for_launch(client, config)) {
         return 1;
     }
 
