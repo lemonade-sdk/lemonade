@@ -142,7 +142,7 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
 ```
 
 - `contextWindow` and `maxTokens` come from the model's saved `ctx_size`, or 40960 when none is saved or it is set to automatic (`-1`). For the launched model, `--ctx-size` on `lemonade launch` takes precedence. If a model runs with a different context size, save it with `lemonade load <model> --ctx-size N --save-options` so Pi compacts the conversation before it overflows.
-- `apiKey` is the placeholder `lemonade` when Lemonade has no API key. When it has one (`--api-key`, `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY`), the value is `${LEMONADE_API_KEY}`: launch passes the key to Pi in that environment variable, and it is never written to disk. Running `pi` directly then needs `LEMONADE_API_KEY` set.
+- `apiKey` is the placeholder `lemonade` when Lemonade has no API key. When it has one (`--api-key`, `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY`), the value is `${LEMONADE_API_KEY}`: launch passes the key to Pi in that environment variable, and it is never written to disk. Running `pi` directly then needs `LEMONADE_API_KEY` set. If launch can't update Pi's config while a key is set, it stops instead of starting Pi, so the key is never sent to the server in Pi's old config.
 
 **`settings.json`** makes Lemonade Pi's default provider, only if Pi has no default yet:
 

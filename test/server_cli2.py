@@ -2379,6 +2379,51 @@ sys.exit(0)
             self.assertIn("Failed to remove Lemonade MCP from pi", result.stderr)
             self.assertFalse(os.path.exists(capture_path), "pi was started")
 
+    def test_136_launch_pi_with_key_stops_when_config_cannot_be_updated(self):
+        """With an API key, pi is not started against config still pointing at another server."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+        if os.geteuid() == 0:
+            self.skipTest("root ignores the read-only directory this test relies on")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            agent_dir = os.path.join(temp_dir, ".pi", "agent")
+            os.makedirs(agent_dir)
+            with open(os.path.join(agent_dir, "mcp.json"), "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "mcpServers": {
+                            "lemonade": {
+                                "url": "http://server-a.invalid:1/mcp",
+                                "headers": {
+                                    "Authorization": "Bearer ${LEMONADE_API_KEY}"
+                                },
+                            }
+                        }
+                    },
+                    f,
+                )
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path)
+            os.chmod(agent_dir, 0o555)
+            try:
+                result = run_cli_command(
+                    [
+                        "launch",
+                        "pi",
+                        "--model",
+                        ENDPOINT_TEST_MODEL,
+                        "--api-key",
+                        "key-for-this-server",
+                    ],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_stubbed_agent_env(temp_dir),
+                )
+            finally:
+                os.chmod(agent_dir, 0o755)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
     # =============================================================================
     # Unload Tests
     # =============================================================================

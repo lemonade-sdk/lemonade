@@ -772,6 +772,12 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         lemon_tray::build_agent_server_base_url(
             config.host, config.port, config.agent == "pi" && config.is_ssl) + "/v1";
 
+    // Pi's config references the key launch exports, so starting pi on a
+    // config that still points at another server would send it this key.
+    const bool pi_with_key = config.agent == "pi" && !config.api_key.empty();
+    const char* pi_key_stop = "Not launching pi, since it would send this server's API key "
+                              "to the server in pi's old config.";
+
     std::string error_message;
     if (!lemon_cli::sync_agent_config_file(*profile,
                                            "Lemonade",
@@ -779,6 +785,11 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                            config_api_key,
                                            models,
                                            error_message)) {
+        if (pi_with_key) {
+            std::cerr << "Error: Failed to sync pi config: " << error_message << std::endl;
+            std::cerr << pi_key_stop << std::endl;
+            return false;
+        }
         std::cerr << "Warning: Failed to sync " << config.agent
                   << " config: " << error_message << std::endl;
         std::cerr << "Continuing with launch anyway..." << std::endl;
@@ -801,12 +812,19 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         }
 
         // An existing entry is refreshed so it follows the current host, port and key.
-        if (config.pi_mcp.value_or(lemon_cli::pi_has_mcp_server())) {
+        const bool had_mcp_entry = lemon_cli::pi_has_mcp_server();
+        if (config.pi_mcp.value_or(had_mcp_entry)) {
             std::string mcp_error;
             if (!lemon_cli::sync_pi_mcp_server(
                     lemon_tray::build_agent_server_base_url(config.host, config.port,
                                                             config.is_ssl),
                     !config.api_key.empty(), mcp_error)) {
+                if (pi_with_key && had_mcp_entry) {
+                    std::cerr << "Error: Failed to update Lemonade MCP in pi: " << mcp_error
+                              << std::endl;
+                    std::cerr << pi_key_stop << std::endl;
+                    return false;
+                }
                 std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
                 std::cerr << "Continuing with launch anyway..." << std::endl;
             }
