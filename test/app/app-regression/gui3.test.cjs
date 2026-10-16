@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const {
   repoRoot,
   readSource,
@@ -232,6 +234,24 @@ const tests = [
       try { require.resolve(tsPath); }
       catch (_) { return { skip: true, reason: "typescript not installed - run 'npm ci' in src/app first" }; }
       require(path.join(repoRoot, 'src', 'app', 'tests', 'dashboard-throughput.runtime.cjs'));
+    },
+  },
+  {
+    name: 'MCP runtime image-precedence contract holds',
+    run() {
+      const appDir = path.join(repoRoot, 'src', 'app');
+      if (!fs.existsSync(path.join(appDir, 'node_modules', 'webpack'))) {
+        return { skip: true, reason: 'src/app dependencies are not installed' };
+      }
+      const result = spawnSync(process.execPath, ['tests/mcp-runtime.runtime.cjs'], {
+        cwd: appDir,
+        encoding: 'utf8',
+      });
+      assert.equal(
+        result.status,
+        0,
+        `mcp-runtime suite failed:\n${result.stdout || ''}${result.stderr || ''}`,
+      );
     },
   },
 ];

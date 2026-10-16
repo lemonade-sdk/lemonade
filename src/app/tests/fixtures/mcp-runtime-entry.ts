@@ -177,22 +177,169 @@ async function main(): Promise<void> {
   assert.deepEqual(generated.artifacts?.map(item => item.type), ['image', 'model3d']);
   assert.deepEqual(calls, ['load:image-model', 'image:image-model', 'load:3d-model', '3d:3d-model']);
 
+  const ATTACHED = 'data:image/png;base64,YXR0YWNoZWQ=';
+  const PREVIOUS = 'data:image/png;base64,cHJldmlvdXM=';
+  const GENERATED = 'data:image/png;base64,Z2VuZXJhdGVk';
+  const NEWEST = 'data:image/png;base64,bmV3ZXN0';
+  const EXPLICIT = 'data:image/png;base64,ZXhwbGljaXQ=';
+
+  let editTarget = '';
   (api as any).imageEdit = async (name: string, _prompt: string, image: string) => {
     assert.equal(name, 'image-edit-model');
-    assert.equal(image, 'data:image/png;base64,YXR0YWNoZWQ=');
+    editTarget = image;
     return ['data:image/png;base64,ZWRpdGVk'];
   };
-  const lemonadeWithImage = await buildSelectedMcpRuntime(
+
+  const editWith = async (
+    context: { attachedImages?: string[]; previousImages?: string[] },
+    extraArgs: Record<string, unknown> = {},
+  ): Promise<string> => {
+    const runtime = await buildSelectedMcpRuntime(['lemonade'], context);
+    editTarget = '';
+    const result = await runtime!.execute({
+      id: 'call-edit',
+      type: 'function',
+      function: {
+        name: 'edit_image',
+        arguments: JSON.stringify({ prompt: 'make it blue', ...extraArgs }),
+      },
+    });
+    assert.notEqual(result.error, true);
+    assert.equal(result.artifacts?.[0]?.url, 'data:image/png;base64,ZWRpdGVk');
+    return editTarget;
+  };
+
+  assert.equal(
+    await editWith({ attachedImages: [ATTACHED] }), ATTACHED,
+    'a lone attachment is the edit target');
+  assert.equal(
+    await editWith({ previousImages: [PREVIOUS, GENERATED] }), GENERATED,
+    'with no new attachment the newest conversation image wins');
+  assert.equal(
+    await editWith({ previousImages: [PREVIOUS, GENERATED], attachedImages: [NEWEST] }), NEWEST,
+    'a new attachment outranks every earlier conversation image');
+  assert.equal(
+    await editWith({ previousImages: [PREVIOUS], attachedImages: [ATTACHED, NEWEST] }), NEWEST,
+    'the last of several attachments in one turn is the newest');
+  assert.equal(
+    await editWith({ previousImages: [PREVIOUS], attachedImages: ['', 'https://example.com/a.png', NEWEST] }),
+    NEWEST,
+    'entries that are not data URLs never become the edit target');
+  assert.equal(
+    await editWith({ previousImages: [PREVIOUS], attachedImages: [NEWEST] }, { image: EXPLICIT }), EXPLICIT,
+    'an explicit data-URL argument outranks the conversation');
+  assert.equal(
+    await editWith({ attachedImages: [NEWEST] }, { image: 'https://example.com/a.png' }), NEWEST,
+    'an explicit argument that is not a data URL falls back to the newest image');
+
+
+  // An image produced earlier in the same turn must outrank anything older.
+  const CHAIN_GENERATED = 'data:image/png;base64,Y2hhaW5nZW4=';
+  const priorImageGeneration = (api as any).imageGeneration;
+  (api as any).imageGeneration = async () => [CHAIN_GENERATED];
+  const chainRuntime = await buildSelectedMcpRuntime(
     ['lemonade'],
-    { attachedImages: ['data:image/png;base64,YXR0YWNoZWQ='] },
+    { previousImages: [PREVIOUS], attachedImages: [ATTACHED] },
   );
-  const edited = await lemonadeWithImage!.execute({
-    id: 'call-edit',
+  const chainGenerated = await chainRuntime!.execute({
+    id: 'chain-generate', type: 'function',
+    function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a teapot' }) },
+  });
+  assert.equal(chainGenerated.artifacts?.[0]?.url, CHAIN_GENERATED);
+  editTarget = '';
+  const chainEdited = await chainRuntime!.execute({
+    id: 'chain-edit', type: 'function',
+    function: { name: 'edit_image', arguments: JSON.stringify({ prompt: 'make it blue' }) },
+  });
+  assert.notEqual(chainEdited.error, true);
+  assert.equal(editTarget, CHAIN_GENERATED,
+    'an image generated earlier in the same turn is the newest image');
+
+  // A prompt must not be discarded because the history happens to hold an image.
+  let model3dSource = '';
+  const prior3d = (api as any).model3dGeneration;
+  (api as any).model3dGeneration = async (_name: string, image: string) => {
+    model3dSource = image;
+    return { url: 'blob:3d', filename: 'a.glb', blob: { type: 'model/gltf-binary' } };
+  };
+  const promptTo3d = await (await buildSelectedMcpRuntime(['lemonade'], { previousImages: [PREVIOUS] }))!.execute({
+    id: 'text-to-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({ prompt: 'a brand new teapot' }) },
+  });
+  assert.notEqual(promptTo3d.error, true);
+  assert.equal(model3dSource, CHAIN_GENERATED,
+    'text-to-3D builds a reference image from the prompt instead of reusing an older image');
+
+  // An image generated earlier in this turn answered a different request, so a
+  // prompt must still win. Generate a cat, then ask for a 3D teapot.
+  const CAT_GENERATED = 'data:image/png;base64,Y2F0Z2Vu';
+  const TEAPOT_REFERENCE = 'data:image/png;base64,dGVhcG90cmVm';
+  (api as any).imageGeneration = async (_name: string, prompt: string) => (
+    prompt.includes('cat') ? [CAT_GENERATED] : [TEAPOT_REFERENCE]
+  );
+  const catThen3d = await buildSelectedMcpRuntime(['lemonade'], {});
+  const catImage = await catThen3d!.execute({
+    id: 'cat-generate', type: 'function',
+    function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a cat' }) },
+  });
+  assert.equal(catImage.artifacts?.[0]?.url, CAT_GENERATED);
+  model3dSource = '';
+  const teapot3d = await catThen3d!.execute({
+    id: 'cat-then-teapot-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({ prompt: 'a teapot' }) },
+  });
+  assert.notEqual(teapot3d.error, true);
+  assert.equal(model3dSource, TEAPOT_REFERENCE,
+    'a prompt outranks an unrelated image that an earlier tool call produced this turn');
+
+  // Without a prompt, a same-turn generated image is still the newest image.
+  const noPromptRuntime = await buildSelectedMcpRuntime(['lemonade'], { previousImages: [PREVIOUS] });
+  await noPromptRuntime!.execute({
+    id: 'cat-generate-2', type: 'function',
+    function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a cat' }) },
+  });
+  model3dSource = '';
+  await noPromptRuntime!.execute({
+    id: 'no-prompt-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({}) },
+  });
+  assert.equal(model3dSource, CAT_GENERATED,
+    'without a prompt the same-turn generated image is the reconstruction source');
+
+  (api as any).imageGeneration = async () => [CHAIN_GENERATED];
+
+  // An image attached this turn still outranks the prompt.
+  model3dSource = '';
+  const imageTo3d = await (await buildSelectedMcpRuntime(
+    ['lemonade'],
+    { previousImages: [PREVIOUS], attachedImages: [NEWEST] },
+  ))!.execute({
+    id: 'image-to-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({ prompt: 'make this 3D' }) },
+  });
+  assert.notEqual(imageTo3d.error, true);
+  assert.equal(model3dSource, NEWEST,
+    "this turn's attachment outranks the prompt for image-to-3D");
+
+  // With neither a prompt nor a new attachment, the newest older image is used.
+  model3dSource = '';
+  await (await buildSelectedMcpRuntime(['lemonade'], { previousImages: [PREVIOUS, GENERATED] }))!.execute({
+    id: 'history-to-3d', type: 'function',
+    function: { name: 'generate_3d', arguments: JSON.stringify({}) },
+  });
+  assert.equal(model3dSource, GENERATED,
+    'without a prompt the newest conversation image is the reconstruction source');
+
+  (api as any).model3dGeneration = prior3d;
+  (api as any).imageGeneration = priorImageGeneration;
+
+  const noImage = await (await buildSelectedMcpRuntime(['lemonade'], { previousImages: ['not-an-image'] }))!.execute({
+    id: 'call-edit-none',
     type: 'function',
     function: { name: 'edit_image', arguments: JSON.stringify({ prompt: 'make it blue' }) },
   });
-  assert.notEqual(edited.error, true);
-  assert.equal(edited.artifacts?.[0]?.url, 'data:image/png;base64,ZWRpdGVk');
+  assert.equal(noImage.error, true);
+  assert.match(noImage.content, /No attached or previously generated image/);
 
   const wrongCapability = await lemonade!.execute({
     id: 'call-wrong-capability',
