@@ -40,7 +40,6 @@ public:
     void write_load_error(httplib::Response& res, const std::string& model,
                           const std::string& message) const;
 
-    // The errors model_error() reports, by the code its body carries.
     static const RouteError kModelNotSupported;
     static const RouteError kModelNotFound;
     static const RouteError kRouterResidencyConflict;

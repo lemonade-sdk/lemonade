@@ -34,9 +34,8 @@ public:
     // Snapshots of every visible job, expiring completed jobs past their grace period.
     nlohmann::json list();
 
-    // Applies a pause, cancel or remove action. Sets status to kDownloadNotFound's for an
-    // unknown job and kUnsupportedAction's for an unknown action; the returned body is the
-    // response either way.
+    // Applies a pause, cancel or remove action. Sets status to 404 for an unknown job
+    // and 400 for an unknown action; the returned body is the response either way.
     nlohmann::json control(const std::string& id, const std::string& action, int& status);
     static const RouteError kDownloadNotFound;
     static const RouteError kUnsupportedAction;

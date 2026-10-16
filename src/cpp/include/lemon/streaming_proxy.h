@@ -48,7 +48,6 @@ public:
         }
     };
 
-    // A backend can fail after the 200 is committed, so the error arrives as one more event.
     static nlohmann::ordered_json error_event_schema();
 
     static void forward_sse_stream(

@@ -110,8 +110,6 @@ public:
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 
-    // The errors base-class steps write, such as the invalid-body 400, so the docs list them
-    // beside the route's own.
     virtual std::vector<RouteError> inherited_errors(const RouteSpec& spec) const;
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
@@ -126,8 +124,8 @@ public:
                                 const std::string& content_type = "text/event-stream");
 
 protected:
-    // Routes answer a body that does not parse in different shapes, so a route can override
-    // this, and then overrides invalid_body_errors() to match.
+    // Clients parse each route's invalid-JSON error, and the shapes differ by route. The
+    // default is a 400 with a plain-string error; a route with another shape overrides it.
     virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
                                     httplib::Response& res) const;
     virtual std::vector<RouteError> invalid_body_errors() const;
@@ -147,8 +145,9 @@ protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
 
-    // Routes answer an exception from validate() or run() in different shapes, so a route can
-    // override this, and then overrides exception_errors() to match.
+    // An exception escaping validate() or run() lands here. The default answers a residency
+    // conflict with 409 and anything else with a 500 plain-string error; a route whose clients
+    // parse another shape overrides it.
     virtual void write_exception(const std::exception& error, httplib::Response& res) const;
     virtual std::vector<RouteError> exception_errors() const;
 
@@ -177,10 +176,9 @@ std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const Ro
 void attach_route_decision(nlohmann::json& response, httplib::Response& res,
                            const std::optional<RouterDispatchResult>& decision);
 
-// A backend error passes through with the backend's status, so its RouteError's status is the
-// fallback for a backend that reports none.
 extern const RouteError kBackendError;
 
+// Maps a backend error body to its HTTP status.
 void set_error_response(const nlohmann::json& response, httplib::Response& res,
                         const RouteError& fallback);
 
@@ -188,7 +186,7 @@ extern const RouteError kNoOutputError;
 
 // A generation streamed straight to the client commits a 200 before the backend runs, so a
 // backend that crashes or runs out of memory would look like an empty successful file. This
-// buffers the output and answers with kNoOutputError or the backend's error instead.
+// buffers the output and answers with an error instead.
 void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
                           const std::function<void(httplib::DataSink&)>& generate);
 
