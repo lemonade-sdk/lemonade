@@ -2121,42 +2121,50 @@ static bool try_resolve_registered_extra_cache(ModelInfo& info, const std::strin
     }
 
     ModelInfo candidate = info;
-    // Discovery must also exclude matched shards when the family is incomplete.
-    // Resolved model paths are still only committed after full validation.
-    std::set<fs::path> local_owned_paths;
-    std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
-    try {
-        for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
-            const std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
-            if (checkpoint_repo.empty()) return false;
-            const fs::path expected_repo = root /
-                repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
-            candidate.resolved_paths[type] =
-                resolve_registered_extra_checkpoint(info, type, checkpoint, extra_dir);
-            const std::string& resolved = candidate.resolved_paths[type];
-            if (info.recipe == "llamacpp" && type == "main" &&
-                (safe_is_directory(path_from_utf8(resolved)) ||
-                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
-                return false;
+    std::set<fs::path> matched_paths;
+    const bool complete = [&]() -> bool {
+        try {
+            for (const auto& [type, checkpoint] : info.checkpoints) {
+                if (type == "npu_cache") continue;  // Lazily managed by flm-npu.
+                const std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
+                if (checkpoint_repo.empty()) return false;
+                const fs::path expected_repo = root /
+                    repo_id_to_cache_dir_name(checkpoint_repo, effective_registry_source(info));
+                candidate.resolved_paths[type] =
+                    resolve_registered_extra_checkpoint(info, type, checkpoint, extra_dir);
+                const std::string& resolved = candidate.resolved_paths[type];
+                if (info.recipe == "llamacpp" && type == "main" &&
+                    (safe_is_directory(path_from_utf8(resolved)) ||
+                     !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
+                    return false;
+                }
+                // Reject escaped refs/main entries and symlinks, including redirects
+                // into a different repository under the same extra models root.
+                const fs::path resolved_path = path_from_utf8(resolved);
+                const bool own_repo = path_inside(expected_repo, root) &&
+                    path_inside(resolved_path, expected_repo);
+                const bool legacy_main_repo = type != "main" &&
+                    path_inside(resolved_path, main_repo);
+                if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
+                    !collect_registered_shards(resolved_path,
+                        own_repo ? expected_repo : main_repo, matched_paths)) {
+                    return false;
+                }
             }
-            // Reject escaped refs/main entries and symlinks, including redirects
-            // into a *different* repository under the same extra models root.
-            const fs::path resolved_path = path_from_utf8(resolved);
-            const bool own_repo = path_inside(expected_repo, root) &&
-                path_inside(resolved_path, expected_repo);
-            const bool legacy_main_repo = type != "main" &&
-                path_inside(resolved_path, main_repo);
-            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
-                !collect_registered_shards(resolved_path,
-                    own_repo ? expected_repo : main_repo, owned_paths)) {
-                return false;
+            return are_required_checkpoints_complete(candidate);
+        } catch (const std::exception&) {
+            return false;  // Optional extra directory must never break discovery.
+        }
+    }();
+
+    if (registered_paths) {
+        for (const auto& path : matched_paths) {
+            if (complete || is_gguf_shard_filename(path.filename().string(), nullptr)) {
+                registered_paths->insert(path);
             }
         }
-        if (!are_required_checkpoints_complete(candidate)) return false;
-    } catch (const std::exception&) {
-        return false;  // An optional directory must never break catalog discovery.
     }
+    if (!complete) return false;
     info.resolved_paths = std::move(candidate.resolved_paths);
     return true;
 }
