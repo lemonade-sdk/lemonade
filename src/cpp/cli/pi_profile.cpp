@@ -87,12 +87,10 @@ nlohmann::json build_pi_provider_block(
     provider_block["baseUrl"] = base_url;
     provider_block["api"] = "openai-completions";
     provider_block["apiKey"] = pi_api_key_value(api_key);
-    // Pi's defaults target OpenAI: a developer role, store and
-    // max_completion_tokens. These match what pi's own llama.cpp provider
-    // sends instead.
+    // Pi's defaults target OpenAI: store and max_completion_tokens. These
+    // match what pi's own llama.cpp provider sends instead.
     provider_block["compat"] = {
         {"supportsStore", false},
-        {"supportsDeveloperRole", false},
         {"maxTokensField", "max_tokens"},
     };
 

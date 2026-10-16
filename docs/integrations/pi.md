@@ -125,7 +125,6 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
       "apiKey": "lemonade",
       "compat": {
         "supportsStore": false,
-        "supportsDeveloperRole": false,
         "maxTokensField": "max_tokens"
       },
       "models": [

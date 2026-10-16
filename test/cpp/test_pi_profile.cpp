@@ -52,7 +52,6 @@ void test_provider_block() {
 
     check("provider compat targets llama.cpp", provider["compat"] == json{
         {"supportsStore", false},
-        {"supportsDeveloperRole", false},
         {"maxTokensField", "max_tokens"},
     });
     check("plain model", provider["models"][0] == json{
