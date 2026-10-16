@@ -171,6 +171,15 @@ void test_mcp_server(const fs::path& mcp_path) {
     check("refresh keeps an HTTP type the user set",
           mcp["mcpServers"]["lemonade"]["type"] == "streamable-http");
 
+    // Only the exact url launch writes counts as the same server.
+    write_file(mcp_path, R"({"mcpServers": {"lemonade": {
+        "url": "http://localhost:13305/mcp/", "headers": {"X-Trace": "1"}
+    }}})");
+    lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
+    mcp = json::parse(read_file(mcp_path));
+    check("refresh treats another form of the url as another server",
+          !mcp["mcpServers"]["lemonade"].contains("headers"));
+
     write_file(mcp_path, R"({"mcpServers": {"lemonade": {
         "url": "http://localhost:13305/mcp",
         "headers": {"Authorization": "Bearer my-own-token"}
