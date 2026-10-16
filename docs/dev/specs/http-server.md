@@ -228,7 +228,7 @@ This section defines how a route declares the error responses it can answer with
 
 - **In the route class.** Each error response a route writes is a `RouteError` constant beside its handler. The handler passes it to an error writer such as `write_plain_error()`, which takes the status and code from it, and `spec()` lists it.
 - **Shared error responses.** An error response that more than one route writes is declared beside the function that writes it, such as `ModelLoader::errors()` beside `ModelLoader::write_load_error()`.
-- **Base classes.** A base class declares the error responses its own steps write, such as `ModelRoute::kModelMissing` for step 4, and a route lists the ones its base class writes for it. A route that overrides `write_invalid_body()` or `write_exception()` lists what its override writes instead.
+- **Base classes.** A base class declares the error responses its own steps write, such as `ModelRoute::kModelMissing` for a request that names no `model`, and a route lists the ones its base class writes for it. A route that overrides `write_invalid_body()` or `write_exception()` lists what its override writes instead.
 - **Backend errors.** A route that passes a backend's error through lists `kBackendError`, and also the backend error responses a client can act on, such as llama.cpp's 501 for a model that cannot embed.
 
 An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`. `docs/api/README.md` lists the error responses no route class writes: the 401 and 403 answers, the 405 stubs and the 404 for an unknown path. Body shapes differ by route; [Appendix B](#appendix-b-error-format-cleanup) unifies them.
