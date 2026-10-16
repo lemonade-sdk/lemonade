@@ -525,10 +525,15 @@ bool apply_http_security_policy(
 }
 } // namespace
 
-HttpResponse HttpClient::get(const std::string& url,
+namespace {
+
+// One request whose whole payload is its status line and headers; `headers_only`
+// is the HEAD case.
+HttpResponse perform_request(const std::string& url,
                              const std::map<std::string, std::string>& headers,
                              long timeout_seconds,
-                             HttpSecurityPolicy policy) {
+                             HttpSecurityPolicy policy,
+                             bool headers_only) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -540,6 +545,9 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
+    curl_easy_setopt(curl, CURLOPT_NOBODY, headers_only ? 1L : 0L);
     if (!apply_http_security_policy(curl, policy, true)) {
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
@@ -576,6 +584,22 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_cleanup(curl);
 
     return response;
+}
+
+}  // namespace
+
+HttpResponse HttpClient::get(const std::string& url,
+                             const std::map<std::string, std::string>& headers,
+                             long timeout_seconds,
+                             HttpSecurityPolicy policy) {
+    return perform_request(url, headers, timeout_seconds, policy, false);
+}
+
+HttpResponse HttpClient::head(const std::string& url,
+                              const std::map<std::string, std::string>& headers,
+                              long timeout_seconds,
+                              HttpSecurityPolicy policy) {
+    return perform_request(url, headers, timeout_seconds, policy, true);
 }
 
 HttpResponse HttpClient::post(const std::string& url,
@@ -688,6 +712,8 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
     if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
         curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);

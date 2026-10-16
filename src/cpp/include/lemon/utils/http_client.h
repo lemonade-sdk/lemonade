@@ -18,8 +18,8 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
-    // Response headers, names lowercased. Populated by post(); other verbs
-    // leave this empty.
+    // Response headers, names lowercased. Populated by every verb that buffers
+    // a response; post_stream reports them through out_response_headers.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
@@ -154,6 +154,13 @@ public:
                            const std::map<std::string, std::string>& headers = {},
                            long timeout_seconds = 0,
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+
+    // HEAD request: headers only, no body. A conditional poll asks whether a
+    // document changed without paying for the body it will not use.
+    static HttpResponse head(const std::string& url,
+                            const std::map<std::string, std::string>& headers = {},
+                            long timeout_seconds = 0,
+                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Simple POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
