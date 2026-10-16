@@ -231,7 +231,7 @@ This section defines how a route declares the error responses it can answer with
 - **Base classes.** A base class declares the error responses its own steps write, such as `ModelRoute::kModelMissing` for a request that names no `model`, and a route lists the ones its base class writes for it. A route that overrides `write_invalid_body()` or `write_exception()` lists what its override writes instead.
 - **Backend errors.** A route that passes a backend's error through lists `kBackendError`, and also the backend error responses a client can act on, such as llama.cpp's 501 for a model that cannot embed.
 
-An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`. `docs/api/README.md` lists the error responses no route class writes: the 401 and 403 answers, the 405 stubs and the 404 for an unknown path. Body shapes differ by route; [Appendix B](#appendix-b-error-format-cleanup) unifies them.
+An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`. The [API reference's Errors section](../../api/README.md#errors) lists the error responses no route class writes: the 401 and 403 answers, the 405 stubs and the 404 for an unknown path. Body shapes differ by route; [Appendix B](#appendix-b-error-format-cleanup) unifies them.
 
 ```cpp
 const RouteError kUnknownJob{404, "", "`id` names no job"};
