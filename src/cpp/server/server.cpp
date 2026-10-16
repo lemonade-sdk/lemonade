@@ -3809,13 +3809,145 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         res.set_content(error.dump(), "application/json");
         return;
     }
-    if (request_json.contains("prompt") && !request_json["prompt"].is_string()) {
+
+    // A real request body (chat's `messages`, an explicit `tools` array, the
+    // Responses API's `input`, or the completions form's multi-segment array
+    // `prompt`) opts into deriving RouteContext via build_route_context, the
+    // same function production uses — this is what lets the preview pick up
+    // any signal that function knows how to compute (multi-turn text, image
+    // content parts, tool arrays) without hand-plumbing each one here, and
+    // it's why the flattened has_images/has_tools/prompt shape below is kept
+    // working unchanged rather than being routed through the same function.
+    const bool prompt_present = request_json.contains("prompt");
+    const bool prompt_is_array = prompt_present && request_json["prompt"].is_array();
+    const bool real_body = request_json.contains("messages") ||
+                            request_json.contains("input") ||
+                            request_json.contains("tools") || prompt_is_array;
+
+    // Presence alone decides `real_body` above; without these, a wrong-typed
+    // messages/input/tools would still flip into real-body mode and then
+    // silently evaluate as empty (build_route_context's own type guards treat
+    // a malformed field as absent, not an error) — a confidently-wrong 200
+    // instead of a 400 naming the mistake.
+    if (prompt_present && !request_json["prompt"].is_string() && !prompt_is_array) {
         res.status = 400;
-        nlohmann::json error = {{"error", "'prompt' must be a string"}};
+        nlohmann::json error = {{"error", "'prompt' must be a string or an array"}};
         res.set_content(error.dump(), "application/json");
         return;
     }
-    const std::string prompt = request_json.value("prompt", std::string());
+
+    const int primary_body_fields = static_cast<int>(request_json.contains("messages")) +
+                                    static_cast<int>(request_json.contains("input")) +
+                                    static_cast<int>(prompt_present);
+    if (primary_body_fields > 1) {
+        res.status = 400;
+        nlohmann::json error = {{"error",
+            "only one of 'messages', 'input', or 'prompt' may be provided"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (request_json.contains("messages") && !request_json["messages"].is_array()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'messages' must be an array"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (request_json.contains("input") && !request_json["input"].is_string() &&
+        !request_json["input"].is_array()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'input' must be a string or an array"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (request_json.contains("tools") && !request_json["tools"].is_array()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'tools' must be an array"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (prompt_is_array) {
+        for (const auto& part : request_json["prompt"]) {
+            if (!part.is_string()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", "'prompt' array elements must be strings"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        auto validate_content = [](const nlohmann::json& content,
+                                   const char* field) -> std::optional<std::string> {
+            if (content.is_string()) return std::nullopt;
+            if (!content.is_array()) {
+                return std::string("'") + field + "' content must be a string or an array";
+            }
+            for (const auto& part : content) {
+                if (!part.is_object()) {
+                    return std::string("'") + field + "' content parts must be objects";
+                }
+                const std::string type = part.value("type", std::string());
+                if ((type == "text" || type == "input_text") &&
+                    (!part.contains("text") || !part["text"].is_string())) {
+                    return std::string("'") + field + "' text parts must contain string 'text'";
+                }
+            }
+            return std::nullopt;
+        };
+
+        if (request_json.contains("messages")) {
+            for (const auto& message : request_json["messages"]) {
+                if (!message.is_object() || !message.contains("content")) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error",
+                        "'messages' items must be objects with a 'content' field"}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+                if (auto error_message = validate_content(message["content"], "messages")) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error", *error_message}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+            }
+        }
+
+        if (request_json.contains("input") && request_json["input"].is_array()) {
+            for (const auto& item : request_json["input"]) {
+                if (item.is_string()) continue;
+                if (!item.is_object()) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error",
+                        "'input' array items must be strings or objects"}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+                const nlohmann::json content =
+                    item.contains("content") ? item["content"] : nlohmann::json::array({item});
+                if (auto error_message = validate_content(content, "input")) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error", *error_message}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+            }
+        }
+    }
+
+    if (real_body &&
+        (request_json.contains("has_images") || request_json.contains("has_tools"))) {
+        res.status = 400;
+        nlohmann::json error = {{"error",
+            "cannot combine 'has_images'/'has_tools' with a real request body "
+            "('messages', 'input', 'tools', or an array 'prompt'); use one shape "
+            "or the other"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
 
     if (request_json.contains("has_images") && !request_json["has_images"].is_boolean()) {
         res.status = 400;
@@ -3833,7 +3965,6 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
     const bool has_tools = request_json.value("has_tools", false);
 
-    std::map<std::string, std::string> metadata;
     if (request_json.contains("metadata")) {
         const nlohmann::json& metadata_json = request_json["metadata"];
         if (!metadata_json.is_object()) {
@@ -3850,7 +3981,6 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
                 res.set_content(error.dump(), "application/json");
                 return;
             }
-            metadata[it.key()] = it.value().get<std::string>();
         }
     }
 
@@ -3878,17 +4008,21 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
             });
         RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
-        RouteContext ctx;
-        ctx.input = prompt;
-        ctx.params.chars = prompt.size();
-        // A test prompt is a single turn with no history, so its whole-request
-        // total is the prompt itself — the same equality build_route_context
-        // gives the history-less `prompt` form. Leaving this at 0 would make
-        // every min_total_chars rule silently untestable here.
-        ctx.params.total_chars = prompt.size();
-        ctx.params.has_images = has_images;
-        ctx.params.has_tools = has_tools;
-        ctx.metadata = std::move(metadata);
+        // Always derive ctx from build_route_context, the same function
+        // production uses, so every Params field (present today or added
+        // later, e.g. total_chars) comes from one place instead of being
+        // re-plumbed by hand here. A flattened legacy request has no
+        // messages/tools content for build_route_context to detect
+        // has_images/has_tools from, though — those two booleans are the
+        // caller's literal signal values, not something to derive, so
+        // they're the one deliberate override. (build_route_context's
+        // history-less `prompt` branch already sets total_chars to the same
+        // prompt.size() a hand-built ctx would need to set explicitly here.)
+        RouteContext ctx = build_route_context(request_json, std::string());
+        if (!real_body) {
+            ctx.params.has_images = has_images;
+            ctx.params.has_tools = has_tools;
+        }
 
         Decision decision = engine.route(ctx, /*want_trace=*/true);
 
