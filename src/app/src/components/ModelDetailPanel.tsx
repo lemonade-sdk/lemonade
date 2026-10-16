@@ -2680,6 +2680,11 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       {isDownloaded && !isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">{t('Ready')}</WorkspaceMetadataChip>
       )}
+      {model.update_available === true && (isDownloaded || isLoaded) && (
+        <WorkspaceMetadataChip emphasis="high" tone="warning" icon="rotate-ccw">
+          Update available
+        </WorkspaceMetadataChip>
+      )}
       {sourceRef && (
         <WorkspaceMetadataChip
           className="model-detail-panel__source"
@@ -2767,6 +2772,17 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             {t('Download')}
           </WorkspaceActionButton>
         </>
+      )}
+      {model.update_available === true && (isDownloaded || isLoaded) && !isPulling && (
+        <WorkspaceActionButton
+          appearance="secondary"
+          icon="rotate-ccw"
+          onClick={() => onPull(model)}
+          aria-label={`Update ${name} from the model registry`}
+          title="Download the latest model version"
+        >
+          Update
+        </WorkspaceActionButton>
       )}
       {isLoaded && onTogglePin && (
         <WorkspaceActionButton
