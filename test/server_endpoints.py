@@ -5415,6 +5415,52 @@ class EndpointTests(ServerTestBase):
             "[OK] /routing/validate rejected wrong-typed messages/input/tools/prompt-array fields with 400"
         )
 
+    def test_021z2b_routing_validate_rejects_ambiguous_or_nested_body(self):
+        """Ambiguous primary fields and malformed nested content must not
+        produce a successful preview for a silently altered request."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_multiple_primary = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={
+                "policy": policy,
+                "messages": [{"role": "user", "content": "hello"}],
+                "input": "hello",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_multiple_primary.status_code, 400)
+        self.assertIn("only one", response_multiple_primary.json()["error"])
+
+        response_bad_message_content = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={
+                "policy": policy,
+                "messages": [{"role": "user", "content": 123}],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_message_content.status_code, 400)
+        self.assertIn("content", response_bad_message_content.json()["error"])
+
+        response_bad_input_item = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "input": [123]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_input_item.status_code, 400)
+        self.assertIn("input", response_bad_input_item.json()["error"])
+        print(
+            "[OK] /routing/validate rejected ambiguous primary fields and malformed nested bodies"
+        )
+
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
         cloud model (via _start_mock_cloud_provider) that returns a fixed valid

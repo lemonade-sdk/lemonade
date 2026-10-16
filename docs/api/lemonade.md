@@ -164,8 +164,10 @@ The endpoint is available at:
 | `tools` | array | no | A real `tools` array; a non-empty array sets `has_tools`. |
 
 Provide either the flattened preview fields (`prompt`/`has_images`/`has_tools`) or
-a real request body (`messages`/`input`/`tools`/array `prompt`) — combining the
-two is rejected with `400`.
+a real request body (`messages`/`input`/`tools`/array `prompt`). Only one primary
+body field (`messages`, `input`, or `prompt`) may be supplied; combining it with
+`has_images` or `has_tools`, or supplying multiple primary fields, is rejected
+with `400`.
 
 ### Example request (flattened preview)
 
@@ -195,7 +197,18 @@ curl -X POST http://localhost:13305/v1/routing/validate \
 curl -X POST http://localhost:13305/v1/routing/validate \
      -H "Content-Type: application/json" \
      -d '{
-           "policy": { "...": "same policy document as above" },
+           "policy": {
+             "version": "1",
+             "recipe": "collection.router",
+             "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+             "routing": {
+               "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+               "default_model": "Qwen3-8B-GGUF",
+               "rules": [
+                 { "id": "vision-and-tools-to-big", "match": { "all": [{ "has_images": true }, { "has_tools": true }] }, "route_to": "vllm.qwen3-32b" }
+               ]
+             }
+           },
            "messages": [
              { "role": "user", "content": "earlier turn" },
              { "role": "user", "content": [
