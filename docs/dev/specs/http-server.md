@@ -176,7 +176,7 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 This section defines how `ApiRoute::serve()` checks a request against the route's `RouteArg`s before it calls `handle()`, so a handler never receives a value its schema does not allow.
 
 - **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument. A `required` argument must be present, and a value must match its schema's `type`, `enum` and `const`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
-- **Aliases.** A client may send an argument under any of its `aliases`, such as `model` for `/delete`'s `model_name`, and either name satisfies `required`. The docs list the aliases beside the name.
+- **Aliases.** A client may send an argument under any of its `aliases`, such as `model` for `/delete`'s `model_name`. `serve()` renames an alias to the argument's name, so a handler reads only the name, and the name wins when a request sends both. The docs list the aliases beside the name.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
 
