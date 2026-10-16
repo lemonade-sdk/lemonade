@@ -17,37 +17,41 @@
 #endif
 #endif
 
-#include <lemon/utils/process_platform.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/process_platform.h>
+#include <lemon/utils/windows_args.h>
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
-#include <thread>
+#include <cwchar>
+#include <limits>
+#include <map>
 #include <stdexcept>
+#include <thread>
 
 namespace lemon {
 namespace utils {
 
-// Helper function: escape Windows command-line arguments
-static std::string escape_windows_arg(const std::string& arg) {
-    std::string result = "\"";
-    for (size_t i = 0; i < arg.size(); ++i) {
-        if (arg[i] == '"') {
-            // Escape the quote with a backslash
-            result += "\\\"";
-        } else if (arg[i] == '\\') {
-            // Check if this backslash is followed by a quote
-            // If so, we need to escape the backslash too
-            if (i + 1 < arg.size() && arg[i + 1] == '"') {
-                result += "\\\\";
-            } else {
-                result += '\\';
-            }
-        } else {
-            result += arg[i];
-        }
+static std::wstring utf8_to_utf16(const std::string& value) {
+    if (value.empty()) {
+        return {};
     }
-    result += "\"";
+    if (value.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+        value.find('\0') != std::string::npos) {
+        throw std::invalid_argument("Invalid UTF-8 process launch input");
+    }
+    const int length = static_cast<int>(value.size());
+    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                         value.data(), length, nullptr, 0);
+    if (size == 0) {
+        throw std::invalid_argument("Invalid UTF-8 process launch input");
+    }
+    std::wstring result(size, L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), length,
+                            result.data(), size) != size) {
+        throw std::runtime_error("Failed to convert process launch input to UTF-16");
+    }
     return result;
 }
 
@@ -112,62 +116,60 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
     return 0;
 }
 
-// Helper function: lowercase ASCII string for case-insensitive comparison
-static std::string lowercase_ascii(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
+struct WindowsEnvironmentLess {
+    bool operator()(const std::wstring& left, const std::wstring& right) const {
+        return CompareStringOrdinal(left.data(), static_cast<int>(left.size()),
+                                    right.data(), static_cast<int>(right.size()),
+                                    TRUE) == CSTR_LESS_THAN;
+    }
+};
 
-// Helper function: build Windows environment block
-static std::vector<char> build_windows_environment_block(
+static std::vector<wchar_t> build_windows_environment_block(
     const std::vector<std::pair<std::string, std::string>>& env_vars) {
-    std::vector<std::string> merged_entries;
+    std::map<std::wstring, std::wstring, WindowsEnvironmentLess> merged_entries;
+    std::vector<std::pair<std::wstring, std::wstring>> overrides;
+    for (const auto& env : env_vars) {
+        auto key = utf8_to_utf16(env.first);
+        if (key.empty() || key.find(L'=') != std::wstring::npos) {
+            throw std::invalid_argument("Invalid process environment variable name");
+        }
+        overrides.emplace_back(std::move(key), utf8_to_utf16(env.second));
+    }
 
     LPWCH environment = GetEnvironmentStringsW();
-    if (environment) {
+    if (!environment) {
+        throw std::runtime_error("Failed to read process environment");
+    }
+    try {
         for (const wchar_t* entry = environment; *entry != L'\0';
              entry += std::wcslen(entry) + 1) {
-            int size_needed = WideCharToMultiByte(CP_UTF8, 0, entry, -1, nullptr, 0, nullptr, nullptr);
-            if (size_needed > 0) {
-                std::string narrow(size_needed - 1, '\0');
-                WideCharToMultiByte(CP_UTF8, 0, entry, -1, &narrow[0], size_needed, nullptr, nullptr);
-                merged_entries.emplace_back(std::move(narrow));
+            const std::wstring value(entry);
+            // Drive-current-directory entries start with '=' and must survive inheritance.
+            const auto equals = value.find(L'=', value.front() == L'=' ? 1 : 0);
+            if (equals != std::wstring::npos) {
+                merged_entries[value.substr(0, equals)] = value.substr(equals + 1);
             }
         }
+    } catch (...) {
         FreeEnvironmentStringsW(environment);
+        throw;
+    }
+    FreeEnvironmentStringsW(environment);
+    for (const auto& env : overrides) {
+        merged_entries[env.first] = env.second;
     }
 
-    for (const auto& env : env_vars) {
-        const std::string key_lower = lowercase_ascii(env.first);
-        const std::string new_entry = env.first + "=" + env.second;
-
-        bool replaced = false;
-        for (auto& existing : merged_entries) {
-            size_t equals = existing.find('=');
-            if (equals == std::string::npos) {
-                continue;
-            }
-
-            std::string existing_key = lowercase_ascii(existing.substr(0, equals));
-            if (existing_key == key_lower) {
-                existing = new_entry;
-                replaced = true;
-                break;
-            }
-        }
-
-        if (!replaced) {
-            merged_entries.push_back(new_entry);
-        }
+    std::vector<wchar_t> block;
+    for (const auto& env : merged_entries) {
+        block.insert(block.end(), env.first.begin(), env.first.end());
+        block.push_back(L'=');
+        block.insert(block.end(), env.second.begin(), env.second.end());
+        block.push_back(L'\0');
     }
-
-    std::vector<char> block;
-    for (const auto& entry : merged_entries) {
-        block.insert(block.end(), entry.begin(), entry.end());
-        block.push_back('\0');
+    if (block.empty()) {
+        block.push_back(L'\0');
     }
-    block.push_back('\0');
+    block.push_back(L'\0');
     return block;
 }
 
@@ -191,7 +193,13 @@ public:
             cmdline += " " + escape_windows_arg(arg);
         }
 
-        STARTUPINFOA si;
+        auto wide_cmdline = utf8_to_utf16(cmdline);
+        const auto wide_working_dir = utf8_to_utf16(working_dir);
+        std::vector<wchar_t> environment_block;
+        if (!env_vars.empty()) {
+            environment_block = build_windows_environment_block(env_vars);
+        }
+        STARTUPINFOW si;
         PROCESS_INFORMATION pi;
         ZeroMemory(&si, sizeof(si));
         si.cb = sizeof(si);
@@ -247,7 +255,7 @@ public:
             si.dwFlags = STARTF_USESTDHANDLES;
             si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
             if (si.hStdInput == nullptr || si.hStdInput == INVALID_HANDLE_VALUE) {
-                nul_input = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                nul_input = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
                 if (nul_input != INVALID_HANDLE_VALUE) {
                     SetHandleInformation(nul_input, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
                     si.hStdInput = nul_input;
@@ -271,7 +279,7 @@ public:
             si.dwFlags |= STARTF_USESTDHANDLES;
             si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
-            HANDLE hNul = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            HANDLE hNul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (hNul != INVALID_HANDLE_VALUE) {
                 // Ensure the NUL handle is inheritable
                 SetHandleInformation(hNul, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
@@ -280,20 +288,15 @@ public:
             }
         }
 
-        std::vector<char> environment_block;
-        if (!env_vars.empty()) {
-            environment_block = build_windows_environment_block(env_vars);
-        }
-
-        BOOL success = CreateProcessA(
+        BOOL success = CreateProcessW(
             nullptr,
-            const_cast<char*>(cmdline.c_str()),
+            wide_cmdline.data(),
             nullptr,
             nullptr,
             TRUE,  // Inherit handles
-            (inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW,
+            CREATE_UNICODE_ENVIRONMENT | ((inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW),
             environment_block.empty() ? nullptr : environment_block.data(),
-            working_dir.empty() ? nullptr : working_dir.c_str(),
+            wide_working_dir.empty() ? nullptr : wide_working_dir.c_str(),
             &si,
             &pi
         );
@@ -462,6 +465,9 @@ public:
             cmdline += " " + escape_windows_arg(arg);
         }
 
+        auto wide_cmdline = utf8_to_utf16(cmdline);
+        const auto wide_working_dir = utf8_to_utf16(working_dir);
+
         // Create pipes for stdout
         HANDLE stdout_read = nullptr;
         HANDLE stdout_write = nullptr;
@@ -478,7 +484,7 @@ public:
         // Make sure the read handle is not inherited
         SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
 
-        STARTUPINFOA si;
+        STARTUPINFOW si;
         PROCESS_INFORMATION pi;
         ZeroMemory(&si, sizeof(si));
         si.cb = sizeof(si);
@@ -488,15 +494,15 @@ public:
         si.hStdError = capture_stderr ? stdout_write : GetStdHandle(STD_ERROR_HANDLE);
         ZeroMemory(&pi, sizeof(pi));
 
-        BOOL success = CreateProcessA(
+        BOOL success = CreateProcessW(
             nullptr,
-            const_cast<char*>(cmdline.c_str()),
+            wide_cmdline.data(),
             nullptr,
             nullptr,
             TRUE,  // Inherit handles
-            CREATE_NO_WINDOW,
+            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
             nullptr,
-            working_dir.empty() ? nullptr : working_dir.c_str(),
+            wide_working_dir.empty() ? nullptr : wide_working_dir.c_str(),
             &si,
             &pi
         );
@@ -659,6 +665,7 @@ public:
 
     int run_command(const std::string& command, std::string& output, int timeout_seconds) override {
         output.clear();
+        auto wide_cmdline = utf8_to_utf16("cmd /c " + command);
 
         // Windows: use CreateProcess + pipe to avoid console window flash.
         // This is a drop-in replacement for _popen() that works in SUBSYSTEM:WINDOWS apps.
@@ -675,7 +682,7 @@ public:
         }
         SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
 
-        STARTUPINFOA si = {};
+        STARTUPINFOW si = {};
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESTDHANDLES;
         si.hStdInput = INVALID_HANDLE_VALUE;
@@ -684,10 +691,9 @@ public:
 
         PROCESS_INFORMATION pi = {};
         // Wrap in cmd /c so shell features (redirection, pipes) work
-        std::string cmdline = "cmd /c " + command;
-        BOOL success = CreateProcessA(
-            nullptr, const_cast<char*>(cmdline.c_str()),
-            nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+        BOOL success = CreateProcessW(
+            nullptr, wide_cmdline.data(),
+            nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
             nullptr, nullptr, &si, &pi);
 
         CloseHandle(stdout_write);

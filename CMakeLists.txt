@@ -1064,6 +1064,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
+    src/cpp/server/utils/windows_args.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
@@ -2351,6 +2352,36 @@ if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_cpp_ci_test(ArchivePlatformTest CI ON COMMAND test_archive_platform)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_windows_args
+        test/cpp/test_windows_args.cpp
+        src/cpp/server/utils/windows_args.cpp
+    )
+    target_include_directories(test_windows_args PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_cpp_ci_test(WindowsArgsTest CI ON COMMAND test_windows_args)
+
+    if(WIN32)
+        add_executable(windows_argv_echo_child test/cpp/windows_argv_echo_child.cpp)
+        target_link_libraries(windows_argv_echo_child PRIVATE nlohmann_json::nlohmann_json)
+        add_executable(test_windows_process
+            test/cpp/test_windows_process.cpp
+            src/cpp/server/utils/platform/process_windows.cpp
+            src/cpp/server/utils/windows_args.cpp
+        )
+        target_include_directories(test_windows_process PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+        )
+        target_link_libraries(test_windows_process PRIVATE nlohmann_json::nlohmann_json ws2_32)
+        add_dependencies(test_windows_process windows_argv_echo_child)
+        add_cpp_ci_test(WindowsProcessTest CI ON
+            COMMAND test_windows_process $<TARGET_FILE:windows_argv_echo_child>)
+        set_tests_properties(WindowsProcessTest PROPERTIES TIMEOUT 120)
+    endif()
 endif()
 
 # ProcessManager zombie detection and non-mutating reap contract.
