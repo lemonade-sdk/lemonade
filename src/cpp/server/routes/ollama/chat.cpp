@@ -15,13 +15,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kModelRequired{400, "", "The body has no `model`, or it is empty"};
+const RouteError kModelRequired{400, "", "`model` is empty"};
 const RouteError kModelNotLoaded{
     404, "",
     "`model` fails to load for any reason other than a residency conflict, such as naming no "
     "model or a failed download"};
-const RouteError kRequestFailed{
-    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+const RouteError kRequestFailed{500, "", "A field has the wrong type, or another step throws"};
 
 // Ollama sends tool-call arguments as an object; OpenAI sends a JSON string.
 json normalize_ollama_tool_calls(json tool_calls) {
@@ -326,7 +325,7 @@ public:
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Model to run."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
+            {"messages", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Conversation so far. Each message has a `role` and `content`, plus optional "
              "`images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or "
              "`tool_call_id`."},
@@ -340,8 +339,10 @@ public:
              "ignored."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Tools the model may call."},
-            {"format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
-             "`json` constrains the reply to a JSON object. JSON schemas are not supported."},
+            {"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
+             Support::Partial,
+             "`json` constrains the reply to a JSON object. A JSON schema is accepted but not "
+             "applied."},
             {"think", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
              "Not applied: reasoning models think regardless. Qwen3 models skip their reasoning "
              "when the prompt ends with `/no_think`."},
@@ -382,14 +383,16 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
-        s.errors = {kModelRequired, ModelLoader::kRouterResidencyConflict, kModelNotLoaded,
-                    kOllamaBackendError, kRequestFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kModelRequired,
+                    ModelLoader::kRouterResidencyConflict, kModelNotLoaded, kOllamaBackendError,
+                    kRequestFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
             std::string model = strip_latest_tag(request_json.value("model", ""));
             if (model.empty()) {

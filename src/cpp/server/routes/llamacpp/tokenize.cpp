@@ -9,8 +9,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidJson{400, "", "The body is not empty and is not valid JSON"};
-const RouteError kMissingContent{400, "", "`content` is missing or not a string"};
 const RouteError kNoModelLoaded{400, "", "No model is loaded"};
 const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
 const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
@@ -34,11 +32,11 @@ public:
             {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text to tokenize."},
             {"add_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Insert special tokens, such as `BOS`. Defaults to `false`."},
+             "Insert special tokens, such as `BOS`. Defaults to `false`.", {}, true},
             {"parse_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`."},
+             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`.", {}, true},
             {"with_pieces", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Return each token's text piece with its ID. Defaults to `false`."},
+             "Return each token's text piece with its ID. Defaults to `false`.", {}, true},
         };
 
         RouteResponse response;
@@ -61,8 +59,9 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"content", "This is a string to tokenize"}};
         s.examples = {example};
-        s.errors = {kInvalidJson, kMissingContent, kNoModelLoaded, kModelUnloaded, kNotLlamaCpp,
-                    kBackendError, kTokenizeFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kNoModelLoaded, kModelUnloaded,
+                    kNotLlamaCpp, kBackendError, kTokenizeFailed};
+        s.request_format = RequestFormat::OptionalJson;
         return s;
     }
 
@@ -70,30 +69,13 @@ public:
         try {
             LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
 
-            json request_body = json::object();
-            if (!req.http.body.empty()) {
-                try {
-                    request_body = json::parse(req.http.body);
-                } catch (const std::exception& e) {
-                    LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
-                    write_plain_error(res, kInvalidJson, "Invalid JSON in request body");
-                    return;
-                }
-            }
-
-            if (!request_body.contains("content") || !request_body["content"].is_string()) {
-                LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
-                write_plain_error(res, kMissingContent, "'content' parameter is required");
-                return;
-            }
-
             if (!ctx_.router->is_model_loaded()) {
                 LOG(ERROR, "Server") << "No model loaded for tokenization" << std::endl;
                 write_plain_error(res, kNoModelLoaded, "No model loaded for tokenization");
                 return;
             }
 
-            auto response = ctx_.router->tokenize(request_body);
+            auto response = ctx_.router->tokenize(req.body);
             if (response.contains("error")) {
                 set_error_response(response, res, kBackendError);
                 return;

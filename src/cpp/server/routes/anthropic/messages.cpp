@@ -24,7 +24,7 @@
 namespace lemon {
 namespace {
 
-const RouteError kModelRequired{400, "", "The body has no `model`, or it is empty"};
+const RouteError kModelRequired{400, "", "`model` is empty"};
 const RouteError kProviderNoBaseUrl{
     500, "", "`model` is a cloud model whose `--wire-format anthropic` provider has no base URL"};
 const RouteError kProviderNoApiKey{
@@ -47,8 +47,7 @@ const RouteError kModelNotLoaded{
     404, "",
     "`model` fails to load for any reason other than a residency conflict, such as naming no "
     "model or a failed download"};
-const RouteError kRequestFailed{
-    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+const RouteError kRequestFailed{500, "", "A field has the wrong type, or another step throws"};
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
@@ -216,14 +215,6 @@ struct AnthropicUpstreamMatch {
     std::string error_message;
 };
 
-void set_anthropic_error_response(httplib::Response& res, const RouteError& error,
-                                  const std::string& message) {
-    res.status = error.status;
-    res.set_content(
-        anthropic::build_anthropic_error(json{{"message", message}}, error.status).dump(),
-        "application/json");
-}
-
 using anthropic::is_forwardable_request_header;
 using anthropic::is_forwardable_response_header;
 
@@ -339,7 +330,7 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
             relay_response_headers(response.headers, res);
             res.set_content(response.body, "application/json");
         } catch (const std::exception& e) {
-            set_anthropic_error_response(
+            write_anthropic_error(
                 res, kCloudRequestFailed, "cloud request for '" + model + "' failed: " + e.what());
         }
         return;
@@ -837,13 +828,13 @@ public:
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Upper bound on generated tokens."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature.", {}, true},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Nucleus sampling probability."},
+             "Nucleus sampling probability.", {}, true},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens considered during sampling."},
-            {"stop_sequences", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Sequences where generation stops."},
+             "Number of top tokens considered during sampling.", {}, true},
+            {"stop_sequences", ArgIn::JsonBody, {{"type", json::array({"array", "string"})}}, false,
+             Support::Available, "Sequences where generation stops."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Stream server-sent events as tokens are generated. Defaults to `false`."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
@@ -944,20 +935,23 @@ public:
         })");
 
         s.examples = {message_example, stream_example};
-        s.errors = {kModelRequired, kProviderNoBaseUrl, kProviderNoApiKey, kProviderInsecureHttp,
-                    kCloudModelNoCheckpoint, kCloudRequestFailed, kResidencyConflict,
-                    kModelNotLoaded, kBackendError, kRequestFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kModelRequired, kProviderNoBaseUrl,
+                    kProviderNoApiKey, kProviderInsecureHttp, kCloudModelNoCheckpoint,
+                    kCloudRequestFailed, kResidencyConflict, kModelNotLoaded, kBackendError,
+                    kRequestFailed};
+        s.error_format = ErrorFormat::Anthropic;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
             std::vector<std::string> warnings;
 
             std::string model = strip_latest_tag(request_json.value("model", ""));
             if (model.empty()) {
-                set_anthropic_error_response(res, kModelRequired, "model is required");
+                write_anthropic_error(res, kModelRequired, "model is required");
                 return;
             }
 
@@ -981,7 +975,7 @@ public:
             if (match.claimed) {
                 emit_warning_header();
                 if (!match.upstream) {
-                    set_anthropic_error_response(res, *match.error, match.error_message);
+                    write_anthropic_error(res, *match.error, match.error_message);
                     return;
                 }
                 forward_anthropic_upstream(std::move(*match.upstream),
@@ -998,8 +992,8 @@ public:
                 set_anthropic_residency_conflict_response(e, res);
                 return;
             } catch (const std::exception&) {
-                set_anthropic_error_response(res, kModelNotLoaded,
-                                             "model '" + model + "' not found, try pulling it first");
+                write_anthropic_error(res, kModelNotLoaded,
+                                      "model '" + model + "' not found, try pulling it first");
                 return;
             }
 
@@ -1031,7 +1025,7 @@ public:
 
         } catch (const std::exception& e) {
             std::cerr << "[OllamaApi] Error in /v1/messages: " << e.what() << std::endl;
-            set_anthropic_error_response(res, kRequestFailed, e.what());
+            write_anthropic_error(res, kRequestFailed, e.what());
         }
     }
 };

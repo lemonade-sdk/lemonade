@@ -19,11 +19,9 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
 const RouteError kProviderNotInstalled{404, "", "The cloud `provider` is not installed"};
 const RouteError kMissingRecipeOrBackend{
-    400, "", "A local uninstall is missing `recipe` or `backend`, or one is empty"};
+    400, "", "A local uninstall is missing `recipe`, or `recipe` or `backend` is empty"};
 const RouteError kUninstallFailed{
-    500, "",
-    "The body is not valid JSON, a field has the wrong type, or unloading a model or removing "
-    "the backend fails"};
+    500, "", "Unloading a model or removing the backend fails"};
 
 class UninstallRoute : public ApiRoute {
 public:
@@ -99,14 +97,15 @@ public:
             "provider": "fireworks"
         })");
         s.examples = {local_example, cloud_example};
-        s.errors = {kMissingProvider, kProviderNotInstalled, kMissingRecipeOrBackend,
-                    kUninstallFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingProvider,
+                    kProviderNotInstalled, kMissingRecipeOrBackend, kUninstallFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
             Router& router = *ctx_.router;
 
             if (request_json.value("backend", "") == "cloud") {

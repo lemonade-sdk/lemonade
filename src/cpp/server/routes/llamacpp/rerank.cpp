@@ -8,7 +8,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidJson{500, "", "The body is empty or is not valid JSON"};
 const RouteError kNotLlamaCpp{400, "", "`model` is not a llama.cpp model"};
 
 class RerankRoute : public ModelRoute {
@@ -27,9 +26,9 @@ public:
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
         s.args = {
             {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The search query text."},
+             "The search query text.", {}, true},
             {"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
-             true, Support::Available, "Documents to score against the query."},
+             true, Support::Available, "Documents to score against the query.", {}, true},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Reranker model to run; loaded on first use."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
@@ -77,9 +76,10 @@ public:
             ]
         })");
         s.examples = {example};
-        s.errors = join_errors({{kInvalidJson, kModelMissing, kNotLlamaCpp, kBackendError,
-                                 kUnexpectedException},
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlamaCpp,
+                                 kBackendError, kUnexpectedException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -94,10 +94,6 @@ protected:
         res.set_content(response.dump(), "application/json");
     }
 
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_plain_error(res, kInvalidJson, error.what());
-    }
     LoadSpan load_span() const override { return {"RERANKER", "reranking"}; }
 };
 

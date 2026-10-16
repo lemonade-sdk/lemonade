@@ -1,5 +1,6 @@
 #include "lemon/server/api_route.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <stdexcept>
@@ -8,6 +9,7 @@
 
 #include "../telemetry.h"
 #include "lemon/alias_manager.h"
+#include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/router.h"
@@ -20,13 +22,16 @@ using json = nlohmann::json;
 
 const RouteError kBackendError{
     500, "", "The backend reports an error; the backend's own status replaces this one when it sends one"};
-const RouteError ApiRoute::kBodyNotJson{400, "", "The body is empty or is not valid JSON"};
+const RouteError ApiRoute::kBodyNotJson{400, "invalid_json", "The body is not a JSON object"};
+const RouteError ApiRoute::kArgMissing{400, "missing_argument", "A required argument is missing"};
+const RouteError ApiRoute::kArgInvalid{
+    400, "invalid_argument", "An argument does not match its type or allowed values"};
 const RouteError ModelRoute::kFormNotMultipart{400, "", "The request is not `multipart/form-data`"};
 const RouteError ModelRoute::kFormValueInvalid{
     400, "", "A numeric form field does not parse as its parameter's type"};
 const RouteError ModelRoute::kModelMissing{400, "", "The request names no `model`"};
 const RouteError ModelRoute::kUnexpectedException{
-    500, "", "The request fails unexpectedly, for example on a parameter of the wrong JSON type"};
+    500, "", "The request fails unexpectedly"};
 const RouteError kNoOutputError{
     502, "", "The backend produces no output, for example after it crashes or runs out of GPU memory"};
 
@@ -49,6 +54,82 @@ const char* to_string(ArgIn in) {
         case ArgIn::Form: return "Form";
     }
     return "";
+}
+
+const char* to_string(ErrorFormat format) {
+    switch (format) {
+        case ErrorFormat::Plain: return "Plain";
+        case ErrorFormat::OpenAi: return "OpenAi";
+        case ErrorFormat::Anthropic: return "Anthropic";
+    }
+    return "";
+}
+
+bool matches_type(const json& value, const std::string& type) {
+    if (type == "string") return value.is_string();
+    if (type == "integer") {
+        if (value.is_number_integer()) return true;
+        if (!value.is_number_float()) return false;
+        double number = value.get<double>();
+        return std::isfinite(number) && std::floor(number) == number;
+    }
+    if (type == "number") return value.is_number();
+    if (type == "boolean") return value.is_boolean();
+    if (type == "array") return value.is_array();
+    if (type == "object") return value.is_object();
+    if (type == "null") return value.is_null();
+    return true;
+}
+
+// A query value arrives as a string, so only a numeric type constrains its spelling.
+bool matches_query_type(const std::string& value, const std::string& type) {
+    if (type == "integer") {
+        return !value.empty() && value.find_first_not_of("0123456789") == std::string::npos;
+    }
+    if (type == "number") {
+        try {
+            size_t used = 0;
+            double number = std::stod(value, &used);
+            return used == value.size() && std::isfinite(number);
+        } catch (const std::exception&) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool matches_schema(const json& value, const json& schema, bool from_query) {
+    if (schema.contains("type")) {
+        const json& types = schema["type"];
+        bool any = false;
+        for (const auto& type : types.is_array() ? types : json::array({types})) {
+            const std::string name = type.get<std::string>();
+            any = any || (from_query ? matches_query_type(value.get<std::string>(), name)
+                                     : matches_type(value, name));
+        }
+        if (!any) return false;
+    }
+    if (schema.contains("enum")) {
+        const json& values = schema["enum"];
+        if (std::find(values.begin(), values.end(), value) == values.end()) return false;
+    }
+    if (schema.contains("const") && value != schema["const"]) {
+        return false;
+    }
+    return true;
+}
+
+std::string describe_schema(const json& schema) {
+    if (schema.contains("enum")) return "one of " + schema["enum"].dump();
+    if (schema.contains("const")) return schema["const"].dump();
+    if (!schema.contains("type")) return "a valid value";
+    const json& types = schema["type"];
+    if (types.is_string()) return types.get<std::string>();
+    std::string text;
+    for (size_t i = 0; i < types.size(); ++i) {
+        text += (i == 0 ? "" : i + 1 == types.size() ? " or " : ", ") + types[i].get<std::string>();
+    }
+    return text;
 }
 
 const char* to_string(RequestFormat format) {
@@ -178,6 +259,8 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
             {"required", arg.required},
             {"supported", to_string(arg.supported)},
             {"description", arg.description},
+            {"aliases", arg.aliases},
+            {"forwarded", arg.forwarded},
         });
     }
     ordered_json responses = ordered_json::array();
@@ -216,6 +299,7 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
         {"responses", responses},
         {"examples", examples},
         {"errors", errors},
+        {"error_format", to_string(spec.error_format)},
         {"request_format", to_string(spec.request_format)},
         {"quiet_log", spec.quiet_log},
     };
@@ -227,7 +311,13 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
 
     if (spec.request_format == RequestFormat::Json ||
         spec.request_format == RequestFormat::OptionalJson) {
-        if (spec.request_format == RequestFormat::OptionalJson && http.body.empty()) {
+        const bool optional = spec.request_format == RequestFormat::OptionalJson;
+        if (http.body.empty()) {
+            if (!optional) {
+                write_error(res, spec.error_format, kBodyNotJson,
+                            "Request body is required but was empty");
+                return;
+            }
             req.body = json::object();
         } else {
             try {
@@ -235,22 +325,69 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
             } catch (const json::exception& e) {
                 // Not just parse_error: a numeric literal too large for a double raises
                 // out_of_range, which is answered the same way.
-                write_invalid_body(req, e, res);
+                write_error(res, spec.error_format, kBodyNotJson,
+                            std::string("Invalid JSON in request body: ") + e.what());
                 return;
             }
+        }
+        // Released CLIs send the literal null to POST /unload when no model is named.
+        if (optional && req.body.is_null()) {
+            req.body = json::object();
+        }
+        if (!req.body.is_object()) {
+            write_error(res, spec.error_format, kBodyNotJson, "Request body must be a JSON object");
+            return;
+        }
+        if (!check_args(req, res)) {
+            return;
         }
     }
 
     handle(req, res);
 }
 
-void ApiRoute::write_invalid_body(const RouteRequest& req, const std::exception& error,
-                                  httplib::Response& res) const {
-    if (req.http.body.empty()) {
-        write_plain_error(res, kBodyNotJson, "Request body is required but was empty");
-        return;
+bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
+    for (const auto& arg : req.spec.args) {
+        if (arg.forwarded || (arg.in != ArgIn::JsonBody && arg.in != ArgIn::Query)) {
+            continue;
+        }
+        std::vector<std::string> names = {arg.name};
+        names.insert(names.end(), arg.aliases.begin(), arg.aliases.end());
+        bool present = false;
+        for (const auto& name : names) {
+            json value;
+            if (arg.in == ArgIn::JsonBody) {
+                auto it = req.body.find(name);
+                if (it == req.body.end()) continue;
+                if (it->is_null()) {
+                    if (!matches_schema(*it, arg.schema, false)) {
+                        req.body.erase(it);
+                    }
+                    continue;
+                }
+                value = *it;
+            } else {
+                if (!req.http.has_param(name)) continue;
+                value = req.http.get_param_value(name);
+            }
+            present = true;
+            if (!matches_schema(value, arg.schema, arg.in == ArgIn::Query)) {
+                write_error(res, req.spec.error_format, kArgInvalid,
+                            "Invalid value for '" + name + "': expected " +
+                                describe_schema(arg.schema));
+                return false;
+            }
+        }
+        if (!present && arg.required) {
+            std::string message = "Missing required argument '" + arg.name + "'";
+            for (const auto& alias : arg.aliases) {
+                message += " (or '" + alias + "')";
+            }
+            write_error(res, req.spec.error_format, kArgMissing, message);
+            return false;
+        }
     }
-    write_plain_error(res, kBodyNotJson, std::string("Invalid JSON in request body: ") + error.what());
+    return true;
 }
 
 void ApiRoute::stream_response(RouteRequest& req, httplib::Response& res, StreamFn fn,
@@ -510,8 +647,29 @@ void write_openai_error(httplib::Response& res, const RouteError& route_error,
 }
 
 void write_plain_error(httplib::Response& res, const RouteError& error, const std::string& message) {
+    json body = {{"error", message}};
+    if (!error.code.empty()) {
+        body["code"] = error.code;
+    }
     res.status = error.status;
-    res.set_content(json{{"error", message}}.dump(), "application/json");
+    res.set_content(body.dump(), "application/json");
+}
+
+void write_anthropic_error(httplib::Response& res, const RouteError& error,
+                           const std::string& message) {
+    res.status = error.status;
+    res.set_content(
+        anthropic::build_anthropic_error(json{{"message", message}}, error.status).dump(),
+        "application/json");
+}
+
+void write_error(httplib::Response& res, ErrorFormat format, const RouteError& error,
+                 const std::string& message) {
+    switch (format) {
+        case ErrorFormat::Plain: write_plain_error(res, error, message); return;
+        case ErrorFormat::OpenAi: write_openai_error(res, error, message); return;
+        case ErrorFormat::Anthropic: write_anthropic_error(res, error, message); return;
+    }
 }
 
 } // namespace lemon

@@ -7,9 +7,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidControlBody{
-    400, "", "The body is not valid JSON or not a JSON object, or `id` or `action` is not a string"};
-const RouteError kMissingIdOrAction{400, "", "`id` or `action` is missing or empty"};
+const RouteError kEmptyId{400, "", "`id` is empty"};
 
 class DownloadsControlRoute : public ApiRoute {
 public:
@@ -77,29 +75,25 @@ public:
         remove_example.format = ResponseFormat::Json;
         remove_example.args = {{"id", "model:Qwen3-1.7B-GGUF"}, {"action", "remove"}};
         s.examples = {example, remove_example};
-        s.errors = {kInvalidControlBody, kMissingIdOrAction,
-                    DownloadManager::kDownloadNotFound, DownloadManager::kUnsupportedAction};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kEmptyId,
+                    DownloadManager::kDownloadNotFound};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        try {
-            auto request_json = json::parse(req.http.body);
-            std::string id = request_json.value("id", "");
-            std::string action = request_json.value("action", "");
+        const std::string id = req.body["id"].get<std::string>();
+        const std::string action = req.body["action"].get<std::string>();
 
-            if (id.empty() || action.empty()) {
-                write_plain_error(res, kMissingIdOrAction, "Both 'id' and 'action' are required");
-                return;
-            }
-
-            int status = 200;
-            json response = ctx_.downloads->control(id, action, status);
-            res.status = status;
-            res.set_content(response.dump(), "application/json");
-        } catch (const std::exception& e) {
-            write_plain_error(res, kInvalidControlBody, e.what());
+        if (id.empty()) {
+            write_plain_error(res, kEmptyId, "'id' must not be empty");
+            return;
         }
+
+        int status = 200;
+        json response = ctx_.downloads->control(id, action, status);
+        res.status = status;
+        res.set_content(response.dump(), "application/json");
     }
 };
 

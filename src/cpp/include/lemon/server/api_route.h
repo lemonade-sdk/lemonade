@@ -19,6 +19,7 @@ namespace lemon {
 enum class Prefixes { Quad, Internal, Root };      // URLs and auth; see RouteRegistry
 enum class ArgIn { JsonBody, Query, Path, Form };  // where an argument comes from
 enum class RequestFormat { Raw, Json, OptionalJson, Form };  // how ApiRoute parses the request body
+enum class ErrorFormat { Plain, OpenAi, Anthropic };          // the body shape of the base class's error responses
 
 // Clients parse each kind of body differently, and some stream.
 enum class ResponseFormat {
@@ -41,6 +42,8 @@ struct RouteArg {
     bool required = false;
     Support supported = Support::Available;  // Partial: the description states the limit
     std::string description;
+    std::vector<std::string> aliases;  // other names clients send it under, e.g. "model" for "model_name"
+    bool forwarded = false;            // lemond passes it to the backend without acting on it
 };
 
 // Each format a route returns gets its own schema in the docs.
@@ -85,7 +88,8 @@ struct RouteSpec {
     std::vector<RouteResponse> responses;  // one per format; empty for an unsupported route, e.g. Ollama's POST /api/create (501)
     std::vector<RouteExample> examples;    // the first is the route's main example
     std::vector<RouteError> errors;        // every error the route writes, besides those its base class adds
-    RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing; OptionalJson: an empty body is {}
+    ErrorFormat error_format = ErrorFormat::Plain;
+    RequestFormat request_format = RequestFormat::Raw;  // Raw: no parsing or argument checks; OptionalJson: an empty or null body is {}
     bool quiet_log = false;           // leave out of the access log
 };
 
@@ -111,9 +115,11 @@ public:
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 
     static const RouteError kBodyNotJson;
+    static const RouteError kArgMissing;
+    static const RouteError kArgInvalid;
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
-    // says, then calls handle().
+    // says, checks the arguments, then calls handle().
     void serve(const RouteSpec& spec, const httplib::Request& http, httplib::Response& res);
 
     using StreamFn = std::function<void(const std::string& body, httplib::DataSink& sink)>;
@@ -124,14 +130,12 @@ public:
                                 const std::string& content_type = "text/event-stream");
 
 protected:
-    // Clients parse each route's invalid-JSON error, and the shapes differ by route. The
-    // default is a 400 with a plain-string error; a route with another shape overrides it.
-    virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
-                                    httplib::Response& res) const;
-
     void record_usage(const nlohmann::json& response, const RouteRequest& req) const;
 
     ServerContext& ctx_;
+
+private:
+    bool check_args(RouteRequest& req, httplib::Response& res) const;
 };
 
 class ModelRoute : public ApiRoute {
@@ -205,5 +209,8 @@ std::vector<RouteError> join_errors(std::initializer_list<std::vector<RouteError
 void write_openai_error(httplib::Response& res, const RouteError& error, const std::string& message,
                         const std::string& type = "invalid_request_error");
 void write_plain_error(httplib::Response& res, const RouteError& error, const std::string& message);
+void write_anthropic_error(httplib::Response& res, const RouteError& error, const std::string& message);
+void write_error(httplib::Response& res, ErrorFormat format, const RouteError& error,
+                 const std::string& message);
 
 } // namespace lemon

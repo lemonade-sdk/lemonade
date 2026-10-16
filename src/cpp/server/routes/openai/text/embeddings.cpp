@@ -8,7 +8,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kUnparsableBody{500, "", "The body is empty or is not valid JSON"};
 const RouteError kCannotEmbed{400, "", "`model`'s backend cannot embed, such as a text-to-speech model"};
 const RouteError kNotEmbeddingModel{501, "", "`model` is a llama.cpp model that is not an embedding model"};
 
@@ -29,11 +28,11 @@ public:
             "loaded. Embedding models use the `llamacpp` or `flm` recipe.";
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The text to embed, as a string or an array of strings."},
+             "The text to embed, as a string or an array of strings.", {}, true},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The embedding model to run."},
             {"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
-             "`float` or `base64`. Defaults to `float`."},
+             "`float` or `base64`. Defaults to `float`.", {}, true},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},
@@ -76,9 +75,10 @@ public:
             "encoding_format": "float"
         })");
         s.examples = {example};
-        s.errors = join_errors({{kUnparsableBody, kModelMissing, kCannotEmbed, kNotEmbeddingModel,
-                                 kBackendError, kUnexpectedException},
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kCannotEmbed,
+                                 kNotEmbeddingModel, kBackendError, kUnexpectedException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -91,11 +91,6 @@ protected:
             return;
         }
         res.set_content(response.dump(), "application/json");
-    }
-
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_plain_error(res, kUnparsableBody, error.what());
     }
 
     LoadSpan load_span() const override { return {"EMBEDDING", "embeddings"}; }

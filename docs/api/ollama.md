@@ -38,11 +38,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `messages` | Yes | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `messages` | No | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `tools` | No | Tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `format` | No | `json` constrains the reply to a JSON object. JSON schemas are not supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `format` | No | `json` constrains the reply to a JSON object. A JSON schema is accepted but not applied. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `think` | No | Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `keep_alive` | No | `0` with an empty `messages` array unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -182,11 +182,14 @@ Each line carries the next message piece with `done: false`. When the message en
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body has no `model`, or it is empty |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
+| `500` |  | A field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.chat -->
 
 <!-- BEGIN GENERATED: ollama.generate -->
@@ -202,7 +205,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `prompt` | Yes | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | No | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `width` | No | Image models only: image width in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -347,11 +350,14 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body has no `model`, or it is empty |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
+| `500` |  | A field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.generate -->
 
 <!-- BEGIN GENERATED: ollama.tags -->
@@ -442,8 +448,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to describe. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to describe. `name` is its older name, and wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -510,11 +515,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body has neither `model` nor `name`, or the one used is empty |
-| `404` | The model names no model in the registry, or one filtered out on this system |
-| `500` | The body is not valid JSON, a field has the wrong type, or another step throws |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | The `model` or `name` used is empty |
+| `404` |  | The model names no model in the registry, or one filtered out on this system |
+| `500` |  | A field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->
@@ -529,8 +537,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to delete. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to delete. `name` is its older name, and wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Success answers `200` with an empty body, as Ollama does.
 
@@ -558,11 +565,14 @@ Success answers `200` with an empty body, as Ollama does.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body has neither `model` nor `name`, or the one used is empty |
-| `404` | The model names no model, or one this system does not support |
-| `500` | Deleting fails for another reason, such as an `extra.` model, or the body is not valid JSON |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | The `model` or `name` used is empty |
+| `404` |  | The model names no model, or one this system does not support |
+| `500` |  | Deleting fails for another reason, such as an `extra.` model |
 <!-- END GENERATED: ollama.delete -->
 
 <!-- BEGIN GENERATED: ollama.pull -->
@@ -577,8 +587,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to download. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to download. `name` is its older name, and wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.
@@ -666,10 +675,13 @@ The first line is `pulling manifest`, then one line per progress report, then tw
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body has neither `model` nor `name`, or the one used is empty |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | The `model` or `name` used is empty |
 | `400` | `lemond_offline` | Lemonade runs in offline mode and the model exists |
 | `404` |  | The model names no model in the registry, or one filtered out on this system |
-| `500` |  | A non-streaming download fails, the body is not valid JSON, or a field has the wrong type |
+| `500` |  | A non-streaming download fails, or a field has the wrong type |
 <!-- END GENERATED: ollama.pull -->
 
 <!-- BEGIN GENERATED: ollama.embed -->
@@ -735,12 +747,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body has no `model`, or it is empty |
-| `400` |  | The body has no `input` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
+| `500` |  | A field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.embed -->
 
 <!-- BEGIN GENERATED: ollama.embeddings -->
@@ -801,12 +815,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body has no `model`, or it is empty |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `model` is empty |
 | `400` |  | The body has neither `prompt` nor `input` |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | The body is not valid JSON, a field has the wrong type, or another step throws |
+| `500` |  | A field has the wrong type, or another step throws |
 <!-- END GENERATED: ollama.embeddings -->
 
 <!-- BEGIN GENERATED: ollama.ps -->

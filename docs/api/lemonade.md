@@ -124,12 +124,11 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body is empty or is not valid JSON |
-| `400` |  | `model` is not a string |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | Neither `input` nor `text` is present |
-| `400` |  | `input` or `text` is not a string |
 | `400` |  | The input text is empty or only whitespace |
-| `400` |  | `top_k` is not an integer from 1 to 1,000,000 |
+| `400` |  | `top_k` is not from 1 to 1,000,000 |
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
 | `400` |  | The backend rejects the request, for example because `model` is not a classification model, which is found only after it loads |
 | `404` |  | The model is unloaded between its load and the classification |
@@ -139,7 +138,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The backend's response has no `labels` object |
-| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: lemonade.classify -->
 
@@ -319,14 +318,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is empty or is not valid JSON |
-| `400` | The body is not a JSON object |
-| `400` | `model_name` is missing or not a string |
-| `400` | The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, `recipe` is missing, the body embeds a `models` array, or `checkpoint`, `checkpoints`, `source` or `components` is malformed |
-| `400` | A definition field has the wrong JSON type |
-| `500` | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, `recipe` is empty, the body embeds a `models` array, or `checkpoint`, `checkpoints`, `source` or `components` is malformed |
+| `400` |  | A definition field has the wrong JSON type |
+| `500` |  | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
 
 <!-- BEGIN GENERATED: lemonade.pull -->
@@ -343,7 +342,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `stream` | No | If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `subscribe` | No | Only applies when `stream=true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model_name` | Yes | A [registered model](https://lemonade-server.ai/models.html) to install, or a new `user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps registered models from colliding with built-in ones. `model` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_name` or `model` | Yes | A [registered model](https://lemonade-server.ai/models.html) to install, or a new `user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps registered models from colliding with built-in ones. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `recipe` | No | Required when registering: the recipe that loads and runs the model, such as `llamacpp`, or `collection.omni` for an omni collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoint` | No | The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoints` | No | Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, `draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for image generation, each when `main` does not embed it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -611,13 +610,15 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body is empty or is not valid JSON |
-| `400` |  | `source` or `registry_source` is not a string or names an unsupported source, or the checkpoint URLs disagree with it or with each other |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `source` or `registry_source` names an unsupported source, or the checkpoint URLs disagree with it or with each other |
 | `400` |  | A new definition has a reserved or non-`user.*` name, or a malformed `checkpoint`, `checkpoints`, `source` or `components`; nothing is registered |
 | `400` | `lemond_offline` | `offline` is set to `true`; a new definition is still registered, but nothing is downloaded |
 | `400` | `unknown_model` | Without `stream`, the model is not registered and its name has no `user.` prefix |
 | `400` |  | Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, or name two |
-| `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a missing `model_name`, a field of the wrong type, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
+| `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
 <!-- END GENERATED: lemonade.pull -->
 
 <!-- BEGIN GENERATED: lemonade.downloads -->
@@ -831,12 +832,13 @@ A `pause` or `cancel` for a job that already finished leaves it as it is.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not valid JSON or not a JSON object, or `id` or `action` is not a string |
-| `400` | `id` or `action` is missing or empty |
-| `400` | `action` is not `pause`, `cancel` or `remove` for an existing job |
-| `404` | `id` names no download job and `action` is not `remove` |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `id` is empty |
+| `404` |  | `id` names no download job and `action` is not `remove` |
 <!-- END GENERATED: lemonade.downloads_control -->
 
 <!-- BEGIN GENERATED: lemonade.registry_search -->
@@ -1043,7 +1045,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. `model` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_name` or `model` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A file still held open, for example by a download that was just cancelled, is retried up to 3 times, 5 seconds apart.
 
@@ -1082,11 +1084,13 @@ A file still held open, for example by a download that was just cancelled, is re
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is empty or is not valid JSON |
-| `422` | The model is not in the registry, or this system does not support it |
-| `500` | Another failure occurs, for example a file that stays locked after the retries, a failed unload, or a `model_name` of the wrong type |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `422` |  | The model is not in the registry, or this system does not support it |
+| `500` |  | Another failure occurs, for example a file that stays locked after the retries, a failed unload, or a `model_name` of the wrong type |
 <!-- END GENERATED: lemonade.delete -->
 
 <!-- BEGIN GENERATED: lemonade.load -->
@@ -1231,8 +1235,9 @@ A collection, which has no checkpoint of its own.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body is empty or is not valid JSON |
-| `400` | `invalid_request` | `model_name` is missing or not a string, or the body is not a JSON object |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1252,9 +1257,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model_name` | No | The model to unload; omit it to unload every model. `model` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-An unparsable body also unloads every model.
+| `model_name` or `model` | No | The model to unload; omit it to unload every model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -1292,10 +1295,12 @@ An unparsable body also unloads every model.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `404` | The named model is not loaded, which includes an omni collection, whose components are unloaded by their own names |
-| `500` | Unloading fails for another reason |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `404` |  | The named model is not loaded, which includes an omni collection, whose components are unloaded by their own names |
+| `500` |  | Unloading fails for another reason |
 <!-- END GENERATED: lemonade.unload -->
 
 <!-- BEGIN GENERATED: lemonade.audio_generations -->
@@ -1411,18 +1416,17 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
-| `400` |  | `prompt` is missing |
-| `400` |  | `prompt`, `lyrics` or `vocal_language` is not a string |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` | `model_not_applicable` | `model` is not an audio-generation model |
 | `400` |  | `response_format` is not a format the model's backend produces |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is empty or is not valid JSON |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | `model` is not a string, or generation fails unexpectedly |
+| `500` |  | Generation fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.audio_generations -->
@@ -1483,21 +1487,16 @@ Errors carry a JSON `error` object.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
-| `400` |  | `model` is missing or not a string |
-| `400` |  | `image` is missing or not a string |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | `image` is not base64 data, or is a `data:` URL without a base64 payload |
 | `400` |  | `image` is not a PNG, JPEG, BMP or GIF |
-| `400` |  | `response_format` is not the string `glb` |
-| `400` |  | `resolution` is not 512, 1024 or 1536 |
-| `400` |  | `bg_removal` is not `threshold` or `birefnet` |
-| `400` |  | `seed` is not an integer |
-| `400` |  | `uv` is not `box` or `xatlas` |
+| `400` |  | `response_format` is not `glb` |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is empty or is not valid JSON |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | `model` is not a 3D model, or generation fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
@@ -2458,15 +2457,17 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | A local install is missing `recipe` or `backend`, or one is empty |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | A local install is missing `recipe`, or `recipe` or `backend` is empty |
 | `400` |  | The backend is not supported on this system and `force` is not set |
 | `400` |  | A cloud install is missing `provider` or `base_url`, or one is empty |
 | `400` |  | `provider` is longer than 64 characters or not lowercase `[a-z0-9_-]` |
 | `400` |  | `base_url` does not start with `https://` or `http://`, has no host, or contains whitespace |
-| `400` |  | `auth_header_name`, `auth_header_prefix` or `wire_format` is not a string or not a valid value |
-| `400` |  | `allow_insecure_http` is not a boolean |
+| `400` |  | `auth_header_name`, `auth_header_prefix` or `wire_format` is not a valid value |
 | `400` | `insecure_http_requires_opt_in` | The provider's base URL is `http://`, an API key would be sent to it, and neither this request nor an earlier install sets `allow_insecure_http` |
-| `500` |  | The body is not valid JSON, a field has the wrong type, or the install fails |
+| `500` |  | The install fails |
 <!-- END GENERATED: lemonade.install -->
 
 <!-- BEGIN GENERATED: lemonade.install_dry_run -->
@@ -2543,10 +2544,13 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | `recipe` or `backend` is missing or empty |
-| `500` | The body is not valid JSON, a field has the wrong type, or resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body also carries `arch` when the request set one |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `recipe` or `backend` is empty |
+| `500` |  | Resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body also carries `arch` when the request set one |
 <!-- END GENERATED: lemonade.install_dry_run -->
 
 <!-- BEGIN GENERATED: lemonade.uninstall -->
@@ -2643,12 +2647,15 @@ A cloud provider removed.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | A cloud uninstall has no `provider`, or an empty one |
-| `400` | A local uninstall is missing `recipe` or `backend`, or one is empty |
-| `404` | The cloud `provider` is not installed |
-| `500` | The body is not valid JSON, a field has the wrong type, or unloading a model or removing the backend fails |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | A cloud uninstall has no `provider`, or an empty one |
+| `400` |  | A local uninstall is missing `recipe`, or `recipe` or `backend` is empty |
+| `404` |  | The cloud `provider` is not installed |
+| `500` |  | Unloading a model or removing the backend fails |
 <!-- END GENERATED: lemonade.uninstall -->
 
 <!-- BEGIN GENERATED: lemonade.cloud_auth -->
@@ -2715,14 +2722,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body is not valid JSON |
-| `400` |  | `provider` or `api_key` is missing or not a string |
-| `400` |  | `allow_insecure_http` is not a boolean |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | `provider` or `api_key` is empty |
 | `400` | `insecure_http_requires_opt_in` | The provider's base URL is `http://`, an API key would be sent to it, and neither this request nor an earlier install sets `allow_insecure_http` |
 | `404` |  | `provider` was not installed with [`POST /v1/install`](#post-v1install) |
 | `409` |  | `LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; `error.type` is `auth_conflict` and `error.env_var` names the variable |
-| `500` |  | The body holds a number out of range, or storing the key fails unexpectedly |
+| `500` |  | Storing the key fails unexpectedly |
 <!-- END GENERATED: lemonade.cloud_auth -->
 
 <!-- BEGIN GENERATED: lemonade.cloud_auth_provider -->
@@ -2973,11 +2980,13 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not valid JSON or not a JSON object, or `name` or a step has the wrong type |
-| `400` | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
-| `429` | All 50 jobs in the store are still active or resumable |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | A step has the wrong type |
+| `400` |  | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
+| `429` |  | All 50 jobs in the store are still active or resumable |
 <!-- END GENERATED: lemonade.jobs_create -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_list -->

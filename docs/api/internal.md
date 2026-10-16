@@ -123,7 +123,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model_name` | Yes | Loaded model to pin or unpin. `model` is accepted in its place and wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_name` or `model` | Yes | Loaded model to pin or unpin. `model` wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pinned` | Yes | `true` pins the model; `false` unpins it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a slot held only by pinned models fails with a `slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).
@@ -164,12 +164,12 @@ A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not valid JSON |
-| `400` | The body has neither `model` nor `model_name` |
-| `400` | `pinned` is missing or not a boolean |
-| `400` | `model` or `model_name` is not a string or names no loaded model |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | The model is not loaded |
 <!-- END GENERATED: internal.pin -->
 
 <!-- BEGIN GENERATED: internal.set -->
@@ -272,11 +272,12 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not valid JSON |
-| `400` | The body is not a non-empty JSON object, or has an unknown key or an invalid value |
-| `500` | A number in the body is too large to parse, or applying a setting fails |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | The body is `{}`, or has an unknown key or an invalid value |
+| `500` |  | Applying a setting fails |
 <!-- END GENERATED: internal.set -->
 
 <!-- BEGIN GENERATED: internal.config -->
@@ -442,7 +443,9 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 
 | Status | Code | When |
 |--------|------|------|
-| `500` | `model_not_found` | The body is empty or not a JSON object, `dry_run` is not a boolean, or scanning or removing cache files fails |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `500` | `model_not_found` | Scanning or removing cache files fails |
 <!-- END GENERATED: internal.cleanup_cache -->
 
 <!-- BEGIN GENERATED: internal.simulate_vram_pressure -->
@@ -497,9 +500,10 @@ The answer comes after the evaluation finishes, so a test can check the outcome 
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not valid JSON or not a JSON object, or `pct` is a string, array, object or `null` |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 <!-- END GENERATED: internal.simulate_vram_pressure -->
 
 <!-- BEGIN GENERATED: internal.models_sync -->
@@ -596,17 +600,14 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not valid JSON |
-| `400` | The body is not a JSON object |
-| `400` | `models` is not an array of strings |
-| `400` | `dry_run` is not a boolean |
-| `400` | `async` is not a boolean |
-| `400` | `attach_if_running` is not a boolean |
-| `409` | Offline mode (`offline=true`) is on, so no network request is made |
-| `500` | Checking for updates with `dry_run` fails |
-| `500` | A sync with `async: false` fails |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | An item in `models` is not a string |
+| `409` |  | Offline mode (`offline=true`) is on, so no network request is made |
+| `500` |  | Checking for updates with `dry_run` fails |
+| `500` |  | A sync with `async: false` fails |
 <!-- END GENERATED: internal.models_sync -->
 
 <!-- BEGIN GENERATED: internal.models_sync_status -->
@@ -771,7 +772,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `alias` | Yes | The alias name to create or update. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `target` | Yes | The model name, canonical ID or other alias to point at, which is not checked to exist (also accepted as `model`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `target` or `model` | Yes | The model name, canonical ID or other alias to point at, which is not checked to exist. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -811,8 +812,10 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Status | Code | When |
 |--------|------|------|
-| `400` | `invalid_request` | The body is not valid JSON or not a JSON object, or `alias`, `target` or `model` is not a string |
-| `400` | `invalid_request` | `alias` or `target` is missing or blank |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_request` | `alias` or `target` is blank |
 | `400` | `invalid_alias` | `alias` equals `target` |
 | `400` | `invalid_alias` | `alias` starts with `user.`, `extra.` or `builtin.` |
 | `409` | `alias_conflict` | `alias` is already a registered model's name |
@@ -930,6 +933,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     ],
     "examples": [{"name": "", "description": "", "format": "Json", "args": {}, "setup": []}],
     "errors": [],
+    "error_format": "Plain",
     "request_format": "Raw",
     "quiet_log": false
   }
@@ -956,6 +960,8 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `required` - Whether a request must send the argument.
   - `supported` - `available`; `partial`, honored only in part as the argument's description says; or `not_available`, accepted but ignored.
   - `description` - What the argument controls.
+  - `aliases` - Other names a request may send the argument under.
+  - `forwarded` - Whether `lemond` passes the argument to the backend unchecked.
 - `responses` - One entry per response format the route returns.
   - `format` - The response format.
   - `schema` - JSON Schema of the body, each NDJSON line, or each event's data; null for other formats.
@@ -972,6 +978,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `status` - The HTTP status.
   - `code` - The code the error body carries, or empty when it carries none.
   - `when` - The condition that produces the error.
-- `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form.
+- `error_format` - The body shape of the errors `lemond` writes when a request is not valid JSON or an argument is missing or invalid.
+- `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty or `null` body read as `{}`, `Form` as a multipart form.
 - `quiet_log` - Whether the route is left out of the access log.
 <!-- END GENERATED: internal.routes -->

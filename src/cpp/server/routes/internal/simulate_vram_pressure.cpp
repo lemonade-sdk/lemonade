@@ -7,9 +7,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidBody{
-    400, "", "The body is not valid JSON or not a JSON object, or `pct` is a string, array, object or `null`"};
-
 class SimulateVramPressureRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -53,19 +50,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"pct", 0.5}};
         s.examples = {example};
-        s.errors = {kInvalidBody};
+        s.errors = {kBodyNotJson, kArgInvalid};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        try {
-            auto req_json = json::parse(req.http.body);
-            double pct = req_json.value("pct", 0.0);
-            ctx_.router->simulate_vram_pressure(pct);
-            res.set_content(R"({"status": "ok"})", "application/json");
-        } catch (const std::exception& e) {
-            write_plain_error(res, kInvalidBody, e.what());
-        }
+        double pct = req.body.value("pct", 0.0);
+        ctx_.router->simulate_vram_pressure(pct);
+        res.set_content(R"({"status": "ok"})", "application/json");
     }
 };
 

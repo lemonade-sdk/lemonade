@@ -27,12 +27,9 @@ public:
         s.summary = "Unload a model";
         s.description =
             "Unloads a model from memory, freeing it while `lemond` keeps running.";
-        s.notes = {
-            "An unparsable body also unloads every model.",
-        };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The model to unload; omit it to unload every model. `model` is accepted as an alias."},
+             "The model to unload; omit it to unload every model.", {"model"}},
         };
 
         RouteResponse response;
@@ -53,7 +50,8 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
-        s.errors = {kNotLoaded, kUnloadFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kNotLoaded, kUnloadFailed};
+        s.request_format = RequestFormat::OptionalJson;
         return s;
     }
 
@@ -64,19 +62,13 @@ public:
             LOG(DEBUG, "Server") << "Request method: " << http.method << ", body length: " << http.body.length() << std::endl;
             LOG(DEBUG, "Server") << "Content-Type: " << http.get_header_value("Content-Type") << std::endl;
 
+            json& request_json = req.body;
+            resolve_model_name(ctx_, request_json);
             std::string model_name;
-            if (!http.body.empty()) {
-                try {
-                    auto request_json = json::parse(http.body);
-                    resolve_model_name(ctx_, request_json);
-                    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
-                        model_name = request_json["model_name"].get<std::string>();
-                    } else if (request_json.contains("model") && request_json["model"].is_string()) {
-                        model_name = request_json["model"].get<std::string>();
-                    }
-                } catch (...) {
-                    // An unparsable body unloads every model.
-                }
+            if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+                model_name = request_json["model_name"].get<std::string>();
+            } else if (request_json.contains("model") && request_json["model"].is_string()) {
+                model_name = request_json["model"].get<std::string>();
             }
 
             ctx_.router->unload_model(model_name);  // Empty string = unload all

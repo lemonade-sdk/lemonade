@@ -16,10 +16,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidLoadRequest{
-    400, "invalid_request",
-    "`model_name` is missing or not a string, or the body is not a JSON object"};
-
 ordered_json load_schema() {
     return ordered_json::parse(R"({
         "oneOf": [
@@ -103,7 +99,7 @@ public:
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "[Lemonade Server model name](https://lemonade-server.ai/models.html) to load."},
-            {"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+            {"pinned", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
              "If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. "
              "When omitted, a loaded model keeps its pin state and a new load uses the model's "
              "saved `pinned` option, else `false`."},
@@ -114,31 +110,31 @@ public:
              "save options without loading, or to change one option without resending the rest, "
              "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
              "`false`."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+            {"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
              "Recipes that take a context size, such as `llamacpp`, `flm`, `ryzenai-llm` and "
              "`vllm`: context size, or `-1` to size it automatically."},
-            {"llamacpp_backend", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
              "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
              "or `system` for a `llama-server` already installed where supported."},
-            {"llamacpp_args", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"llamacpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
              "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
              "with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, "
              "`--model-draft`, `--embeddings`, `--reranking` and `--metrics`."},
-            {"whispercpp_backend", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"whispercpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
              "`whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or "
              "`metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports."},
-            {"whispercpp_args", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"whispercpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
              "`whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, "
              "`--model` and `--port` are rejected."},
-            {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+            {"steps", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
              "`sd-cpp`: inference steps per image. Defaults to the model's own, else `20`."},
-            {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+            {"cfg_scale", ArgIn::JsonBody, {{"type", json::array({"number", "null"})}}, false, Support::Available,
              "`sd-cpp`: classifier-free guidance scale. Defaults to the model's own, else `7.0`."},
-            {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+            {"width", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
              "`sd-cpp`: image width in pixels. Defaults to the model's own, else `512`."},
-            {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+            {"height", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
              "`sd-cpp`: image height in pixels. Defaults to the model's own, else `512`."},
-            {"merge_args", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+            {"merge_args", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
              "If `true`, server-wide `*_args` still apply when the request sends `*_args`. If "
              "`false`, the request's `*_args` are the only arguments passed: server-wide, saved "
              "and architecture `*_args` are dropped, as are the arguments Lemonade adds to "
@@ -160,7 +156,8 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
-        s.errors = join_errors({{kBodyNotJson, kInvalidLoadRequest}, ModelLoader::errors()});
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -170,15 +167,12 @@ public:
         LOG(DEBUG, "Server") << "===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
 
         ModelManager& model_manager = *ctx_.model_manager;
-        // Declared outside the try so the catch can tell a load failure from a bad request.
-        std::string model_name;
 
         json& request_json = req.body;
         resolve_model_name(ctx_, request_json, /*strip_latest=*/false);
+        const std::string model_name = request_json["model_name"].get<std::string>();
 
         try {
-            model_name = request_json["model_name"];
-
             // Cloud models are registered at cache build, cloud auth and install, so an
             // unknown cloud model here is as missing as any other.
             if (!model_manager.model_exists(model_name)) {
@@ -282,13 +276,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
-
-            if (!model_name.empty()) {
-                ctx_.model_loader->write_load_error(res, model_name, e.what());
-            } else {
-                write_openai_error(res, kInvalidLoadRequest,
-                                   std::string("Invalid request: ") + e.what());
-            }
+            ctx_.model_loader->write_load_error(res, model_name, e.what());
         }
     }
 };

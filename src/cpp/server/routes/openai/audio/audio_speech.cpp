@@ -14,14 +14,10 @@ using json = nlohmann::json;
 const RouteError kNotTtsModel{
     400, "model_not_applicable",
     "`model` is not a text-to-speech model, which is checked before it loads"};
-const RouteError kMissingInput{400, "", "The body has no `input`"};
-const RouteError kInputNotString{400, "", "`input` is not a string"};
-const RouteError kBadStreamFormat{400, "", "`stream_format` is not `audio`"};
 const RouteError kUnsupportedFormat{
     400, "",
     "`response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams"};
-const RouteError kSpeechFailure{
-    500, "", "The body is not valid JSON, or the request fails unexpectedly"};
+const RouteError kSpeechFailure{500, "", "The request fails unexpectedly"};
 
 class AudioSpeechRoute : public ModelRoute {
 public:
@@ -52,11 +48,11 @@ public:
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The model to use (e.g., `kokoro-v1`)."},
             {"speed", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Speaking speed. Defaults to `1.0`."},
+             "Speaking speed. Defaults to `1.0`.", {}, true},
             {"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
              "For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own "
              "(`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text "
-             "voice or style instruction, e.g. `a calm, deep male narrator voice`."},
+             "voice or style instruction, e.g. `a calm, deep male narrator voice`.", {}, true},
             {"reference_wav_b64", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the "
              "voice to clone."},
@@ -98,20 +94,16 @@ public:
                           {"stream_format", "audio"}};
 
         s.examples = {audio_example, stream_example};
-        s.errors = join_errors({{kSpeechFailure, kModelMissing, kNotTtsModel, kMissingInput,
-                                 kInputNotString, kBadStreamFormat, kUnsupportedFormat,
-                                 kNoOutputError, kBackendError},
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kSpeechFailure,
+                                 kNotTtsModel, kUnsupportedFormat, kNoOutputError, kBackendError},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        if (!req.body.contains("model")) {
-            return true;
-        }
-        req.body["model"].get<std::string>();  // a non-string model fails before any load
         if (auto info = ctx_.router->try_get_model_info(req.model);
             info && info->type != ModelType::TTS) {
             write_openai_error(res, kNotTtsModel,
@@ -123,23 +115,10 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         json& request_json = req.body;
-        if (!request_json.contains("input")) {
-            write_openai_error(res, kMissingInput, "Missing 'input' field in request");
-            return;
-        }
-        if (!request_json["input"].is_string()) {
-            write_openai_error(res, kInputNotString, "'input' must be a string");
-            return;
-        }
-
         bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
 
-        if (request_json.contains("stream_format")) {
+        if (request_json.contains("stream_format") && request_json["stream_format"] == "audio") {
             is_streaming = true;
-            if (request_json["stream_format"] != "audio") {
-                write_openai_error(res, kBadStreamFormat, "Only 'audio' is supported for stream_format");
-                return;
-            }
         }
 
         const AudioFormat format =
@@ -172,10 +151,6 @@ protected:
         }
     }
 
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_exception(error, res);
-    }
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in audio speech: " << error.what() << std::endl;
         write_openai_error(res, kSpeechFailure, error.what(), "internal_error");

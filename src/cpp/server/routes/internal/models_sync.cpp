@@ -17,12 +17,7 @@ using ordered_json = nlohmann::ordered_json;
 namespace {
 
 const RouteError kOffline{409, "", "Offline mode (`offline=true`) is on, so no network request is made"};
-const RouteError kInvalidJson{400, "", "The body is not valid JSON"};
-const RouteError kNotObject{400, "", "The body is not a JSON object"};
-const RouteError kBadModels{400, "", "`models` is not an array of strings"};
-const RouteError kBadDryRun{400, "", "`dry_run` is not a boolean"};
-const RouteError kBadAsync{400, "", "`async` is not a boolean"};
-const RouteError kBadAttach{400, "", "`attach_if_running` is not a boolean"};
+const RouteError kBadModels{400, "", "An item in `models` is not a string"};
 const RouteError kDryRunFailed{500, "", "Checking for updates with `dry_run` fails"};
 const RouteError kSyncFailed{500, "", "A sync with `async: false` fails"};
 
@@ -73,8 +68,8 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.examples = {example};
-        s.errors = {kOffline, kInvalidJson, kNotObject, kBadModels, kBadDryRun, kBadAsync,
-                    kBadAttach, kDryRunFailed, kSyncFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kOffline, kBadModels, kDryRunFailed, kSyncFailed};
+        s.request_format = RequestFormat::OptionalJson;
         s.quiet_log = true;
         return s;
     }
@@ -91,52 +86,25 @@ public:
         bool async_specified = false;
         bool attach_if_running = false;
 
-        if (!req.http.body.empty()) {
-            try {
-                auto body_json = json::parse(req.http.body);
-                if (!body_json.is_object()) {
-                    write_plain_error(res, kNotObject, "Request body must be a JSON object");
+        const json& body = req.body;
+        if (body.contains("models")) {
+            for (const auto& item : body["models"]) {
+                if (!item.is_string()) {
+                    write_plain_error(res, kBadModels, "Each item in 'models' must be a string");
                     return;
                 }
-                if (body_json.contains("models")) {
-                    if (!body_json["models"].is_array()) {
-                        write_plain_error(res, kBadModels, "'models' must be an array of strings");
-                        return;
-                    }
-                    for (const auto& item : body_json["models"]) {
-                        if (!item.is_string()) {
-                            write_plain_error(res, kBadModels, "Each item in 'models' must be a string");
-                            return;
-                        }
-                        target_models.push_back(item.get<std::string>());
-                    }
-                }
-                if (body_json.contains("dry_run")) {
-                    if (!body_json["dry_run"].is_boolean()) {
-                        write_plain_error(res, kBadDryRun, "'dry_run' must be a boolean");
-                        return;
-                    }
-                    dry_run = body_json["dry_run"].get<bool>();
-                }
-                if (body_json.contains("async")) {
-                    if (!body_json["async"].is_boolean()) {
-                        write_plain_error(res, kBadAsync, "'async' must be a boolean");
-                        return;
-                    }
-                    async_dispatch = body_json["async"].get<bool>();
-                    async_specified = true;
-                }
-                if (body_json.contains("attach_if_running")) {
-                    if (!body_json["attach_if_running"].is_boolean()) {
-                        write_plain_error(res, kBadAttach, "'attach_if_running' must be a boolean");
-                        return;
-                    }
-                    attach_if_running = body_json["attach_if_running"].get<bool>();
-                }
-            } catch (const std::exception& e) {
-                write_plain_error(res, kInvalidJson, std::string("Invalid JSON body: ") + e.what());
-                return;
+                target_models.push_back(item.get<std::string>());
             }
+        }
+        if (body.contains("dry_run")) {
+            dry_run = body["dry_run"].get<bool>();
+        }
+        if (body.contains("async")) {
+            async_dispatch = body["async"].get<bool>();
+            async_specified = true;
+        }
+        if (body.contains("attach_if_running")) {
+            attach_if_running = body["attach_if_running"].get<bool>();
         }
 
         ModelManager* model_manager = ctx_.model_manager;

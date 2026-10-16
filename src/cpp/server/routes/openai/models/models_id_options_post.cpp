@@ -56,10 +56,6 @@ std::string validate_option_value(const std::string& key, const json& expected,
     return "";
 }
 
-const RouteError kEmptyBody{400, "", "The body is empty"};
-const RouteError kInvalidJsonBody{400, "", "The body is not valid JSON"};
-const RouteError kBodyNotObject{400, "", "The body is not a JSON object"};
-const RouteError kDryRunNotBoolean{400, "", "`dry_run` is not a boolean"};
 const RouteError kUnknownOption{400, "", "The body names an option that the model's recipe does not accept"};
 const RouteError kLiveProcessOption{
     400, "", "The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin`"};
@@ -89,8 +85,6 @@ public:
             "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
             "removes every saved option at once.",
             "A request that fails validation saves nothing.",
-            "The model is resolved before the body is read, so an unknown model is reported even "
-            "when the body is also invalid.",
             "A running model keeps its current options until it is next loaded.",
             "`pinned` is omitted from `effective` and `defaults`; it belongs to "
             "[`/v1/load`](./lemonade.md#post-v1load) and "
@@ -119,48 +113,21 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
         s.examples = {example};
-        s.errors = join_errors({{kEmptyBody, kInvalidJsonBody, kBodyNotObject, kDryRunNotBoolean,
-                                 kUnknownOption, kLiveProcessOption, kOptionWrongType,
-                                 kInvalidOptionValue},
+        s.errors = join_errors({{kBodyNotJson, kArgInvalid, kUnknownOption, kLiveProcessOption,
+                                 kOptionWrongType, kInvalidOptionValue},
                                 model_options_errors()});
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager* model_manager = ctx_.model_manager;
-        const httplib::Request& http = req.http;
-        // The body is parsed after the model resolves, so an unknown model answers 404
-        // even when the body is also invalid.
-        respond_with_model_options(ctx_, http, res,
-            [model_manager, &http](const std::string& model_key, ModelInfo& info,
-                                   httplib::Response& r) {
-                if (http.body.empty()) {
-                    write_plain_error(r, kEmptyBody, "Request body is required but was empty");
-                    return false;
-                }
-                json body;
-                try {
-                    body = json::parse(http.body);
-                } catch (const json::exception& e) {
-                    write_plain_error(r, kInvalidJsonBody,
-                                      std::string("Invalid JSON in request body: ") + e.what());
-                    return false;
-                }
-                if (!body.is_object()) {
-                    write_plain_error(r, kBodyNotObject,
-                                      "Request body must be a JSON object of recipe options");
-                    return false;
-                }
-
-                bool dry_run = false;
-                if (body.contains("dry_run")) {
-                    if (!body["dry_run"].is_boolean()) {
-                        write_plain_error(r, kDryRunNotBoolean, "'dry_run' must be a boolean");
-                        return false;
-                    }
-                    dry_run = body["dry_run"].get<bool>();
-                    body.erase("dry_run");
-                }
+        respond_with_model_options(ctx_, req.http, res,
+            [model_manager, &req](const std::string& model_key, ModelInfo& info,
+                                  httplib::Response& r) {
+                json body = req.body;
+                const bool dry_run = body.contains("dry_run") && body["dry_run"] == true;
+                body.erase("dry_run");
 
                 const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
                 const std::set<std::string> allowed(keys.begin(), keys.end());

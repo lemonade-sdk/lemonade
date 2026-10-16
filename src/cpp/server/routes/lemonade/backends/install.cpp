@@ -19,7 +19,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingRecipeOrBackend{
-    400, "", "A local install is missing `recipe` or `backend`, or one is empty"};
+    400, "", "A local install is missing `recipe`, or `recipe` or `backend` is empty"};
 const RouteError kUnsupportedBackend{
     400, "", "The backend is not supported on this system and `force` is not set"};
 const RouteError kMissingCloudFields{
@@ -32,11 +32,8 @@ const RouteError kInvalidBaseUrl{
     "whitespace"};
 const RouteError kInvalidCloudOption{
     400, "",
-    "`auth_header_name`, `auth_header_prefix` or `wire_format` is not a string or not a valid "
-    "value"};
-const RouteError kInvalidAllowInsecure{400, "", "`allow_insecure_http` is not a boolean"};
-const RouteError kInstallFailed{
-    500, "", "The body is not valid JSON, a field has the wrong type, or the install fails"};
+    "`auth_header_name`, `auth_header_prefix` or `wire_format` is not a valid value"};
+const RouteError kInstallFailed{500, "", "The install fails"};
 
 ordered_json install_schema() {
     auto local = ordered_json::parse(R"({
@@ -207,15 +204,16 @@ public:
         })");
 
         s.examples = {local_example, stream_example, job_example, cloud_example};
-        s.errors = {kMissingRecipeOrBackend, kUnsupportedBackend, kMissingCloudFields,
-                    kInvalidProviderName, kInvalidBaseUrl, kInvalidCloudOption,
-                    kInvalidAllowInsecure, kInsecureHttpError, kInstallFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingRecipeOrBackend,
+                    kUnsupportedBackend, kMissingCloudFields, kInvalidProviderName,
+                    kInvalidBaseUrl, kInvalidCloudOption, kInsecureHttpError, kInstallFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
             if (request_json.value("backend", "") == "cloud") {
                 install_cloud_provider(request_json, res);
@@ -346,11 +344,6 @@ private:
                                         std::string (*validate)(const std::string&),
                                         std::optional<std::string>& out) {
             if (!request_json.contains(field)) return true;
-            if (!request_json[field].is_string()) {
-                reject(kInvalidCloudOption,
-                       std::string(field) + " must be a string when provided");
-                return false;
-            }
             auto value = request_json[field].get<std::string>();
             if (auto err = validate(value); !err.empty()) {
                 reject(kInvalidCloudOption, err);
@@ -371,11 +364,6 @@ private:
             return;
         }
         if (request_json.contains("allow_insecure_http")) {
-            if (!request_json["allow_insecure_http"].is_boolean()) {
-                reject(kInvalidAllowInsecure,
-                       "allow_insecure_http must be a boolean when provided");
-                return;
-            }
             install_options.allow_insecure_http =
                 request_json["allow_insecure_http"].get<bool>();
         }

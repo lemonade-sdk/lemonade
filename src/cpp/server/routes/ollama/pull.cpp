@@ -11,14 +11,13 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNameRequired{
-    400, "", "The body has neither `model` nor `name`, or the one used is empty"};
+const RouteError kNameRequired{400, "", "The `model` or `name` used is empty"};
 const RouteError kModelNotFound{
     404, "", "The model names no model in the registry, or one filtered out on this system"};
 const RouteError kOffline{400, "lemond_offline", "Lemonade runs in offline mode and the model exists"};
 const RouteError kPullFailed{
     500, "",
-    "A non-streaming download fails, the body is not valid JSON, or a field has the wrong type"};
+    "A non-streaming download fails, or a field has the wrong type"};
 
 class PullRoute : public ApiRoute {
 public:
@@ -39,10 +38,9 @@ public:
             "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Model to download. Required unless `name` is given."},
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Older name for `model`; wins when both are given."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "Model to download. `name` is its older name, and wins when both are given.",
+             {"name"}},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Stream newline-delimited JSON progress. Defaults to `true`."},
         };
@@ -82,13 +80,15 @@ public:
         full_example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime", "stream": false})");
 
         s.examples = {stream_example, full_example};
-        s.errors = {kNameRequired, kModelNotFound, kOffline, kPullFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kNameRequired, kModelNotFound,
+                    kOffline, kPullFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
             std::string name = strip_latest_tag(request_json.value("name", request_json.value("model", "")));
 
             if (name.empty()) {

@@ -16,8 +16,7 @@ namespace {
 
 using json = nlohmann::json;
 
-const RouteError kMissingImageField{400, "", "`image` is missing or not a string"};
-const RouteError kMissingModelField{400, "", "`model` is missing or empty"};
+const RouteError kMissingModelField{400, "", "`model` is empty"};
 const RouteError kNotUpscalingModel{400, "", "`model` has no `upscaling` label"};
 const RouteError kUnknownUpscaleModel{
     404, "", "`model` names no model in the registry, or downloading it fails"};
@@ -68,9 +67,12 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
         s.examples = {example};
-        s.errors = join_errors({{kMissingImageField, kMissingModelField, kNotUpscalingModel,
-                                 kUnknownUpscaleModel, kRecipeCannotUpscale, kUpscaleFailed},
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kMissingModelField,
+                                 kNotUpscalingModel, kUnknownUpscaleModel, kRecipeCannotUpscale,
+                                 kUpscaleFailed},
                                 image_route_exception_errors()});
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
@@ -79,15 +81,7 @@ public:
         try {
             LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
 
-            auto request_json = json::parse(req.http.body);
-
-            if (!request_json.contains("image") || !request_json["image"].is_string()) {
-                write_openai_error(res, kMissingImageField,
-                                   "Missing 'image' field (base64 encoded)");
-                return;
-            }
-
-            std::string upscale_model_name = request_json.value("model", "");
+            std::string upscale_model_name = req.body["model"].get<std::string>();
             if (upscale_model_name.empty()) {
                 write_openai_error(res, kMissingModelField, "Missing 'model' field");
                 return;
@@ -116,7 +110,7 @@ public:
                 return;
             }
 
-            std::string b64_image = request_json["image"].get<std::string>();
+            std::string b64_image = req.body["image"].get<std::string>();
 
             backends::BackendContext context;
             context.log_level = ctx_.config->log_level();

@@ -22,10 +22,7 @@ void write_alias_error(httplib::Response& res, const RouteError& error, const st
     }}}.dump(), "application/json");
 }
 
-const RouteError kInvalidBody{
-    400, "invalid_request",
-    "The body is not valid JSON or not a JSON object, or `alias`, `target` or `model` is not a string"};
-const RouteError kMissingField{400, "invalid_request", "`alias` or `target` is missing or blank"};
+const RouteError kBlankField{400, "invalid_request", "`alias` or `target` is blank"};
 const RouteError kSelfAlias{400, "invalid_alias", "`alias` equals `target`"};
 const RouteError kReservedPrefix{
     400, "invalid_alias", "`alias` starts with `user.`, `extra.` or `builtin.`"};
@@ -54,7 +51,7 @@ public:
              "The alias name to create or update."},
             {"target", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The model name, canonical ID or other alias to point at, which is not checked to "
-             "exist (also accepted as `model`)."},
+             "exist.", {"model"}},
         };
 
         RouteResponse response;
@@ -74,60 +71,58 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"alias", "my-alias-1"}, {"target", "user.custom-llama"}};
         s.examples = {example};
-        s.errors = {kInvalidBody, kMissingField, kSelfAlias, kReservedPrefix, kNameConflict,
-                    kAliasChain, kNoAliasManager};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kBlankField, kSelfAlias, kReservedPrefix,
+                    kNameConflict, kAliasChain, kNoAliasManager};
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        try {
-            auto req_json = json::parse(req.http.body);
-            std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
-            std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
+        const json& req_json = req.body;
+        std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
+        std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
 
-            if (alias.empty() || target.empty()) {
-                write_alias_error(res, kMissingField, "Alias and target fields are required");
-                return;
-            }
-
-            if (alias == target) {
-                write_alias_error(res, kSelfAlias, "Alias cannot point to itself");
-                return;
-            }
-
-            if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
-                write_alias_error(res, kReservedPrefix, "Alias name cannot use reserved prefixes (user., extra., builtin.)");
-                return;
-            }
-
-            if (ctx_.model_manager->model_exists(alias)) {
-                std::string canonical = ctx_.model_manager->resolve_model_name(alias);
-                if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
-                    write_alias_error(res, kNameConflict, "Cannot create alias '" + alias + "': Name conflicts with an existing canonical model");
-                    return;
-                }
-            }
-
-            if (!ctx_.alias_manager) {
-                write_alias_error(res, kNoAliasManager, "AliasManager uninitialized", "server_error");
-                return;
-            }
-
-            std::string err_msg;
-            if (!ctx_.alias_manager->set_alias(alias, target, err_msg)) {
-                write_alias_error(res, kAliasChain, err_msg);
-                return;
-            }
-
-            json response = {
-                {"status", "ok"},
-                {"alias", alias},
-                {"target", target}
-            };
-            res.set_content(response.dump(), "application/json");
-        } catch (const std::exception& e) {
-            write_alias_error(res, kInvalidBody, e.what());
+        if (alias.empty() || target.empty()) {
+            write_alias_error(res, kBlankField, "Alias and target fields are required");
+            return;
         }
+
+        if (alias == target) {
+            write_alias_error(res, kSelfAlias, "Alias cannot point to itself");
+            return;
+        }
+
+        if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
+            write_alias_error(res, kReservedPrefix, "Alias name cannot use reserved prefixes (user., extra., builtin.)");
+            return;
+        }
+
+        if (ctx_.model_manager->model_exists(alias)) {
+            std::string canonical = ctx_.model_manager->resolve_model_name(alias);
+            if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
+                write_alias_error(res, kNameConflict, "Cannot create alias '" + alias + "': Name conflicts with an existing canonical model");
+                return;
+            }
+        }
+
+        if (!ctx_.alias_manager) {
+            write_alias_error(res, kNoAliasManager, "AliasManager uninitialized", "server_error");
+            return;
+        }
+
+        std::string err_msg;
+        if (!ctx_.alias_manager->set_alias(alias, target, err_msg)) {
+            write_alias_error(res, kAliasChain, err_msg);
+            return;
+        }
+
+        json response = {
+            {"status", "ok"},
+            {"alias", alias},
+            {"target", target}
+        };
+        res.set_content(response.dump(), "application/json");
     }
 };
 

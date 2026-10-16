@@ -41,8 +41,8 @@ public:
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. "
-             "`model` is accepted as an alias."},
+             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to delete.",
+             {"model"}},
         };
 
         RouteResponse response;
@@ -62,7 +62,7 @@ public:
         example.setup = {{"lemonade.models_register", ""}};
         example.args = {{"model_name", "$lemonade.models_register/canonical_model_name"}};
         s.examples = {example};
-        s.errors = {kBodyNotJson, kUnknownModel, kDeleteFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kUnknownModel, kDeleteFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }

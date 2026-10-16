@@ -94,15 +94,16 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | `model` is not a llama.cpp model |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is empty or is not valid JSON |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: llamacpp.rerank -->
 
@@ -357,17 +358,17 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | `id` is too large for a 32-bit integer |
-| `400` | `action` is missing or empty |
-| `400` | `action` is not `erase`, `save` or `restore` |
-| `400` | No model is loaded |
-| `400` | The body is not empty and is not valid JSON |
-| `400` | The most recently used model is not a llama.cpp model |
-| `404` | The model is unloaded while the request waits for it |
-| `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | The slot action fails unexpectedly |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `id` is too large for a 32-bit integer |
+| `400` |  | No model is loaded |
+| `400` |  | The most recently used model is not a llama.cpp model |
+| `404` |  | The model is unloaded while the request waits for it |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The slot action fails unexpectedly |
 <!-- END GENERATED: llamacpp.slots_action -->
 
 <!-- BEGIN GENERATED: llamacpp.tokenize -->
@@ -421,13 +422,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body is not empty and is not valid JSON |
-| `400` | `content` is missing or not a string |
-| `400` | No model is loaded |
-| `400` | The most recently used model is not a llama.cpp model |
-| `404` | The model is unloaded while the request waits for it |
-| `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | Tokenizing fails unexpectedly |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | No model is loaded |
+| `400` |  | The most recently used model is not a llama.cpp model |
+| `404` |  | The model is unloaded while the request waits for it |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | Tokenizing fails unexpectedly |
 <!-- END GENERATED: llamacpp.tokenize -->

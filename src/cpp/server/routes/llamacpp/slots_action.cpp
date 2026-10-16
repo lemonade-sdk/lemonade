@@ -10,11 +10,8 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidSlotId{400, "", "`id` is too large for a 32-bit integer"};
-const RouteError kMissingAction{400, "", "`action` is missing or empty"};
-const RouteError kUnknownAction{400, "", "`action` is not `erase`, `save` or `restore`"};
 const RouteError kNoModelLoaded{400, "", "No model is loaded"};
 const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
-const RouteError kInvalidJson{400, "", "The body is not empty and is not valid JSON"};
 const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
 const RouteError kSlotActionFailed{500, "", "The slot action fails unexpectedly"};
 
@@ -44,7 +41,7 @@ public:
              "The slot to act on."},
             {"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "File to save to or restore from, relative to `--slot-save-path`. Required for "
-             "`save` and `restore`."},
+             "`save` and `restore`.", {}, true},
             {"action", ArgIn::Query, {{"enum", json::array({"save", "restore", "erase"})}}, true, Support::Available,
              "`save` writes the slot's prompt cache to `filename`, `restore` reads it back from "
              "`filename`, and `erase` clears the slot."},
@@ -103,8 +100,9 @@ public:
         erase.args = {{"id", 0}, {"action", "erase"}};
 
         s.examples = {save, restore, erase};
-        s.errors = {kInvalidSlotId, kMissingAction, kUnknownAction, kNoModelLoaded, kModelUnloaded,
-                    kInvalidJson, kNotLlamaCpp, kBackendError, kSlotActionFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSlotId, kNoModelLoaded,
+                    kModelUnloaded, kNotLlamaCpp, kBackendError, kSlotActionFailed};
+        s.request_format = RequestFormat::OptionalJson;
         return s;
     }
 
@@ -121,17 +119,6 @@ public:
             }
 
             auto action_param = req.http.get_param_value("action");
-            if (action_param.empty()) {
-                LOG(ERROR, "Server") << "Missing action parameter for slots POST endpoint" << std::endl;
-                write_plain_error(res, kMissingAction, "POST /api/v1/slots/{id} requires action query parameter (e.g., ?action=erase)");
-                return;
-            }
-
-            if (action_param != "erase" && action_param != "save" && action_param != "restore") {
-                LOG(ERROR, "Server") << "Unknown action parameter: " << action_param << std::endl;
-                write_plain_error(res, kUnknownAction, std::string("Unknown action: ") + action_param + ". Supported actions: erase, save, restore");
-                return;
-            }
 
             // Slot actions operate on backend state, so they need a loaded model rather
             // than a named one.
@@ -141,18 +128,7 @@ public:
                 return;
             }
 
-            json request_body = json::object();
-            if (!req.http.body.empty()) {
-                try {
-                    request_body = json::parse(req.http.body);
-                } catch (const std::exception& e) {
-                    LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
-                    write_plain_error(res, kInvalidJson, "Invalid JSON in request body");
-                    return;
-                }
-            }
-
-            auto response = ctx_.router->slots_action(slot_id, action_param, request_body);
+            auto response = ctx_.router->slots_action(slot_id, action_param, req.body);
             if (response.contains("error")) {
                 set_error_response(response, res, kBackendError);
                 return;

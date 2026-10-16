@@ -11,11 +11,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kMissingRecipeOrBackend{400, "", "`recipe` or `backend` is missing or empty"};
+const RouteError kEmptyRecipeOrBackend{400, "", "`recipe` or `backend` is empty"};
 const RouteError kResolveFailed{
     500, "",
-    "The body is not valid JSON, a field has the wrong type, or resolving the install "
-    "parameters fails, for example for an unknown recipe/backend pair, an unsupported platform "
+    "Resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform "
     "or a failed version lookup; the body also carries `arch` when the request set one"};
 
 class InstallDryRunRoute : public ApiRoute {
@@ -80,21 +79,22 @@ public:
             "arch": "gfx1201"
         })");
         s.examples = {example};
-        s.errors = {kMissingRecipeOrBackend, kResolveFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kEmptyRecipeOrBackend, kResolveFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         std::string requested_arch;
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
             const std::string recipe = request_json.value("recipe", "");
             const std::string backend = request_json.value("backend", "");
             requested_arch = request_json.value("arch", "");
 
             if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, kMissingRecipeOrBackend, "Both 'recipe' and 'backend' are required");
+                write_plain_error(res, kEmptyRecipeOrBackend, "Both 'recipe' and 'backend' are required");
                 return;
             }
 

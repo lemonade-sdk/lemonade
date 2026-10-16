@@ -13,9 +13,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidAuthJson{400, "", "The body is not valid JSON"};
-const RouteError kMissingAuthFields{400, "", "`provider` or `api_key` is missing or not a string"};
-const RouteError kInvalidAllowInsecure{400, "", "`allow_insecure_http` is not a boolean"};
 const RouteError kEmptyAuthFields{400, "", "`provider` or `api_key` is empty"};
 const RouteError kProviderNotInstalled{
     404, "", "`provider` was not installed with [`POST /v1/install`](#post-v1install)"};
@@ -23,8 +20,7 @@ const RouteError kAuthConflict{
     409, "",
     "`LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; "
     "`error.type` is `auth_conflict` and `error.env_var` names the variable"};
-const RouteError kAuthFailed{
-    500, "", "The body holds a number out of range, or storing the key fails unexpectedly"};
+const RouteError kAuthFailed{500, "", "Storing the key fails unexpectedly"};
 
 class CloudAuthRoute : public ApiRoute {
 public:
@@ -83,32 +79,20 @@ public:
             "api_key": "fw-XXXXX"
         })");
         s.examples = {example};
-        s.errors = {kInvalidAuthJson, kMissingAuthFields, kInvalidAllowInsecure, kEmptyAuthFields,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kEmptyAuthFields,
                     kProviderNotInstalled, kInsecureHttpError, kAuthConflict, kAuthFailed};
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         CloudProviderRegistry& registry = *ctx_.cloud_registry;
         try {
-            const auto body = json::parse(req.http.body);
-            if (!body.contains("provider") || !body["provider"].is_string() ||
-                !body.contains("api_key") || !body["api_key"].is_string()) {
-                write_openai_error(res, kMissingAuthFields,
-                                   "Body must contain string fields: provider, api_key");
-                return;
-            }
+            const json& body = req.body;
             const auto provider = body["provider"].get<std::string>();
             const auto api_key = body["api_key"].get<std::string>();
-            bool allow_insecure_http = false;
-            if (body.contains("allow_insecure_http")) {
-                if (!body["allow_insecure_http"].is_boolean()) {
-                    write_openai_error(res, kInvalidAllowInsecure,
-                                       "allow_insecure_http must be a boolean when provided");
-                    return;
-                }
-                allow_insecure_http = body["allow_insecure_http"].get<bool>();
-            }
+            const bool allow_insecure_http = body.value("allow_insecure_http", false);
             if (provider.empty() || api_key.empty()) {
                 write_openai_error(res, kEmptyAuthFields, "provider and api_key must be non-empty");
                 return;
@@ -166,8 +150,6 @@ public:
                 response,
                 CloudProviderRegistry::base_url_warnings(base_url, /*api_key_available=*/true));
             res.set_content(response.dump(), "application/json");
-        } catch (const json::parse_error& e) {
-            write_openai_error(res, kInvalidAuthJson, "Invalid JSON: " + std::string(e.what()));
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
             write_openai_error(res, kAuthFailed, e.what(), "server_error");

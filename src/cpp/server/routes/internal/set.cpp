@@ -22,11 +22,9 @@ std::string json_type_name(const json& value) {
     return "string";
 }
 
-const RouteError kInvalidJson{400, "", "The body is not valid JSON"};
 const RouteError kInvalidSetting{
-    400, "", "The body is not a non-empty JSON object, or has an unknown key or an invalid value"};
-const RouteError kApplyFailed{
-    500, "", "A number in the body is too large to parse, or applying a setting fails"};
+    400, "", "The body is `{}`, or has an unknown key or an invalid value"};
+const RouteError kApplyFailed{500, "", "Applying a setting fails"};
 
 class SetRoute : public ApiRoute {
 public:
@@ -66,8 +64,11 @@ public:
             std::string description = value.is_object()
                 ? "`" + key + "` settings; send only the keys to change."
                 : "Defaults to `" + value.dump() + "`.";
-            s.args.push_back({key, ArgIn::JsonBody, {{"type", json_type_name(value)}}, false,
-                              Support::Available, description});
+            // "auto" picks a free port; a number pins it.
+            json type = key == "websocket_port" ? json::array({"string", "integer"})
+                                                : json(json_type_name(value));
+            s.args.push_back({key, ArgIn::JsonBody, {{"type", type}}, false, Support::Available,
+                              description});
         }
 
         RouteResponse response;
@@ -87,16 +88,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"log_level", "info"}};
         s.examples = {example};
-        s.errors = {kInvalidJson, kInvalidSetting, kApplyFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSetting, kApplyFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto body = json::parse(req.http.body);
-
             ConfigEffects* effects = ctx_.config_effects;
-            auto result = ctx_.config->set(body, [effects](const json& applied) {
+            auto result = ctx_.config->set(req.body, [effects](const json& applied) {
                 for (const auto& [key, value] : applied.items()) {
                     effects->apply(key, value);
                 }
@@ -118,8 +118,6 @@ public:
             }
 
             res.set_content(result.dump(), "application/json");
-        } catch (const json::parse_error&) {
-            write_plain_error(res, kInvalidJson, "Invalid JSON in request body");
         } catch (const std::invalid_argument& e) {
             write_plain_error(res, kInvalidSetting, e.what());
         } catch (const std::exception& e) {

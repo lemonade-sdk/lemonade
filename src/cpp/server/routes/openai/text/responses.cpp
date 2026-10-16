@@ -11,7 +11,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kUnparsableBody{500, "", "The body is empty or is not valid JSON"};
 const RouteError kNoResponsesApi{
     400, "",
     "The request does not stream and `model` is a FastFlowLM or cloud model, which has no "
@@ -102,15 +101,15 @@ public:
             {"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Upper bound on generated tokens."},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature.", {}, true},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition."},
+             "repetition.", {}, true},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling.", {}, true},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`."},
+             "`0.0` to `1.0`.", {}, true},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "`true` sends tokens as server-sent events as they are generated; `false` sends one "
              "response once complete. Defaults to `false`."},
@@ -152,9 +151,10 @@ public:
         })");
 
         s.examples = {response_example, stream_example};
-        s.errors = join_errors({{kUnparsableBody, kModelMissing, kNoResponsesApi, kNotLlm,
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNoResponsesApi, kNotLlm,
                                  kBackendError, kUnexpectedException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -164,9 +164,6 @@ protected:
         // Router policies call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
         req.route_decision = router_dispatch(ctx_, req);
-        if (req.body.contains("model")) {
-            req.body["model"].get<std::string>();  // a non-string model fails before any load
-        }
         return true;
     }
 
@@ -193,11 +190,6 @@ protected:
         attach_route_decision(response, res, req.route_decision);
         res.set_content(response.dump(), "application/json");
         record_usage(response, req);
-    }
-
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_plain_error(res, kUnparsableBody, error.what());
     }
 };
 

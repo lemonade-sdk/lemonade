@@ -11,12 +11,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNotObject{400, "", "The body is not a JSON object"};
-const RouteError kMissingModelName{400, "", "`model_name` is missing or not a string"};
 const RouteError kInvalidDefinition{
     400, "",
     "The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, "
-    "`recipe` is missing, the body embeds a `models` array, or `checkpoint`, `checkpoints`, "
+    "`recipe` is empty, the body embeds a `models` array, or `checkpoint`, `checkpoints`, "
     "`source` or `components` is malformed"};
 const RouteError kWrongFieldType{400, "", "A definition field has the wrong JSON type"};
 const RouteError kRegisterFailed{
@@ -84,7 +82,7 @@ public:
             "recipe": "llamacpp"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kNotObject, kMissingModelName, kInvalidDefinition, kWrongFieldType,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidDefinition, kWrongFieldType,
                     kRegisterFailed};
         s.request_format = RequestFormat::Json;
         return s;
@@ -93,15 +91,6 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         json& request_json = req.body;
         try {
-            if (!request_json.is_object()) {
-                write_plain_error(res, kNotObject, "Request body must be a JSON object");
-                return;
-            }
-            if (!request_json.contains("model_name") || !request_json["model_name"].is_string()) {
-                write_plain_error(res, kMissingModelName, "A string `model_name` is required");
-                return;
-            }
-
             const std::string model_name = request_json["model_name"].get<std::string>();
             const std::string public_name = register_model_definition(
                 ctx_,

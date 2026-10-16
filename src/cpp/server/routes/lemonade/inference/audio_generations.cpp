@@ -12,15 +12,11 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidAudioBody{500, "", "The body is empty or is not valid JSON"};
-const RouteError kMissingPrompt{400, "", "`prompt` is missing"};
-const RouteError kNonStringField{400, "", "`prompt`, `lyrics` or `vocal_language` is not a string"};
 const RouteError kNotAudioModel{
     400, "model_not_applicable", "`model` is not an audio-generation model"};
 const RouteError kUnsupportedFormat{
     400, "", "`response_format` is not a format the model's backend produces"};
-const RouteError kGenerationException{
-    500, "", "`model` is not a string, or generation fails unexpectedly"};
+const RouteError kGenerationException{500, "", "Generation fails unexpectedly"};
 
 class AudioGenerationsRoute : public ModelRoute {
 public:
@@ -110,33 +106,17 @@ public:
         })");
 
         s.examples = {sound, song};
-        s.errors = join_errors({{kInvalidAudioBody, kModelMissing, kMissingPrompt, kNonStringField,
-                                 kNotAudioModel, kUnsupportedFormat, kNoOutputError, kBackendError,
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotAudioModel,
+                                 kUnsupportedFormat, kNoOutputError, kBackendError,
                                  kGenerationException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        // ModelRoute reports a missing model, and that error wins over a missing prompt.
-        if (!req.body.contains("model")) {
-            return true;
-        }
-        if (!req.body.contains("prompt")) {
-            write_openai_error(res, kMissingPrompt, "Missing 'prompt' field in request");
-            return false;
-        }
-        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
-            if (req.body.contains(field) && !req.body[field].is_string()) {
-                write_openai_error(res, kNonStringField,
-                                   "'" + std::string(field) + "' must be a string");
-                return false;
-            }
-        }
-
-        req.body["model"].get<std::string>();  // a non-string model fails before any load
         if (auto info = ctx_.router->try_get_model_info(req.model);
             info && info->type != ModelType::AUDIO_GENERATION) {
             write_openai_error(res, kNotAudioModel,
@@ -164,10 +144,6 @@ protected:
         });
     }
 
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_openai_error(res, kInvalidAudioBody, error.what(), "internal_error");
-    }
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << error.what() << std::endl;
         write_openai_error(res, kGenerationException, error.what(), "internal_error");

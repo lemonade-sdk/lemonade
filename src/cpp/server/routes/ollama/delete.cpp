@@ -11,13 +11,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNameRequired{
-    400, "", "The body has neither `model` nor `name`, or the one used is empty"};
+const RouteError kNameRequired{400, "", "The `model` or `name` used is empty"};
 const RouteError kModelNotFound{
     404, "", "The model names no model, or one this system does not support"};
 const RouteError kDeleteFailed{
     500, "",
-    "Deleting fails for another reason, such as an `extra.` model, or the body is not valid JSON"};
+    "Deleting fails for another reason, such as an `extra.` model"};
 
 class DeleteRoute : public ApiRoute {
 public:
@@ -36,10 +35,9 @@ public:
             "Success answers `200` with an empty body, as Ollama does.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Model to delete. Required unless `name` is given."},
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Older name for `model`; wins when both are given."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "Model to delete. `name` is its older name, and wins when both are given.",
+             {"name"}},
         };
 
         // Deleting a model the docs need would break later examples, so this deletes the
@@ -53,13 +51,15 @@ public:
         example.setup = {{"ollama.pull", "non-streaming"}};
         example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
         s.examples = {example};
-        s.errors = {kNameRequired, kModelNotFound, kDeleteFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kNameRequired, kModelNotFound,
+                    kDeleteFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
             std::string name = strip_latest_tag(request_json.value("name", request_json.value("model", "")));
 
             if (name.empty()) {

@@ -10,10 +10,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidJson{400, "", "The body is not valid JSON"};
-const RouteError kMissingModel{400, "", "The body has neither `model` nor `model_name`"};
-const RouteError kBadPinned{400, "", "`pinned` is missing or not a boolean"};
-const RouteError kNotLoaded{400, "", "`model` or `model_name` is not a string or names no loaded model"};
+const RouteError kNotLoaded{400, "", "The model is not loaded"};
 
 class PinRoute : public ApiRoute {
 public:
@@ -36,7 +33,7 @@ public:
         };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Loaded model to pin or unpin. `model` is accepted in its place and wins when both are sent."},
+             "Loaded model to pin or unpin. `model` wins when both are sent.", {"model"}},
             {"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, true, Support::Available,
              "`true` pins the model; `false` unpins it."},
         };
@@ -59,32 +56,15 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"model_name", "Qwen3-0.6B-GGUF"}, {"pinned", true}};
         s.examples = {example};
-        s.errors = {kInvalidJson, kMissingModel, kBadPinned, kNotLoaded};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kNotLoaded};
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            json request_json;
-            try {
-                request_json = json::parse(req.http.body);
-            } catch (const std::exception& parse_err) {
-                write_openai_error(res, kInvalidJson,
-                                   "Invalid JSON body: " + std::string(parse_err.what()));
-                return;
-            }
-
-            if (!request_json.contains("model") && !request_json.contains("model_name")) {
-                write_openai_error(res, kMissingModel, "Parameter 'model' or 'model_name' is required");
-                return;
-            }
-
-            if (!request_json.contains("pinned") || !request_json["pinned"].is_boolean()) {
-                write_openai_error(res, kBadPinned,
-                                   "Parameter 'pinned' is required and must be a boolean");
-                return;
-            }
-
+            const json& request_json = req.body;
             std::string model_name = request_json.contains("model") ?
                 request_json["model"].get<std::string>() :
                 request_json["model_name"].get<std::string>();

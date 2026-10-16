@@ -404,15 +404,16 @@ The backend failed after the stream started. This event replaces the rest of the
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body is empty or is not valid JSON |
-| `400` |  | The request names no `model` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.chat_completions -->
 
@@ -613,16 +614,17 @@ The backend failed after the stream started. This event replaces the rest of the
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is empty or is not valid JSON |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` |  | The backend's response has no `choices` |
-| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.completions -->
 
@@ -707,15 +709,16 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is empty or is not valid JSON |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `501` |  | `model` is a llama.cpp model that is not an embedding model |
 <!-- END GENERATED: openai.embeddings -->
@@ -898,16 +901,17 @@ The backend failed after the stream started. This event replaces the rest of the
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is empty or is not valid JSON |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The request fails unexpectedly, for example on a parameter of the wrong JSON type |
+| `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.responses -->
 
@@ -1217,8 +1221,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
-| `400` |  | The body has no `prompt` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -1520,16 +1525,18 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | `image` is missing or not a string |
-| `400` | `model` is missing or empty |
-| `400` | `model` has no `upscaling` label |
-| `400` | `model`'s recipe cannot upscale |
-| `400` | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
-| `404` | `model` names no model in the registry, or downloading it fails |
-| `500` | The backend produces no upscaled image |
-| `500` | The request fails unexpectedly |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `model` is empty |
+| `400` |  | `model` has no `upscaling` label |
+| `400` |  | `model`'s recipe cannot upscale |
+| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `404` |  | `model` names no model in the registry, or downloading it fails |
+| `500` |  | The backend produces no upscaled image |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: openai.images_upscale -->
 
 <!-- BEGIN GENERATED: openai.audio_speech -->
@@ -1630,17 +1637,16 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The request names no `model` |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
-| `400` |  | The body has no `input` |
-| `400` |  | `input` is not a string |
-| `400` |  | `stream_format` is not `audio` |
 | `400` |  | `response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The body is not valid JSON, or the request fails unexpectedly |
+| `500` |  | The request fails unexpectedly |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
@@ -2102,8 +2108,6 @@ The request merges into the model's saved entry, so keys it leaves out keep thei
 
 A request that fails validation saves nothing.
 
-The model is resolved before the body is read, so an unknown model is reported even when the body is also invalid.
-
 A running model keeps its current options until it is next loaded.
 
 `pinned` is omitted from `effective` and `defaults`; it belongs to [`/v1/load`](./lemonade.md#post-v1load) and [`/internal/pin`](./internal.md#post-internalpin).
@@ -2180,10 +2184,8 @@ A running model keeps its current options until it is next loaded.
 
 | Status | Code | When |
 |--------|------|------|
-| `400` |  | The body is empty |
-| `400` |  | The body is not valid JSON |
-| `400` |  | The body is not a JSON object |
-| `400` |  | `dry_run` is not a boolean |
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
 | `400` |  | The body names an option that the model's recipe does not accept |
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
 | `400` |  | An option's value has the wrong JSON type |

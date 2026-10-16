@@ -13,8 +13,7 @@ using ordered_json = nlohmann::ordered_json;
 // The body is ModelLoader::model_error() for an empty model name, which carries model_not_found.
 const RouteError kCleanupFailed{
     500, "model_not_found",
-    "The body is empty or not a JSON object, `dry_run` is not a boolean, or scanning or removing "
-    "cache files fails"};
+    "Scanning or removing cache files fails"};
 
 class CleanupCacheRoute : public ApiRoute {
 public:
@@ -66,14 +65,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"dry_run", true}};
         s.examples = {example};
-        s.errors = {kCleanupFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kCleanupFailed};
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
-            bool dry_run = request_json.value("dry_run", true);
+            bool dry_run = req.body.value("dry_run", true);
 
             auto result = ctx_.model_manager->cleanup_orphaned_cache(dry_run);
             res.set_content(result.dump(), "application/json");

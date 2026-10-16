@@ -12,7 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kUnparsableBody{500, "", "The body is empty or is not valid JSON"};
 const RouteError kNotLlm{400, "", "`model` is not an LLM, which is checked after it loads"};
 const RouteError kNoChoices{500, "", "The backend's response has no `choices`"};
 
@@ -102,25 +101,25 @@ public:
              "response once complete. Defaults to `false`."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Sequences that stop generation, as a string or an array of strings. The returned "
-             "text leaves them out."},
+             "text leaves them out.", {}, true},
             {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Partial,
              "`true` asks the backend to return the prompt before the completion. llama.cpp "
-             "models ignore it."},
+             "models ignore it.", {}, true},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
              "`true`, or a number of top alternatives per token, returns the log probability of each "
-             "output token. Defaults to `false`."},
+             "output token. Defaults to `false`.", {}, true},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature.", {}, true},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition."},
+             "repetition.", {}, true},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling.", {}, true},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`."},
+             "`0.0` to `1.0`.", {}, true},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens."},
+             "Upper bound on generated tokens.", {}, true},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the per-condition "
              "`trace` to `x_lemonade_route`. Defaults to `false`."},
@@ -161,9 +160,10 @@ public:
         })");
 
         s.examples = {completion_example, stream_example};
-        s.errors = join_errors({{kUnparsableBody, kModelMissing, kNotLlm, kBackendError, kNoChoices,
-                                 kUnexpectedException},
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlm, kBackendError,
+                                 kNoChoices, kUnexpectedException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -210,11 +210,6 @@ protected:
         attach_route_decision(response, res, req.route_decision);
         res.set_content(response.dump(), "application/json");
         record_usage(response, req);
-    }
-
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_plain_error(res, kUnparsableBody, error.what());
     }
 
     LoadSpan load_span() const override { return {"LLM", "completions"}; }

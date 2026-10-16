@@ -9,12 +9,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidClassifyBody{400, "", "The body is empty or is not valid JSON"};
-const RouteError kNonStringModel{400, "", "`model` is not a string"};
 const RouteError kMissingInput{400, "", "Neither `input` nor `text` is present"};
-const RouteError kNonStringInput{400, "", "`input` or `text` is not a string"};
 const RouteError kBlankInput{400, "", "The input text is empty or only whitespace"};
-const RouteError kInvalidTopK{400, "", "`top_k` is not an integer from 1 to 1,000,000"};
+const RouteError kInvalidTopK{400, "", "`top_k` is not from 1 to 1,000,000"};
 const RouteError kNoSoleClassifier{
     400, "", "`model` is omitted and not exactly one classification model is loaded"};
 const RouteError kBackendRejected{
@@ -95,52 +92,38 @@ public:
             "input": "Please verify your account at http://secure-login.example now."
         })");
         s.examples = {example};
-        s.errors = join_errors({{kInvalidClassifyBody, kNonStringModel, kMissingInput,
-                                 kNonStringInput, kBlankInput, kInvalidTopK, kNoSoleClassifier,
+        s.errors = join_errors({{kBodyNotJson, kArgInvalid, kMissingInput, kBlankInput,
+                                 kInvalidTopK, kNoSoleClassifier,
                                  kBackendRejected, kModelNotLoaded, kBackendError,
                                  kUnexpectedResponse, kUnexpectedException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        const json& request_json = req.body;
-
         // Malformed requests are rejected before any model gets loaded.
-        std::string validation_error;
-        const RouteError* validation_route_error = nullptr;
-        bool has_text = request_json.contains("text");
-        bool has_input = request_json.contains("input");
-        const auto& input_field = has_text ? request_json["text"]
-                                 : has_input ? request_json["input"] : request_json;
-        if (request_json.contains("model") && !request_json["model"].is_string()) {
-            validation_error = "'model' must be a string";
-            validation_route_error = &kNonStringModel;
-        } else if (!has_text && !has_input) {
-            validation_error = "Missing 'input' (or 'text') string in classify request";
-            validation_route_error = &kMissingInput;
-        } else if (has_text && !request_json["text"].is_string()) {
-            validation_error = "'text' must be a string";
-            validation_route_error = &kNonStringInput;
-        } else if (has_input && !request_json["input"].is_string()) {
-            validation_error = "'input' must be a string";
-            validation_route_error = &kNonStringInput;
-        } else if (input_field.get<std::string>().find_first_not_of(" \t\r\n") ==
-                   std::string::npos) {
-            validation_error = "input text must not be empty";
-            validation_route_error = &kBlankInput;
-        } else if (request_json.contains("top_k") &&
-                   (!request_json["top_k"].is_number_integer() ||
-                    request_json["top_k"].get<long long>() < 1 ||
-                    request_json["top_k"].get<long long>() > 1000000)) {
-            validation_error = "'top_k' must be a positive integer";
-            validation_route_error = &kInvalidTopK;
-        }
-        if (validation_route_error) {
-            write_openai_error(res, *validation_route_error, validation_error);
+        const bool has_text = req.body.contains("text");
+        if (!has_text && !req.body.contains("input")) {
+            write_openai_error(res, kMissingInput,
+                               "Missing 'input' (or 'text') string in classify request");
             return false;
+        }
+        const std::string input = req.body[has_text ? "text" : "input"].get<std::string>();
+        if (input.find_first_not_of(" \t\r\n") == std::string::npos) {
+            write_openai_error(res, kBlankInput, "input text must not be empty");
+            return false;
+        }
+        if (req.body.contains("top_k")) {
+            const double top_k = req.body["top_k"].get<double>();
+            if (top_k < 1 || top_k > 1000000) {
+                write_openai_error(res, kInvalidTopK, "'top_k' must be from 1 to 1,000,000");
+                return false;
+            }
+            // The validator accepts 2.0 as an integer; the backend expects 2.
+            req.body["top_k"] = static_cast<long long>(top_k);
         }
 
         // The router requires a model on every request, so an omitted one is resolved
@@ -201,11 +184,6 @@ protected:
         res.set_content(enveloped.dump(), "application/json");
     }
 
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_openai_error(res, kInvalidClassifyBody,
-                           std::string("Invalid JSON in request body: ") + error.what());
-    }
     LoadSpan load_span() const override { return {"CLASSIFIER", "classify"}; }
 };
 

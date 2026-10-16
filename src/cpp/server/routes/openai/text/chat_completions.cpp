@@ -168,26 +168,26 @@ public:
              "response once complete. Defaults to `false`."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Sequences that stop generation, as a string or an array of strings. The returned "
-             "text leaves them out."},
+             "text leaves them out.", {}, true},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` returns the log probability of each output token. Defaults to `false`."},
+             "`true` returns the log probability of each output token. Defaults to `false`.", {}, true},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature.", {}, true},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition."},
+             "repetition.", {}, true},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling.", {}, true},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`."},
+             "`0.0` to `1.0`.", {}, true},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "A list of tools the model may call."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Upper bound on generated tokens. Wins over `max_completion_tokens` when both are "
-             "sent."},
+             "sent.", {}, true},
             {"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "OpenAI's name for `max_tokens`."},
+             "OpenAI's name for `max_tokens`.", {}, true},
             {"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
              "false` does the same, and `enable_thinking` wins when both are sent."},
@@ -257,9 +257,10 @@ public:
         })");
 
         s.examples = {completion_example, stream_example, image_example, tools_example};
-        s.errors = join_errors({{kBodyNotJson, kModelMissing, kNotLlm, kBackendError,
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlm, kBackendError,
                                  kUnexpectedException},
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }

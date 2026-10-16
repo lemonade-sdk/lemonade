@@ -175,16 +175,19 @@ data: {"type": "message_stop"}
 
 ### Errors
 
-| Status | When |
-|--------|------|
-| `400` | The body has no `model`, or it is empty |
-| `400` | `model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base URL and was not installed with `--allow-insecure-http` |
-| `401` | `model` is a cloud model whose `--wire-format anthropic` provider has no API key |
-| `404` | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
-| `409` | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
-| `500` | `model` is a cloud model whose `--wire-format anthropic` provider has no base URL |
-| `500` | `model` is a `--wire-format anthropic` cloud model with no `checkpoint` |
-| `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | The body is not valid JSON, a field has the wrong type, or another step throws |
-| `502` | Without `stream`, the relayed cloud request fails or the provider answers with an error; the provider's own status and body replace this one when it answers |
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` |  | `model` is empty |
+| `400` |  | `model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base URL and was not installed with `--allow-insecure-http` |
+| `401` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no API key |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` |  | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no base URL |
+| `500` |  | `model` is a `--wire-format anthropic` cloud model with no `checkpoint` |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | A field has the wrong type, or another step throws |
+| `502` |  | Without `stream`, the relayed cloud request fails or the provider answers with an error; the provider's own status and body replace this one when it answers |
 <!-- END GENERATED: anthropic.messages -->

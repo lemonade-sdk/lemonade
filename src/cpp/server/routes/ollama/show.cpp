@@ -11,12 +11,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNameRequired{
-    400, "", "The body has neither `model` nor `name`, or the one used is empty"};
+const RouteError kNameRequired{400, "", "The `model` or `name` used is empty"};
 const RouteError kModelNotFound{
     404, "", "The model names no model in the registry, or one filtered out on this system"};
-const RouteError kRequestFailed{
-    500, "", "The body is not valid JSON, a field has the wrong type, or another step throws"};
+const RouteError kRequestFailed{500, "", "A field has the wrong type, or another step throws"};
 
 json build_ollama_capabilities(const ModelInfo& info) {
     json capabilities = json::array();
@@ -56,10 +54,9 @@ public:
         s.summary = "Describe a model";
         s.description = "Describes one registered model in Ollama's format.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Model to describe. Required unless `name` is given."},
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Older name for `model`; wins when both are given."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+             "Model to describe. `name` is its older name, and wins when both are given.",
+             {"name"}},
         };
 
         RouteResponse response;
@@ -83,13 +80,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
         s.examples = {example};
-        s.errors = {kNameRequired, kModelNotFound, kRequestFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kNameRequired, kModelNotFound,
+                    kRequestFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
             std::string name = strip_latest_tag((!request_json.value("model", "").empty() && request_json.value("name", "").empty()) ?
             request_json.value("model", "") : request_json.value("name", ""));

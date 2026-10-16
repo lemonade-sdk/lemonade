@@ -356,11 +356,41 @@ def lint_spec(spec: dict) -> list[str]:
     for error, count in collections.Counter(listed).items():
         if count > 1:
             problems.append(f"lists error {error[0]} {error[2]!r} {count} times")
+    codes = {error["code"] for error in spec["errors"]}
+    for code, written in base_error_codes(spec).items():
+        if written and code not in codes:
+            problems.append(
+                f"leaves out the {code} error, which ApiRoute writes for it"
+            )
+        elif not written and code in codes:
+            problems.append(
+                f"lists the {code} error, which ApiRoute never writes for it"
+            )
     if len(spec["summary"].split()) > MAX_SUMMARY_WORDS:
         problems.append(f"summary runs over {MAX_SUMMARY_WORDS} words")
     if len(sentences(spec["description"])) > MAX_DESCRIPTION_SENTENCES:
         problems.append(f"description runs over {MAX_DESCRIPTION_SENTENCES} sentences")
     return [f"{spec['id']}: {problem}" for problem in problems]
+
+
+def base_error_codes(spec: dict) -> dict:
+    """Whether ApiRoute::serve() can write each of its argument errors for this route."""
+    if spec["request_format"] not in ("Json", "OptionalJson"):
+        return {
+            "invalid_json": False,
+            "missing_argument": False,
+            "invalid_argument": False,
+        }
+    checked = [
+        arg
+        for arg in spec["args"]
+        if arg["in"] in ("JsonBody", "Query") and not arg["forwarded"]
+    ]
+    return {
+        "invalid_json": True,
+        "missing_argument": any(arg["required"] for arg in checked),
+        "invalid_argument": bool(checked),
+    }
 
 
 def lint_region(route_id: str, body: str) -> list[str]:
@@ -389,6 +419,7 @@ ROUTE_ERROR_NAME = re.compile(
 )
 ERROR_LISTS = re.compile(r"\berrors\s*=\s*[^;]*;", re.S)
 REQUIRED_MODEL_ARG = re.compile(r'\{"model", ArgIn::\w+, [^\n]*?, true,')
+RECEIVES_BODY = re.compile(r"RequestFormat::(?:Json|OptionalJson|Form)\b")
 ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
 
 
@@ -420,18 +451,26 @@ def lint_sources() -> list[str]:
             continue
         lists = " ".join(m.group(0) for m in ERROR_LISTS.finditer(text))
         inherited = "ModelLoader::errors()" in lists
-        base_errors = []
-        if re.search(r"RequestFormat::(?:Json|OptionalJson)\b", text) and (
-            "void write_invalid_body" not in text
+        # MCP's JSON-RPC endpoint answers its own parse errors, in-band with a 200.
+        if (
+            not RECEIVES_BODY.search(text)
+            and "http.body" in text
+            and path.parent.name != "mcp"
         ):
-            base_errors.append("kBodyNotJson")
+            problems.append(
+                f"{where} reads its request body, which its RequestFormat skips"
+            )
+        base_errors = []
         if "public ModelRoute" in text:
             base_errors.append("ModelLoader::errors()")
             if "void write_exception" not in text:
                 base_errors.append("kUnexpectedException")
             if "RequestFormat::Form" in text:
                 base_errors += ["kFormNotMultipart", "kFormValueInvalid"]
-            if REQUIRED_MODEL_ARG.search(text):
+            fills_model = 'req.body["model"] =' in text
+            if "RequestFormat::Form" in text or not (
+                REQUIRED_MODEL_ARG.search(text) or fills_model
+            ):
                 base_errors.append("kModelMissing")
         for name in base_errors:
             if name not in lists:
@@ -1395,7 +1434,7 @@ def render_parameters(spec: dict) -> str:
         "|-----------|----------|-------------|--------|",
     ]
     for arg in spec["args"]:
-        name = f"`{arg['name']}`"
+        name = " or ".join(f"`{name}`" for name in [arg["name"], *arg["aliases"]])
         if arg["in"] == "Query":
             name += " (query)"
         elif arg["in"] == "Path":

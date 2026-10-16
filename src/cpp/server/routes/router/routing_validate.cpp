@@ -16,11 +16,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kBadPolicy{400, "", "`policy` is missing or not a JSON object"};
-const RouteError kBadPrompt{400, "", "`prompt` is not a string"};
-const RouteError kBadHasImages{400, "", "`has_images` is not a boolean"};
-const RouteError kBadHasTools{400, "", "`has_tools` is not a boolean"};
-const RouteError kBadMetadata{400, "", "`metadata` is not an object of string values"};
+const RouteError kBadMetadata{400, "", "A `metadata` value is not a string"};
 const RouteError kInvalidPolicy{400, "", "`policy` is invalid or internally inconsistent"};
 
 class RoutingValidateRoute : public ApiRoute {
@@ -156,8 +152,7 @@ public:
             "prompt": "please write a def to reverse a list"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kBadPolicy, kBadPrompt, kBadHasImages, kBadHasTools,
-                    kBadMetadata, kInvalidPolicy};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kBadMetadata, kInvalidPolicy};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -165,35 +160,13 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         const json& request_json = req.body;
 
-        if (!request_json.contains("policy") || !request_json["policy"].is_object()) {
-            write_plain_error(res, kBadPolicy, "'policy' must be a JSON object");
-            return;
-        }
-        if (request_json.contains("prompt") && !request_json["prompt"].is_string()) {
-            write_plain_error(res, kBadPrompt, "'prompt' must be a string");
-            return;
-        }
         const std::string prompt = request_json.value("prompt", std::string());
-
-        if (request_json.contains("has_images") && !request_json["has_images"].is_boolean()) {
-            write_plain_error(res, kBadHasImages, "'has_images' must be a boolean");
-            return;
-        }
         const bool has_images = request_json.value("has_images", false);
-
-        if (request_json.contains("has_tools") && !request_json["has_tools"].is_boolean()) {
-            write_plain_error(res, kBadHasTools, "'has_tools' must be a boolean");
-            return;
-        }
         const bool has_tools = request_json.value("has_tools", false);
 
         std::map<std::string, std::string> metadata;
         if (request_json.contains("metadata")) {
             const json& metadata_json = request_json["metadata"];
-            if (!metadata_json.is_object()) {
-                write_plain_error(res, kBadMetadata, "'metadata' must be a JSON object of string values");
-                return;
-            }
             for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
                 if (!it.value().is_string()) {
                     write_plain_error(res, kBadMetadata,

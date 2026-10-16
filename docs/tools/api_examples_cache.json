@@ -669,6 +669,7 @@
             }
           ],
           "errors": [],
+          "error_format": "Plain",
           "request_format": "Raw",
           "quiet_log": false
         }

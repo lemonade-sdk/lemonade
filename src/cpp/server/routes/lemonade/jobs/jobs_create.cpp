@@ -9,8 +9,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidJobBody{
-    400, "", "The body is not valid JSON or not a JSON object, or `name` or a step has the wrong type"};
+const RouteError kInvalidJobBody{400, "", "A step has the wrong type"};
 const RouteError kInvalidSteps{
     400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
 const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
@@ -49,7 +48,7 @@ public:
             {"definition", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
              "Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over "
              "`steps`."},
-            {"inputs", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"inputs", ArgIn::JsonBody, json::object(), false, Support::Available,
              "Values the steps read as `context.inputs`."},
         };
 
@@ -69,12 +68,14 @@ public:
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
         s.examples = {example};
-        s.errors = {kInvalidJobBody, kInvalidSteps, kJobLimit};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidJobBody, kInvalidSteps, kJobLimit};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
+            // Parsed again as ordered_json, so `GET jobs/{id}` echoes the keys in the client's order.
             auto body = lemon::jobs::json::parse(req.http.body);
             const std::string name = body.value("name", "");
             lemon::jobs::json steps_json = lemon::jobs::json::array();

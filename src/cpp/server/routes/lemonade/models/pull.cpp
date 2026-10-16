@@ -15,7 +15,7 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidSource{
     400, "",
-    "`source` or `registry_source` is not a string or names an unsupported source, or the "
+    "`source` or `registry_source` names an unsupported source, or the "
     "checkpoint URLs disagree with it or with each other"};
 const RouteError kInvalidDefinition{
     400, "",
@@ -35,8 +35,8 @@ const RouteError kIllegalLabels{
 const RouteError kPullFailed{
     500, "",
     "Another failure occurs, for example a failed download, a model this system cannot run, a "
-    "missing `model_name`, a field of the wrong type, a new `user.*` model without `recipe` or "
-    "`checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered"};
+    "new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a "
+    "variant; a new definition stays registered"};
 
 ordered_json pull_schema() {
     ordered_json success = ordered_json::parse(R"({
@@ -99,7 +99,7 @@ public:
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "A [registered model](https://lemonade-server.ai/models.html) to install, or a new "
              "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
-             "registered models from colliding with built-in ones. `model` is accepted as an alias."},
+             "registered models from colliding with built-in ones.", {"model"}},
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Required when registering: the recipe that loads and runs the model, such as `llamacpp`, "
              "or `collection.omni` for an omni collection."},
@@ -205,7 +205,7 @@ public:
 
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
-        s.errors = {kBodyNotJson, kInvalidSource, kInvalidDefinition, kOffline, kUnknownModel,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidDefinition, kOffline, kUnknownModel,
                     kIllegalLabels, kPullFailed};
         s.request_format = RequestFormat::Json;
         return s;
