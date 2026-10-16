@@ -1470,6 +1470,17 @@
         ],
         "size": 5.16
     },
+    "LFM2.5-24B-A2B-GGUF": {
+        "checkpoint": "unsloth/LFM2.5-24B-A2B-GGUF:LFM2.5-24B-A2B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 14.9
+    },
     "PromptBridge-0.6b-Alpha-GGUF": {
         "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
         "recipe": "llamacpp",
