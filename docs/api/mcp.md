@@ -129,8 +129,6 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 ### Response format
 
-**Field Descriptions:**
-
 One JSON-RPC 2.0 response, or an array of them for a batch.
 
 - `jsonrpc` - Always `2.0`.

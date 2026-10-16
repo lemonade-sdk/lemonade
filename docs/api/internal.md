@@ -63,8 +63,6 @@ Backend processes such as `llama-server` have exited by the time the caller read
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `shutting down`.
 <!-- END GENERATED: internal.shutdown -->
 
@@ -105,8 +103,6 @@ A batch the collector rejects or does not receive is dropped without further ret
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `flushed`.
 <!-- END GENERATED: internal.telemetry_flush -->
@@ -155,8 +151,6 @@ A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `success`.
 - `model_name` - The model name as sent.
@@ -264,8 +258,6 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `success`.
 - `updated` - The keys the request set, with their new values, in `config.json`'s nested form: a flat key such as `llamacpp_backend` appears under `llamacpp`.
 - `message` - Present when a deprecated value was replaced, such as `rocm_channel=preview`.
@@ -319,8 +311,6 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
 
 ### Response format
 
-**Field Descriptions:**
-
 Every `config.json` key with its current value.
 
 - A setting; see the Settings Reference.
@@ -370,8 +360,6 @@ The per-backend sections come from the backend descriptors, so this is the autho
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 Every `config.json` key with its factory default.
 
@@ -427,8 +415,6 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `orphaned_files` - Each orphaned file found.
   - `path` - Absolute path of the file.
@@ -493,8 +479,6 @@ The answer comes after the evaluation finishes, so a test can check the outcome 
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `ok`.
 
@@ -569,8 +553,6 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - `idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`.
 - `sync_id` - The sync this status describes; `0` before any sync.
@@ -661,8 +643,6 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - `idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`.
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
@@ -742,8 +722,6 @@ An alias stands in for its target in the `model` field of inference requests and
 
 ### Response format
 
-**Field Descriptions:**
-
 - `aliases` - Each alias with its target.
   - `alias` - The alias name.
   - `target` - Model or alias the alias points to.
@@ -799,8 +777,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `ok`.
 - `alias` - The alias name.
@@ -858,8 +834,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `deleted`.
 - `alias` - The alias that was removed.
@@ -939,8 +913,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `id` - `<page>.<name>`; names the route's generated region in `docs/api/<page>.md`.
 - `methods` - HTTP methods the route answers, such as `POST`.

@@ -221,6 +221,9 @@ def validate_specs(specs: dict) -> None:
                 raise GenerationError(f"{where}: a JSON format needs a schema")
             if response["format"] not in JSON_FORMATS and has_schema:
                 raise GenerationError(f"{where}: only JSON formats have a schema")
+            for shape in (response["schema"] or {}).get("oneOf", []):
+                if not shape.get("title"):
+                    raise GenerationError(f"{where}: every oneOf shape needs a title")
         names = [example["name"] for example in spec["examples"]]
         if len(names) > 1 and (not all(names) or len(set(names)) != len(names)):
             raise GenerationError(
@@ -1217,20 +1220,16 @@ def field_lines(rows: list, pad: str = "") -> list[str]:
     return lines
 
 
-def render_fields(schema: dict, shapes: list | None = None) -> str:
-    """The schema's top-level description, then its fields; a format with several shapes
-    lists each of shapes (all of them by default) under that shape's description."""
-    if shapes is None:
-        shapes = schema.get("oneOf", [])
+def render_fields(schema: dict, heading: str) -> str:
+    """The schema's description, then its fields; a format with several shapes gives each
+    shape a heading from its title, then that shape's description and fields."""
     blocks = [schema.get("description", "")]
     blocks.append("\n".join(field_lines(field_rows({**schema, "oneOf": []}))))
-    for shape in shapes:
+    for shape in schema.get("oneOf", []):
+        blocks.append(f"{heading} {shape['title']}")
         blocks.append(shape.get("description", ""))
         blocks.append("\n".join(field_lines(field_rows(shape))))
-    blocks = [block for block in blocks if block]
-    if not blocks:
-        return ""
-    return "**Field Descriptions:**\n\n" + "\n\n".join(blocks)
+    return "\n\n".join(block for block in blocks if block)
 
 
 def shorten(value, schema):
@@ -1385,12 +1384,15 @@ def render_examples(spec: dict, entries: list[dict]) -> str:
 
 
 def render_response_format(spec: dict) -> str:
-    """Each format's Field Descriptions, once, under a heading per format when there are
-    several."""
+    """Each format's fields, under a heading per format when there are several."""
+    schemas = [response for response in spec["responses"] if response["schema"]]
+    shape_heading = "####" if len(schemas) == 1 else "#####"
     sections = [
-        (response["format"], render_fields(dereferenced(response["schema"])))
-        for response in spec["responses"]
-        if response["schema"]
+        (
+            response["format"],
+            render_fields(dereferenced(response["schema"]), shape_heading),
+        )
+        for response in schemas
     ]
     sections = [(fmt, fields) for fmt, fields in sections if fields]
     if not sections:

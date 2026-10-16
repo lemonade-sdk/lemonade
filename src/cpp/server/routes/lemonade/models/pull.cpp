@@ -34,6 +34,7 @@ const RouteError kPullFailed{
 ordered_json pull_schema() {
     ordered_json success = ordered_json::parse(R"({
         "type": "object",
+        "title": "Installed",
         "description": "Without `stream`, or with `local_import`: the model is installed or registered.",
         "required": ["status", "model_name"],
         "properties": {
@@ -43,6 +44,7 @@ ordered_json pull_schema() {
         }
     })");
     ordered_json job = DownloadManager::job_schema();
+    job["title"] = "Download job";
     job["description"] = "With `stream: true` and `subscribe: false`: the server-owned download job.";
     return {{"oneOf", ordered_json::array({success, job})}};
 }

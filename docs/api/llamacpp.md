@@ -79,8 +79,6 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model` - The model that scored the documents.
 - `object` - Always `"list"`.
 - `results` - Every input document with its score, sorted by `relevance_score`, highest first.
@@ -208,8 +206,6 @@ This endpoint does not take any parameters.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `id` - The slot's ID.
 - `next_token` - Generation state of the slot's current request.
@@ -345,8 +341,6 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 ### Response format
 
-**Field Descriptions:**
-
 - `id_slot` - The slot acted on.
 - `filename` - `save` and `restore`: the file written or read.
 - `n_saved` - `save`: tokens written.
@@ -415,8 +409,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `tokens` - Token IDs, or `{"id", "piece"}` objects when `with_pieces` is `true`.
 

@@ -53,7 +53,8 @@ ordered_json text_completion_schema(bool chunk) {
          "[Routing](./router.md#routing-collectionrouter) for the decision object."},
     };
     if (chunk) {
-        schema["description"] = "A chunk of the completion text. The stream ends with `data: [DONE]`.";
+        schema["title"] = "Chunk";
+        schema["description"] = "A chunk of the completion text.";
         auto& properties = schema["properties"];
         properties["id"]["description"] = "Identifier of the completion, the same on every chunk.";
         properties["model"]["description"] =
@@ -132,7 +133,7 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = {{"oneOf", ordered_json::array({
+        stream.schema = {{"description", "One event per `data:` line. The stream ends with `data: [DONE]`."}, {"oneOf", ordered_json::array({
             text_completion_schema(true), StreamingProxy::error_event_schema()})}};
 
         s.responses = {completion, stream};

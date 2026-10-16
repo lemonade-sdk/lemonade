@@ -49,6 +49,7 @@ public:
         response.format = ResponseFormat::Json;
         ordered_json removed = ordered_json::parse(R"({
             "type": "object",
+            "title": "Removed",
             "description": "`remove` of a stopped job, or of an `id` with no job: the job is gone.",
             "required": ["status"],
             "properties": {
@@ -57,6 +58,7 @@ public:
             }
         })");
         ordered_json snapshot = DownloadManager::job_schema();
+        snapshot["title"] = "Snapshot";
         snapshot["description"] = "`pause`, `cancel`, or `remove` of a running job: the job's latest snapshot.";
         response.schema = {{"oneOf", ordered_json::array({removed, snapshot})}};
         s.responses = {response};

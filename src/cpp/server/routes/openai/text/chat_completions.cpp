@@ -70,7 +70,8 @@ ordered_json chat_completion_schema() {
 ordered_json chat_completion_chunk_schema() {
     auto schema = ordered_json::parse(R"({
         "type": "object",
-        "description": "A chunk of the assistant's message. The stream ends with `data: [DONE]`.",
+        "title": "Chunk",
+        "description": "A chunk of the assistant's message.",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
             "id": {"type": "string", "description": "Identifier of the completion, the same on every chunk."},
@@ -203,7 +204,7 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = {{"oneOf", ordered_json::array({
+        stream.schema = {{"description", "One event per `data:` line. The stream ends with `data: [DONE]`."}, {"oneOf", ordered_json::array({
             chat_completion_chunk_schema(), StreamingProxy::error_event_schema()})}};
 
         s.responses = {completion, stream};

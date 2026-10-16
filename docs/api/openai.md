@@ -347,8 +347,6 @@ Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, w
 
 #### JSON
 
-**Field Descriptions:**
-
 - `id` - Identifier of the completion.
 - `object` - Always `"chat.completion"`.
 - `created` - Unix timestamp of when the completion was created.
@@ -372,9 +370,11 @@ Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, w
 
 #### Event stream
 
-**Field Descriptions:**
+One event per `data:` line. The stream ends with `data: [DONE]`.
 
-A chunk of the assistant's message. The stream ends with `data: [DONE]`.
+##### Chunk
+
+A chunk of the assistant's message.
 
 - `id` - Identifier of the completion, the same on every chunk.
 - `object` - Always `"chat.completion.chunk"`.
@@ -393,7 +393,9 @@ A chunk of the assistant's message. The stream ends with `data: [DONE]`.
 - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
-The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+##### Error event
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `[DONE]` follows it.
 
 - `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
@@ -559,8 +561,6 @@ data: [DONE]
 
 #### JSON
 
-**Field Descriptions:**
-
 - `id` - Identifier of the completion.
 - `object` - Always `"text_completion"`.
 - `created` - Unix timestamp of when the completion was created.
@@ -581,9 +581,11 @@ data: [DONE]
 
 #### Event stream
 
-**Field Descriptions:**
+One event per `data:` line. The stream ends with `data: [DONE]`.
 
-A chunk of the completion text. The stream ends with `data: [DONE]`.
+##### Chunk
+
+A chunk of the completion text.
 
 - `id` - Identifier of the completion, the same on every chunk.
 - `object` - Always `"text_completion"`.
@@ -603,7 +605,9 @@ A chunk of the completion text. The stream ends with `data: [DONE]`.
 - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
-The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+##### Error event
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `[DONE]` follows it.
 
 - `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
@@ -692,8 +696,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `object` - Always `"list"`.
 - `data` - One embedding per input.
@@ -860,8 +862,6 @@ data: [DONE]
 
 #### JSON
 
-**Field Descriptions:**
-
 - `id` - Identifier of the response.
 - `object` - Always `"response"`.
 - `created_at` - Unix timestamp of when the response was created.
@@ -878,9 +878,11 @@ data: [DONE]
 
 #### Event stream
 
-**Field Descriptions:**
+One event per `data:` line. The stream ends with `data: [DONE]`.
 
-An event of the response, passed through from the backend. The stream ends with `data: [DONE]`.
+##### Response event
+
+An event of the response, passed through from the backend.
 
 - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
 - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
@@ -890,7 +892,9 @@ An event of the response, passed through from the backend. The stream ends with 
 - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 
-The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.
+##### Error event
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `[DONE]` follows it.
 
 - `error` - The backend's error, as an object or, when the backend sent one, a string.
   - `message` - What failed.
@@ -989,8 +993,6 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `text` - The transcribed text.
 - `segments` - `verbose_json` only: timestamped segments.
@@ -1208,8 +1210,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
@@ -1321,8 +1321,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
@@ -1425,8 +1423,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
@@ -1508,8 +1504,6 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `created` - Unix timestamp of when the upscaled image was generated.
 - `data` - The upscaled image.
@@ -1709,8 +1703,6 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 
 ### Response format
 
-**Field Descriptions:**
-
 - `object` - Always `"list"`.
 - `data` - The model objects.
   - `id` - Model identifier for loading and inference requests.
@@ -1883,8 +1875,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `id` - Model identifier for loading and inference requests.
 - `created` - Always `1234567890`, for OpenAI compatibility.
 - `object` - Always `"model"`.
@@ -1973,8 +1963,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model_id` - The model's public id.
 - `files` - The model's resolved files.
   - `name` - Base filename from the resolved path.
@@ -2060,8 +2048,6 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
 - `recipe` - The recipe the option names belong to.
@@ -2163,8 +2149,6 @@ A running model keeps its current options until it is next loaded.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
 - `recipe` - The recipe the option names belong to.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
@@ -2255,8 +2239,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `model_name` - The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body.
 - `recipe` - The recipe the option names belong to.

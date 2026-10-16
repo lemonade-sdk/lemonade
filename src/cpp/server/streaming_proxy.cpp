@@ -13,7 +13,8 @@ namespace lemon {
 nlohmann::ordered_json StreamingProxy::error_event_schema() {
     return nlohmann::ordered_json::parse(R"({
         "type": "object",
-        "description": "The backend failed after the stream started. This event replaces the rest of the stream, and no `[DONE]` follows.",
+        "title": "Error event",
+        "description": "Sent in place of the rest of the stream when the backend fails after the stream has started. No `[DONE]` follows it.",
         "x-no-example": "Only a backend that fails mid-stream sends it.",
         "required": ["error"],
         "properties": {

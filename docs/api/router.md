@@ -186,8 +186,6 @@ Match `decision.matched_rule` against this document: a policy written with only 
 
 ### Response format
 
-**Field Descriptions:**
-
 - `decision` - The routing decision for the prompt, with the per-condition `trace` included. See [Routing](#routing-collectionrouter) for the decision object.
 - `normalized_policy` - The policy as evaluated, with any `routing.router` shorthand expanded.
 

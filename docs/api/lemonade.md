@@ -112,8 +112,6 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 
 ### Response format
 
-**Field Descriptions:**
-
 - `object` - Always `classification`.
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
@@ -176,8 +174,6 @@ The `lemonade check-updates` command uses this endpoint.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - `failed` when any model's check failed.
 - `updates_available` - How many models have an update.
@@ -268,8 +264,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `success`.
 - `model_name` - The ID [`GET /v1/models`](./openai.md#get-v1models) lists for the model.
@@ -557,13 +551,15 @@ Registers `user.MyKit`, an omni collection of three built-in models, and pulls e
 
 #### JSON
 
-**Field Descriptions:**
+##### Installed
 
 Without `stream`, or with `local_import`: the model is installed or registered.
 
 - `status` - Always `success`.
 - `model_name` - The installed model.
 - `message` - Only with `local_import`: a confirmation that the files were registered.
+
+##### Download job
 
 With `stream: true` and `subscribe: false`: the server-owned download job.
 
@@ -588,8 +584,6 @@ With `stream: true` and `subscribe: false`: the server-owned download job.
 - `code` - `unknown_model` when the model is not in the registry.
 
 #### Event stream
-
-**Field Descriptions:**
 
 A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
 
@@ -675,8 +669,6 @@ Active, paused, cancelled and failed jobs stay listed until a client removes the
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `id` - Stable download id. Model downloads use `model:<model_name>`. Backend downloads use `backend:<recipe>:<backend>`.
 - `type` - Download type.
@@ -800,12 +792,14 @@ A `pause` or `cancel` for a job that already finished leaves it as it is.
 
 ### Response format
 
-**Field Descriptions:**
+#### Removed
 
 `remove` of a stopped job, or of an `id` with no job: the job is gone.
 
 - `status` - Always `ok`.
 - `missing` - Only when no job had that `id`.
+
+#### Snapshot
 
 `pause`, `cancel`, or `remove` of a running job: the job's latest snapshot.
 
@@ -912,8 +906,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `source` - The registry searched, by its canonical name.
 - `query` - The query, trimmed.
 - `format` - Present only when `format=gguf` was requested.
@@ -998,8 +990,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `checkpoint` - Echoed input (normalized to `owner/repo` when given as a URL).
 - `source` - Registry the variants came from.
 - `recipe` - Suggested recipe: `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection.
@@ -1074,8 +1064,6 @@ A file still held open, for example by a download that was just cancelled, is re
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `success`.
 - `message` - A confirmation naming the deleted model.
@@ -1214,7 +1202,7 @@ Every option the model's recipe accepts can be passed; the [Backend Reference](.
 
 ### Response format
 
-**Field Descriptions:**
+#### Model
 
 A model with a backend of its own.
 
@@ -1222,6 +1210,8 @@ A model with a backend of its own.
 - `model_name` - The loaded model.
 - `checkpoint` - The model's main checkpoint.
 - `recipe` - The recipe that loaded the model, such as `llamacpp`.
+
+#### Collection
 
 A collection, which has no checkpoint of its own.
 
@@ -1284,8 +1274,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `success`.
 - `message` - A confirmation that one model, or every model, was unloaded.
@@ -1546,8 +1534,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `version` - Lemonade Server version the pages describe.
 - `format` - The media type of every listed page.
 - `docs` - The bundled pages.
@@ -1714,8 +1700,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `"ok"`.
 - `version` - Lemonade Server version.
 - `model_loaded` - The most recently used loaded model, or `null` when none is loaded.
@@ -1814,8 +1798,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `time_to_first_token` - Time in seconds until the first token was generated
 - `tokens_per_second` - Generation speed in tokens per second
 - `input_tokens` - Number of tokens processed
@@ -1897,8 +1879,6 @@ GPU, VRAM and NPU telemetry depends on the operating system and installed driver
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `cpu_percent` - System CPU utilization percentage, or `null` when unavailable
 - `memory_gb` - System RAM currently in use, in GiB
@@ -2137,8 +2117,6 @@ The same backend can carry different labels on different operating systems. Each
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `OS Version` - Operating system name and version
 - `Processor` - CPU model name
@@ -2379,7 +2357,7 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
 
 #### JSON
 
-**Field Descriptions:**
+##### Local backend
 
 A local backend installed or already up to date.
 
@@ -2387,11 +2365,15 @@ A local backend installed or already up to date.
 - `recipe` - The recipe from the request.
 - `backend` - The backend from the request.
 
+##### Manual setup
+
 A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.
 
 - `action` - The setup guide's URL.
 - `recipe` - The recipe from the request.
 - `backend` - The backend from the request.
+
+##### Cloud provider
 
 A cloud provider registered.
 
@@ -2409,6 +2391,8 @@ A cloud provider registered.
   - `runtime_key_set` - Whether a key is held in `lemond`'s memory.
 - `warnings` - Present when the base URL is `http://`, or when the provider's environment variable overrode `api_key`.
 - `warning` - The warnings joined into one string, for older clients.
+
+##### Download job
 
 `stream: true` with `subscribe: false`: the server-owned download job just started.
 
@@ -2433,8 +2417,6 @@ A cloud provider registered.
 - `code` - `unknown_model` when the model is not in the registry.
 
 #### Event stream
-
-**Field Descriptions:**
 
 A `progress` event reports one file; a `complete` event follows the last one, and an `error` event replaces it on failure.
 
@@ -2526,8 +2508,6 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `recipe` - The requested recipe.
 - `backend` - The requested backend.
@@ -2626,13 +2606,15 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
 
 ### Response format
 
-**Field Descriptions:**
+#### Local backend
 
 A local backend removed.
 
 - `status` - Always `success`.
 - `recipe` - The recipe from the request.
 - `backend` - The backend from the request.
+
+#### Cloud provider
 
 A cloud provider removed.
 
@@ -2703,8 +2685,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `provider` - The provider the key was set for.
 - `allow_insecure_http` - Whether the provider may receive keys over `http://`, after this request.
 - `auth_state` - Which API keys are set for the provider.
@@ -2768,8 +2748,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `provider` - The provider whose key was cleared.
 - `cleared_runtime_key` - `false` when no in-memory key was present, for example when the only key came from the environment variable.
@@ -2913,8 +2891,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `ok`.
 <!-- END GENERATED: lemonade.live -->
 
@@ -2968,8 +2944,6 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `id` - The job's id.
 
@@ -3028,8 +3002,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `jobs` - Every job not deleted or evicted, newest first.
   - `id` - The job's id.
   - `name` - The display name the job was created with.
@@ -3082,8 +3054,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `pausing`.
 
 ### Errors
@@ -3131,8 +3101,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `interrupting`.
 
 ### Errors
@@ -3179,8 +3147,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `resuming`.
 
@@ -3243,8 +3209,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `id` - The job's id.
 - `name` - The display name the job was created with.
@@ -3310,8 +3274,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `status` - Always `deleted`.
 

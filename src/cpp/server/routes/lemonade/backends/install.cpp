@@ -37,6 +37,7 @@ const RouteError kInvalidCloudOption{
 ordered_json install_schema() {
     auto local = ordered_json::parse(R"({
         "type": "object",
+        "title": "Local backend",
         "description": "A local backend installed or already up to date.",
         "required": ["status", "recipe", "backend"],
         "properties": {
@@ -47,6 +48,7 @@ ordered_json install_schema() {
     })");
     auto manual = ordered_json::parse(R"({
         "type": "object",
+        "title": "Manual setup",
         "description": "A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.",
         "x-no-example": "Only a Strix Halo running a kernel without the CWSR fix returns it.",
         "required": ["action", "recipe", "backend"],
@@ -58,6 +60,7 @@ ordered_json install_schema() {
     })");
     auto cloud = ordered_json::parse(R"({
         "type": "object",
+        "title": "Cloud provider",
         "description": "A cloud provider registered.",
         "required": ["status", "backend", "provider", "base_url", "allow_insecure_http",
                      "auth_header_name", "auth_header_prefix", "wire_format", "models_discovered",
@@ -85,6 +88,7 @@ ordered_json install_schema() {
         }
     })");
     auto job = DownloadManager::job_schema();
+    job["title"] = "Download job";
     job["description"] = "`stream: true` with `subscribe: false`: the server-owned download job just started.";
     return {{"oneOf", ordered_json::array({local, manual, cloud, job})}};
 }

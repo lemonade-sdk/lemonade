@@ -140,8 +140,6 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### JSON
 
-**Field Descriptions:**
-
 - `model` - The model that generated the response.
 - `created_at` - Always `2024-01-01T00:00:00Z`.
 - `message` - The assistant's message; in a streamed line, the next piece of it.
@@ -158,8 +156,6 @@ A request with tools and streaming runs non-streaming on the backend and answers
 - `eval_duration` - Generation time in nanoseconds, when the backend reports timings; otherwise `0`.
 
 #### NDJSON
-
-**Field Descriptions:**
 
 Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
 
@@ -315,8 +311,6 @@ Image generation never streams.
 
 #### JSON
 
-**Field Descriptions:**
-
 - `model` - The model that generated the response.
 - `created_at` - Always `2024-01-01T00:00:00Z`.
 - `response` - Generated text. Empty for an image model.
@@ -329,8 +323,6 @@ Image generation never streams.
 - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
 
 #### NDJSON
-
-**Field Descriptions:**
 
 Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
 
@@ -410,8 +402,6 @@ This endpoint does not take any parameters.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `models` - The downloaded models.
   - `name` - Lemonade model name with a `:latest` tag.
@@ -495,8 +485,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `modelfile` - A `FROM` line naming the checkpoint.
 - `parameters` - `num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time.
@@ -651,8 +639,6 @@ Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](
 
 #### NDJSON
 
-**Field Descriptions:**
-
 The first line is `pulling manifest`, then one line per progress report, then two `success` lines.
 
 - `status` - `pulling manifest`, `downloading <file>`, or `success`.
@@ -662,8 +648,6 @@ The first line is `pulling manifest`, then one line per progress report, then tw
 - `error` - Only on a failed download's last line.
 
 #### JSON
-
-**Field Descriptions:**
 
 - `status` - Always `success`.
 
@@ -732,8 +716,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model` - The model that produced the embeddings.
 - `embeddings` - One vector per input, in input order.
 - `total_duration`, `load_duration`, `prompt_eval_count` - Always `0`.
@@ -798,8 +780,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `model` - The model that produced the embedding.
 - `embedding` - The text's embedding vector.
@@ -872,8 +852,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `models` - The loaded models.
   - `name` - Lemonade model name with a `:latest` tag.
   - `model` - Same as `name`.
@@ -929,8 +907,6 @@ This endpoint does not take any parameters.
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `version` - The Ollama version Lemonade reports to clients.
 <!-- END GENERATED: ollama.version -->

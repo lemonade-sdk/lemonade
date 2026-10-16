@@ -141,8 +141,6 @@ data: {"type": "message_stop"}
 
 #### JSON
 
-**Field Descriptions:**
-
 - `id` - The message's ID.
 - `type` - Always `message`.
 - `role` - Always `assistant`.
@@ -161,8 +159,6 @@ data: {"type": "message_stop"}
 - `warnings` - What Lemonade ignored or changed while converting; present only when there is something to report.
 
 #### Event stream
-
-**Field Descriptions:**
 
 - `type` - Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`.
 - `message` - In `message_start`: the message, with empty `content` and zero `usage`.

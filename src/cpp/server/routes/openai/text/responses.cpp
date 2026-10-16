@@ -55,7 +55,8 @@ ordered_json response_schema() {
 ordered_json response_event_schema() {
     auto schema = ordered_json::parse(R"({
         "type": "object",
-        "description": "An event of the response, passed through from the backend. The stream ends with `data: [DONE]`.",
+        "title": "Response event",
+        "description": "An event of the response, passed through from the backend.",
         "required": ["type"],
         "properties": {
             "type": {"type": "string", "description": "Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)."},
@@ -127,7 +128,7 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = {{"oneOf", ordered_json::array({
+        stream.schema = {{"description", "One event per `data:` line. The stream ends with `data: [DONE]`."}, {"oneOf", ordered_json::array({
             response_event_schema(), StreamingProxy::error_event_schema()})}};
 
         s.responses = {response, stream};

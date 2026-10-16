@@ -53,6 +53,7 @@ public:
         response.schema = ordered_json::parse(R"({"oneOf": [
             {
                 "type": "object",
+                "title": "Local backend",
                 "description": "A local backend removed.",
                 "required": ["status", "recipe", "backend"],
                 "properties": {
@@ -63,6 +64,7 @@ public:
             },
             {
                 "type": "object",
+                "title": "Cloud provider",
                 "description": "A cloud provider removed.",
                 "required": ["status", "backend", "provider", "models_evicted"],
                 "properties": {

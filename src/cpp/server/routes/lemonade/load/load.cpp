@@ -21,6 +21,7 @@ ordered_json load_schema() {
         "oneOf": [
             {
                 "type": "object",
+                "title": "Model",
                 "description": "A model with a backend of its own.",
                 "required": ["status", "model_name", "checkpoint", "recipe"],
                 "properties": {
@@ -32,6 +33,7 @@ ordered_json load_schema() {
             },
             {
                 "type": "object",
+                "title": "Collection",
                 "description": "A collection, which has no checkpoint of its own.",
                 "required": ["status", "model_name", "recipe"],
                 "properties": {
