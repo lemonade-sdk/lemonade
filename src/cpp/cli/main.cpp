@@ -811,6 +811,15 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
             }
         }
 
+        // Pi may still load an mcp.json launch cannot parse (Node tolerates
+        // invalid UTF-8), so its lemonade entry could not be checked or refreshed.
+        std::string mcp_read_error;
+        if (pi_with_key && !lemon_cli::pi_mcp_config_readable(mcp_read_error)) {
+            std::cerr << "Error: Can't read pi's mcp.json: " << mcp_read_error << std::endl;
+            std::cerr << "Not launching pi with an API key until it can be read." << std::endl;
+            return false;
+        }
+
         // An existing entry is refreshed so it follows the current host, port and key.
         const bool had_mcp_entry = lemon_cli::pi_has_mcp_server();
         if (config.pi_mcp.value_or(had_mcp_entry)) {

@@ -26,6 +26,10 @@ bool sync_pi_settings_file(const std::string& provider_name,
 // Whether pi's mcp.json (next to models.json) has a "lemonade" server.
 bool pi_has_mcp_server();
 
+// False when pi's mcp.json exists but cannot be read as a JSON object. A
+// missing file is readable.
+bool pi_mcp_config_readable(std::string& error_out);
+
 // Add or refresh the "lemonade" server in pi's mcp.json, pointing at
 // <server_origin>/mcp, while keeping other servers and top-level keys.
 bool sync_pi_mcp_server(const std::string& server_origin,

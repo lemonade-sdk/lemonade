@@ -277,6 +277,15 @@ bool pi_has_mcp_server() {
     return servers != mcp.end() && servers->is_object() && servers->contains(kPiMcpServerName);
 }
 
+bool pi_mcp_config_readable(std::string& error_out) {
+    const std::string mcp_path = resolve_pi_mcp_path();
+    if (mcp_path.empty()) {
+        return true;
+    }
+    nlohmann::json mcp;
+    return read_json_object(mcp_path, mcp, error_out);
+}
+
 bool sync_pi_mcp_server(const std::string& server_origin,
                         bool has_api_key,
                         std::string& error_out) {

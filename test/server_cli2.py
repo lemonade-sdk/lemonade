@@ -2424,6 +2424,40 @@ sys.exit(0)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(os.path.exists(capture_path), "pi was started")
 
+    def test_137_launch_pi_with_key_stops_when_mcp_json_is_unreadable(self):
+        """With an API key, pi is not started when launch cannot read pi's mcp.json."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            agent_dir = os.path.join(temp_dir, ".pi", "agent")
+            os.makedirs(agent_dir)
+            # Pi reads this file (Node replaces the invalid byte), so a stale
+            # entry in it would get this server's key.
+            with open(os.path.join(agent_dir, "mcp.json"), "wb") as f:
+                f.write(
+                    b'{"mcpServers": {"lemonade": {"url": "http://server-a.invalid:1/mcp",'
+                    b' "description": "caf\xe9",'
+                    b' "headers": {"Authorization": "Bearer ${LEMONADE_API_KEY}"}}}}'
+                )
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "pi",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "key-for-this-server",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=self._build_stubbed_agent_env(temp_dir),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("mcp.json", result.stderr)
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
     # =============================================================================
     # Unload Tests
     # =============================================================================
