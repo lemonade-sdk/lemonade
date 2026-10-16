@@ -2542,6 +2542,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
     add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
 endif()
 
+# The KV-header reader and the capability hints it may (and may not) take from
+# the arrays it walks past.
+set(_GGUF_READER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_reader.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GGUF_READER_TEST_SRC}")
+    add_executable(test_gguf_reader
+        test/cpp/test_gguf_reader.cpp
+    )
+    target_include_directories(test_gguf_reader PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_gguf_reader PRIVATE lemonade-server-core)
+    add_dependencies(test_gguf_reader copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(GgufReaderTest CI ON COMMAND test_gguf_reader)
+endif()
+
 # Per-model artifact selection and snapshot baselines used to decide whether an
 # upstream commit actually touches a downloaded model.
 set(_HF_UPDATE_CHECK_TEST_SRC

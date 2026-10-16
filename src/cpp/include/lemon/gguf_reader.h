@@ -135,10 +135,27 @@ static bool read_gguf_integer_value(std::istream& in, uint32_t type, int64_t& va
     }
 }
 
+// Advance past a string without building it. Same length limit as
+// read_gguf_string, so an oversized entry fails the read either way.
+static bool skip_gguf_string(std::istream& in) {
+    uint64_t len = 0;
+    if (!read_gguf_le(in, len)) return false;
+    if (len > 1024 * 1024) return false;
+    if (len == 0) return true;
+    in.ignore(static_cast<std::streamsize>(len));
+    return static_cast<bool>(in);
+}
+
+static bool skip_gguf_string_array(std::istream& in, uint64_t count) {
+    for (uint64_t i = 0; i < count; ++i) {
+        if (!skip_gguf_string(in)) return false;
+    }
+    return true;
+}
+
 static bool skip_gguf_value(std::istream& in, uint32_t type) {
     if (type == 8) {  // STRING
-        std::string ignored;
-        return read_gguf_string(in, ignored);
+        return skip_gguf_string(in);
     }
 
     if (type == 9) {  // ARRAY
@@ -147,11 +164,7 @@ static bool skip_gguf_value(std::istream& in, uint32_t type) {
         if (!read_gguf_le(in, elem_type) || !read_gguf_le(in, count)) return false;
 
         if (elem_type == 8) {
-            for (uint64_t i = 0; i < count; ++i) {
-                std::string ignored;
-                if (!read_gguf_string(in, ignored)) return false;
-            }
-            return true;
+            return skip_gguf_string_array(in, count);
         }
 
         if (elem_type == 9) return false;
@@ -337,7 +350,13 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             continue;
         }
 
-        // Capability detection (vision, tool-calling, MTP)
+        // Capability detection (vision, tool-calling, MTP).  Only the keys
+        // named by the two predicates below can carry a hint (see
+        // inspect_gguf_string), so other strings are skipped rather than read:
+        // a tokenizer vocabulary is a string array of hundreds of thousands of
+        // entries, and lowercasing each one cost more than the rest of the
+        // header combined.
+        const bool carries_hint = is_stable_vision_key(key) || is_chat_template_key(key);
         if (type == 4) {
             uint32_t val = 0;
             if (read_gguf_le(in, val)) {
@@ -345,9 +364,13 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                     out.caps.mtp = true;
             }
         } else if (type == 8) {
-            std::string value;
-            if (read_gguf_string(in, value)) {
-                inspect_gguf_string(key, value, out.caps);
+            if (carries_hint) {
+                std::string value;
+                if (read_gguf_string(in, value)) {
+                    inspect_gguf_string(key, value, out.caps);
+                }
+            } else if (!skip_gguf_string(in)) {
+                return false;
             }
         } else if (type == 9) {
             // Array — check string elements for capability hints
@@ -355,10 +378,14 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             uint64_t count = 0;
             if (read_gguf_le(in, elem_type) && read_gguf_le(in, count)) {
                 if (elem_type == 8) {
-                    for (uint64_t j = 0; j < count; ++j) {
-                        std::string value;
-                        if (!read_gguf_string(in, value)) return false;
-                        inspect_gguf_string(key, value, out.caps);
+                    if (!carries_hint) {
+                        if (!skip_gguf_string_array(in, count)) return false;
+                    } else {
+                        for (uint64_t j = 0; j < count; ++j) {
+                            std::string value;
+                            if (!read_gguf_string(in, value)) return false;
+                            inspect_gguf_string(key, value, out.caps);
+                        }
                     }
                 } else if (elem_type != 9) {
                     uint64_t elem_size = gguf_scalar_size(elem_type);
