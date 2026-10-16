@@ -82,9 +82,8 @@ public:
 
     // Podman when it is on PATH, Docker otherwise, nullopt when neither is.
     std::optional<ContainerTool> tool() const;
-    // True when the tool is Podman and it runs containers as this account,
-    // which lets it publish a port from an --internal network. Rootful Podman
-    // and Docker publish none, so lemond connects at the container's address.
+    // Only rootless Podman publishes a port from an --internal network; under
+    // rootful Podman or Docker, lemond connects at the container's address.
     bool rootless_podman() const;
 
     // The first setup check that fails for a container backend, or nullopt

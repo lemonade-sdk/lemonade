@@ -656,11 +656,22 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
     return false;
 }
 
+// Marks `status` action_required when a setup check fails, returning whether one did.
+static bool mark_container_setup(json& status, const std::string& recipe,
+                                 const std::string& backend) {
+    const auto failure = backends::container_setup_failure(recipe, backend);
+    if (!failure) return false;
+    status["state"] = "action_required";
+    status["message"] = failure->message;
+    status["action"] = failure->action;
+    return true;
+}
+
+// Generic installation check
 static bool is_installed_state(const std::string& state) {
     return state == "installed" || state == "update_available" || state == "update_required";
 }
 
-// Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
     // CWSR fix is missing (a per-descriptor flag).
@@ -1269,7 +1280,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
     for (const auto& def : recipe_defs()) {
         const auto* def_desc = backends::descriptor_for(def.recipe);
         const bool container_backend = def_desc && def_desc->container_for(def.backend);
-        // Container backends are hidden on Windows and macOS.
         if (container_backend && current_os != "linux") {
             continue;
         }
@@ -1583,11 +1593,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // using BackendManager as the single source of truth for repo/version mappings.
 
         if (supported && container_backend) {
-            if (auto failure = backends::container_setup_failure(def.recipe, def.backend)) {
-                backend["state"] = "action_required";
-                backend["message"] = failure->message;
-                backend["action"] = failure->action;
-            }
+            mark_container_setup(backend, def.recipe, def.backend);
         }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
@@ -1757,11 +1763,7 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
             if (!desc->container_for(backend) || state == "unsupported") {
                 continue;
             }
-            if (auto failure = backends::container_setup_failure(recipe, backend)) {
-                status["state"] = "action_required";
-                status["message"] = failure->message;
-                status["action"] = failure->action;
-            } else if (state == "action_required") {
+            if (!mark_container_setup(status, recipe, backend) && state == "action_required") {
                 cleared = true;
             }
         }
