@@ -1,9 +1,14 @@
 #include "lemon_cli/agent_launcher.h"
 
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/process_manager.h>
+
+#include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <cstdlib>
+#include <optional>
+#include <regex>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -204,13 +209,22 @@ void configure_opencode_agent(const std::string& model,
     };
     add_windows_npm_fallbacks(config.fallback_paths, "opencode");
 
+    // OpenCode v2 dropped the TUI's -m flag; the "model" config key works on v1 and v2.
+    nlohmann::json inline_config = nlohmann::json::object();
+    const char* existing_inline_config = std::getenv("OPENCODE_CONFIG_CONTENT");
+    if (existing_inline_config && existing_inline_config[0] != '\0') {
+        inline_config = nlohmann::json::parse(existing_inline_config, nullptr, false);
+        if (!inline_config.is_object()) {
+            inline_config = nlohmann::json::object();
+        }
+    }
+    inline_config["model"] = "Lemonade/" + model;
+
     config.env_vars = {
-        {"LEMONADE_API_KEY", resolved_api_key}
+        {"LEMONADE_API_KEY", resolved_api_key},
+        {"OPENCODE_CONFIG_CONTENT", inline_config.dump()}
     };
-    config.extra_args = {
-        "-m",
-        "Lemonade/" + model
-    };
+    config.extra_args = {};
     config.install_instructions =
         "Install OpenCode CLI:\n"
         "  curl -fsSL https://opencode.ai/install | bash\n"
@@ -343,6 +357,33 @@ bool build_agent_config(const std::string& agent,
 
     error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi, junie.";
     return false;
+}
+
+std::optional<bool> opencode_needs_standalone(const std::string& binary) {
+    const std::regex version_pattern(R"(^\s*(?:opencode\s+)?v?(\d{1,4})\.\d+\.\d+)");
+    std::optional<int> major;
+    try {
+        lemon::utils::ProcessManager::run_process_with_output(
+            binary,
+            {"--version"},
+            [&](const std::string& line) {
+                std::smatch match;
+                if (!major && std::regex_search(line, match, version_pattern)) {
+                    major = std::stoi(match[1].str());
+                }
+                return true;
+            },
+            "",
+            10,
+            false);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+
+    if (!major) {
+        return std::nullopt;
+    }
+    return *major >= 2;
 }
 
 std::string find_agent_binary(const AgentConfig& config) {

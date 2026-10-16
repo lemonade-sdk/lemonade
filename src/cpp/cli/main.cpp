@@ -806,6 +806,19 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
+    if (config.agent == "opencode") {
+        const std::optional<bool> needs_standalone =
+            lemon_tray::opencode_needs_standalone(agent_binary);
+        if (!needs_standalone) {
+            std::cerr << "Warning: Could not determine the opencode version; launching without --standalone."
+                      << std::endl;
+            std::cerr << "If opencode opens on a non-Lemonade model, rerun with --agent-args \"--standalone\"."
+                      << std::endl;
+        } else if (*needs_standalone) {
+            agent_config.extra_args.insert(agent_config.extra_args.begin(), "--standalone");
+        }
+    }
+
     std::cout << "Loading model in background: " << config.model << std::endl;
 
     // Trigger load asynchronously so launch is non-blocking for agent startup.
