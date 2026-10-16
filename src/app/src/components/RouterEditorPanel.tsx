@@ -817,7 +817,11 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         return { ...current, modelName: current.modelName || nextRequest.model_name };
       });
       setNotice(`Registered ${nextRequest.model_name}.`);
-onSaved?.(savedModel);
+      try {
+        onSaved?.(savedModel);
+      } catch (localError) {
+        console.error('Router registration succeeded, but the local view could not update:', localError);
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t('Could not register router.'));
     } finally {
