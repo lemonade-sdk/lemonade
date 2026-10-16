@@ -381,6 +381,7 @@ The following options are available depending on the recipe being used:
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
+| `--kv-cache-quantization ARGS` | KV cache quantization: auto (default), off, q8_0, or q4_0 | `auto` |
 
 #### HRX GPU (`llamacpp-hrx` recipe)
 
