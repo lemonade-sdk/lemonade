@@ -193,14 +193,16 @@ These options are the same for Podman and Docker:
 | `--env` | Any other variables the engine needs, such as `ROCBLAS_USE_HIPBLASLT=1` or Halogen's `HALOGEN_CTX` | `ServerCommand.env`, set by the `WrappedServer` subclass |
 | `--cap-add` | One per capability, only when `ContainerPolicy` sets `cap_add` ‡ | `ContainerPolicy.cap_add` |
 
-When the container tool is Podman, `lemond` connects to the server at `127.0.0.1:<port>`, and the command adds:
+Podman runs containers rootless or rootful, which `lemond` reads from `podman info --format '{{.Host.Security.Rootless}}'`. Only rootless Podman publishes a port from an `--internal` network.
+
+When the container tool is rootless Podman, `lemond` connects to the server at `127.0.0.1:<port>`, and the command adds:
 
 | Option | Value | Comes from |
 | --- | --- | --- |
 | `--group-add` | `keep-groups` ‡, which carries the account's own `video` and `render` membership into the container | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 | `-p` | `127.0.0.1:<port>:<port>` | A free port `lemond` picks |
 
-When the container tool is Docker, `lemond` connects to the server at the container's address on its private network, and the command adds:
+When the container tool is Docker or rootful Podman, `lemond` connects to the server at the container's address on its private network, and the command adds:
 
 | Option | Value | Comes from |
 | --- | --- | --- |
@@ -334,7 +336,8 @@ When the container tool is Podman, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Device nodes accessible | The user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
+| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Device nodes accessible | Podman is rootless and the user's account is not in both `video` and `render` | 1. `sudo usermod -aG video,render $USER`<br>2. Log out and back in |
 
 When the container tool is Docker, the checks are:
 
@@ -373,6 +376,7 @@ When the container tool is Podman, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
+| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
 | Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 
