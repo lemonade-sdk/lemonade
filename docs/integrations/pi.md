@@ -62,7 +62,7 @@ Equivalent long form:
 lemonade launch pi --model Qwen3.5-35B-A3B-GGUF
 ```
 
-When `--model` is provided, launch goes straight to starting the agent and loading that model.
+When `--model` is provided, launch skips the model prompt. If the model's context size is automatic, it waits for the model to load before starting the agent; otherwise it starts the agent while the model loads.
 
 ## Passing Pi arguments with `--agent-args`
 
