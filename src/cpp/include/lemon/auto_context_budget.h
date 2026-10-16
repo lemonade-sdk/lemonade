@@ -36,8 +36,8 @@ struct AutoContextReserveRange {
 };
 
 struct AutoContextReservePolicy {
-    AutoContextReserveRange free_memory;
-    AutoContextReserveRange model_workspace;
+    AutoContextReserveRange memory_headroom;
+    AutoContextReserveRange compute_workspace;
 };
 
 // Conservative runtime estimates, calibrated separately for discrete VRAM,
@@ -66,25 +66,27 @@ inline double auto_context_cap_shared_memory_gib(double gpu_free_gib,
 
 inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        double weights_gib,
-                                                       double extra_weights_gib,
                                                        double kv_bytes_per_token,
                                                        bool gpu,
                                                        bool speculative,
                                                        bool unified_gpu = false) {
     AutoContextBudget result;
     if (!std::isfinite(free_gib) || !std::isfinite(weights_gib) ||
-        !std::isfinite(extra_weights_gib) || !std::isfinite(kv_bytes_per_token) ||
-        free_gib <= 0.0 || weights_gib <= 0.0 || extra_weights_gib < 0.0 ||
-        kv_bytes_per_token <= 0.0) {
+        !std::isfinite(kv_bytes_per_token) ||
+        free_gib <= 0.0 || weights_gib <= 0.0 || kv_bytes_per_token <= 0.0) {
         return result;
     }
 
-    result.model_gib = weights_gib + extra_weights_gib;
-    const AutoContextReservePolicy& policy = !gpu ? AUTO_CTX_HOST_RESERVE
+    result.model_gib = weights_gib;
+    const AutoContextReservePolicy& reserve_policy = !gpu ? AUTO_CTX_HOST_RESERVE
         : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
-    result.reserve_gib = policy.free_memory.estimate(free_gib) +
-        policy.model_workspace.estimate(result.model_gib) +
-        (speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0);
+    const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(free_gib);
+    const double compute_workspace_gib =
+        reserve_policy.compute_workspace.estimate(result.model_gib);
+    const double speculative_workspace_gib =
+        speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0;
+    result.reserve_gib = memory_headroom_gib + compute_workspace_gib +
+        speculative_workspace_gib;
     result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
 
     constexpr double bytes_per_gib = 1024.0 * 1024.0 * 1024.0;

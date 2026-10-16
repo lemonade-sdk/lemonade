@@ -300,7 +300,7 @@ static void test_varying_heads_swa() {
 static void test_auto_context_budget() {
     using lemon::estimate_auto_context_budget;
     // 5090 (32 GiB), Qwen3.8-27B Q4 (16.5 GiB), vision projector and MTP.
-    auto qwen = estimate_auto_context_budget(32.0, 16.5, 1.5, 65536.0 * 1.07,
+    auto qwen = estimate_auto_context_budget(32.0, 18.0, 65536.0 * 1.07,
                                              true, true);
     check("auto ctx: CUDA uses most VRAM without exhausting it",
           qwen.max_tokens >= 170000 && qwen.max_tokens < 215000);
@@ -308,6 +308,9 @@ static void test_auto_context_budget() {
           qwen.reserve_gib >= 1.5 && qwen.reserve_gib <= 3.0);
     check("auto ctx: GGUF weights counted once",
           approx_eq(qwen.model_gib, 18.0));
+    constexpr int64_t expected_qwen_5090_tokens = 174711;
+    check("auto ctx: RTX 5090 budget calibration remains unchanged",
+          qwen.max_tokens == expected_qwen_5090_tokens);
     using lemon::auto_context_total_weights_gib;
     check("auto ctx: model registry already includes mmproj",
           approx_eq(auto_context_total_weights_gib(18.0, 16.5, 1.5, 0.0), 18.0));
@@ -316,45 +319,45 @@ static void test_auto_context_budget() {
     check("auto ctx: sharded total is not replaced by first shard",
           approx_eq(auto_context_total_weights_gib(21.0, 1.1, 0.0, 0.0), 21.0));
 
-    auto no_extra = estimate_auto_context_budget(32.0, 16.5, 0.0, 65536.0,
+    auto no_extra = estimate_auto_context_budget(32.0, 16.5, 65536.0,
                                                  true, false);
     check("auto ctx: mmproj and MTP reduce available context",
           qwen.max_tokens < no_extra.max_tokens);
 
-    auto apu = estimate_auto_context_budget(110.0, 18.0, 0.0, 65536.0,
+    auto apu = estimate_auto_context_budget(110.0, 18.0, 65536.0,
                                             true, false, true);
     check("auto ctx: 128 GB APU still supports long context",
           apu.max_tokens >= 262144);
     check("auto ctx: UMA retains OS memory headroom",
           apu.reserve_gib >= 8.0 && apu.reserve_gib < 14.0);
 
-    auto discrete = estimate_auto_context_budget(110.0, 18.0, 0.0, 65536.0,
+    auto discrete = estimate_auto_context_budget(110.0, 18.0, 65536.0,
                                                  true, false, false);
     check("auto ctx: discrete and UMA budgets differ",
           discrete.reserve_gib < apu.reserve_gib);
 
-    auto small = estimate_auto_context_budget(8.0, 3.0, 0.0, 65536.0,
+    auto small = estimate_auto_context_budget(8.0, 3.0, 65536.0,
                                               true, false);
     check("auto ctx: 8 GiB GPU has compute headroom",
           small.reserve_gib >= 1.0 && small.reserve_gib <= 2.5);
     check("auto ctx: 8 GiB GPU provides useful context",
           small.max_tokens >= 32768);
 
-    auto no_space = estimate_auto_context_budget(4.0, 5.0, 0.0, 65536.0,
+    auto no_space = estimate_auto_context_budget(4.0, 5.0, 65536.0,
                                                  true, false);
     check("auto ctx: weights exceeding VRAM cannot claim KV", no_space.max_tokens == 0);
-    auto missing_model = estimate_auto_context_budget(32.0, 0.0, 0.0, 65536.0,
+    auto missing_model = estimate_auto_context_budget(32.0, 0.0, 65536.0,
                                                       true, false);
     check("auto ctx: missing model size handled", missing_model.max_tokens == 0);
-    auto invalid_kv = estimate_auto_context_budget(32.0, 16.5, 0.0, 0.0,
+    auto invalid_kv = estimate_auto_context_budget(32.0, 16.5, 0.0,
                                                    true, false);
     check("auto ctx: invalid KV metadata handled", invalid_kv.max_tokens == 0);
 
-    auto barely_fits = estimate_auto_context_budget(8.0, 7.875, 0.0, 65536.0,
+    auto barely_fits = estimate_auto_context_budget(8.0, 7.875, 65536.0,
                                                      true, false);
     check("auto ctx: known insufficient VRAM returns zero, not 4096",
           barely_fits.max_tokens == 0);
-    auto tiny_budget = estimate_auto_context_budget(8.0, 6.7, 0.0, 65536.0,
+    auto tiny_budget = estimate_auto_context_budget(8.0, 6.7, 65536.0,
                                                      true, false);
     check("auto ctx: low but positive budget is not raised to a fallback",
           tiny_budget.max_tokens > 0 && tiny_budget.max_tokens < 4096);
@@ -367,7 +370,7 @@ static void test_auto_context_budget() {
     check("auto ctx: unknown RAM usage does not fabricate a cap",
           approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, -1.0), 12.0));
 
-    auto huge = estimate_auto_context_budget(110.0, 18.0, 0.0, 1e-12,
+    auto huge = estimate_auto_context_budget(110.0, 18.0, 1e-12,
                                               true, false);
     check("auto ctx: token conversion saturates without int64 overflow",
           huge.max_tokens == std::numeric_limits<int64_t>::max());

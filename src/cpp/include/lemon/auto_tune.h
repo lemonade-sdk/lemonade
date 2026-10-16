@@ -279,7 +279,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     }
 
     const auto budget = estimate_auto_context_budget(
-        available_memory_gb, model_weight_gb, 0.0,
+        available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu);
     const int64_t max_ctx_from_memory = budget.max_tokens;
