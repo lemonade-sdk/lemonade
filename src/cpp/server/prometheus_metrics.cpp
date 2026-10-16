@@ -421,12 +421,12 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     }
 #endif
 
-    metrics.describe("lemonade_gpu_usage_percent", "GPU utilization percentage.", "gauge");
+    metrics.describe("lemonade_gpu_usage_percent", "Primary GPU utilization percentage.", "gauge");
     if (system_metrics.gpu_percent >= 0 && std::isfinite(system_metrics.gpu_percent)) {
         metrics.sample("lemonade_gpu_usage_percent", {}, system_metrics.gpu_percent);
     }
 
-    metrics.describe("lemonade_vram_used_gb", "GPU memory usage in GiB.", "gauge");
+    metrics.describe("lemonade_vram_used_gb", "Primary GPU memory usage in GiB.", "gauge");
     if (system_metrics.vram_gb >= 0 && std::isfinite(system_metrics.vram_gb)) {
         metrics.sample("lemonade_vram_used_gb", {}, system_metrics.vram_gb);
     }

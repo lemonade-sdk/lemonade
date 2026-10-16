@@ -3,15 +3,11 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/routing_policy.h"
-#include "lemon/utils/path_utils.h"
 
-#include <chrono>
 #include <cstdio>
-#include <filesystem>
 #include <optional>
 #include <string>
 
-namespace fs = std::filesystem;
 using lemon::ModelManager;
 using lemon::json;
 
@@ -20,14 +16,6 @@ static int g_failures = 0;
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
-}
-
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_manager_collection_validation_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
 }
 
 static json component_def(const std::string& name) {
@@ -476,9 +464,6 @@ static void test_register_preserves_routing(ModelManager& manager) {
 }
 
 int main() {
-    fs::path temp = make_temp_dir();
-    lemon::utils::set_cache_dir(temp.string());
-
     ModelManager manager;
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
@@ -488,8 +473,6 @@ int main() {
     test_filtered_classifier_bare_name_resolves_through_alias(manager);
     test_filtered_classifier_builtin_prefixed_alias_resolves(manager);
     test_register_preserves_routing(manager);
-
-    fs::remove_all(temp);
 
     if (g_failures == 0) {
         std::printf("All model manager collection validation tests passed.\n");

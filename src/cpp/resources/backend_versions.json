@@ -50,7 +50,7 @@
   },
   "llamacpp": {
     "vulkan": "b11393",
-    "rocm-stable": "b11395",
+    "rocm-stable": "b11580",
     "rocm-nightly": "b1338",
     "cuda": "b11395",
     "metal": "b11393",
@@ -68,11 +68,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-894-017cc8e",
-    "rocm-stable": "master-894-017cc8e",
-    "vulkan": "master-894-017cc8e",
-    "cuda": "master-894-017cc8e",
-    "metal": "master-894-017cc8e"
+    "cpu": "master-957-90e86d1",
+    "rocm-stable": "master-957-90e86d1",
+    "vulkan": "master-957-90e86d1",
+    "cuda": "master-957-90e86d1",
+    "metal": "master-957-90e86d1"
   },
   "rocmfpx": {
     "rocm": "rocm-10.0-rocmfpx@sha256:ee2ef51d6d9eef8817560babf171828626c7c74dad4594edff02b75bba0eae58"
@@ -81,7 +81,7 @@
     "rocm": "rocm-10.0@sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291"
   },
   "therock": {
-    "version": "10.0.0",
+    "version": "10.1.0",
     "architectures": [
       "gfx908",
       "gfx90a",
@@ -143,7 +143,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.7"
+    "npu": "v1.0.9"
   },
   "kokoro": {
     "cpu": "b21",
