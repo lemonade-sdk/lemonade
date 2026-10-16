@@ -233,7 +233,7 @@ schema["properties"]["x_lemonade_route"] = {
 
 This section defines how a route declares its error statuses, so its handler and its docs read each one from the same `RouteError`.
 
-Every function that writes an error status, such as `write_plain_error()` and `write_openai_error()`, takes a `RouteError` in place of its status and code arguments, or picks one of the `RouteError`s it defines, as `ModelLoader::write_load_error()` picks from `ModelLoader::errors()`. Each function keeps the body shape its callers write; [Appendix B](#appendix-b-error-format-cleanup) unifies them. A route defines its errors as constants beside its class and lists them in `errors`:
+Every function that writes an error status, such as `write_plain_error()` and `write_openai_error()`, takes the status and code from a `RouteError`, or picks one of the `RouteError`s it defines, as `ModelLoader::write_load_error()` picks from `ModelLoader::errors()`. Each function writes its own body shape; [Appendix B](#appendix-b-error-format-cleanup) unifies them. A route defines its errors as constants beside its class and lists them in `errors`:
 
 ```cpp
 const RouteError kUnknownJob{404, "", "`id` names no job"};
