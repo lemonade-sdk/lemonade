@@ -6,6 +6,7 @@
 #include "lemon/auto_context_budget.h"
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 using lemon::GgufMetadata;
@@ -348,6 +349,28 @@ static void test_auto_context_budget() {
     auto invalid_kv = estimate_auto_context_budget(32.0, 16.5, 0.0, 0.0,
                                                    true, false);
     check("auto ctx: invalid KV metadata handled", invalid_kv.max_tokens == 0);
+
+    auto barely_fits = estimate_auto_context_budget(8.0, 7.875, 0.0, 65536.0,
+                                                     true, false);
+    check("auto ctx: known insufficient VRAM returns zero, not 4096",
+          barely_fits.max_tokens == 0);
+    auto tiny_budget = estimate_auto_context_budget(8.0, 6.7, 0.0, 65536.0,
+                                                     true, false);
+    check("auto ctx: low but positive budget is not raised to a fallback",
+          tiny_budget.max_tokens > 0 && tiny_budget.max_tokens < 4096);
+
+    using lemon::auto_context_cap_shared_memory_gib;
+    check("auto ctx: unified RAM cap uses physical RAM total",
+          approx_eq(auto_context_cap_shared_memory_gib(20.0, 32.0, 24.0), 8.0));
+    check("auto ctx: unified RAM cap leaves tighter GPU limit intact",
+          approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, 4.0), 12.0));
+    check("auto ctx: unknown RAM usage does not fabricate a cap",
+          approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, -1.0), 12.0));
+
+    auto huge = estimate_auto_context_budget(110.0, 18.0, 0.0, 1e-12,
+                                              true, false);
+    check("auto ctx: token conversion saturates without int64 overflow",
+          huge.max_tokens == std::numeric_limits<int64_t>::max());
 }
 
 int main() {

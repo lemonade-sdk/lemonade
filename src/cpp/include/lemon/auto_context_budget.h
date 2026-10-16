@@ -7,9 +7,6 @@
 
 namespace lemon {
 
-// Once model artifacts have been resolved, ModelInfo::size includes *all*
-// resolved paths (main, mmproj, draft, and sharded GGUF). The old heuristic
-// counted mmproj/draft a second time. Use whichever total is more complete.
 inline double auto_context_total_weights_gib(double registry_gib,
                                               double main_gib,
                                               double mmproj_gib,
@@ -28,6 +25,45 @@ struct AutoContextBudget {
     int64_t max_tokens = 0;
 };
 
+struct AutoContextReserveRange {
+    double fraction;
+    double minimum_gib;
+    double maximum_gib;
+
+    double estimate(double base_gib) const {
+        return std::clamp(base_gib * fraction, minimum_gib, maximum_gib);
+    }
+};
+
+struct AutoContextReservePolicy {
+    AutoContextReserveRange free_memory;
+    AutoContextReserveRange model_workspace;
+};
+
+// Conservative runtime estimates, calibrated separately for discrete VRAM,
+// shared physical RAM, and host-only backends. Not additional model weights.
+inline constexpr AutoContextReservePolicy AUTO_CTX_DISCRETE_GPU_RESERVE{
+    {0.045, 0.75, 2.0}, {0.05, 0.5, 1.75}};
+inline constexpr AutoContextReservePolicy AUTO_CTX_UNIFIED_GPU_RESERVE{
+    {0.08, 2.0, 10.0}, {0.04, 0.5, 3.0}};
+inline constexpr AutoContextReservePolicy AUTO_CTX_HOST_RESERVE{
+    {0.05, 1.0, std::numeric_limits<double>::max()},
+    {0.05, 1.0, std::numeric_limits<double>::max()}};
+inline constexpr double AUTO_CTX_SPECULATIVE_WORKSPACE_GIB = 0.25;
+inline constexpr double AUTO_CTX_MTP_KV_MULTIPLIER = 1.07;
+inline constexpr double AUTO_CTX_UNKNOWN_DRAFT_KV_MULTIPLIER = 1.25;
+
+inline double auto_context_cap_shared_memory_gib(double gpu_free_gib,
+                                                 double physical_total_gib,
+                                                 double physical_used_gib) {
+    if (physical_total_gib <= 0.0 || physical_used_gib < 0.0 ||
+        !std::isfinite(physical_total_gib) || !std::isfinite(physical_used_gib)) {
+        return gpu_free_gib;
+    }
+    return (std::min)(gpu_free_gib,
+                      (std::max)(0.0, physical_total_gib - physical_used_gib));
+}
+
 inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        double weights_gib,
                                                        double extra_weights_gib,
@@ -43,42 +79,20 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
         return result;
     }
 
-    // GGUF sizes already include quantization data and tensor alignment.
-    // Runtime allocations belong in reserve_gib, not in a weight surcharge.
     result.model_gib = weights_gib + extra_weights_gib;
-
-    // Estimate *runtime* overhead separately from weights and the KV cache.
-    // Clamp GPU headroom: leaving 15% of a 32 GiB card unused needlessly
-    // sacrifices ~75k context tokens for a 64 KiB/token KV cache.
-    double headroom_gib;
-    double workspace_gib;
-    if (gpu && !unified_gpu) {
-        // Discrete GPU: driver/graph slack plus fixed compute buffers. Bound
-        // both terms so high-VRAM cards do not lose many GiB to percentages.
-        headroom_gib = std::clamp(free_gib * 0.045, 0.75, 2.0);
-        workspace_gib = std::clamp(result.model_gib * 0.05, 0.5, 1.75);
-    } else if (gpu) {
-        // UMA must retain free physical RAM for the OS and other processes;
-        // its available pool has already been capped by system RAM usage.
-        headroom_gib = std::clamp(free_gib * 0.08, 2.0, 10.0);
-        workspace_gib = std::clamp(result.model_gib * 0.04, 0.5, 3.0);
-    } else {
-        // Preserve the more cautious system-RAM policy for CPU/NPU paths.
-        headroom_gib = (std::max)(1.0, free_gib * 0.05);
-        workspace_gib = (std::max)(1.0, result.model_gib * 0.05);
-    }
-
-    // Built-in MTP weights are already part of the main GGUF file. The MTP
-    // context's extra token-dependent storage is charged by the caller.
-    const double draft_workspace_gib = speculative ? 0.25 : 0.0;
-    result.reserve_gib = headroom_gib + workspace_gib + draft_workspace_gib;
+    const AutoContextReservePolicy& policy = !gpu ? AUTO_CTX_HOST_RESERVE
+        : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
+    result.reserve_gib = policy.free_memory.estimate(free_gib) +
+        policy.model_workspace.estimate(result.model_gib) +
+        (speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0);
     result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
 
     constexpr double bytes_per_gib = 1024.0 * 1024.0 * 1024.0;
     const double tokens = std::floor(result.kv_gib * bytes_per_gib / kv_bytes_per_token);
     if (tokens > 0.0) {
-        result.max_tokens = static_cast<int64_t>(
-            (std::min)(tokens, static_cast<double>(std::numeric_limits<int64_t>::max())));
+        const int64_t limit = std::numeric_limits<int64_t>::max();
+        result.max_tokens = tokens >= static_cast<double>(limit)
+            ? limit : static_cast<int64_t>(tokens);
     }
     return result;
 }

@@ -162,6 +162,21 @@ int main() {
     check(metal.vendor == GpuMemoryVendor::Metal,
           "Metal pool carries typed vendor identity");
 
+    GPUInfo apple_unified = gpu(24.0, 2.0);
+    apple_unified.virtual_gb = 32.0;
+    apple_unified.unified_memory = true;
+    auto shared_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple_unified);
+    check(shared_metal.unified && shared_metal.total_gb == 24.0 &&
+          shared_metal.used_gb == 2.0,
+          "Apple Silicon uses Metal working set, not RAM plus VRAM");
+
+    apple_unified.unified_memory = false;
+    auto discrete_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple_unified);
+    check(!discrete_metal.unified && discrete_metal.total_gb == 24.0,
+          "Discrete Metal is not classified as unified");
+
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);
     check(automatic.total_gb == 4.0, "ambiguous target preserves fallback order");

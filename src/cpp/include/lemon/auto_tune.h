@@ -22,6 +22,7 @@ constexpr int64_t EMBEDDING_CTX_SIZE = 8192;
 
 // Fallback context size when auto-resolution cannot be computed
 constexpr int64_t AUTO_CTX_FALLBACK = 4096;
+constexpr int64_t AUTO_CTX_NO_CAPACITY = 0;
 
 // Hard cap on context size when the model's max context window is unknown.
 // No modern model supports less than this, and it prevents runaway allocation.
@@ -91,8 +92,10 @@ static double get_used_memory_gb(DeviceType device_type) {
 inline double get_available_memory_gb(DeviceType device_type,
                                       GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
                                       const std::string& gpu_device = "",
-                                      bool* unified_gpu_out = nullptr) {
+                                      bool* unified_gpu_out = nullptr,
+                                      bool* memory_known_out = nullptr) {
     if (unified_gpu_out) *unified_gpu_out = false;
+    if (memory_known_out) *memory_known_out = false;
     auto si = create_system_info();
 
     // Subtract currently-used memory
@@ -114,21 +117,18 @@ inline double get_available_memory_gb(DeviceType device_type,
                                            gpu_device,
                                            cuda_visible_devices);
         if (pool.total_gb > 0) {
-            if (unified_gpu_out)
-                *unified_gpu_out = pool.unified || pool.vendor == GpuMemoryVendor::Metal;
+            if (unified_gpu_out) *unified_gpu_out = pool.unified;
+            if (memory_known_out) *memory_known_out = true;
             if (pool.used_gb >= 0.0) used_gb = pool.used_gb;
-            double available = pool.vendor == GpuMemoryVendor::Metal
-                ? (std::min)(pool.total_gb, (std::max)(0.0, apple_gpu.virtual_gb - used_gb))
-                : (std::max)(0.0, pool.total_gb - used_gb);
-            // An APU's VRAM + GTT describes addressable unified memory, not
-            // necessarily free physical RAM. Likewise Metal is unified memory.
-            // Do not let GPU-only usage readings ignore RAM already in use.
-            if (pool.unified || pool.vendor == GpuMemoryVendor::Metal) {
+            else if (pool.unified || pool.vendor == GpuMemoryVendor::Metal) used_gb = 0.0;
+            double available = (std::max)(0.0, pool.total_gb - used_gb);
+            if (pool.unified) {
+                const double physical_total_gb =
+                    pool.vendor == GpuMemoryVendor::Metal && apple_gpu.virtual_gb > 0.0
+                        ? apple_gpu.virtual_gb : pool.total_gb;
                 const double ram_used = get_used_memory_gb(DEVICE_CPU);
-                if (ram_used > 0.0) {
-                    available = (std::min)(available,
-                        (std::max)(0.0, pool.total_gb - ram_used));
-                }
+                available = auto_context_cap_shared_memory_gib(
+                    available, physical_total_gb, ram_used);
             }
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (" << pool.label
                                    << ") total=" << std::fixed << std::setprecision(2)
@@ -149,6 +149,7 @@ inline double get_available_memory_gb(DeviceType device_type,
     // as virtual_gb on the Apple Silicon device.
     auto apple = si->get_apple_silicon_device();
     if (apple.available && apple.virtual_gb > 0) {
+        if (memory_known_out) *memory_known_out = true;
         double available = (std::max)(0.0, apple.virtual_gb - used_gb);
         LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (Apple Silicon unified) total="
                                << std::fixed << std::setprecision(2) << apple.virtual_gb
@@ -160,6 +161,7 @@ inline double get_available_memory_gb(DeviceType device_type,
     // On unified-memory systems (APU), the iGPU vram_gb + virtual_gb approximates system RAM
     auto amd_igpu = si->get_amd_igpu_device();
     if (amd_igpu.available && amd_igpu.vram_gb > 0) {
+        if (memory_known_out) *memory_known_out = true;
         double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
         double available = (std::max)(0.0, total_gb - used_gb);
         LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (AMD iGPU proxy) total="
@@ -173,6 +175,7 @@ inline double get_available_memory_gb(DeviceType device_type,
     auto amd_dgpus = si->get_amd_dgpu_devices();
     for (const auto& gpu : amd_dgpus) {
         if (gpu.available && gpu.virtual_gb > 0) {
+            if (memory_known_out) *memory_known_out = true;
             double available = (std::max)(0.0, gpu.virtual_gb - used_gb);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (AMD dGPU GTT proxy) total="
                                    << std::fixed << std::setprecision(2) << gpu.virtual_gb
@@ -257,20 +260,13 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const double model_weight_gb = auto_context_total_weights_gib(
         model_info.size, file_gib(model_info.resolved_path()),
         file_gib(mmproj_path), file_gib(draft_path));
-    double extra_weights_gb = 0.0;
-    // The mmproj may be loaded by llama.cpp via -hf rather than resolved here.
-    if (mmproj_path.empty() && !model_info.checkpoint("mmproj").empty())
-        extra_weights_gb += 1.0;
-    if (draft_path.empty() && !model_info.checkpoint("draft").empty())
-        extra_weights_gb += 1.0;
+    if (model_weight_gb <= 0.0) return AUTO_CTX_FALLBACK;
 
     const bool uses_mtp = std::find(model_info.labels.begin(), model_info.labels.end(),
                                     "mtp") != model_info.labels.end();
     const bool speculative = uses_mtp || !model_info.checkpoint("draft").empty();
     if (uses_mtp) {
-        // MTP uses a second, context-sized llama_context, sharing model weights
-        // but not all scratch/state buffers. Keep extra per-token headroom.
-        kv_bytes_per_token *= 1.07;
+        kv_bytes_per_token *= AUTO_CTX_MTP_KV_MULTIPLIER;
     }
     if (!draft_path.empty()) {
         GgufMetadata draft_metadata;
@@ -278,12 +274,12 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
             const double draft_kv = compute_weighted_kv_cache_bytes_per_token(draft_metadata);
             if (draft_kv > 0.0) kv_bytes_per_token += draft_kv;
         } else {
-            kv_bytes_per_token *= 1.25; // Unknown draft KV footprint.
+            kv_bytes_per_token *= AUTO_CTX_UNKNOWN_DRAFT_KV_MULTIPLIER;
         }
     }
 
     const auto budget = estimate_auto_context_budget(
-        available_memory_gb, model_weight_gb, extra_weights_gb,
+        available_memory_gb, model_weight_gb, 0.0,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu);
     const int64_t max_ctx_from_memory = budget.max_tokens;
@@ -291,8 +287,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — model and runtime reserves exceed available memory ("
                                << std::fixed << std::setprecision(2) << available_memory_gb
-                               << " GiB), returning " << AUTO_CTX_FALLBACK << " ";
-        return AUTO_CTX_FALLBACK;
+                               << " GiB), cannot fit automatic context";
+        return AUTO_CTX_NO_CAPACITY;
     }
 
     // Clamp to model's declared maximum context window
@@ -306,10 +302,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         clamp_note = " (clamped to unknown-max default)";
     }
 
-    // Embedding models need at least EMBEDDING_CTX_SIZE
     if (is_embedding && ctx_size < EMBEDDING_CTX_SIZE) {
-        ctx_size = EMBEDDING_CTX_SIZE;
-        clamp_note = " (raised to embedding floor)";
+        return AUTO_CTX_NO_CAPACITY;
     }
 
     LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
@@ -352,11 +346,13 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     if (backend_json.is_string()) backend = backend_json.get<std::string>();
     if (device_json.is_string()) device = device_json.get<std::string>();
     bool ctx_unified_gpu = false;
+    bool memory_known = false;
     double available_gb = get_available_memory_gb(
         model_info.device, gpu_memory_vendor_for_target(backend, device), device,
-        &ctx_unified_gpu);
+        &ctx_unified_gpu, &memory_known);
 
     if (available_gb <= 0) {
+        if (memory_known) return AUTO_CTX_NO_CAPACITY;
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
         LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                                << " — memory undetectable, returning " << fallback;

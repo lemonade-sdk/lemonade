@@ -209,7 +209,8 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
     };
     auto select_metal = [&]() -> GpuMemoryPool {
         if (apple.available && apple.vram_gb > 0)
-            return pool_for(apple, "Metal", GpuMemoryVendor::Metal);
+            return {apple.vram_gb, apple.vram_used_gb, "Metal",
+                    GpuMemoryVendor::Metal, apple.unified_memory};
         return {};
     };
 
