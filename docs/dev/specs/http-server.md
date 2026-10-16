@@ -570,7 +570,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one
-- a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it
+- a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it or lists one its base class never writes for it
 - a route's `description`, `notes` or argument descriptions name an error status, such as `404`
 - a `Raw` route other than MCP's JSON-RPC endpoint reads its request body
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
