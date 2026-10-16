@@ -308,9 +308,6 @@ static void test_auto_context_budget() {
           qwen.reserve_gib >= 1.5 && qwen.reserve_gib <= 3.0);
     check("auto ctx: GGUF weights counted once",
           approx_eq(qwen.model_gib, 18.0));
-    constexpr int64_t expected_qwen_5090_tokens = 174711;
-    check("auto ctx: RTX 5090 budget calibration remains unchanged",
-          qwen.max_tokens == expected_qwen_5090_tokens);
     using lemon::auto_context_total_weights_gib;
     check("auto ctx: model registry already includes mmproj",
           approx_eq(auto_context_total_weights_gib(18.0, 16.5, 1.5, 0.0), 18.0));

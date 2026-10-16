@@ -98,9 +98,6 @@ inline double get_available_memory_gb(DeviceType device_type,
     if (memory_known_out) *memory_known_out = false;
     auto si = create_system_info();
 
-    // Subtract currently-used memory
-    double used_gb = get_used_memory_gb(device_type);
-
     // GPU recipes: use VRAM
     if (device_type & DEVICE_GPU) {
         auto amd_igpu = si->get_amd_igpu_device();
@@ -118,21 +115,31 @@ inline double get_available_memory_gb(DeviceType device_type,
                                            cuda_visible_devices);
         if (pool.total_gb > 0) {
             if (unified_gpu_out) *unified_gpu_out = pool.unified;
+            double gpu_used_gb = pool.used_gb;
+            if (!pool.unified && gpu_used_gb < 0.0) {
+                auto metrics = create_metrics_platform();
+                if (metrics) gpu_used_gb = metrics->get_vram_usage_gb();
+            }
+            if (!pool.unified &&
+                (!std::isfinite(gpu_used_gb) || gpu_used_gb < 0.0)) {
+                LOG(DEBUG, "AutoTune")
+                    << "get_available_memory_gb: GPU usage unknown; using context fallback";
+                return 0.0;
+            }
             if (memory_known_out) *memory_known_out = true;
-            if (pool.used_gb >= 0.0) used_gb = pool.used_gb;
-            else if (pool.unified || pool.vendor == GpuMemoryVendor::Metal) used_gb = 0.0;
-            double available = (std::max)(0.0, pool.total_gb - used_gb);
+            if (!std::isfinite(gpu_used_gb) || gpu_used_gb < 0.0)
+                gpu_used_gb = 0.0;
+            double available = (std::max)(0.0, pool.total_gb - gpu_used_gb);
             if (pool.unified) {
-                const double physical_total_gb =
-                    pool.vendor == GpuMemoryVendor::Metal && apple_gpu.virtual_gb > 0.0
-                        ? apple_gpu.virtual_gb : pool.total_gb;
+                const double physical_total_gb = pool.physical_total_gb > 0.0
+                    ? pool.physical_total_gb : pool.total_gb;
                 const double ram_used = get_used_memory_gb(DEVICE_CPU);
                 available = auto_context_cap_shared_memory_gib(
                     available, physical_total_gb, ram_used);
             }
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (" << pool.label
                                    << ") total=" << std::fixed << std::setprecision(2)
-                                   << pool.total_gb << " GB, used=" << used_gb
+                                   << pool.total_gb << " GB, used=" << gpu_used_gb
                                    << " GB → " << available << " GB available" << " ";
             return available;
         }
@@ -145,6 +152,7 @@ inline double get_available_memory_gb(DeviceType device_type,
     }
 
     // CPU / NPU: use system RAM
+    const double used_gb = get_used_memory_gb(device_type);
     // Apple Silicon: the full unified-memory pool (total physical RAM) is reported
     // as virtual_gb on the Apple Silicon device.
     auto apple = si->get_apple_silicon_device();
