@@ -149,10 +149,12 @@ public:
     }
 
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
+    // max_body_bytes > 0 aborts and throws once the response grows past it.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
                            long timeout_seconds = 0,
-                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+                           size_t max_body_bytes = 0);
 
     // HEAD request: headers only, no body.
     static HttpResponse head(const std::string& url,

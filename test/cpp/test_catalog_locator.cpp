@@ -330,9 +330,44 @@ static void fetch_clock_tests(const fs::path& scratch) {
     document.stop();
 }
 
+
+static void body_limit_tests(const fs::path& scratch) {
+    ServingDocument document;
+    document.start();
+    if (document.port <= 0) {
+        check("the catalog server bound a port for the size limit", false);
+        return;
+    }
+
+    const std::string small = R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]}})";
+    const fs::path cache = scratch / "sized" / "body.json";
+
+    HttpCatalogSource exact = serving(document, "/catalog.json", cache);
+    exact.max_body_bytes = small.size();
+    check("a body at the limit is read", http_catalog_locator("sized", exact)->read(nullptr).has_value());
+
+    HttpCatalogSource over = exact;
+    over.cache_path = (scratch / "sized" / "over.json").string();
+    over.max_body_bytes = small.size() - 1;
+    check("a body over the limit yields no document",
+          !http_catalog_locator("over", over)->read(nullptr).has_value());
+    check("an oversized body is never cached", !fs::exists(scratch / "sized" / "over.json"));
+
+    document.rewrite(R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]},
+                        "Padding":{"recipe":"llamacpp","labels":["chat"]}})", "\"v9\"");
+    HttpCatalogSource too_small = exact;
+    too_small.max_body_bytes = 8;
+    const json served = http_catalog_locator("sized", too_small)->read(nullptr).value_or(json());
+    check("an oversized answer serves the last good body", served.size() == 1);
+    check("the cached body survives one that will not fit", read_text(cache) == small);
+
+    document.stop();
+}
+
 int main() {
     const fs::path scratch = lemon::test::make_scratch_dir("catalog_locator");
     fetch_clock_tests(scratch);
+    body_limit_tests(scratch);
     const fs::path document = scratch / "catalog.json";
     const std::string id = "file:" + document.string();
 

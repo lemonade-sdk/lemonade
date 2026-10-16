@@ -303,6 +303,7 @@ struct ResourceLocator { std::string resource_path; };     // an embedded resour
 struct HttpLocator {
     std::string url;
     std::string cache_path;    // last good body, used when the fetch fails
+    size_t max_body_bytes = 0; // 0: unbounded
 };
 
 using Locator = std::variant<FileLocator, ResourceLocator, HttpLocator>;
@@ -320,13 +321,15 @@ The locator decides how a body is fetched and how a change is detected:
 | --- | --- | --- | --- |
 | `FileLocator` | read the file | mtime or size differs | missing or unparseable contributes no entries when `required()` is false; throws when it is true |
 | `ResourceLocator` | `utils::get_resource_path()`, then read | contents digest differs | throws when `required()` |
-| `HttpLocator` | `GET url` with `If-None-Match` / `If-Modified-Since` from `cache_path`; a 304 keeps the cached body | ETag or Last-Modified differs from the cached pair | falls back to the cached body, then to no entries, when `required()` is false; with `required()` true and no cache, throws |
+| `HttpLocator` | `GET url` with `If-None-Match` / `If-Modified-Since` from `cache_path`; a 304 keeps the cached body; a body over `max_body_bytes` aborts the transfer | ETag or Last-Modified differs from the cached pair | falls back to the cached body, then to no entries, when `required()` is false; with `required()` true and no cache, throws |
 
 Rules:
 
 1. One parse primitive turns a fetched body into `CatalogEntry` values, so an error message reads the same whichever locator supplied the document.
 2. `HttpLocator` fetches during its own catalog's refresh, never on another catalog's startup path.
 3. `HttpLocator` stores only the response body and its validators in `cache_path`. It touches no model bytes and no sync queue.
+4. A body over `max_body_bytes` is refused before it is buffered, and is never cached: the last good body stays, so a runaway or hostile host cannot grow the cache or evict a working document.
+5. A cached body belongs to the catalog set. When a catalog leaves the setting, its cached body and validators are removed with it; the sweep touches only files of that shape, and a file it does not recognize is left alone.
 
 ## Model Store
 

@@ -973,6 +973,12 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
         deps.configured_catalogs = std::move(parsed.catalogs);
     }
 
+    std::set<std::string> configured_ids;
+    for (const auto& catalog : deps.configured_catalogs) {
+        configured_ids.insert(catalog.id);
+    }
+    models::prune_cached_bodies(deps.catalog_cache_dir, configured_ids);
+
     auto* config = RuntimeConfig::global();
     deps.offline = config != nullptr && config->offline();
     deps.dynamic_recipes = [] {

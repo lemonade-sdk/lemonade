@@ -140,7 +140,8 @@ class HttpCatalogLocator final : public CatalogLocator {
 
         std::optional<utils::HttpResponse> response;
         try {
-            response = utils::HttpClient::get(source_.url, conditional(cached), 0, policy());
+            response = utils::HttpClient::get(source_.url, conditional(cached), 0, policy(),
+                                              source_.max_body_bytes);
         } catch (const std::exception& e) {
             LOG(WARNING, kLog) << "'" << id_ << "' did not answer: " << e.what() << std::endl;
         }

@@ -80,11 +80,26 @@ int main() {
     }
     check("the facade hands the fixture model back", read_back);
 
+    const fs::path bodies = scratch / "catalogs";
+    fs::create_directories(bodies);
+    {
+        std::ofstream(bodies / "named.json") << "{}";
+        std::ofstream(bodies / "orphan.json") << "{}";
+        std::ofstream(bodies / "orphan.json.validators") << "{}";
+    }
+
+    manager.catalog_set_changed();
+    check("a body for a catalog that is still configured survives",
+          fs::exists(bodies / "named.json"));
+    check("a body for a catalog nobody configures is removed",
+          !fs::exists(bodies / "orphan.json") && !fs::exists(bodies / "orphan.json.validators"));
+
     *configured = nlohmann::json::array();
     manager.catalog_set_changed();
     check("a catalog taken out of config.json stops contributing",
           !manager.model_exists("Configured-Model"));
     check("and what it held is not taken with it", manager.model_exists("Shim-Model"));
+    check("its cached body goes with it", !fs::exists(bodies / "named.json"));
 
     if (g_failures == 0) {
         std::printf("All composition root tests passed.\n");
