@@ -8,9 +8,7 @@ if (mode !== 'smoke' && mode !== 'inference') {
   console.error('Usage: run-server-tests.mjs smoke|inference [Playwright options]');
   process.exit(1);
 }
-const pattern = mode === 'smoke'
-  ? '\\b06\\s+—'
-  : '\\b(?:08|09|10|11)\\s+—';
+const pattern = mode === 'smoke' ? '@real-server' : '@inference';
 const output = mode === 'smoke' ? 'test-results-real-server' : 'test-results-inference';
 const result = spawnSync(process.execPath, [
   fileURLToPath(new URL('run-playwright-tests.mjs', import.meta.url)),

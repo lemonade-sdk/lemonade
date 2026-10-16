@@ -1,6 +1,6 @@
 import { test, expect, Page, type Route } from '@playwright/test';
 
-const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
+const realServerRequired = /@(?:real-server|inference)\b/;
 
 type ModelOptionsState = Map<string, Record<string, unknown>>;
 
@@ -55,6 +55,21 @@ async function fulfillModelOptionsRoute(
     },
   });
   return true;
+}
+
+async function connectToRealServer(page: Page): Promise<void> {
+  await page.goto('/');
+  await page.waitForSelector('.titlebar__nav');
+
+  const status = page.getByRole('status', { name: 'Connected' });
+  if (!(await status.isVisible())) {
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await page.waitForSelector('.connect');
+    const port = process.env.LEMONADE_TEST_PORT || '13305';
+    await page.locator('#host-input').fill(`http://localhost:${port}`);
+    await page.locator('.connect__section--server button[type="submit"]').click();
+  }
+  await expect(status).toBeVisible({ timeout: 15000 });
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -520,7 +535,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/05-navigation.png', fullPage: true });
   });
 
-  test('06 — Connect form connects to server', async ({ page }) => {
+  test('06 — Connect form connects to server @real-server', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await page.locator('.titlebar__nav').getByText('Settings').click();
@@ -540,86 +555,38 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/06-connected.png', fullPage: true });
   });
 
-  test('07 — Models view shows loaded models when connected', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-
-    // Wait for auto-connect
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
-
+  test('07 — Models view shows loaded models when connected @real-server', async ({ page }) => {
+    await connectToRealServer(page);
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.manager');
 
-    // Wait for models to load
-    await page.waitForTimeout(2000);
-
-    // Should have zones (Running, Downloaded, Available)
-    const zones = page.locator('.zone');
-    const zoneCount = await zones.count();
-    console.log(`Found ${zoneCount} model zones`);
-
-    // Should have model rows
-    const rows = page.locator('.row');
-    const count = await rows.count();
-    console.log(`Found ${count} model rows`);
-
-    // Should have search bar
-    await expect(page.locator('.manager__search-input')).toBeVisible();
-
-    // Should have filter tabs
-    await expect(page.locator('.manager__filters')).toBeVisible();
-
-    // Stats should be visible
-    await expect(page.locator('.manager__stats')).toBeVisible();
-
+    const list = page.locator('.model-list-panel__list');
+    const rows = list.locator('.workspace-list-row');
+    await expect(rows.first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.model-list-panel__count')).toHaveText(/\d+ models?/);
     await page.screenshot({ path: 'screenshots/07-models-loaded.png', fullPage: true });
 
-    // Test search filtering
-    const searchInput = page.locator('.manager__search-input');
-    await searchInput.fill('Qwen');
-    await page.waitForTimeout(500);
-    const filteredCount = await page.locator('.row').count();
-    console.log(`Filtered to ${filteredCount} rows for "Qwen"`);
+    const search = page.getByRole('searchbox', { name: 'Search models' });
+    await search.fill('Qwen');
+    await expect.poll(() => rows.count()).toBeGreaterThan(0);
+    await expect(rows.first()).toContainText(/Qwen/i);
     await page.screenshot({ path: 'screenshots/07b-models-search.png', fullPage: true });
 
-    // HuggingFace Explore zone should appear after debounce
-    await page.waitForTimeout(600);
-    const hfZone = page.locator('.zone--hf');
-    const hfVisible = await hfZone.isVisible().catch(() => false);
-    console.log(`HuggingFace zone visible: ${hfVisible}`);
-    if (hfVisible) {
-      const hfRows = await page.locator('.zone--hf .workspace-list-row').count();
-      console.log(`HuggingFace results: ${hfRows}`);
-      await page.screenshot({ path: 'screenshots/07b2-models-hf-zone.png', fullPage: true });
-    }
-
-    // Clear search and test type filter
-    await searchInput.clear();
-    await page.waitForTimeout(300);
-    await page.locator('.manager__filter').getByText('Image').click();
-    await page.waitForTimeout(500);
+    await search.clear();
+    const taskFilters = page.getByRole('group', { name: 'Filter by task' });
+    const imageFilter = taskFilters.locator('.model-nav-rail__task-chip').filter({ hasText: /^Image/ });
+    await imageFilter.click();
+    await expect(imageFilter).toHaveAttribute('aria-pressed', 'true');
     await page.screenshot({ path: 'screenshots/07c-models-filter-image.png', fullPage: true });
 
-    // Reset to All
-    await page.locator('.manager__filter').getByText('All').click();
-    await page.waitForTimeout(300);
-
-    // Test expanding a model detail (click first row)
-    const firstRow = page.locator('.row__content').first();
-    await firstRow.click();
-    await page.waitForTimeout(500);
-    // Detail panel should appear
-    const detail = page.locator('.row__detail').first();
-    if (await detail.isVisible().catch(() => false)) {
-      console.log('Model detail panel expanded successfully');
-    }
+    await taskFilters.locator('.model-nav-rail__task-chip').first().click();
+    await expect(rows.first()).toBeVisible();
+    await rows.first().click();
+    await expect(list.locator('.workspace-list-row--selected').first()).toBeVisible();
+    await expect(page.locator('.model-detail-panel').first()).toBeVisible();
     await page.screenshot({ path: 'screenshots/07d-model-detail.png', fullPage: true });
   });
 
-  test('08 — Chat sends message and receives streaming response', async ({ page }) => {
+  test('08 — Chat sends message and receives streaming response @inference', async ({ page }) => {
     test.setTimeout(120000); // Extended timeout for slow local LLMs
     await page.goto('/');
 
@@ -670,7 +637,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/08-chat-response.png', fullPage: true });
   });
 
-  test('09 — Markdown rendering with code blocks', async ({ page }) => {
+  test('09 — Markdown rendering with code blocks @inference', async ({ page }) => {
     await page.goto('/');
 
     await page.waitForFunction(() => {
@@ -714,7 +681,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/09-markdown-code.png', fullPage: true });
   });
 
-  test('10 — Thinking model shows reasoning section', async ({ page }) => {
+  test('10 — Thinking model shows reasoning section @inference', async ({ page }) => {
     await page.goto('/');
 
     await page.waitForFunction(() => {
@@ -751,7 +718,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/10-thinking-model.png', fullPage: true });
   });
 
-  test('11 — New Chat button clears conversation', async ({ page }) => {
+  test('11 — New Chat button clears conversation @inference', async ({ page }) => {
     await page.goto('/');
 
     await page.waitForFunction(() => {
@@ -1254,37 +1221,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
   });
 
 
-  test('14 — Backends view shows matrix and device info', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-
-    // Backends nav button exists
-    await expect(page.locator('.titlebar__nav').getByText('Backends')).toBeVisible();
-
-    // Navigate to Backends
+  test('14 — Backends view shows matrix and device info @real-server', async ({ page }) => {
+    await connectToRealServer(page);
     await page.locator('.titlebar__nav').getByText('Backends').click();
-    await page.waitForSelector('[data-view="backends"]');
+    await expect(page.locator('[data-view="backends"]')).toBeVisible();
+    await expect(page.locator('.backends__pane-header h1')).toContainText('Inference Backends');
 
-    // Title visible
-    await expect(page.locator('.backends__title h1')).toContainText('Backends');
+    const catalog = page.locator('[data-backends-matrix]');
+    await expect(catalog).toBeVisible();
+    await expect(catalog.locator('.backend-card').first()).toBeVisible({ timeout: 15000 });
 
-    // Show technical details toggle visible
-    await expect(page.locator('.backends__toggle')).toBeVisible();
-
-    // Matrix table present
-    const matrix = page.locator('[data-backends-matrix] table');
-    await expect(matrix).toBeVisible();
-
-    // Matrix has capability column headers
-    await expect(matrix.locator('thead th')).toHaveCount(5); // Device + LLM + Audio + Image + TTS
-
-    // At least one device row
-    const rows = matrix.locator('tbody tr');
-    expect(await rows.count()).toBeGreaterThan(0);
-
-    // Toggle tech details — version sha becomes visible
-    await page.locator('.backends__toggle input').check();
-
+    const techToggle = page.getByLabel('Show technical details');
+    await expect(techToggle).toBeVisible();
+    await techToggle.check();
+    await expect(page.locator('.backends.show-tech')).toBeVisible();
     await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
   });
 
@@ -1586,80 +1536,38 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/20-models-zones.png', fullPage: true });
   });
 
-  test('21 — Models page zone labels: Loaded, Downloaded, Registry', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-
-    // Connect to server first
-    await page.locator('.titlebar__nav').getByText('Settings').click();
-    await page.waitForSelector('.connect');
-    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
-    const urlInput = page.locator('#host-input');
-    await urlInput.clear();
-    await urlInput.fill(`http://localhost:${testPort}`);
-    await page.locator('.connect__section--server button[type="submit"]').click();
-
-    // Wait for connection
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
-
-    // Navigate to Models
+  test('21 — Models list groups reflect the connected catalog @real-server', async ({ page }) => {
+    await connectToRealServer(page);
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.manager');
-    await page.waitForTimeout(2000);
 
-    // Check zone labels (only visible zones will have these titles)
-    const allTitles = await page.locator('.zone__title').allTextContents();
-    console.log('Zone titles:', allTitles);
+    const list = page.locator('.model-list-panel__list');
+    await expect(list.locator('.workspace-list-row').first()).toBeVisible({ timeout: 15000 });
+    const groups = list.locator('.workspace-list-group');
+    await expect(groups.first()).toBeVisible();
 
-    // Should NOT contain old labels
-    for (const t of allTitles) {
-      expect(t).not.toContain('Ready to Load');
-      expect(t).not.toContain('Download Required');
-      expect(t).not.toContain('Explore —');
+    // GUI3 groups downloaded/pinned and local catalog rows; remote catalog
+    // sections are created only during an active online search.
+    const titles = (await groups.locator('.zone__title').allTextContents()).map(s => s.trim());
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) {
+      expect(['Pinned', 'Downloaded', 'Local Catalog']).toContain(title);
     }
-
-    // Should contain new labels where zones appear
-    const hasLoadedModels = allTitles.some(t => t.includes('Loaded Models'));
-    const hasDownloaded = allTitles.some(t => t === 'Downloaded');
-    const hasRegistry = allTitles.some(t => t.includes('Lemonade Registry'));
-    const hasHuggingFace = allTitles.some(t => t === 'Online Catalog: Hugging Face');
-
-    // The Hugging Face online catalog should always be there
-    expect(hasHuggingFace).toBeTruthy();
-
-    console.log(`Loaded Models: ${hasLoadedModels}, Downloaded: ${hasDownloaded}, Registry: ${hasRegistry}, HF: ${hasHuggingFace}`);
-
     await page.screenshot({ path: 'screenshots/21-models-zone-labels.png', fullPage: true });
   });
 
-  test('22 — Backends update button says "updated" not "installed"', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-
-    // Navigate to Backends
+  test('22 — Backends update button says "updated" not "installed" @real-server', async ({ page }) => {
+    await connectToRealServer(page);
     await page.locator('.titlebar__nav').getByText('Backends').click();
-    await page.waitForSelector('[data-view="backends"]');
 
-    // Check if any Update buttons exist in the matrix (filter by text)
-    const updateBtns = page.locator('.cell__swap', { hasText: /^Update$|^Updating/ });
-    const installBtns = page.locator('.cell__swap', { hasText: /^Install$|^Installing/ });
-    const updateCount = await updateBtns.count();
-    const installCount = await installBtns.count();
-    console.log(`Update buttons: ${updateCount}, Install buttons: ${installCount}`);
+    const catalog = page.locator('[data-backends-matrix]');
+    await expect(catalog.locator('.backend-card').first()).toBeVisible({ timeout: 15000 });
+    const updates = catalog.locator('.cell__swap').filter({ hasText: /^Updat(?:e|ing)/ });
+    const installs = catalog.locator('.cell__swap').filter({ hasText: /^Install(?:ing)?/ });
+    console.log(`Update buttons: ${await updates.count()}, Install buttons: ${await installs.count()}`);
 
-    // If update buttons exist, they should say "Update" not "Install"
-    if (updateCount > 0) {
-      const firstUpdate = updateBtns.first();
-      await expect(firstUpdate).toContainText(/Update/);
+    for (const update of await updates.all()) {
+      await expect(update).toContainText(/^Updat/);
     }
-
-    // Verify the matrix table renders
-    const matrix = page.locator('[data-backends-matrix] table');
-    await expect(matrix).toBeVisible();
-
     await page.screenshot({ path: 'screenshots/22-backends-update.png', fullPage: true });
   });
 
