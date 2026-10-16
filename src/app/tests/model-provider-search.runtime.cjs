@@ -194,7 +194,7 @@ assert.doesNotMatch(capabilitiesSource, /MULTIMODAL_CHAT_NAME_PATTERNS|capabilit
   'classification must never guess from a model or repository name');
 assert.doesNotMatch(capabilitiesSource, /registry_source/,
   'an installed model must not be classified by which registry it came from');
-assert.match(remoteCapabilitiesSource, /Repository IDs, display names and the user's search query are deliberately\n \* excluded/,
+assert.match(remoteCapabilitiesSource, /Repository IDs, display names and the user's search query are deliberately\r?\n \* excluded/,
   'remote registry rows must avoid name guessing');
 assert.match(listPanelSource, /const identity = identityFromModelInfo\(m\);/,
   'task filtering asks for the identity rather than re-deriving collection rules');
@@ -202,7 +202,7 @@ assert.match(listPanelSource, /const identity = identityFromModelInfo\(m\);/,
 assert.match(nav, /const \[catalogsOpen, setCatalogsOpen\] = useState\(true\)/, 'Online Catalogs must be independently collapsible');
 assert.match(nav, /aria-expanded=\{catalogsOpen\}[\s\S]*aria-controls="nav-online-catalogs"[\s\S]*setCatalogsOpen/, 'Online Catalogs must use the standard collapsible section header');
 assert.match(nav, /\{catalogsOpen && \([\s\S]*id="nav-online-catalogs"/, 'catalog checkboxes must hide when collapsed');
-assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>Online Catalogs<\/span>/,
+assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>\{t\('Online Catalogs'\)\}<\/span>/,
   'Online Catalogs must use the same collapsible heading treatment as the other filter sections');
 assert.match(nav, /className="backends__toggle model-nav-rail__provider-option"/,
   'online catalogs must reuse the Backends checkbox treatment');
@@ -222,8 +222,8 @@ assert.doesNotMatch(styles, /model-nav-rail__section--providers\s*\{[\s\S]*borde
   'Online Catalogs must not add a divider below Backends');
 assert.match(styles, /\.model-nav-rail__provider-list \{[\s\S]*padding: 2px var\(--space-2\) 0;/,
   'catalog checkboxes must align horizontally with the task/backend controls');
-assert.match(styles, /\.backends__toggle input \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 3px;/,
-  'catalog checkboxes must inherit the exact Backends checkbox geometry');
+assert.match(styles, /input\[type="checkbox"\] \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 4px;/,
+  'catalog checkboxes must inherit the exact Backends checkbox geometry, now shared by one global rule');
 assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{searchActive\}/,
   'ModelManager must pass the existing search activity signal to the nav rail');
 
@@ -303,7 +303,7 @@ const ggufOmni = remoteCapabilityEvidence({
   suggested_labels: [], mmproj_files: ['mmproj-f16.gguf'], variants: [],
   gguf_metadata: { tokenizer: { chat_template: '{{ messages }}' } },
 });
-assert.deepEqual({ primary: ggufOmni.primary, confidence: ggufOmni.confidence }, { primary: 'omni', confidence: 'repository' });
+assert.deepEqual({ primary: ggufOmni.primary, confidence: ggufOmni.confidence }, { primary: 'chat', confidence: 'repository' });
 assert.ok(ggufOmni.labels.includes('vision'));
 
 const mmprojOmniWithoutMetadata = remoteCapabilityEvidence({
@@ -315,8 +315,8 @@ const mmprojOmniWithoutMetadata = remoteCapabilityEvidence({
 });
 assert.deepEqual(
   { primary: mmprojOmniWithoutMetadata.primary, confidence: mmprojOmniWithoutMetadata.confidence },
-  { primary: 'omni', confidence: 'repository' },
-  'validated GGUF + mmproj structure is repository evidence for Omni',
+  { primary: 'chat', confidence: 'repository' },
+  'validated GGUF + mmproj structure is repository evidence for a vision-capable chat model',
 );
 
 const ggufEmbedding = remoteCapabilityEvidence({
@@ -340,7 +340,7 @@ const providerVisionChat = remoteCapabilityEvidence({
 });
 assert.deepEqual(
   { primary: providerVisionChat.primary, confidence: providerVisionChat.confidence },
-  { primary: 'omni', confidence: 'provider' },
+  { primary: 'chat', confidence: 'provider' },
   'exact provider task tags may provide capability evidence without name guessing',
 );
 assert.ok(providerVisionChat.labels.includes('vision'));
@@ -351,7 +351,7 @@ const remoteUnknown = {
 };
 assert.equal(capabilityFromModelInfo(remoteUnknown), 'unknown');
 assert.deepEqual(modelCapabilityTags(remoteUnknown), []);
-assert.equal(capabilityFromModelInfo({ id: 'local-model', recipe: 'llamacpp', labels: [] }), 'chat',
-  'local recipe behavior must remain unchanged');
+assert.equal(capabilityFromModelInfo({ id: 'local-model', recipe: 'llamacpp', labels: ['chat'] }), 'chat',
+  'a chat deployment label classifies a local model as chat');
 
 console.log('Model provider search and capability contract checks passed.');

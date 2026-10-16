@@ -26,7 +26,7 @@ for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath
   assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
 }
 
-assert.match(nav, /<span>\{mobileOpen \? 'Categories' : 'Task'\}<\/span>/);
+assert.match(nav, /<span>\{mobileOpen \? t\('Categories'\) : t\('Task'\)\}<\/span>/);
 assert.match(nav, /key: 'llm', label: 'Chat'/);
 assert.match(nav, /key: 'router', label: 'Router'/);
 assert.match(nav, /model-nav-rail__task-chip/);
@@ -140,7 +140,16 @@ function loadListHelpers() {
     if (request === '../modelCapabilities') return capModule.exports;
     if (request === './Icon') return { Icon() {}, CapabilityIcon() {} };
     if (request.includes('downloadStore')) return { activeDownloadForModel() { return undefined; } };
-    if (request === './WorkspacePanels') return { WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {} };
+    if (request === './WorkspacePanels') return {
+      WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {},
+      WorkspaceList() {}, WorkspaceListGroup() {}, WorkspaceListRow() {},
+    };
+    if (request === '../features/backends/recipeMetadata') return { recipeBackendOptionName() { return null; } };
+    if (request === '../i18n') return {
+      useI18n() {
+        return { t: (key, vars = {}) => key.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? '')) };
+      },
+    };
     if (request === '../modelPresentation') return {
       backendColor: recipe => `color:${recipe}`,
       backendCompactLabel: recipe => recipe,
