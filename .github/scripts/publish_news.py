@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Copy news changes from main onto the checked-out website branch.
+"""Publish news posts that merged to main since the last release.
 
-Walks main's first-parent history since the last release merged into the
-website and commits, one website commit per source commit, every change from a
-commit that touched only news files. A commit that also touched anything else
-waits for the release.
+Run with the website branch checked out. For each PR merged since the last
+release, in order:
 
-A file is copied only when its live version matches main's version just before
-the commit. Otherwise main holds an unreleased change to that file from a
-skipped commit, and copying it would publish that change early.
+- If the PR changed only news files, copy those files onto website and commit.
+- If the PR changed anything else too, skip it. Its news changes go out with
+  the next release.
 
-Re-running is safe: a file already matching main at this commit or later is
-left alone.
+One exception: a news file is not copied if a skipped PR also changed it,
+because copying the file would publish that PR's change too. It waits for the
+release instead.
 
 Usage:
     python publish_news.py <main-ref>
