@@ -110,8 +110,8 @@ public:
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
 
-    // A base-class step writes errors the route's own spec does not list, and the docs must
-    // list them with the route's own.
+    // The errors base-class steps write, such as the invalid-body 400, so the docs list them
+    // beside the route's own.
     virtual std::vector<RouteError> inherited_errors(const RouteSpec& spec) const;
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
@@ -126,8 +126,8 @@ public:
                                 const std::string& content_type = "text/event-stream");
 
 protected:
-    // A route's error shape is part of its contract, so a route can override how a body that
-    // does not parse is answered, together with the errors that override writes.
+    // Routes answer a body that does not parse in different shapes, so a route can override
+    // this, and then overrides invalid_body_errors() to match.
     virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
                                     httplib::Response& res) const;
     virtual std::vector<RouteError> invalid_body_errors() const;
@@ -147,8 +147,8 @@ protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
 
-    // A route's error shape is part of its contract, so a route can override how an exception
-    // that escapes validate() or run() is answered, together with the errors that override writes.
+    // Routes answer an exception from validate() or run() in different shapes, so a route can
+    // override this, and then overrides exception_errors() to match.
     virtual void write_exception(const std::exception& error, httplib::Response& res) const;
     virtual std::vector<RouteError> exception_errors() const;
 
