@@ -125,6 +125,8 @@ nav:
       - MCP Gateway: api/mcp.md
       - llama.cpp Specific: api/llamacpp.md
       - Lemonade Specific: api/lemonade.md
+      - Router: api/router.md
+      - Internal: api/internal.md
   - Embeddable Lemonade:
       - Overview: embeddable/README.md
       - Runtime: embeddable/runtime.md

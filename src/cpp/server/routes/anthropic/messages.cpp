@@ -1,33 +1,52 @@
+#include <algorithm>
+#include <iostream>
+#include <map>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "lemon/anthropic_error.h"
 #include "lemon/anthropic_relay_headers.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/cloud_provider_registry.h"
-#include "lemon/error_types.h"
-#include "lemon/ollama_api.h"
+#include "lemon/model_manager.h"
+#include "lemon/router.h"
+#include "lemon/server/api_route.h"
+#include "lemon/server/gateway_conversion.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
-#include <iostream>
-#include <sstream>
-#include <chrono>
-#include <algorithm>
-#include <map>
-#include <memory>
-#include <optional>
-#include <set>
-#include <utility>
-#include <vector>
 
 namespace lemon {
-
 namespace {
 
-static void add_warning(std::vector<std::string>& warnings, const std::string& warning) {
+const RouteError kProviderNoBaseUrl{
+    500, "", "`model` is a cloud model whose `--wire-format anthropic` provider has no base URL"};
+const RouteError kProviderNoApiKey{
+    401, "", "`model` is a cloud model whose `--wire-format anthropic` provider has no API key"};
+const RouteError kProviderInsecureHttp{
+    400, "",
+    "`model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base "
+    "URL and was not installed with `--allow-insecure-http`"};
+const RouteError kCloudModelNoCheckpoint{
+    500, "", "`model` is a `--wire-format anthropic` cloud model with no `checkpoint`"};
+const RouteError kCloudRequestFailed{
+    502, "",
+    "Without `stream`, the relayed cloud request fails or the provider answers with an error; "
+    "the provider's own status and body replace this one when it answers"};
+
+using json = nlohmann::json;
+using ordered_json = nlohmann::ordered_json;
+
+void add_warning(std::vector<std::string>& warnings, const std::string& warning) {
     if (std::find(warnings.begin(), warnings.end(), warning) == warnings.end()) {
         warnings.push_back(warning);
     }
 }
 
-static std::string join_strings(const std::vector<std::string>& parts, const char* sep = "\n") {
+std::string join_strings(const std::vector<std::string>& parts, const char* sep = "\n") {
     std::ostringstream os;
     for (size_t i = 0; i < parts.size(); ++i) {
         if (i > 0) os << sep;
@@ -36,7 +55,7 @@ static std::string join_strings(const std::vector<std::string>& parts, const cha
     return os.str();
 }
 
-static std::string join_text_blocks(const json& value, std::vector<std::string>& warnings, const std::string& field_name) {
+std::string join_text_blocks(const json& value, std::vector<std::string>& warnings, const std::string& field_name) {
     if (value.is_string()) {
         return value.get<std::string>();
     }
@@ -65,30 +84,7 @@ static std::string join_text_blocks(const json& value, std::vector<std::string>&
     return join_strings(parts);
 }
 
-static std::string map_finish_reason_to_anthropic_stop_reason(const json& choice) {
-    std::string finish_reason = choice.value("finish_reason", "stop");
-
-    if (finish_reason == "length") {
-        return "max_tokens";
-    }
-    if (finish_reason == "tool_calls") {
-        return "tool_use";
-    }
-    return "end_turn";
-}
-
-static std::string generate_anthropic_message_id() {
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    return "msg_" + std::to_string(millis);
-}
-
-static bool write_sse_event(httplib::DataSink& sink, const std::string& event, const json& data) {
-    std::string payload = "event: " + event + "\ndata: " + data.dump() + "\n\n";
-    return sink.write(payload.c_str(), payload.size());
-}
-
-static std::string stringify_anthropic_tool_result_content(const json& content,
+std::string stringify_anthropic_tool_result_content(const json& content,
                                                            std::vector<std::string>& warnings) {
     if (content.is_string()) {
         return content.get<std::string>();
@@ -122,7 +118,7 @@ static std::string stringify_anthropic_tool_result_content(const json& content,
     return "";
 }
 
-static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::string>& warnings) {
+json parse_openai_tool_arguments(const json& tool_call, std::vector<std::string>& warnings) {
     if (!tool_call.is_object() || !tool_call.contains("function") || !tool_call["function"].is_object()) {
         return json::object();
     }
@@ -159,7 +155,7 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
     return json::object();
 }
 
-static bool set_anthropic_backend_error_response(const json& response, httplib::Response& res) {
+bool set_anthropic_backend_error_response(const json& response, httplib::Response& res) {
     if (!response.contains("error")) {
         return false;
     }
@@ -171,20 +167,6 @@ static bool set_anthropic_backend_error_response(const json& response, httplib::
     res.status = status;
     res.set_content(anthropic::build_anthropic_error(error, status).dump(), "application/json");
     return true;
-}
-
-static void set_anthropic_residency_conflict_response(
-    const RouterResidencyConflictException& error,
-    httplib::Response& res) {
-    res.status = 409;
-    json body = {
-        {"type", "error"},
-        {"error", {
-            {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
-            {"message", error.what()},
-        }},
-    };
-    res.set_content(body.dump(), "application/json");
 }
 
 // Everything needed to relay one /v1/messages request to a provider that
@@ -203,22 +185,14 @@ struct AnthropicUpstream {
 struct AnthropicUpstreamMatch {
     bool claimed = false;
     std::optional<AnthropicUpstream> upstream;
-    int error_status = 0;
+    const RouteError* error = nullptr;
     std::string error_message;
 };
-
-static void set_anthropic_error_response(httplib::Response& res, int status,
-                                         const std::string& message) {
-    res.status = status;
-    res.set_content(
-        anthropic::build_anthropic_error(json{{"message", message}}, status).dump(),
-        "application/json");
-}
 
 using anthropic::is_forwardable_request_header;
 using anthropic::is_forwardable_response_header;
 
-static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
+AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
                                                          const std::string& model,
                                                          const json& request_json,
                                                          const httplib::Request& req) {
@@ -238,27 +212,27 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     if (registry->wire_format_for(info.cloud_provider) != "anthropic") return match;
 
     match.claimed = true;
-    auto fail = [&match](int status, std::string message) {
-        match.error_status = status;
+    auto fail = [&match](const RouteError& error, std::string message) {
+        match.error = &error;
         match.error_message = std::move(message);
         return match;
     };
 
     const std::string base_url = registry->base_url_for(info.cloud_provider);
     if (base_url.empty()) {
-        return fail(500, "provider '" + info.cloud_provider +
+        return fail(kProviderNoBaseUrl, "provider '" + info.cloud_provider +
                          "' has no base URL configured");
     }
     const std::string api_key = registry->resolve_key(info.cloud_provider);
     if (api_key.empty()) {
-        return fail(401, "no API key for provider '" + info.cloud_provider + "'; set " +
+        return fail(kProviderNoApiKey, "no API key for provider '" + info.cloud_provider + "'; set " +
                          CloudProviderRegistry::env_var_name(info.cloud_provider) +
                          " or POST /v1/cloud/auth");
     }
     const bool allow_insecure_http =
         registry->allow_insecure_http_for(info.cloud_provider);
     if (CloudProviderRegistry::is_http_base_url(base_url) && !allow_insecure_http) {
-        return fail(400, "provider '" + info.cloud_provider +
+        return fail(kProviderInsecureHttp, "provider '" + info.cloud_provider +
                          "' uses an http:// base URL; re-install it with "
                          "--allow-insecure-http to send the API key in plaintext");
     }
@@ -267,7 +241,7 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     // the same check here a hand-authored registry entry would relay an empty
     // model id and surface an opaque provider 400 instead.
     if (info.checkpoint().empty()) {
-        return fail(500, "cloud model '" + model + "' is missing the 'checkpoint' "
+        return fail(kCloudModelNoCheckpoint, "cloud model '" + model + "' is missing the 'checkpoint' "
                          "field (provider's upstream model id)");
     }
 
@@ -308,7 +282,7 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     return match;
 }
 
-static void relay_response_headers(const std::map<std::string, std::string>& upstream,
+void relay_response_headers(const std::map<std::string, std::string>& upstream,
                                    httplib::Response& res) {
     for (const auto& [name, value] : upstream) {
         if (is_forwardable_response_header(name)) {
@@ -317,9 +291,10 @@ static void relay_response_headers(const std::map<std::string, std::string>& ups
     }
 }
 
-static void forward_anthropic_upstream(AnthropicUpstream upstream,
+void forward_anthropic_upstream(AnthropicUpstream upstream,
                                        bool stream,
                                        const std::string& model,
+                                       RouteRequest& req,
                                        httplib::Response& res) {
     if (!stream) {
         try {
@@ -329,28 +304,24 @@ static void forward_anthropic_upstream(AnthropicUpstream upstream,
             relay_response_headers(response.headers, res);
             res.set_content(response.body, "application/json");
         } catch (const std::exception& e) {
-            set_anthropic_error_response(
-                res, 502, "cloud request for '" + model + "' failed: " + e.what());
+            write_anthropic_error(
+                res, kCloudRequestFailed, "cloud request for '" + model + "' failed: " + e.what());
         }
         return;
     }
 
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
     // Everything below runs inside the content provider, after the status line
     // is already on the wire. That costs the real status on a non-200 (relayed
     // as an SSE error frame instead) but keeps every blocking wait somewhere
     // sink.is_writable can observe the peer, so a client that disappears cannot
     // strand the upstream transfer.
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [upstream = std::move(upstream), model](size_t offset, httplib::DataSink& sink) {
-            if (offset > 0) return false;
+    ApiRoute::stream_response(
+        req, res,
+        [upstream = std::move(upstream), model](const std::string&, httplib::DataSink& sink) {
             // Both ends speak Anthropic SSE, so a 200 relays unparsed. A
             // non-200 body is not SSE, so it is diverted and re-emitted as an
             // error event rather than written into the event stream.
-            static constexpr size_t max_error_body = 64 * 1024;
+            constexpr size_t max_error_body = 64 * 1024;
             int upstream_status = 200;
             std::string error_body;
             std::map<std::string, std::string> response_headers;
@@ -393,23 +364,13 @@ static void forward_anthropic_upstream(AnthropicUpstream upstream,
                 emit_error(502, std::string("failed: ") + e.what());
             }
             sink.done();
-            return false;
-        }
-    );
+        });
 }
 
-}  // namespace
-
-void OllamaApi::register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self) {
-    server.Post("/v1/messages", [self](const httplib::Request& req, httplib::Response& res) {
-        self->handle_anthropic_messages(req, res);
-    });
-}
-
-json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector<std::string>& warnings) {
+json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector<std::string>& warnings) {
     json openai_req;
 
-    std::string model = normalize_model_name(anthropic_request.value("model", ""));
+    std::string model = strip_latest_tag(anthropic_request.value("model", ""));
     openai_req["model"] = model;
 
     json messages = json::array();
@@ -499,7 +460,7 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
                             continue;
                         }
 
-                        std::string tool_id = block.value("id", generate_anthropic_message_id());
+                        std::string tool_id = block.value("id", anthropic_message_id());
                         json input_obj = json::object();
                         if (block.contains("input")) {
                             if (block["input"].is_object()) {
@@ -698,19 +659,19 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
     return openai_req;
 }
 
-json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
-                                                 const std::string& model,
-                                                 const std::vector<std::string>& warnings) {
+json convert_openai_chat_to_anthropic(const json& openai_response,
+                                      const std::string& model,
+                                      const std::vector<std::string>& warnings) {
     std::vector<std::string> mutable_warnings = warnings;
     std::string response_text;
     json content_blocks = json::array();
     std::string stop_reason = "end_turn";
-    std::string response_id = openai_response.value("id", generate_anthropic_message_id());
+    std::string response_id = openai_response.value("id", anthropic_message_id());
 
     if (openai_response.contains("choices") && openai_response["choices"].is_array() &&
         !openai_response["choices"].empty()) {
         const auto& choice = openai_response["choices"][0];
-        stop_reason = map_finish_reason_to_anthropic_stop_reason(choice);
+        stop_reason = anthropic_stop_reason(choice);
 
         if (choice.contains("message") && choice["message"].is_object()) {
             const auto& message = choice["message"];
@@ -733,7 +694,7 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
                         continue;
                     }
 
-                    std::string tool_id = tool_call.value("id", generate_anthropic_message_id());
+                    std::string tool_id = tool_call.value("id", anthropic_message_id());
                     std::string tool_name;
                     if (tool_call.contains("function") && tool_call["function"].is_object()) {
                         tool_name = tool_call["function"].value("name", "");
@@ -804,457 +765,238 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
     return anthropic_res;
 }
 
-void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
-                                                   httplib::DataSink& client_sink,
-                                                   const std::string& model,
-                                                   const std::vector<std::string>& warnings,
-                                                   StreamFn call_router) {
-    httplib::DataSink adapter_sink;
-    std::string sse_buffer;
+class MessagesRoute : public ApiRoute {
+public:
+    using ApiRoute::ApiRoute;
 
-    bool sent_message_start = false;
-    bool sent_text_content_start = false;
-    bool sent_text_content_stop = false;
-    bool sent_error = false;
-    std::vector<bool> started_tool_blocks;
-    std::vector<bool> stopped_tool_blocks;
-    std::vector<std::string> tool_ids;
-    std::vector<std::string> tool_names;
-    std::string stop_reason = "end_turn";
-    int input_tokens = 0;
-    int output_tokens = 0;
-    std::string message_id = generate_anthropic_message_id();
+    RouteSpec spec() const override {
+        RouteSpec s;
+        s.id = "anthropic.messages";
+        s.methods = {"POST"};
+        s.paths = {"/v1/messages"};
+        s.prefixes = Prefixes::Root;
+        s.summary = "Generate the next assistant message";
+        s.description =
+            "Generates the next assistant message for a conversation in the Anthropic Messages "
+            "format.";
+        s.notes = {
+            "Lemonade runs the request as an OpenAI chat completion and converts both ways. Some "
+            "values it cannot convert, such as an unsupported content block type or `metadata`, "
+            "are ignored and reported in the `X-Lemonade-Warning` header (joined with ` | `) and "
+            "in a `warnings` array. Unknown fields are ignored "
+            "without a warning. A "
+            "cloud provider registered with `--wire-format anthropic` is relayed unconverted, so "
+            "nothing is dropped; see [Cloud "
+            "Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).",
+            "Errors use Anthropic's shape, `{\"type\": \"error\", \"error\": {\"type\", "
+            "\"message\"}}`.",
+        };
+        s.args = {
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+             "Model to run; loaded on first use."},
+            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
+             "Conversation so far, as `user` and `assistant` messages. `content` is a string or "
+             "an array of `text`, `image` (base64 source), `tool_use` and `tool_result` blocks."},
+            {"system", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
+             "System prompt, as a string or an array of `text` blocks."},
+            {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+             "Upper bound on generated tokens."},
+            {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+             "Sampling temperature.", {}, true},
+            {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+             "Nucleus sampling probability.", {}, true},
+            {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+             "Number of top tokens considered during sampling.", {}, true},
+            {"stop_sequences", ArgIn::JsonBody, {{"type", json::array({"array", "string"})}}, false,
+             Support::Available, "Sequences where generation stops."},
+            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+             "Stream server-sent events as tokens are generated. Defaults to `false`."},
+            {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+             "Tools the model may call, each with a `name`, `description` and `input_schema`."},
+            {"tool_choice", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+             "`{\"type\": \"auto\"}`, `any`, `none`, or `tool` with a `name`."},
+            {"output_config", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+             "`format` of type `json_schema` (with a `schema`) or `json_object` constrains the "
+             "reply."},
+            {"thinking", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
+             "Not applied to local models: reasoning models think regardless. Qwen3 models "
+             "skip their reasoning when the prompt ends with `/no_think`."},
+            {"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
+             "Ignored for local models, with a warning."},
+            {"context_management", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
+             "Ignored for local models, with a warning."},
+            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+             "Lemonade extension: context size to load the model with, when this request loads "
+             "it."},
+            {"beta", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
+             "Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; "
+             "`true` is passed on to providers that are relayed."},
+        };
 
-    adapter_sink.is_writable = client_sink.is_writable;
+        RouteResponse message;
+        message.format = ResponseFormat::Json;
+        message.schema = ordered_json::parse(R"({
+            "type": "object",
+            "required": ["id", "type", "role", "model", "content", "stop_reason", "usage"],
+            "properties": {
+                "id": {"type": "string", "description": "The message's ID."},
+                "type": {"const": "message", "description": "Always `message`."},
+                "role": {"const": "assistant", "description": "Always `assistant`."},
+                "model": {"type": "string", "description": "The model that generated the message."},
+                "content": {"type": "array", "description": "The message's content blocks.", "items": {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {"type": "string", "description": "`text` or `tool_use`. A relayed provider can add its own block types, such as `thinking`."},
+                        "text": {"type": "string", "description": "In a `text` block: the text."},
+                        "id": {"type": "string", "description": "In a `tool_use` block: the tool call's ID."},
+                        "name": {"type": "string", "description": "In a `tool_use` block: the tool's name."},
+                        "input": {"type": "object", "description": "In a `tool_use` block: the call's arguments."}
+                    }
+                }},
+                "stop_reason": {"type": "string", "description": "`end_turn`, `max_tokens` or `tool_use`."},
+                "stop_sequence": {"type": ["string", "null"], "description": "The stop sequence that ended the message; always `null` for local models."},
+                "usage": {
+                    "type": "object",
+                    "description": "Token counts.",
+                    "properties": {
+                        "input_tokens": {"type": "integer", "description": "Prompt tokens."},
+                        "output_tokens": {"type": "integer", "description": "Generated tokens."}
+                    }
+                },
+                "warnings": {"type": "array", "items": {"type": "string"}, "description": "What Lemonade ignored or changed while converting; present only when there is something to report."}
+            }
+        })");
 
-    adapter_sink.write = [&client_sink,
-                          &sse_buffer,
-                          &sent_message_start,
-                          &sent_text_content_start,
-                          &sent_text_content_stop,
-                          &sent_error,
-                          &started_tool_blocks,
-                          &stopped_tool_blocks,
-                          &tool_ids,
-                          &tool_names,
-                          &stop_reason,
-                          &input_tokens,
-                          &output_tokens,
-                          &message_id,
-                          &model](const char* data, size_t len) -> bool {
-        sse_buffer.append(data, len);
+        RouteResponse stream;
+        stream.format = ResponseFormat::EventStream;
+        stream.schema = ordered_json::parse(R"({
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+                "type": {"type": "string", "description": "Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`."},
+                "message": {"type": "object", "description": "In `message_start`: the message, with empty `content` and zero `usage`."},
+                "index": {"type": "integer", "description": "In `content_block_start`, `content_block_delta` and `content_block_stop`: the block's position in the message's `content`."},
+                "content_block": {"type": "object", "description": "In `content_block_start`: the block, with empty `text` or `input`."},
+                "delta": {"type": "object", "description": "In `content_block_delta`: the block's next `text_delta` text or `input_json_delta` partial JSON. In `message_delta`: the `stop_reason` and `stop_sequence`."},
+                "usage": {"type": "object", "description": "In `message_delta`: token counts. Both are `0` when the backend's stream carries no usage, as with llama.cpp."},
+                "warnings": {"type": "array", "items": {"type": "string"}, "description": "In `message_delta`: what Lemonade ignored while converting; present only when there is something to report."},
+                "error": {"type": "object", "description": "In `error`, sent when the backend or provider fails after the stream started: the error's `type` and `message`."}
+            }
+        })");
 
-        size_t pos;
-        while ((pos = sse_buffer.find('\n')) != std::string::npos) {
-            std::string line = sse_buffer.substr(0, pos);
-            sse_buffer.erase(0, pos + 1);
+        s.responses = {message, stream};
 
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
+        RouteExample message_example;
+        message_example.name = "non-streaming";
+        message_example.format = ResponseFormat::Json;
+        message_example.args = ordered_json::parse(R"({
+            "model": "Qwen3-0.6B-GGUF",
+            "max_tokens": 64,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
+        })");
+
+        RouteExample stream_example;
+        stream_example.name = "streaming";
+        stream_example.format = ResponseFormat::EventStream;
+        stream_example.args = ordered_json::parse(R"({
+            "model": "Qwen3-0.6B-GGUF",
+            "max_tokens": 64,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+            "stream": true
+        })");
+
+        s.examples = {message_example, stream_example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+                                {kProviderNoBaseUrl, kProviderNoApiKey, kProviderInsecureHttp,
+                                 kCloudModelNoCheckpoint, kCloudRequestFailed, kBackendError,
+                                 ApiRoute::kUnexpectedException}});
+        s.error_format = ErrorFormat::Anthropic;
+        s.request_format = RequestFormat::Json;
+        return s;
+    }
+
+    void handle(RouteRequest& req, httplib::Response& res) override {
+        try {
+            const json& request_json = req.body;
+            std::vector<std::string> warnings;
+
+            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
+
+            if (req.http.has_param("beta")) {
+                std::string beta_value = req.http.get_param_value("beta");
+                if (beta_value != "true") {
+                    add_warning(warnings, "Ignored unsupported beta query value: " + beta_value);
+                }
             }
 
-            if (line.empty() || line.find("data: ") != 0) {
-                continue;
-            }
-
-            std::string json_str = line.substr(6);
-            if (json_str == "[DONE]") {
-                continue;
-            }
-
-            try {
-                auto openai_chunk = json::parse(json_str);
-
-                if (openai_chunk.contains("error")) {
-                    const auto& error = openai_chunk["error"];
-                    std::cerr << "[OllamaApi] Backend error in Anthropic stream: "
-                              << error.dump() << std::endl;
-                    sent_error = true;
-                    write_sse_event(client_sink, "error",
-                                    anthropic::build_anthropic_error(
-                                        error, anthropic::backend_error_http_status(error)));
-                    return false;
-                }
-
-                if (!sent_message_start) {
-                    if (openai_chunk.contains("id") && openai_chunk["id"].is_string()) {
-                        message_id = openai_chunk["id"].get<std::string>();
-                    }
-
-                    json message_start = {
-                        {"type", "message_start"},
-                        {"message", {
-                            {"id", message_id},
-                            {"type", "message"},
-                            {"role", "assistant"},
-                            {"model", model},
-                            {"content", json::array()},
-                            {"stop_reason", nullptr},
-                            {"stop_sequence", nullptr},
-                            {"usage", {{"input_tokens", 0}, {"output_tokens", 0}}}
-                        }}
-                    };
-                    if (!write_sse_event(client_sink, "message_start", message_start)) {
-                        return false;
-                    }
-                    sent_message_start = true;
-                }
-
-                if (openai_chunk.contains("usage") && openai_chunk["usage"].is_object()) {
-                    const auto& usage = openai_chunk["usage"];
-                    input_tokens = usage.value("prompt_tokens", input_tokens);
-                    output_tokens = usage.value("completion_tokens", output_tokens);
-                }
-
-                if (openai_chunk.contains("choices") && openai_chunk["choices"].is_array() &&
-                    !openai_chunk["choices"].empty()) {
-                    const auto& choice = openai_chunk["choices"][0];
-
-                    if (choice.contains("delta") && choice["delta"].is_object()) {
-                        const auto& delta = choice["delta"];
-                        if (delta.contains("content") && delta["content"].is_string()) {
-                            std::string delta_text = delta["content"].get<std::string>();
-                            if (!delta_text.empty()) {
-                                if (!sent_text_content_start) {
-                                    json content_start = {
-                                        {"type", "content_block_start"},
-                                        {"index", 0},
-                                        {"content_block", {{"type", "text"}, {"text", ""}}}
-                                    };
-                                    if (!write_sse_event(client_sink, "content_block_start", content_start)) {
-                                        return false;
-                                    }
-                                    sent_text_content_start = true;
-                                }
-
-                                json content_delta = {
-                                    {"type", "content_block_delta"},
-                                    {"index", 0},
-                                    {"delta", {{"type", "text_delta"}, {"text", delta_text}}}
-                                };
-                                if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
-                                    return false;
-                                }
-                            }
-                        }
-
-                        if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
-                            for (const auto& tool_delta : delta["tool_calls"]) {
-                                if (!tool_delta.is_object()) {
-                                    continue;
-                                }
-
-                                int openai_tool_index = tool_delta.value("index", 0);
-                                if (openai_tool_index < 0) {
-                                    continue;
-                                }
-
-                                size_t idx = static_cast<size_t>(openai_tool_index);
-                                if (started_tool_blocks.size() <= idx) {
-                                    started_tool_blocks.resize(idx + 1, false);
-                                    stopped_tool_blocks.resize(idx + 1, false);
-                                    tool_ids.resize(idx + 1);
-                                    tool_names.resize(idx + 1);
-                                }
-
-                                if (tool_delta.contains("id") && tool_delta["id"].is_string()) {
-                                    tool_ids[idx] = tool_delta["id"].get<std::string>();
-                                }
-
-                                if (tool_delta.contains("function") && tool_delta["function"].is_object()) {
-                                    const auto& fn = tool_delta["function"];
-                                    if (fn.contains("name") && fn["name"].is_string()) {
-                                        tool_names[idx] = fn["name"].get<std::string>();
-                                    }
-                                }
-
-                                if (!started_tool_blocks[idx]) {
-                                    if (tool_ids[idx].empty()) {
-                                        tool_ids[idx] = generate_anthropic_message_id();
-                                    }
-                                    if (tool_names[idx].empty()) {
-                                        tool_names[idx] = "unknown_tool";
-                                    }
-
-                                    json tool_block_start = {
-                                        {"type", "content_block_start"},
-                                        {"index", static_cast<int>(idx) + 1},
-                                        {"content_block", {
-                                            {"type", "tool_use"},
-                                            {"id", tool_ids[idx]},
-                                            {"name", tool_names[idx]},
-                                            {"input", json::object()}
-                                        }}
-                                    };
-                                    if (!write_sse_event(client_sink, "content_block_start", tool_block_start)) {
-                                        return false;
-                                    }
-                                    started_tool_blocks[idx] = true;
-                                }
-
-                                if (tool_delta.contains("function") && tool_delta["function"].is_object()) {
-                                    const auto& fn = tool_delta["function"];
-                                    if (fn.contains("arguments") && fn["arguments"].is_string()) {
-                                        std::string args_delta = fn["arguments"].get<std::string>();
-                                        if (!args_delta.empty()) {
-                                            json tool_input_delta = {
-                                                {"type", "content_block_delta"},
-                                                {"index", static_cast<int>(idx) + 1},
-                                                {"delta", {
-                                                    {"type", "input_json_delta"},
-                                                    {"partial_json", args_delta}
-                                                }}
-                                            };
-                                            if (!write_sse_event(client_sink, "content_block_delta", tool_input_delta)) {
-                                                return false;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
-                        stop_reason = map_finish_reason_to_anthropic_stop_reason(choice);
-                    }
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[OllamaApi] Failed to parse Anthropic stream chunk: " << e.what() << std::endl;
-            }
-        }
-        return true;
-    };
-
-    adapter_sink.done = [&client_sink,
-                         &sent_message_start,
-                         &sent_text_content_start,
-                         &sent_text_content_stop,
-                         &sent_error,
-                         &started_tool_blocks,
-                         &stopped_tool_blocks,
-                         &stop_reason,
-                         &input_tokens,
-                         &output_tokens,
-                         &warnings]() {
-        // The error event terminates the stream. Emitting the closing frames
-        // here would let a client read the failure as a turn that produced no
-        // content, which is the state this path exists to avoid.
-        if (sent_error) {
-            client_sink.done();
-            return;
-        }
-
-        if (!sent_message_start) {
-            json message_start = {
-                {"type", "message_start"},
-                {"message", {
-                    {"id", generate_anthropic_message_id()},
-                    {"type", "message"},
-                    {"role", "assistant"},
-                    {"content", json::array()},
-                    {"stop_reason", nullptr},
-                    {"stop_sequence", nullptr},
-                    {"usage", {{"input_tokens", 0}, {"output_tokens", 0}}}
-                }}
+            auto emit_warning_header = [&res, &warnings]() {
+                if (warnings.empty()) return;
+                const std::string joined = join_strings(warnings, " | ");
+                res.set_header("X-Lemonade-Warning", joined);
+                std::cerr << "[OllamaApi] Anthropic compatibility warnings: " << joined << std::endl;
             };
-            if (!write_sse_event(client_sink, "message_start", message_start)) {
-                client_sink.done();
-                return;
-            }
-            sent_message_start = true;
-        }
 
-        if (!sent_text_content_start && started_tool_blocks.empty()) {
-            json content_start = {
-                {"type", "content_block_start"},
-                {"index", 0},
-                {"content_block", {{"type", "text"}, {"text", ""}}}
-            };
-            if (!write_sse_event(client_sink, "content_block_start", content_start)) {
-                client_sink.done();
-                return;
-            }
-            sent_text_content_start = true;
-        }
-
-        if (sent_text_content_start && !sent_text_content_stop) {
-            json content_stop = {
-                {"type", "content_block_stop"},
-                {"index", 0}
-            };
-            if (!write_sse_event(client_sink, "content_block_stop", content_stop)) {
-                client_sink.done();
-                return;
-            }
-            sent_text_content_stop = true;
-        }
-
-        for (size_t idx = 0; idx < started_tool_blocks.size(); ++idx) {
-            if (started_tool_blocks[idx] && !stopped_tool_blocks[idx]) {
-                json tool_stop = {
-                    {"type", "content_block_stop"},
-                    {"index", static_cast<int>(idx) + 1}
-                };
-                if (!write_sse_event(client_sink, "content_block_stop", tool_stop)) {
-                    client_sink.done();
+            // Relaying verbatim keeps thinking blocks, tool use, and cache control
+            // intact. No router slot is taken — there is no local resource to hold.
+            auto match = resolve_anthropic_upstream(ctx_.model_manager, model, request_json, req.http);
+            if (match.claimed) {
+                emit_warning_header();
+                if (!match.upstream) {
+                    write_anthropic_error(res, *match.error, match.error_message);
                     return;
                 }
-                stopped_tool_blocks[idx] = true;
-            }
-        }
-
-        if (stop_reason == "end_turn") {
-            for (bool started : started_tool_blocks) {
-                if (started) {
-                    stop_reason = "tool_use";
-                    break;
-                }
-            }
-        }
-
-        json message_delta = {
-            {"type", "message_delta"},
-            {"delta", {
-                {"stop_reason", stop_reason},
-                {"stop_sequence", nullptr}
-            }},
-            {"usage", {
-                {"input_tokens", input_tokens},
-                {"output_tokens", output_tokens}
-            }}
-        };
-        if (!warnings.empty()) {
-            message_delta["warnings"] = warnings;
-        }
-        if (!write_sse_event(client_sink, "message_delta", message_delta)) {
-            client_sink.done();
-            return;
-        }
-
-        json message_stop = {{"type", "message_stop"}};
-        write_sse_event(client_sink, "message_stop", message_stop);
-        client_sink.done();
-    };
-
-    call_router(openai_body, adapter_sink);
-}
-
-void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::Response& res) {
-    try {
-        auto request_json = json::parse(req.body);
-        std::vector<std::string> warnings;
-
-        std::string model = normalize_model_name(request_json.value("model", ""));
-        if (model.empty()) {
-            res.status = 400;
-            res.set_content(R"({"type":"error","error":{"type":"invalid_request_error","message":"model is required"}})", "application/json");
-            return;
-        }
-
-        if (req.has_param("beta")) {
-            std::string beta_value = req.get_param_value("beta");
-            if (beta_value != "true") {
-                add_warning(warnings, "Ignored unsupported beta query value: " + beta_value);
-            }
-        }
-
-        auto emit_warning_header = [&res, &warnings]() {
-            if (warnings.empty()) return;
-            std::ostringstream warning_header;
-            for (size_t i = 0; i < warnings.size(); ++i) {
-                if (i > 0) warning_header << " | ";
-                warning_header << warnings[i];
-            }
-            res.set_header("X-Lemonade-Warning", warning_header.str());
-            std::cerr << "[OllamaApi] Anthropic compatibility warnings: "
-                      << warning_header.str() << std::endl;
-        };
-
-        // Relaying verbatim keeps thinking blocks, tool use, and cache control
-        // intact. No router slot is taken — there is no local resource to hold.
-        auto match = resolve_anthropic_upstream(model_manager_, model, request_json, req);
-        if (match.claimed) {
-            emit_warning_header();
-            if (!match.upstream) {
-                set_anthropic_error_response(res, match.error_status,
-                                             match.error_message);
+                forward_anthropic_upstream(std::move(*match.upstream),
+                                           request_json.value("stream", false), model, req, res);
                 return;
             }
-            forward_anthropic_upstream(std::move(*match.upstream),
-                                       request_json.value("stream", false), model, res);
-            return;
-        }
 
-        auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
+            auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
 
-        try {
-            auto_load_model(model, extract_auto_load_options(request_json));
-        } catch (const RouterResidencyConflictException& e) {
-            set_anthropic_residency_conflict_response(e, res);
-            return;
-        } catch (const std::exception&) {
-            res.status = 404;
-            json error = {
-                {"type", "error"},
-                {"error", {
-                    {"type", "not_found_error"},
-                    {"message", "model '" + model + "' not found, try pulling it first"}
-                }}
-            };
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json,
+                                       ErrorFormat::Anthropic, res)) {
+                return;
+            }
 
-        bool stream = openai_req.value("stream", false);
-        emit_warning_header();
+            bool stream = openai_req.value("stream", false);
+            emit_warning_header();
 
-        if (stream) {
-            openai_req["stream"] = true;
-            std::string openai_body = openai_req.dump();
-
-            res.set_header("Cache-Control", "no-cache");
-            res.set_header("Connection", "keep-alive");
-            res.set_header("X-Accel-Buffering", "no");
-
-            res.set_chunked_content_provider(
-                "text/event-stream",
-                [this, openai_body, model, warnings](size_t offset, httplib::DataSink& sink) {
-                    if (offset > 0) return false;
-
+            if (stream) {
+                openai_req["stream"] = true;
+                req.body = openai_req;
+                Router* router = ctx_.router;
+                stream_response(req, res, [router, model, warnings](const std::string& openai_body,
+                                                                    httplib::DataSink& sink) {
                     stream_openai_sse_to_anthropic_sse(openai_body, sink, model, warnings,
-                        [this](const std::string& body, httplib::DataSink& s) {
-                            router_->chat_completion_stream(body, s);
-                        }
-                    );
+                        [router](const std::string& body, httplib::DataSink& s) {
+                            router->chat_completion_stream(body, s);
+                        });
+                });
+                return;
+            }
 
-                    return false;
-                }
-            );
-            return;
+            openai_req["stream"] = false;
+            auto openai_response = ctx_.router->chat_completion(openai_req);
+            if (set_anthropic_backend_error_response(openai_response, res)) {
+                return;
+            }
+
+            auto anthropic_response = convert_openai_chat_to_anthropic(openai_response, model, warnings);
+            res.set_content(anthropic_response.dump(), "application/json");
+
+        } catch (const std::exception& e) {
+            std::cerr << "[OllamaApi] Error in /v1/messages: " << e.what() << std::endl;
+            write_anthropic_error(res, ApiRoute::kUnexpectedException, e.what());
         }
-
-        openai_req["stream"] = false;
-        auto openai_response = router_->chat_completion(openai_req);
-        if (set_anthropic_backend_error_response(openai_response, res)) {
-            return;
-        }
-
-        auto anthropic_response = convert_openai_chat_to_anthropic(openai_response, model, warnings);
-        res.set_content(anthropic_response.dump(), "application/json");
-
-    } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /v1/messages: " << e.what() << std::endl;
-        res.status = 500;
-        json error = {
-            {"type", "error"},
-            {"error", {
-                {"type", "api_error"},
-                {"message", std::string(e.what())}
-            }}
-        };
-        res.set_content(error.dump(), "application/json");
     }
+};
+
+} // namespace
+
+std::unique_ptr<ApiRoute> make_anthropic_messages_route(ServerContext& ctx) {
+    return std::make_unique<MessagesRoute>(ctx);
 }
 
-}  // namespace lemon
+} // namespace lemon
