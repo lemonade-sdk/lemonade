@@ -94,7 +94,7 @@ void test_mcp_server(const fs::path& mcp_path) {
         "autoEnableCodemode": false,
         "mcpServers": {
             "other": {"url": "http://other/mcp"},
-            "lemonade": {"url": "http://old:1/mcp", "enabled": false,
+            "lemonade": {"url": "http://localhost:13305/mcp", "enabled": false,
                          "headers": {"X-Trace": "1"}}
         }
     })");
@@ -116,11 +116,32 @@ void test_mcp_server(const fs::path& mcp_path) {
     mcp["mcpServers"]["lemonade"].erase("description");
     check("add keeps other servers, top-level keys and user-set keys", mcp == expected);
 
+    lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
+    mcp = json::parse(read_file(mcp_path));
+    check("refresh without a key drops only the key header",
+          mcp["mcpServers"]["lemonade"]["headers"] == json{{"X-Trace", "1"}});
+
+    // Credentials meant for the old server must not be sent to the new one.
+    mcp["mcpServers"]["lemonade"]["headers"]["Authorization"] = "Bearer token-for-old";
+    mcp["mcpServers"]["lemonade"]["oauth"] = {{"clientId", "old"}};
+    mcp["mcpServers"]["lemonade"]["auth"] = {{"provider", "old"}};
+    write_file(mcp_path, mcp.dump());
     lemon_cli::sync_pi_mcp_server("http://127.0.0.1:9000", false, error);
     mcp = json::parse(read_file(mcp_path));
-    check("refresh follows the origin and drops only the key header without a key",
-          mcp["mcpServers"]["lemonade"]["url"] == "http://127.0.0.1:9000/mcp" &&
-              mcp["mcpServers"]["lemonade"]["headers"] == json{{"X-Trace", "1"}});
+    const json& moved = mcp["mcpServers"]["lemonade"];
+    check("refresh to another server drops the old server's credentials",
+          moved["url"] == "http://127.0.0.1:9000/mcp" && !moved.contains("headers") &&
+              !moved.contains("oauth") && !moved.contains("auth") &&
+              moved["enabled"] == false);
+
+    mcp["mcpServers"]["lemonade"]["headers"] = {{"Authorization", "Bearer token-for-old"},
+                                                {"X-API-Key", "key-for-old"}};
+    write_file(mcp_path, mcp.dump());
+    lemon_cli::sync_pi_mcp_server("https://other.example:443", true, error);
+    mcp = json::parse(read_file(mcp_path));
+    check("refresh to another server with a key sends only the key reference",
+          mcp["mcpServers"]["lemonade"]["headers"] ==
+              json{{"Authorization", "Bearer ${LEMONADE_API_KEY}"}});
 
     lemon_cli::remove_pi_mcp_server(error);
     mcp = json::parse(read_file(mcp_path));
@@ -151,11 +172,12 @@ void test_mcp_server(const fs::path& mcp_path) {
           mcp["mcpServers"]["lemonade"]["type"] == "streamable-http");
 
     write_file(mcp_path, R"({"mcpServers": {"lemonade": {
-        "url": "http://old:1/mcp", "headers": {"Authorization": "Bearer my-own-token"}
+        "url": "http://localhost:13305/mcp",
+        "headers": {"Authorization": "Bearer my-own-token"}
     }}})");
     lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
     mcp = json::parse(read_file(mcp_path));
-    check("refresh without a key keeps an Authorization header the user set",
+    check("refresh to the same server without a key keeps the user's Authorization",
           mcp["mcpServers"]["lemonade"]["headers"] ==
               json{{"Authorization", "Bearer my-own-token"}});
 

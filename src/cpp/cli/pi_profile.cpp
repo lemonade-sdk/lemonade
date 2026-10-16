@@ -277,7 +277,16 @@ bool sync_pi_mcp_server(const std::string& server_origin,
     if (!server.is_object()) {
         server = nlohmann::json::object();
     }
-    server["url"] = server_origin + "/mcp";
+    const std::string url = server_origin + "/mcp";
+    // Credentials on the entry belong to the server it pointed at, so they
+    // are not carried over to a different one.
+    const auto old_url = server.find("url");
+    if (old_url == server.end() || *old_url != url) {
+        for (const char* credential_key : {"headers", "oauth", "auth"}) {
+            server.erase(credential_key);
+        }
+    }
+    server["url"] = url;
     // Pi rejects a url entry whose type is not an HTTP one, and leftover
     // stdio keys would make the entry look like a local command.
     if (server.contains("type") && server["type"] != "http" &&
