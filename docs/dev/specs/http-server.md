@@ -143,11 +143,7 @@ public:
     virtual ~ApiRoute() = default;
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
-    virtual std::vector<RouteError> inherited_errors(const RouteSpec& spec) const;
 protected:
-    virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
-                                    httplib::Response& res) const;
-    virtual std::vector<RouteError> invalid_body_errors() const;
     ServerContext& ctx_;
 };
 
@@ -155,12 +151,9 @@ class ModelRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
     void handle(RouteRequest& req, httplib::Response& res) final;  // resolve, validate, load, run
-    std::vector<RouteError> inherited_errors(const RouteSpec& spec) const override;
 protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
-    virtual void write_exception(const std::exception& error, httplib::Response& res) const;
-    virtual std::vector<RouteError> exception_errors() const;
 };
 ```
 
@@ -231,30 +224,21 @@ schema["properties"]["x_lemonade_route"] = {
 
 ### Errors
 
-This section defines how a route declares its error statuses, so its handler and its docs read each one from the same `RouteError`.
+This section defines how a route declares the error responses it can answer with, such as a 404 for an unknown job id. Each is a `RouteError`: its HTTP status, the `code` its body carries, and when it is returned. The route's handler writes some of a route's error responses, and its base class and shared helpers write the rest, so `RouteSpec::errors` lists them from these places:
 
-Every function that writes an error status, such as `write_plain_error()` and `write_openai_error()`, takes the status and code from a `RouteError`, or picks one of the `RouteError`s it defines, as `ModelLoader::write_load_error()` picks from `ModelLoader::errors()`. Each function writes its own body shape; [Appendix B](#appendix-b-error-format-cleanup) unifies them. A route defines its errors as constants beside its class and lists them in `errors`:
+- **In the route class.** Each error response a route writes is a `RouteError` constant beside its handler. The handler passes it to an error writer such as `write_plain_error()`, which takes the status and code from it, and `spec()` lists it.
+- **Shared error responses.** An error response that more than one route writes is declared beside the function that writes it, such as `ModelLoader::errors()` beside `ModelLoader::write_load_error()`.
+- **Base classes.** `RouteRegistry::add()` adds the error responses a route's base class writes, such as `ModelRoute`'s missing-`model` 400 and `ModelLoader::errors()`. A route that overrides `write_invalid_body()` or `write_exception()` also overrides `invalid_body_errors()` or `exception_errors()`.
+- **Backend errors.** A route that passes a backend's error through lists `kBackendError`, and also the backend error responses a client can act on, such as llama.cpp's 501 for a model that cannot embed.
+
+An error in a response that has already started, such as an error event in a stream, is a shape of the route's `RouteResponse::schema`. `docs/api/README.md` lists the error responses no route class writes: the 401 and 403 answers, the 405 stubs and the 404 for an unknown path. Body shapes differ by route; [Appendix B](#appendix-b-error-format-cleanup) unifies them.
 
 ```cpp
 const RouteError kUnknownJob{404, "", "`id` names no job"};
 
-s.errors = {kUnknownJob};                                // in spec()
-write_plain_error(res, kUnknownJob, "unknown job");      // in handle()
+s.errors = {kUnknownJob};                            // in spec()
+write_plain_error(res, kUnknownJob, "unknown job");  // in handle()
 ```
-
-An error shared by several routes, such as `kBackendError`, is defined once beside the function that writes it. A route also lists the errors its backends report that a client can act on, such as llama.cpp's 501 for a model that cannot embed, though only `set_error_response()` writes them. `RouteRegistry::add()` appends each error that `ApiRoute::inherited_errors()` returns and `errors` does not already list. It returns the errors that base-class steps write:
-
-| Base class | `inherited_errors()` returns |
-| --- | --- |
-| `ApiRoute` | `invalid_body_errors()`, written by `write_invalid_body()`, when `request_format` is `Json` or `OptionalJson` |
-| `ModelRoute` | The form errors from step 1 when `request_format` is `Form`, the missing-`model` 400 from step 4 when the route's `model` argument is `required`, `ModelLoader::errors()` from step 5, and `exception_errors()`, written by `write_exception()` |
-
-A route that overrides `write_invalid_body()` or `write_exception()` overrides the matching list beside it.
-
-These are not `RouteError`s:
-
-- **Errors in a started response.** An error event in a stream, or a JSON-RPC error answered with `200`, is a shape of the route's `RouteResponse::schema`.
-- **Errors outside the route.** `RequestMiddleware`'s 401 and 403, `RouteRegistry`'s 405 stubs and the 404 for an unknown path; `docs/api/README.md` states them.
 
 ### Complete Example
 
