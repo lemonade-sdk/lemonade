@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 
 import requests
 from openai import OpenAI
@@ -62,20 +63,9 @@ def labeled(kind):
 
 
 def pinned_image():
-    with open(
-        os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "src",
-            "cpp",
-            "resources",
-            "backend_versions.json",
-        ),
-        encoding="utf-8",
-    ) as f:
-        pin = json.load(f)[RECIPE][BACKEND]
-    digest = pin.split("@")[1]
-    return f"docker.io/kyuz0/amd-strix-halo-toolboxes@{digest}"
+    versions = Path(__file__).parent.parent / "src/cpp/resources/backend_versions.json"
+    digest = json.loads(versions.read_text(encoding="utf-8"))[RECIPE][BACKEND]
+    return f"docker.io/kyuz0/amd-strix-halo-toolboxes@{digest.split('@')[1]}"
 
 
 class ContainerSmokeTest(unittest.TestCase):
@@ -205,7 +195,7 @@ def main():
     parser.add_argument("--cli-binary", default="lemonade", help="Path to lemonade")
     parser.add_argument("--tool", required=True, choices=["podman", "docker"])
     parser.add_argument("--mode", required=True, choices=["rootless", "rootful"])
-    args, rest = parser.parse_known_args()
+    args = parser.parse_args()
 
     suite = unittest.TestLoader().loadTestsFromTestCase(ContainerSmokeTest)
     result = unittest.TextTestRunner(verbosity=2, failfast=True).run(suite)
