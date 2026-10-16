@@ -418,7 +418,7 @@ Registration follows these rules:
 - **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header.
 - **One list per folder.** Each folder's `routes.cpp` declares its factories and adds them to the `RouteRegistry` in registration order. `Server` calls each folder's registration function. CMake collects `routes/` sources with `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`, as it does for `docs/api`, so adding a route edits no CMake file.
 - **Order.** httplib uses the first registered route that matches, so routes register in the order each folder's `routes.cpp` lists them, and a folder lists a specific path before a pattern that also matches it, such as `models/{id}/files` before `models/{id}`. `WebUi` registers its catch-all route after every API route.
-- **Pages.** `router.md` documents the routing concepts and `/routing/validate`. `internal.md` documents all 14 internal routes.
+- **Pages.** The [Router API](../../api/router.md) page documents the routing concepts and `/routing/validate`. The [Internal API](../../api/internal.md) page documents all 14 internal routes.
 - **Gateways.** The Anthropic routes live in `routes/anthropic/`, separate from Ollama's. The OpenAI-to-gateway stream conversion both use lives in `services/`. `McpServer`'s HTTP route is a route class in `routes/mcp/`.
 
 ## Core Components
@@ -492,7 +492,7 @@ These rules apply across the fields:
 4. Identifiers, values and placeholders such as `<PROVIDER>` are in backticks.
 5. A mention of another route links to its section.
 
-A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. Routes state only whether they need an API key, so `docs/api/README.md` states how a client sends `LEMONADE_API_KEY` and `LEMONADE_ADMIN_API_KEY`. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
+A page intro states what the API family is and the facts true of every route on the page, such as Ollama's error shape, and routes do not repeat them. Routes state only whether they need an API key, so the [API reference's Authentication section](../../api/README.md#authentication) states how a client sends `LEMONADE_API_KEY` and `LEMONADE_ADMIN_API_KEY`. A page sets the order of its sections: the generator never moves an existing region, inserts a new route's region after the route registered before it, and orders the summary table to match the sections.
 
 ### Response Cache
 
