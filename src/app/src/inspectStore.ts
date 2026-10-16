@@ -80,7 +80,7 @@ export interface Trace {
   max?: number;
 
   // content
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string; redacted?: boolean; thinking?: string; tokens?: number }>;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string; redacted?: boolean; thinking?: string; tokens?: number; capturedOutput?: boolean }>;
   output: string;
 
   // identity
@@ -179,6 +179,18 @@ class InspectStoreClass {
     this.autoSelectNextTrace = false;
   }
 
+  private static restoreCapturedOutputFlag(
+    messages: Trace['messages'],
+    output: unknown,
+  ): Trace['messages'] {
+    const last = messages[messages.length - 1];
+    if (last && !last.capturedOutput && last.role === 'assistant' &&
+        typeof output === 'string' && last.content === output) {
+      last.capturedOutput = true;
+    }
+    return messages;
+  }
+
   private loadFromLocalStorage() {
     const savedCapturing = safeGetLocalStorage(LOCAL_STORAGE_CAPTURING_KEY);
     if (savedCapturing !== null) {
@@ -216,13 +228,17 @@ class InspectStoreClass {
               topP: typeof t.topP === 'number' ? t.topP : undefined,
               topK: typeof t.topK === 'number' ? t.topK : undefined,
               max: typeof t.max === 'number' ? t.max : undefined,
-              messages: Array.isArray(t.messages) ? t.messages.map((m: any) => ({
-                role: m.role || 'user',
-                content: typeof m.content === 'string' ? m.content : '',
-                redacted: !!m.redacted,
-                thinking: m.thinking,
-                tokens: m.tokens
-              })) : [],
+              messages: Array.isArray(t.messages) ? InspectStoreClass.restoreCapturedOutputFlag(
+                t.messages.map((m: any) => ({
+                  role: m.role || 'user',
+                  content: typeof m.content === 'string' ? m.content : '',
+                  redacted: !!m.redacted,
+                  thinking: m.thinking,
+                  tokens: m.tokens,
+                  capturedOutput: !!m.capturedOutput
+                })),
+                t.output,
+              ) : [],
               output: typeof t.output === 'string' ? t.output : '',
               sessionId: t.sessionId,
               userId: t.userId,
@@ -663,9 +679,9 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
   // Extract thinking/reasoning if present (like <think> blocks)
   if (kind === 'LLM' && output && typeof output === 'string') {
     const thinking = extractThinking(output);
-    messages.push({ role: 'assistant', content: output, thinking });
+    messages.push({ role: 'assistant', content: output, thinking, capturedOutput: true });
   } else if (kind === 'LLM' && output) {
-    messages.push({ role: 'assistant', content: String(output) });
+    messages.push({ role: 'assistant', content: String(output), capturedOutput: true });
   }
 
   return {

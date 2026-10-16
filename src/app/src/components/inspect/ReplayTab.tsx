@@ -54,7 +54,7 @@ export default function ReplayTab({
 
     // Reconstruct conversation messages omitting system prompt which we override
     const userMsgs: ChatMessage[] = selectedTrace.messages
-      .filter((m) => m.role !== 'system')
+      .filter((m) => m.role !== 'system' && !m.capturedOutput)
       .map((m) => ({ role: m.role as any, content: m.content }));
 
     const formattedMessages: ChatMessage[] = [];
