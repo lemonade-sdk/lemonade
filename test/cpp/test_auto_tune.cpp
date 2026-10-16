@@ -367,6 +367,25 @@ static void test_auto_context_budget() {
     check("auto ctx: unknown RAM usage does not fabricate a cap",
           approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, -1.0), 12.0));
 
+    using lemon::auto_context_available_gpu_gib;
+    auto cuda_free = auto_context_available_gpu_gib(32.0, 4.0, false, 0.0, -1.0);
+    check("auto ctx: measured discrete VRAM remains unchanged",
+          cuda_free && approx_eq(*cuda_free, 28.0));
+    check("auto ctx: unknown discrete VRAM is unavailable",
+          !auto_context_available_gpu_gib(32.0, -1.0, false, 0.0, 12.0));
+
+    auto metal_free = auto_context_available_gpu_gib(24.0, -1.0, true, 32.0, 24.0);
+    check("auto ctx: unified GPU uses measured physical RAM without VRAM metrics",
+          metal_free && approx_eq(*metal_free, 8.0));
+    check("auto ctx: unknown unified VRAM and RAM use safe fallback",
+          !auto_context_available_gpu_gib(24.0, -1.0, true, 32.0, 0.0));
+    check("auto ctx: invalid unified RAM and GPU readings use safe fallback",
+          !auto_context_available_gpu_gib(24.0, -1.0, true, 32.0, -1.0));
+
+    auto shared_free = auto_context_available_gpu_gib(24.0, 2.0, true, 32.0, 25.0);
+    check("auto ctx: shared GPU applies tighter RAM limit",
+          shared_free && approx_eq(*shared_free, 7.0));
+
     auto huge = estimate_auto_context_budget(110.0, 18.0, 1e-12,
                                               true, false);
     check("auto ctx: token conversion saturates without int64 overflow",

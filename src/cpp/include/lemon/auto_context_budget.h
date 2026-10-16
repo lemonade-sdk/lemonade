@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 namespace lemon {
 
@@ -62,6 +63,29 @@ inline double auto_context_cap_shared_memory_gib(double gpu_free_gib,
     }
     return (std::min)(gpu_free_gib,
                       (std::max)(0.0, physical_total_gib - physical_used_gib));
+}
+
+inline std::optional<double> auto_context_available_gpu_gib(
+    double gpu_total_gib, double gpu_used_gib, bool unified,
+    double physical_total_gib, double physical_used_gib) {
+    if (!std::isfinite(gpu_total_gib) || gpu_total_gib <= 0.0)
+        return std::nullopt;
+
+    const bool gpu_usage_known = std::isfinite(gpu_used_gib) && gpu_used_gib >= 0.0;
+    const bool ram_usage_known = std::isfinite(physical_total_gib) &&
+        physical_total_gib > 0.0 && std::isfinite(physical_used_gib) &&
+        physical_used_gib > 0.0;
+
+    // On shared-memory GPUs, measured system RAM can bound an unknown GPU footprint.
+    if (!gpu_usage_known && !(unified && ram_usage_known))
+        return std::nullopt;
+
+    double available = gpu_usage_known
+        ? (std::max)(0.0, gpu_total_gib - gpu_used_gib) : gpu_total_gib;
+    if (unified && ram_usage_known)
+        available = auto_context_cap_shared_memory_gib(
+            available, physical_total_gib, physical_used_gib);
+    return available;
 }
 
 inline AutoContextBudget estimate_auto_context_budget(double free_gib,
