@@ -391,6 +391,37 @@ static void test_auto_context_budget() {
     check("auto ctx: model maximum above runtime minimum remains capped",
           auto_context_clamp_tokens(100000, 16384, 32768, 8192) == 16384);
 
+    GgufMetadata bert_encoder;
+    bert_encoder.architecture = "nomic-bert-moe";
+    bert_encoder.block_count = 12;
+    bert_encoder.embedding_length = 768;
+    const double encoder_kv = lemon::estimate_bert_encoder_kv_bytes_per_token(
+        bert_encoder, true);
+    check("auto ctx: BERT encoder estimates full-width K/V from GGUF",
+          approx_eq(encoder_kv, 12.0 * 768.0 * 4.0));
+    check("auto ctx: non-encoder retains the existing KV fallback",
+          lemon::estimate_bert_encoder_kv_bytes_per_token(bert_encoder, false) == 0.0);
+    bert_encoder.embedding_length = 0;
+    check("auto ctx: missing encoder dimensions retain the size fallback",
+          lemon::estimate_bert_encoder_kv_bytes_per_token(bert_encoder, true) == 0.0);
+
+    // Values observed on the 7 GiB macOS CI runner for nomic-embed-text-v2-moe.
+    auto generic_embedding = estimate_auto_context_budget(2.40, 0.48,
+                                                          128.0 * 1024.0,
+                                                          true, false, true);
+    check("auto ctx: generic fallback rejects the observed macOS sample",
+          generic_embedding.max_tokens < 8192);
+    auto mac_embedding = estimate_auto_context_budget(2.40, 0.48, encoder_kv,
+                                                      true, false, true);
+    check("auto ctx: measured macOS embedding budget fits 8192 tokens",
+          auto_context_clamp_tokens(mac_embedding.max_tokens, 512, 32768, 8192) == 8192);
+    check("auto ctx: measured macOS runtime reserve stays intact",
+          approx_eq(mac_embedding.reserve_gib, 1.25));
+    auto mac_insufficient = estimate_auto_context_budget(1.90, 0.48, encoder_kv,
+                                                         true, false, true);
+    check("auto ctx: real macOS embedding shortage is still rejected",
+          auto_context_clamp_tokens(mac_insufficient.max_tokens, 512, 32768, 8192) == 0);
+
     using lemon::auto_context_cap_shared_memory_gib;
     check("auto ctx: unified RAM cap uses physical RAM total",
           approx_eq(auto_context_cap_shared_memory_gib(20.0, 32.0, 24.0), 8.0));

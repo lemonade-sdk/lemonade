@@ -241,7 +241,13 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         }
     } else {
         // GGUF metadata missing — estimate from model size
-        kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(model_info.size);
+        const bool encoder_model = model_info.type == ModelType::EMBEDDING ||
+                                   model_info.type == ModelType::RERANKING;
+        kv_bytes_per_token = estimate_bert_encoder_kv_bytes_per_token(
+            model_info.gguf, encoder_model);
+        if (kv_bytes_per_token <= 0.0) {
+            kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(model_info.size);
+        }
         estimated = true;
     }
 
