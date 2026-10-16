@@ -12,6 +12,8 @@ This guide focuses on the most common launch flows.
     npm install -g @earendil-works/pi-coding-agent
     ```
 
+    `--mcp` needs Pi 1.0 or newer, and `--codemode` needs Pi 1.1 or newer. Check with `pi --version`, and update with the same install command.
+
 2. Make sure Lemonade Server is running (`lemond`).
 
 ## Launch Pi with Lemonade
@@ -74,7 +76,7 @@ If Pi supports a flag, you can pass it through `--agent-args`.
 
 ## Lemonade tools in Pi (MCP)
 
-Add `--mcp` to give Pi Lemonade's [MCP tools](../api/mcp.md): list models, chat with another local model, generate images, transcribe audio, and search the Lemonade docs.
+Add `--mcp` to give Pi Lemonade's [MCP tools](../api/mcp.md): list models, chat with another local model, generate images, transcribe audio, and search the Lemonade docs. This needs Pi 1.0 or newer; older versions ignore `mcp.json`.
 
 ```bash
 lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp
@@ -92,7 +94,7 @@ Pi shows generated images inline only in terminals that support the kitty or iTe
 
 ## Codemode
 
-Add `--codemode` to turn on Pi's [codemode](https://pi.dev/docs/latest/codemode) tool for that launch. The model can then write scripts that call Pi's tools. With `--mcp` as well, scripts can call Lemonade's tools, for example to generate an image and show it:
+Add `--codemode` to turn on Pi's [codemode](https://pi.dev/docs/latest/codemode) tool for that launch. This needs Pi 1.1 or newer. The model can then write scripts that call Pi's tools. With `--mcp` as well, scripts can call Lemonade's tools, for example to generate an image and show it:
 
 ```bash
 lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp --codemode

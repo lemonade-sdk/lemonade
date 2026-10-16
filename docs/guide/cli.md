@@ -676,8 +676,8 @@ Pi-only options:
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. | No |
-| `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. | No |
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. Needs pi 1.0 or newer. | No |
+| `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. Needs pi 1.1 or newer. | No |
 
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
