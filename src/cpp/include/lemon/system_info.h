@@ -94,6 +94,9 @@ public:
 
     // Get list of supported backends for a recipe (in preference order)
     static SupportedBackendsResult get_supported_backends(const std::string& recipe);
+    // True when `backend` runs on this OS and is installed, including one
+    // installed with `force` on hardware that does not support it.
+    static bool is_backend_installed(const std::string& recipe, const std::string& backend);
 
     // Check if a recipe is supported on the current system
     // Returns empty string if supported, or a reason string if not supported

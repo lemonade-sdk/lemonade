@@ -1,5 +1,7 @@
 #include "lemon/system_info.h"
 #include "system_info_utils.h"
+#include "platform/amd_gpu_type.h"
+#include "platform/nvidia_metrics.h"
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/backend_manager.h"
@@ -152,51 +154,7 @@ struct HsaRuntimeApi {
 };
 
 bool query_amdgpu_is_apu(const fs::path& card_path) {
-    const fs::path drm_device_dir = card_path / "device" / "drm";
-    std::error_code ec;
-    if (!fs::is_directory(drm_device_dir, ec)) {
-        return false;
-    }
-
-    bool is_apu = false;
-    for (fs::directory_iterator it(drm_device_dir, ec), end;
-         it != end && !ec;
-         it.increment(ec)) {
-        const std::string name = it->path().filename().string();
-        if (name.rfind("renderD", 0) != 0) {
-            continue;
-        }
-
-        const fs::path node = fs::path("/dev/dri") / name;
-        const int fd = open(node.c_str(), O_RDWR | O_CLOEXEC);
-        if (fd < 0) {
-            continue;
-        }
-
-        uint32_t major_version = 0;
-        uint32_t minor_version = 0;
-        amdgpu_device_handle device = nullptr;
-        const int init_result = amdgpu_device_initialize(
-            fd, &major_version, &minor_version, &device);
-        if (init_result != 0 || device == nullptr) {
-            close(fd);
-            continue;
-        }
-
-        amdgpu_gpu_info info{};
-        const int query_result = amdgpu_query_gpu_info(device, &info);
-        amdgpu_device_deinitialize(device);
-        close(fd);
-
-        if (query_result != 0) {
-            continue;
-        }
-
-        is_apu = (info.ids_flags & AMDGPU_IDS_FLAGS_FUSION) != 0;
-        break;
-    }
-
-    return is_apu;
+    return gpu_metrics_detail::is_amd_apu(card_path);
 }
 
 std::string trim_copy(const std::string& value) {
@@ -698,11 +656,22 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
     return false;
 }
 
+// Marks `status` action_required when a setup check fails, returning whether one did.
+static bool mark_container_setup(json& status, const std::string& recipe,
+                                 const std::string& backend) {
+    const auto failure = backends::container_setup_failure(recipe, backend);
+    if (!failure) return false;
+    status["state"] = "action_required";
+    status["message"] = failure->message;
+    status["action"] = failure->action;
+    return true;
+}
+
+// Generic installation check
 static bool is_installed_state(const std::string& state) {
     return state == "installed" || state == "update_available" || state == "update_required";
 }
 
-// Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
     // CWSR fix is missing (a per-descriptor flag).
@@ -1311,7 +1280,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
     for (const auto& def : recipe_defs()) {
         const auto* def_desc = backends::descriptor_for(def.recipe);
         const bool container_backend = def_desc && def_desc->container_for(def.backend);
-        // Container backends are hidden on Windows and macOS.
         if (container_backend && current_os != "linux") {
             continue;
         }
@@ -1625,11 +1593,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // using BackendManager as the single source of truth for repo/version mappings.
 
         if (supported && container_backend) {
-            if (auto failure = backends::container_setup_failure(def.recipe, def.backend)) {
-                backend["state"] = "action_required";
-                backend["message"] = failure->message;
-                backend["action"] = failure->action;
-            }
+            mark_container_setup(backend, def.recipe, def.backend);
         }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
@@ -1799,16 +1763,25 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
             if (!desc->container_for(backend) || state == "unsupported") {
                 continue;
             }
-            if (auto failure = backends::container_setup_failure(recipe, backend)) {
-                status["state"] = "action_required";
-                status["message"] = failure->message;
-                status["action"] = failure->action;
-            } else if (state == "action_required") {
+            if (!mark_container_setup(status, recipe, backend) && state == "action_required") {
                 cleared = true;
             }
         }
     }
     return cleared;
+}
+
+bool SystemInfo::is_backend_installed(const std::string& recipe, const std::string& backend) {
+    const auto* desc = backends::descriptor_for(recipe);
+    if (!desc) return false;
+    const std::string current_os = get_current_os();
+    const bool runs_here = std::any_of(desc->support.begin(), desc->support.end(),
+                                       [&](const BackendSupport& row) {
+                                           return row.backend == backend &&
+                                                  row.supported_os.count(current_os) > 0;
+                                       });
+    std::string ignored;
+    return runs_here && is_recipe_installed(recipe, backend, ignored);
 }
 
 std::string SystemInfo::check_guest_backend_installed(const std::string& recipe,
@@ -2595,102 +2568,18 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
 // fails due to AppArmor restrictions in snap strict confinement.
 static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     std::vector<NvidiaSmiGpuInfo> result;
-
-    void* handle = dlopen("libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-        handle = dlopen("/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-        return result;
-
-    // Minimal NVML ABI surface — only what we actually call.
-    using nvmlDevice_t = void*;
-    using nvmlReturn_t = int;
-    constexpr nvmlReturn_t NVML_SUCCESS = 0;
-    constexpr unsigned int NVML_DEVICE_NAME_BUFFER_SIZE = 96;
-    struct NvmlMemory { unsigned long long total, free, used; };
-
-    using fn_Init       = nvmlReturn_t (*)(void);
-    using fn_Shutdown   = nvmlReturn_t (*)(void);
-    using fn_GetCount   = nvmlReturn_t (*)(unsigned int*);
-    using fn_GetHandle  = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
-    using fn_GetName    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
-    using fn_GetUUID    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
-    using fn_GetCC      = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
-    using fn_GetMem     = nvmlReturn_t (*)(nvmlDevice_t, NvmlMemory*);
-    using fn_GetDriver  = nvmlReturn_t (*)(char*, unsigned int);
-
-    auto load = [&](const char* sym) { return dlsym(handle, sym); };
-
-    auto nvmlInit    = (fn_Init)load("nvmlInit_v2");
-    if (!nvmlInit)
-        nvmlInit = (fn_Init)load("nvmlInit");
-    auto nvmlShutdown = (fn_Shutdown)load("nvmlShutdown");
-    auto nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount_v2");
-    if (!nvmlGetCount)
-        nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount");
-    auto nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex_v2");
-    if (!nvmlGetHandle)
-        nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex");
-    auto nvmlGetName   = (fn_GetName)load("nvmlDeviceGetName");
-    auto nvmlGetUUID   = (fn_GetUUID)load("nvmlDeviceGetUUID");
-    auto nvmlGetCC     = (fn_GetCC)load("nvmlDeviceGetCudaComputeCapability");
-    auto nvmlGetMem    = (fn_GetMem)load("nvmlDeviceGetMemoryInfo");
-    auto nvmlGetDriver = (fn_GetDriver)load("nvmlSystemGetDriverVersion");
-
-    if (!nvmlInit || !nvmlShutdown || !nvmlGetCount || !nvmlGetHandle ||
-        !nvmlGetName) {
-        dlclose(handle);
-        return result;
+    for (const auto& device : query_nvidia_nvml_devices(false)) {
+        if (device.name.empty()) continue;
+        NvidiaSmiGpuInfo info;
+        info.index = device.index;
+        info.uuid = device.uuid;
+        info.name = device.name;
+        info.compute_cap = device.compute_cap;
+        info.driver_version = device.driver_version;
+        if (device.vram_total_gb >= 0.0) info.vram_gb = device.vram_total_gb;
+        info.vram_used_gb = device.vram_used_gb;
+        result.push_back(info);
     }
-
-    if (nvmlInit() != NVML_SUCCESS) {
-        dlclose(handle);
-        return result;
-    }
-
-    char driver_buf[64] = {};
-    std::string driver_version;
-    if (nvmlGetDriver && nvmlGetDriver(driver_buf, sizeof(driver_buf)) == NVML_SUCCESS)
-        driver_version = driver_buf;
-
-    unsigned int count = 0;
-    if (nvmlGetCount(&count) == NVML_SUCCESS) {
-        for (unsigned int i = 0; i < count; i++) {
-            nvmlDevice_t dev = nullptr;
-            if (nvmlGetHandle(i, &dev) != NVML_SUCCESS) continue;
-
-            char name_buf[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
-            if (nvmlGetName(dev, name_buf, sizeof(name_buf)) != NVML_SUCCESS) continue;
-
-            NvidiaSmiGpuInfo info;
-            info.index          = static_cast<int>(i);
-            info.name           = name_buf;
-            info.driver_version = driver_version;
-
-            if (nvmlGetUUID) {
-                char uuid_buf[96] = {};
-                if (nvmlGetUUID(dev, uuid_buf, sizeof(uuid_buf)) == NVML_SUCCESS)
-                    info.uuid = uuid_buf;
-            }
-
-            int major = 0, minor = 0;
-            if (nvmlGetCC && nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
-                info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
-
-            if (nvmlGetMem) {
-                NvmlMemory mem{};
-                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS) {
-                    info.vram_gb = static_cast<double>(mem.total) / (1024.0 * 1024.0 * 1024.0);
-                    info.vram_used_gb = static_cast<double>(mem.used) / (1024.0 * 1024.0 * 1024.0);
-                }
-            }
-
-            result.push_back(info);
-        }
-    }
-
-    nvmlShutdown();
-    dlclose(handle);
     return result;
 }
 #endif

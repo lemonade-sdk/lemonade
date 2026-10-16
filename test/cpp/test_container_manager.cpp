@@ -44,6 +44,9 @@ struct FakeHost {
     std::set<std::string> tools;
     std::set<std::string> groups;
     bool docker_socket = true;
+    // `podman info`'s exit code and its Host.Security.Rootless answer.
+    int podman_info_exit = 0;
+    std::string podman_rootless = "true";
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
 
     ContainerHost host() const {
@@ -58,7 +61,12 @@ struct FakeHost {
             const auto it = files.find(path);
             return it == files.end() ? std::string() : it->second;
         };
-        h.run = [](const std::vector<std::string>&, int) { return lemon::utils::CommandResult{}; };
+        h.run = [this](const std::vector<std::string>& argv, int) {
+            if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
+                return lemon::utils::CommandResult{podman_info_exit, podman_rootless + "\n"};
+            }
+            return lemon::utils::CommandResult{};
+        };
         return h;
     }
 };
@@ -113,11 +121,21 @@ void test_run_command() {
           docker_command == "docker" + common + " --group-add 44 --group-add 990" +
                                 mount_and_home + image_and_program);
 
-    ContainerRunSpec ds4 = example_spec();
-    ds4.devices = {"/dev/dri", "/dev/kfd"};
-    ds4.cap_add = {"SYS_PTRACE"};
-    ds4.env = {{"HIP_VISIBLE_DEVICES", "0"}, {"ROCBLAS_USE_HIPBLASLT", "1"}};
-    const std::string policy_command = join(ContainerManager(podman.host()).run_command(ds4));
+    FakeHost rootful;
+    rootful.tools = {"podman"};
+    rootful.podman_rootless = "false";
+    const ContainerManager rootful_manager(rootful.host());
+    check("rootful podman run takes Docker's group IDs and publishes no port",
+          !rootful_manager.rootless_podman() &&
+              join(rootful_manager.run_command(example_spec())) ==
+                  "podman" + common + " --group-add 44 --group-add 990" + mount_and_home +
+                      image_and_program);
+
+    ContainerRunSpec policy = example_spec();
+    policy.devices = {"/dev/dri", "/dev/kfd"};
+    policy.cap_add = {"SYS_PTRACE"};
+    policy.env = {{"HIP_VISIBLE_DEVICES", "0"}, {"ROCBLAS_USE_HIPBLASLT", "1"}};
+    const std::string policy_command = join(ContainerManager(podman.host()).run_command(policy));
     check("a policy's permissions and the command's variables follow the devices",
           policy_command.find(" --device /dev/dri --device /dev/kfd --group-add keep-groups"
                               " --cap-add SYS_PTRACE -v ") != std::string::npos &&
@@ -159,6 +177,20 @@ void test_tool_choice_and_setup() {
                                 "2. Log out and back in");
     both.groups = {"video", "render"};
     check("Podman passes with both groups", !ContainerManager(both.host()).check_setup());
+
+    FakeHost rootful;
+    rootful.tools = {"podman"};
+    rootful.podman_rootless = "false";
+    check("rootful Podman needs neither group", !ContainerManager(rootful.host()).check_setup());
+
+    FakeHost broken;
+    broken.tools = {"podman"};
+    broken.groups = {"video", "render"};
+    broken.podman_info_exit = 125;
+    const auto silent = ContainerManager(broken.host()).check_setup();
+    check("Podman must answer podman info",
+          silent && silent->message == "Podman does not answer `podman info`" &&
+              silent->action == "Run `podman info` and fix the error it prints");
 
     FakeHost docker;
     docker.tools = {"docker"};
@@ -224,7 +256,7 @@ void test_helpers() {
     check("no index when no GPU matches", ContainerManager::gpu_index({0, 120001}, "gfx1151").empty());
 
     check("docker.io/kyuz0 is allowed",
-          ContainerManager::allowed_image("docker.io/kyuz0/strix-halo-ds4-toolbox"));
+          ContainerManager::allowed_image("docker.io/kyuz0/amd-strix-halo-toolboxes"));
     check("ghcr.io/peonist-ai is allowed",
           ContainerManager::allowed_image("ghcr.io/peonist-ai/halogen-flash-server"));
     check("other publishers are refused",
@@ -233,13 +265,13 @@ void test_helpers() {
               !ContainerManager::allowed_image("docker.io/kyuz0/"));
 
     const std::string digest =
-        "sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291";
-    const auto pin = lemon::backends::parse_container_pin("rocm-10.0@" + digest);
+        "sha256:e79f876de3be84200172552b7abe5686a230f1fce02caa65dbba90372e3255c6";
+    const auto pin = lemon::backends::parse_container_pin("vulkan-radv-performance@" + digest);
     check("a pin splits into tag and digest",
-          pin && pin->tag == "rocm-10.0" && pin->digest == digest);
+          pin && pin->tag == "vulkan-radv-performance" && pin->digest == digest);
     check("a pin needs a full sha256 digest",
-          !lemon::backends::parse_container_pin("rocm-10.0@sha256:1277") &&
-              !lemon::backends::parse_container_pin("rocm-10.0") &&
+          !lemon::backends::parse_container_pin("vulkan-radv-performance@sha256:e79f") &&
+              !lemon::backends::parse_container_pin("vulkan-radv-performance") &&
               !lemon::backends::parse_container_pin("b0001"));
 }
 

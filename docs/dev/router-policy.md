@@ -62,6 +62,9 @@ A **rule** is `{ id, match, route_to, outputs? }`. `route_to` must be one of
 
 A `match` is a match-expression. Combine with the logical operators `any` (OR),
 `all` (AND), and `not`; a leaf object with several keys is an implicit `all`.
+The order in which the keys of such a leaf are evaluated is not specified, so
+its entries in the decision trace may change between versions. The children of
+an explicit `all` or `any` run in list order.
 
 **Deterministic (no model needed):**
 

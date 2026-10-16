@@ -191,6 +191,11 @@ std::string preferred_draft_companion(
 
 }  // namespace
 
+std::string gguf_quant_token(const std::string& name) {
+    std::string quant;
+    return extract_quant(name, quant) ? quant : std::string();
+}
+
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes) {

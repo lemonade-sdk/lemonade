@@ -263,15 +263,22 @@ SHARED_REPO_MODEL_B_CHECKPOINT = (
 #           Model B has main(repo3) + text_encoder(repo2-shared)
 # Deleting A must keep repo2 (still needed by B). Deleting B then cleans up repo2+repo3.
 MULTI_REPO_MODEL_A_NAME = "user.MultiRepo-TestA"
+# Must be a quant no other model in this file claims. Deleting a model now keeps
+# a file that another registered model still resolves to, so sharing Q2_K with
+# USER_MODEL_MAIN_CHECKPOINT would leave this file behind and the suite is
+# persistent, which keeps that other model registered.
 MULTI_REPO_MODEL_A_MAIN = (
-    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
+    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q3_K_M.gguf"
 )
 MULTI_REPO_MODEL_B_NAME = "user.MultiRepo-TestB"
 MULTI_REPO_MODEL_B_MAIN = (
     "bartowski/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
+# Shared between MultiRepo A and B on purpose, but kept distinct from
+# USER_MODEL_TE_CHECKPOINT: the final assertions expect this file gone once the
+# last MultiRepo model is deleted, which only holds while nothing else claims it.
 MULTI_REPO_SHARED_CHECKPOINT = (
-    "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
+    "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q3_K_S.gguf"
 )
 # Cache directory names for on-disk verification (repo_id with / replaced by --)
 MULTI_REPO_MODEL_A_CACHE_DIR = "models--unsloth--SmolLM2-135M-Instruct-GGUF"

@@ -15,6 +15,20 @@ public:
         return value ? std::string(value) : "";
     }
 
+    void set_environment_variable_utf8(const std::string& name,
+                                       const std::string& value) override {
+        if (setenv(name.c_str(), value.c_str(), 1) != 0) {
+            throw std::runtime_error("Failed to set environment variable: " + name);
+        }
+    }
+
+    void unset_environment_variable_utf8(const std::string& name) override {
+        if (unsetenv(name.c_str()) != 0) {
+            throw std::runtime_error("Failed to unset environment variable: " + name);
+        }
+    }
+
+
     fs::path path_from_utf8(const std::string& path) override {
         return fs::path(path);
     }

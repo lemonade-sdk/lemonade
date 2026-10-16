@@ -91,6 +91,28 @@ namespace lemon {
 
 namespace {
 
+nlohmann::json gpu_device_details_json(const SystemGpuMetrics& snapshot) {
+    nlohmann::json result;
+    result["primary_gpu_id"] = snapshot.primary_gpu_id.empty()
+        ? nlohmann::json() : nlohmann::json(snapshot.primary_gpu_id);
+    result["gpus"] = nlohmann::json::array();
+    for (const auto& gpu : snapshot.gpus) {
+        nlohmann::json entry;
+        entry["id"] = gpu.id;
+        entry["vendor"] = gpu.vendor;
+        entry["name"] = gpu.name;
+        entry["memory_type"] = gpu.memory_type;
+        entry["gpu_percent"] = gpu.gpu_percent >= 0.0
+            ? nlohmann::json(gpu.gpu_percent) : nlohmann::json();
+        entry["memory_total_gb"] = gpu.memory_total_gb >= 0.0
+            ? nlohmann::json(gpu.memory_total_gb) : nlohmann::json();
+        entry["memory_used_gb"] = gpu.memory_used_gb >= 0.0
+            ? nlohmann::json(gpu.memory_used_gb) : nlohmann::json();
+        result["gpus"].push_back(std::move(entry));
+    }
+    return result;
+}
+
 std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
     auto at = [&bytes](size_t i) -> std::uint8_t {
         return static_cast<std::uint8_t>(bytes[i]);
@@ -511,11 +533,17 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             stats["cpu_percent"] =
                 cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
             stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
-            const double gpu_percent = get_gpu_usage();
-            stats["gpu_percent"] =
-                gpu_percent >= 0 ? lemon::jobs::json(gpu_percent) : lemon::jobs::json();
-            const double vram_gb = get_vram_usage();
-            stats["vram_gb"] = vram_gb >= 0 ? lemon::jobs::json(vram_gb) : lemon::jobs::json();
+            const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+            stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
+                ? lemon::jobs::json(gpu_metrics.gpu_percent)
+                : lemon::jobs::json();
+            stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
+                ? lemon::jobs::json(gpu_metrics.vram_used_gb)
+                : lemon::jobs::json();
+            const auto gpu_details = gpu_device_details_json(gpu_metrics);
+            stats["primary_gpu_id"] = lemon::jobs::json::parse(
+                gpu_details["primary_gpu_id"].dump());
+            stats["gpus"] = lemon::jobs::json::parse(gpu_details["gpus"].dump());
             const double npu_percent = get_npu_utilization();
             stats["npu_percent"] =
                 npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
@@ -6994,8 +7022,9 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
     try {
         SystemMetrics system_metrics;
         system_metrics.cpu_percent = get_cpu_usage();
-        system_metrics.gpu_percent = get_gpu_usage();
-        system_metrics.vram_gb = get_vram_usage();
+        const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+        system_metrics.gpu_percent = gpu_metrics.gpu_percent;
+        system_metrics.vram_gb = gpu_metrics.vram_used_gb;
         system_metrics.npu_percent = get_npu_utilization();
 
         res.set_content(build_prometheus_metrics(*router_, system_metrics),
@@ -7103,16 +7132,6 @@ double Server::get_cpu_usage() {
 #endif
 }
 
-// Get GPU usage percentage (AMD GPUs on Linux)
-double Server::get_gpu_usage() {
-    return metrics_platform_->get_gpu_usage();
-}
-
-// Get VRAM/GTT usage in GB (AMD GPUs on Linux)
-double Server::get_vram_usage() {
-    return metrics_platform_->get_vram_usage_gb();
-}
-
 // Helper: Get NPU utilization (AMD NPU on Linux)
 double Server::get_npu_utilization() {
     return metrics_platform_->get_npu_utilization();
@@ -7134,13 +7153,16 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     // Get memory info
     stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
 
-    // GPU usage
-    double gpu_percent = get_gpu_usage();
-    stats["gpu_percent"] = (gpu_percent >= 0) ? nlohmann::json(gpu_percent) : nlohmann::json();
-
-    // VRAM usage
-    double vram_gb = get_vram_usage();
-    stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+    const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+    stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
+        ? nlohmann::json(gpu_metrics.gpu_percent)
+        : nlohmann::json();
+    stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
+        ? nlohmann::json(gpu_metrics.vram_used_gb)
+        : nlohmann::json();
+    const auto gpu_details = gpu_device_details_json(gpu_metrics);
+    stats["primary_gpu_id"] = gpu_details["primary_gpu_id"];
+    stats["gpus"] = gpu_details["gpus"];
 
     // NPU Utilization
     double npu_percent = get_npu_utilization();
