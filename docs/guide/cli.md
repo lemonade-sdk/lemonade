@@ -680,7 +680,7 @@ Pi-only options:
 | `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. Needs pi 1.1 or newer. | No |
 
 **Notes:**
-- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
 - If a model is already provided, launch skips recipe import prompts.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
