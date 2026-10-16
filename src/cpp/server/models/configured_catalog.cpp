@@ -1,6 +1,7 @@
 #include <lemon/models/configured_catalog.h>
 
 #include <lemon/models/catalog_descriptor.h>
+#include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/path_utils.h>
 
 #include <cctype>
@@ -19,6 +20,11 @@ namespace {
 // A rebuild is triggered by local events — a pull, a delete, a file in the scan
 // directory — none of which change what a remote host serves.
 constexpr std::chrono::seconds kFetchedCatalogFreshness{60};
+
+// A registry of every model anyone could name is still far under this.
+constexpr std::size_t kMaxFetchedCatalogBodyBytes = 8 * 1024 * 1024;
+
+constexpr const char* kBodySuffix = ".json";
 
 fs::path body_cache_path(const std::string& cache_dir, const std::string& id) {
     const std::string& root = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
@@ -184,6 +190,7 @@ std::shared_ptr<ModelCatalog> make_configured_catalog(const ConfiguredCatalog& c
         http.allow_insecure_http = catalog.allow_insecure_http;
         http.fresh_for = kFetchedCatalogFreshness;
         http.clock = std::move(clock);
+        http.max_body_bytes = kMaxFetchedCatalogBodyBytes;
         locator = http_catalog_locator(catalog.id, std::move(http));
     }
 
@@ -197,6 +204,49 @@ std::shared_ptr<ModelCatalog> make_configured_catalog(const ConfiguredCatalog& c
                      "A model registry read from " + source + ".", {}, ""},
             "model_catalogs", true, catalog.required),
         std::move(locator), std::move(catalog_rows));
+}
+
+void prune_cached_bodies(const std::string& cache_dir, const std::set<std::string>& keep) {
+    const std::string& root = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
+    const fs::path dir = fs::path(root) / "catalogs";
+
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) {
+        return;
+    }
+
+    const std::string validators = std::string(kBodySuffix) + ".validators";
+    int removed = 0;
+    for (const auto& entry : fs::directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
+        if (!entry.is_regular_file(ec) || ec) {
+            continue;
+        }
+        const std::string name = entry.path().filename().string();
+        std::string id;
+        if (name.size() > validators.size() && name.compare(name.size() - validators.size(),
+                                                             validators.size(), validators) == 0) {
+            id = name.substr(0, name.size() - validators.size());
+        } else if (name.size() > std::string(kBodySuffix).size() &&
+                   name.compare(name.size() - std::string(kBodySuffix).size(),
+                                std::string(kBodySuffix).size(), kBodySuffix) == 0) {
+            id = name.substr(0, name.size() - std::string(kBodySuffix).size());
+        } else {
+            continue;
+        }
+        if (keep.count(id) != 0 || id.empty()) {
+            continue;
+        }
+        std::error_code ignored;
+        fs::remove(entry.path(), ignored);
+        if (!ignored) {
+            ++removed;
+        }
+    }
+
+    if (removed > 0) {
+        LOG(INFO, "ModelManager") << "Removed " << removed
+                                  << " cached catalog bodies no longer configured" << std::endl;
+    }
 }
 
 }  // namespace models

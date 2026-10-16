@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -49,6 +50,8 @@ struct HttpCatalogSource {
     // Inside this window the cached body answers and the url is not asked.
     std::chrono::seconds fresh_for{0};
     std::shared_ptr<const CatalogFetchClock> clock;
+    // A document this large is not a model registry. 0 accepts any size.
+    std::size_t max_body_bytes = 0;
 };
 
 std::shared_ptr<CatalogLocator> http_catalog_locator(std::string id, HttpCatalogSource source);

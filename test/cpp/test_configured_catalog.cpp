@@ -30,6 +30,7 @@ using lemon::models::JsonCatalog;
 using lemon::models::make_catalog_descriptor;
 using lemon::models::make_configured_catalog;
 using lemon::models::parse_configured_catalogs;
+using lemon::models::prune_cached_bodies;
 using lemon::models::product_catalogs;
 using lemon::models::RegistryRowRules;
 using lemon::models::catalog_rank::configured;
@@ -340,6 +341,36 @@ static void product_wiring_tests(const fs::path& scratch) {
               set.find("extra_models_dir")->descriptor().rank);
 }
 
+
+static void touch(const fs::path& path) {
+    std::ofstream out(path, std::ios::binary);
+    out << "{}";
+}
+
+static void prune_tests(const fs::path& scratch) {
+    const fs::path cache = scratch / "prune";
+    const fs::path dir = cache / "catalogs";
+    fs::create_directories(dir);
+    touch(dir / "keep.json");
+    touch(dir / "keep.json.validators");
+    touch(dir / "gone.json");
+    touch(dir / "gone.json.validators");
+    touch(dir / "notes.txt");
+    fs::create_directories(dir / "shaped-like-a-body.json");
+
+    prune_cached_bodies(cache.string(), {"keep"});
+
+    check("a body for a catalog nobody configures is removed", !fs::exists(dir / "gone.json"));
+    check("its validator sidecar goes too", !fs::exists(dir / "gone.json.validators"));
+    check("a configured catalog keeps its body",
+          fs::exists(dir / "keep.json") && fs::exists(dir / "keep.json.validators"));
+    check("a file this cache does not write is left alone", fs::exists(dir / "notes.txt"));
+    check("a directory is not a cached body", fs::is_directory(dir / "shaped-like-a-body.json"));
+
+    prune_cached_bodies((scratch / "never-created").string(), {});
+    check("a missing catalog cache is not an error", true);
+}
+
 int main() {
     const fs::path scratch = lemon::test::make_scratch_dir("configured_catalog");
 
@@ -348,6 +379,7 @@ int main() {
     http_catalog_tests(scratch);
     precedence_tests(scratch);
     product_wiring_tests(scratch);
+    prune_tests(scratch);
 
     if (g_failures == 0) {
         std::printf("All configured catalog tests passed.\n");

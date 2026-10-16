@@ -527,22 +527,42 @@ bool apply_http_security_policy(
 
 namespace {
 
+// Returning short of the chunk size is how libcurl is told to abort a transfer.
+struct BodySink {
+    std::string data;
+    size_t max_bytes = 0;
+    bool refused = false;
+};
+
+static size_t bounded_write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+    const size_t incoming = size * nmemb;
+    auto* sink = static_cast<BodySink*>(userp);
+    if (sink->max_bytes != 0 && sink->data.size() + incoming > sink->max_bytes) {
+        sink->refused = true;
+        return 0;
+    }
+    sink->data.append(static_cast<char*>(contents), incoming);
+    return incoming;
+}
+
 HttpResponse perform_request(const std::string& url,
                              const std::map<std::string, std::string>& headers,
                              long timeout_seconds,
                              HttpSecurityPolicy policy,
-                             bool headers_only) {
+                             bool headers_only,
+                             size_t max_body_bytes = 0) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
     }
 
     HttpResponse response;
-    std::string response_body;
+    BodySink body;
+    body.max_bytes = max_body_bytes;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, bounded_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
     curl_easy_setopt(curl, CURLOPT_NOBODY, headers_only ? 1L : 0L);
@@ -566,6 +586,13 @@ HttpResponse perform_request(const std::string& url,
 
     CURLcode res = curl_easy_perform(curl);
 
+    if (body.refused) {
+        curl_slist_free_all(header_list);
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("response body is larger than " +
+                                 std::to_string(max_body_bytes) + " bytes");
+    }
+
     if (res != CURLE_OK) {
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_slist_free_all(header_list);
@@ -576,7 +603,7 @@ HttpResponse perform_request(const std::string& url,
     long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     response.status_code = static_cast<int>(response_code);
-    response.body = response_body;
+    response.body = body.data;
 
     curl_slist_free_all(header_list);
     curl_easy_cleanup(curl);
@@ -589,8 +616,9 @@ HttpResponse perform_request(const std::string& url,
 HttpResponse HttpClient::get(const std::string& url,
                              const std::map<std::string, std::string>& headers,
                              long timeout_seconds,
-                             HttpSecurityPolicy policy) {
-    return perform_request(url, headers, timeout_seconds, policy, false);
+                             HttpSecurityPolicy policy,
+                             size_t max_body_bytes) {
+    return perform_request(url, headers, timeout_seconds, policy, false, max_body_bytes);
 }
 
 HttpResponse HttpClient::head(const std::string& url,

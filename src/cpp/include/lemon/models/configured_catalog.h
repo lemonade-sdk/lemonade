@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,10 @@ ParsedCatalogs parse_configured_catalogs(const nlohmann::json& value);
 void reject_refused_catalogs(const nlohmann::json& value);
 
 nlohmann::json configured_catalogs_to_config(const std::vector<ConfiguredCatalog>& catalogs);
+
+// Drops cached bodies whose id is not in `keep`. Nothing outside the shape this
+// cache writes is touched.
+void prune_cached_bodies(const std::string& cache_dir, const std::set<std::string>& keep);
 
 // The catalog the record names. A fetched body is kept under `cache_dir`.
 std::shared_ptr<ModelCatalog> make_configured_catalog(const ConfiguredCatalog& catalog,
