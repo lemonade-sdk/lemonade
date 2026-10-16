@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lemon/models/catalog.h>
+#include <lemon/models/configured_catalog.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/registry_documents.h>
 
@@ -25,6 +26,9 @@ struct CatalogSetDeps {
     RegistryRowRules registry_rows;
     std::function<RegistryDocuments::Pin()> pin_registries;
     std::function<std::vector<ModelInfo>(const CatalogAccumulator&)> scan_extra_models;
+
+    std::vector<ConfiguredCatalog> configured_catalogs;
+    std::string catalog_cache_dir;
 
     bool offline = false;
     std::function<std::vector<std::string>()> dynamic_recipes;

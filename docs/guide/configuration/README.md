@@ -92,6 +92,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
   "max_loaded_models": 1,
+  "model_catalogs": [],
   "models_dir": "auto",
   "moonshine": {
     "args": "",
@@ -291,6 +292,20 @@ Backend-specific settings are nested under their backend name:
 | `wire_format` | `openai` or `anthropic`. Omitted when it is the default `openai`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
+
+**model_catalogs** — Extra model registries, read every time the model set is built. Array, one object per catalog:
+
+| Key | Description |
+|-----|-------------|
+| `id` | Stable name: letters, digits, `.`, `_`, `-`. Keys the catalog set, and a fetched body is kept under it. |
+| `path` | A JSON file with the same shape as `user_models.json`. Name exactly one of `path` or `url`. |
+| `url` | An HTTP(S) URL serving such a document. A body that answers once is kept, and an outage lists what the catalog listed last instead of nothing. |
+| `required` | True: a catalog that cannot be read fails the build. Default false: it contributes nothing. |
+| `allow_insecure_http` | Needed for an `http://` URL; an `https://` URL never asks for it. |
+
+A configured document yields any name the built-in registry or a registration already holds, so it can add models without taking one over. Any other key is refused with the catalog's name in the complaint, and a refused entry costs only its own catalog.
+
+Set the value with `POST /internal/set` — the model set rebuilds and every connected client sees the change — and see what built the current set with `GET /internal/model-sources`.
 
 **telemetry** — Unified telemetry and tracing configurations:
 

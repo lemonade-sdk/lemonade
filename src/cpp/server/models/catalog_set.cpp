@@ -38,6 +38,11 @@ std::vector<std::shared_ptr<ModelCatalog>> product_catalogs(const CatalogSetDeps
                      ""}),
         documents.user, std::move(user_rows)));
 
+    for (const auto& configured : deps.configured_catalogs) {
+        catalogs.push_back(make_configured_catalog(configured, deps.registry_rows,
+                                                   deps.catalog_cache_dir));
+    }
+
     if (deps.scan_extra_models) {
         catalogs.push_back(std::make_shared<EnumeratedCatalog>(
             make_catalog_descriptor(

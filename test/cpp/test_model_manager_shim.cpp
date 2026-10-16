@@ -3,11 +3,13 @@
 #include <lemon/models/registry_descriptors.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/utils/path_utils.h>
+#include <nlohmann/json.hpp>
 
 #include "support/test_state_isolation.h"
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -38,14 +40,24 @@ int main() {
             return std::vector<ModelInfo>{info};
         });
 
+    const fs::path named = scratch / "named.json";
+    {
+        std::ofstream out(named, std::ios::binary);
+        out << R"({"Configured-Model":{"recipe":"llamacpp","labels":["chat"]}})";
+    }
+
     ModelManagerConfig config;
     config.cache_dir = scratch.string();
     config.extra_catalogs = {fixture};
     config.default_model_source = [] { return "modelscope"; };
+    const auto configured = std::make_shared<nlohmann::json>(
+        nlohmann::json::array({{{"id", "named"}, {"path", named.string()}}}));
+    config.model_catalogs = [configured] { return *configured; };
 
     ModelManager manager(std::move(config));
 
     check("the config-injected catalog contributes", manager.model_exists("Shim-Model"));
+    check("a catalog named in config.json contributes", manager.model_exists("Configured-Model"));
     check("fixture paths serve the alias manager", manager.aliases().empty());
 
     const auto resolved = manager.resolve("Shim-Model");
@@ -67,6 +79,12 @@ int main() {
         std::printf("    [read back threw] %s\n", e.what());
     }
     check("the facade hands the fixture model back", read_back);
+
+    *configured = nlohmann::json::array();
+    manager.catalog_set_changed();
+    check("a catalog taken out of config.json stops contributing",
+          !manager.model_exists("Configured-Model"));
+    check("and what it held is not taken with it", manager.model_exists("Shim-Model"));
 
     if (g_failures == 0) {
         std::printf("All composition root tests passed.\n");

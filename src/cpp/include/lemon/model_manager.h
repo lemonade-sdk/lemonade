@@ -189,6 +189,7 @@ struct ModelManagerConfig {
     std::string extra_models_dir;
     CloudProviderRegistry* cloud_providers = nullptr;  // Not owned
     std::function<std::string()> default_model_source;
+    std::function<json()> model_catalogs;
     std::vector<std::shared_ptr<models::ModelCatalog>> extra_catalogs;
 };
 
@@ -453,6 +454,9 @@ public:
     // automatically refreshes the model cache when files are added or
     // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
+
+    // The catalogs a build reads changed: rebuild and publish.
+    void catalog_set_changed();
 
     // Per-architecture default recipe options (loaded from resources).
     // Override global config defaults but are overridden by model-level recipe_options.

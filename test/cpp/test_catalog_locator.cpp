@@ -61,8 +61,6 @@ static std::string read_text(const fs::path& path) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
-// One document of model rows over HTTP, answering the conditional requests a
-// catalog locator makes.
 struct ServingDocument {
     httplib::Server svr;
     std::thread thread;
@@ -99,13 +97,12 @@ struct ServingDocument {
             }
             res.set_content(body, "application/json");
         });
-        // A host that names no validators at all: length is the only comparison.
+        // No validators: a length is the only comparison.
         svr.Get("/opaque.json", [this](const httplib::Request&, httplib::Response& res) {
             std::lock_guard<std::mutex> lock(mutex);
             res.set_content(body, "application/json");
         });
-        // A host that answers 200 whatever it was asked, so a status line says
-        // nothing and only the validators mean anything.
+        // 200 whatever it was asked: only the validators mean anything.
         svr.Get("/always200.json", [this](const httplib::Request&, httplib::Response& res) {
             std::lock_guard<std::mutex> lock(mutex);
             res.set_header("ETag", etag);
@@ -182,7 +179,6 @@ static void http_catalog_tests(const fs::path& scratch) {
     check("a probe the server refuses asks the document", locator->changed(second));
     document.refuses_head = false;
 
-    // A host that names no validators, so a length is the only comparison.
     const auto opaque = http_catalog_locator(
         "opaque", serving(document, "/opaque.json", scratch / "http" / "opaque.json"));
     CatalogState sized;

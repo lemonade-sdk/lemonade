@@ -6,6 +6,7 @@
 #include <lemon/utils/json_utils.h>
 
 #include <set>
+#include <stdexcept>
 
 namespace lemon {
 namespace models {
@@ -50,6 +51,9 @@ void parse_checkpoints(ModelInfo& info, const json& row) {
 
     if (row.contains("checkpoints") && row["checkpoints"].is_object()) {
         for (const auto& [key, value] : row["checkpoints"].items()) {
+            if (!value.is_string()) {
+                throw std::invalid_argument("checkpoint '" + key + "' is not a string");
+            }
             info.checkpoints[key] = value.get<std::string>();
         }
     }
@@ -235,7 +239,17 @@ void JsonCatalog::enumerate(CatalogAccumulator& accumulator) const {
     }
 
     for (const auto& [key, row] : document->items()) {
-        std::optional<ModelInfo> info = parse_registry_row(key, row, rules_);
+        std::optional<ModelInfo> info;
+        try {
+            info = parse_registry_row(key, row, rules_);
+        } catch (const std::exception& e) {
+            // Nothing here promises a well-typed document: a hand-edited file, or
+            // one served by someone else. A row that cannot be read costs its own
+            // model, and the build goes on with the rows that can.
+            LOG(ERROR, "ModelManager") << "Skipping invalid " << rules_.source_label << " '"
+                                       << key << "': " << e.what() << std::endl;
+            continue;
+        }
         if (!info) {
             continue;
         }

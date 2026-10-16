@@ -18,8 +18,7 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
-    // Response headers, names lowercased. Populated by every verb that buffers
-    // a response; post_stream reports them through out_response_headers.
+    // Response headers, names lowercased.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
@@ -155,8 +154,7 @@ public:
                            long timeout_seconds = 0,
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
-    // HEAD request: headers only, no body. A conditional poll asks whether a
-    // document changed without paying for the body it will not use.
+    // HEAD request: headers only, no body.
     static HttpResponse head(const std::string& url,
                             const std::map<std::string, std::string>& headers = {},
                             long timeout_seconds = 0,
