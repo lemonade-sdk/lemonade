@@ -9,6 +9,7 @@
 
 #include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
+#include "lemon/model_manager.h"
 #include "lemon/server/model_loader.h"
 
 namespace lemon {
@@ -159,6 +160,67 @@ void map_ollama_options(const json& ollama_request, json& openai_req) {
     }
 }
 
+const RouteError kGatewayModelNotLoaded{
+    404, "",
+    "`model` fails to load for any reason other than a residency conflict, such as naming no "
+    "model or a failed download"};
+
+namespace {
+
+// Ollama and Anthropic clients each read the conflict type where their own errors keep it.
+void write_residency_conflict(const std::exception& error, ErrorFormat format,
+                              httplib::Response& res) {
+    json body;
+    if (format == ErrorFormat::Anthropic) {
+        body = {
+            {"type", "error"},
+            {"error", {
+                {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+                {"message", error.what()},
+                {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+            }},
+        };
+    } else {
+        body = {
+            {"error", error.what()},
+            {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+            {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+        };
+    }
+    res.status = ModelLoader::kRouterResidencyConflict.status;
+    res.set_content(body.dump(), "application/json");
+}
+
+} // namespace
+
+bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model, const json& request,
+                           ErrorFormat format, httplib::Response& res) {
+    try {
+        loader.ensure_loaded(model, gateway_load_options(request));
+        return true;
+    } catch (const RouterResidencyConflictException& e) {
+        write_residency_conflict(e, format, res);
+    } catch (const std::exception&) {
+        write_error(res, format, kGatewayModelNotLoaded,
+                    "model '" + model + "' not found, try pulling it first");
+    }
+    return false;
+}
+
+std::vector<RouteError> gateway_load_errors() {
+    return {ModelLoader::kRouterResidencyConflict, kGatewayModelNotLoaded};
+}
+
+const RouteError kOllamaModelNotFound{
+    404, "", "`model` names no model in the registry, or one filtered out on this system"};
+
+bool ollama_model_registered(ModelManager& model_manager, const std::string& name,
+                             httplib::Response& res) {
+    if (model_manager.model_exists(name)) return true;
+    write_plain_error(res, kOllamaModelNotFound, "model '" + name + "' not found");
+    return false;
+}
+
 const RouteError kOllamaBackendError{500, "", "The backend reports an error, whatever its own status"};
 
 bool write_ollama_backend_error(const json& response, httplib::Response& res) {
@@ -168,16 +230,6 @@ bool write_ollama_backend_error(const json& response, httplib::Response& res) {
     json error = {{"error", response["error"].value("message", "backend error")}};
     res.set_content(error.dump(), "application/json");
     return true;
-}
-
-void write_ollama_residency_conflict(const std::exception& error, httplib::Response& res) {
-    res.status = ModelLoader::kRouterResidencyConflict.status;
-    json body = {
-        {"error", error.what()},
-        {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
-        {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
-    };
-    res.set_content(body.dump(), "application/json");
 }
 
 std::string anthropic_message_id() {

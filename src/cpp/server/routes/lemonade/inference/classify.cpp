@@ -9,17 +9,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kMissingInput{400, "", "Neither `input` nor `text` is present"};
-const RouteError kBlankInput{400, "", "The input text is empty or only whitespace"};
-const RouteError kInvalidTopK{400, "", "`top_k` is not from 1 to 1,000,000"};
 const RouteError kNoSoleClassifier{
     400, "", "`model` is omitted and not exactly one classification model is loaded"};
 const RouteError kBackendRejected{
     400, "",
     "The backend rejects the request, for example because `model` is not a classification "
     "model, which is found only after it loads"};
-const RouteError kModelNotLoaded{
-    404, "", "The model is unloaded between its load and the classification"};
 const RouteError kUnexpectedResponse{500, "", "The backend's response has no `labels` object"};
 
 class ClassifyRoute : public ModelRoute {
@@ -60,12 +55,10 @@ public:
             {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "The classifier model. Optional when exactly one classification model is loaded; that "
              "model is used."},
-            {"input", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Text to classify. Required unless `text` is given."},
-            {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
+            {"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern", "\\S"}}, true, Support::Available,
+             "Text to classify.", {"text"}},
+            {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
              "Return only the highest-scoring `k` labels. Defaults to every label."},
-            {"text", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Alias for `input`, used instead of it when both are given."},
         };
 
         RouteResponse response;
@@ -92,9 +85,9 @@ public:
             "input": "Please verify your account at http://secure-login.example now."
         })");
         s.examples = {example};
-        s.errors = join_errors({{kBodyNotJson, kArgInvalid, kMissingInput, kBlankInput,
-                                 kInvalidTopK, kNoSoleClassifier,
-                                 kBackendRejected, kModelNotLoaded, kBackendError,
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid,
+                                 kNoSoleClassifier,
+                                 kBackendRejected, kModelUnloaded, kBackendError,
                                  kUnexpectedResponse, kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
@@ -104,24 +97,8 @@ public:
 
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        // Malformed requests are rejected before any model gets loaded.
-        const bool has_text = req.body.contains("text");
-        if (!has_text && !req.body.contains("input")) {
-            write_openai_error(res, kMissingInput,
-                               "Missing 'input' (or 'text') string in classify request");
-            return false;
-        }
-        const std::string input = req.body[has_text ? "text" : "input"].get<std::string>();
-        if (input.find_first_not_of(" \t\r\n") == std::string::npos) {
-            write_openai_error(res, kBlankInput, "input text must not be empty");
-            return false;
-        }
         if (req.body.contains("top_k")) {
             const double top_k = req.body["top_k"].get<double>();
-            if (top_k < 1 || top_k > 1000000) {
-                write_openai_error(res, kInvalidTopK, "'top_k' must be from 1 to 1,000,000");
-                return false;
-            }
             // The validator accepts 2.0 as an integer; the backend expects 2.
             req.body["top_k"] = static_cast<long long>(top_k);
         }
@@ -157,7 +134,7 @@ protected:
                     type == "unsupported_operation") {
                     res.status = kBackendRejected.status;
                 } else if (type == "model_not_loaded") {
-                    res.status = kModelNotLoaded.status;
+                    res.status = kModelUnloaded.status;
                 } else {
                     res.status = kBackendError.status;
                 }

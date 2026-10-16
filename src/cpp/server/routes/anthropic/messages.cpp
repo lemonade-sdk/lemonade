@@ -12,19 +12,16 @@
 #include "lemon/anthropic_relay_headers.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/cloud_provider_registry.h"
-#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
-#include "lemon/server/model_loader.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 
 namespace lemon {
 namespace {
 
-const RouteError kModelRequired{400, "", "`model` is empty"};
 const RouteError kProviderNoBaseUrl{
     500, "", "`model` is a cloud model whose `--wire-format anthropic` provider has no base URL"};
 const RouteError kProviderNoApiKey{
@@ -39,15 +36,6 @@ const RouteError kCloudRequestFailed{
     502, "",
     "Without `stream`, the relayed cloud request fails or the provider answers with an error; "
     "the provider's own status and body replace this one when it answers"};
-const RouteError kResidencyConflict{
-    409, "",
-    "Loading `model` would evict a model that a `collection.router` model needs resident on the "
-    "same NPU"};
-const RouteError kModelNotLoaded{
-    404, "",
-    "`model` fails to load for any reason other than a residency conflict, such as naming no "
-    "model or a failed download"};
-const RouteError kRequestFailed{500, "", "A field has the wrong type, or another step throws"};
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
@@ -179,20 +167,6 @@ bool set_anthropic_backend_error_response(const json& response, httplib::Respons
     res.status = status;
     res.set_content(anthropic::build_anthropic_error(error, status).dump(), "application/json");
     return true;
-}
-
-void set_anthropic_residency_conflict_response(
-    const RouterResidencyConflictException& error,
-    httplib::Response& res) {
-    res.status = kResidencyConflict.status;
-    json body = {
-        {"type", "error"},
-        {"error", {
-            {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
-            {"message", error.what()},
-        }},
-    };
-    res.set_content(body.dump(), "application/json");
 }
 
 // Everything needed to relay one /v1/messages request to a provider that
@@ -818,7 +792,7 @@ public:
             "\"message\"}}`.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Model to run; loaded on first use."},
             {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
              "Conversation so far, as `user` and `assistant` messages. `content` is a string or "
@@ -935,10 +909,10 @@ public:
         })");
 
         s.examples = {message_example, stream_example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kModelRequired, kProviderNoBaseUrl,
-                    kProviderNoApiKey, kProviderInsecureHttp, kCloudModelNoCheckpoint,
-                    kCloudRequestFailed, kResidencyConflict, kModelNotLoaded, kBackendError,
-                    kRequestFailed};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+                                {kProviderNoBaseUrl, kProviderNoApiKey, kProviderInsecureHttp,
+                                 kCloudModelNoCheckpoint, kCloudRequestFailed, kBackendError,
+                                 ApiRoute::kUnexpectedException}});
         s.error_format = ErrorFormat::Anthropic;
         s.request_format = RequestFormat::Json;
         return s;
@@ -949,11 +923,7 @@ public:
             const json& request_json = req.body;
             std::vector<std::string> warnings;
 
-            std::string model = strip_latest_tag(request_json.value("model", ""));
-            if (model.empty()) {
-                write_anthropic_error(res, kModelRequired, "model is required");
-                return;
-            }
+            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
 
             if (req.http.has_param("beta")) {
                 std::string beta_value = req.http.get_param_value("beta");
@@ -985,15 +955,8 @@ public:
 
             auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
 
-            try {
-                ctx_.model_loader->ensure_loaded(model,
-                                                 gateway_load_options(request_json));
-            } catch (const RouterResidencyConflictException& e) {
-                set_anthropic_residency_conflict_response(e, res);
-                return;
-            } catch (const std::exception&) {
-                write_anthropic_error(res, kModelNotLoaded,
-                                      "model '" + model + "' not found, try pulling it first");
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json,
+                                       ErrorFormat::Anthropic, res)) {
                 return;
             }
 
@@ -1025,7 +988,7 @@ public:
 
         } catch (const std::exception& e) {
             std::cerr << "[OllamaApi] Error in /v1/messages: " << e.what() << std::endl;
-            write_anthropic_error(res, kRequestFailed, e.what());
+            write_anthropic_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

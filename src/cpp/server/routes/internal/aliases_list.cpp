@@ -1,3 +1,4 @@
+#include "alias_errors.h"
 #include "lemon/alias_manager.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
@@ -86,13 +87,7 @@ public:
             }
             res.set_content(json{{"aliases", alias_list}}.dump(), "application/json");
         } catch (const std::exception& e) {
-            res.status = kListFailed.status;
-            res.set_content(json{{"error", {
-                {"message", e.what()},
-                {"type", "server_error"},
-                {"param", "alias"},
-                {"code", "internal_error"}
-            }}}.dump(), "application/json");
+            write_alias_error(res, kListFailed, e.what(), "server_error");
         }
     }
 };

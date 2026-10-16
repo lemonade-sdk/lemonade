@@ -4,6 +4,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/model_sync.h"
 
 namespace lemon {
 namespace {
@@ -11,13 +12,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNameRequired{400, "", "The `model` or `name` used is empty"};
-const RouteError kModelNotFound{
-    404, "", "The model names no model in the registry, or one filtered out on this system"};
-const RouteError kOffline{400, "lemond_offline", "Lemonade runs in offline mode and the model exists"};
-const RouteError kPullFailed{
-    500, "",
-    "A non-streaming download fails, or a field has the wrong type"};
+const RouteError kPullFailed{500, "", "A non-streaming download fails"};
 
 class PullRoute : public ApiRoute {
 public:
@@ -38,7 +33,7 @@ public:
             "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Model to download.",
              {"name"}},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -80,8 +75,7 @@ public:
         full_example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime", "stream": false})");
 
         s.examples = {stream_example, full_example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kNameRequired, kModelNotFound,
-                    kOffline, kPullFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kOllamaModelNotFound, kLemondOffline, kPullFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -90,25 +84,13 @@ public:
         try {
             const json& request_json = req.body;
             std::string name = strip_latest_tag(request_json["model"].get<std::string>());
-
-            if (name.empty()) {
-                res.status = kNameRequired.status;
-                res.set_content(R"({"error":"name is required"})", "application/json");
+            if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }
 
             bool stream = request_json.value("stream", true);
 
-            if (!ctx_.model_manager->model_exists(name)) {
-                res.status = kModelNotFound.status;
-                json error = {{"error", "model '" + name + "' not found"}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-            if (ctx_.config->offline()) {
-                res.status = kOffline.status;
-                json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
-                res.set_content(error.dump(), "application/json");
+            if (refuse_offline_download(ctx_, res)) {
                 return;
             }
 
@@ -165,9 +147,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/pull: " << e.what() << std::endl;
-            res.status = kPullFailed.status;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, kPullFailed, e.what());
         }
     }
 };

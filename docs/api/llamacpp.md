@@ -234,7 +234,7 @@ This endpoint does not take any parameters.
 | `400` | The most recently used model is not a llama.cpp model |
 | `404` | The model is unloaded while the request waits for it |
 | `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` | Reading the slots fails unexpectedly |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: llamacpp.slots -->
 
 <!-- BEGIN GENERATED: llamacpp.slots_action -->
@@ -368,7 +368,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 | `400` |  | The most recently used model is not a llama.cpp model |
 | `404` |  | The model is unloaded while the request waits for it |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | The slot action fails unexpectedly |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: llamacpp.slots_action -->
 
 <!-- BEGIN GENERATED: llamacpp.tokenize -->
@@ -431,5 +431,5 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | The most recently used model is not a llama.cpp model |
 | `404` |  | The model is unloaded while the request waits for it |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | Tokenizing fails unexpectedly |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: llamacpp.tokenize -->

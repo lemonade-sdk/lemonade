@@ -7,7 +7,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kEmptyId{400, "", "`id` is empty"};
 
 class DownloadsControlRoute : public ApiRoute {
 public:
@@ -39,7 +38,7 @@ public:
             "the job was already gone.",
         };
         s.args = {
-            {"id", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"id", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The job's `id`, for example `model:Qwen3-0.6B-GGUF`."},
             {"action", ArgIn::JsonBody, {{"enum", json::array({"pause", "cancel", "remove"})}}, true,
              Support::Available,
@@ -75,7 +74,7 @@ public:
         remove_example.format = ResponseFormat::Json;
         remove_example.args = {{"id", "model:Qwen3-1.7B-GGUF"}, {"action", "remove"}};
         s.examples = {example, remove_example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kEmptyId,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid,
                     DownloadManager::kDownloadNotFound};
         s.request_format = RequestFormat::Json;
         return s;
@@ -85,10 +84,6 @@ public:
         const std::string id = req.body["id"].get<std::string>();
         const std::string action = req.body["action"].get<std::string>();
 
-        if (id.empty()) {
-            write_plain_error(res, kEmptyId, "'id' must not be empty");
-            return;
-        }
 
         int status = 200;
         json response = ctx_.downloads->control(id, action, status);

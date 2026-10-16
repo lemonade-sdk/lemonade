@@ -12,7 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kClearFailed{500, "", "Clearing the key or evicting the provider's models fails"};
 
 class CloudAuthProviderRoute : public ApiRoute {
 public:
@@ -59,7 +58,7 @@ public:
         example.setup = {{"lemonade.cloud_auth", ""}};
         example.args = {{"provider", "fireworks"}};
         s.examples = {example};
-        s.errors = {kClearFailed};
+        s.errors = {kUnexpectedException};
         return s;
     }
 
@@ -86,7 +85,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_clear: " << e.what() << std::endl;
-            write_openai_error(res, kClearFailed, e.what(), "server_error");
+            write_openai_error(res, kUnexpectedException, e.what(), "server_error");
         }
     }
 };

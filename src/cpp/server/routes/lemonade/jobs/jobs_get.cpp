@@ -1,3 +1,4 @@
+#include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
 
@@ -6,8 +7,6 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteError kUnknownJob{404, "", "`id` names no job, or a deleted one"};
 
 class JobsGetRoute : public ApiRoute {
 public:
@@ -73,7 +72,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         const auto job = ctx_.job_manager->get(req.http.matches[1]);
         if (!job) {
-            write_plain_error(res, kUnknownJob, "unknown job");
+            write_unknown_job(res);
             return;
         }
         res.set_content(job->dump(), "application/json");

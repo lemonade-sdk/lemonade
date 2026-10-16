@@ -12,11 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kImageBackendError{
-    500, "",
-    "The backend reports an error, for example when `model` cannot make image variations, an error whose "
-    "`type` is `unsupported_operation`"};
-
 class ImagesVariationsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -56,16 +51,16 @@ public:
             {"model", ArgIn::Form, text, true, Support::Available,
              "The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
             {"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
-             "The source image (PNG)."},
+             "The source image (PNG).", {"image[]"}},
             {"prompt", ArgIn::Form, text, false, Support::NotAvailable,
              "Ignored; the variation depends only on the image."},
             {"size", ArgIn::Form, text, false, Support::Available,
              "Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`."},
-            {"n", ArgIn::Form, {{"type", "integer"}}, false, Support::Available,
+            {"n", ArgIn::Form, {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}, false, Support::Available,
              "Number of images to generate, from `1` to `10`. "
              "Defaults to `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported."},
+             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
             {"user", ArgIn::Form, text, false, Support::NotAvailable,
              "Accepted for OpenAI compatibility and ignored."},
         };
@@ -85,10 +80,10 @@ public:
             "image": "@fixtures/image.png"
         })");
         s.examples = {example};
-        s.errors = join_errors({{kFormNotMultipart, kFormValueInvalid, kModelMissing,
-                                 kImageBackendError},
+        s.errors = join_errors({{kFormNotMultipart, kArgMissing, kArgInvalid, kImageBackendError},
                                 attach_form_image_errors(), image_route_exception_errors(),
                                 ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Form;
         return s;
     }
@@ -101,11 +96,7 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->image_variations(req.body);
-        if (response.contains("error")) {
-            LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
-            res.status = kImageBackendError.status;
-        }
-        res.set_content(response.dump(), "application/json");
+        write_image_backend_response(response, res);
     }
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {

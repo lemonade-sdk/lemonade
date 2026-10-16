@@ -9,7 +9,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kSnapshotFailed{500, "", "Serializing the running configuration fails"};
 
 class ConfigRoute : public ApiRoute {
 public:
@@ -46,7 +45,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kSnapshotFailed};
+        s.errors = {kUnexpectedException};
         return s;
     }
 
@@ -55,7 +54,7 @@ public:
             res.set_content(ctx_.config->snapshot().dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in /internal/config: " << e.what() << std::endl;
-            write_plain_error(res, kSnapshotFailed, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 };

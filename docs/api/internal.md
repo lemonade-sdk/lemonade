@@ -277,7 +277,7 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The body is `{}`, names an unknown setting, or gives a setting a value outside its range or options |
-| `500` |  | Applying a setting fails |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: internal.set -->
 
 <!-- BEGIN GENERATED: internal.config -->
@@ -329,7 +329,7 @@ Every `config.json` key with its current value.
 
 | Status | When |
 |--------|------|
-| `500` | Serializing the running configuration fails |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: internal.config -->
 
 <!-- BEGIN GENERATED: internal.config_defaults -->
@@ -604,9 +604,8 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `409` |  | Offline mode (`offline=true`) is on, so no network request is made |
-| `500` |  | Checking for updates with `dry_run` fails |
-| `500` |  | A sync with `async: false` fails |
+| `409` |  | `offline` is set to `true`; no network request is made |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: internal.models_sync -->
 
 <!-- BEGIN GENERATED: internal.models_sync_status -->
@@ -695,7 +694,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 | Status | When |
 |--------|------|
 | `400` | `sync_id` does not start with a number, or is too large for 64 bits |
-| `500` | Reading the sync status fails |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: internal.models_sync_status -->
 
 <!-- BEGIN GENERATED: internal.aliases_list -->

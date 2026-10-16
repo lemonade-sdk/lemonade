@@ -1,12 +1,12 @@
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/omni_collection.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/thinking_controls.h"
+#include "require_llm.h"
 
 namespace lemon {
 namespace {
@@ -108,8 +108,6 @@ ordered_json chat_completion_chunk_schema() {
     };
     return schema;
 }
-
-const RouteError kNotLlm{400, "", "`model` is not an LLM, which is checked after it loads"};
 
 class ChatCompletionsRoute : public ModelRoute {
 public:
@@ -287,9 +285,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (ctx_.router->get_model_type(req.model) != ModelType::LLM) {
-            LOG(ERROR, "Server") << "Model does not support chat completion" << std::endl;
-            write_openai_error(res, kNotLlm, "This model does not support chat completion. Only LLM models support this endpoint.");
+        if (!require_llm(*ctx_.router, req.model, "chat completion", res)) {
             return;
         }
 

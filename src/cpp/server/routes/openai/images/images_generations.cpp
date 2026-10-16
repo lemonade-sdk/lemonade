@@ -12,11 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kImageBackendError{
-    500, "",
-    "The backend reports an error, for example when `model` cannot generate images, an error whose "
-    "`type` is `unsupported_operation`"};
-
 class ImagesGenerationsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -80,11 +75,7 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->image_generations(req.body);
-        if (response.contains("error")) {
-            LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
-            res.status = kImageBackendError.status;
-        }
-        res.set_content(response.dump(), "application/json");
+        write_image_backend_response(response, res);
     }
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {

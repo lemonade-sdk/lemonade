@@ -12,7 +12,6 @@ namespace {
 
 const RouteError kInvalidSyncId{
     400, "", "`sync_id` does not start with a number, or is too large for 64 bits"};
-const RouteError kStatusFailed{500, "", "Reading the sync status fails"};
 
 class ModelsSyncStatusRoute : public ApiRoute {
 public:
@@ -46,7 +45,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kInvalidSyncId, kStatusFailed};
+        s.errors = {kInvalidSyncId, kUnexpectedException};
         s.quiet_log = true;
         return s;
     }
@@ -67,7 +66,7 @@ public:
             res.status = 200;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Failed to get sync status: " << e.what() << std::endl;
-            write_plain_error(res, kStatusFailed, std::string("Failed to get sync status: ") + e.what());
+            write_plain_error(res, kUnexpectedException, std::string("Failed to get sync status: ") + e.what());
         }
     }
 };

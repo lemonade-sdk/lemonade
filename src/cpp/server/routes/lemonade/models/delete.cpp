@@ -1,11 +1,9 @@
-#include <chrono>
-#include <thread>
-
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_registration.h"
 
 namespace lemon {
 namespace {
@@ -15,10 +13,6 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kUnknownModel{
     422, "", "The model is not in the registry, or this system does not support it"};
-const RouteError kDeleteFailed{
-    500, "",
-    "Another failure occurs, for example a file that stays locked after the retries, a "
-    "failed unload, or a `model_name` of the wrong type"};
 
 class DeleteRoute : public ApiRoute {
 public:
@@ -74,62 +68,16 @@ public:
 
             LOG(INFO, "Server") << "Deleting model: " << model_name << std::endl;
 
-            // Unload first so the backend releases its file locks.
-            if (ctx_.router->is_model_loaded(model_name)) {
-                LOG(INFO, "Server") << "Model is loaded, unloading before delete: " << model_name << std::endl;
-                ctx_.router->unload_model(model_name);
-            }
-
-            // A download cancelled just before this request may not have released its
-            // file handles yet, so a file-in-use failure is retried.
-            const int max_retries = 3;
-            const int retry_delay_seconds = 5;
-            std::string last_error;
-
-            for (int attempt = 0; attempt <= max_retries; ++attempt) {
-                try {
-                    ctx_.model_manager->delete_model(model_name);
-
-                    json response = {
-                        {"status", "success"},
-                        {"message", "Deleted model: " + model_name}
-                    };
-                    res.set_content(response.dump(), "application/json");
-                    return;
-
-                } catch (const std::exception& e) {
-                    last_error = e.what();
-
-                    bool is_file_locked =
-                        last_error.find("being used by another process") != std::string::npos ||
-                        last_error.find("Permission denied") != std::string::npos ||
-                        last_error.find("resource busy") != std::string::npos;
-
-                    if (is_file_locked && attempt < max_retries) {
-                        LOG(INFO, "Server") << "Delete failed (file in use), retry "
-                                  << (attempt + 1) << "/" << max_retries
-                                  << " in " << retry_delay_seconds << "s..." << std::endl;
-                        std::this_thread::sleep_for(std::chrono::seconds(retry_delay_seconds));
-                        continue;
-                    }
-
-                    throw;
-                }
-            }
-
+            delete_model_files(ctx_, model_name);
+            json response = {
+                {"status", "success"},
+                {"message", "Deleted model: " + model_name}
+            };
+            res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_delete: " << e.what() << std::endl;
 
-            std::string error_msg = e.what();
-            if (error_msg.find("Model not found") != std::string::npos ||
-                error_msg.find("not supported") != std::string::npos) {
-                res.status = kUnknownModel.status;
-            } else {
-                res.status = kDeleteFailed.status;
-            }
-
-            json error = {{"error", e.what()}};
-            res.set_content(error.dump(), "application/json");
+            write_delete_error(e, kUnknownModel, res);
         }
     }
 };

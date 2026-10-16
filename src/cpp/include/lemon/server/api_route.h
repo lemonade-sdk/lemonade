@@ -117,6 +117,7 @@ public:
     static const RouteError kBodyNotJson;
     static const RouteError kArgMissing;
     static const RouteError kArgInvalid;
+    static const RouteError kUnexpectedException;
 
     // RouteRegistry calls this for every request: it parses the body as spec.request_format
     // says, checks the arguments, then calls handle().
@@ -132,10 +133,9 @@ public:
 protected:
     void record_usage(const nlohmann::json& response, const RouteRequest& req) const;
 
-    ServerContext& ctx_;
-
-private:
     bool check_args(RouteRequest& req, httplib::Response& res) const;
+
+    ServerContext& ctx_;
 };
 
 class ModelRoute : public ApiRoute {
@@ -144,9 +144,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) final;  // resolve, validate, load, run
 
     static const RouteError kFormNotMultipart;
-    static const RouteError kFormValueInvalid;
     static const RouteError kModelMissing;
-    static const RouteError kUnexpectedException;
 
 protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
@@ -183,6 +181,7 @@ void attach_route_decision(nlohmann::json& response, httplib::Response& res,
                            const std::optional<RouterDispatchResult>& decision);
 
 extern const RouteError kBackendError;
+extern const RouteError kModelUnloaded;
 
 // Maps a backend error body to its HTTP status.
 void set_error_response(const nlohmann::json& response, httplib::Response& res,

@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "recent_llamacpp.h"
 
 namespace lemon {
 namespace {
@@ -10,10 +11,6 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidSlotId{400, "", "`id` is too large for a 32-bit integer"};
-const RouteError kNoModelLoaded{400, "", "No model is loaded"};
-const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
-const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
-const RouteError kSlotActionFailed{500, "", "The slot action fails unexpectedly"};
 
 class SlotsActionRoute : public ApiRoute {
 public:
@@ -100,45 +97,27 @@ public:
         erase.args = {{"id", 0}, {"action", "erase"}};
 
         s.examples = {save, restore, erase};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSlotId, kNoModelLoaded,
-                    kModelUnloaded, kNotLlamaCpp, kBackendError, kSlotActionFailed};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSlotId},
+                                RecentLlamaCpp::errors()});
         s.request_format = RequestFormat::OptionalJson;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        std::string slot_id_str = req.http.matches[1];
+        int slot_id;
         try {
-            std::string slot_id_str = req.http.matches[1];
-            int slot_id;
-            try {
-                slot_id = std::stoi(slot_id_str);
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
-                write_plain_error(res, kInvalidSlotId, std::string("Invalid slot ID: ") + slot_id_str);
-                return;
-            }
-
-            auto action_param = req.http.get_param_value("action");
-
-            // Slot actions operate on backend state, so they need a loaded model rather
-            // than a named one.
-            if (!ctx_.router->is_model_loaded()) {
-                LOG(ERROR, "Server") << "No model loaded for slots " << action_param << " operation" << std::endl;
-                write_plain_error(res, kNoModelLoaded, std::string("No model loaded for slots ") + action_param + " operation");
-                return;
-            }
-
-            auto response = ctx_.router->slots_action(slot_id, action_param, req.body);
-            if (response.contains("error")) {
-                set_error_response(response, res, kBackendError);
-                return;
-            }
-
-            res.set_content(response.dump(), "application/json");
+            slot_id = std::stoi(slot_id_str);
         } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
-            write_plain_error(res, kSlotActionFailed, e.what());
+            LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
+            write_plain_error(res, kInvalidSlotId, std::string("Invalid slot ID: ") + slot_id_str);
+            return;
         }
+
+        auto action_param = req.http.get_param_value("action");
+        RecentLlamaCpp::serve(*ctx_.router, res, "slots " + action_param + " operation", [&] {
+            return ctx_.router->slots_action(slot_id, action_param, req.body);
+        });
     }
 };
 

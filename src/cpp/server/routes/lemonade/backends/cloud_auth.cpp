@@ -13,14 +13,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kEmptyAuthFields{400, "", "`provider` or `api_key` is empty"};
-const RouteError kProviderNotInstalled{
-    404, "", "`provider` was not installed with [`POST /v1/install`](#post-v1install)"};
 const RouteError kAuthConflict{
     409, "",
     "`LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; "
     "`error.type` is `auth_conflict` and `error.env_var` names the variable"};
-const RouteError kAuthFailed{500, "", "Storing the key fails unexpectedly"};
 
 class CloudAuthRoute : public ApiRoute {
 public:
@@ -39,9 +35,9 @@ public:
             "and is gone after a restart; for a key that persists, set "
             "`LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.";
         s.args = {
-            {"provider", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"provider", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The installed provider's name."},
-            {"api_key", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"api_key", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The API key."},
             {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Opt in to sending the key to a provider whose base URL is `http://`; the opt-in is "
@@ -79,8 +75,8 @@ public:
             "api_key": "fw-XXXXX"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kEmptyAuthFields,
-                    kProviderNotInstalled, kInsecureHttpError, kAuthConflict, kAuthFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid,
+                    kProviderNotInstalled, kInsecureHttpError, kAuthConflict, kUnexpectedException};
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
@@ -93,16 +89,9 @@ public:
             const auto provider = body["provider"].get<std::string>();
             const auto api_key = body["api_key"].get<std::string>();
             const bool allow_insecure_http = body.value("allow_insecure_http", false);
-            if (provider.empty() || api_key.empty()) {
-                write_openai_error(res, kEmptyAuthFields, "provider and api_key must be non-empty");
-                return;
-            }
 
             if (!registry.is_installed(provider)) {
-                write_openai_error(res, kProviderNotInstalled,
-                    "Cloud provider '" + provider + "' is not installed. "
-                    "Call POST /v1/install with backend=cloud, provider, "
-                    "and base_url first.");
+                write_provider_not_installed(res, provider);
                 return;
             }
 
@@ -152,7 +141,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
-            write_openai_error(res, kAuthFailed, e.what(), "server_error");
+            write_openai_error(res, kUnexpectedException, e.what(), "server_error");
         }
     }
 };

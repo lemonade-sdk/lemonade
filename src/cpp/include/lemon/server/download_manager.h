@@ -35,10 +35,10 @@ public:
     nlohmann::json list();
 
     // Applies a pause, cancel or remove action. Sets status to 404 for an unknown job
-    // and 400 for an unknown action; the returned body is the response either way.
+    // and to ApiRoute::kArgInvalid's 400 for an unknown action; the returned body is the
+    // response either way.
     nlohmann::json control(const std::string& id, const std::string& action, int& status);
     static const RouteError kDownloadNotFound;
-    static const RouteError kUnsupportedAction;
 
     // Asks every worker to stop and joins it. Workers capture this object, so they must
     // never outlive it.

@@ -1,3 +1,4 @@
+#include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
 
@@ -6,8 +7,6 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteError kJobNotFound{404, "", "`id` names no job, a deleted one, or one that is not queued or running"};
 
 class JobsPauseRoute : public ApiRoute {
 public:
@@ -41,13 +40,13 @@ public:
         example.setup = {{"lemonade.jobs_create", ""}};
         example.args = {{"id", "$lemonade.jobs_create/id"}};
         s.examples = {example};
-        s.errors = {kJobNotFound};
+        s.errors = {kJobNotActive};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         if (!ctx_.job_manager->pause(req.http.matches[1])) {
-            write_plain_error(res, kJobNotFound, "job not found or not pausable");
+            write_job_not_active(res, "pausable");
             return;
         }
         res.set_content(R"({"status":"pausing"})", "application/json");

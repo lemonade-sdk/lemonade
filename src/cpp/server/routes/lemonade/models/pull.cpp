@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/server/model_sync.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
@@ -17,14 +18,6 @@ const RouteError kInvalidSource{
     400, "",
     "`source` or `registry_source` names an unsupported source, or the "
     "checkpoint URLs disagree with it or with each other"};
-const RouteError kInvalidDefinition{
-    400, "",
-    "A new definition has a reserved or non-`user.*` name, or a malformed `checkpoint`, "
-    "`checkpoints`, `source` or `components`; nothing is registered"};
-const RouteError kOffline{
-    400, "lemond_offline",
-    "`offline` is set to `true`; a new definition is still registered, but nothing is "
-    "downloaded"};
 const RouteError kUnknownModel{
     400, "unknown_model",
     "Without `stream`, the model is not registered and its name has no `user.` prefix"};
@@ -72,6 +65,7 @@ public:
             "Loading a model never checks for updates, and "
             "[`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.",
             "With `stream`, the error event or the job reports an unknown model.",
+            "In offline mode a new definition is still registered, but nothing is downloaded.",
             "### Register and Install a Model\n\n"
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
             "(`~/.config/lemonade` by default), after which [`GET /v1/models`](./openai.md#get-v1models) lists it beside the "
@@ -205,8 +199,8 @@ public:
 
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidDefinition, kOffline, kUnknownModel,
-                    kIllegalLabels, kPullFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidModelDefinition,
+                    kLemondOffline, kUnknownModel, kIllegalLabels, kPullFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -245,16 +239,14 @@ public:
             const bool collection_file_import =
                 request_json.contains("models") && request_json["models"].is_array();
 
-            try {
-                register_model_definition(
+            if (!try_register_model_definition(
                     ctx_,
                     model_name,
                     request_json,
                     /*require_definition=*/false,
                     /*allow_embedded_models=*/true,
-                    local_import);
-            } catch (const std::invalid_argument& e) {
-                write_plain_error(res, kInvalidDefinition, e.what());
+                    local_import,
+                    res)) {
                 return;
             }
 
@@ -268,10 +260,7 @@ public:
                 return;
             }
 
-            if (ctx_.config->offline()) {
-                res.status = kOffline.status;
-                json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
-                res.set_content(error.dump(), "application/json");
+            if (refuse_offline_download(ctx_, res)) {
                 return;
             }
 

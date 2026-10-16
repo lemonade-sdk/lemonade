@@ -1,13 +1,11 @@
-#include "lemon/server/api_route.h"
+#include "unsupported.h"
 
 namespace lemon {
 namespace {
 
-const RouteError kNotSupported{501, "", "Lemonade does not support this Ollama operation"};
-
-class PushRoute : public ApiRoute {
+class PushRoute : public OllamaUnsupportedRoute {
 public:
-    using ApiRoute::ApiRoute;
+    using OllamaUnsupportedRoute::OllamaUnsupportedRoute;
 
     RouteSpec spec() const override {
         RouteSpec s;
@@ -18,11 +16,6 @@ public:
         s.summary = "Push a model to a registry";
         s.errors = {kNotSupported};
         return s;
-    }
-
-    void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = kNotSupported.status;
-        res.set_content(R"({"error":"not supported by Lemonade"})", "application/json");
     }
 };
 

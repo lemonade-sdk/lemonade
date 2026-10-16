@@ -11,12 +11,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidDefinition{
-    400, "",
-    "The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, "
-    "`recipe` is empty, the body embeds a `models` array, `checkpoints` has no `main`, `source` "
-    "is unsupported, or `components` is empty or names itself, a collection or an unregistered "
-    "model, or the collection's routing policy is invalid"};
 const RouteError kWrongFieldType{
     400, "", "A definition field not listed above has the wrong JSON type"};
 const RouteError kRegisterFailed{
@@ -87,7 +81,7 @@ public:
             "recipe": "llamacpp"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidDefinition, kWrongFieldType,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidModelDefinition, kWrongFieldType,
                     kRegisterFailed};
         s.request_format = RequestFormat::Json;
         return s;
@@ -97,13 +91,18 @@ public:
         json& request_json = req.body;
         try {
             const std::string model_name = request_json["model_name"].get<std::string>();
-            const std::string public_name = register_model_definition(
+            const auto registered = try_register_model_definition(
                 ctx_,
                 model_name,
                 request_json,
                 /*require_definition=*/true,
                 /*allow_embedded_models=*/false,
-                /*local_import=*/false);
+                /*local_import=*/false,
+                res);
+            if (!registered) {
+                return;
+            }
+            const std::string& public_name = *registered;
 
             json response = {
                 {"status", "success"},
@@ -118,8 +117,6 @@ public:
             }
 
             res.set_content(response.dump(), "application/json");
-        } catch (const std::invalid_argument& e) {
-            write_plain_error(res, kInvalidDefinition, e.what());
         } catch (const json::exception& e) {
             write_plain_error(res, kWrongFieldType, e.what());
         } catch (const std::exception& e) {

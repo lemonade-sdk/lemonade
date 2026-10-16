@@ -2,26 +2,17 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
-#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteError kModelRequired{400, "", "`model` is empty"};
-const RouteError kModelNotLoaded{
-    404, "",
-    "`model` fails to load for any reason other than a residency conflict, such as naming no "
-    "model or a failed download"};
-const RouteError kRequestFailed{500, "", "A field has the wrong type, or another step throws"};
 
 json convert_ollama_to_openai_completion(const json& ollama_request) {
     json openai_req;
@@ -121,9 +112,7 @@ void generate_image(Router& router, const json& request_json, httplib::Response&
 
     } catch (const std::exception& e) {
         LOG(ERROR, "OllamaApi") << "Error in image generation: " << e.what() << std::endl;
-        res.status = kRequestFailed.status;
-        json error = {{"error", std::string(e.what())}};
-        res.set_content(error.dump(), "application/json");
+        write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
     }
 }
 
@@ -177,7 +166,7 @@ public:
             "Image generation never streams.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Model to run."},
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Text to continue, or the image to generate for an image model."},
@@ -242,9 +231,8 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kModelRequired,
-                    ModelLoader::kRouterResidencyConflict, kModelNotLoaded, kOllamaBackendError,
-                    kRequestFailed};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+                                {kOllamaBackendError, ApiRoute::kUnexpectedException}});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -253,12 +241,7 @@ public:
         try {
             const json& request_json = req.body;
 
-            std::string model = strip_latest_tag(request_json.value("model", ""));
-            if (model.empty()) {
-                res.status = kModelRequired.status;
-                res.set_content(R"({"error":"model is required"})", "application/json");
-                return;
-            }
+            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
 
             std::string prompt = request_json.value("prompt", "");
             if (prompt.empty() && request_json.contains("keep_alive") &&
@@ -280,16 +263,8 @@ public:
                 return;
             }
 
-            try {
-                ctx_.model_loader->ensure_loaded(model,
-                                                 gateway_load_options(request_json));
-            } catch (const RouterResidencyConflictException& e) {
-                write_ollama_residency_conflict(e, res);
-                return;
-            } catch (const std::exception& e) {
-                res.status = kModelNotLoaded.status;
-                json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
-                res.set_content(error.dump(), "application/json");
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
+                                       res)) {
                 return;
             }
 
@@ -384,9 +359,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/generate: " << e.what() << std::endl;
-            res.status = kRequestFailed.status;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

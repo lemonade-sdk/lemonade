@@ -21,6 +21,10 @@ void persist_cloud_providers(ServerContext& ctx);
 extern const RouteError kInsecureHttpError;
 void write_insecure_http_error(httplib::Response& res, const std::string& provider);
 
+// cloud/auth and uninstall act only on a provider that install registered.
+extern const RouteError kProviderNotInstalled;
+void write_provider_not_installed(httplib::Response& res, const std::string& provider);
+
 // Adds "warnings", plus the single joined "warning" string that older clients read.
 void attach_warnings(nlohmann::json& response, const std::vector<std::string>& warnings);
 

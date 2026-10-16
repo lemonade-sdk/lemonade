@@ -1000,10 +1000,8 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | The request is not `multipart/form-data` |
-| `400` |  | A numeric form field does not parse as its parameter's type |
-| `400` |  | The request names no `model` |
-| `400` |  | `response_format` is not a supported transcript format |
-| `400` |  | The form has no `file` |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` cannot transcribe, which is found after it loads; the error's `type` is `unsupported_operation` |
 | `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
@@ -1229,7 +1227,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error, for example when `model` cannot generate images, an error whose `type` is `unsupported_operation` |
+| `500` |  | The backend reports an error, for example when `model` cannot serve this route, an error whose `type` is `unsupported_operation` |
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.images_generations -->
@@ -1247,7 +1245,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` | Yes | PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files are forwarded without re-encoding. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` or `image[]` | Yes | PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files are forwarded without re-encoding. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | A PNG mask: white areas are edited and black areas are kept. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1335,18 +1333,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | The request is not `multipart/form-data` |
-| `400` |  | A numeric form field does not parse as its parameter's type |
-| `400` |  | The request names no `model` |
-| `400` |  | The form has no `prompt` |
-| `400` |  | `n` is outside `1` to `10` |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The form has files under both `image` and `image[]` |
-| `400` |  | The form has no file under `image` or `image[]` |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error, for example when `model` cannot edit images, an error whose `type` is `unsupported_operation` |
+| `500` |  | The backend reports an error, for example when `model` cannot serve this route, an error whose `type` is `unsupported_operation` |
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.images_edits -->
@@ -1364,7 +1359,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` | Yes | The source image (PNG). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` or `image[]` | Yes | The source image (PNG). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Ignored; the variation depends only on the image. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `size` | No | Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate, from `1` to `10`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1442,16 +1437,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | The request is not `multipart/form-data` |
-| `400` |  | A numeric form field does not parse as its parameter's type |
-| `400` |  | The request names no `model` |
-| `400` |  | `n` is outside `1` to `10` |
-| `400` |  | The form has no file under `image` or `image[]` |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
-| `500` |  | The backend reports an error, for example when `model` cannot make image variations, an error whose `type` is `unsupported_operation` |
+| `500` |  | The backend reports an error, for example when `model` cannot serve this route, an error whose `type` is `unsupported_operation` |
 | `500` |  | The request fails unexpectedly |
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: openai.images_variations -->
@@ -1530,7 +1523,6 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | `model` is empty |
 | `400` |  | `model` has no `upscaling` label |
 | `400` |  | `model`'s recipe cannot upscale |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
@@ -1641,7 +1633,7 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
-| `400` |  | `response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams |
+| `400` |  | `response_format` is not a format `model`'s backend produces, or, when streaming, one it streams |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |

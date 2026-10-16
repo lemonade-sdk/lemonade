@@ -16,7 +16,6 @@ namespace {
 
 using json = nlohmann::json;
 
-const RouteError kMissingModelField{400, "", "`model` is empty"};
 const RouteError kNotUpscalingModel{400, "", "`model` has no `upscaling` label"};
 const RouteError kUnknownUpscaleModel{
     404, "", "`model` names no model in the registry, or downloading it fails"};
@@ -49,7 +48,7 @@ public:
         s.args = {
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Base64-encoded PNG image to upscale."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."},
         };
 
@@ -67,7 +66,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
         s.examples = {example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kMissingModelField,
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid,
                                  kNotUpscalingModel, kUnknownUpscaleModel, kRecipeCannotUpscale,
                                  kUpscaleFailed},
                                 image_route_exception_errors()});
@@ -82,10 +81,6 @@ public:
             LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
 
             std::string upscale_model_name = req.body["model"].get<std::string>();
-            if (upscale_model_name.empty()) {
-                write_openai_error(res, kMissingModelField, "Missing 'model' field");
-                return;
-            }
 
             ModelInfo info;
             try {

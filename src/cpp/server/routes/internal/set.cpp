@@ -24,7 +24,6 @@ std::string json_type_name(const json& value) {
 
 const RouteError kInvalidSetting{
     400, "", "The body is `{}`, names an unknown setting, or gives a setting a value outside its range or options"};
-const RouteError kApplyFailed{500, "", "Applying a setting fails"};
 
 class SetRoute : public ApiRoute {
 public:
@@ -88,7 +87,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"log_level", "info"}};
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSetting, kApplyFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSetting, kUnexpectedException};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -122,7 +121,7 @@ public:
             write_plain_error(res, kInvalidSetting, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in /internal/set: " << e.what() << std::endl;
-            write_plain_error(res, kApplyFailed, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 };

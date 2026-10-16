@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/server/model_sync.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
@@ -19,7 +20,6 @@ const RouteError kUnsupportedRepo{
     400, "",
     "`source` names an unsupported registry, or the Hugging Face GGUF repository is one "
     "llama.cpp cannot run"};
-const RouteError kOffline{400, "lemond_offline", "`offline` is set to `true`"};
 const RouteError kCheckpointNotFound{404, "", "The registry has no such checkpoint"};
 const RouteError kVariantsFailed{
     500, "",
@@ -89,8 +89,8 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"checkpoint", "unsloth/Qwen3-8B-GGUF"}};
         s.examples = {example};
-        s.errors = {kMissingCheckpoint, kSourceMismatch, kMalformedCheckpoint, kUnsupportedRepo,
-                    kOffline, kCheckpointNotFound, kVariantsFailed};
+        s.errors = {kMissingCheckpoint, kSourceMismatch, kMalformedCheckpoint,
+                    kUnsupportedRepo, kLemondOffline, kCheckpointNotFound, kVariantsFailed};
         return s;
     }
 
@@ -138,10 +138,7 @@ public:
                 return;
             }
             const auto parsed_source = parse_remote_registry_source(source);
-            if (ctx_.config->offline()) {
-                res.status = kOffline.status;
-                json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
-                res.set_content(error.dump(), "application/json");
+            if (refuse_offline_download(ctx_, res)) {
                 return;
             }
             bool not_found = false;

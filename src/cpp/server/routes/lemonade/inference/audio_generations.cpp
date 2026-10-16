@@ -14,9 +14,6 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kNotAudioModel{
     400, "model_not_applicable", "`model` is not an audio-generation model"};
-const RouteError kUnsupportedFormat{
-    400, "", "`response_format` is not a format the model's backend produces"};
-const RouteError kGenerationException{500, "", "Generation fails unexpectedly"};
 
 class AudioGenerationsRoute : public ModelRoute {
 public:
@@ -107,8 +104,8 @@ public:
 
         s.examples = {sound, song};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotAudioModel,
-                                 kUnsupportedFormat, kNoOutputError, kBackendError,
-                                 kGenerationException},
+                                 kUnsupportedAudioFormat, kNoOutputError, kBackendError,
+                                 kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
@@ -128,12 +125,8 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         AudioFormat format = negotiate_audio_generation_format(*ctx_.router, req.model, req.body);
-        if (!format.error.empty()) {
-            write_openai_error(res, kUnsupportedFormat, format.error);
+        if (!apply_audio_format(format, res)) {
             return;
-        }
-        for (const auto& [name, value] : format.headers) {
-            res.set_header(name, value);
         }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
@@ -146,7 +139,7 @@ protected:
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << error.what() << std::endl;
-        write_openai_error(res, kGenerationException, error.what(), "internal_error");
+        write_openai_error(res, kUnexpectedException, error.what(), "internal_error");
     }};
 
 } // namespace

@@ -14,10 +14,6 @@ using json = nlohmann::json;
 const RouteError kNotTtsModel{
     400, "model_not_applicable",
     "`model` is not a text-to-speech model, which is checked before it loads"};
-const RouteError kUnsupportedFormat{
-    400, "",
-    "`response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams"};
-const RouteError kSpeechFailure{500, "", "The request fails unexpectedly"};
 
 class AudioSpeechRoute : public ModelRoute {
 public:
@@ -94,8 +90,8 @@ public:
                           {"stream_format", "audio"}};
 
         s.examples = {audio_example, stream_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kSpeechFailure,
-                                 kNotTtsModel, kUnsupportedFormat, kNoOutputError, kBackendError},
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kUnexpectedException,
+                                 kNotTtsModel, kUnsupportedAudioFormat, kNoOutputError, kBackendError},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
@@ -123,12 +119,8 @@ protected:
 
         const AudioFormat format =
             negotiate_speech_format(*ctx_.router, req.model, request_json, is_streaming);
-        if (!format.error.empty()) {
-            write_openai_error(res, kUnsupportedFormat, format.error);
+        if (!apply_audio_format(format, res)) {
             return;
-        }
-        for (const auto& [name, value] : format.headers) {
-            res.set_header(name, value);
         }
         // The backend must encode what the Content-Type promises, including a default
         // format the client never sent.
@@ -153,7 +145,7 @@ protected:
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in audio speech: " << error.what() << std::endl;
-        write_openai_error(res, kSpeechFailure, error.what(), "internal_error");
+        write_openai_error(res, kUnexpectedException, error.what(), "internal_error");
     }};
 
 } // namespace

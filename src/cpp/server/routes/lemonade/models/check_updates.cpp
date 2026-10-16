@@ -1,8 +1,8 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_sync.h"
 
 namespace lemon {
 namespace {
@@ -10,8 +10,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kOffline{409, "", "`offline` is set to `true`; no network request is made"};
-const RouteError kCheckFailed{500, "", "The update check fails as a whole"};
 
 class CheckUpdatesRoute : public ApiRoute {
 public:
@@ -50,15 +48,14 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kOffline, kCheckFailed};
+        s.errors = {kOfflineUpdates, kUnexpectedException};
         return s;
     }
 
     void handle(RouteRequest&, httplib::Response& res) override {
         // A manual check is intentionally independent from
         // auto_check_model_updates, but full offline mode remains authoritative.
-        if (ctx_.config->offline()) {
-            write_plain_error(res, kOffline, "Cannot check model updates while offline=true");
+        if (refuse_offline_updates(ctx_, res, "check")) {
             return;
         }
 
@@ -75,7 +72,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Manual model update check failed: " << e.what() << std::endl;
-            write_plain_error(res, kCheckFailed, std::string("Model update check failed: ") + e.what());
+            write_plain_error(res, kUnexpectedException, std::string("Model update check failed: ") + e.what());
         }
     }
 };

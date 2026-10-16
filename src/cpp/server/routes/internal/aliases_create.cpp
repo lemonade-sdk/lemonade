@@ -1,3 +1,4 @@
+#include "alias_errors.h"
 #include "lemon/alias_manager.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
@@ -8,19 +9,6 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-// Alias failures are not model-lookup failures. ModelLoader::model_error() reports any
-// name missing from the registry as "model not found", which a new alias always is.
-void write_alias_error(httplib::Response& res, const RouteError& error, const std::string& message,
-                       const std::string& type = "invalid_request_error") {
-    res.status = error.status;
-    res.set_content(json{{"error", {
-        {"message", message},
-        {"type", type},
-        {"param", "alias"},
-        {"code", error.code}
-    }}}.dump(), "application/json");
-}
 
 const RouteError kBlankField{400, "invalid_request", "`alias` or `target` is blank"};
 const RouteError kSelfAlias{400, "invalid_alias", "`alias` equals `target`"};

@@ -374,8 +374,8 @@ def lint_spec(spec: dict) -> list[str]:
 
 
 def base_error_codes(spec: dict) -> dict:
-    """Whether ApiRoute::serve() can write each of its argument errors for this route."""
-    if spec["request_format"] not in ("Json", "OptionalJson"):
+    """Whether the base classes can write each of the argument errors for this route."""
+    if spec["request_format"] not in ("Json", "OptionalJson", "Form"):
         return {
             "invalid_json": False,
             "missing_argument": False,
@@ -384,10 +384,10 @@ def base_error_codes(spec: dict) -> dict:
     checked = [
         arg
         for arg in spec["args"]
-        if arg["in"] in ("JsonBody", "Query") and not arg["forwarded"]
+        if arg["in"] in ("JsonBody", "Query", "Form") and not arg["forwarded"]
     ]
     return {
-        "invalid_json": True,
+        "invalid_json": spec["request_format"] != "Form",
         "missing_argument": any(arg["required"] for arg in checked),
         "invalid_argument": bool(checked),
     }
@@ -466,11 +466,9 @@ def lint_sources() -> list[str]:
             if "void write_exception" not in text:
                 base_errors.append("kUnexpectedException")
             if "RequestFormat::Form" in text:
-                base_errors += ["kFormNotMultipart", "kFormValueInvalid"]
+                base_errors.append("kFormNotMultipart")
             fills_model = 'req.body["model"] =' in text
-            if "RequestFormat::Form" in text or not (
-                REQUIRED_MODEL_ARG.search(text) or fills_model
-            ):
+            if not (REQUIRED_MODEL_ARG.search(text) or fills_model):
                 base_errors.append("kModelMissing")
         for name in base_errors:
             if name not in lists:

@@ -11,7 +11,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kEmptyRecipeOrBackend{400, "", "`recipe` or `backend` is empty"};
 const RouteError kResolveFailed{
     500, "",
     "Resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform "
@@ -42,9 +41,9 @@ public:
             "manifest, to verify it.",
         };
         s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The recipe, such as `llamacpp`, `whispercpp` or `vllm`."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."},
             {"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
@@ -79,7 +78,7 @@ public:
             "arch": "gfx1201"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kEmptyRecipeOrBackend, kResolveFailed};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kResolveFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -89,14 +88,9 @@ public:
         try {
             const json& request_json = req.body;
 
-            const std::string recipe = request_json.value("recipe", "");
-            const std::string backend = request_json.value("backend", "");
+            const std::string recipe = request_json["recipe"].get<std::string>();
+            const std::string backend = request_json["backend"].get<std::string>();
             requested_arch = request_json.value("arch", "");
-
-            if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, kEmptyRecipeOrBackend, "Both 'recipe' and 'backend' are required");
-                return;
-            }
 
             if (!requested_arch.empty()) {
                 SystemInfo::set_rocm_arch_override(requested_arch);

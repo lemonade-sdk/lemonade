@@ -1,3 +1,4 @@
+#include "alias_errors.h"
 #include "lemon/alias_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/utils/model_name_utils.h"
@@ -51,19 +52,9 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         std::string alias = utils::normalize_model_name(req.http.matches[1]);
-        auto write_error = [&res](const RouteError& error, const std::string& message,
-                                  const std::string& type) {
-            res.status = error.status;
-            res.set_content(json{{"error", {
-                {"message", message},
-                {"type", type},
-                {"param", "alias"},
-                {"code", error.code}
-            }}}.dump(), "application/json");
-        };
         try {
             if (!ctx_.alias_manager || !ctx_.alias_manager->remove_alias(alias)) {
-                write_error(kAliasNotFound, "Alias not found: " + alias, "invalid_request_error");
+                write_alias_error(res, kAliasNotFound, "Alias not found: " + alias);
                 return;
             }
             json response = {
@@ -72,7 +63,7 @@ public:
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
-            write_error(kSaveFailed, e.what(), "server_error");
+            write_alias_error(res, kSaveFailed, e.what(), "server_error");
         }
     }
 };

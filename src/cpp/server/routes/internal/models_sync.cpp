@@ -4,7 +4,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
 #include "lemon/server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_sync.h"
@@ -16,9 +15,6 @@ using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
-const RouteError kOffline{409, "", "Offline mode (`offline=true`) is on, so no network request is made"};
-const RouteError kDryRunFailed{500, "", "Checking for updates with `dry_run` fails"};
-const RouteError kSyncFailed{500, "", "A sync with `async: false` fails"};
 
 class ModelsSyncRoute : public ApiRoute {
 public:
@@ -67,15 +63,14 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kOffline, kDryRunFailed, kSyncFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kOfflineUpdates, kUnexpectedException};
         s.request_format = RequestFormat::OptionalJson;
         s.quiet_log = true;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (ctx_.config->offline()) {
-            write_plain_error(res, kOffline, "Cannot sync model updates while offline=true");
+        if (refuse_offline_updates(ctx_, res, "sync")) {
             return;
         }
 
@@ -109,7 +104,7 @@ public:
                 res.status = 200;
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Model sync dry-run failed: " << e.what() << std::endl;
-                write_plain_error(res, kDryRunFailed, std::string("Model sync dry-run failed: ") + e.what());
+                write_plain_error(res, kUnexpectedException, std::string("Model sync dry-run failed: ") + e.what());
             }
             return;
         }
@@ -140,7 +135,7 @@ public:
             res.status = 200;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model sync failed: " << e.what() << std::endl;
-            write_plain_error(res, kSyncFailed, std::string("Model sync failed: ") + e.what());
+            write_plain_error(res, kUnexpectedException, std::string("Model sync failed: ") + e.what());
         }
     }
 };

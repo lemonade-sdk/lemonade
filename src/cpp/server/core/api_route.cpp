@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <regex>
 #include <stdexcept>
 
 #include <lemon/utils/aixlog.hpp>
@@ -22,15 +23,14 @@ using json = nlohmann::json;
 
 const RouteError kBackendError{
     500, "", "The backend reports an error; the backend's own status replaces this one when it sends one"};
+const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
 const RouteError ApiRoute::kBodyNotJson{400, "invalid_json", "The body is not a JSON object"};
 const RouteError ApiRoute::kArgMissing{400, "missing_argument", "A required argument is missing"};
 const RouteError ApiRoute::kArgInvalid{
     400, "invalid_argument", "An argument or a value nested in it has the wrong JSON type, or a value its schema does not list"};
 const RouteError ModelRoute::kFormNotMultipart{400, "", "The request is not `multipart/form-data`"};
-const RouteError ModelRoute::kFormValueInvalid{
-    400, "", "A numeric form field does not parse as its parameter's type"};
 const RouteError ModelRoute::kModelMissing{400, "", "The request names no `model`"};
-const RouteError ModelRoute::kUnexpectedException{
+const RouteError ApiRoute::kUnexpectedException{
     500, "", "The request fails unexpectedly"};
 const RouteError kNoOutputError{
     502, "", "The backend produces no output, for example after it crashes or runs out of GPU memory"};
@@ -116,6 +116,25 @@ bool matches_schema(const json& value, const json& schema, bool from_query) {
     if (schema.contains("const") && value != schema["const"]) {
         return false;
     }
+    if (value.is_number() || (from_query && (schema.contains("minimum") || schema.contains("maximum")))) {
+        const double number = value.is_number() ? value.get<double>()
+                                                : std::stod(value.get<std::string>());
+        if (schema.contains("minimum") && number < schema["minimum"].get<double>()) return false;
+        if (schema.contains("maximum") && number > schema["maximum"].get<double>()) return false;
+    }
+    if (value.is_string() && !from_query) {
+        const std::string& text = value.get_ref<const std::string&>();
+        if (schema.contains("minLength") && text.size() < schema["minLength"].get<size_t>()) {
+            return false;
+        }
+        if (schema.contains("maxLength") && text.size() > schema["maxLength"].get<size_t>()) {
+            return false;
+        }
+        if (schema.contains("pattern") &&
+            !std::regex_search(text, std::regex(schema["pattern"].get<std::string>()))) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -162,13 +181,35 @@ bool allows_null(const json& schema) {
 std::string describe_schema(const json& schema) {
     if (schema.contains("enum")) return "one of " + schema["enum"].dump();
     if (schema.contains("const")) return schema["const"].dump();
-    if (!schema.contains("type")) return "a valid value";
-    const json& types = schema["type"];
-    if (types.is_string()) return types.get<std::string>();
-    std::string text;
-    for (size_t i = 0; i < types.size(); ++i) {
-        text += (i == 0 ? "" : i + 1 == types.size() ? " or " : ", ") + types[i].get<std::string>();
+    std::string text = "a valid value";
+    if (schema.contains("type")) {
+        const json& types = schema["type"];
+        if (types.is_string()) {
+            text = types.get<std::string>();
+        } else {
+            text.clear();
+            for (size_t i = 0; i < types.size(); ++i) {
+                text += (i == 0 ? "" : i + 1 == types.size() ? " or " : ", ") +
+                        types[i].get<std::string>();
+            }
+        }
     }
+    if (schema.contains("minimum") && schema.contains("maximum")) {
+        text += " from " + schema["minimum"].dump() + " to " + schema["maximum"].dump();
+    } else if (schema.contains("minimum")) {
+        text += " of at least " + schema["minimum"].dump();
+    } else if (schema.contains("maximum")) {
+        text += " of at most " + schema["maximum"].dump();
+    }
+    if (schema.contains("minLength")) {
+        text = schema["minLength"] == 1 ? "non-empty " + text
+                                        : text + " of at least " + schema["minLength"].dump() +
+                                              " characters";
+    }
+    if (schema.contains("maxLength")) {
+        text += " of at most " + schema["maxLength"].dump() + " characters";
+    }
+    if (schema.contains("pattern")) text += " matching " + schema["pattern"].dump();
     return text;
 }
 
@@ -266,7 +307,7 @@ int get_error_status_code(const json& response, int default_status_code) {
         }
 
         if (type == ErrorType::MODEL_NOT_LOADED) {
-            return 404;
+            return kModelUnloaded.status;
         }
     }
 
@@ -388,7 +429,7 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
 
 bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
     for (const auto& arg : req.spec.args) {
-        if (arg.forwarded || (arg.in != ArgIn::JsonBody && arg.in != ArgIn::Query)) {
+        if (arg.forwarded || arg.in == ArgIn::Path) {
             continue;
         }
         std::vector<std::string> names = {arg.name};
@@ -406,9 +447,16 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                     continue;
                 }
                 value = *it;
-            } else {
+            } else if (arg.in == ArgIn::Query) {
                 if (!req.http.has_param(name)) continue;
                 value = req.http.get_param_value(name);
+            } else if (is_file_arg(arg)) {
+                if (req.http.form.has_file(name)) present = true;
+                continue;
+            } else {
+                auto it = req.body.find(name);
+                if (it == req.body.end()) continue;
+                value = *it;
             }
             present = true;
             std::string path = name;
@@ -561,13 +609,12 @@ bool ModelRoute::build_form_body(RouteRequest& req, httplib::Response& res) {
                 req.body[arg.name] = value;
             }
         } catch (const std::exception&) {
-            write_openai_error(res, kFormValueInvalid,
-                               "Invalid value for '" + arg.name + "': must be " +
-                                   (type == "integer" ? "an integer" : "a number"));
+            write_error(res, req.spec.error_format, kArgInvalid,
+                        "Invalid value for '" + arg.name + "': expected " + type);
             return false;
         }
     }
-    return true;
+    return check_args(req, res);
 }
 
 std::string strip_latest_tag(const std::string& name) {
@@ -709,10 +756,12 @@ void write_plain_error(httplib::Response& res, const RouteError& error, const st
 
 void write_anthropic_error(httplib::Response& res, const RouteError& error,
                            const std::string& message) {
+    json body = anthropic::build_anthropic_error(json{{"message", message}}, error.status);
+    if (!error.code.empty()) {
+        body["error"]["code"] = error.code;
+    }
     res.status = error.status;
-    res.set_content(
-        anthropic::build_anthropic_error(json{{"message", message}}, error.status).dump(),
-        "application/json");
+    res.set_content(body.dump(), "application/json");
 }
 
 void write_error(httplib::Response& res, ErrorFormat format, const RouteError& error,

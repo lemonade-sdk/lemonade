@@ -1,8 +1,21 @@
 #include "lemon/server/model_sync.h"
 
+#include "lemon/runtime_config.h"
+#include "lemon/server/api_route.h"
+
 namespace lemon {
 
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kOfflineUpdates{409, "", "`offline` is set to `true`; no network request is made"};
+
+bool refuse_offline_updates(ServerContext& ctx, httplib::Response& res, const std::string& action) {
+    if (!ctx.config->offline()) {
+        return false;
+    }
+    write_plain_error(res, kOfflineUpdates, "Cannot " + action + " model updates while offline=true");
+    return true;
+}
 
 ordered_json model_sync_status_schema() {
     return ordered_json::parse(R"({
@@ -41,6 +54,16 @@ ordered_json model_sync_status_schema() {
             }
         }
     })");
+}
+
+const RouteError kLemondOffline{400, "lemond_offline", "`offline` is set to `true`"};
+
+bool refuse_offline_download(ServerContext& ctx, httplib::Response& res) {
+    if (!ctx.config->offline()) {
+        return false;
+    }
+    write_plain_error(res, kLemondOffline, "Lemond is in offline mode, models not downloaded");
+    return true;
 }
 
 } // namespace lemon

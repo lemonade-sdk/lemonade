@@ -15,7 +15,6 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kMalformedImage{
     400, "", "`image` is not base64 data, or is a `data:` URL without a base64 payload"};
 const RouteError kUnsupportedImage{400, "", "`image` is not a PNG, JPEG, BMP or GIF"};
-const RouteError kInvalidResponseFormat{400, "", "`response_format` is not `glb`"};
 const RouteError kGenerationException{
     500, "", "`model` is not a 3D model, or generation fails unexpectedly"};
 
@@ -56,7 +55,7 @@ public:
              "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducibility. Defaults to the backend's own."},
-            {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
              "Output encoding. Only `glb`, the format the backend produces, is accepted. "
              "Defaults to `glb`."},
         };
@@ -75,7 +74,7 @@ public:
         })");
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kMalformedImage,
-                                 kUnsupportedImage, kInvalidResponseFormat, kNoOutputError,
+                                 kUnsupportedImage, kNoOutputError,
                                  kBackendError, kGenerationException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
@@ -118,15 +117,6 @@ protected:
         if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
             return reject(kUnsupportedImage,
                           "'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
-        }
-        std::string response_format = "glb";
-        if (request_json.contains("response_format")) {
-            response_format = request_json["response_format"].get<std::string>();
-        }
-        // TODO: convert from a natively supported format instead of rejecting.
-        if (response_format != "glb") {
-            return reject(kInvalidResponseFormat, "response_format '" + response_format +
-                                                  "' is not supported (supported: glb)");
         }
         return true;
     }

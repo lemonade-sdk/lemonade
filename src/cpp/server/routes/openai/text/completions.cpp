@@ -1,10 +1,10 @@
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/streaming_proxy.h"
+#include "require_llm.h"
 
 namespace lemon {
 namespace {
@@ -12,7 +12,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kNotLlm{400, "", "`model` is not an LLM, which is checked after it loads"};
 const RouteError kNoChoices{500, "", "The backend's response has no `choices`"};
 
 ordered_json text_completion_schema(bool chunk) {
@@ -177,9 +176,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (ctx_.router->get_model_type(req.model) != ModelType::LLM) {
-            LOG(ERROR, "Server") << "Model does not support completion" << std::endl;
-            write_openai_error(res, kNotLlm, "This model does not support completion. Only LLM models support this endpoint.");
+        if (!require_llm(*ctx_.router, req.model, "completion", res)) {
             return;
         }
 

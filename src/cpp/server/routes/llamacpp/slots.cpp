@@ -1,18 +1,12 @@
-#include <lemon/utils/aixlog.hpp>
-
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "recent_llamacpp.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteError kNoModelLoaded{400, "", "No model is loaded"};
-const RouteError kModelUnloaded{404, "", "The model is unloaded while the request waits for it"};
-const RouteError kNotLlamaCpp{400, "", "The most recently used model is not a llama.cpp model"};
-const RouteError kSlotsFailed{500, "", "Reading the slots fails unexpectedly"};
 
 class SlotsRoute : public ApiRoute {
 public:
@@ -65,30 +59,13 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kNoModelLoaded, kModelUnloaded, kNotLlamaCpp, kBackendError, kSlotsFailed};
+        s.errors = RecentLlamaCpp::errors();
         return s;
     }
 
     void handle(RouteRequest&, httplib::Response& res) override {
-        try {
-            // Slots are backend state, so they need a loaded model rather than a named one.
-            if (!ctx_.router->is_model_loaded()) {
-                LOG(ERROR, "Server") << "No model loaded for slots query" << std::endl;
-                write_plain_error(res, kNoModelLoaded, "No model loaded for slots query");
-                return;
-            }
-
-            auto response = ctx_.router->get_slots();
-            if (response.contains("error")) {
-                set_error_response(response, res, kBackendError);
-                return;
-            }
-
-            res.set_content(response.dump(), "application/json");
-        } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "ERROR in handle_slots: " << e.what() << std::endl;
-            write_plain_error(res, kSlotsFailed, e.what());
-        }
+        RecentLlamaCpp::serve(*ctx_.router, res, "slots query",
+                              [this] { return ctx_.router->get_slots(); });
     }
 };
 

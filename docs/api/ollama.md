@@ -185,11 +185,10 @@ Each line carries the next message piece with `done: false`. When the message en
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | A field has the wrong type, or another step throws |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.chat -->
 
 <!-- BEGIN GENERATED: ollama.generate -->
@@ -353,11 +352,10 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | A field has the wrong type, or another step throws |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.generate -->
 
 <!-- BEGIN GENERATED: ollama.tags -->
@@ -433,7 +431,7 @@ This endpoint does not take any parameters.
 
 | Status | When |
 |--------|------|
-| `500` | Listing the models throws |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: ollama.tags -->
 
 <!-- BEGIN GENERATED: ollama.show -->
@@ -520,9 +518,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | The `model` or `name` used is empty |
-| `404` |  | The model names no model in the registry, or one filtered out on this system |
-| `500` |  | A field has the wrong type, or another step throws |
+| `404` |  | `model` names no model in the registry, or one filtered out on this system |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->
@@ -570,9 +567,8 @@ Success answers `200` with an empty body, as Ollama does.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | The `model` or `name` used is empty |
-| `404` |  | The model names no model, or one this system does not support |
-| `500` |  | Deleting fails for another reason, such as an `extra.` model |
+| `404` |  | `model` names no model in the registry, or one filtered out on this system |
+| `500` |  | Deleting fails for another reason, for example for an `extra.` model, a file that stays locked after the retries, or a failed unload |
 <!-- END GENERATED: ollama.delete -->
 
 <!-- BEGIN GENERATED: ollama.pull -->
@@ -678,10 +674,9 @@ The first line is `pulling manifest`, then one line per progress report, then tw
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | The `model` or `name` used is empty |
-| `400` | `lemond_offline` | Lemonade runs in offline mode and the model exists |
-| `404` |  | The model names no model in the registry, or one filtered out on this system |
-| `500` |  | A non-streaming download fails, or a field has the wrong type |
+| `400` | `lemond_offline` | `offline` is set to `true` |
+| `404` |  | `model` names no model in the registry, or one filtered out on this system |
+| `500` |  | A non-streaming download fails |
 <!-- END GENERATED: ollama.pull -->
 
 <!-- BEGIN GENERATED: ollama.embed -->
@@ -750,11 +745,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | A field has the wrong type, or another step throws |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.embed -->
 
 <!-- BEGIN GENERATED: ollama.embeddings -->
@@ -770,8 +764,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `prompt` | No | Text to embed. Required unless `input` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `input` | No | Accepted in place of `prompt`. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` or `input` | Yes | Text to embed. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
@@ -818,12 +811,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | `model` is empty |
-| `400` |  | The body has neither `prompt` nor `input` |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
-| `500` |  | A field has the wrong type, or another step throws |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.embeddings -->
 
 <!-- BEGIN GENERATED: ollama.ps -->
@@ -902,7 +893,7 @@ This endpoint does not take any parameters.
 
 | Status | When |
 |--------|------|
-| `500` | Listing the models throws |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: ollama.ps -->
 
 <!-- BEGIN GENERATED: ollama.version -->

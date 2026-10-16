@@ -1,10 +1,8 @@
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/error_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
-#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -12,13 +10,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kModelRequired{400, "", "`model` is empty"};
-const RouteError kModelNotLoaded{
-    404, "",
-    "`model` fails to load for any reason other than a residency conflict, such as naming no "
-    "model or a failed download"};
-const RouteError kPromptRequired{400, "", "The body has neither `prompt` nor `input`"};
-const RouteError kRequestFailed{500, "", "A field has the wrong type, or another step throws"};
 
 class EmbeddingsRoute : public ApiRoute {
 public:
@@ -35,13 +26,11 @@ public:
             "Returns the embedding of one text in Ollama's older format, loading the model on "
             "first use.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Embedding model to run."},
-            {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "Text to embed. Required unless `input` is given."},
-            {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "Accepted in place of `prompt`. For an array, only the first text's embedding is "
-             "returned."},
+            {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
+             "Text to embed. For an array, only the first text's embedding is returned.",
+             {"input"}},
             {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
              "`num_ctx` sets the context size when this request loads the model. Other keys are "
              "ignored."},
@@ -69,9 +58,9 @@ public:
             "prompt": "Why is the sky blue?"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kModelRequired,
-                    ModelLoader::kRouterResidencyConflict, kModelNotLoaded, kPromptRequired,
-                    kOllamaBackendError, kRequestFailed};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+                                {kOllamaBackendError,
+                                 ApiRoute::kUnexpectedException}});
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -80,38 +69,17 @@ public:
         try {
             const json& request_json = req.body;
 
-            std::string model = strip_latest_tag(request_json.value("model", ""));
-            if (model.empty()) {
-                res.status = kModelRequired.status;
-                res.set_content(R"({"error":"model is required"})", "application/json");
-                return;
-            }
+            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
 
-            try {
-                ctx_.model_loader->ensure_loaded(model,
-                                                 gateway_load_options(request_json));
-            } catch (const RouterResidencyConflictException& e) {
-                write_ollama_residency_conflict(e, res);
-                return;
-            } catch (const std::exception& e) {
-                res.status = kModelNotLoaded.status;
-                json error = {{"error", "model '" + model + "' not found"}};
-                res.set_content(error.dump(), "application/json");
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
+                                       res)) {
                 return;
             }
 
             json openai_req;
             openai_req["model"] = model;
 
-            if (request_json.contains("prompt")) {
-                openai_req["input"] = request_json["prompt"];
-            } else if (request_json.contains("input")) {
-                openai_req["input"] = request_json["input"];
-            } else {
-                res.status = kPromptRequired.status;
-                res.set_content(R"({"error":"prompt is required"})", "application/json");
-                return;
-            }
+            openai_req["input"] = request_json["prompt"];
 
             auto openai_response = ctx_.router->embeddings(openai_req);
 
@@ -131,9 +99,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/embeddings: " << e.what() << std::endl;
-            res.status = kRequestFailed.status;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

@@ -4,6 +4,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "local_backend.h"
 #include "lemon/backend_manager.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
@@ -18,8 +19,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kMissingRecipeOrBackend{
-    400, "", "A local install is missing `recipe`, or `recipe` or `backend` is empty"};
 const RouteError kUnsupportedBackend{
     400, "", "The backend is not supported on this system and `force` is not set"};
 const RouteError kMissingCloudFields{
@@ -118,10 +117,10 @@ public:
             "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
              "Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, "
              "`sd-cpp` or `ryzenai-llm`."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
              "`default`. Cloud providers: `\"cloud\"`."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -205,7 +204,7 @@ public:
         })");
 
         s.examples = {local_example, stream_example, job_example, cloud_example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingRecipeOrBackend,
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingRecipe,
                     kUnsupportedBackend, kMissingCloudFields, kInvalidProviderName,
                     kInvalidBaseUrl, kInvalidCloudOption, kInsecureHttpError, kInstallFailed};
         s.request_format = RequestFormat::Json;
@@ -221,16 +220,14 @@ public:
                 return;
             }
 
-            std::string recipe = request_json.value("recipe", "");
-            std::string backend = request_json.value("backend", "");
+            std::string recipe;
+            std::string backend;
+            if (!read_local_backend(request_json, recipe, backend, res)) {
+                return;
+            }
             bool stream = request_json.value("stream", false);
             bool subscribe = request_json.value("subscribe", true);
             bool force = request_json.value("force", false);
-
-            if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, kMissingRecipeOrBackend, "Both 'recipe' and 'backend' are required");
-                return;
-            }
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 

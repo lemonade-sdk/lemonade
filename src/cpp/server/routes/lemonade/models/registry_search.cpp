@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/server/model_sync.h"
 #include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
@@ -16,7 +17,6 @@ const RouteError kInvalidSearchParam{
     400, "",
     "`source` names an unsupported registry, `limit` is not an integer from 1 to 50, or "
     "`format` is not `gguf`"};
-const RouteError kOffline{400, "lemond_offline", "`offline` is set to `true`"};
 const RouteError kRateLimited{
     429, "",
     "The upstream registry rate-limits the request; `error.upstream_status_code` is its "
@@ -90,8 +90,8 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"source", "modelscope"}, {"query", "qwen"}, {"format", "gguf"}};
         s.examples = {example};
-        s.errors = {kShortQuery, kInvalidSearchParam, kOffline, kRateLimited, kUpstreamError,
-                    kSearchFailed};
+        s.errors = {kShortQuery, kInvalidSearchParam, kLemondOffline,
+                    kRateLimited, kUpstreamError, kSearchFailed};
         return s;
     }
 
@@ -142,7 +142,7 @@ public:
             }
 
             if (ctx_.config->offline()) {
-                write_openai_error(res, kOffline,
+                write_openai_error(res, kLemondOffline,
                                    "Lemond is in offline mode, registry search is unavailable");
                 return;
             }

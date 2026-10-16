@@ -180,14 +180,13 @@ data: {"type": "message_stop"}
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | `model` is empty |
 | `400` |  | `model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base URL and was not installed with `--allow-insecure-http` |
 | `401` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no API key |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
-| `409` |  | Loading `model` would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no base URL |
 | `500` |  | `model` is a `--wire-format anthropic` cloud model with no `checkpoint` |
 | `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
-| `500` |  | A field has the wrong type, or another step throws |
+| `500` |  | The request fails unexpectedly |
 | `502` |  | Without `stream`, the relayed cloud request fails or the provider answers with an error; the provider's own status and body replace this one when it answers |
 <!-- END GENERATED: anthropic.messages -->

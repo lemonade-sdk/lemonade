@@ -21,11 +21,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kMissingPrompt{400, "", "The form has no `prompt`"};
-const RouteError kImageBackendError{
-    500, "",
-    "The backend reports an error, for example when `model` cannot edit images, an error whose "
-    "`type` is `unsupported_operation`"};
 
 std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
     auto at = [&bytes](size_t i) -> std::uint8_t {
@@ -133,7 +128,7 @@ public:
              "The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
             {"image", ArgIn::Form, file, true, Support::Available,
              "PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files "
-             "are forwarded without re-encoding."},
+             "are forwarded without re-encoding.", {"image[]"}},
             {"prompt", ArgIn::Form, text, true, Support::Available,
              "A text description of the desired edit."},
             {"mask", ArgIn::Form, file, false, Support::Available,
@@ -143,11 +138,11 @@ public:
              "image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` "
              "(2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips "
              "that cap; backend limits still apply."},
-            {"n", ArgIn::Form, integer, false, Support::Available,
+            {"n", ArgIn::Form, {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}, false, Support::Available,
              "Number of images to generate, from `1` to `10`. "
              "Defaults to `1`."},
             {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported."},
+             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
             {"steps", ArgIn::Form, integer, false, Support::Available,
              "Number of inference steps. Defaults to the model's own."},
             {"cfg_scale", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
@@ -181,10 +176,11 @@ public:
             "image": "@fixtures/image.png"
         })");
         s.examples = {example};
-        s.errors = join_errors({{kFormNotMultipart, kFormValueInvalid, kModelMissing, kMissingPrompt,
+        s.errors = join_errors({{kFormNotMultipart, kArgMissing, kArgInvalid,
                                  kImageBackendError},
                                 attach_form_image_errors(/*allow_multiple=*/true),
                                 image_route_exception_errors(), ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Form;
         return s;
     }
@@ -222,20 +218,12 @@ protected:
                                 << " (" << mask->content.size() << " bytes)" << std::endl;
         }
 
-        if (!req.body.contains("prompt")) {
-            write_openai_error(res, kMissingPrompt, "Missing 'prompt' field in request");
-            return false;
-        }
         return true;
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->image_edits(req.body);
-        if (response.contains("error")) {
-            LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
-            res.status = kImageBackendError.status;
-        }
-        res.set_content(response.dump(), "application/json");
+        write_image_backend_response(response, res);
     }
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
