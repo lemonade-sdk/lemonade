@@ -1057,16 +1057,22 @@ jobs:
       # grouping them costs little and removes most of the handoffs.
       matrix:
         include:
-          - name: vulkan-rocm
+          # Split in two: as one group this ran ~20 min and set the run's
+          # critical path. Parts are balanced by measured runtime. A third part
+          # would claim every vulkan+rocm runner, leaving none for stx-halo.
+          - name: vulkan-rocm-1
             runner: [Windows, X64, vulkan, rocm, lemon-prod]
             suites: >-
-              [{"name":"llamacpp","script":"server_llm.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan rocm"},
+              [{"name":"3d-trellis","script":"server_3d.py","extra_args":"--wrapped-server trellis","backends":"vulkan rocm"},
                {"name":"stable-diffusion","script":"server_sd.py","extra_args":"","backends":"cpu vulkan"},
-               {"name":"audio-gen-thinksound","script":"server_audio_generation.py","extra_args":"--wrapped-server thinksound","backends":"vulkan rocm"},
+               {"name":"audio-gen-thinksound","script":"server_audio_generation.py","extra_args":"--wrapped-server thinksound","backends":"vulkan rocm"}]
+          - name: vulkan-rocm-2
+            runner: [Windows, X64, vulkan, rocm, lemon-prod]
+            suites: >-
+              [{"name":"tts-openmoss","script":"server_tts_openmoss.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"},
+               {"name":"llamacpp","script":"server_llm.py","extra_args":"--wrapped-server llamacpp","backends":"vulkan rocm"},
                {"name":"audio-gen-acestep","script":"server_audio_generation.py","extra_args":"--wrapped-server acestep","backends":"vulkan rocm"},
-               {"name":"audio-gen-openmoss","script":"server_audio_generation.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"},
-               {"name":"3d-trellis","script":"server_3d.py","extra_args":"--wrapped-server trellis","backends":"vulkan rocm"},
-               {"name":"tts-openmoss","script":"server_tts_openmoss.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"}]
+               {"name":"audio-gen-openmoss","script":"server_audio_generation.py","extra_args":"--wrapped-server openmoss","backends":"vulkan"}]
           - name: xdna2
             runner: [Windows, X64, xdna2, lemon-prod]
             suites: >-
