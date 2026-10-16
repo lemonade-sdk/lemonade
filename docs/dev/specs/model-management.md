@@ -383,6 +383,8 @@ Rules:
 3. Download status comes from artifact sources, never from a comparison on `ModelInfo::source`.
 4. The store runs no thread. A rebuild runs on the executor of whoever requested it — the sync service's worker, the directory watcher, or the call that changed the model set — and publishes with `std::atomic_store` and one notification.
 5. The five steps are private methods of `StoreBuilder`. The pipeline is fixed, not a pluggable stage list: a new stage is an edit to `StoreBuilder`, which is exactly the friction wanted here.
+6. A read publishes nothing. `generation` is the signal clients watch for "the set changed", so a read answers from the published snapshot and never takes the store lock — a read that published would invalidate every watcher without changing anything.
+7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a draft with no lock held. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build makes every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
 
 ## Hardware Filtering
 

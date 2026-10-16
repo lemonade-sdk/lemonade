@@ -224,6 +224,10 @@ public:
     // Unfiltered: see models::KnownModels.
     std::map<std::string, ModelInfo> all_models() const;
 
+    // Absolute paths recorded for a model, empty if nothing is recorded.
+    std::map<std::string, std::filesystem::path> resolved_paths_for(
+        const std::string& canonical_model_name) const;
+
     // Drop the model's own registration, if it has one. Rows the catalog re-creates
     // have none.
     void forget_registered_model(const std::string& canonical_model_name);
