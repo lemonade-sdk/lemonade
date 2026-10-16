@@ -173,9 +173,9 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 
 ### Argument Validation
 
-This section defines how `ApiRoute::serve()` checks a request against the route's `RouteArg`s before it calls `handle()`, so a handler never receives a wrong-typed value other than `null`.
+This section defines how `ApiRoute::serve()` checks a request against the route's `RouteArg`s before it calls `handle()`, so a handler never receives a value its schema does not allow.
 
-- **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument. A `required` argument must be present, and a value must match its schema's `type`, `enum` and `const`. `null` counts as absent, `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
+- **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument. A `required` argument must be present, and a value must match its schema's `type`, `enum` and `const`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
 - **Aliases.** A client may send an argument under any of its `aliases`, such as `model` for `/delete`'s `model_name`, and either name satisfies `required`. The docs list the aliases beside the name.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
@@ -572,7 +572,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a JSON format has no `schema`, or another format has one
 - a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it
 - a route's `description`, `notes` or argument descriptions name an error status, such as `404`
-- a `Raw` route reads its request body
+- a `Raw` route other than MCP's JSON-RPC endpoint reads its request body
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
 - a JSON format, or one of its shapes, has no example whose response it validates, unless the shape sets `x-no-example` to the reason no recording machine can return it
 - a field in a recorded JSON response has no `description` in its schema, unless an enclosing field is described without listing its properties
