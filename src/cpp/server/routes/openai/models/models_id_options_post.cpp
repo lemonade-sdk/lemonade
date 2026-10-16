@@ -59,7 +59,7 @@ std::string validate_option_value(const std::string& key, const json& expected,
 const RouteError kUnknownOption{400, "", "The body names an option that the model's recipe does not accept"};
 const RouteError kLiveProcessOption{
     400, "", "The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin`"};
-const RouteError kOptionWrongType{400, "", "An option's value has the wrong JSON type"};
+const RouteError kOptionWrongType{400, "", "A recipe option not listed above has the wrong JSON type"};
 const RouteError kInvalidOptionValue{
     400, "",
     "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};

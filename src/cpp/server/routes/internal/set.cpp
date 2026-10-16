@@ -23,7 +23,7 @@ std::string json_type_name(const json& value) {
 }
 
 const RouteError kInvalidSetting{
-    400, "", "The body is `{}`, or has an unknown key or an invalid value"};
+    400, "", "The body is `{}`, names an unknown setting, or gives a setting a value outside its range or options"};
 const RouteError kApplyFailed{500, "", "Applying a setting fails"};
 
 class SetRoute : public ApiRoute {

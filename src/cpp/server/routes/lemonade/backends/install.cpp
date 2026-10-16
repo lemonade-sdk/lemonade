@@ -32,7 +32,8 @@ const RouteError kInvalidBaseUrl{
     "whitespace"};
 const RouteError kInvalidCloudOption{
     400, "",
-    "`auth_header_name`, `auth_header_prefix` or `wire_format` is not a valid value"};
+    "`auth_header_name` is empty, over 128 characters or not a valid HTTP header name, or "
+    "`auth_header_prefix` is over 128 characters or contains a control character"};
 const RouteError kInstallFailed{500, "", "The install fails"};
 
 ordered_json install_schema() {
@@ -357,11 +358,11 @@ private:
                                   install_options.auth_header_name) ||
             !read_validated_field("auth_header_prefix",
                                   CloudProviderRegistry::validate_auth_header_prefix,
-                                  install_options.auth_header_prefix) ||
-            !read_validated_field("wire_format",
-                                  CloudProviderRegistry::validate_wire_format,
-                                  install_options.wire_format)) {
+                                  install_options.auth_header_prefix)) {
             return;
+        }
+        if (request_json.contains("wire_format")) {
+            install_options.wire_format = request_json["wire_format"].get<std::string>();
         }
         if (request_json.contains("allow_insecure_http")) {
             install_options.allow_insecure_http =

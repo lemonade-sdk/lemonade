@@ -184,7 +184,7 @@ Each line carries the next message piece with `done: false`. When the message en
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -352,7 +352,7 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -519,7 +519,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The `model` or `name` used is empty |
 | `404` |  | The model names no model in the registry, or one filtered out on this system |
 | `500` |  | A field has the wrong type, or another step throws |
@@ -569,7 +569,7 @@ Success answers `200` with an empty body, as Ollama does.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The `model` or `name` used is empty |
 | `404` |  | The model names no model, or one this system does not support |
 | `500` |  | Deleting fails for another reason, such as an `extra.` model |
@@ -677,7 +677,7 @@ The first line is `pulling manifest`, then one line per progress report, then tw
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The `model` or `name` used is empty |
 | `400` | `lemond_offline` | Lemonade runs in offline mode and the model exists |
 | `404` |  | The model names no model in the registry, or one filtered out on this system |
@@ -749,7 +749,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is empty |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -817,7 +817,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is empty |
 | `400` |  | The body has neither `prompt` nor `input` |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |

@@ -17,7 +17,6 @@ using ordered_json = nlohmann::ordered_json;
 namespace {
 
 const RouteError kOffline{409, "", "Offline mode (`offline=true`) is on, so no network request is made"};
-const RouteError kBadModels{400, "", "An item in `models` is not a string"};
 const RouteError kDryRunFailed{500, "", "Checking for updates with `dry_run` fails"};
 const RouteError kSyncFailed{500, "", "A sync with `async: false` fails"};
 
@@ -68,7 +67,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kOffline, kBadModels, kDryRunFailed, kSyncFailed};
+        s.errors = {kBodyNotJson, kArgInvalid, kOffline, kDryRunFailed, kSyncFailed};
         s.request_format = RequestFormat::OptionalJson;
         s.quiet_log = true;
         return s;
@@ -88,13 +87,7 @@ public:
 
         const json& body = req.body;
         if (body.contains("models")) {
-            for (const auto& item : body["models"]) {
-                if (!item.is_string()) {
-                    write_plain_error(res, kBadModels, "Each item in 'models' must be a string");
-                    return;
-                }
-                target_models.push_back(item.get<std::string>());
-            }
+            target_models = body["models"].get<std::vector<std::string>>();
         }
         if (body.contains("dry_run")) {
             dry_run = body["dry_run"].get<bool>();

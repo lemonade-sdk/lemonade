@@ -96,7 +96,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not a llama.cpp model |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -362,7 +362,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `id` is too large for a 32-bit integer |
 | `400` |  | No model is loaded |
 | `400` |  | The most recently used model is not a llama.cpp model |
@@ -426,7 +426,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | No model is loaded |
 | `400` |  | The most recently used model is not a llama.cpp model |
 | `404` |  | The model is unloaded while the request waits for it |

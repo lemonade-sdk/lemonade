@@ -14,9 +14,11 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kInvalidDefinition{
     400, "",
     "The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, "
-    "`recipe` is empty, the body embeds a `models` array, or `checkpoint`, `checkpoints`, "
-    "`source` or `components` is malformed"};
-const RouteError kWrongFieldType{400, "", "A definition field has the wrong JSON type"};
+    "`recipe` is empty, the body embeds a `models` array, `checkpoints` has no `main`, `source` "
+    "is unsupported, or `components` is empty or names itself, a collection or an unregistered "
+    "model, or the collection's routing policy is invalid"};
+const RouteError kWrongFieldType{
+    400, "", "A definition field not listed above has the wrong JSON type"};
 const RouteError kRegisterFailed{
     500, "",
     "The definition is invalid in another way and nothing is registered, for example a GGUF "
@@ -44,13 +46,16 @@ public:
              "Recipe that loads the model, such as `llamacpp`."},
             {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Main checkpoint. Model types with no local weights have none."},
-            {"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"checkpoints", ArgIn::JsonBody,
+             {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
              "Named checkpoints for multi-checkpoint models."},
             {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Registry or local source. Remote values are `huggingface` or `modelscope`."},
-            {"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+            {"labels", ArgIn::JsonBody,
+             {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
              "Model labels; see [Model Labels](./openai.md#model-labels)."},
-            {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+            {"components", ArgIn::JsonBody,
+             {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
              "Collections only: the component model names, each already registered."},
         };
 

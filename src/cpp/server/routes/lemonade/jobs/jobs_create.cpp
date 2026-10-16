@@ -9,10 +9,21 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kInvalidJobBody{400, "", "A step has the wrong type"};
 const RouteError kInvalidSteps{
     400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
 const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
+
+// StepRecord::from_json also reads the fields a stored job carries, such as `status`.
+json step_list_schema() {
+    return json::parse(R"({"type": "array", "items": {"type": "object", "properties": {
+        "id": {"type": "string"}, "op": {"type": "string"}, "params": {"type": "object"},
+        "when": {"type": "string"}, "extract": {"type": "object"}, "on_done": {"type": "string"},
+        "branch": {"type": "array", "items": {"type": "object", "properties": {
+            "when": {"type": "string"}, "goto": {"type": "string"}}}},
+        "on_fail": {"type": "string"}, "failure_handled": {"type": "boolean"},
+        "status": {"type": "string"}, "duration_ms": {"type": "integer"}, "error": {"type": "string"}
+    }}})");
+}
 
 class JobsCreateRoute : public ApiRoute {
 public:
@@ -41,11 +52,12 @@ public:
         s.args = {
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Display name. Defaults to `\"\"`."},
-            {"steps", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+            {"steps", ArgIn::JsonBody, step_list_schema(), false, Support::Available,
              "The steps, in order, at least one; see "
              "[Recipe: steps](../dev/job-system.md#recipe-steps). Required unless `definition` "
              "holds them."},
-            {"definition", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"definition", ArgIn::JsonBody,
+             {{"type", "object"}, {"properties", {{"steps", step_list_schema()}}}}, false, Support::Available,
              "Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over "
              "`steps`."},
             {"inputs", ArgIn::JsonBody, json::object(), false, Support::Available,
@@ -68,7 +80,7 @@ public:
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kInvalidJobBody, kInvalidSteps, kJobLimit};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSteps, kJobLimit};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -97,8 +109,6 @@ public:
         } catch (const lemon::jobs::JobError& e) {
             write_plain_error(res, e.status == kJobLimit.status ? kJobLimit : kInvalidSteps,
                               e.what());
-        } catch (const std::exception& e) {
-            write_plain_error(res, kInvalidJobBody, e.what());
         }
     }
 };

@@ -125,7 +125,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | Neither `input` nor `text` is present |
 | `400` |  | The input text is empty or only whitespace |
 | `400` |  | `top_k` is not from 1 to 1,000,000 |
@@ -322,9 +322,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
-| `400` |  | The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, `recipe` is empty, the body embeds a `models` array, or `checkpoint`, `checkpoints`, `source` or `components` is malformed |
-| `400` |  | A definition field has the wrong JSON type |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | The name is outside the `user.` namespace or has a reserved `extra.`/`builtin.` prefix, `recipe` is empty, the body embeds a `models` array, `checkpoints` has no `main`, `source` is unsupported, or `components` is empty or names itself, a collection or an unregistered model, or the collection's routing policy is invalid |
+| `400` |  | A definition field not listed above has the wrong JSON type |
 | `500` |  | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
 
@@ -612,7 +612,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `source` or `registry_source` names an unsupported source, or the checkpoint URLs disagree with it or with each other |
 | `400` |  | A new definition has a reserved or non-`user.*` name, or a malformed `checkpoint`, `checkpoints`, `source` or `components`; nothing is registered |
 | `400` | `lemond_offline` | `offline` is set to `true`; a new definition is still registered, but nothing is downloaded |
@@ -836,7 +836,7 @@ A `pause` or `cancel` for a job that already finished leaves it as it is.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `id` is empty |
 | `404` |  | `id` names no download job and `action` is not `remove` |
 <!-- END GENERATED: lemonade.downloads_control -->
@@ -1088,7 +1088,7 @@ A file still held open, for example by a download that was just cancelled, is re
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `422` |  | The model is not in the registry, or this system does not support it |
 | `500` |  | Another failure occurs, for example a file that stays locked after the retries, a failed unload, or a `model_name` of the wrong type |
 <!-- END GENERATED: lemonade.delete -->
@@ -1237,7 +1237,7 @@ A collection, which has no checkpoint of its own.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1298,7 +1298,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `404` |  | The named model is not loaded, which includes an omni collection, whose components are unloaded by their own names |
 | `500` |  | Unloading fails for another reason |
 <!-- END GENERATED: lemonade.unload -->
@@ -1418,7 +1418,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not an audio-generation model |
 | `400` |  | `response_format` is not a format the model's backend produces |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
@@ -1489,7 +1489,7 @@ Errors carry a JSON `error` object.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `image` is not base64 data, or is a `data:` URL without a base64 payload |
 | `400` |  | `image` is not a PNG, JPEG, BMP or GIF |
 | `400` |  | `response_format` is not `glb` |
@@ -2459,13 +2459,13 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | A local install is missing `recipe`, or `recipe` or `backend` is empty |
 | `400` |  | The backend is not supported on this system and `force` is not set |
 | `400` |  | A cloud install is missing `provider` or `base_url`, or one is empty |
 | `400` |  | `provider` is longer than 64 characters or not lowercase `[a-z0-9_-]` |
 | `400` |  | `base_url` does not start with `https://` or `http://`, has no host, or contains whitespace |
-| `400` |  | `auth_header_name`, `auth_header_prefix` or `wire_format` is not a valid value |
+| `400` |  | `auth_header_name` is empty, over 128 characters or not a valid HTTP header name, or `auth_header_prefix` is over 128 characters or contains a control character |
 | `400` | `insecure_http_requires_opt_in` | The provider's base URL is `http://`, an API key would be sent to it, and neither this request nor an earlier install sets `allow_insecure_http` |
 | `500` |  | The install fails |
 <!-- END GENERATED: lemonade.install -->
@@ -2548,7 +2548,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `recipe` or `backend` is empty |
 | `500` |  | Resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform or a failed version lookup; the body also carries `arch` when the request set one |
 <!-- END GENERATED: lemonade.install_dry_run -->
@@ -2651,7 +2651,7 @@ A cloud provider removed.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | A cloud uninstall has no `provider`, or an empty one |
 | `400` |  | A local uninstall is missing `recipe`, or `recipe` or `backend` is empty |
 | `404` |  | The cloud `provider` is not installed |
@@ -2724,7 +2724,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `provider` or `api_key` is empty |
 | `400` | `insecure_http_requires_opt_in` | The provider's base URL is `http://`, an API key would be sent to it, and neither this request nor an earlier install sets `allow_insecure_http` |
 | `404` |  | `provider` was not installed with [`POST /v1/install`](#post-v1install) |
@@ -2983,8 +2983,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
-| `400` |  | A step has the wrong type |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
 | `429` |  | All 50 jobs in the store are still active or resumable |
 <!-- END GENERATED: lemonade.jobs_create -->

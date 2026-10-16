@@ -179,7 +179,7 @@ data: {"type": "message_stop"}
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is empty |
 | `400` |  | `model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base URL and was not installed with `--allow-insecure-http` |
 | `401` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no API key |

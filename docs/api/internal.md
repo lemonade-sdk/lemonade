@@ -168,7 +168,7 @@ A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The model is not loaded |
 <!-- END GENERATED: internal.pin -->
 
@@ -275,8 +275,8 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
-| `400` |  | The body is `{}`, or has an unknown key or an invalid value |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | The body is `{}`, names an unknown setting, or gives a setting a value outside its range or options |
 | `500` |  | Applying a setting fails |
 <!-- END GENERATED: internal.set -->
 
@@ -444,7 +444,7 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `500` | `model_not_found` | Scanning or removing cache files fails |
 <!-- END GENERATED: internal.cleanup_cache -->
 
@@ -503,7 +503,7 @@ The answer comes after the evaluation finishes, so a test can check the outcome 
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 <!-- END GENERATED: internal.simulate_vram_pressure -->
 
 <!-- BEGIN GENERATED: internal.models_sync -->
@@ -603,8 +603,7 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
-| `400` |  | An item in `models` is not a string |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `409` |  | Offline mode (`offline=true`) is on, so no network request is made |
 | `500` |  | Checking for updates with `dry_run` fails |
 | `500` |  | A sync with `async: false` fails |
@@ -814,7 +813,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `invalid_request` | `alias` or `target` is blank |
 | `400` | `invalid_alias` | `alias` equals `target` |
 | `400` | `invalid_alias` | `alias` starts with `user.`, `extra.` or `builtin.` |

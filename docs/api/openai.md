@@ -406,7 +406,7 @@ The backend failed after the stream started. This event replaces the rest of the
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -616,7 +616,7 @@ The backend failed after the stream started. This event replaces the rest of the
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -711,7 +711,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -903,7 +903,7 @@ The backend failed after the stream started. This event replaces the rest of the
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
@@ -1223,8 +1223,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
-| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1341,7 +1341,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | `n` is outside `1` to `10` |
 | `400` |  | The form has files under both `image` and `image[]` |
 | `400` |  | The form has no file under `image` or `image[]` |
-| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1446,7 +1446,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | The request names no `model` |
 | `400` |  | `n` is outside `1` to `10` |
 | `400` |  | The form has no file under `image` or `image[]` |
-| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1529,11 +1529,11 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is empty |
 | `400` |  | `model` has no `upscaling` label |
 | `400` |  | `model`'s recipe cannot upscale |
-| `400` |  | A JSON value in the request or in the backend's reply does not parse or has the wrong type |
+| `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
 | `404` |  | `model` names no model in the registry, or downloading it fails |
 | `500` |  | The backend produces no upscaled image |
 | `500` |  | The request fails unexpectedly |
@@ -1639,7 +1639,7 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
 | `400` |  | `response_format` is not a format `model`'s backend encodes, or, when streaming, one it streams |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
@@ -2185,10 +2185,10 @@ A running model keeps its current options until it is next loaded.
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_json` | The body is not a JSON object |
-| `400` | `invalid_argument` | An argument does not match its type or allowed values |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The body names an option that the model's recipe does not accept |
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
-| `400` |  | An option's value has the wrong JSON type |
+| `400` |  | A recipe option not listed above has the wrong JSON type |
 | `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |

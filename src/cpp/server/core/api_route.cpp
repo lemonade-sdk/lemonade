@@ -25,7 +25,7 @@ const RouteError kBackendError{
 const RouteError ApiRoute::kBodyNotJson{400, "invalid_json", "The body is not a JSON object"};
 const RouteError ApiRoute::kArgMissing{400, "missing_argument", "A required argument is missing"};
 const RouteError ApiRoute::kArgInvalid{
-    400, "invalid_argument", "An argument does not match its type or allowed values"};
+    400, "invalid_argument", "An argument or a value nested in it has the wrong JSON type, or a value its schema does not list"};
 const RouteError ModelRoute::kFormNotMultipart{400, "", "The request is not `multipart/form-data`"};
 const RouteError ModelRoute::kFormValueInvalid{
     400, "", "A numeric form field does not parse as its parameter's type"};
@@ -117,6 +117,39 @@ bool matches_schema(const json& value, const json& schema, bool from_query) {
         return false;
     }
     return true;
+}
+
+// The schema that value or one of its nested values fails, with path extended to that value.
+const json* find_mismatch(const json& value, const json& schema, bool from_query,
+                          std::string& path) {
+    if (!matches_schema(value, schema, from_query)) return &schema;
+    if (value.is_array() && schema.contains("items")) {
+        for (size_t i = 0; i < value.size(); ++i) {
+            std::string item_path = path + "[" + std::to_string(i) + "]";
+            if (const json* failed = find_mismatch(value[i], schema["items"], false, item_path)) {
+                path = item_path;
+                return failed;
+            }
+        }
+    }
+    if (value.is_object()) {
+        for (const auto& [key, item] : value.items()) {
+            const json* item_schema = nullptr;
+            if (schema.contains("properties") && schema["properties"].contains(key)) {
+                item_schema = &schema["properties"][key];
+            } else if (schema.contains("additionalProperties") &&
+                       schema["additionalProperties"].is_object()) {
+                item_schema = &schema["additionalProperties"];
+            }
+            if (!item_schema) continue;
+            std::string item_path = path + "." + key;
+            if (const json* failed = find_mismatch(item, *item_schema, false, item_path)) {
+                path = item_path;
+                return failed;
+            }
+        }
+    }
+    return nullptr;
 }
 
 bool allows_null(const json& schema) {
@@ -378,10 +411,12 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                 value = req.http.get_param_value(name);
             }
             present = true;
-            if (!matches_schema(value, arg.schema, arg.in == ArgIn::Query)) {
+            std::string path = name;
+            if (const json* failed =
+                    find_mismatch(value, arg.schema, arg.in == ArgIn::Query, path)) {
                 write_error(res, req.spec.error_format, kArgInvalid,
-                            "Invalid value for '" + name + "': expected " +
-                                describe_schema(arg.schema));
+                            "Invalid value for '" + path + "': expected " +
+                                describe_schema(*failed));
                 return false;
             }
         }

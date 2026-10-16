@@ -16,7 +16,6 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteError kBadMetadata{400, "", "A `metadata` value is not a string"};
 const RouteError kInvalidPolicy{400, "", "`policy` is invalid or internally inconsistent"};
 
 class RoutingValidateRoute : public ApiRoute {
@@ -107,7 +106,8 @@ public:
              "Simulate a request carrying image input. Defaults to `false`."},
             {"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Simulate a request carrying tool definitions. Defaults to `false`."},
-            {"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"metadata", ArgIn::JsonBody,
+             {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
              "String-valued metadata pairs matched by `metadata` conditions."},
         };
 
@@ -152,7 +152,7 @@ public:
             "prompt": "please write a def to reverse a list"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kBadMetadata, kInvalidPolicy};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidPolicy};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -168,11 +168,6 @@ public:
         if (request_json.contains("metadata")) {
             const json& metadata_json = request_json["metadata"];
             for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
-                if (!it.value().is_string()) {
-                    write_plain_error(res, kBadMetadata,
-                        "'metadata' value for key '" + it.key() + "' must be a string");
-                    return;
-                }
                 metadata[it.key()] = it.value().get<std::string>();
             }
         }
