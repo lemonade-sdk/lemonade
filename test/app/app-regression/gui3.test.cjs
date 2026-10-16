@@ -228,9 +228,15 @@ const tests = [
     },
   },
   {
-    // The MCP runtime decides which image every multimodal tool acts on, and
-    // that contract is only enforced by its own fixture. Run it here so the
-    // image-precedence rules cannot drift unnoticed.
+    name: 'GUI3 throughput supports llama.cpp slots and FLM live stats',
+    run() {
+      const tsPath = path.join(repoRoot, 'src', 'app', 'node_modules', 'typescript');
+      try { require.resolve(tsPath); }
+      catch (_) { return { skip: true, reason: "typescript not installed - run 'npm ci' in src/app first" }; }
+      require(path.join(repoRoot, 'src', 'app', 'tests', 'dashboard-throughput.runtime.cjs'));
+    },
+  },
+  {
     name: 'MCP runtime image-precedence contract holds',
     run() {
       const appDir = path.join(repoRoot, 'src', 'app');
