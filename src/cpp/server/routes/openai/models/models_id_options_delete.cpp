@@ -28,9 +28,6 @@ public:
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
         };
-        s.notes = {
-            "An unknown model answers `404` with `code` `model_not_found`.",
-        };
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -42,6 +39,7 @@ public:
         example.setup = {{"openai.models_id_options_post", ""}};
         example.args = {{"id", "Qwen3-4B-GGUF"}};
         s.examples = {example};
+        s.errors = model_options_errors();
         return s;
     }
 

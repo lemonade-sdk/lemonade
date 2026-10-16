@@ -40,7 +40,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Lemonade runs the request as an OpenAI chat completion and converts both ways. Some values it cannot convert, such as an unsupported content block type or `metadata`, are ignored and reported in the `X-Lemonade-Warning` header (joined with ` | `) and in a `warnings` array. Unknown fields are ignored without a warning. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so nothing is dropped; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).
 
-Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`. A model that fails to load, whether unknown or not, answers `404` with a `not_found_error`, except a load blocked by a `collection.router` residency constraint, which answers `409`.
+Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 ### Examples
 
@@ -141,8 +141,6 @@ data: {"type": "message_stop"}
 
 #### JSON
 
-**Field Descriptions:**
-
 - `id` - The message's ID.
 - `type` - Always `message`.
 - `role` - Always `assistant`.
@@ -162,8 +160,6 @@ data: {"type": "message_stop"}
 
 #### Event stream
 
-**Field Descriptions:**
-
 - `type` - Matches the event's name: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop` or `error`. A relayed provider can also send `ping`.
 - `message` - In `message_start`: the message, with empty `content` and zero `usage`.
 - `index` - In `content_block_start`, `content_block_delta` and `content_block_stop`: the block's position in the message's `content`.
@@ -171,4 +167,22 @@ data: {"type": "message_stop"}
 - `delta` - In `content_block_delta`: the block's next `text_delta` text or `input_json_delta` partial JSON. In `message_delta`: the `stop_reason` and `stop_sequence`.
 - `usage` - In `message_delta`: token counts. Both are `0` when the backend's stream carries no usage, as with llama.cpp.
 - `warnings` - In `message_delta`: what Lemonade ignored while converting; present only when there is something to report.
+- `error` - In `error`, sent when the backend or provider fails after the stream started: the error's `type` and `message`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is a cloud model whose `--wire-format anthropic` provider has an `http://` base URL and was not installed with `--allow-insecure-http` |
+| `401` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no API key |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | `model` is a cloud model whose `--wire-format anthropic` provider has no base URL |
+| `500` |  | `model` is a `--wire-format anthropic` cloud model with no `checkpoint` |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+| `502` |  | Without `stream`, the relayed cloud request fails or the provider answers with an error; the provider's own status and body replace this one when it answers |
 <!-- END GENERATED: anthropic.messages -->

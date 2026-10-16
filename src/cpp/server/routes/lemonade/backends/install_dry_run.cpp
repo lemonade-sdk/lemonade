@@ -11,6 +11,11 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kResolveFailed{
+    500, "",
+    "Resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform "
+    "or a failed version lookup; the body also carries `arch` when the request set one"};
+
 class InstallDryRunRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -28,21 +33,17 @@ public:
             "reads local configuration and, for a backend version set to `latest`, GitHub release "
             "metadata.";
         s.notes = {
+            "Errors carry an `error` string.",
             "A device ISA may resolve to a family target name used by the release repository, for "
             "example `gfx1201` to `gfx120X`. That mapping is defined by `rocm_asset_families` in "
             "`backend_versions.json`.",
             "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
             "manifest, to verify it.",
-            "A `400` answers a missing or empty `recipe` or `backend`. Invalid JSON, or "
-            "install-parameter resolution failing (an unknown recipe/backend pair, an unsupported "
-            "platform, unavailable architecture detection, failed version resolution), answers "
-            "`500`. Errors carry an `error` string, and a `500` also carries `arch` when the "
-            "request set one.",
         };
         s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The recipe, such as `llamacpp`, `whispercpp` or `vllm`."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."},
             {"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
@@ -77,22 +78,19 @@ public:
             "arch": "gfx1201"
         })");
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kResolveFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         std::string requested_arch;
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
-            const std::string recipe = request_json.value("recipe", "");
-            const std::string backend = request_json.value("backend", "");
+            const std::string recipe = request_json["recipe"].get<std::string>();
+            const std::string backend = request_json["backend"].get<std::string>();
             requested_arch = request_json.value("arch", "");
-
-            if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, 400, "Both 'recipe' and 'backend' are required");
-                return;
-            }
 
             if (!requested_arch.empty()) {
                 SystemInfo::set_rocm_arch_override(requested_arch);
@@ -131,7 +129,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             SystemInfo::set_rocm_arch_override("");
-            res.status = 500;
+            res.status = kResolveFailed.status;
             json error = {{"error", e.what()}};
             if (!requested_arch.empty()) {
                 error["arch"] = requested_arch;

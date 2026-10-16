@@ -56,6 +56,13 @@ std::string validate_option_value(const std::string& key, const json& expected,
     return "";
 }
 
+const RouteError kUnknownOption{400, "", "The body names an option that the model's recipe does not accept"};
+const RouteError kLiveProcessOption{
+    400, "", "The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin`"};
+const RouteError kInvalidOptionValue{
+    400, "",
+    "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};
+
 class ModelsIdOptionsPostRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -76,14 +83,10 @@ public:
             "but `ctx_size`, and the model falls back to the next layer of the "
             "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
             "removes every saved option at once.",
-            "A `400` answers an empty or invalid body, an unrecognized option or one from another "
-            "recipe, a value of the wrong type or an invalid `ctx_size`, a non-boolean "
-            "`dry_run`, and nothing from that request is saved.",
-            "An unknown model answers `404` with `code` `model_not_found`, even when the body is "
-            "also invalid.",
+            "A request that fails validation saves nothing.",
             "A running model keeps its current options until it is next loaded.",
-            "`pinned` answers `400` here and is omitted from `effective` and `defaults`; it "
-            "belongs to [`/v1/load`](./lemonade.md#post-v1load) and "
+            "`pinned` is omitted from `effective` and `defaults`; it belongs to "
+            "[`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",
         };
         s.args = {
@@ -109,42 +112,21 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgInvalid, kUnknownOption, kLiveProcessOption,
+                                 kUnlistedFieldInvalid, kInvalidOptionValue},
+                                model_options_errors()});
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager* model_manager = ctx_.model_manager;
-        const httplib::Request& http = req.http;
-        // The body is parsed after the model resolves, so an unknown model answers 404
-        // even when the body is also invalid.
-        respond_with_model_options(ctx_, http, res,
-            [model_manager, &http](const std::string& model_key, ModelInfo& info,
-                                   httplib::Response& r) {
-                if (http.body.empty()) {
-                    write_plain_error(r, 400, "Request body is required but was empty");
-                    return false;
-                }
-                json body;
-                try {
-                    body = json::parse(http.body);
-                } catch (const json::exception& e) {
-                    write_plain_error(r, 400, std::string("Invalid JSON in request body: ") + e.what());
-                    return false;
-                }
-                if (!body.is_object()) {
-                    write_plain_error(r, 400, "Request body must be a JSON object of recipe options");
-                    return false;
-                }
-
-                bool dry_run = false;
-                if (body.contains("dry_run")) {
-                    if (!body["dry_run"].is_boolean()) {
-                        write_plain_error(r, 400, "'dry_run' must be a boolean");
-                        return false;
-                    }
-                    dry_run = body["dry_run"].get<bool>();
-                    body.erase("dry_run");
-                }
+        respond_with_model_options(ctx_, req.http, res,
+            [model_manager, &req](const std::string& model_key, ModelInfo& info,
+                                  httplib::Response& r) {
+                json body = req.body;
+                const bool dry_run = body.contains("dry_run") && body["dry_run"] == true;
+                body.erase("dry_run");
 
                 const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
                 const std::set<std::string> allowed(keys.begin(), keys.end());
@@ -156,12 +138,12 @@ public:
                 for (const auto& [key, value] : body.items()) {
                     if (key == "model_name") continue;
                     if (!allowed.count(key)) {
-                        write_plain_error(r, 400, "Unknown option '" + key +
-                                                      "' for recipe '" + info.recipe + "'");
+                        write_plain_error(r, kUnknownOption, "Unknown option '" + key +
+                                          "' for recipe '" + info.recipe + "'");
                         return false;
                     }
                     if (is_live_process_option(key)) {
-                        write_plain_error(r, 400, "'" + key + "' applies to a running "
+                        write_plain_error(r, kLiveProcessOption, "'" + key + "' applies to a running "
                             "model; use /v1/load or /internal/pin");
                         return false;
                     }
@@ -177,12 +159,13 @@ public:
                     }
                     const json expected = unset.get_option(key);
                     if (!option_type_matches(expected, value)) {
-                        write_plain_error(r, 400, "Invalid type for option '" + key + "'");
+                        write_plain_error(r, kUnlistedFieldInvalid,
+                                          "Invalid type for option '" + key + "'");
                         return false;
                     }
                     const std::string invalid = validate_option_value(key, expected, value);
                     if (!invalid.empty()) {
-                        write_plain_error(r, 400, invalid);
+                        write_plain_error(r, kInvalidOptionValue, invalid);
                         return false;
                     }
                     changes[key] = value;

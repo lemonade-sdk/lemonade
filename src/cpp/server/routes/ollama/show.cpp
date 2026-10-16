@@ -49,10 +49,9 @@ public:
         s.summary = "Describe a model";
         s.description = "Describes one registered model in Ollama's format.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Model to describe. Required unless `name` is given."},
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Older name for `model`; wins when both are given."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+             "Model to describe.",
+             {"name"}},
         };
 
         RouteResponse response;
@@ -76,26 +75,17 @@ public:
         example.format = ResponseFormat::Json;
         example.args = ordered_json::parse(R"({"model": "Qwen3-0.6B-GGUF"})");
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kOllamaModelNotFound, ApiRoute::kUnexpectedException};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
-            std::string name = strip_latest_tag((!request_json.value("model", "").empty() && request_json.value("name", "").empty()) ?
-            request_json.value("model", "") : request_json.value("name", ""));
-
-            if (name.empty()) {
-                res.status = 400;
-                res.set_content(R"({"error":"name is required"})", "application/json");
-                return;
-            }
-
-            if (!ctx_.model_manager->model_exists(name)) {
-                res.status = 404;
-                json error = {{"error", "model '" + name + "' not found"}};
-                res.set_content(error.dump(), "application/json");
+            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
+            if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }
 
@@ -121,9 +111,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/show: " << e.what() << std::endl;
-            res.status = 500;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

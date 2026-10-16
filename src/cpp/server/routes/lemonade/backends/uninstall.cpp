@@ -2,6 +2,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "local_backend.h"
 #include "lemon/backend_manager.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
@@ -15,6 +16,8 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
 
 class UninstallRoute : public ApiRoute {
 public:
@@ -30,10 +33,6 @@ public:
             "Removes a recipe's backend, unloading the models that use it first, or a cloud "
             "provider when `backend` is `\"cloud\"`.";
         s.notes = {
-            "A local uninstall without both `recipe` and `backend`, or a cloud uninstall without "
-            "`provider`, answers `400`, and a cloud provider that was never installed answers "
-            "`404`. Any other failure, including invalid JSON, answers `500` with an `error` "
-            "string.",
             "### Uninstall a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
@@ -41,9 +40,9 @@ public:
             "and evicts every discovered model for that provider from the catalog.",
         };
         s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
              "The recipe of the local backend to remove."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Local backends: the backend within the recipe. Cloud providers: `\"cloud\"`."},
             {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "The installed cloud provider to remove."},
@@ -54,6 +53,7 @@ public:
         response.schema = ordered_json::parse(R"({"oneOf": [
             {
                 "type": "object",
+                "title": "Local backend",
                 "description": "A local backend removed.",
                 "required": ["status", "recipe", "backend"],
                 "properties": {
@@ -64,6 +64,7 @@ public:
             },
             {
                 "type": "object",
+                "title": "Cloud provider",
                 "description": "A cloud provider removed.",
                 "required": ["status", "backend", "provider", "models_evicted"],
                 "properties": {
@@ -94,18 +95,21 @@ public:
             "provider": "fireworks"
         })");
         s.examples = {local_example, cloud_example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingProvider,
+                    kProviderNotInstalled, kMissingRecipe, kUnexpectedException};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
             Router& router = *ctx_.router;
 
             if (request_json.value("backend", "") == "cloud") {
                 const std::string provider = request_json.value("provider", "");
                 if (provider.empty()) {
-                    write_openai_error(res, 400, "Cloud uninstall requires 'provider' string field");
+                    write_openai_error(res, kMissingProvider, "Cloud uninstall requires 'provider' string field");
                     return;
                 }
                 // Router::unload_model takes a model name, not a recipe filter, so the
@@ -120,7 +124,7 @@ public:
                 bool removed = ctx_.cloud_registry->uninstall(provider);
                 size_t evicted = ctx_.model_manager->evict_cloud_models(provider);
                 if (!removed) {
-                    write_openai_error(res, 404, "Cloud provider '" + provider + "' is not installed");
+                    write_provider_not_installed(res, provider);
                     return;
                 }
                 persist_cloud_providers(ctx_);
@@ -134,11 +138,9 @@ public:
                 return;
             }
 
-            std::string recipe = request_json.value("recipe", "");
-            std::string backend = request_json.value("backend", "");
-
-            if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, 400, "Both 'recipe' and 'backend' are required");
+            std::string recipe;
+            std::string backend;
+            if (!read_local_backend(request_json, recipe, backend, res)) {
                 return;
             }
 
@@ -176,7 +178,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_uninstall: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 };

@@ -4,7 +4,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
 #include "lemon/server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_sync.h"
@@ -15,6 +14,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 namespace {
+
 
 class ModelsSyncRoute : public ApiRoute {
 public:
@@ -38,8 +38,6 @@ public:
             "with what a sync would update.",
             "While a sync is running, a new request answers `200` with that sync's status "
             "instead of starting another.",
-            "Offline mode (`offline=true`) answers `409` without any network request.",
-            "A `400` answers a body that is not a JSON object, or an argument of the wrong type.",
             "See Model Synchronization & Auto-Updates in "
             "[Server Configuration](../guide/configuration/README.md).",
         };
@@ -65,13 +63,14 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"models", ordered_json::array({"Qwen3-0.6B-GGUF"})}, {"dry_run", true}};
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgInvalid, kOfflineUpdates, kUnexpectedException};
+        s.request_format = RequestFormat::OptionalJson;
         s.quiet_log = true;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (ctx_.config->offline()) {
-            write_plain_error(res, 409, "Cannot sync model updates while offline=true");
+        if (refuse_offline_updates(ctx_, res, "sync")) {
             return;
         }
 
@@ -81,52 +80,19 @@ public:
         bool async_specified = false;
         bool attach_if_running = false;
 
-        if (!req.http.body.empty()) {
-            try {
-                auto body_json = json::parse(req.http.body);
-                if (!body_json.is_object()) {
-                    write_plain_error(res, 400, "Request body must be a JSON object");
-                    return;
-                }
-                if (body_json.contains("models")) {
-                    if (!body_json["models"].is_array()) {
-                        write_plain_error(res, 400, "'models' must be an array of strings");
-                        return;
-                    }
-                    for (const auto& item : body_json["models"]) {
-                        if (!item.is_string()) {
-                            write_plain_error(res, 400, "Each item in 'models' must be a string");
-                            return;
-                        }
-                        target_models.push_back(item.get<std::string>());
-                    }
-                }
-                if (body_json.contains("dry_run")) {
-                    if (!body_json["dry_run"].is_boolean()) {
-                        write_plain_error(res, 400, "'dry_run' must be a boolean");
-                        return;
-                    }
-                    dry_run = body_json["dry_run"].get<bool>();
-                }
-                if (body_json.contains("async")) {
-                    if (!body_json["async"].is_boolean()) {
-                        write_plain_error(res, 400, "'async' must be a boolean");
-                        return;
-                    }
-                    async_dispatch = body_json["async"].get<bool>();
-                    async_specified = true;
-                }
-                if (body_json.contains("attach_if_running")) {
-                    if (!body_json["attach_if_running"].is_boolean()) {
-                        write_plain_error(res, 400, "'attach_if_running' must be a boolean");
-                        return;
-                    }
-                    attach_if_running = body_json["attach_if_running"].get<bool>();
-                }
-            } catch (const std::exception& e) {
-                write_plain_error(res, 400, std::string("Invalid JSON body: ") + e.what());
-                return;
-            }
+        const json& body = req.body;
+        if (body.contains("models")) {
+            target_models = body["models"].get<std::vector<std::string>>();
+        }
+        if (body.contains("dry_run")) {
+            dry_run = body["dry_run"].get<bool>();
+        }
+        if (body.contains("async")) {
+            async_dispatch = body["async"].get<bool>();
+            async_specified = true;
+        }
+        if (body.contains("attach_if_running")) {
+            attach_if_running = body["attach_if_running"].get<bool>();
         }
 
         ModelManager* model_manager = ctx_.model_manager;
@@ -138,7 +104,7 @@ public:
                 res.status = 200;
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Model sync dry-run failed: " << e.what() << std::endl;
-                write_plain_error(res, 500, std::string("Model sync dry-run failed: ") + e.what());
+                write_plain_error(res, kUnexpectedException, std::string("Model sync dry-run failed: ") + e.what());
             }
             return;
         }
@@ -169,7 +135,7 @@ public:
             res.status = 200;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model sync failed: " << e.what() << std::endl;
-            write_plain_error(res, 500, std::string("Model sync failed: ") + e.what());
+            write_plain_error(res, kUnexpectedException, std::string("Model sync failed: ") + e.what());
         }
     }
 };

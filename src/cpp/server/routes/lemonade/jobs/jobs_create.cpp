@@ -9,6 +9,22 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidSteps{
+    400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
+const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
+
+// StepRecord::from_json also reads the fields a stored job carries, such as `status`.
+json step_list_schema() {
+    return json::parse(R"({"type": "array", "items": {"type": "object", "properties": {
+        "id": {"type": "string"}, "op": {"type": "string"}, "params": {"type": "object"},
+        "when": {"type": "string"}, "extract": {"type": "object"}, "on_done": {"type": "string"},
+        "branch": {"type": "array", "items": {"type": "object", "properties": {
+            "when": {"type": "string"}, "goto": {"type": "string"}}}},
+        "on_fail": {"type": "string"}, "failure_handled": {"type": "boolean"},
+        "status": {"type": "string"}, "duration_ms": {"type": "integer"}, "error": {"type": "string"}
+    }}})");
+}
+
 class JobsCreateRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -26,9 +42,7 @@ public:
             "server restarts (a restart leaves an active job interrupted), and can be paused, "
             "interrupted, resumed, read and deleted.";
         s.notes = {
-            "An invalid step graph answers `400` at creation. The job store holds 50 jobs: a new "
-            "job evicts the oldest finished one, and while all 50 are still active or resumable, "
-            "a new job answers `429` until one is deleted or finishes.",
+            "The job store holds 50 jobs: a new job evicts the oldest finished one.",
             "A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot "
             "for as long as it runs, so normal traffic queues behind it.",
             "[`docs/dev/job-system.md`](../dev/job-system.md) specifies the step schema, op set and "
@@ -38,14 +52,15 @@ public:
         s.args = {
             {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Display name. Defaults to `\"\"`."},
-            {"steps", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+            {"steps", ArgIn::JsonBody, step_list_schema(), false, Support::Available,
              "The steps, in order, at least one; see "
              "[Recipe: steps](../dev/job-system.md#recipe-steps). Required unless `definition` "
              "holds them."},
-            {"definition", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"definition", ArgIn::JsonBody,
+             {{"type", "object"}, {"properties", {{"steps", step_list_schema()}}}}, false, Support::Available,
              "Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over "
              "`steps`."},
-            {"inputs", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"inputs", ArgIn::JsonBody, json::object(), false, Support::Available,
              "Values the steps read as `context.inputs`."},
         };
 
@@ -65,11 +80,14 @@ public:
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSteps, kJobLimit};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
+            // Parsed again as ordered_json, so `GET jobs/{id}` echoes the keys in the client's order.
             auto body = lemon::jobs::json::parse(req.http.body);
             const std::string name = body.value("name", "");
             lemon::jobs::json steps_json = lemon::jobs::json::array();
@@ -89,9 +107,8 @@ public:
             res.status = 202;
             res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");
         } catch (const lemon::jobs::JobError& e) {
-            write_plain_error(res, e.status, e.what());
-        } catch (const std::exception& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, e.status == kJobLimit.status ? kJobLimit : kInvalidSteps,
+                              e.what());
         }
     }
 };

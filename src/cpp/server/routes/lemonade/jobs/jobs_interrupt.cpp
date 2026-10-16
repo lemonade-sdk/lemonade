@@ -1,3 +1,4 @@
+#include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
 
@@ -21,7 +22,6 @@ public:
         s.description =
             "Cancels a job's current step now, aborting an in-flight load or chat. The step "
             "returns to pending, so resuming re-runs it, and the models the job loaded are unloaded.";
-        s.notes = {"An unknown job, or one that is not queued or running, answers `404`."};
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
@@ -40,12 +40,13 @@ public:
         example.setup = {{"lemonade.jobs_create", ""}};
         example.args = {{"id", "$lemonade.jobs_create/id"}};
         s.examples = {example};
+        s.errors = {kJobNotActive};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         if (!ctx_.job_manager->interrupt(req.http.matches[1])) {
-            write_plain_error(res, 404, "job not found or not interruptible");
+            write_job_not_active(res, "interruptible");
             return;
         }
         res.set_content(R"({"status":"interrupting"})", "application/json");

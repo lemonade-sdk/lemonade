@@ -7,6 +7,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+
 class DownloadsControlRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -32,14 +33,12 @@ public:
             "running, the server keeps the job visible and treats the request as a cancel request "
             "until the worker stops. |",
             "A `pause` or `cancel` for a job that already finished leaves it as it is.",
-            "A `400` answers a missing `id` or `action`, invalid JSON, or an unknown action for "
-            "an existing job. Any action but `remove` for an `id` with no job answers `404`.",
             "`pause` and `cancel` answer the job's latest snapshot, as does `remove` for a running "
             "job. Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
             "the job was already gone.",
         };
         s.args = {
-            {"id", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"id", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The job's `id`, for example `model:Qwen3-0.6B-GGUF`."},
             {"action", ArgIn::JsonBody, {{"enum", json::array({"pause", "cancel", "remove"})}}, true,
              Support::Available,
@@ -50,6 +49,7 @@ public:
         response.format = ResponseFormat::Json;
         ordered_json removed = ordered_json::parse(R"({
             "type": "object",
+            "title": "Removed",
             "description": "`remove` of a stopped job, or of an `id` with no job: the job is gone.",
             "required": ["status"],
             "properties": {
@@ -58,6 +58,7 @@ public:
             }
         })");
         ordered_json snapshot = DownloadManager::job_schema();
+        snapshot["title"] = "Snapshot";
         snapshot["description"] = "`pause`, `cancel`, or `remove` of a running job: the job's latest snapshot.";
         response.schema = {{"oneOf", ordered_json::array({removed, snapshot})}};
         s.responses = {response};
@@ -75,27 +76,21 @@ public:
         remove_example.format = ResponseFormat::Json;
         remove_example.args = {{"id", "model:Qwen3-1.7B-GGUF"}, {"action", "remove"}};
         s.examples = {example, remove_example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid,
+                    DownloadManager::kDownloadNotFound};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        try {
-            auto request_json = json::parse(req.http.body);
-            std::string id = request_json.value("id", "");
-            std::string action = request_json.value("action", "");
+        const std::string id = req.body["id"].get<std::string>();
+        const std::string action = req.body["action"].get<std::string>();
 
-            if (id.empty() || action.empty()) {
-                write_plain_error(res, 400, "Both 'id' and 'action' are required");
-                return;
-            }
 
-            int status = 200;
-            json response = ctx_.downloads->control(id, action, status);
-            res.status = status;
-            res.set_content(response.dump(), "application/json");
-        } catch (const std::exception& e) {
-            write_plain_error(res, 400, e.what());
-        }
+        int status = 200;
+        json response = ctx_.downloads->control(id, action, status);
+        res.status = status;
+        res.set_content(response.dump(), "application/json");
     }
 };
 

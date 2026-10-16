@@ -4,6 +4,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "local_backend.h"
 #include "lemon/backend_manager.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
@@ -18,9 +19,25 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kUnsupportedBackend{
+    400, "", "The backend is not supported on this system and `force` is not set"};
+const RouteError kMissingCloudFields{
+    400, "", "A cloud install is missing `provider` or `base_url`, or one is empty"};
+const RouteError kInvalidProviderName{
+    400, "", "`provider` is longer than 64 characters or not lowercase `[a-z0-9_-]`"};
+const RouteError kInvalidBaseUrl{
+    400, "",
+    "`base_url` does not start with `https://` or `http://`, has no host, or contains "
+    "whitespace"};
+const RouteError kInvalidCloudOption{
+    400, "",
+    "`auth_header_name` is empty, over 128 characters or not a valid HTTP header name, or "
+    "`auth_header_prefix` is over 128 characters or contains a control character"};
+
 ordered_json install_schema() {
     auto local = ordered_json::parse(R"({
         "type": "object",
+        "title": "Local backend",
         "description": "A local backend installed or already up to date.",
         "required": ["status", "recipe", "backend"],
         "properties": {
@@ -31,6 +48,7 @@ ordered_json install_schema() {
     })");
     auto manual = ordered_json::parse(R"({
         "type": "object",
+        "title": "Manual setup",
         "description": "A backend that needs manual setup on this system, such as `rocm` on a Strix Halo (`gfx1151`) whose Linux kernel lacks the CWSR fix: nothing was installed.",
         "x-no-example": "Only a Strix Halo running a kernel without the CWSR fix returns it.",
         "required": ["action", "recipe", "backend"],
@@ -42,6 +60,7 @@ ordered_json install_schema() {
     })");
     auto cloud = ordered_json::parse(R"({
         "type": "object",
+        "title": "Cloud provider",
         "description": "A cloud provider registered.",
         "required": ["status", "backend", "provider", "base_url", "allow_insecure_http",
                      "auth_header_name", "auth_header_prefix", "wire_format", "models_discovered",
@@ -69,6 +88,7 @@ ordered_json install_schema() {
         }
     })");
     auto job = DownloadManager::job_schema();
+    job["title"] = "Download job";
     job["description"] = "`stream: true` with `subscribe: false`: the server-owned download job just started.";
     return {{"oneOf", ordered_json::array({local, manual, cloud, job})}};
 }
@@ -86,10 +106,8 @@ public:
         s.description =
             "Installs or updates a recipe's backend, or registers a cloud provider.";
         s.notes = {
-            "A local install without both `recipe` and `backend`, or of a backend this system "
-            "does not support and without `force`, answers `400` with an `error` string; an "
-            "invalid cloud provider field answers `400` with an `error` object. Any other failure, "
-            "including invalid JSON, answers `500` with an `error` string.",
+            "A local install's errors carry an `error` string, and a cloud provider's invalid field "
+            "an `error` object.",
             "### Install a Cloud Provider\n"
             "<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>\n"
             "\n"
@@ -102,10 +120,10 @@ public:
             "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
              "Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, "
              "`sd-cpp` or `ryzenai-llm`."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
              "`default`. Cloud providers: `\"cloud\"`."},
             {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -189,28 +207,30 @@ public:
         })");
 
         s.examples = {local_example, stream_example, job_example, cloud_example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingRecipe,
+                    kUnsupportedBackend, kMissingCloudFields, kInvalidProviderName,
+                    kInvalidBaseUrl, kInvalidCloudOption, kInsecureHttpError, kUnexpectedException};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
             if (request_json.value("backend", "") == "cloud") {
                 install_cloud_provider(request_json, res);
                 return;
             }
 
-            std::string recipe = request_json.value("recipe", "");
-            std::string backend = request_json.value("backend", "");
+            std::string recipe;
+            std::string backend;
+            if (!read_local_backend(request_json, recipe, backend, res)) {
+                return;
+            }
             bool stream = request_json.value("stream", false);
             bool subscribe = request_json.value("subscribe", true);
             bool force = request_json.value("force", false);
-
-            if (recipe.empty() || backend.empty()) {
-                write_plain_error(res, 400, "Both 'recipe' and 'backend' are required");
-                return;
-            }
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
@@ -229,7 +249,7 @@ public:
                 std::string action = backend_info.value("action", "");
 
                 if (state == "unsupported" && !force) {
-                    res.status = 400;
+                    res.status = kUnsupportedBackend.status;
                     json error = {
                         {"error", "Cannot install " + recipe + ":" + backend + " on this system: " + message},
                         {"recipe", recipe},
@@ -289,7 +309,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_install: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 
@@ -303,19 +323,20 @@ private:
         const std::string base_url = request_json.value("base_url", "");
         const std::string api_key = request_json.value("api_key", "");
 
-        auto reject = [&](const std::string& message) {
-            write_openai_error(res, 400, message);
+        auto reject = [&](const RouteError& error, const std::string& message) {
+            write_openai_error(res, error, message);
         };
         if (provider.empty() || base_url.empty()) {
-            reject("Cloud install requires 'provider' and 'base_url' string fields");
+            reject(kMissingCloudFields,
+                   "Cloud install requires 'provider' and 'base_url' string fields");
             return;
         }
         if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
-            reject(err);
+            reject(kInvalidProviderName, err);
             return;
         }
         if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
-            reject(err);
+            reject(kInvalidBaseUrl, err);
             return;
         }
 
@@ -324,13 +345,9 @@ private:
                                         std::string (*validate)(const std::string&),
                                         std::optional<std::string>& out) {
             if (!request_json.contains(field)) return true;
-            if (!request_json[field].is_string()) {
-                reject(std::string(field) + " must be a string when provided");
-                return false;
-            }
             auto value = request_json[field].get<std::string>();
             if (auto err = validate(value); !err.empty()) {
-                reject(err);
+                reject(kInvalidCloudOption, err);
                 return false;
             }
             out = std::move(value);
@@ -341,17 +358,13 @@ private:
                                   install_options.auth_header_name) ||
             !read_validated_field("auth_header_prefix",
                                   CloudProviderRegistry::validate_auth_header_prefix,
-                                  install_options.auth_header_prefix) ||
-            !read_validated_field("wire_format",
-                                  CloudProviderRegistry::validate_wire_format,
-                                  install_options.wire_format)) {
+                                  install_options.auth_header_prefix)) {
             return;
         }
+        if (request_json.contains("wire_format")) {
+            install_options.wire_format = request_json["wire_format"].get<std::string>();
+        }
         if (request_json.contains("allow_insecure_http")) {
-            if (!request_json["allow_insecure_http"].is_boolean()) {
-                reject("allow_insecure_http must be a boolean when provided");
-                return;
-            }
             install_options.allow_insecure_http =
                 request_json["allow_insecure_http"].get<bool>();
         }

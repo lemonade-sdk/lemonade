@@ -9,6 +9,7 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+
 class ConfigRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -44,6 +45,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kUnexpectedException};
         return s;
     }
 
@@ -52,7 +54,7 @@ public:
             res.set_content(ctx_.config->snapshot().dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in /internal/config: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 };

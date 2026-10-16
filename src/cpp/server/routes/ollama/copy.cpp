@@ -1,11 +1,11 @@
-#include "lemon/server/api_route.h"
+#include "unsupported.h"
 
 namespace lemon {
 namespace {
 
-class CopyRoute : public ApiRoute {
+class CopyRoute : public OllamaUnsupportedRoute {
 public:
-    using ApiRoute::ApiRoute;
+    using OllamaUnsupportedRoute::OllamaUnsupportedRoute;
 
     RouteSpec spec() const override {
         RouteSpec s;
@@ -14,13 +14,8 @@ public:
         s.paths = {"/api/copy"};
         s.prefixes = Prefixes::Root;
         s.summary = "Copy a model";
-        s.description = "Answers `501`.";
+        s.errors = {kNotSupported};
         return s;
-    }
-
-    void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = 501;
-        res.set_content(R"({"error":"not supported by Lemonade"})", "application/json");
     }
 };
 

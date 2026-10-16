@@ -10,6 +10,11 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+// The body is ModelLoader::model_error() for an empty model name, which carries model_not_found.
+const RouteError kCleanupFailed{
+    500, "model_not_found",
+    "Scanning or removing cache files fails"};
+
 class CleanupCacheRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -27,7 +32,6 @@ public:
         s.notes = {
             "An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different "
             "repository, found inside the `main` checkpoint's cache folder.",
-            "Invalid JSON, including an empty body, answers `500`.",
         };
         s.args = {
             {"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -61,19 +65,21 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"dry_run", true}};
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgInvalid, kCleanupFailed};
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
-            bool dry_run = request_json.value("dry_run", true);
+            bool dry_run = req.body.value("dry_run", true);
 
             auto result = ctx_.model_manager->cleanup_orphaned_cache(dry_run);
             res.set_content(result.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cleanup_cache: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kCleanupFailed.status;
             res.set_content(ctx_.model_loader->model_error("", e.what()).dump(), "application/json");
         }
     }

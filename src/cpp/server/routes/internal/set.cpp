@@ -22,6 +22,9 @@ std::string json_type_name(const json& value) {
     return "string";
 }
 
+const RouteError kInvalidSetting{
+    400, "", "The body is `{}`, names an unknown setting, or gives a setting a value outside its range or options"};
+
 class SetRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -38,8 +41,7 @@ public:
             "them. The `lemonade config set` command uses it.";
         s.notes = {
             "Every key is validated before any is applied, so an unknown key or one invalid value "
-            "rejects the whole request with `400` and changes nothing. A body that is not a "
-            "non-empty JSON object also answers `400`.",
+            "rejects the whole request and changes nothing.",
             "Settings with a runtime effect apply immediately, such as `port` and `host`, which "
             "rebind the listeners, the logging settings, and a backend section's `*_bin`, which "
             "reinstalls that backend and reloads its models. Other settings are read the next "
@@ -61,8 +63,11 @@ public:
             std::string description = value.is_object()
                 ? "`" + key + "` settings; send only the keys to change."
                 : "Defaults to `" + value.dump() + "`.";
-            s.args.push_back({key, ArgIn::JsonBody, {{"type", json_type_name(value)}}, false,
-                              Support::Available, description});
+            // "auto" picks a free port; a number pins it.
+            json type = key == "websocket_port" ? json::array({"string", "integer"})
+                                                : json(json_type_name(value));
+            s.args.push_back({key, ArgIn::JsonBody, {{"type", type}}, false, Support::Available,
+                              description});
         }
 
         RouteResponse response;
@@ -82,15 +87,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"log_level", "info"}};
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSetting, kUnexpectedException};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto body = json::parse(req.http.body);
-
             ConfigEffects* effects = ctx_.config_effects;
-            auto result = ctx_.config->set(body, [effects](const json& applied) {
+            auto result = ctx_.config->set(req.body, [effects](const json& applied) {
                 for (const auto& [key, value] : applied.items()) {
                     effects->apply(key, value);
                 }
@@ -112,13 +117,11 @@ public:
             }
 
             res.set_content(result.dump(), "application/json");
-        } catch (const json::parse_error&) {
-            write_plain_error(res, 400, "Invalid JSON in request body");
         } catch (const std::invalid_argument& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kInvalidSetting, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in /internal/set: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kUnexpectedException, e.what());
         }
     }
 };

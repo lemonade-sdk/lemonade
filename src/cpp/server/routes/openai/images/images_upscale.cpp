@@ -16,6 +16,12 @@ namespace {
 
 using json = nlohmann::json;
 
+const RouteError kNotUpscalingModel{400, "", "`model` has no `upscaling` label"};
+const RouteError kUnknownUpscaleModel{
+    404, "", "`model` names no model in the registry, or downloading it fails"};
+const RouteError kRecipeCannotUpscale{400, "", "`model`'s recipe cannot upscale"};
+const RouteError kUpscaleFailed{500, "", "The backend produces no upscaled image"};
+
 // Upscaling runs the model once through its backend's command-line tool instead of a
 // loaded server, so this route never auto-loads and is not a ModelRoute.
 class ImagesUpscaleRoute : public ApiRoute {
@@ -34,9 +40,6 @@ public:
             "the upscale factor, which its name usually states.";
         s.notes = {
             "The model is downloaded on first use.",
-            "A missing `image` or `model`, a model without the `upscaling` label, or one whose "
-            "recipe cannot upscale answers `400`; an unknown model `404`; a failed upscale `500`; "
-            "each with an `error` object.",
             "### Upscale a Generated Image\n"
             "\n"
             "To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgenerations), "
@@ -45,7 +48,7 @@ public:
         s.args = {
             {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Base64-encoded PNG image to upscale."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."},
         };
 
@@ -63,6 +66,12 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"image", "@fixtures/image.png"}, {"model", "RealESRGAN-x4plus"}};
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid,
+                                 kNotUpscalingModel, kUnknownUpscaleModel, kRecipeCannotUpscale,
+                                 kUpscaleFailed},
+                                image_route_exception_errors()});
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
@@ -71,25 +80,14 @@ public:
         try {
             LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
 
-            auto request_json = json::parse(req.http.body);
-
-            if (!request_json.contains("image") || !request_json["image"].is_string()) {
-                write_openai_error(res, 400, "Missing 'image' field (base64 encoded)");
-                return;
-            }
-
-            std::string upscale_model_name = request_json.value("model", "");
-            if (upscale_model_name.empty()) {
-                write_openai_error(res, 400, "Missing 'model' field");
-                return;
-            }
+            std::string upscale_model_name = req.body["model"].get<std::string>();
 
             ModelInfo info;
             try {
                 info = model_manager.get_model_info(upscale_model_name);
 
                 if (!lemon::has_label(info.labels, "upscaling")) {
-                    write_openai_error(res, 400,
+                    write_openai_error(res, kNotUpscalingModel,
                         "Upscale model is not labeled 'upscaling': " + upscale_model_name);
                     return;
                 }
@@ -102,11 +100,12 @@ public:
                 }
 
             } catch (const std::exception& e) {
-                write_openai_error(res, 404, "Upscale model not found: " + upscale_model_name);
+                write_openai_error(res, kUnknownUpscaleModel,
+                                   "Upscale model not found: " + upscale_model_name);
                 return;
             }
 
-            std::string b64_image = request_json["image"].get<std::string>();
+            std::string b64_image = req.body["image"].get<std::string>();
 
             backends::BackendContext context;
             context.log_level = ctx_.config->log_level();
@@ -116,14 +115,15 @@ public:
             context.model_info = &info;
             auto server = backends::create_server(info.recipe, context);
             if (!server || !supports_capability<IUpscaleServer>(server.get())) {
-                write_openai_error(res, 400, "Upscale is not supported by recipe: " + info.recipe);
+                write_openai_error(res, kRecipeCannotUpscale,
+                                   "Upscale is not supported by recipe: " + info.recipe);
                 return;
             }
             auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
             std::string upscaled = upscale_server->upscale_via_cli(b64_image, info.resolved_path("main"));
 
             if (upscaled.empty()) {
-                write_openai_error(res, 500, "Upscale failed", "server_error");
+                write_openai_error(res, kUpscaleFailed, "Upscale failed", "server_error");
                 return;
             }
 

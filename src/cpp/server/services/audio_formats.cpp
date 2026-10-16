@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "lemon/router.h"
+#include "lemon/server/api_route.h"
 
 namespace lemon {
 
@@ -98,6 +99,22 @@ AudioFormat negotiate_audio_generation_format(Router& router, const std::string&
     }
     result.headers.insert(metadata.headers.begin(), metadata.headers.end());
     return result;
+}
+
+const RouteError kUnsupportedAudioFormat{
+    400, "",
+    "`response_format` is not a format `model`'s backend produces, or, when streaming, one it "
+    "streams"};
+
+bool apply_audio_format(const AudioFormat& format, httplib::Response& res) {
+    if (!format.error.empty()) {
+        write_openai_error(res, kUnsupportedAudioFormat, format.error);
+        return false;
+    }
+    for (const auto& [name, value] : format.headers) {
+        res.set_header(name, value);
+    }
+    return true;
 }
 
 } // namespace lemon

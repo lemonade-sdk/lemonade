@@ -1,10 +1,8 @@
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/error_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
-#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -26,7 +24,7 @@ public:
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Embedding model to run."},
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
              "Text to embed, or an array of texts."},
@@ -61,43 +59,27 @@ public:
             "input": "Why is the sky blue?"
         })");
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+                                {kOllamaBackendError, ApiRoute::kUnexpectedException}});
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
-            std::string model = strip_latest_tag(request_json.value("model", ""));
-            if (model.empty()) {
-                res.status = 400;
-                res.set_content(R"({"error":"model is required"})", "application/json");
-                return;
-            }
+            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
 
-            try {
-                ctx_.model_loader->ensure_loaded(model,
-                                                 gateway_load_options(request_json));
-            } catch (const RouterResidencyConflictException& e) {
-                write_ollama_residency_conflict(e, res);
-                return;
-            } catch (const std::exception& e) {
-                res.status = 404;
-                json error = {{"error", "model '" + model + "' not found"}};
-                res.set_content(error.dump(), "application/json");
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
+                                       res)) {
                 return;
             }
 
             json openai_req;
             openai_req["model"] = model;
 
-            if (request_json.contains("input")) {
-                openai_req["input"] = request_json["input"];
-            } else {
-                res.status = 400;
-                res.set_content(R"({"error":"input is required"})", "application/json");
-                return;
-            }
+            openai_req["input"] = request_json["input"];
 
             auto openai_response = ctx_.router->embeddings(openai_req);
 
@@ -123,9 +105,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/embed: " << e.what() << std::endl;
-            res.status = 500;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

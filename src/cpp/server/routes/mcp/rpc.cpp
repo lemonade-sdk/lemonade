@@ -10,6 +10,11 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInternalError{
+    500, "-32603",
+    "An exception escapes the JSON-RPC handling, such as a number too large for a double or "
+    "invalid UTF-8 in the body"};
+
 class McpRpcRoute : public ApiRoute {
 public:
     explicit McpRpcRoute(ServerContext& ctx)
@@ -30,8 +35,8 @@ public:
             "Serves the MCP methods listed under [Supported Methods](#supported-methods) over "
             "JSON-RPC 2.0.";
         s.notes = {
-            "The body is one JSON-RPC message or a batch array of them. The reply is `200` with "
-            "the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). "
+            "The body is one JSON-RPC message or a batch array of them. A JSON-RPC error is "
+            "answered with `200` like any other JSON-RPC response; see [Error Model](#error-model). "
             "A request whose messages are all notifications answers `202` with no body.",
             "### Supported Methods\n"
             "\n"
@@ -121,6 +126,7 @@ public:
         notification_example.args = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
 
         s.examples = {reply_example, notification_example};
+        s.errors = {kInternalError};
         return s;
     }
 
@@ -130,7 +136,7 @@ public:
             response_body = mcp_.handle_request_body(req.http.body);
         } catch (const std::exception& e) {
             LOG(ERROR, "McpServer") << "Unhandled exception in POST /mcp: " << e.what() << std::endl;
-            res.status = 500;
+            res.status = kInternalError.status;
             res.set_content(McpServer::internal_error_response(e.what()).dump(), "application/json");
             return;
         }

@@ -23,9 +23,6 @@ public:
         s.modality = "n/a";
         s.description =
             "Returns one model, as the same model object [`GET /v1/models`](#get-v1models) lists.";
-        s.notes = {
-            "An unknown model answers `404` with `code` `model_not_found`.",
-        };
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
              "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
@@ -40,6 +37,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"id", "Qwen3-0.6B-GGUF"}};
         s.examples = {example};
+        s.errors = {ModelLoader::kModelNotSupported, ModelLoader::kModelNotFound};
         return s;
     }
 

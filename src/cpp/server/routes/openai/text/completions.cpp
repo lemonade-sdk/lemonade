@@ -1,14 +1,17 @@
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
+#include "lemon/streaming_proxy.h"
+#include "require_llm.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
 
 ordered_json text_completion_schema(bool chunk) {
     auto schema = ordered_json::parse(R"({
@@ -50,6 +53,8 @@ ordered_json text_completion_schema(bool chunk) {
          "[Routing](./router.md#routing-collectionrouter) for the decision object."},
     };
     if (chunk) {
+        schema["title"] = "Chunk";
+        schema["description"] = "A chunk of the completion text.";
         auto& properties = schema["properties"];
         properties["id"]["description"] = "Identifier of the completion, the same on every chunk.";
         properties["model"]["description"] =
@@ -84,12 +89,6 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
-            "A `400` answers a missing `model`, or a model that is not an LLM, which is loaded "
-            "before the check. An unknown model, or one not available on this system, answers "
-            "`404`; a load blocked by pinned models or a routing residency conflict answers `409`; "
-            "any other load failure, or invalid JSON, answers `500`. A backend error answers with "
-            "the backend's status, except that once a stream has started it arrives as a "
-            "`data: {\"error\": ...}` event in the `200` stream.",
         };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
@@ -101,25 +100,25 @@ public:
              "response once complete. Defaults to `false`."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Sequences that stop generation, as a string or an array of strings. The returned "
-             "text leaves them out."},
+             "text leaves them out.", {}, true},
             {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Partial,
              "`true` asks the backend to return the prompt before the completion. llama.cpp "
-             "models ignore it."},
+             "models ignore it.", {}, true},
             {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
              "`true`, or a number of top alternatives per token, returns the log probability of each "
-             "output token. Defaults to `false`."},
+             "output token. Defaults to `false`.", {}, true},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature.", {}, true},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition."},
+             "repetition.", {}, true},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling.", {}, true},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`."},
+             "`0.0` to `1.0`.", {}, true},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens."},
+             "Upper bound on generated tokens.", {}, true},
             {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension for `collection.router` models: `true` adds the per-condition "
              "`trace` to `x_lemonade_route`. Defaults to `false`."},
@@ -134,7 +133,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = text_completion_schema(true);
+        stream.schema = {{"description", "One event per `data:` line. The stream ends with `data: [DONE]`."}, {"oneOf", ordered_json::array({
+            text_completion_schema(true), StreamingProxy::error_event_schema()})}};
 
         s.responses = {completion, stream};
 
@@ -159,6 +159,10 @@ public:
         })");
 
         s.examples = {completion_example, stream_example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlm, kBackendError,
+                                 kMalformedBackendResponse, kUnexpectedException},
+                                ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -172,9 +176,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (ctx_.router->get_model_type(req.model) != ModelType::LLM) {
-            LOG(ERROR, "Server") << "Model does not support completion" << std::endl;
-            write_openai_error(res, 400, "This model does not support completion. Only LLM models support this endpoint.");
+        if (!require_llm(*ctx_.router, req.model, "completion", res)) {
             return;
         }
 
@@ -192,24 +194,19 @@ protected:
         auto response = ctx_.router->completion(req.body);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
 
         if (!response.contains("choices")) {
             LOG(ERROR, "Server") << "Response missing 'choices' field. Response: " << response.dump() << std::endl;
-            write_plain_error(res, 500, "Backend returned invalid response format");
+            write_plain_error(res, kMalformedBackendResponse, "Backend returned invalid response format");
             return;
         }
 
         attach_route_decision(response, res, req.route_decision);
         res.set_content(response.dump(), "application/json");
         record_usage(response, req);
-    }
-
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_plain_error(res, 500, error.what());
     }
 
     LoadSpan load_span() const override { return {"LLM", "completions"}; }

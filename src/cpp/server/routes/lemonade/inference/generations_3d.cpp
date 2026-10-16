@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 
@@ -10,6 +11,10 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kMalformedImage{
+    400, "", "`image` is not base64 data, or is a `data:` URL without a base64 payload"};
+const RouteError kUnsupportedImage{400, "", "`image` is not a PNG, JPEG, BMP or GIF"};
 
 class Generations3dRoute : public ModelRoute {
 public:
@@ -28,9 +33,7 @@ public:
         s.notes = {
             "Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher "
             "`resolution` values take longer.",
-            "A failed request answers with a JSON `error` object: `400` for an invalid field, "
-            "`404` for an unknown model, `500` for a body that is not JSON or a backend error, and "
-            "`502` when the backend produces no output.",
+            "Errors carry a JSON `error` object.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -50,9 +53,9 @@ public:
              "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducibility. Defaults to the backend's own."},
-            {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only `glb`, the format the backend produces, is accepted; other values "
-             "answer `400`. Defaults to `glb`."},
+            {"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
+             "Output encoding. Only `glb`, the format the backend produces, is accepted. "
+             "Defaults to `glb`."},
         };
 
         RouteResponse response;
@@ -68,6 +71,11 @@ public:
             "seed": 42
         })");
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kMalformedImage,
+                                 kUnsupportedImage, kNoOutputError,
+                                 kBackendError, kUnexpectedException},
+                                ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -77,78 +85,36 @@ protected:
     // trigger a multi-gigabyte model load.
     bool validate(RouteRequest& req, httplib::Response& res) override {
         const json& request_json = req.body;
-        auto reject = [&res](const std::string& message) {
-            write_openai_error(res, 400, message);
+        auto reject = [&res](const RouteError& error, const std::string& message) {
+            write_openai_error(res, error, message);
             return false;
         };
-        if (!request_json.contains("model") || !request_json["model"].is_string()) {
-            return reject("Missing or non-string 'model' field in request");
+        std::string image = request_json["image"].get<std::string>();
+        if (image.rfind("data:", 0) == 0) {
+            const auto comma = image.find(',');
+            if (comma == std::string::npos) {
+                return reject(kMalformedImage, "'image' data URL is missing its base64 payload");
+            }
+            image = image.substr(comma + 1);
         }
-        if (!request_json.contains("image") || !request_json["image"].is_string()) {
-            return reject("Missing or non-string 'image' field in request (base64-encoded input image)");
+        if (image.empty() || image.find_first_not_of(
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n") !=
+                std::string::npos) {
+            return reject(kMalformedImage, "'image' must be base64 data or a base64 data: URL");
         }
-        {
-            std::string image = request_json["image"].get<std::string>();
-            if (image.rfind("data:", 0) == 0) {
-                const auto comma = image.find(',');
-                if (comma == std::string::npos) {
-                    return reject("'image' data URL is missing its base64 payload");
-                }
-                image = image.substr(comma + 1);
-            }
-            if (image.empty() || image.find_first_not_of(
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n") !=
-                    std::string::npos) {
-                return reject("'image' must be base64 data or a base64 data: URL");
-            }
-            // Sniffing needs only the first 12 bytes; base64 is block-aligned,
-            // so decoding the first 16 characters is enough and avoids decoding
-            // a multi-megabyte payload just to validate it.
-            std::string head;
-            for (char c : image) {
-                if (c != '\r' && c != '\n') {
-                    head += c;
-                    if (head.size() == 16) break;
-                }
-            }
-            if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
-                return reject("'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
+        // Sniffing needs only the first 12 bytes; base64 is block-aligned,
+        // so decoding the first 16 characters is enough and avoids decoding
+        // a multi-megabyte payload just to validate it.
+        std::string head;
+        for (char c : image) {
+            if (c != '\r' && c != '\n') {
+                head += c;
+                if (head.size() == 16) break;
             }
         }
-        std::string response_format = "glb";
-        if (request_json.contains("response_format")) {
-            if (!request_json["response_format"].is_string()) {
-                return reject("'response_format' must be a string");
-            }
-            response_format = request_json["response_format"].get<std::string>();
-        }
-        // TODO: convert from a natively supported format instead of rejecting.
-        if (response_format != "glb") {
-            return reject("response_format '" + response_format +
-                          "' is not supported (supported: glb)");
-        }
-        if (request_json.contains("resolution")) {
-            const auto& r = request_json["resolution"];
-            const std::string v = r.is_string() ? r.get<std::string>()
-                : (r.is_number_integer() ? std::to_string(r.get<int>()) : "");
-            if (v != "512" && v != "1024" && v != "1536") {
-                return reject("'resolution' must be 512, 1024, or 1536");
-            }
-        }
-        if (request_json.contains("bg_removal")) {
-            const auto& b = request_json["bg_removal"];
-            if (!b.is_string() || (b != "threshold" && b != "birefnet")) {
-                return reject("'bg_removal' must be 'threshold' or 'birefnet'");
-            }
-        }
-        if (request_json.contains("seed") && !request_json["seed"].is_number_integer()) {
-            return reject("'seed' must be an integer");
-        }
-        if (request_json.contains("uv")) {
-            const auto& u = request_json["uv"];
-            if (!u.is_string() || (u != "box" && u != "xatlas")) {
-                return reject("'uv' must be 'box' or 'xatlas'");
-            }
+        if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
+            return reject(kUnsupportedImage,
+                          "'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
         }
         return true;
     }
@@ -162,16 +128,10 @@ protected:
         });
     }
 
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_openai_error(res, 500, error.what(), "internal_error");
-    }
-
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << error.what() << std::endl;
-        write_openai_error(res, 500, error.what(), "internal_error");
-    }
-};
+        write_openai_error(res, kUnexpectedException, error.what(), "internal_error");
+    }};
 
 } // namespace
 

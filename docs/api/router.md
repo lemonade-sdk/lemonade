@@ -97,8 +97,6 @@ comes back with `router` replaced by these `classifiers` and `rules`:
 
 Match `decision.matched_rule` against this document: a policy written with only `routing.router` has no rules of its own, only the generated `__route_0`, `__route_1`, etc.
 
-A `400` answers a body that is not valid JSON, a missing or non-object `policy`, a non-string `prompt`, non-boolean `has_images`/`has_tools`, a `metadata` that is not an object of string values, or a policy document that is invalid or internally inconsistent, whose `error` is prefixed with `Invalid routing policy:`.
-
 ### Example
 
 === "PowerShell"
@@ -188,8 +186,15 @@ A `400` answers a body that is not valid JSON, a missing or non-object `policy`,
 
 ### Response format
 
-**Field Descriptions:**
-
 - `decision` - The routing decision for the prompt, with the per-condition `trace` included. See [Routing](#routing-collectionrouter) for the decision object.
 - `normalized_policy` - The policy as evaluated, with any `routing.router` shorthand expanded.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `policy` is invalid or internally inconsistent |
 <!-- END GENERATED: router.routing_validate -->

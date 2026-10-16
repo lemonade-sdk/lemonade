@@ -56,6 +56,7 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = json::object();
         s.examples = {example};
+        s.errors = {ApiRoute::kUnexpectedException};
         return s;
     }
 
@@ -88,9 +89,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/ps: " << e.what() << std::endl;
-            res.status = 500;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

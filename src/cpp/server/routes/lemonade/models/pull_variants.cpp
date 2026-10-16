@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/server/model_sync.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
@@ -10,6 +11,20 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kMissingCheckpoint{400, "", "`checkpoint` is missing or empty"};
+const RouteError kSourceMismatch{
+    400, "", "`checkpoint` is a URL whose registry disagrees with `source`"};
+const RouteError kMalformedCheckpoint{400, "", "`checkpoint` does not contain `/`"};
+const RouteError kUnsupportedRepo{
+    400, "",
+    "`source` names an unsupported registry, or the Hugging Face GGUF repository is one "
+    "llama.cpp cannot run"};
+const RouteError kCheckpointNotFound{404, "", "The registry has no such checkpoint"};
+const RouteError kVariantsFailed{
+    500, "",
+    "Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection "
+    "files, or a network error"};
 
 class PullVariantsRoute : public ApiRoute {
 public:
@@ -27,14 +42,6 @@ public:
             "<owner/repo>` command and the desktop app's model search use it to fill in the "
             "install form. Lemonade reads public registry metadata, and sends the server's "
             "`HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.";
-        s.notes = {
-            "A `400` answers a missing or malformed `checkpoint` (it must contain `/`), an "
-            "unsupported `source` or one that disagrees with the checkpoint URL's registry, a "
-            "Hugging Face GGUF repository that llama.cpp cannot run, or offline mode (`code: "
-            "lemond_offline`). A checkpoint the registry does not have answers `404`, and any other "
-            "failure, such as a repository with no GGUF, ONNX RyzenAI or collection files, answers "
-            "`500` with an `error` message.",
-        };
         s.args = {
             {"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
              "Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is "
@@ -82,6 +89,8 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"checkpoint", "unsloth/Qwen3-8B-GGUF"}};
         s.examples = {example};
+        s.errors = {kMissingCheckpoint, kSourceMismatch, kMalformedCheckpoint,
+                    kUnsupportedRepo, kLemondOffline, kCheckpointNotFound, kVariantsFailed};
         return s;
     }
 
@@ -90,7 +99,7 @@ public:
         try {
             std::string checkpoint = http.get_param_value("checkpoint");
             if (checkpoint.empty()) {
-                write_plain_error(res, 400, "Missing required query parameter 'checkpoint'");
+                write_plain_error(res, kMissingCheckpoint, "Missing required query parameter 'checkpoint'");
                 return;
             }
             lemon::RemoteRegistrySource url_source;
@@ -106,7 +115,7 @@ public:
             // not rejected against the URL's canonical registry name.
             if (has_url && !raw_source.empty()) {
                 if (parse_remote_registry_source(raw_source) != url_source) {
-                    write_plain_error(res, 400,
+                    write_plain_error(res, kSourceMismatch,
                         "checkpoint URL uses " + remote_registry_source_name(url_source) +
                         " but source was set to '" + raw_source + "'");
                     return;
@@ -124,22 +133,19 @@ public:
                     ? http.get_param_value("source") : ctx_.config->default_model_source();
             }
             if (checkpoint.find('/') == std::string::npos) {
-                write_plain_error(res, 400,
+                write_plain_error(res, kMalformedCheckpoint,
                     "Malformed 'checkpoint': expected a repository id of the form 'owner/name'");
                 return;
             }
             const auto parsed_source = parse_remote_registry_source(source);
-            if (ctx_.config->offline()) {
-                res.status = 400;
-                json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
-                res.set_content(error.dump(), "application/json");
+            if (refuse_offline_download(ctx_, res)) {
                 return;
             }
             bool not_found = false;
             const std::string resolved_source = remote_registry_source_name(parsed_source);
             json body = lemon::fetch_pull_variants(checkpoint, resolved_source, not_found);
             if (not_found) {
-                write_plain_error(res, 404, "Checkpoint '" + checkpoint + "' not found on " +
+                write_plain_error(res, kCheckpointNotFound, "Checkpoint '" + checkpoint + "' not found on " +
                     remote_registry_display_name(parsed_source));
                 return;
             }
@@ -148,10 +154,10 @@ public:
             }
             res.set_content(body.dump(), "application/json");
         } catch (const std::invalid_argument& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kUnsupportedRepo, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull_variants: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kVariantsFailed, e.what());
         }
     }
 };

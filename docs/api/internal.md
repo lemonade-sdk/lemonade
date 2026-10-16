@@ -63,8 +63,6 @@ Backend processes such as `llama-server` have exited by the time the caller read
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `shutting down`.
 <!-- END GENERATED: internal.shutdown -->
 
@@ -106,8 +104,6 @@ A batch the collector rejects or does not receive is dropped without further ret
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `flushed`.
 <!-- END GENERATED: internal.telemetry_flush -->
 
@@ -123,12 +119,10 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model_name` | Yes | Loaded model to pin or unpin. `model` is accepted in its place and wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_name` or `model` | Yes | Loaded model to pin or unpin. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pinned` | Yes | `true` pins the model; `false` unpins it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a slot held only by pinned models fails with `409` and a `slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).
-
-A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pinned`, or a model that is not loaded.
+A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a slot held only by pinned models fails with a `slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).
 
 ### Example
 
@@ -158,11 +152,18 @@ A `400` answers invalid JSON, a missing model name, a missing or non-boolean `pi
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `success`.
 - `model_name` - The model name as sent.
 - `pinned` - The model's pinned state now.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | The model is not loaded |
 <!-- END GENERATED: internal.pin -->
 
 <!-- BEGIN GENERATED: internal.set -->
@@ -223,7 +224,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `websocket_port` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp` | No | `whispercpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Every key is validated before any is applied, so an unknown key or one invalid value rejects the whole request with `400` and changes nothing. A body that is not a non-empty JSON object also answers `400`.
+Every key is validated before any is applied, so an unknown key or one invalid value rejects the whole request and changes nothing.
 
 Settings with a runtime effect apply immediately, such as `port` and `host`, which rebind the listeners, the logging settings, and a backend section's `*_bin`, which reinstalls that backend and reloads its models. Other settings are read the next time they are needed, such as at the next model load. See the [Settings Reference](../guide/configuration/README.md#settings-reference) for every key.
 
@@ -257,11 +258,18 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `success`.
 - `updated` - The keys the request set, with their new values, in `config.json`'s nested form: a flat key such as `llamacpp_backend` appears under `llamacpp`.
 - `message` - Present when a deprecated value was replaced, such as `rocm_channel=preview`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | The body is `{}`, names an unknown setting, or gives a setting a value outside its range or options |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: internal.set -->
 
 <!-- BEGIN GENERATED: internal.config -->
@@ -303,11 +311,15 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
 
 ### Response format
 
-**Field Descriptions:**
-
 Every `config.json` key with its current value.
 
 - A setting; see the Settings Reference.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: internal.config -->
 
 <!-- BEGIN GENERATED: internal.config_defaults -->
@@ -349,11 +361,15 @@ The per-backend sections come from the backend descriptors, so this is the autho
 
 ### Response format
 
-**Field Descriptions:**
-
 Every `config.json` key with its factory default.
 
 - A setting; see the Settings Reference.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `500` | `resources/defaults.json` is missing or is not valid JSON |
 <!-- END GENERATED: internal.config_defaults -->
 
 <!-- BEGIN GENERATED: internal.cleanup_cache -->
@@ -371,8 +387,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `dry_run` | No | List the orphaned files without removing them. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different repository, found inside the `main` checkpoint's cache folder.
-
-Invalid JSON, including an empty body, answers `500`.
 
 ### Example
 
@@ -402,8 +416,6 @@ Invalid JSON, including an empty body, answers `500`.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `orphaned_files` - Each orphaned file found.
   - `path` - Absolute path of the file.
   - `size` - Size in bytes.
@@ -412,6 +424,14 @@ Invalid JSON, including an empty body, answers `500`.
   - `belongs_to` - Repository the file belongs to.
 - `total_bytes` - Combined size of the orphaned files.
 - `dry_run` - Whether the files were left in place.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `500` | `model_not_found` | Scanning or removing cache files fails |
 <!-- END GENERATED: internal.cleanup_cache -->
 
 <!-- BEGIN GENERATED: internal.simulate_vram_pressure -->
@@ -431,8 +451,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above `auto_evict_threshold_pct` runs the idle-timeout checks and then unloads at most one model for pressure, `-1` runs only the idle-timeout checks, and any other value does nothing.
 
 The answer comes after the evaluation finishes, so a test can check the outcome right away. While an exclusive job session is active no evaluation runs, and the answer is still `200`.
-
-A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pct`.
 
 ### Example
 
@@ -462,9 +480,14 @@ A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pc
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `ok`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 <!-- END GENERATED: internal.simulate_vram_pressure -->
 
 <!-- BEGIN GENERATED: internal.models_sync -->
@@ -489,10 +512,6 @@ A background sync answers `202` with its status; poll [`GET /internal/models/syn
 A `dry_run` finishes before answering, whatever `async` says, and answers `200` with what a sync would update.
 
 While a sync is running, a new request answers `200` with that sync's status instead of starting another.
-
-Offline mode (`offline=true`) answers `409` without any network request.
-
-A `400` answers a body that is not a JSON object, or an argument of the wrong type.
 
 See Model Synchronization & Auto-Updates in [Server Configuration](../guide/configuration/README.md).
 
@@ -535,8 +554,6 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - `idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`.
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
@@ -562,6 +579,15 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
   - `bytes_downloaded` - Bytes of the current file downloaded so far.
   - `bytes_total` - Size of the current file in bytes.
   - `percent` - Share of the current file downloaded, from `0` to `100`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `409` |  | `offline` is set to `true`; no network request is made |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: internal.models_sync -->
 
 <!-- BEGIN GENERATED: internal.models_sync_status -->
@@ -578,7 +604,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 |-----------|----------|-------------|--------|
 | `sync_id` (query) | No | Sync to report. Defaults to the latest. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A `sync_id` that is neither running nor recorded answers `200` with `status: "not_found"`. A `sync_id` that is not a number answers `400`.
+A `sync_id` that is neither running nor recorded answers `200` with `status: "not_found"`.
 
 ### Example
 
@@ -617,8 +643,6 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - `idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`.
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
@@ -644,6 +668,13 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
   - `bytes_downloaded` - Bytes of the current file downloaded so far.
   - `bytes_total` - Size of the current file in bytes.
   - `percent` - Share of the current file downloaded, from `0` to `100`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | `sync_id` does not start with a number, or is too large for 64 bits |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: internal.models_sync_status -->
 
 <!-- BEGIN GENERATED: internal.aliases_list -->
@@ -691,13 +722,17 @@ An alias stands in for its target in the `model` field of inference requests and
 
 ### Response format
 
-**Field Descriptions:**
-
 - `aliases` - Each alias with its target.
   - `alias` - The alias name.
   - `target` - Model or alias the alias points to.
   - `downloaded` - Whether the target model is downloaded.
   - `recipe` - The target model's recipe; `llamacpp` when the target is not in the registry.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `500` | `internal_error` | The alias manager is not initialized, or reading or checking the alias file fails |
 <!-- END GENERATED: internal.aliases_list -->
 
 <!-- BEGIN GENERATED: internal.aliases_create -->
@@ -713,9 +748,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `alias` | Yes | The alias name to create or update. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `target` | Yes | The model name, canonical ID or other alias to point at, which is not checked to exist (also accepted as `model`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-A `400` answers invalid JSON, a missing `alias` or `target`, an alias equal to its target, or an alias with a reserved prefix (`user.`, `extra.`, `builtin.`). A `409` answers an alias that is already a registered model's name, or one that would form a cycle or an alias chain too long to resolve.
+| `target` or `model` | Yes | The model name, canonical ID or other alias to point at, which is not checked to exist. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -745,11 +778,23 @@ A `400` answers invalid JSON, a missing `alias` or `target`, an alias equal to i
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `ok`.
 - `alias` - The alias name.
 - `target` - Model or alias the alias now points to.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` | `invalid_request` | `alias` or `target` is blank |
+| `400` | `invalid_alias` | `alias` equals `target` |
+| `400` | `invalid_alias` | `alias` starts with `user.`, `extra.` or `builtin.` |
+| `409` | `alias_conflict` | `alias` is already a registered model's name |
+| `409` | `alias_conflict` | The alias would form a cycle or an alias chain deeper than 10 links |
+| `500` | `internal_error` | The alias manager is not initialized, or reading or checking the alias file fails |
 <!-- END GENERATED: internal.aliases_create -->
 
 <!-- BEGIN GENERATED: internal.aliases_delete -->
@@ -765,8 +810,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `alias` (path) | Yes | The alias name to remove. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-An alias that does not exist answers `404`.
 
 ### Example
 
@@ -792,10 +835,15 @@ An alias that does not exist answers `404`.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `status` - Always `deleted`.
 - `alias` - The alias that was removed.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `404` | `alias_not_found` | `alias` names no alias |
+| `500` | `internal_error` | The alias manager is not initialized, or reading or checking the alias file fails |
 <!-- END GENERATED: internal.aliases_delete -->
 
 <!-- BEGIN GENERATED: internal.routes -->
@@ -856,6 +904,8 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
       }
     ],
     "examples": [{"name": "", "description": "", "format": "Json", "args": {}, "setup": []}],
+    "errors": [],
+    "error_format": "Plain",
     "request_format": "Raw",
     "quiet_log": false
   }
@@ -863,8 +913,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 ```
 
 ### Response format
-
-**Field Descriptions:**
 
 - `id` - `<page>.<name>`; names the route's generated region in `docs/api/<page>.md`.
 - `methods` - HTTP methods the route answers, such as `POST`.
@@ -882,6 +930,8 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
   - `required` - Whether a request must send the argument.
   - `supported` - `available`; `partial`, honored only in part as the argument's description says; or `not_available`, accepted but ignored.
   - `description` - What the argument controls.
+  - `aliases` - Other names a request may send the argument under.
+  - `forwarded` - Whether `lemond` passes the argument to the backend unchecked.
 - `responses` - One entry per response format the route returns.
   - `format` - The response format.
   - `schema` - JSON Schema of the body, each NDJSON line, or each event's data; null for other formats.
@@ -894,6 +944,11 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
     - `route` - The `id` of the route the step requests.
     - `example` - The name of the route's example to run.
     - `args` - Set instead of example: a request sent as is and left out of the docs.
-- `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form.
+- `errors` - Every error status the route answers with, including those its base class adds.
+  - `status` - The HTTP status.
+  - `code` - The code the error body carries, or empty when it carries none.
+  - `when` - The condition that produces the error.
+- `error_format` - The body shape of the errors `lemond` writes when a request is not valid JSON or an argument is missing or invalid.
+- `request_format` - How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty or `null` body read as `{}`, `Form` as a multipart form.
 - `quiet_log` - Whether the route is left out of the access log.
 <!-- END GENERATED: internal.routes -->

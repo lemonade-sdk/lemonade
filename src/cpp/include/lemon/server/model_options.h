@@ -2,11 +2,13 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
 #include "lemon/model_manager.h"
+#include "lemon/server/route_error.h"
 #include "lemon/server/server_context.h"
 
 namespace lemon {
@@ -23,5 +25,6 @@ nlohmann::ordered_json model_options_schema();
 // it already wrote an error.
 void respond_with_model_options(ServerContext& ctx, const httplib::Request& http,
                                 httplib::Response& res, const ModelOptionsMutation& mutation);
+std::vector<RouteError> model_options_errors();
 
 } // namespace lemon

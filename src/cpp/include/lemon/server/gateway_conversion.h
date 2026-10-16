@@ -12,6 +12,9 @@
 
 namespace lemon {
 
+class ModelLoader;
+class ModelManager;
+
 // The Ollama and Anthropic gateways answer with Lemonade's OpenAI-shaped inference,
 // converted to their own wire formats. The conversions more than one gateway route
 // needs live here, including the stream conversions.
@@ -41,9 +44,28 @@ nlohmann::ordered_json ollama_details_schema();
 // Copies Ollama sampling options, from "options" or the top level, to OpenAI names.
 void map_ollama_options(const nlohmann::json& ollama_request, nlohmann::json& openai_request);
 
+extern const RouteError kGatewayModelNotLoaded;
+
+// Inference gateway routes load their model on first use, with the request's
+// gateway_load_options(). Writes the residency conflict or kGatewayModelNotLoaded in format
+// and returns false when the load fails.
+bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model,
+                           const nlohmann::json& request, ErrorFormat format,
+                           httplib::Response& res);
+
+// What gateway_ensure_loaded() writes.
+std::vector<RouteError> gateway_load_errors();
+
+extern const RouteError kOllamaModelNotFound;
+
+// Writes kOllamaModelNotFound and returns false when name is not in the registry.
+bool ollama_model_registered(ModelManager& model_manager, const std::string& name,
+                             httplib::Response& res);
+
+extern const RouteError kOllamaBackendError;
+
 // Writes an Ollama-shaped 500 when the router returned an error. Returns true if it did.
 bool write_ollama_backend_error(const nlohmann::json& response, httplib::Response& res);
-void write_ollama_residency_conflict(const std::exception& error, httplib::Response& res);
 
 std::string anthropic_message_id();
 std::string anthropic_stop_reason(const nlohmann::json& openai_choice);

@@ -28,7 +28,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `method` | Yes | One of the [supported methods](#supported-methods), e.g. `initialize`, `tools/list` or `tools/call`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `params` | No | Method parameters; `tools/call` takes `name` and `arguments`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-The body is one JSON-RPC message or a batch array of them. The reply is `200` with the JSON-RPC response, including JSON-RPC errors; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
+The body is one JSON-RPC message or a batch array of them. A JSON-RPC error is answered with `200` like any other JSON-RPC response; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
 
 ### Supported Methods
 
@@ -129,8 +129,6 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 ### Response format
 
-**Field Descriptions:**
-
 One JSON-RPC 2.0 response, or an array of them for a batch.
 
 - `jsonrpc` - Always `2.0`.
@@ -139,6 +137,12 @@ One JSON-RPC 2.0 response, or an array of them for a batch.
 - `error` - A JSON-RPC error, such as `-32601` for an unknown method.
   - `code` - The JSON-RPC error code.
   - `message` - What went wrong.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `500` | `-32603` | An exception escapes the JSON-RPC handling, such as a number too large for a double or invalid UTF-8 in the body |
 <!-- END GENERATED: mcp.rpc -->
 
 <!-- BEGIN GENERATED: mcp.sse -->
@@ -149,7 +153,11 @@ Lemonade opens no server-initiated event stream, so tools return their full resu
 
 Requires `LEMONADE_API_KEY` when it is set.
 
-Answers `405` with `Allow: POST` and a JSON-RPC `-32600` error.
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `405` | `-32600` | Always, since MCP calls go to `POST /mcp`; the reply carries `Allow: POST` |
 <!-- END GENERATED: mcp.sse -->
 
 ## Tools

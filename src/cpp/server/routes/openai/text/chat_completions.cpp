@@ -1,10 +1,12 @@
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/server/omni_collection.h"
+#include "lemon/streaming_proxy.h"
 #include "lemon/thinking_controls.h"
+#include "require_llm.h"
 
 namespace lemon {
 namespace {
@@ -68,6 +70,8 @@ ordered_json chat_completion_schema() {
 ordered_json chat_completion_chunk_schema() {
     auto schema = ordered_json::parse(R"({
         "type": "object",
+        "title": "Chunk",
+        "description": "A chunk of the assistant's message.",
         "required": ["id", "object", "created", "model", "choices"],
         "properties": {
             "id": {"type": "string", "description": "Identifier of the completion, the same on every chunk."},
@@ -124,12 +128,6 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
-            "A `400` answers invalid JSON, a missing `model`, or a model that is not an LLM, "
-            "which is loaded before the check. An unknown model, or one not available on this "
-            "system, answers `404`; a load blocked by pinned models or a routing residency "
-            "conflict answers `409`; any other load failure answers `500`. A backend error answers "
-            "with the backend's status, except that once a stream has started it arrives as a "
-            "`data: {\"error\": ...}` event in the `200` stream.",
             "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
@@ -169,26 +167,26 @@ public:
              "response once complete. Defaults to `false`."},
             {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
              "Sequences that stop generation, as a string or an array of strings. The returned "
-             "text leaves them out."},
+             "text leaves them out.", {}, true},
             {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` returns the log probability of each output token. Defaults to `false`."},
+             "`true` returns the log probability of each output token. Defaults to `false`.", {}, true},
             {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature."},
+             "Sampling temperature.", {}, true},
             {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition."},
+             "repetition.", {}, true},
             {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling."},
+             "Number of top tokens to consider during sampling.", {}, true},
             {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
              "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`."},
+             "`0.0` to `1.0`.", {}, true},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "A list of tools the model may call."},
             {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Upper bound on generated tokens. Wins over `max_completion_tokens` when both are "
-             "sent."},
+             "sent.", {}, true},
             {"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "OpenAI's name for `max_tokens`."},
+             "OpenAI's name for `max_tokens`.", {}, true},
             {"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
              "false` does the same, and `enable_thinking` wins when both are sent."},
@@ -206,7 +204,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::EventStream;
-        stream.schema = chat_completion_chunk_schema();
+        stream.schema = {{"description", "One event per `data:` line. The stream ends with `data: [DONE]`."}, {"oneOf", ordered_json::array({
+            chat_completion_chunk_schema(), StreamingProxy::error_event_schema()})}};
 
         s.responses = {completion, stream};
 
@@ -257,6 +256,10 @@ public:
         })");
 
         s.examples = {completion_example, stream_example, image_example, tools_example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlm, kBackendError,
+                                 kUnexpectedException},
+                                ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -283,9 +286,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (ctx_.router->get_model_type(req.model) != ModelType::LLM) {
-            LOG(ERROR, "Server") << "Model does not support chat completion" << std::endl;
-            write_openai_error(res, 400, "This model does not support chat completion. Only LLM models support this endpoint.");
+        if (!require_llm(*ctx_.router, req.model, "chat completion", res)) {
             return;
         }
 
@@ -309,7 +310,7 @@ protected:
         auto response = ctx_.router->chat_completion(req.body);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
 

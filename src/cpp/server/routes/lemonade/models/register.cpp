@@ -11,6 +11,12 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kRegisterFailed{
+    500, "",
+    "The definition is invalid in another way and nothing is registered, for example a GGUF "
+    "`checkpoint` without a variant, a recipe this system cannot run, or labels that name two "
+    "deployment modes"};
+
 class RegisterRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -25,14 +31,6 @@ public:
             "Registers or updates a `user.*` model definition in `user_models.json` without "
             "downloading any files, for clients that register and install as separate steps. "
             "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
-        s.notes = {
-            "A `400` answers a body that is not a JSON object, a missing `model_name`, a name "
-            "outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, a "
-            "missing `recipe`, an embedded `models` array, and malformed `checkpoint`, "
-            "`checkpoints`, `source` or `components` values. Other invalid definitions answer "
-            "`500` and register nothing, such as a GGUF `checkpoint` without a variant, a recipe "
-            "this system cannot run, or labels that name two deployment modes.",
-        };
         s.args = {
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "Non-empty namespaced model name under `user.*`."},
@@ -40,13 +38,16 @@ public:
              "Recipe that loads the model, such as `llamacpp`."},
             {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Main checkpoint. Model types with no local weights have none."},
-            {"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+            {"checkpoints", ArgIn::JsonBody,
+             {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
              "Named checkpoints for multi-checkpoint models."},
             {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Registry or local source. Remote values are `huggingface` or `modelscope`."},
-            {"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+            {"labels", ArgIn::JsonBody,
+             {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
              "Model labels; see [Model Labels](./openai.md#model-labels)."},
-            {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+            {"components", ArgIn::JsonBody,
+             {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
              "Collections only: the component model names, each already registered."},
         };
 
@@ -78,6 +79,8 @@ public:
             "recipe": "llamacpp"
         })");
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidModelDefinition, kUnlistedFieldInvalid,
+                    kRegisterFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -85,23 +88,19 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         json& request_json = req.body;
         try {
-            if (!request_json.is_object()) {
-                write_plain_error(res, 400, "Request body must be a JSON object");
-                return;
-            }
-            if (!request_json.contains("model_name") || !request_json["model_name"].is_string()) {
-                write_plain_error(res, 400, "A string `model_name` is required");
-                return;
-            }
-
             const std::string model_name = request_json["model_name"].get<std::string>();
-            const std::string public_name = register_model_definition(
+            const auto registered = try_register_model_definition(
                 ctx_,
                 model_name,
                 request_json,
                 /*require_definition=*/true,
                 /*allow_embedded_models=*/false,
-                /*local_import=*/false);
+                /*local_import=*/false,
+                res);
+            if (!registered) {
+                return;
+            }
+            const std::string& public_name = *registered;
 
             json response = {
                 {"status", "success"},
@@ -116,13 +115,11 @@ public:
             }
 
             res.set_content(response.dump(), "application/json");
-        } catch (const std::invalid_argument& e) {
-            write_plain_error(res, 400, e.what());
         } catch (const json::exception& e) {
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kUnlistedFieldInvalid, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_model_register: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kRegisterFailed, e.what());
         }
     }
 };

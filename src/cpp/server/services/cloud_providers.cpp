@@ -13,6 +13,13 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+const RouteError kInsecureHttpError{
+    400, "insecure_http_requires_opt_in",
+    "The provider's base URL is `http://`, an API key would be sent to it, and neither this "
+    "request nor an earlier install sets `allow_insecure_http`"};
+const RouteError kProviderNotInstalled{
+    404, "", "`provider` was not installed with [`POST /v1/install`](#post-v1install)"};
+
 void persist_cloud_providers(ServerContext& ctx) {
     const std::string& config_dir = ctx.server->config_dir();
     if (config_dir.empty()) return;
@@ -27,11 +34,14 @@ void persist_cloud_providers(ServerContext& ctx) {
 }
 
 void write_insecure_http_error(httplib::Response& res, const std::string& provider) {
-    write_openai_error(res, 400,
+    write_openai_error(res, kInsecureHttpError,
                        "Cloud provider '" + provider + "' uses http://. "
                        "Set allow_insecure_http=true to explicitly opt in before "
-                       "storing or using an API key over plaintext HTTP.",
-                       "invalid_request_error", "insecure_http_requires_opt_in");
+                       "storing or using an API key over plaintext HTTP.");
+}
+
+void write_provider_not_installed(httplib::Response& res, const std::string& provider) {
+    write_openai_error(res, kProviderNotInstalled, "Cloud provider '" + provider + "' is not installed");
 }
 
 void attach_warnings(json& response, const std::vector<std::string>& warnings) {

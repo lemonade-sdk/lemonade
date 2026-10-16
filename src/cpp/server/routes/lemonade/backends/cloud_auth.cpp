@@ -13,6 +13,11 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kAuthConflict{
+    409, "",
+    "`LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; "
+    "`error.type` is `auth_conflict` and `error.env_var` names the variable"};
+
 class CloudAuthRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -29,21 +34,10 @@ public:
             "discovered models. The key is held in `lemond`'s memory only, never written to disk, "
             "and is gone after a restart; for a key that persists, set "
             "`LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.";
-        s.notes = {
-            "When `LEMONADE_<PROVIDER>_API_KEY` is set, it takes precedence: the request answers "
-            "`409` without storing the key, with `error.type` `auth_conflict` and the `env_var` "
-            "that took precedence.",
-            "A `400` answers invalid JSON, a missing or empty `provider` or `api_key`, a "
-            "non-boolean `allow_insecure_http`, or a provider whose base URL is `http://` when "
-            "neither this request nor the provider's install set "
-            "`allow_insecure_http` (code `insecure_http_requires_opt_in`). A provider that is not "
-            "installed answers `404`; install it with [`POST /v1/install`](#post-v1install) and `backend: \"cloud\"` "
-            "first.",
-        };
         s.args = {
-            {"provider", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"provider", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The installed provider's name."},
-            {"api_key", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"api_key", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "The API key."},
             {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
              "Opt in to sending the key to a provider whose base URL is `http://`; the opt-in is "
@@ -81,38 +75,23 @@ public:
             "api_key": "fw-XXXXX"
         })");
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid,
+                    kProviderNotInstalled, kInsecureHttpError, kAuthConflict, kUnexpectedException};
+        s.error_format = ErrorFormat::OpenAi;
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         CloudProviderRegistry& registry = *ctx_.cloud_registry;
         try {
-            const auto body = json::parse(req.http.body);
-            if (!body.contains("provider") || !body["provider"].is_string() ||
-                !body.contains("api_key") || !body["api_key"].is_string()) {
-                write_openai_error(res, 400, "Body must contain string fields: provider, api_key");
-                return;
-            }
+            const json& body = req.body;
             const auto provider = body["provider"].get<std::string>();
             const auto api_key = body["api_key"].get<std::string>();
-            bool allow_insecure_http = false;
-            if (body.contains("allow_insecure_http")) {
-                if (!body["allow_insecure_http"].is_boolean()) {
-                    write_openai_error(res, 400, "allow_insecure_http must be a boolean when provided");
-                    return;
-                }
-                allow_insecure_http = body["allow_insecure_http"].get<bool>();
-            }
-            if (provider.empty() || api_key.empty()) {
-                write_openai_error(res, 400, "provider and api_key must be non-empty");
-                return;
-            }
+            const bool allow_insecure_http = body.value("allow_insecure_http", false);
 
             if (!registry.is_installed(provider)) {
-                write_openai_error(res, 404,
-                    "Cloud provider '" + provider + "' is not installed. "
-                    "Call POST /v1/install with backend=cloud, provider, "
-                    "and base_url first.");
+                write_provider_not_installed(res, provider);
                 return;
             }
 
@@ -132,7 +111,7 @@ public:
             // The environment variable wins over a runtime key, so refusing with 409
             // tells the caller its POST had no effect.
             if (!registry.set_runtime_key(provider, api_key)) {
-                res.status = 409;
+                res.status = kAuthConflict.status;
                 const auto env_name = CloudProviderRegistry::env_var_name(provider);
                 json error = {{"error", {
                     {"message", env_name + " is set in the lemond process; the env var "
@@ -160,11 +139,9 @@ public:
                 response,
                 CloudProviderRegistry::base_url_warnings(base_url, /*api_key_available=*/true));
             res.set_content(response.dump(), "application/json");
-        } catch (const json::parse_error& e) {
-            write_openai_error(res, 400, "Invalid JSON: " + std::string(e.what()));
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
-            write_openai_error(res, 500, e.what(), "server_error");
+            write_openai_error(res, kUnexpectedException, e.what(), "server_error");
         }
     }
 };

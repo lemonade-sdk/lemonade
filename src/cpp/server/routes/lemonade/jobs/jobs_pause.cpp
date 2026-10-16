@@ -1,3 +1,4 @@
+#include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
 
@@ -21,7 +22,6 @@ public:
         s.description =
             "Stops a job after its current step and releases the model slot, so queued requests "
             "run. A queued job pauses at once. Models the job loaded stay loaded for the resume.";
-        s.notes = {"An unknown job, or one that is not queued or running, answers `404`."};
         s.args = {
             {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
         };
@@ -40,12 +40,13 @@ public:
         example.setup = {{"lemonade.jobs_create", ""}};
         example.args = {{"id", "$lemonade.jobs_create/id"}};
         s.examples = {example};
+        s.errors = {kJobNotActive};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         if (!ctx_.job_manager->pause(req.http.matches[1])) {
-            write_plain_error(res, 404, "job not found or not pausable");
+            write_job_not_active(res, "pausable");
             return;
         }
         res.set_content(R"({"status":"pausing"})", "application/json");

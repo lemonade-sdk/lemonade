@@ -38,11 +38,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `messages` | Yes | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `messages` | No | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `tools` | No | Tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `format` | No | `json` constrains the reply to a JSON object. JSON schemas are not supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `format` | No | `json` constrains the reply to a JSON object. A JSON schema is accepted but not applied. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `think` | No | Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `keep_alive` | No | `0` with an empty `messages` array unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -140,8 +140,6 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### JSON
 
-**Field Descriptions:**
-
 - `model` - The model that generated the response.
 - `created_at` - Always `2024-01-01T00:00:00Z`.
 - `message` - The assistant's message; in a streamed line, the next piece of it.
@@ -159,8 +157,6 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### NDJSON
 
-**Field Descriptions:**
-
 Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
 
 - `model` - The model that generated the response.
@@ -177,6 +173,18 @@ Each line carries the next message piece with `done: false`. When the message en
 - `total_duration`, `load_duration` - Always `0`.
 - `prompt_eval_duration` - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
 - `eval_duration` - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.chat -->
 
 <!-- BEGIN GENERATED: ollama.generate -->
@@ -192,7 +200,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `prompt` | Yes | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | No | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `width` | No | Image models only: image width in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -303,8 +311,6 @@ Image generation never streams.
 
 #### JSON
 
-**Field Descriptions:**
-
 - `model` - The model that generated the response.
 - `created_at` - Always `2024-01-01T00:00:00Z`.
 - `response` - Generated text. Empty for an image model.
@@ -318,8 +324,6 @@ Image generation never streams.
 
 #### NDJSON
 
-**Field Descriptions:**
-
 Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
 
 - `model` - The model that generated the response.
@@ -332,6 +336,18 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 - `prompt_eval_count` - Prompt tokens.
 - `eval_count` - Generated tokens.
 - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.generate -->
 
 <!-- BEGIN GENERATED: ollama.tags -->
@@ -387,8 +403,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `models` - The downloaded models.
   - `name` - Lemonade model name with a `:latest` tag.
   - `model` - Same as `name`.
@@ -402,6 +416,12 @@ This endpoint does not take any parameters.
     - `families` - A list holding only `family`.
     - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
     - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: ollama.tags -->
 
 <!-- BEGIN GENERATED: ollama.show -->
@@ -416,8 +436,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to describe. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to describe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -467,8 +486,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `modelfile` - A `FROM` line naming the checkpoint.
 - `parameters` - `num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time.
 - `template` - Always empty.
@@ -481,6 +498,16 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
 - `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `404` |  | `model` names no model in the registry, or one filtered out on this system |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.show -->
 
 <!-- BEGIN GENERATED: ollama.delete -->
@@ -495,10 +522,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to delete. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to delete. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Success answers `200` with an empty body, as Ollama does. A model this system does not support also answers `404`, and other failures answer `500`.
+Success answers `200` with an empty body, as Ollama does.
 
 ### Example
 
@@ -521,6 +547,16 @@ Success answers `200` with an empty body, as Ollama does. A model this system do
     ```
 
 **Response:** `200 OK`
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `404` |  | `model` names no model in the registry, or one filtered out on this system |
+| `500` |  | Deleting fails for another reason, for example for an `extra.` model, a file that stays locked after the retries, or a failed unload |
 <!-- END GENERATED: ollama.delete -->
 
 <!-- BEGIN GENERATED: ollama.pull -->
@@ -535,13 +571,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | No | Model to download. Required unless `name` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `name` | No | Older name for `model`; wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | Model to download. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.
-
-In offline mode the request answers `400` with code `lemond_offline`.
 
 ### Examples
 
@@ -606,8 +639,6 @@ In offline mode the request answers `400` with code `lemond_offline`.
 
 #### NDJSON
 
-**Field Descriptions:**
-
 The first line is `pulling manifest`, then one line per progress report, then two `success` lines.
 
 - `status` - `pulling manifest`, `downloading <file>`, or `success`.
@@ -618,9 +649,18 @@ The first line is `pulling manifest`, then one line per progress report, then tw
 
 #### JSON
 
-**Field Descriptions:**
-
 - `status` - Always `success`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` | `lemond_offline` | `offline` is set to `true` |
+| `404` |  | `model` names no model in the registry, or one filtered out on this system |
+| `500` |  | A non-streaming download fails |
 <!-- END GENERATED: ollama.pull -->
 
 <!-- BEGIN GENERATED: ollama.embed -->
@@ -676,11 +716,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model` - The model that produced the embeddings.
 - `embeddings` - One vector per input, in input order.
 - `total_duration`, `load_duration`, `prompt_eval_count` - Always `0`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.embed -->
 
 <!-- BEGIN GENERATED: ollama.embeddings -->
@@ -696,8 +746,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `prompt` | No | Text to embed. Required unless `input` is given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `input` | No | Accepted in place of `prompt`. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` or `input` | Yes | Text to embed. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
@@ -732,10 +781,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model` - The model that produced the embedding.
 - `embedding` - The text's embedding vector.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `500` |  | The backend reports an error, whatever its own status |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: ollama.embeddings -->
 
 <!-- BEGIN GENERATED: ollama.ps -->
@@ -793,8 +852,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `models` - The loaded models.
   - `name` - Lemonade model name with a `:latest` tag.
   - `model` - Same as `name`.
@@ -809,6 +866,12 @@ This endpoint does not take any parameters.
     - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
   - `expires_at` - Always `2099-01-01T00:00:00Z`.
   - `size_vram` - Always `0`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: ollama.ps -->
 
 <!-- BEGIN GENERATED: ollama.version -->
@@ -845,8 +908,6 @@ This endpoint does not take any parameters.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `version` - The Ollama version Lemonade reports to clients.
 <!-- END GENERATED: ollama.version -->
 
@@ -854,34 +915,58 @@ This endpoint does not take any parameters.
 ## `POST /api/create`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`. Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
+Register a model with [`POST /v1/pull`](./lemonade.md#post-v1pull) instead.
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.create -->
 
 <!-- BEGIN GENERATED: ollama.copy -->
 ## `POST /api/copy`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`.
+
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.copy -->
 
 <!-- BEGIN GENERATED: ollama.push -->
 ## `POST /api/push`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`.
+
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.push -->
 
 <!-- BEGIN GENERATED: ollama.blobs -->
 ## `POST /api/blobs/{digest}`
 <sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
 
-Answers `501`.
+
 
 Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `501` | Lemonade does not support this Ollama operation |
 <!-- END GENERATED: ollama.blobs -->

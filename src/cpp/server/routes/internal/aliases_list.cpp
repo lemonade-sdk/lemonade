@@ -1,3 +1,4 @@
+#include "alias_errors.h"
 #include "lemon/alias_manager.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
@@ -7,6 +8,7 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
 
 class AliasesListRoute : public ApiRoute {
 public:
@@ -55,6 +57,7 @@ public:
         example.setup = {{"internal.aliases_create", ""}};
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kAliasStoreFailed};
         return s;
     }
 
@@ -83,13 +86,7 @@ public:
             }
             res.set_content(json{{"aliases", alias_list}}.dump(), "application/json");
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", {
-                {"message", e.what()},
-                {"type", "server_error"},
-                {"param", "alias"},
-                {"code", "internal_error"}
-            }}}.dump(), "application/json");
+            write_alias_error(res, kAliasStoreFailed, e.what(), "server_error");
         }
     }
 };

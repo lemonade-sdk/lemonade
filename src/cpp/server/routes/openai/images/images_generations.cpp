@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 
@@ -24,10 +25,6 @@ public:
         s.modality = "prompt -> image";
         s.description =
             "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
-        s.notes = {
-            "A model that cannot do this answers `500` with `type` `unsupported_operation`, after "
-            "it loads.",
-        };
         s.args = {
             {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text description of the image to generate."},
@@ -38,7 +35,7 @@ public:
             {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Number of images to generate. Defaults to `1`."},
             {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported."},
+             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Number of inference steps. Defaults to the model's own, else `20`."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -63,41 +60,27 @@ public:
             "response_format": "b64_json"
         })");
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kImageBackendError},
+                                image_route_exception_errors(), ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
 protected:
-    bool validate(RouteRequest& req, httplib::Response& res) override {
+    bool validate(RouteRequest&, httplib::Response&) override {
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
-        if (!req.body.contains("prompt")) {
-            write_openai_error(res, 400, "Missing 'prompt' field in request");
-            return false;
-        }
-        if (req.body.contains("model")) {
-            req.body["model"].get<std::string>();  // a non-string model fails before any load
-        }
         return true;
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->image_generations(req.body);
-        if (response.contains("error")) {
-            LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
-            res.status = 500;
-        }
-        res.set_content(response.dump(), "application/json");
-    }
-
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_exception(error, res);
+        write_image_backend_response(response, res);
     }
 
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         write_image_route_exception(error, res, "internal_error");
-    }
-};
+    }};
 
 } // namespace
 

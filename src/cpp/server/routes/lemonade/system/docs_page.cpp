@@ -9,6 +9,8 @@ namespace {
 
 using json = nlohmann::json;
 
+const RouteError kUnknownPage{404, "", "`page` names no bundled page"};
+
 class DocsPageRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -22,7 +24,6 @@ public:
         s.description =
             "Reads one page from the [`GET /v1/docs`](#get-v1docs) index, as `text/markdown`.";
         s.notes = {
-            "An unknown page answers `404`.",
             "### Reading the Files Directly\n"
             "\n"
             "The same files are installed on disk, so they can be read without a running server:\n"
@@ -51,6 +52,7 @@ public:
         example.format = ResponseFormat::Text;
         example.args = {{"page", "api/lemonade"}};
         s.examples = {example};
+        s.errors = {kUnknownPage};
         return s;
     }
 
@@ -59,7 +61,7 @@ public:
 
         std::string content;
         if (!read_api_doc(docs_dir, req.http.matches[1].str(), content)) {
-            write_plain_error(res, 404, "Documentation page not found");
+            write_plain_error(res, kUnknownPage, "Documentation page not found");
             return;
         }
 

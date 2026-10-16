@@ -29,7 +29,6 @@ public:
             "The answer comes after the evaluation finishes, so a test can check the outcome "
             "right away. While an exclusive job session is active no evaluation runs, and the "
             "answer is still `200`.",
-            "A `400` answers invalid JSON, a body that is not an object, or a non-numeric `pct`.",
         };
         s.args = {
             {"pct", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
@@ -51,18 +50,15 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"pct", 0.5}};
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgInvalid};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        try {
-            auto req_json = json::parse(req.http.body);
-            double pct = req_json.value("pct", 0.0);
-            ctx_.router->simulate_vram_pressure(pct);
-            res.set_content(R"({"status": "ok"})", "application/json");
-        } catch (const std::exception& e) {
-            write_plain_error(res, 400, e.what());
-        }
+        double pct = req.body.value("pct", 0.0);
+        ctx_.router->simulate_vram_pressure(pct);
+        res.set_content(R"({"status": "ok"})", "application/json");
     }
 };
 

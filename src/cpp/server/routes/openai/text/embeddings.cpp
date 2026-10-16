@@ -1,11 +1,15 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kCannotEmbed{400, "", "`model`'s backend cannot embed, such as a text-to-speech model"};
+const RouteError kNotEmbeddingModel{501, "", "`model` is a llama.cpp model that is not an embedding model"};
 
 class EmbeddingsRoute : public ModelRoute {
 public:
@@ -22,20 +26,13 @@ public:
             "Returns vector representations (embeddings) of the input text for semantic search, "
             "clustering and similarity comparisons, downloading and loading the model if it is not "
             "loaded. Embedding models use the `llamacpp` or `flm` recipe.";
-        s.notes = {
-            "A `400` answers a missing `model`, or a model whose backend cannot embed, such as a "
-            "text-to-speech model. An unknown model, or one not available on this system, answers "
-            "`404`; a load blocked by pinned models or a routing residency conflict answers `409`; "
-            "any other load failure, or invalid JSON, answers `500`. A backend error, such as llama.cpp's "
-            "`501` for a model that is not an embedding model, answers with the backend's status.",
-        };
         s.args = {
             {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The text to embed, as a string or an array of strings."},
+             "The text to embed, as a string or an array of strings.", {}, true},
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The embedding model to run."},
             {"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
-             "`float` or `base64`. Defaults to `float`."},
+             "`float` or `base64`. Defaults to `float`.", {}, true},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request "
              "loads it. Ignored when the model is already loaded."},
@@ -78,6 +75,10 @@ public:
             "encoding_format": "float"
         })");
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kCannotEmbed,
+                                 kNotEmbeddingModel, kBackendError, kUnexpectedException},
+                                ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -86,15 +87,10 @@ protected:
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->embeddings(req.body);
         if (response.contains("error")) {
-            set_error_response(response, res);
+            set_error_response(response, res, kBackendError);
             return;
         }
         res.set_content(response.dump(), "application/json");
-    }
-
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_plain_error(res, 500, error.what());
     }
 
     LoadSpan load_span() const override { return {"EMBEDDING", "embeddings"}; }

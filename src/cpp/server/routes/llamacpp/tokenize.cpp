@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "recent_llamacpp.h"
 
 namespace lemon {
 namespace {
@@ -23,19 +24,15 @@ public:
         s.description =
             "Tokenizes text without using the model's context window. After a request to a "
             "reranker, for example, the reranker's tokenizer answers.";
-        s.notes = {
-            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
-            "the answer is `400`.",
-        };
         s.args = {
             {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "The text to tokenize."},
             {"add_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Insert special tokens, such as `BOS`. Defaults to `false`."},
+             "Insert special tokens, such as `BOS`. Defaults to `false`.", {}, true},
             {"parse_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`."},
+             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`.", {}, true},
             {"with_pieces", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Return each token's text piece with its ID. Defaults to `false`."},
+             "Return each token's text piece with its ID. Defaults to `false`.", {}, true},
         };
 
         RouteResponse response;
@@ -58,47 +55,15 @@ public:
         example.setup = {{"lemonade.load", "model"}};
         example.args = {{"content", "This is a string to tokenize"}};
         s.examples = {example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, RecentLlamaCpp::errors()});
+        s.request_format = RequestFormat::OptionalJson;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        try {
-            LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
-
-            json request_body = json::object();
-            if (!req.http.body.empty()) {
-                try {
-                    request_body = json::parse(req.http.body);
-                } catch (const std::exception& e) {
-                    LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
-                    write_plain_error(res, 400, "Invalid JSON in request body");
-                    return;
-                }
-            }
-
-            if (!request_body.contains("content") || !request_body["content"].is_string()) {
-                LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
-                write_plain_error(res, 400, "'content' parameter is required");
-                return;
-            }
-
-            if (!ctx_.router->is_model_loaded()) {
-                LOG(ERROR, "Server") << "No model loaded for tokenization" << std::endl;
-                write_plain_error(res, 400, "No model loaded for tokenization");
-                return;
-            }
-
-            auto response = ctx_.router->tokenize(request_body);
-            if (response.contains("error")) {
-                set_error_response(response, res);
-                return;
-            }
-
-            res.set_content(response.dump(), "application/json");
-        } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "ERROR in handle_tokenize: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
-        }
+        LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
+        RecentLlamaCpp::serve(*ctx_.router, res, "tokenization",
+                              [&] { return ctx_.router->tokenize(req.body); });
     }
 };
 

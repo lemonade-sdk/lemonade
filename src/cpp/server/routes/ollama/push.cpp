@@ -1,11 +1,11 @@
-#include "lemon/server/api_route.h"
+#include "unsupported.h"
 
 namespace lemon {
 namespace {
 
-class PushRoute : public ApiRoute {
+class PushRoute : public OllamaUnsupportedRoute {
 public:
-    using ApiRoute::ApiRoute;
+    using OllamaUnsupportedRoute::OllamaUnsupportedRoute;
 
     RouteSpec spec() const override {
         RouteSpec s;
@@ -14,13 +14,8 @@ public:
         s.paths = {"/api/push"};
         s.prefixes = Prefixes::Root;
         s.summary = "Push a model to a registry";
-        s.description = "Answers `501`.";
+        s.errors = {kNotSupported};
         return s;
-    }
-
-    void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = 501;
-        res.set_content(R"({"error":"not supported by Lemonade"})", "application/json");
     }
 };
 

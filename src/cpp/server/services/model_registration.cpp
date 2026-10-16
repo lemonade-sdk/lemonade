@@ -1,20 +1,32 @@
 #include "lemon/server/model_registration.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
+#include "lemon/router.h"
+#include "lemon/server/api_route.h"
 #include "lemon/utils/path_utils.h"
 
 namespace lemon {
 
 using json = nlohmann::json;
+
+const RouteError kInvalidModelDefinition{
+    400, "",
+    "The definition is malformed and nothing is registered, for example a name outside the "
+    "`user.` namespace or with a reserved `extra.`/`builtin.` prefix, an empty `recipe` where one "
+    "is required, `checkpoints` without `main`, an unsupported `source`, `components` that are "
+    "empty or name the collection itself, another collection or an unregistered model, or an "
+    "invalid routing policy"};
 
 namespace {
 
@@ -258,6 +270,61 @@ std::string register_model_definition(ServerContext& ctx, const std::string& mod
     }
 
     return model_manager.get_public_model_name(model_name);
+}
+
+std::optional<std::string> try_register_model_definition(
+    ServerContext& ctx, const std::string& model_name, json& request_json,
+    bool require_definition, bool allow_embedded_models, bool local_import,
+    httplib::Response& res) {
+    try {
+        return register_model_definition(ctx, model_name, request_json, require_definition,
+                                         allow_embedded_models, local_import);
+    } catch (const std::invalid_argument& e) {
+        write_plain_error(res, kInvalidModelDefinition, e.what());
+        return std::nullopt;
+    }
+}
+
+const RouteError kDeleteFailed{
+    500, "",
+    "Deleting fails for another reason, for example for an `extra.` model, a file that stays "
+    "locked after the retries, or a failed unload"};
+
+void delete_model_files(ServerContext& ctx, const std::string& model_name) {
+    if (ctx.router->is_model_loaded(model_name)) {
+        LOG(INFO, "Server") << "Model is loaded, unloading before delete: " << model_name << std::endl;
+        ctx.router->unload_model(model_name);
+    }
+
+    const int max_retries = 3;
+    const int retry_delay_seconds = 5;
+    for (int attempt = 0;; ++attempt) {
+        try {
+            ctx.model_manager->delete_model(model_name);
+            return;
+        } catch (const std::exception& e) {
+            const std::string error = e.what();
+            const bool is_file_locked =
+                error.find("being used by another process") != std::string::npos ||
+                error.find("Permission denied") != std::string::npos ||
+                error.find("resource busy") != std::string::npos;
+            if (!is_file_locked || attempt >= max_retries) {
+                throw;
+            }
+            LOG(INFO, "Server") << "Delete failed (file in use), retry " << (attempt + 1) << "/"
+                                << max_retries << " in " << retry_delay_seconds << "s..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(retry_delay_seconds));
+        }
+    }
+}
+
+void write_delete_error(const std::exception& error, const RouteError& not_found,
+                        httplib::Response& res) {
+    const std::string message = error.what();
+    const bool unknown = message.find("Model not found") != std::string::npos ||
+                         message.find("not supported") != std::string::npos;
+    res.status = unknown ? not_found.status : kDeleteFailed.status;
+    res.set_content(nlohmann::json{{"error", message}}.dump(), "application/json");
 }
 
 } // namespace lemon

@@ -39,8 +39,8 @@ public:
             "items": {
                 "type": "object",
                 "required": ["id", "methods", "paths", "prefixes", "summary", "modality", "description",
-                             "notes", "experimental", "args", "responses", "examples", "request_format",
-                             "quiet_log"],
+                             "notes", "experimental", "args", "responses", "examples", "errors", "error_format",
+                             "request_format", "quiet_log"],
                 "properties": {
                     "id": {"type": "string", "description": "`<page>.<name>`; names the route's generated region in `docs/api/<page>.md`."},
                     "methods": {"type": "array", "items": {"type": "string"}, "description": "HTTP methods the route answers, such as `POST`."},
@@ -53,14 +53,17 @@ public:
                     "experimental": {"type": "boolean", "description": "The route may still change."},
                     "args": {"type": "array", "description": "Every argument the route takes.", "items": {
                         "type": "object",
-                        "required": ["name", "in", "schema", "required", "supported", "description"],
+                        "required": ["name", "in", "schema", "required", "supported", "description", "aliases",
+                                     "forwarded"],
                         "properties": {
                             "name": {"type": "string", "description": "The argument's name."},
                             "in": {"enum": ["JsonBody", "Query", "Path", "Form"], "description": "Where the argument goes: the JSON body, the query string, the path, or a form field."},
                             "schema": {"type": "object", "description": "JSON Schema of the argument's value."},
                             "required": {"type": "boolean", "description": "Whether a request must send the argument."},
                             "supported": {"enum": ["available", "partial", "not_available"], "description": "`available`; `partial`, honored only in part as the argument's description says; or `not_available`, accepted but ignored."},
-                            "description": {"type": "string", "description": "What the argument controls."}
+                            "description": {"type": "string", "description": "What the argument controls."},
+                            "aliases": {"type": "array", "items": {"type": "string"}, "description": "Other names a request may send the argument under."},
+                            "forwarded": {"type": "boolean", "description": "Whether `lemond` passes the argument to the backend unchecked."}
                         }
                     }},
                     "responses": {"type": "array", "description": "One entry per response format the route returns.", "items": {
@@ -90,7 +93,17 @@ public:
                             }, "description": "Requests that run first to put `lemond` in the state this example needs."}
                         }
                     }, "description": "The first is the route's main example."},
-                    "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"], "description": "How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty body read as `{}`, `Form` as a multipart form."},
+                    "errors": {"type": "array", "description": "Every error status the route answers with, including those its base class adds.", "items": {
+                        "type": "object",
+                        "required": ["status", "code", "when"],
+                        "properties": {
+                            "status": {"type": "integer", "description": "The HTTP status."},
+                            "code": {"type": "string", "description": "The code the error body carries, or empty when it carries none."},
+                            "when": {"type": "string", "description": "The condition that produces the error."}
+                        }
+                    }},
+                    "error_format": {"enum": ["Plain", "OpenAi", "Anthropic"], "description": "The body shape of the errors `lemond` writes when a request is not valid JSON or an argument is missing or invalid."},
+                    "request_format": {"enum": ["Raw", "Json", "OptionalJson", "Form"], "description": "How `lemond` parses the request body: `Raw` not at all, `Json` as JSON, `OptionalJson` as JSON with an empty or `null` body read as `{}`, `Form` as a multipart form."},
                     "quiet_log": {"type": "boolean", "description": "Whether the route is left out of the access log."}
                 }
             }

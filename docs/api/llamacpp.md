@@ -30,8 +30,6 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 | `model` | Yes | Reranker model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A model that is not a reranker answers `400`, or `501` from llama.cpp when it is a llama.cpp model. A body that is not valid JSON answers `500`.
-
 ### Example
 
 === "PowerShell"
@@ -81,8 +79,6 @@ A model that is not a reranker answers `400`, or `501` from llama.cpp when it is
 
 ### Response format
 
-**Field Descriptions:**
-
 - `model` - The model that scored the documents.
 - `object` - Always `"list"`.
 - `results` - Every input document with its score, sorted by `relevance_score`, highest first.
@@ -91,6 +87,22 @@ A model that is not a reranker answers `400`, or `501` from llama.cpp when it is
 - `usage` - Tokens processed.
   - `prompt_tokens` - Tokens in the query and documents.
   - `total_tokens` - All tokens processed.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is not a llama.cpp model |
+| `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
+| `404` | `model_not_found` | The requested model is not in the registry |
+| `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
+| `409` | `slots_pinned_error` | Every loaded model of the requested model's type is pinned, so none can be unloaded to make room |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
+| `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 <!-- END GENERATED: llamacpp.rerank -->
 
 <!-- BEGIN GENERATED: llamacpp.slots -->
@@ -104,8 +116,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 ### Parameters
 
 This endpoint does not take any parameters.
-
-With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`.
 
 ### Example
 
@@ -197,8 +207,6 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 
 ### Response format
 
-**Field Descriptions:**
-
 - `id` - The slot's ID.
 - `next_token` - Generation state of the slot's current request.
   - `has_next_token` - Whether more tokens are expected
@@ -213,6 +221,16 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 - `n_prompt_tokens_processed` - Prompt tokens processed for the current request.
 - `params` - Sampling parameters of the slot's last request.
 - `speculative` - Whether the slot uses speculative decoding.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | No model is loaded |
+| `400` | The most recently used model is not a llama.cpp model |
+| `404` | The model is unloaded while the request waits for it |
+| `500` | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` | The request fails unexpectedly |
 <!-- END GENERATED: llamacpp.slots -->
 
 <!-- BEGIN GENERATED: llamacpp.slots_action -->
@@ -231,9 +249,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `filename` | No | File to save to or restore from, relative to `--slot-save-path`. Required for `save` and `restore`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `action` (query) | Yes | `save` writes the slot's prompt cache to `filename`, `restore` reads it back from `filename`, and `erase` clears the slot. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`. An `error` from llama.cpp is returned with its status.
-
-Every action needs llama.cpp started with `--slot-save-path`; without it, llama.cpp answers `501`. Set it for every load with `lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"` (see [Server Configuration](../guide/configuration/README.md)), or for one load with `llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).
+Every action needs llama.cpp started with `--slot-save-path`. Set it for every load with `lemonade config set llamacpp.args="--slot-save-path /path/to/slot/saves"` (see [Server Configuration](../guide/configuration/README.md)), or for one load with `llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).
 
 ### Examples
 
@@ -325,8 +341,6 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
 
 ### Response format
 
-**Field Descriptions:**
-
 - `id_slot` - The slot acted on.
 - `filename` - `save` and `restore`: the file written or read.
 - `n_saved` - `save`: tokens written.
@@ -335,6 +349,20 @@ Every action needs llama.cpp started with `--slot-save-path`; without it, llama.
 - `n_read` - `restore`: bytes read.
 - `n_erased` - `erase`: tokens cleared.
 - `timings` - `save` and `restore`: how long the file operation took.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `id` is too large for a 32-bit integer |
+| `400` |  | No model is loaded |
+| `400` |  | The most recently used model is not a llama.cpp model |
+| `404` |  | The model is unloaded while the request waits for it |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: llamacpp.slots_action -->
 
 <!-- BEGIN GENERATED: llamacpp.tokenize -->
@@ -353,8 +381,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `add_special` | No | Insert special tokens, such as `BOS`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `parse_special` | No | Tokenize special tokens; `false` treats them as plain text. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `with_pieces` | No | Return each token's text piece with its ID. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-With no model loaded, or when the most recently used one is not a llama.cpp model, the answer is `400`.
 
 ### Example
 
@@ -384,7 +410,18 @@ With no model loaded, or when the most recently used one is not a llama.cpp mode
 
 ### Response format
 
-**Field Descriptions:**
-
 - `tokens` - Token IDs, or `{"id", "piece"}` objects when `with_pieces` is `true`.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | No model is loaded |
+| `400` |  | The most recently used model is not a llama.cpp model |
+| `404` |  | The model is unloaded while the request waits for it |
+| `500` |  | The backend reports an error; the backend's own status replaces this one when it sends one |
+| `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: llamacpp.tokenize -->

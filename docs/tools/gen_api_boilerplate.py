@@ -221,6 +221,9 @@ def validate_specs(specs: dict) -> None:
                 raise GenerationError(f"{where}: a JSON format needs a schema")
             if response["format"] not in JSON_FORMATS and has_schema:
                 raise GenerationError(f"{where}: only JSON formats have a schema")
+            for shape in (response["schema"] or {}).get("oneOf", []):
+                if not shape.get("title"):
+                    raise GenerationError(f"{where}: every oneOf shape needs a title")
         names = [example["name"] for example in spec["examples"]]
         if len(names) > 1 and (not all(names) or len(set(names)) != len(names)):
             raise GenerationError(
@@ -283,6 +286,8 @@ GENERATED_PHRASES = ["Also served at", "Requires `LEMONADE_API_KEY`", "> **Note:
 OTHER_PREFIXES = re.compile(r"/api/v[01]\b|(?<![\w/])/v0/")
 PLACEHOLDER = re.compile(r"<(?!(?:sub|br)\b)[A-Za-z_][\w-]*>")
 SENTENCE_END = re.compile(r"(?<!e\.g)(?<!i\.e)(?<=[.!?])\s+")
+# The error statuses HTTP defines, so a value such as a `512` pixel default is not one.
+ERROR_STATUS = re.compile(r"`(?:4(?:0\d|1[0-7]|2[1-689]|31|51)|50\d|51[01])`")
 MAX_SUMMARY_WORDS = 10
 MAX_DESCRIPTION_SENTENCES = 3
 REPEAT_MIN_CHARS = 40
@@ -306,6 +311,8 @@ def route_texts(spec: dict):
     for example in spec["examples"]:
         if example["description"]:
             yield f"example {example['name'] or '(main)'}", example["description"]
+    for error in spec["errors"]:
+        yield f"error {error['status']} {error['code']}".rstrip(), error["when"]
 
     def walk(schema, path):
         if not isinstance(schema, dict):
@@ -337,11 +344,56 @@ def lint_spec(spec: dict) -> list[str]:
             problems.append(f"{where} has an em dash")
         for match in PLACEHOLDER.finditer(prose):
             problems.append(f"{where} has {match.group(0)} outside backticks")
+    for where, text in (
+        [("description", spec["description"])]
+        + [(f"notes[{index}]", note) for index, note in enumerate(spec["notes"])]
+        + [(f"argument {arg['name']}", arg["description"]) for arg in spec["args"]]
+    ):
+        if ERROR_STATUS.search(text):
+            problems.append(
+                f"{where} names an error status, which belongs in a RouteError"
+            )
+    listed = [
+        (error["status"], error["code"], error["when"]) for error in spec["errors"]
+    ]
+    for error, count in collections.Counter(listed).items():
+        if count > 1:
+            problems.append(f"lists error {error[0]} {error[2]!r} {count} times")
+    codes = {error["code"] for error in spec["errors"]}
+    for code, written in base_error_codes(spec).items():
+        if written and code not in codes:
+            problems.append(
+                f"leaves out the {code} error, which ApiRoute writes for it"
+            )
+        elif not written and code in codes:
+            problems.append(
+                f"lists the {code} error, which ApiRoute never writes for it"
+            )
     if len(spec["summary"].split()) > MAX_SUMMARY_WORDS:
         problems.append(f"summary runs over {MAX_SUMMARY_WORDS} words")
     if len(sentences(spec["description"])) > MAX_DESCRIPTION_SENTENCES:
         problems.append(f"description runs over {MAX_DESCRIPTION_SENTENCES} sentences")
     return [f"{spec['id']}: {problem}" for problem in problems]
+
+
+def base_error_codes(spec: dict) -> dict:
+    """Whether the base classes can write each of the argument errors for this route."""
+    if spec["request_format"] not in ("Json", "OptionalJson", "Form"):
+        return {
+            "invalid_json": False,
+            "missing_argument": False,
+            "invalid_argument": False,
+        }
+    checked = [
+        arg
+        for arg in spec["args"]
+        if arg["in"] in ("JsonBody", "Query", "Form") and not arg["forwarded"]
+    ]
+    return {
+        "invalid_json": spec["request_format"] != "Form",
+        "missing_argument": any(arg["required"] for arg in checked),
+        "invalid_argument": bool(checked),
+    }
 
 
 def lint_region(route_id: str, body: str) -> list[str]:
@@ -360,6 +412,82 @@ def lint_region(route_id: str, body: str) -> list[str]:
         for sentence, count in counts.items()
         if count > 1
     ]
+
+
+LITERAL_ERROR_STATUS = re.compile(
+    r"\bstatus\s*=\s*[45]\d\d\b|_error\(\s*res\s*,\s*[45]\d\d\b"
+)
+ROUTE_ERROR_NAME = re.compile(
+    r"\b(?:extern |static )?const RouteError (?:\w+::)?(k[A-Z]\w*)"
+)
+ERROR_LISTS = re.compile(r"\berrors\s*=\s*[^;]*;", re.S)
+REQUIRED_MODEL_ARG = re.compile(r'\{"model", ArgIn::\w+, [^\n]*?, true,')
+RECEIVES_BODY = re.compile(r"RequestFormat::(?:Json|OptionalJson|Form)\b")
+ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
+
+
+def lint_sources() -> list[str]:
+    """Every error status a route or service writes comes from a RouteError, and every
+    RouteError a route file uses is in its route's errors."""
+    server = REPO_ROOT / "src" / "cpp" / "server"
+    sources = sorted((server / "routes").rglob("*.cpp")) + sorted(
+        (server / "services").rglob("*.cpp")
+    )
+    declared = set()
+    for path in (
+        sources
+        + sorted((REPO_ROOT / "src" / "cpp" / "include").rglob("*.h"))
+        + [server / "core" / "api_route.cpp"]
+    ):
+        declared.update(ROUTE_ERROR_NAME.findall(path.read_text(encoding="utf-8")))
+
+    problems = []
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        where = path.relative_to(REPO_ROOT)
+        for match in LITERAL_ERROR_STATUS.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{where}:{line} writes an error status that is not a RouteError's"
+            )
+        if path.parent.name == "services" or "RouteSpec spec()" not in text:
+            continue
+        lists = " ".join(m.group(0) for m in ERROR_LISTS.finditer(text))
+        inherited = "ModelLoader::errors()" in lists
+        # MCP's JSON-RPC endpoint answers its own parse errors, in-band with a 200.
+        if (
+            not RECEIVES_BODY.search(text)
+            and "http.body" in text
+            and path.parent.name != "mcp"
+        ):
+            problems.append(
+                f"{where} reads its request body, which its RequestFormat skips"
+            )
+        base_errors = []
+        if "public ModelRoute" in text:
+            base_errors.append("ModelLoader::errors()")
+            if "void write_exception" not in text:
+                base_errors.append("kUnexpectedException")
+            if "RequestFormat::Form" in text:
+                base_errors.append("kFormNotMultipart")
+            fills_model = 'req.body["model"] =' in text
+            if not (REQUIRED_MODEL_ARG.search(text) or fills_model):
+                base_errors.append("kModelMissing")
+        for name in base_errors:
+            if name not in lists:
+                problems.append(
+                    f"{where} leaves {name}, which its base class writes, out of its errors"
+                )
+        used = {name for name in ROUTE_ERROR_USE.findall(text) if name in declared}
+        for name in sorted(used):
+            if re.search(rf"\b{name}\b", lists):
+                continue
+            if inherited and re.search(rf"ModelLoader::{name}\b", text):
+                continue
+            problems.append(
+                f"{where} uses {name}, which its route's errors do not list"
+            )
+    return problems
 
 
 # --------------------------------------------------------------------------
@@ -1092,20 +1220,16 @@ def field_lines(rows: list, pad: str = "") -> list[str]:
     return lines
 
 
-def render_fields(schema: dict, shapes: list | None = None) -> str:
-    """The schema's top-level description, then its fields; a format with several shapes
-    lists each of shapes (all of them by default) under that shape's description."""
-    if shapes is None:
-        shapes = schema.get("oneOf", [])
+def render_fields(schema: dict, heading: str) -> str:
+    """The schema's description, then its fields; a format with several shapes gives each
+    shape a heading from its title, then that shape's description and fields."""
     blocks = [schema.get("description", "")]
     blocks.append("\n".join(field_lines(field_rows({**schema, "oneOf": []}))))
-    for shape in shapes:
+    for shape in schema.get("oneOf", []):
+        blocks.append(f"{heading} {shape['title']}")
         blocks.append(shape.get("description", ""))
         blocks.append("\n".join(field_lines(field_rows(shape))))
-    blocks = [block for block in blocks if block]
-    if not blocks:
-        return ""
-    return "**Field Descriptions:**\n\n" + "\n\n".join(blocks)
+    return "\n\n".join(block for block in blocks if block)
 
 
 def shorten(value, schema):
@@ -1260,12 +1384,15 @@ def render_examples(spec: dict, entries: list[dict]) -> str:
 
 
 def render_response_format(spec: dict) -> str:
-    """Each format's Field Descriptions, once, under a heading per format when there are
-    several."""
+    """Each format's fields, under a heading per format when there are several."""
+    schemas = [response for response in spec["responses"] if response["schema"]]
+    shape_heading = "####" if len(schemas) == 1 else "#####"
     sections = [
-        (response["format"], render_fields(dereferenced(response["schema"])))
-        for response in spec["responses"]
-        if response["schema"]
+        (
+            response["format"],
+            render_fields(dereferenced(response["schema"]), shape_heading),
+        )
+        for response in schemas
     ]
     sections = [(fmt, fields) for fmt, fields in sections if fields]
     if not sections:
@@ -1278,6 +1405,25 @@ def render_response_format(spec: dict) -> str:
     return "\n".join(parts)
 
 
+def render_errors(spec: dict) -> str:
+    if not spec["errors"]:
+        return ""
+    errors = sorted(spec["errors"], key=lambda error: error["status"])
+    with_code = any(error["code"] for error in errors)
+    rows = ["### Errors", ""]
+    if with_code:
+        rows += ["| Status | Code | When |", "|--------|------|------|"]
+    else:
+        rows += ["| Status | When |", "|--------|------|"]
+    for error in errors:
+        cells = [f"`{error['status']}`"]
+        if with_code:
+            cells.append(f"`{error['code']}`" if error["code"] else "")
+        cells.append(md_cell(error["when"]))
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows)
+
+
 def render_parameters(spec: dict) -> str:
     if not spec["args"]:
         return "### Parameters\n\nThis endpoint does not take any parameters."
@@ -1288,7 +1434,7 @@ def render_parameters(spec: dict) -> str:
         "|-----------|----------|-------------|--------|",
     ]
     for arg in spec["args"]:
-        name = f"`{arg['name']}`"
+        name = " or ".join(f"`{name}`" for name in [arg["name"], *arg["aliases"]])
         if arg["in"] == "Query":
             name += " (query)"
         elif arg["in"] == "Path":
@@ -1329,6 +1475,9 @@ def render_route(spec: dict, entries: dict) -> str:
         fields = render_response_format(spec)
         if fields:
             parts += ["", fields]
+    errors = render_errors(spec)
+    if errors:
+        parts += ["", errors]
     return "\n".join(parts)
 
 
@@ -1511,7 +1660,7 @@ def main() -> int:
                 specs, spec["id"], example, backend_versions, server_models
             )
 
-    problems = []
+    problems = lint_sources()
     for spec in route_list:
         problems += lint_spec(spec)
     missing = [ref for ref, key in keys.items() if key not in cache]

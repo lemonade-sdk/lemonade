@@ -2,12 +2,15 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "recent_llamacpp.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kInvalidSlotId{400, "", "`id` is too large for a 32-bit integer"};
 
 class SlotsActionRoute : public ApiRoute {
 public:
@@ -25,10 +28,7 @@ public:
             "Saves a slot's prompt cache to a file, restores it from one, or erases it, so a "
             "conversation can resume where it left off.";
         s.notes = {
-            "With no model loaded, or when the most recently used one is not a llama.cpp model, "
-            "the answer is `400`. An `error` from llama.cpp is returned with its status.",
-            "Every action needs llama.cpp started with `--slot-save-path`; without it, llama.cpp "
-            "answers `501`. Set it for every load with `lemonade config set "
+            "Every action needs llama.cpp started with `--slot-save-path`. Set it for every load with `lemonade config set "
             "llamacpp.args=\"--slot-save-path /path/to/slot/saves\"` (see "
             "[Server Configuration](../guide/configuration/README.md)), or for one load with "
             "`llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).",
@@ -38,7 +38,7 @@ public:
              "The slot to act on."},
             {"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "File to save to or restore from, relative to `--slot-save-path`. Required for "
-             "`save` and `restore`."},
+             "`save` and `restore`.", {}, true},
             {"action", ArgIn::Query, {{"enum", json::array({"save", "restore", "erase"})}}, true, Support::Available,
              "`save` writes the slot's prompt cache to `filename`, `restore` reads it back from "
              "`filename`, and `erase` clears the slot."},
@@ -97,64 +97,27 @@ public:
         erase.args = {{"id", 0}, {"action", "erase"}};
 
         s.examples = {save, restore, erase};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSlotId},
+                                RecentLlamaCpp::errors()});
+        s.request_format = RequestFormat::OptionalJson;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        std::string slot_id_str = req.http.matches[1];
+        int slot_id;
         try {
-            std::string slot_id_str = req.http.matches[1];
-            int slot_id;
-            try {
-                slot_id = std::stoi(slot_id_str);
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
-                write_plain_error(res, 400, std::string("Invalid slot ID: ") + slot_id_str);
-                return;
-            }
-
-            auto action_param = req.http.get_param_value("action");
-            if (action_param.empty()) {
-                LOG(ERROR, "Server") << "Missing action parameter for slots POST endpoint" << std::endl;
-                write_plain_error(res, 400, "POST /api/v1/slots/{id} requires action query parameter (e.g., ?action=erase)");
-                return;
-            }
-
-            if (action_param != "erase" && action_param != "save" && action_param != "restore") {
-                LOG(ERROR, "Server") << "Unknown action parameter: " << action_param << std::endl;
-                write_plain_error(res, 400, std::string("Unknown action: ") + action_param + ". Supported actions: erase, save, restore");
-                return;
-            }
-
-            // Slot actions operate on backend state, so they need a loaded model rather
-            // than a named one.
-            if (!ctx_.router->is_model_loaded()) {
-                LOG(ERROR, "Server") << "No model loaded for slots " << action_param << " operation" << std::endl;
-                write_plain_error(res, 400, std::string("No model loaded for slots ") + action_param + " operation");
-                return;
-            }
-
-            json request_body = json::object();
-            if (!req.http.body.empty()) {
-                try {
-                    request_body = json::parse(req.http.body);
-                } catch (const std::exception& e) {
-                    LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
-                    write_plain_error(res, 400, "Invalid JSON in request body");
-                    return;
-                }
-            }
-
-            auto response = ctx_.router->slots_action(slot_id, action_param, request_body);
-            if (response.contains("error")) {
-                set_error_response(response, res);
-                return;
-            }
-
-            res.set_content(response.dump(), "application/json");
+            slot_id = std::stoi(slot_id_str);
         } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
+            write_plain_error(res, kInvalidSlotId, std::string("Invalid slot ID: ") + slot_id_str);
+            return;
         }
+
+        auto action_param = req.http.get_param_value("action");
+        RecentLlamaCpp::serve(*ctx_.router, res, "slots " + action_param + " operation", [&] {
+            return ctx_.router->slots_action(slot_id, action_param, req.body);
+        });
     }
 };
 

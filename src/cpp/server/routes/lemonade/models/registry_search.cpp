@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/server/model_sync.h"
 #include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
@@ -9,6 +10,23 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kShortQuery{
+    400, "", "`query` (or `q`) is shorter than 3 characters after trimming"};
+const RouteError kInvalidSearchParam{
+    400, "",
+    "`source` names an unsupported registry, `limit` is not an integer from 1 to 50, or "
+    "`format` is not `gguf`"};
+const RouteError kRateLimited{
+    429, "",
+    "The upstream registry rate-limits the request; `error.upstream_status_code` is its "
+    "status"};
+const RouteError kUpstreamError{
+    502, "",
+    "The upstream registry answers with another error; `error.upstream_status_code` is its "
+    "status"};
+const RouteError kSearchFailed{
+    502, "", "The search fails with no upstream status, for example on a network error"};
 
 class RegistrySearchRoute : public ApiRoute {
 public:
@@ -25,11 +43,6 @@ public:
             "results are candidates chosen from registry metadata, so the desktop app's Model "
             "Manager checks each one with [`GET /v1/pull/variants`](#get-v1pullvariants) and offers a "
             "download only for repositories whose files pass.";
-        s.notes = {
-            "A `400` answers an invalid `query`, `source`, `limit` or `format`, or offline mode (`code: lemond_offline`). A `429` means the upstream "
-            "registry rate-limited the request, and any other upstream failure answers `502`, with "
-            "the upstream status code when available.",
-        };
         s.args = {
             {"query", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
              "Search text, minimum 3 characters after trimming. `q` is accepted as an alias."},
@@ -77,6 +90,8 @@ public:
         example.format = ResponseFormat::Json;
         example.args = {{"source", "modelscope"}, {"query", "qwen"}, {"format", "gguf"}};
         s.examples = {example};
+        s.errors = {kShortQuery, kInvalidSearchParam, kLemondOffline,
+                    kRateLimited, kUpstreamError, kSearchFailed};
         return s;
     }
 
@@ -90,7 +105,8 @@ public:
             const auto last = query.find_last_not_of(" \t\r\n");
             query = first == std::string::npos ? "" : query.substr(first, last - first + 1);
             if (query.size() < 3) {
-                write_openai_error(res, 400, "Query parameter 'query' must contain at least 3 characters");
+                write_openai_error(res, kShortQuery,
+                                   "Query parameter 'query' must contain at least 3 characters");
                 return;
             }
 
@@ -126,8 +142,8 @@ public:
             }
 
             if (ctx_.config->offline()) {
-                write_openai_error(res, 400, "Lemond is in offline mode, registry search is unavailable",
-                                   "invalid_request_error", "lemond_offline");
+                write_openai_error(res, kLemondOffline,
+                                   "Lemond is in offline mode, registry search is unavailable");
                 return;
             }
 
@@ -156,17 +172,18 @@ public:
             if (gguf_only) response["format"] = "gguf";
             res.set_content(response.dump(), "application/json");
         } catch (const RegistrySearchError& e) {
-            res.status = e.status_code() == 429 ? 429 : 502;
+            res.status = e.status_code() == kRateLimited.status ? kRateLimited.status
+                                                                : kUpstreamError.status;
             res.set_content(json{{"error", {
                 {"message", e.what()},
                 {"type", "registry_error"},
                 {"upstream_status_code", e.status_code()}
             }}}.dump(), "application/json");
         } catch (const std::invalid_argument& e) {
-            write_openai_error(res, 400, e.what());
+            write_openai_error(res, kInvalidSearchParam, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_registry_search: " << e.what() << std::endl;
-            write_openai_error(res, 502, e.what(), "registry_error");
+            write_openai_error(res, kSearchFailed, e.what(), "registry_error");
         }
     }
 };

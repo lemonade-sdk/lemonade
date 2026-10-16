@@ -4,12 +4,16 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/audio_formats.h"
+#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kNotAudioModel{
+    400, "model_not_applicable", "`model` is not an audio-generation model"};
 
 class AudioGenerationsRoute : public ModelRoute {
 public:
@@ -29,6 +33,7 @@ public:
         s.notes = {
             "Generation runs on the GPU (Vulkan, ROCm or CUDA) and takes from seconds for a short "
             "sound effect to minutes for full-length music, depending on duration and hardware.",
+            "Errors carry a JSON `error` object.",
             "### Lyrics\n\n"
             "ACE-Step vocals are a two-stage pipeline inside the backend: a language model first "
             "turns the style description and lyrics into audio codes, then the diffusion "
@@ -44,9 +49,6 @@ public:
             "- Describe the voice (\"gentle female vocals\", \"raspy male baritone\") in `prompt`, "
             "not in the lyrics.\n"
             "- Lyrics may be in any supported language; set `vocal_language` to match.",
-            "A failed request answers with a JSON `error` object: `400` for an invalid request, "
-            "`404` for an unknown model, `500` for a body that is not valid JSON or when the "
-            "backend reports an error, and `502` when it produces no output.",
         };
         s.args = {
             {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
@@ -71,8 +73,8 @@ public:
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Random seed for reproducibility."},
             {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only `wav`, the format the backend produces, is accepted; other values "
-             "answer `400`. Defaults to `wav`."},
+             "Output encoding. Only `wav`, the format the backend produces, is accepted. "
+             "Defaults to `wav`."},
         };
 
         RouteResponse response;
@@ -101,33 +103,21 @@ public:
         })");
 
         s.examples = {sound, song};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotAudioModel,
+                                 kUnsupportedAudioFormat, kNoOutputError, kBackendError,
+                                 kUnexpectedException},
+                                ModelLoader::errors()});
+        s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
 protected:
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        // ModelRoute reports a missing model, and that error wins over a missing prompt.
-        if (!req.body.contains("model")) {
-            return true;
-        }
-        if (!req.body.contains("prompt")) {
-            write_openai_error(res, 400, "Missing 'prompt' field in request");
-            return false;
-        }
-        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
-            if (req.body.contains(field) && !req.body[field].is_string()) {
-                write_openai_error(res, 400, "'" + std::string(field) + "' must be a string");
-                return false;
-            }
-        }
-
-        req.body["model"].get<std::string>();  // a non-string model fails before any load
         if (auto info = ctx_.router->try_get_model_info(req.model);
             info && info->type != ModelType::AUDIO_GENERATION) {
-            write_openai_error(res, 400,
-                               "Model '" + req.model + "' is not an audio-generation model",
-                               "invalid_request_error", "model_not_applicable");
+            write_openai_error(res, kNotAudioModel,
+                               "Model '" + req.model + "' is not an audio-generation model");
             return false;
         }
         return true;
@@ -135,12 +125,8 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         AudioFormat format = negotiate_audio_generation_format(*ctx_.router, req.model, req.body);
-        if (!format.error.empty()) {
-            write_openai_error(res, 400, format.error);
+        if (!apply_audio_format(format, res)) {
             return;
-        }
-        for (const auto& [name, value] : format.headers) {
-            res.set_header(name, value);
         }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
@@ -151,16 +137,10 @@ protected:
         });
     }
 
-    void write_invalid_body(const RouteRequest&, const std::exception& error,
-                            httplib::Response& res) const override {
-        write_openai_error(res, 500, error.what(), "internal_error");
-    }
-
     void write_exception(const std::exception& error, httplib::Response& res) const override {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << error.what() << std::endl;
-        write_openai_error(res, 500, error.what(), "internal_error");
-    }
-};
+        write_openai_error(res, kUnexpectedException, error.what(), "internal_error");
+    }};
 
 } // namespace
 

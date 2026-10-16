@@ -1,14 +1,15 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/model_sync.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
 
 class CheckUpdatesRoute : public ApiRoute {
 public:
@@ -25,7 +26,6 @@ public:
             "counterpart to the startup update check and runs even when "
             "`auto_check_model_updates` is `false`.";
         s.notes = {
-            "With `offline` set to `true`, it answers `409` without any network request.",
             "The `lemonade check-updates` command uses this endpoint.",
         };
 
@@ -48,14 +48,14 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kOfflineUpdates, kUnexpectedException};
         return s;
     }
 
     void handle(RouteRequest&, httplib::Response& res) override {
         // A manual check is intentionally independent from
         // auto_check_model_updates, but full offline mode remains authoritative.
-        if (ctx_.config->offline()) {
-            write_plain_error(res, 409, "Cannot check model updates while offline=true");
+        if (refuse_offline_updates(ctx_, res, "check")) {
             return;
         }
 
@@ -72,7 +72,7 @@ public:
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Manual model update check failed: " << e.what() << std::endl;
-            write_plain_error(res, 500, std::string("Model update check failed: ") + e.what());
+            write_plain_error(res, kUnexpectedException, std::string("Model update check failed: ") + e.what());
         }
     }
 };

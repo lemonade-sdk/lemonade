@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/server/model_sync.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
@@ -13,9 +14,27 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kInvalidSource{
+    400, "",
+    "`source` or `registry_source` names an unsupported source, or the "
+    "checkpoint URLs disagree with it or with each other"};
+const RouteError kUnknownModel{
+    400, "unknown_model",
+    "Without `stream`, the model is not registered and its name has no `user.` prefix"};
+const RouteError kIllegalLabels{
+    400, "",
+    "Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, "
+    "or name two"};
+const RouteError kPullFailed{
+    500, "",
+    "Another failure occurs, for example a failed download, a model this system cannot run, a "
+    "new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a "
+    "variant; a new definition stays registered"};
+
 ordered_json pull_schema() {
     ordered_json success = ordered_json::parse(R"({
         "type": "object",
+        "title": "Installed",
         "description": "Without `stream`, or with `local_import`: the model is installed or registered.",
         "required": ["status", "model_name"],
         "properties": {
@@ -25,6 +44,7 @@ ordered_json pull_schema() {
         }
     })");
     ordered_json job = DownloadManager::job_schema();
+    job["title"] = "Download job";
     job["description"] = "With `stream: true` and `subscribe: false`: the server-owned download job.";
     return {{"oneOf", ordered_json::array({success, job})}};
 }
@@ -46,16 +66,8 @@ public:
             "Pulling an already-downloaded model downloads any newer commit from its registry. "
             "Loading a model never checks for updates, and "
             "[`POST /v1/models/check-updates`](#post-v1modelscheck-updates) only reports them.",
-            "A `400` answers an invalid `source`, a reserved or non-`user.*` name for a new "
-            "definition, malformed `checkpoints` or `components`, or labels or "
-            "`embedding`/`reranking` flags that name a deployment mode the recipe cannot serve or "
-            "name two, and nothing is registered. Without `stream`, an unknown model also answers "
-            "`400` with `code: \"unknown_model\"`; with `stream`, the error event or the job "
-            "reports it instead. Other failures answer `500`, such as a new `user.*` model "
-            "without `recipe` or `checkpoint`, a GGUF `checkpoint` without a variant, or a failed "
-            "download, which leaves a new definition registered.",
-            "In offline mode the request still registers a new definition, then answers `400` "
-            "with `code: \"lemond_offline\"` without downloading.",
+            "With `stream`, the error event or the job reports an unknown model.",
+            "In offline mode a new definition is still registered, but nothing is downloaded.",
             "### Register and Install a Model\n\n"
             "Registering writes the model to `user_models.json` in the Lemonade config directory "
             "(`~/.config/lemonade` by default), after which [`GET /v1/models`](./openai.md#get-v1models) lists it beside the "
@@ -83,7 +95,7 @@ public:
             {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
              "A [registered model](https://lemonade-server.ai/models.html) to install, or a new "
              "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
-             "registered models from colliding with built-in ones. `model` is accepted as an alias."},
+             "registered models from colliding with built-in ones.", {"model"}},
             {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
              "Required when registering: the recipe that loads and runs the model, such as `llamacpp`, "
              "or `collection.omni` for an omni collection."},
@@ -189,6 +201,8 @@ public:
 
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidModelDefinition,
+                    kLemondOffline, kUnknownModel, kIllegalLabels, kPullFailed};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -196,10 +210,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         json& request_json = req.body;
         try {
-            // Accept both "model" and "model_name" for compatibility
-            std::string model_name = request_json.contains("model") ?
-                request_json["model"].get<std::string>() :
-                request_json["model_name"].get<std::string>();
+            std::string model_name = request_json["model_name"].get<std::string>();
 
             std::string checkpoint = request_json.value("checkpoint", "");
             std::string recipe = request_json.value("recipe", "");
@@ -213,7 +224,7 @@ public:
             try {
                 lemon::apply_default_pull_source(request_json, ctx_.config->default_model_source());
             } catch (const std::invalid_argument& e) {
-                write_plain_error(res, 400, e.what());
+                write_plain_error(res, kInvalidSource, e.what());
                 return;
             }
             // The helper may have rewritten a provider URL into an owner/repo id.
@@ -230,16 +241,14 @@ public:
             const bool collection_file_import =
                 request_json.contains("models") && request_json["models"].is_array();
 
-            try {
-                register_model_definition(
+            if (!try_register_model_definition(
                     ctx_,
                     model_name,
                     request_json,
                     /*require_definition=*/false,
                     /*allow_embedded_models=*/true,
-                    local_import);
-            } catch (const std::invalid_argument& e) {
-                write_plain_error(res, 400, e.what());
+                    local_import,
+                    res)) {
                 return;
             }
 
@@ -253,10 +262,7 @@ public:
                 return;
             }
 
-            if (ctx_.config->offline()) {
-                res.status = 400;
-                json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
-                res.set_content(error.dump(), "application/json");
+            if (refuse_offline_download(ctx_, res)) {
                 return;
             }
 
@@ -292,15 +298,15 @@ public:
 
         } catch (const lemon::UnknownModelError& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
-            res.status = 400;
+            res.status = kUnknownModel.status;
             json error = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
             res.set_content(error.dump(), "application/json");
         } catch (const lemon::InvalidModelDefinitionError& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
-            write_plain_error(res, 400, e.what());
+            write_plain_error(res, kIllegalLabels, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kPullFailed, e.what());
         }
     }
 };

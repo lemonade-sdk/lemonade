@@ -3,7 +3,10 @@
 #include <map>
 #include <string>
 
+#include <httplib.h>
 #include <nlohmann/json.hpp>
+
+#include "lemon/server/route_error.h"
 
 namespace lemon {
 
@@ -29,5 +32,10 @@ AudioFormat negotiate_speech_format(Router& router, const std::string& model,
 // Only formats the backend produces natively are accepted; the default is wav.
 AudioFormat negotiate_audio_generation_format(Router& router, const std::string& model,
                                               const nlohmann::json& request);
+
+extern const RouteError kUnsupportedAudioFormat;
+
+// Sets the format's headers, or writes kUnsupportedAudioFormat and returns false.
+bool apply_audio_format(const AudioFormat& format, httplib::Response& res);
 
 } // namespace lemon

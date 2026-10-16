@@ -1,11 +1,11 @@
-#include "lemon/server/api_route.h"
+#include "unsupported.h"
 
 namespace lemon {
 namespace {
 
-class BlobsRoute : public ApiRoute {
+class BlobsRoute : public OllamaUnsupportedRoute {
 public:
-    using ApiRoute::ApiRoute;
+    using OllamaUnsupportedRoute::OllamaUnsupportedRoute;
 
     RouteSpec spec() const override {
         RouteSpec s;
@@ -14,17 +14,12 @@ public:
         s.paths = {"/api/blobs/{digest}"};
         s.prefixes = Prefixes::Root;
         s.summary = "Upload a blob";
-        s.description = "Answers `501`.";
         s.args = {
             {"digest", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::NotAvailable,
              "SHA256 digest of the blob."},
         };
+        s.errors = {kNotSupported};
         return s;
-    }
-
-    void handle(RouteRequest&, httplib::Response& res) override {
-        res.status = 501;
-        res.set_content(R"({"error":"not supported by Lemonade"})", "application/json");
     }
 };
 

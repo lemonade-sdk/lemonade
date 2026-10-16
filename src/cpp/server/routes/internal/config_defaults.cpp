@@ -9,6 +9,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteError kDefaultsUnreadable{500, "", "`resources/defaults.json` is missing or is not valid JSON"};
+
 class ConfigDefaultsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -45,6 +47,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
+        s.errors = {kDefaultsUnreadable};
         return s;
     }
 
@@ -53,7 +56,7 @@ public:
             res.set_content(ConfigFile::base_defaults().dump(2), "application/json");
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "ERROR in /internal/config/defaults: " << e.what() << std::endl;
-            write_plain_error(res, 500, e.what());
+            write_plain_error(res, kDefaultsUnreadable, e.what());
         }
     }
 };

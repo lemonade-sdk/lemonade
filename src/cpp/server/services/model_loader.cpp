@@ -209,20 +209,43 @@ json ModelLoader::model_error(const std::string& requested_model,
     return error_response;
 }
 
-int ModelLoader::load_error_status(const std::string& error_code) {
-    if (error_code == "slots_pinned_error" ||
-        error_code == "router_residency_conflict") {
-        return 409;
-    } else if (error_code == "model_load_error") {
-        return 500;
+const RouteError ModelLoader::kModelNotSupported{
+    404, "model_not_supported",
+    "The requested model is filtered out on this system, such as an NPU model without an NPU"};
+const RouteError ModelLoader::kModelNotFound{
+    404, "model_not_found", "The requested model is not in the registry"};
+const RouteError ModelLoader::kRouterResidencyConflict{
+    409, "router_residency_conflict",
+    "Loading the requested model would evict a model that a `collection.router` model needs "
+    "resident on the same NPU"};
+const RouteError ModelLoader::kSlotsPinned{
+    409, "slots_pinned_error",
+    "Every loaded model of the requested model's type is pinned, so none can be unloaded to make "
+    "room"};
+const RouteError ModelLoader::kModelLoadError{
+    500, "model_load_error",
+    "Loading the requested model fails for another reason, such as a failed download or a backend "
+    "that does not start"};
+
+std::vector<RouteError> ModelLoader::errors() {
+    return {kModelNotSupported, kModelNotFound, kRouterResidencyConflict, kSlotsPinned,
+            kModelLoadError};
+}
+
+const RouteError& ModelLoader::load_error(const std::string& error_code) {
+    for (const RouteError* error : {&kModelNotSupported, &kRouterResidencyConflict,
+                                    &kSlotsPinned, &kModelLoadError}) {
+        if (error->code == error_code) {
+            return *error;
+        }
     }
-    return 404;
+    return kModelNotFound;
 }
 
 void ModelLoader::write_load_error(httplib::Response& res, const std::string& model,
                                    const std::string& message) const {
     json error_response = model_error(model, message);
-    res.status = load_error_status(error_response["error"]["code"].get<std::string>());
+    res.status = load_error(error_response["error"]["code"].get<std::string>()).status;
     res.set_content(error_response.dump(), "application/json");
 }
 

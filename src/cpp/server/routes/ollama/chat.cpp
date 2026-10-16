@@ -3,11 +3,9 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/error_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
-#include "lemon/server/model_loader.h"
 
 namespace lemon {
 namespace {
@@ -316,9 +314,9 @@ public:
             "with two NDJSON lines: the whole message, then the final line.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
              "Model to run."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
+            {"messages", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Conversation so far. Each message has a `role` and `content`, plus optional "
              "`images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or "
              "`tool_call_id`."},
@@ -332,8 +330,10 @@ public:
              "ignored."},
             {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
              "Tools the model may call."},
-            {"format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
-             "`json` constrains the reply to a JSON object. JSON schemas are not supported."},
+            {"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
+             Support::Partial,
+             "`json` constrains the reply to a JSON object. A JSON schema is accepted but not "
+             "applied."},
             {"think", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
              "Not applied: reasoning models think regardless. Qwen3 models skip their reasoning "
              "when the prompt ends with `/no_think`."},
@@ -374,19 +374,17 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+                                {kOllamaBackendError, ApiRoute::kUnexpectedException}});
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
+            const json& request_json = req.body;
 
-            std::string model = strip_latest_tag(request_json.value("model", ""));
-            if (model.empty()) {
-                res.status = 400;
-                res.set_content(R"({"error":"model is required"})", "application/json");
-                return;
-            }
+            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
 
             auto messages = request_json.value("messages", json::array());
             if (messages.empty() && request_json.contains("keep_alive") &&
@@ -408,16 +406,8 @@ public:
                 return;
             }
 
-            try {
-                ctx_.model_loader->ensure_loaded(model,
-                                                 gateway_load_options(request_json));
-            } catch (const RouterResidencyConflictException& e) {
-                write_ollama_residency_conflict(e, res);
-                return;
-            } catch (const std::exception& e) {
-                res.status = 404;
-                json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
-                res.set_content(error.dump(), "application/json");
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
+                                       res)) {
                 return;
             }
 
@@ -491,9 +481,7 @@ public:
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/chat: " << e.what() << std::endl;
-            res.status = 500;
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_plain_error(res, ApiRoute::kUnexpectedException, e.what());
         }
     }
 };

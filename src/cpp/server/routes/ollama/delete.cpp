@@ -4,6 +4,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/model_registration.h"
 
 namespace lemon {
 namespace {
@@ -25,14 +26,12 @@ public:
         s.description =
             "Deletes a downloaded model's files, unloading it first when it is loaded.";
         s.notes = {
-            "Success answers `200` with an empty body, as Ollama does. A model this system "
-            "does not support also answers `404`, and other failures answer `500`.",
+            "Success answers `200` with an empty body, as Ollama does.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Model to delete. Required unless `name` is given."},
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Older name for `model`; wins when both are given."},
+            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+             "Model to delete.",
+             {"name"}},
         };
 
         // Deleting a model the docs need would break later examples, so this deletes the
@@ -46,39 +45,23 @@ public:
         example.setup = {{"ollama.pull", "non-streaming"}};
         example.args = ordered_json::parse(R"({"model": "RealESRGAN-x4plus-anime"})");
         s.examples = {example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kOllamaModelNotFound, kDeleteFailed};
+        s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            auto request_json = json::parse(req.http.body);
-            std::string name = strip_latest_tag(request_json.value("name", request_json.value("model", "")));
+            const json& request_json = req.body;
+            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
 
-            if (name.empty()) {
-                res.status = 400;
-                res.set_content(R"({"error":"name is required"})", "application/json");
-                return;
-            }
-
-            if (ctx_.router->is_model_loaded(name)) {
-                ctx_.router->unload_model(name);
-            }
-
-            ctx_.model_manager->delete_model(name);
+            delete_model_files(ctx_, name);
 
             res.status = 200;
 
         } catch (const std::exception& e) {
             LOG(ERROR, "OllamaApi") << "Error in /api/delete: " << e.what() << std::endl;
-            std::string error_msg = e.what();
-            if (error_msg.find("not found") != std::string::npos ||
-                error_msg.find("not supported") != std::string::npos) {
-                res.status = 404;
-            } else {
-                res.status = 500;
-            }
-            json error = {{"error", std::string(e.what())}};
-            res.set_content(error.dump(), "application/json");
+            write_delete_error(e, kOllamaModelNotFound, res);
         }
     }
 };
