@@ -2352,6 +2352,33 @@ sys.exit(0)
             )
             self.assertNotIn("is not labeled tool-calling", payload["stderr"])
 
+    def test_135_launch_pi_no_mcp_stops_when_removal_fails(self):
+        """--no-mcp does not start pi when the lemonade MCP server cannot be removed."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+        if os.geteuid() == 0:
+            self.skipTest("root ignores the read-only directory this test relies on")
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            agent_dir = os.path.join(temp_dir, ".pi", "agent")
+            os.makedirs(agent_dir)
+            with open(os.path.join(agent_dir, "mcp.json"), "w", encoding="utf-8") as f:
+                json.dump({"mcpServers": {"lemonade": {"url": "http://x:1/mcp"}}}, f)
+            capture_path = os.path.join(temp_dir, "pi_capture.json")
+            self._write_fake_agent(temp_dir, "pi", capture_path)
+            os.chmod(agent_dir, 0o555)
+            try:
+                result = run_cli_command(
+                    ["launch", "pi", "--model", ENDPOINT_TEST_MODEL, "--no-mcp"],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_stubbed_agent_env(temp_dir),
+                )
+            finally:
+                os.chmod(agent_dir, 0o755)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Failed to remove Lemonade MCP from pi", result.stderr)
+            self.assertFalse(os.path.exists(capture_path), "pi was started")
+
     # =============================================================================
     # Unload Tests
     # =============================================================================

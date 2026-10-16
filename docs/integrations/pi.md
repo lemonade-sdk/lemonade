@@ -86,7 +86,7 @@ This adds a `lemonade` server to `~/.pi/agent/mcp.json`. It stays there for late
 lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --no-mcp
 ```
 
-`--no-mcp` removes only the `lemonade` server; your other MCP servers are left alone.
+`--no-mcp` removes only the `lemonade` server; your other MCP servers are left alone. If the server can't be removed, for example because `mcp.json` is read-only, launch stops instead of starting Pi.
 
 Pi shows generated images inline only in terminals that support the kitty or iTerm2 image protocol, such as Ghostty, kitty, WezTerm and iTerm2, because it draws images with those protocols' escape sequences. Other terminals, and terminal multiplexers like tmux that don't pass those sequences through, show a placeholder such as `[Image: [image/png] 512x512]` instead. The model still receives the image if it accepts image input. To keep a copy on disk, ask Pi to save it, for example "generate an image of a red dog and save it to disk". The tool then writes the PNG to Lemonade's MCP image folder (`mcp-images` in the Lemonade cache directory, or `LEMONADE_MCP_IMAGE_DIR` if set) and returns its path instead of the inline image.
 

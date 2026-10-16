@@ -678,7 +678,8 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     return models;
 }
 
-static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
+// Returns false when launch must not start the agent.
+static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config) {
     constexpr int default_context_window = 40960;
     std::vector<lemon_cli::AgentModelEntry> models =
@@ -747,7 +748,7 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
             std::cerr << "Warning: Failed to sync junie config: " << junie_error << std::endl;
             std::cerr << "Continuing with launch anyway..." << std::endl;
         }
-        return;
+        return true;
     }
 
     const lemon_cli::AgentConfigProfile* profile = nullptr;
@@ -758,7 +759,7 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 
     if (profile == nullptr) {
-        return;
+        return true;
     }
 
     // Pi decides between an env reference and a placeholder itself, so it
@@ -812,9 +813,10 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         } else if (config.pi_mcp.has_value()) {
             std::string mcp_error;
             if (!lemon_cli::remove_pi_mcp_server(mcp_error)) {
-                std::cerr << "Warning: Failed to remove Lemonade MCP from pi: " << mcp_error
+                std::cerr << "Error: Failed to remove Lemonade MCP from pi: " << mcp_error
                           << std::endl;
-                std::cerr << "Continuing with launch anyway..." << std::endl;
+                std::cerr << "Not launching pi, since --no-mcp was requested." << std::endl;
+                return false;
             }
         }
 
@@ -828,6 +830,7 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
             }
         }
     }
+    return true;
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
@@ -846,8 +849,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
     }
 
-    if (lemon_tray::agent_needs_config_sync(config.agent)) {
-        sync_agent_config_for_launch(client, config);
+    if (lemon_tray::agent_needs_config_sync(config.agent) &&
+        !sync_agent_config_for_launch(client, config)) {
+        return 1;
     }
 
     lemon_tray::AgentConfig agent_config;
