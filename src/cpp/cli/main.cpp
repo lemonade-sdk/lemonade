@@ -679,10 +679,12 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
 }
 
 // Auto-tune sizes the context only when the model loads, so the window is
-// read from the server after loading. Returns 0 when it can't be read.
-static int load_for_context_window(lemonade::LemonadeClient& client, const CliConfig& config) {
+// read from the server after loading. Returns false when the load fails;
+// context_window stays 0 when the size can't be read.
+static bool load_for_context_window(lemonade::LemonadeClient& client, const CliConfig& config,
+                                    int& context_window) {
+    context_window = 0;
     std::cout << "Loading " << config.model << " to read its context size..." << std::endl;
-    std::string failed_step = "load";
     try {
         nlohmann::json request_body =
             config.recipe_options.is_object() ? config.recipe_options : nlohmann::json::object();
@@ -691,24 +693,31 @@ static int load_for_context_window(lemonade::LemonadeClient& client, const CliCo
         constexpr time_t load_timeout_ms = 86400000;
         client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
                             load_timeout_ms, load_timeout_ms);
-        failed_step = "read the context size of";
+    } catch (const lemonade::HttpError& e) {
+        std::cerr << "Error: Failed to load " << config.model << ": "
+                  << lemonade::extract_server_error_message(e) << std::endl;
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to load " << config.model << ": " << e.what() << std::endl;
+        return false;
+    }
+
+    try {
         const nlohmann::json model = nlohmann::json::parse(client.make_request(
             "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
         const auto context_length = model.find("context_length");
         if (context_length != model.end() && context_length->is_number_integer() &&
             context_length->get<int>() > 0) {
-            return context_length->get<int>();
+            context_window = context_length->get<int>();
+            return true;
         }
         std::cerr << "Warning: The server reported no context size for " << config.model
                   << "." << std::endl;
-    } catch (const lemonade::HttpError& e) {
-        std::cerr << "Warning: Failed to " << failed_step << " " << config.model << ": "
-                  << lemonade::extract_server_error_message(e) << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "Warning: Failed to " << failed_step << " " << config.model << ": "
+        std::cerr << "Warning: Failed to read the context size of " << config.model << ": "
                   << e.what() << std::endl;
     }
-    return 0;
+    return true;
 }
 
 // Returns false when launch must not start the agent.
@@ -760,7 +769,10 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     if (config.agent == "pi" && !selected_unknown) {
         for (auto& model : models) {
             if (model.id == config.model && model.context_window <= 0) {
-                model.context_window = load_for_context_window(client, config);
+                if (!load_for_context_window(client, config, model.context_window)) {
+                    std::cerr << "Not launching pi, since the model failed to load." << std::endl;
+                    return false;
+                }
                 if (model.context_window <= 0) {
                     std::cerr << "Launching pi anyway, using a context size of "
                               << default_context_window << "." << std::endl;

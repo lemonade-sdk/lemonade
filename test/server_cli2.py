@@ -2181,6 +2181,22 @@ sys.exit(0)
         ]
         return next(m for m in provider["models"] if m["id"] == model)
 
+    def _register_unloadable_model(self, model_name, **labels):
+        # Registration is persisted before the download, so a checkpoint that
+        # does not exist leaves a registered model that never downloads or loads.
+        requests.post(
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={
+                "model_name": f"user.{model_name}",
+                "checkpoint": "lemonade-sdk/pi-launch-label-probe-missing-GGUF:probe.gguf",
+                "recipe": "llamacpp",
+                "stream": False,
+                **labels,
+            },
+            headers=_auth_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
     def _save_ctx_size(self, ctx_size):
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
@@ -2309,24 +2325,9 @@ sys.exit(0)
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
-        # Registration is persisted before the download, so a checkpoint that
-        # does not exist leaves a registered, labeled model that never
-        # downloads, including from launch's background load.
         model_name = "PiLaunchLabelProbe-GGUF"
         try:
-            requests.post(
-                f"http://localhost:{PORT}/api/v1/pull",
-                json={
-                    "model_name": f"user.{model_name}",
-                    "checkpoint": "lemonade-sdk/pi-launch-label-probe-missing-GGUF:probe.gguf",
-                    "recipe": "llamacpp",
-                    "reasoning": True,
-                    "vision": True,
-                    "stream": False,
-                },
-                headers=_auth_headers(),
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
+            self._register_unloadable_model(model_name, reasoning=True, vision=True)
             info = requests.get(
                 f"http://localhost:{PORT}/api/v1/models/{model_name}",
                 headers=_auth_headers(),
@@ -2340,17 +2341,16 @@ sys.exit(0)
             with tempfile.TemporaryDirectory(
                 prefix="lemonade-launch-stub-"
             ) as temp_dir:
-                payload = self._launch_pi(temp_dir, model=model_name)
+                # A known window skips the load for it, which would fail.
+                payload = self._launch_pi(
+                    temp_dir, ["--ctx-size", "4096"], model=model_name
+                )
                 model = self._pi_model_entry(temp_dir, model_name)
                 self.assertEqual(model["input"], ["text", "image"])
                 self.assertNotIn("reasoning", model)
                 self.assertIn(
                     f"{model_name} is not labeled tool-calling", payload["stderr"]
                 )
-                # Its checkpoint doesn't exist, so the load for its window fails.
-                self.assertEqual(model["contextWindow"], 40960)
-                self.assertIn(f"Failed to load {model_name}", payload["stderr"])
-                self.assertIn("using a context size of 40960", payload["stderr"])
         finally:
             run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
 
@@ -2500,6 +2500,30 @@ sys.exit(0)
             self.assertNotIn(ENDPOINT_TEST_MODEL, loaded)
         finally:
             self._save_ctx_size(saved)
+
+    def test_139_launch_pi_stops_when_the_model_fails_to_load(self):
+        """Launch waits on the load for pi's window, so a failed load stops it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        model_name = "PiLaunchLoadFailProbe-GGUF"
+        try:
+            self._register_unloadable_model(model_name)
+            with tempfile.TemporaryDirectory(
+                prefix="lemonade-launch-stub-"
+            ) as temp_dir:
+                capture_path = os.path.join(temp_dir, "pi_capture.json")
+                self._write_fake_agent(temp_dir, "pi", capture_path)
+                result = run_cli_command(
+                    ["launch", "pi", "--model", model_name],
+                    timeout=TIMEOUT_DEFAULT,
+                    env=self._build_stubbed_agent_env(temp_dir),
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"Failed to load {model_name}", result.stderr)
+                self.assertFalse(os.path.exists(capture_path), "pi was started")
+        finally:
+            run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
 
     # =============================================================================
     # Unload Tests
