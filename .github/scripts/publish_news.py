@@ -8,9 +8,11 @@ release, in order:
 - If the PR changed anything else too, skip it. Its news changes go out with
   the next release.
 
-One exception: a news file is not copied if a skipped PR also changed it,
-because copying the file would publish that PR's change too. It waits for the
-release instead.
+Files are copied whole, so a file that a skipped PR also changed waits for the
+release too. For example, a code PR renames a model and updates the command in
+vllm-rocm.html. If a later news-only PR fixes a typo in vllm-rocm.html,
+copying the file would also publish the new model name before the rename
+ships.
 
 Usage:
     python publish_news.py <main-ref>
