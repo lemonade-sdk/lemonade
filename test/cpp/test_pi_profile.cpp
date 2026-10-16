@@ -187,6 +187,44 @@ void test_mcp_server(const fs::path& mcp_path) {
               read_file(mcp_path) == "{ not json");
 }
 
+#ifndef _WIN32
+// mcp.json can hold other servers' tokens, so rewriting it must not widen its
+// permissions or replace a symlinked file with a regular one.
+void test_mcp_file_kept(const fs::path& agent_dir) {
+    std::string error;
+    const fs::path mcp_path = agent_dir / "mcp.json";
+    const std::string content =
+        R"({"mcpServers": {"other": {"url": "https://x/mcp",
+                                     "headers": {"Authorization": "Bearer secret"}},
+                           "lemonade": {"url": "http://localhost:13305/mcp"}}})";
+
+    write_file(mcp_path, content);
+    fs::permissions(mcp_path, fs::perms::owner_read | fs::perms::owner_write);
+    lemon_cli::sync_pi_mcp_server("http://localhost:13305", false, error);
+    check("refresh keeps a private mcp.json private",
+          fs::status(mcp_path).permissions() ==
+              (fs::perms::owner_read | fs::perms::owner_write));
+
+    write_file(mcp_path, content);
+    fs::permissions(mcp_path, fs::perms::owner_read | fs::perms::owner_write);
+    lemon_cli::remove_pi_mcp_server(error);
+    check("--no-mcp removal keeps a private mcp.json private",
+          fs::status(mcp_path).permissions() ==
+              (fs::perms::owner_read | fs::perms::owner_write));
+
+    const fs::path target = agent_dir / "dotfiles-mcp.json";
+    fs::remove(mcp_path);
+    write_file(target, content);
+    fs::create_symlink(target, mcp_path);
+    lemon_cli::sync_pi_mcp_server("http://127.0.0.1:9000", false, error);
+    check("refresh writes through a symlinked mcp.json",
+          fs::is_symlink(mcp_path) &&
+              json::parse(read_file(target))["mcpServers"]["lemonade"]["url"] ==
+                  "http://127.0.0.1:9000/mcp");
+    fs::remove(mcp_path);
+}
+#endif
+
 }  // namespace
 
 int main() {
@@ -204,6 +242,9 @@ int main() {
     test_api_key();
     test_server_origin();
     test_mcp_server(agent_dir / "mcp.json");
+#ifndef _WIN32
+    test_mcp_file_kept(agent_dir);
+#endif
 
     std::error_code ec;
     fs::remove_all(agent_dir, ec);

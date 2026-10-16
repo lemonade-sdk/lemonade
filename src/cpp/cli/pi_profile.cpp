@@ -104,12 +104,25 @@ nlohmann::json build_pi_provider_block(
 }
 
 // Atomically write JSON to path, creating parent directories. Mirrors the
-// approach in agent_config_file.cpp.
+// approach in agent_config_file.cpp, but keeps a symlinked file linked and an
+// existing file's permissions, since mcp.json can hold other servers' tokens.
 bool write_json_atomic(const std::string& path,
                        const nlohmann::json& config,
                        std::string& error_out) {
-    const fs::path output_path(path);
+    fs::path output_path(path);
     std::error_code ec;
+    if (fs::is_symlink(output_path, ec)) {
+        const fs::path target = fs::canonical(output_path, ec);
+        if (ec) {
+            error_out = "Cannot resolve symlink " + output_path.string() + ": " + ec.message();
+            return false;
+        }
+        output_path = target;
+    }
+    ec.clear();
+    const fs::file_status existing = fs::status(output_path, ec);
+    const bool keep_permissions = !ec && fs::exists(existing);
+    ec.clear();
     const fs::path output_dir = output_path.parent_path();
     if (!output_dir.empty()) {
         fs::create_directories(output_dir, ec);
@@ -142,6 +155,16 @@ bool write_json_atomic(const std::string& path,
             std::error_code remove_ec;
             fs::remove(tmp_path, remove_ec);
             error_out = "Write failed for " + tmp_path.string();
+            return false;
+        }
+    }
+
+    if (keep_permissions) {
+        fs::permissions(tmp_path, existing.permissions(), ec);
+        if (ec) {
+            std::error_code remove_ec;
+            fs::remove(tmp_path, remove_ec);
+            error_out = "Cannot set permissions on " + tmp_path.string() + ": " + ec.message();
             return false;
         }
     }
