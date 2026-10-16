@@ -121,8 +121,7 @@ inline double get_available_memory_gb(DeviceType device_type,
                 auto metrics = create_metrics_platform();
                 if (metrics) gpu_used_gb = metrics->get_vram_usage_gb();
             }
-            const double physical_total_gb = pool.physical_total_gb > 0.0
-                ? pool.physical_total_gb : pool.total_gb;
+            const double physical_total_gb = pool.physical_total_gb;
             const double ram_used_gb = pool.unified
                 ? get_used_memory_gb(DEVICE_CPU) : -1.0;
             const auto available_gpu_gb = auto_context_available_gpu_gib(
