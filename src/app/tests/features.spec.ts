@@ -550,7 +550,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Click Connect
     await page.locator('.connect__section--server button[type="submit"]').click();
 
-    await expect(page.locator('.titlebar__status-dot--connected')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('status', { name: 'Connected' })).toBeVisible({ timeout: 15000 });
 
     await page.screenshot({ path: 'screenshots/06-connected.png', fullPage: true });
   });
