@@ -170,8 +170,8 @@ for (const [name, source] of [
 
 /* ── The chat model picker is a selection list too ───────────────── */
 
-assert.match(chatView, /className="composer__model-results"[\s\S]{0,200}label="Models"/,
-  'the model picker renders through WorkspaceList');
+assert.match(chatView, /<WorkspaceList[\s\S]{0,200}className="composer__model-results"\s+label=\{t\('Models'\)\}/,
+  'the model picker renders through WorkspaceList with a translated accessible label');
 assert.doesNotMatch(chatView, /composer__model-option\b|composer__model-option-row/,
   'the picker must not keep a private option row');
 assert.doesNotMatch(styles, /\.composer__model-option/,

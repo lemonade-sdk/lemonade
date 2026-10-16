@@ -4977,7 +4977,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           {!isEditing && onEditUser && message.content && (
             <div className="message__actions" aria-label={t('Message actions')}>
               <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
-                <Icon name="edit" size={13} /> Edit & resend
+                <Icon name="edit" size={13} /> {t('Edit & resend')}
               </button>
             </div>
           )}

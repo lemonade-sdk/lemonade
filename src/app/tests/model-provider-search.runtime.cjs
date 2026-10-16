@@ -296,17 +296,18 @@ const unknownByNameOnly = remoteCapabilityEvidence({
 });
 assert.equal(unknownByNameOnly.primary, 'unknown', 'repository names must not determine capability');
 
-const ggufOmni = remoteCapabilityEvidence({
+const ggufVisionChat = remoteCapabilityEvidence({
   id: 'org/model', modelId: 'org/model', likes: 0, downloads: 0, tags: [], source: 'modelscope',
 }, {
   checkpoint: 'org/model', recipe: 'llamacpp', repo_kind: 'gguf', suggested_name: 'model',
   suggested_labels: [], mmproj_files: ['mmproj-f16.gguf'], variants: [],
   gguf_metadata: { tokenizer: { chat_template: '{{ messages }}' } },
 });
-assert.deepEqual({ primary: ggufOmni.primary, confidence: ggufOmni.confidence }, { primary: 'omni', confidence: 'repository' });
-assert.ok(ggufOmni.labels.includes('vision'));
+assert.deepEqual({ primary: ggufVisionChat.primary, confidence: ggufVisionChat.confidence }, { primary: 'chat', confidence: 'repository' });
+assert.ok(ggufVisionChat.labels.includes('vision'));
+assert.ok(!ggufVisionChat.labels.includes('omni'), 'vision input alone must not identify an Omni collection');
 
-const mmprojOmniWithoutMetadata = remoteCapabilityEvidence({
+const mmprojVisionChatWithoutMetadata = remoteCapabilityEvidence({
   id: 'org/model', modelId: 'org/model', likes: 0, downloads: 0, tags: [], source: 'modelscope',
 }, {
   checkpoint: 'org/model', recipe: 'llamacpp', repo_kind: 'gguf', suggested_name: 'model',
@@ -314,10 +315,11 @@ const mmprojOmniWithoutMetadata = remoteCapabilityEvidence({
   variants: [{ name: 'Q4_K_M', primary_file: 'model-Q4_K_M.gguf', files: ['model-Q4_K_M.gguf'], sharded: false, size_bytes: 1 }],
 });
 assert.deepEqual(
-  { primary: mmprojOmniWithoutMetadata.primary, confidence: mmprojOmniWithoutMetadata.confidence },
-  { primary: 'omni', confidence: 'repository' },
-  'validated GGUF + mmproj structure is repository evidence for Omni',
+  { primary: mmprojVisionChatWithoutMetadata.primary, confidence: mmprojVisionChatWithoutMetadata.confidence },
+  { primary: 'chat', confidence: 'repository' },
+  'validated GGUF + mmproj structure is repository evidence for vision-capable chat',
 );
+assert.ok(mmprojVisionChatWithoutMetadata.labels.includes('vision'));
 
 const ggufEmbedding = remoteCapabilityEvidence({
   id: 'org/model', modelId: 'org/model', likes: 0, downloads: 0, tags: [], source: 'huggingface',
@@ -340,8 +342,8 @@ const providerVisionChat = remoteCapabilityEvidence({
 });
 assert.deepEqual(
   { primary: providerVisionChat.primary, confidence: providerVisionChat.confidence },
-  { primary: 'omni', confidence: 'provider' },
-  'exact provider task tags may provide capability evidence without name guessing',
+  { primary: 'chat', confidence: 'provider' },
+  'exact provider task tags must identify vision-capable chat without name guessing',
 );
 assert.ok(providerVisionChat.labels.includes('vision'));
 
@@ -351,7 +353,11 @@ const remoteUnknown = {
 };
 assert.equal(capabilityFromModelInfo(remoteUnknown), 'unknown');
 assert.deepEqual(modelCapabilityTags(remoteUnknown), []);
-assert.equal(capabilityFromModelInfo({ id: 'local-model', recipe: 'llamacpp', labels: [] }), 'chat',
-  'local recipe behavior must remain unchanged');
+assert.equal(capabilityFromModelInfo({ id: 'local-model', recipe: 'llamacpp', labels: [] }), 'unknown',
+  'an unlabeled local model must not infer a deployment mode from its recipe');
+assert.equal(capabilityFromModelInfo({ id: 'local-model', recipe: 'llamacpp', labels: ['chat'] }), 'chat',
+  'a local model with an explicit chat label must remain classified as chat');
+assert.equal(capabilityFromModelInfo({ id: 'local-embedding', recipe: 'llamacpp', labels: ['embeddings'] }), 'embedding',
+  'the same llama.cpp backend must also support embedding deployment');
 
 console.log('Model provider search and capability contract checks passed.');
