@@ -32,13 +32,13 @@ from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
-# Long-context scenarios (context-32k/64k/128k) need the model loaded with a
-# matching ctx window; bench loads once at 4096 by default, so a 32k prompt gets
-# HTTP 400. Until per-scenario ctx is wired up, run only the short scenarios
-# that fit the default window. See issue #2858.
-SCENARIOS = ["chat-short", "code-short"]
+SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
+# chat-short = TG/decode; context-4k = meaningful PP/prefill (short prompts are
+# overhead-dominated). Forks may override via bench_scenarios/ctx_size keys.
+SCENARIOS = ["chat-short", "context-4k"]
+DEFAULT_CTX_SIZE = 8192  # must fit the largest default scenario prompt (~4k tokens)
 WARMUP_RUNS = 1
-MEASUREMENT_RUNS = 5
+MEASUREMENT_RUNS = 3  # best-of, not average — 3 runs suffice
 THRESHOLDS = {
     "tps_warn": -0.05,
     "tps_critical": -0.15,
@@ -350,6 +350,9 @@ def run_bench(
     # lemond never reads one.
     bench_as = fork.get("install_as", backend)
 
+    scenarios = fork.get("bench_scenarios") or SCENARIOS
+    ctx_size = fork.get("ctx_size", DEFAULT_CTX_SIZE)
+
     cmd = [
         lemonade_bin,
         "bench",
@@ -357,7 +360,7 @@ def run_bench(
         "--backend",
         bench_as,
         "--scenarios",
-        *SCENARIOS,
+        *scenarios,
         "--runs",
         str(MEASUREMENT_RUNS),
         "--warmup",
@@ -367,6 +370,10 @@ def run_bench(
         "--output",
         str(output_file),
     ]
+    if SCENARIO_FILE.exists():
+        cmd += ["--scenario-file", str(SCENARIO_FILE)]
+    if ctx_size is not None:
+        cmd += ["--ctx-size", str(ctx_size)]
     if compare_file and compare_file.exists():
         cmd += ["--compare", str(compare_file)]
 
@@ -406,6 +413,18 @@ def run_bench(
 
     with open(output_file) as f:
         data = json.load(f)
+
+    annotate_pp(data)
+    for br in backend_results(data, model):
+        for sc in br.get("scenarios", []):
+            print(
+                f"    [{model} / {sc.get('name')}] "
+                f"TG = {sc.get('tps', {}).get('mean', 'n/a')} tok/s  |  "
+                f"PP = {sc.get('pp_tps', 'n/a')} tok/s  "
+                f"(best TTFT {round(sc.get('ttft_ms', {}).get('min', 0), 1)} ms, "
+                f"in={sc.get('input_tokens')} out={sc.get('output_tokens')})",
+                flush=True,
+            )
 
     data.update(
         {
@@ -467,6 +486,16 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
                 out.extend(me.get("results", []))
         return out
     return data.get("results", [])
+
+
+def annotate_pp(data: dict) -> None:
+    """Derive pp_tps (input_tokens / fastest TTFT) for each scenario."""
+    for br in backend_results(data):
+        for sc in br.get("scenarios", []):
+            in_tok = sc.get("input_tokens")
+            best_ttft = sc.get("ttft_ms", {}).get("min", 0)
+            if in_tok and best_ttft > 0:
+                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
 
 
 def check_regression(
@@ -546,8 +575,9 @@ def update_leaderboard(
                 "fork_version": version,
                 "backend": br.get("backend"),
                 "tps_mean": round(tps_mean, 2),
-                "tps_p95": round(sc["tps"].get("p95", 0), 2),
+                "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
                 "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                "pp_tps": sc.get("pp_tps"),
                 "vram_peak_gb": sc.get("vram_peak_gb"),
                 "timestamp": result.get("timestamp"),
             }
