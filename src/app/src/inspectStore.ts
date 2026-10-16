@@ -185,7 +185,7 @@ class InspectStoreClass {
   ): Trace['messages'] {
     const last = messages[messages.length - 1];
     if (last && !last.capturedOutput && last.role === 'assistant' &&
-        typeof output === 'string' && last.content === output) {
+        typeof output === 'string' && output !== '' && last.content === output) {
       last.capturedOutput = true;
     }
     return messages;
