@@ -2347,6 +2347,10 @@ sys.exit(0)
                 self.assertIn(
                     f"{model_name} is not labeled tool-calling", payload["stderr"]
                 )
+                # Its checkpoint doesn't exist, so the load for its window fails.
+                self.assertEqual(model["contextWindow"], 40960)
+                self.assertIn(f"Failed to load {model_name}", payload["stderr"])
+                self.assertIn("using a context size of 40960", payload["stderr"])
         finally:
             run_cli_command(["delete", f"user.{model_name}"], timeout=TIMEOUT_DEFAULT)
 
