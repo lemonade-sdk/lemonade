@@ -1545,6 +1545,79 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+  # llamacpp:nathanw's image runs llama-server on the CPU when it finds no GPU,
+  # so hosted runners can drive each container tool end to end on every PR.
+  test-container-smoke:
+    name: Container smoke test - ${{ matrix.tool }} (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    needs: build-lemonade-deb
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
+      inputs.enable_signing != true &&
+      inputs.disable_macos_signing != true
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {tool: podman, mode: rootless}
+          - {tool: podman, mode: rootful}
+          - {tool: docker, mode: rootful}
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ needs.build-lemonade-deb.outputs.version }}
+          start-server: 'false'
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Prepare the container tool
+        run: |
+          set -e
+          # nathanw maps /dev/dri, and both tools refuse a missing or empty one.
+          sudo mkdir -p /dev/dri
+          [ -e /dev/dri/renderD128 ] || sudo mknod -m 666 /dev/dri/renderD128 c 1 3
+          case "${{ matrix.tool }}-${{ matrix.mode }}" in
+            podman-rootless)
+              sudo usermod -aG video,render "$USER"
+              ;;
+            podman-rootful)
+              sudo systemctl start podman.socket
+              sudo chmod 755 /run/podman
+              sudo chmod 666 /run/podman/podman.sock
+              echo "CONTAINER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
+              ;;
+            docker-rootful)
+              sudo apt-get remove -y podman
+              ;;
+          esac
+          ${{ matrix.tool }} --version
+
+      # sudo -u starts a fresh login, so lemond carries the groups added above.
+      - name: Run the smoke test
+        run: |
+          sudo -E -u "$USER" env "PATH=$PATH" .venv/bin/python test/server_containers.py \
+            --lemond "$(command -v lemond)" --cli-binary "$(command -v lemonade)" \
+            --tool ${{ matrix.tool }} --mode ${{ matrix.mode }}
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-container-smoke-${{ matrix.tool }}-${{ matrix.mode }}
+
   test-watchdog-lifecycle-linux:
     name: Test watchdog lifecycle (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -1723,7 +1796,7 @@ jobs:
   # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-watchdog-lifecycle-linux]
+    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
