@@ -535,11 +535,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Click Connect
     await page.locator('.connect__section--server button[type="submit"]').click();
 
-    // Wait for connection status dot to turn green
-    await page.waitForFunction(() => {
-      const dot = document.querySelector('.titlebar__status-dot');
-      return dot?.classList.contains('titlebar__status-dot--connected');
-    }, { timeout: 10000 }).catch(() => {});
+    await expect(page.locator('.titlebar__status-dot--connected')).toBeVisible({ timeout: 15000 });
 
     await page.screenshot({ path: 'screenshots/06-connected.png', fullPage: true });
   });

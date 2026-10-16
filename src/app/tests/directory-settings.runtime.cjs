@@ -47,7 +47,7 @@ assert.match(connectSource,
 
 assert.match(runtimeConfigSource, /validate_extra_models_dir_access/,
   'runtime config must preflight external directory access before applying it');
-assert.match(runtimeConfigSource, /fs::directory_iterator probe\(dir, read_ec\)/,
+assert.match(runtimeConfigSource, /fs::directory_iterator\{dir, read_ec\};/,
   'runtime config must verify that an existing external directory can be enumerated');
 assert.match(runtimeConfigSource, /not readable by the Lemonade server/,
   'permission failures must surface a user-facing server error');

@@ -125,7 +125,7 @@ const settingsSource = fs.readFileSync(path.join(root, 'src/features/modelSettin
 assert.doesNotMatch(listSource, /onOpenGlobalSettings|Open global model settings|Global model settings/);
 assert.match(listSource, /onUpdateAllModels && \([\s\S]*?icon="rotate-ccw"[\s\S]*?Update all downloaded models/);
 assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel|loadWithGlobalModelPolicy|automaticUpdateIsDue|lastAutomaticUpdateAt/);
-assert.match(managerSource, /await loadModelRuntime\(model\)/);
+assert.match(managerSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/);
 assert.match(managerSource, /handleUpdateAllModels/);
 
 for (const label of [
@@ -191,7 +191,7 @@ assert.match(dashboardSource, /thresholdPercent=\{memoryTopology\.hostTotalGb !=
 assert.match(dashboardSource, /thresholdPercent=\{memoryTopology\.gpuTotalGb != null \? evictionThresholdPercent : null\}/);
 assert.match(dashboardSource, /memoryTopology\.hostTotalGb == null \? evictionThresholdText : null/);
 assert.match(dashboardSource, /memoryTopology\.gpuTotalGb == null \? evictionThresholdText : null/);
-assert.match(dashboardSource, /label="RAM \/ VRAM"/);
+assert.match(dashboardSource, /label=\{t\('RAM \/ VRAM'\)\}/);
 assert.match(stylesSource, /\.dash2-gauge__threshold line/);
 
 const memoryTopologyFilename = path.join(root, 'src/features/dashboard/memoryTopology.ts');

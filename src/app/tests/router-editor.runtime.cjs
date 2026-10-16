@@ -279,7 +279,9 @@ const unary = {
   id: 'group', kind: 'group', operator: 'all',
   children: [{ id: 'leaf', kind: 'leaf', type: 'has_tools', booleanValue: true }],
 };
-assert.equal(router.normalizeRouterNode(unary).kind, 'leaf', 'one-child groups must collapse instead of becoming invalid');
+const normalizedUnary = router.normalizeRouterNode(unary);
+assert.equal(normalizedUnary.kind, 'group', 'one-child gates must remain editable without losing their structure');
+assert.equal(normalizedUnary.children.length, 1);
 
 const graphRoot = router.createRouterLeaf('has_tools');
 const graphWithSibling = graphUtils.appendRouterNodeAtPath(graphRoot, [], router.createRouterLeaf('has_images'));
@@ -301,7 +303,9 @@ assert.throws(
   'graph drag/drop must not create an invalid multi-child NOT gate',
 );
 assert.equal(graphUtils.isBlankRouterGraphNode(router.createRouterLeaf()), true, 'the seeded empty rule should render as an empty graph canvas');
-assert.equal(graphUtils.removeRouterNodeAtPath(graphWithSibling, [1]).kind, 'leaf', 'removing a sibling should normalize a one-child gate');
+const graphAfterRemove = graphUtils.removeRouterNodeAtPath(graphWithSibling, [1]);
+assert.equal(graphAfterRemove.kind, 'group', 'removing a branch must preserve the editable gate');
+assert.equal(graphAfterRemove.children.length, 1);
 const notWithChild = graphUtils.appendRouterNodeAtPath(graphUtils.createEmptyRouterGraphGroup('not'), [], router.createRouterLeaf('has_tools'));
 const emptiedNot = graphUtils.removeRouterNodeAtPath(notWithChild, [0]);
 assert.equal(emptiedNot.kind, 'group');
@@ -373,12 +377,12 @@ const collapseCanCreateDuplicate = {
   ],
 };
 assert.equal(graphUtils.routerDuplicateConditionConflict(collapseCanCreateDuplicate), null);
-const collapsedIntoDuplicate = graphUtils.removeRouterNodeAtPath(collapseCanCreateDuplicate, [1, 1]);
-assert.match(
-  graphUtils.routerDuplicateConditionConflict(collapsedIntoDuplicate) || '',
-  /has tools condition is already in this gate/,
-  'normalizing a nested one-child group can surface a duplicate into its parent gate',
-);
+const preservedNestedGate = graphUtils.removeRouterNodeAtPath(collapseCanCreateDuplicate, [1, 1]);
+assert.equal(preservedNestedGate.children[1].kind, 'group',
+  'removing a nested branch must not flatten the surviving gate');
+assert.equal(preservedNestedGate.children[1].children.length, 1);
+assert.equal(graphUtils.routerDuplicateConditionConflict(preservedNestedGate), null,
+  'preserving the nested gate must not create duplicate sibling conditions');
 
 const renamedLabelTree = router.renameClassifierLabelReference(
   draft.rules[1].condition,

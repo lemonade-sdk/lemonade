@@ -202,7 +202,7 @@ assert.match(listPanelSource, /const identity = identityFromModelInfo\(m\);/,
 assert.match(nav, /const \[catalogsOpen, setCatalogsOpen\] = useState\(true\)/, 'Online Catalogs must be independently collapsible');
 assert.match(nav, /aria-expanded=\{catalogsOpen\}[\s\S]*aria-controls="nav-online-catalogs"[\s\S]*setCatalogsOpen/, 'Online Catalogs must use the standard collapsible section header');
 assert.match(nav, /\{catalogsOpen && \([\s\S]*id="nav-online-catalogs"/, 'catalog checkboxes must hide when collapsed');
-assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>Online Catalogs<\/span>/,
+assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>\{t\('Online Catalogs'\)\}<\/span>/,
   'Online Catalogs must use the same collapsible heading treatment as the other filter sections');
 assert.match(nav, /className="backends__toggle model-nav-rail__provider-option"/,
   'online catalogs must reuse the Backends checkbox treatment');
@@ -222,8 +222,8 @@ assert.doesNotMatch(styles, /model-nav-rail__section--providers\s*\{[\s\S]*borde
   'Online Catalogs must not add a divider below Backends');
 assert.match(styles, /\.model-nav-rail__provider-list \{[\s\S]*padding: 2px var\(--space-2\) 0;/,
   'catalog checkboxes must align horizontally with the task/backend controls');
-assert.match(styles, /\.backends__toggle input \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 3px;/,
-  'catalog checkboxes must inherit the exact Backends checkbox geometry');
+assert.match(styles, /\.model-nav-rail__provider-option \{[^}]*width:\s*100%;[^}]*min-height:\s*25px;/s,
+  'catalog options must remain aligned and occupy the available rail width');
 assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{searchActive\}/,
   'ModelManager must pass the existing search activity signal to the nav rail');
 

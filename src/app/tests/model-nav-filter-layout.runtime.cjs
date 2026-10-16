@@ -26,7 +26,7 @@ for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath
   assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
 }
 
-assert.match(nav, /<span>\{mobileOpen \? 'Categories' : 'Task'\}<\/span>/);
+assert.match(nav, /<span>\{mobileOpen \? t\('Categories'\) : t\('Task'\)\}<\/span>/);
 assert.match(nav, /key: 'llm', label: 'Chat'/);
 assert.match(nav, /key: 'router', label: 'Router'/);
 assert.match(nav, /model-nav-rail__task-chip/);
