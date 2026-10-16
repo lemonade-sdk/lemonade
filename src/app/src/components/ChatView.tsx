@@ -1219,7 +1219,6 @@ const ChatView: React.FC<ChatViewProps> = ({
     && !isCollectionModel(currentEffectiveSettingsModelInfo);
   // A collection deploys as chat; its Omni surface comes from the recipe.
   const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
-  const currentDefaultModel = lemonadeDefaultModel(currentModel);
 
   useEffect(() => {
     if (!currentLoadedModel || currentCapability !== 'chat') return;

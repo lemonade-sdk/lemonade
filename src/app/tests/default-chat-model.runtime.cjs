@@ -104,8 +104,12 @@ assert.match(chatSource, /messages: \[userMessage\]/,
   'the user message must become visible before a potentially long first download');
 assert.match(chatSource, /Lemonade Server is not connected[\s\S]*isError: true/,
   'send failures must produce an assistant response instead of returning silently');
-assert.match(chatSource, /option\.defaultLabel/,
-  'Tiny and Quality roles must stay visible in the picker row text');
+assert.match(chatSource,
+  /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);/,
+  'the Tiny/Quality role must travel in the picker row detail parts');
+assert.match(chatSource,
+  /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);[\s\S]*?meta=\{detailParts\}/,
+  'those detail parts must reach the picker row as its meta line');
 assert.doesNotMatch(chatSource, /Bonsai-8B-gguf|Qwen3\.5-4B-GGUF/,
   'default model names must remain isolated in the replaceable configuration module');
 assert.doesNotMatch(chatSource, /composer__model-default-icon/,
