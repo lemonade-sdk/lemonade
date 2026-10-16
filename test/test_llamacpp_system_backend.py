@@ -590,8 +590,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
-    def test_006e_mcp_chat_disables_thinking_by_default(self):
-        """MCP's lemonade_chat tool must also route through the translation."""
+    def _call_mcp_chat(self, **extra_arguments):
         response = requests.post(
             f"http://localhost:{PORT}/mcp",
             json={
@@ -603,6 +602,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
                     "arguments": {
                         "model": ENDPOINT_TEST_MODEL,
                         "messages": [{"role": "user", "content": "Say hello."}],
+                        **extra_arguments,
                     },
                 },
             },
@@ -613,16 +613,46 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         self.assertNotIn("error", body, body)
 
         with open(self.capture_path, "r", encoding="utf-8") as handle:
-            forwarded_request = json.load(handle)
+            return json.load(handle)
 
-        self.assertEqual(forwarded_request["reasoning_effort"], "none")
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006e_mcp_chat_disables_thinking_by_default(self):
+        """MCP's lemonade_chat disables thinking unless the caller opts back in."""
+        for label, extra_arguments in [
+            ("no template kwargs", {}),
+            ("template kwargs without the flag", {"chat_template_kwargs": {"x": 1}}),
+            ("explicit disable", {"chat_template_kwargs": {"enable_thinking": False}}),
+        ]:
+            with self.subTest(case=label):
+                forwarded_request = self._call_mcp_chat(**extra_arguments)
+
+                self.assertEqual(forwarded_request["reasoning_effort"], "none")
+                self.assertIs(
+                    forwarded_request["chat_template_kwargs"]["enable_thinking"],
+                    False,
+                )
+                self.assertEqual(
+                    forwarded_request["messages"][-1]["content"],
+                    "/no_think\nSay hello.",
+                )
+                self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006e_mcp_chat_respects_opt_in(self):
+        """chat_template_kwargs.enable_thinking=true must leave thinking on."""
+        forwarded_request = self._call_mcp_chat(
+            chat_template_kwargs={"enable_thinking": True}
+        )
+
+        self.assertNotIn("reasoning_effort", forwarded_request)
         self.assertIs(
-            forwarded_request["chat_template_kwargs"]["enable_thinking"], False
+            forwarded_request["chat_template_kwargs"]["enable_thinking"], True
         )
-        self.assertEqual(
-            forwarded_request["messages"][-1]["content"],
-            "/no_think\nSay hello.",
-        )
+        self.assertEqual(forwarded_request["messages"][-1]["content"], "Say hello.")
         self.assertNotIn("enable_thinking", forwarded_request)
 
     @unittest.skipUnless(
