@@ -143,12 +143,8 @@ public:
     virtual ~ApiRoute() = default;
     virtual RouteSpec spec() const = 0;
     virtual void handle(RouteRequest& req, httplib::Response& res) = 0;
-    // The errors base-class steps write, such as the invalid-body 400, so the docs list them
-    // beside the route's own.
     virtual std::vector<RouteError> inherited_errors(const RouteSpec& spec) const;
 protected:
-    // Routes answer a body that does not parse in different shapes, so a route can override
-    // this, and then overrides invalid_body_errors() to match.
     virtual void write_invalid_body(const RouteRequest& req, const std::exception& error,
                                     httplib::Response& res) const;
     virtual std::vector<RouteError> invalid_body_errors() const;
@@ -163,8 +159,6 @@ public:
 protected:
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
-    // Routes answer an exception from validate() or run() in different shapes, so a route can
-    // override this, and then overrides exception_errors() to match.
     virtual void write_exception(const std::exception& error, httplib::Response& res) const;
     virtual std::vector<RouteError> exception_errors() const;
 };
