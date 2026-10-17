@@ -492,22 +492,15 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                 if (it == req.body.end()) continue;
                 value = *it;
             }
+            present = true;
             std::string path = name;
             if (const json* failed =
                     find_mismatch(value, arg.schema, arg.in == ArgIn::Query, path)) {
-                if (arg.drop_invalid && arg.in == ArgIn::JsonBody) {
-                    LOG(DEBUG, "Server") << req.spec.id << ": ignoring '" << path
-                                         << "', expected " << describe_schema(*failed)
-                                         << std::endl;
-                    req.body.erase(name);
-                    continue;
-                }
                 write_error(res, req.spec.error_format, kArgInvalid,
                             "Invalid value for '" + path + "': expected " +
                                 describe_schema(*failed));
                 return false;
             }
-            present = true;
         }
         if (arg.in == ArgIn::JsonBody) {
             for (const auto& alias : arg.aliases) {
