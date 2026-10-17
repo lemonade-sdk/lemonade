@@ -1,7 +1,9 @@
 #include <lemon/canonical_id.h>
 #include <lemon/model_registry.h>
 #include <lemon/model_types.h>
+#include <lemon/models/host_availability.h>
 #include <lemon/models/store_builder.h>
+#include <lemon/runtime_config.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/routing_policy.h>
 
@@ -208,5 +210,27 @@ std::vector<std::pair<std::string, bool>> collection_states_after_component(
     return changed;
 }
 
+
+HostFilter filter_for_host(const std::map<std::string, ModelInfo>& models,
+                           const AvailabilityProbe& probe) {
+    BackendAvailability availability =
+        probe ? probe(models) : probe_backend_availability(models);
+    // Over a declared machine too: turning filtering off is the operator's call, not
+    // the probe's. The GTT hint stays probe-only, since it describes real pools.
+    if (auto* cfg = RuntimeConfig::global()) {
+        availability.filtering_disabled = cfg->disable_model_filtering();
+    }
+
+    FilterResult result = filter_hardware(models, availability);
+
+    auto reasons = std::make_shared<FilterReasons>();
+    reasons->rejected = std::move(result.rejected);
+    reasons->empty_recipes = std::move(result.empty_recipes);
+
+    HostFilter outcome;
+    outcome.visible = std::move(result.visible);
+    outcome.reasons = std::const_pointer_cast<const FilterReasons>(reasons);
+    return outcome;
+}
 }  // namespace models
 }  // namespace lemon

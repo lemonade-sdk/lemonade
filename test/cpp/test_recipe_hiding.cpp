@@ -2,7 +2,7 @@
 // from the recipe/backends listing) when every one of its built-in models was
 // dropped by the system-memory heuristic. Two layers are covered:
 //   * the pure set-difference at the heart of the rule, and
-//   * the manager filtering against the machine its caller declared.
+//   * a filtering pass run against the machine its caller declared.
 
 #include "lemon/model_manager.h"
 #include "lemon/models/store_builder.h"
@@ -17,9 +17,9 @@
 #include <string>
 #include <vector>
 
+namespace models = lemon::models;
+
 using lemon::ModelInfo;
-using lemon::ModelManager;
-using lemon::ModelManagerConfig;
 using lemon::RuntimeConfig;
 using lemon::json;
 
@@ -71,11 +71,10 @@ static lemon::models::BackendAvailability test_machine() {
     return availability;
 }
 
-static ModelManager manager_on_test_machine(
+// A machine the caller declares, in the form the filter asks for.
+static lemon::models::AvailabilityProbe on_test_machine(
     lemon::models::BackendAvailability machine = test_machine()) {
-    ModelManagerConfig config;
-    config.availability = [machine](const std::map<std::string, ModelInfo>&) { return machine; };
-    return ModelManager(std::move(config));
+    return [machine](const std::map<std::string, ModelInfo>&) { return machine; };
 }
 
 using Reasons = std::shared_ptr<const lemon::models::FilterReasons>;
@@ -84,12 +83,12 @@ static bool reports(const std::vector<std::string>& empty_recipes, const std::st
     return std::find(empty_recipes.begin(), empty_recipes.end(), recipe) != empty_recipes.end();
 }
 
-static void test_full_pass_recomputes(ModelManager& manager, const std::string& recipe) {
+static void test_full_pass_recomputes(const std::string& recipe) {
     // Every model of `recipe` is unfillable -> the recipe is reported. This is
     // the positive half: without it the "not reported" assertions below would
     // also hold if the pass reported nothing at all.
     std::map<std::string, ModelInfo> all_filtered = {{"Huge", model(recipe, HUGE_GB)}};
-    const Reasons reported = manager.filter_for_host(all_filtered).reasons;
+    const Reasons reported = models::filter_for_host(all_filtered, on_test_machine()).reasons;
     check("full pass reports a recipe whose every model was size-filtered",
           reports(reported->empty_recipes, recipe));
 
@@ -100,31 +99,31 @@ static void test_full_pass_recomputes(ModelManager& manager, const std::string& 
         {"Tiny", model(recipe, 0.01)},
     };
     check("a pass that replaces the table drops a recipe with a visible model",
-          !reports(manager.filter_for_host(partial).reasons->empty_recipes, recipe));
+          !reports(models::filter_for_host(partial, on_test_machine()).reasons->empty_recipes, recipe));
 }
 
 static void test_the_declared_machine_decides() {
     std::map<std::string, ModelInfo> huge = {{"Huge", model("llamacpp", HUGE_GB)}};
     check("the declared pool decides a model no machine can hold",
-          manager_on_test_machine().filter_for_host(huge).visible.empty());
+          models::filter_for_host(huge, on_test_machine()).visible.empty());
 
     auto switched_off = test_machine();
     switched_off.filtering_disabled = true;
     check("filtering off hides nothing even from a pool that cannot hold it",
-          manager_on_test_machine(switched_off).filter_for_host(huge).visible.count("Huge") == 1);
+          models::filter_for_host(huge, on_test_machine(switched_off)).visible.count("Huge") == 1);
 
     auto without_backend = test_machine();
     without_backend.recipes["llamacpp"] =
         lemon::models::RecipeAvailability{"no backend here", "", false};
     check("a recipe the declared machine cannot run hides its model",
-          manager_on_test_machine(without_backend).filter_for_host(
-              std::map<std::string, ModelInfo>{{"Tiny", model("llamacpp", 0.01)}})
+          models::filter_for_host(std::map<std::string, ModelInfo>{{"Tiny", model("llamacpp", 0.01)}},
+                                  on_test_machine(without_backend))
               .visible.empty());
 
     // A recipe this host probably cannot run, listed because the declared machine can.
     check("a recipe this machine may not run shows when the declared one does",
-          manager_on_test_machine().filter_for_host(
-              std::map<std::string, ModelInfo>{{"NPU", model("ryzenai-llm", 0.01)}})
+          models::filter_for_host(std::map<std::string, ModelInfo>{{"NPU", model("ryzenai-llm", 0.01)}},
+                                  on_test_machine())
               .visible.count("NPU") == 1);
 }
 
@@ -132,8 +131,8 @@ static void test_the_operator_switch_outranks_a_declared_machine() {
     RuntimeConfig config(json{{"disable_model_filtering", true}});
     RuntimeConfig::set_global(&config);
     check("filtering off outranks the declared pool",
-          manager_on_test_machine().filter_for_host(
-              std::map<std::string, ModelInfo>{{"Huge", model("llamacpp", HUGE_GB)}})
+          models::filter_for_host(std::map<std::string, ModelInfo>{{"Huge", model("llamacpp", HUGE_GB)}},
+                                  on_test_machine())
               .visible.count("Huge") == 1);
     RuntimeConfig::set_global(nullptr);
 }
@@ -141,8 +140,7 @@ static void test_the_operator_switch_outranks_a_declared_machine() {
 int main() {
     test_pure_set_difference();
 
-    ModelManager manager = manager_on_test_machine();
-    test_full_pass_recomputes(manager, "llamacpp");
+    test_full_pass_recomputes("llamacpp");
     test_the_declared_machine_decides();
     test_the_operator_switch_outranks_a_declared_machine();
 

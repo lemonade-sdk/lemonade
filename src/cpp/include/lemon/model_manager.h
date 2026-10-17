@@ -78,6 +78,8 @@ public:
 struct RoutePolicy;
 
 namespace models {
+
+class ModelComposition;
 class ArtifactSource;
 class CatalogAccumulator;
 class CatalogSet;
@@ -298,9 +300,6 @@ public:
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
 
-    // Which of `models` this host can run, and the reasons for the rest. Writes
-    // nothing; the build that ran it keeps what comes back.
-    models::HostFilter filter_for_host(const std::map<std::string, ModelInfo>& models) const;
 
     // Register a user model
     void register_user_model(const std::string& model_name,
@@ -463,7 +462,6 @@ public:
     // The artifact store's answer, exposed for the HTTP and Ollama layers.
     backends::DownloadPolicy download_policy(const ModelInfo& info) const;
 
-    void populate_model_metadata(ModelInfo& info);
 
     // The artifact store's completeness answer for this model.
     bool checkpoints_complete(const ModelInfo& info) const;
@@ -582,6 +580,7 @@ private:
     UpdateCheckResult run_update_scan(const std::vector<std::string>& targets);
     models::SyncService::Deps make_sync_deps();
     models::ModelIngest::Deps make_ingest_deps();
+    std::unique_ptr<models::ModelComposition> make_composition();
 
     void publish_update_scan(const models::ScanDetermination& settled,
                              models::UpdateScanResult& result);
@@ -591,6 +590,8 @@ private:
     const std::unique_ptr<models::ModelArtifactStore> artifacts_;
     // Fetches registry bytes; also the ArtifactFetchService the backends ask.
     std::unique_ptr<models::ModelIngest> ingest_;
+    // Everything a set needs that no catalog can answer for itself.
+    const std::unique_ptr<models::ModelComposition> composition_;
     models::SyncService sync_;
     // A provider's rows in that store, for the moments that cannot wait for a build.
     models::CloudRows cloud_rows_;
