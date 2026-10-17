@@ -15,10 +15,15 @@ using json = nlohmann::json;
 ModelLoader::ModelLoader(Router* router, ModelManager* model_manager)
     : router_(router), model_manager_(model_manager) {}
 
-json ModelLoader::load_options(const json& request) {
+const RouteArg ModelLoader::kCtxSize{
+    "ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+    "Lemonade extension: context size to load the model with, when this request loads it. Ignored "
+    "when the model is already loaded."};
+
+json ModelLoader::load_options(const json& ctx_size) {
     json result = json::object();
-    if (request.is_object() && request.contains("ctx_size")) {
-        result["ctx_size"] = request["ctx_size"];
+    if (!ctx_size.is_null()) {
+        result["ctx_size"] = ctx_size;
     }
     return result;
 }

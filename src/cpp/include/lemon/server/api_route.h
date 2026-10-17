@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "lemon/server/route_arg.h"
 #include "lemon/server/route_error.h"
 #include "lemon/server/router_dispatch.h"
 #include "lemon/server/server_context.h"
@@ -17,7 +18,6 @@
 namespace lemon {
 
 enum class Prefixes { Quad, Internal, Root };      // URLs and auth; see RouteRegistry
-enum class ArgIn { JsonBody, Query, Path, Form };  // where an argument comes from
 enum class RequestFormat { Raw, Json, OptionalJson, Form };  // how ApiRoute parses the request body
 enum class ErrorFormat { Plain, OpenAi, Anthropic };          // the body shape of the base class's error responses
 
@@ -30,21 +30,6 @@ enum class ResponseFormat {
     Binary,        // e.g. audio, a glTF mesh
     BinaryStream,  // binary, streamed as generated, e.g. speech
     Empty,         // e.g. the 202 answering an MCP notification
-};
-
-// How much of an argument Lemonade honors; the docs give each argument a badge for it.
-enum class Support { Available, Partial, NotAvailable };
-
-struct RouteArg {
-    std::string name;
-    ArgIn in;
-    nlohmann::json schema;            // JSON-schema subset
-    bool required = false;
-    Support supported = Support::Available;  // Partial: the description states the limit
-    std::string description;
-    std::vector<std::string> aliases;  // other names clients send it under, e.g. "model" for "model_name"
-    bool forwarded = false;            // lemond passes it to the backend without acting on it
-    bool drop_invalid = false;         // a value that fails the schema is ignored instead of answered with 400
 };
 
 // Each format a route returns gets its own schema in the docs.

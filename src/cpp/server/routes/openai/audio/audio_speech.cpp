@@ -123,7 +123,7 @@ protected:
         }
 
         const AudioFormat format =
-            negotiate_speech_format(*ctx_.router, req.model, request_json, is_streaming);
+            negotiate_speech_format(*ctx_.router, req.model, req.arg(kResponseFormat), is_streaming);
         if (!apply_audio_format(format, res)) {
             return;
         }

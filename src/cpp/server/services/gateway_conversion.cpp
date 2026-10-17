@@ -11,6 +11,7 @@
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
 
 namespace lemon {
 
@@ -128,33 +129,32 @@ ordered_json ollama_details_schema() {
 
 namespace {
 
-struct OptionMapping { const char* ollama_key; const char* openai_key; };
-
-const OptionMapping OPTION_MAPPINGS[] = {
-    {"temperature",    "temperature"},
-    {"top_p",          "top_p"},
-    {"seed",           "seed"},
-    {"stop",           "stop"},
-    {"num_predict",    "max_tokens"},
-    {"repeat_penalty", "frequency_penalty"},
-};
+struct OptionMapping { const char* ollama_key; const RouteArg& openai_arg; };
 
 } // namespace
 
-// Ollama accepts these both inside "options" and at the top level; top-level wins.
-void map_ollama_options(const json& ollama_request, json& openai_req) {
-    if (ollama_request.contains("options") && ollama_request["options"].is_object()) {
-        const auto& opts = ollama_request["options"];
-        for (const auto& m : OPTION_MAPPINGS) {
-            if (opts.contains(m.ollama_key)) {
-                openai_req[m.openai_key] = opts[m.ollama_key];
+// Ollama accepts these both inside options and at the top level; top-level wins.
+void map_ollama_options(const json& options, const json& ollama_request, json& openai_req,
+                        const RouteArg& max_tokens) {
+    const OptionMapping mappings[] = {
+        {"temperature",    openai::text::kTemperature},
+        {"top_p",          openai::text::kTopP},
+        {"seed",           openai::text::kSeed},
+        {"stop",           openai::text::kStop},
+        {"num_predict",    max_tokens},
+        {"repeat_penalty", openai::text::kFrequencyPenalty},
+    };
+    if (options.is_object()) {
+        for (const auto& m : mappings) {
+            if (options.contains(m.ollama_key)) {
+                openai_req[m.openai_arg.name] = options[m.ollama_key];
             }
         }
     }
 
-    for (const auto& m : OPTION_MAPPINGS) {
+    for (const auto& m : mappings) {
         if (ollama_request.contains(m.ollama_key)) {
-            openai_req[m.openai_key] = ollama_request[m.ollama_key];
+            openai_req[m.openai_arg.name] = ollama_request[m.ollama_key];
         }
     }
 }

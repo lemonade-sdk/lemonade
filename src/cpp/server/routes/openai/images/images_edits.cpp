@@ -194,7 +194,7 @@ protected:
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
-        if (!attach_form_image(req, res, /*allow_multiple=*/true)) {
+        if (!attach_form_image(req, res, kImage, /*allow_multiple=*/true)) {
             return false;
         }
 

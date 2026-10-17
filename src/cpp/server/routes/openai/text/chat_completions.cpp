@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
 #include "lemon/server/omni_collection.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/thinking_controls.h"
@@ -110,31 +111,23 @@ ordered_json chat_completion_chunk_schema() {
     return schema;
 }
 
+} // namespace
+
+namespace openai::chat {
+
 const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
                          "The conversation so far, in OpenAI's message format: each message has a `role` and "
                          "`content`."};
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                      "The model to run."};
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "`true` sends tokens as server-sent events as they are generated; `false` sends one "
-                       "response once complete. Defaults to `false`."};
-const RouteArg kStop{"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-                     "Sequences that stop generation, as a string or an array of strings. The returned "
-                     "text leaves them out.", {}, true};
 const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                          "`true` returns the log probability of each output token. Defaults to `false`.", {}, true};
-const RouteArg kTemperature{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-                            "Sampling temperature.", {}, true};
-const RouteArg kRepeatPenalty{"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-                              "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-                              "repetition.", {}, true};
-const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                     "Number of top tokens to consider during sampling.", {}, true};
-const RouteArg kTopP{"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-                     "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-                     "`0.0` to `1.0`.", {}, true};
 const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
                       "A list of tools the model may call."};
+const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false, Support::Available,
+                           "Which tool the model must call, in OpenAI's format: `auto`, `none`, `required` or an "
+                           "object naming a function.", {}, true};
+const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+                               "The format the model must output, in OpenAI's format, such as "
+                               "`{\"type\": \"json_object\"}`.", {}, true};
 const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                           "Upper bound on generated tokens. Wins over `max_completion_tokens` when both are "
                           "sent.", {}, true};
@@ -143,12 +136,13 @@ const RouteArg kMaxCompletionTokens{"max_completion_tokens", ArgIn::JsonBody, {{
 const RouteArg kEnableThinking{"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                                "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
                                "false` does the same, and `enable_thinking` wins when both are sent."};
-const RouteArg kRouteTrace{"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                           "Lemonade extension for `collection.router` models: `true` adds the per-condition "
-                           "`trace` to `x_lemonade_route`. Defaults to `false`."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request "
-                        "loads it. Ignored when the model is already loaded."};
+
+} // namespace openai::chat
+
+namespace {
+
+using namespace openai::chat;
+using namespace openai::text;
 
 class ChatCompletionsRoute : public ModelRoute {
 public:
@@ -197,9 +191,10 @@ public:
             "Models](../dev/lemonade-omni.md) for details.",
         };
         s.args = {
-            kMessages, kModel, kStream, kStop, kLogprobs, kTemperature, kRepeatPenalty, kTopK,
-            kTopP, kTools, kMaxTokens, kMaxCompletionTokens, kEnableThinking, kRouteTrace,
-            kCtxSize
+            kMessages, kModel, kStream, kStop, kLogprobs, kTemperature, kRepeatPenalty,
+            kFrequencyPenalty, kSeed, kTopK, kTopP, kTools, kToolChoice, kResponseFormat,
+            kMaxTokens, kMaxCompletionTokens, kEnableThinking, kRouteTrace,
+            ModelLoader::kCtxSize
         };
 
         RouteResponse completion;

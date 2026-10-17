@@ -6,6 +6,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
 
 namespace lemon {
 namespace {
@@ -108,7 +109,7 @@ json convert_ollama_to_openai_chat(const RouteRequest& req) {
     json openai_req;
 
     std::string model = strip_latest_tag(req.value(kModel, ""));
-    openai_req["model"] = model;
+    openai_req[openai::text::kModel.name] = model;
 
     if (req.has(kMessages)) {
         json messages = json::array();
@@ -162,26 +163,26 @@ json convert_ollama_to_openai_chat(const RouteRequest& req) {
 
             messages.push_back(openai_msg);
         }
-        openai_req["messages"] = messages;
+        openai_req[openai::chat::kMessages.name] = messages;
     }
 
-    map_ollama_options(req.body, openai_req);
+    map_ollama_options(req.arg(kOptions), req.body, openai_req, openai::chat::kMaxTokens);
 
     if (req.has(kTools)) {
-        openai_req["tools"] = req.arg(kTools);
+        openai_req[openai::chat::kTools.name] = req.arg(kTools);
     }
 
     if (req.has(kFormat) && req.arg(kFormat).is_string() &&
         req.arg(kFormat).get<std::string>() == "json") {
-        openai_req["response_format"] = {{"type", "json_object"}};
+        openai_req[openai::chat::kResponseFormat.name] = {{"type", "json_object"}};
     }
 
     if (req.has(kThink)) {
-        openai_req["enable_thinking"] = req.arg(kThink);
+        openai_req[openai::chat::kEnableThinking.name] = req.arg(kThink);
     }
 
     // The caller decides whether to stream.
-    openai_req["stream"] = false;
+    openai_req[openai::text::kStream.name] = false;
 
     return openai_req;
 }
@@ -452,7 +453,7 @@ public:
             } else if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req["stream"] = true;
+                openai_req[openai::text::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

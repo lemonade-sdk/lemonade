@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
 
 namespace lemon {
 namespace {
@@ -76,9 +77,9 @@ public:
             }
 
             json openai_req;
-            openai_req["model"] = model;
+            openai_req[openai::embeddings::kModel.name] = model;
 
-            openai_req["input"] = req.arg(kInput);
+            openai_req[openai::embeddings::kInput.name] = req.arg(kInput);
 
             auto openai_response = ctx_.router->embeddings(openai_req);
 

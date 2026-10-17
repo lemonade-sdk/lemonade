@@ -7,6 +7,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
 
 namespace lemon {
 namespace {
@@ -55,15 +56,15 @@ json convert_ollama_to_openai_completion(const RouteRequest& req) {
     json openai_req;
 
     std::string model = strip_latest_tag(req.value(kModel, ""));
-    openai_req["model"] = model;
+    openai_req[openai::text::kModel.name] = model;
 
     if (req.has(kPrompt)) {
-        openai_req["prompt"] = req.arg(kPrompt);
+        openai_req[openai::completions::kPrompt.name] = req.arg(kPrompt);
     }
 
-    map_ollama_options(req.body, openai_req);
+    map_ollama_options(req.arg(kOptions), req.body, openai_req, openai::completions::kMaxTokens);
 
-    openai_req["stream"] = false;
+    openai_req[openai::text::kStream.name] = false;
 
     return openai_req;
 }
@@ -114,19 +115,19 @@ void generate_image(Router& router, const RouteRequest& req, httplib::Response& 
         }
 
         json openai_req;
-        openai_req["model"] = model;
-        openai_req["prompt"] = prompt;
-        openai_req["size"] = std::to_string(width) + "x" + std::to_string(height);
-        openai_req["response_format"] = "b64_json";
+        openai_req[openai::images::kModel.name] = model;
+        openai_req[openai::images::kPrompt.name] = prompt;
+        openai_req[openai::images::kSize.name] = std::to_string(width) + "x" + std::to_string(height);
+        openai_req[openai::images::kResponseFormat.name] = "b64_json";
 
         if (steps > 0) {
-            openai_req["steps"] = steps;
+            openai_req[openai::images::kSteps.name] = steps;
         }
         if (cfg_scale > 0.0) {
-            openai_req["cfg_scale"] = cfg_scale;
+            openai_req[openai::images::kCfgScale.name] = cfg_scale;
         }
         if (seed >= 0) {
-            openai_req["seed"] = seed;
+            openai_req[openai::images::kSeed.name] = seed;
         }
 
         auto openai_response = router.image_generations(openai_req);
@@ -288,7 +289,7 @@ public:
             if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req["stream"] = true;
+                openai_req[openai::text::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

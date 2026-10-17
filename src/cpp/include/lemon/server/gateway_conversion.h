@@ -41,8 +41,11 @@ nlohmann::json ollama_details(const std::string& model_name, const std::string& 
                               const std::string& checkpoint);
 nlohmann::ordered_json ollama_details_schema();
 
-// Copies Ollama sampling options, from "options" or the top level, to OpenAI names.
-void map_ollama_options(const nlohmann::json& ollama_request, nlohmann::json& openai_request);
+// Copies Ollama sampling options, from the request's options argument or its top level, to
+// OpenAI names. max_tokens is the argument of the route the request is for, chat/completions'
+// or completions'.
+void map_ollama_options(const nlohmann::json& options, const nlohmann::json& ollama_request,
+                        nlohmann::json& openai_request, const RouteArg& max_tokens);
 
 extern const RouteError kGatewayModelNotLoaded;
 

@@ -129,7 +129,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        AudioFormat format = negotiate_audio_generation_format(*ctx_.router, req.model, req.body);
+        AudioFormat format = negotiate_audio_generation_format(*ctx_.router, req.model, req.arg(kResponseFormat));
         if (!apply_audio_format(format, res)) {
             return;
         }

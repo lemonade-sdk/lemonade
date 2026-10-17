@@ -16,9 +16,6 @@ const RouteArg kDocuments{"documents", ArgIn::JsonBody, {{"type", "array"}, {"it
                           true, Support::Available, "Documents to score against the query.", {}, true};
 const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                       "Reranker model to run; loaded on first use."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request "
-                        "loads it."};
 
 class RerankRoute : public ModelRoute {
 public:
@@ -34,7 +31,7 @@ public:
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
-        s.args = {kQuery, kDocuments, kModel, kCtxSize};
+        s.args = {kQuery, kDocuments, kModel, ModelLoader::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

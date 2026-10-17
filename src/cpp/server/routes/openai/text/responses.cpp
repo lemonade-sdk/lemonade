@@ -98,9 +98,6 @@ const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, 
 const RouteArg kRouteTrace{"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                            "Lemonade extension for `collection.router` models: `true` adds the per-condition "
                            "`trace` to `x_lemonade_route`. Defaults to `false`."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request "
-                        "loads it. Ignored when the model is already loaded."};
 
 class ResponsesRoute : public ModelRoute {
 public:
@@ -122,7 +119,7 @@ public:
         };
         s.args = {
             kInput, kModel, kMaxOutputTokens, kTemperature, kRepeatPenalty, kTopK, kTopP,
-            kStream, kRouteTrace, kCtxSize
+            kStream, kRouteTrace, ModelLoader::kCtxSize
         };
 
         RouteResponse response;

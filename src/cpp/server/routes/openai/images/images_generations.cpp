@@ -4,6 +4,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
 
 namespace lemon {
 
@@ -11,6 +12,10 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+} // namespace
+
+namespace openai::images {
 
 const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                        "The text description of the image to generate."};
@@ -29,6 +34,12 @@ const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, fal
 const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                      "Random seed for reproducible output; a negative value picks a random seed. Defaults "
                      "to the backend's fixed seed."};
+
+} // namespace openai::images
+
+namespace {
+
+using namespace openai::images;
 
 class ImagesGenerationsRoute : public ModelRoute {
 public:

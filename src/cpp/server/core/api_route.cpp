@@ -677,7 +677,8 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
                                                           load_span_name.name, req.model,
                                                           req.body);
             try {
-                ctx_.model_loader->ensure_loaded(req.model, ModelLoader::load_options(req.body));
+                ctx_.model_loader->ensure_loaded(req.model,
+                                                 ModelLoader::load_options(req.arg(ModelLoader::kCtxSize)));
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 ctx_.model_loader->write_load_error(res, req.model, e.what());

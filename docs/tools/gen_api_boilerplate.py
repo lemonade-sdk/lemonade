@@ -425,7 +425,7 @@ REQUIRED_MODEL_ARG = re.compile(r'\{"model", ArgIn::\w+, [^\n]*?, true,')
 RECEIVES_BODY = re.compile(r"RequestFormat::(?:Json|OptionalJson|Form)\b")
 ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
 ROUTE_ARG_DECL = re.compile(
-    r'\bconst RouteArg (k[A-Z]\w*)\{"([^"]+)", ArgIn::(\w+),(.*?)\};', re.S
+    r'\bconst RouteArg (?:\w+::)*(k[A-Z]\w*)\{\s*"([^"]+)", ArgIn::(\w+),(.*?)\};', re.S
 )
 ROUTE_ARG_ALIASES = re.compile(r'"\s*,\s*\{((?:"[^"]+"\s*,?\s*)+)\}')
 ROUTE_ARG_USE = re.compile(
@@ -437,16 +437,39 @@ BODY_ALIAS = re.compile(r"\b(\w+)\s*=\s*req\.body\s*;")
 # A route's own helpers name the request body after the request they take, such as
 # ollama_request or request_json.
 BODY_PARAM = re.compile(r"\bjson&\s*(\w*(?:request|body)\w*)\s*[,)]")
+# The gateways name the request they build for an OpenAI route openai_req.
+BUILT_REQUEST_KEY = re.compile(
+    r'\bopenai_req\w*\s*(?:\[\s*|\.(?:value|contains|find|at|erase|count)\(\s*)"([^"]+)"'
+)
 
 
-def literal_argument_reads(text: str) -> list[tuple[int, str]]:
-    """Each place a route file names one of its arguments, or an alias, by a string literal
-    on the request, where RouteArg constants belong."""
-    spelled = set()
+def argument_spellings(text: str) -> dict[str, set[str]]:
+    """Each RouteArg constant text defines, with its name and aliases."""
+    spellings = {}
     for decl in ROUTE_ARG_DECL.finditer(text):
-        spelled.add(decl.group(2))
+        names = spellings.setdefault(decl.group(1), set())
+        names.add(decl.group(2))
         for aliases in ROUTE_ARG_ALIASES.finditer(decl.group(4)):
-            spelled.update(re.findall(r'"([^"]+)"', aliases.group(1)))
+            names.update(re.findall(r'"([^"]+)"', aliases.group(1)))
+    return spellings
+
+
+def listed_constants(text: str) -> set[str]:
+    """The RouteArg constants a route file's args lists name, without their namespaces."""
+    lists = " ".join(m.group(0) for m in ARG_LISTS.finditer(text))
+    return set(re.findall(r"\b(k[A-Z]\w*)\b", lists))
+
+
+def literal_argument_reads(
+    text: str, shared: dict[str, set[str]]
+) -> list[tuple[int, str]]:
+    """Each place a route file names one of its arguments, or an alias, by a string literal
+    on the request, where RouteArg constants belong. shared holds the constants defined in
+    other files, such as ModelLoader::kCtxSize."""
+    own = argument_spellings(text)
+    spelled = set().union(*own.values()) if own else set()
+    for name in listed_constants(text) - set(own):
+        spelled |= shared.get(name, set())
     if not spelled:
         return []
     names = "|".join(re.escape(name) for name in sorted(spelled, key=len, reverse=True))
@@ -482,6 +505,19 @@ def lint_sources() -> list[str]:
         + [server / "core" / "api_route.cpp"]
     ):
         declared.update(ROUTE_ERROR_NAME.findall(path.read_text(encoding="utf-8")))
+    # Constants that several routes list, such as ModelLoader::kCtxSize, are defined outside
+    # the route files that list them.
+    shared_args = {}
+    required_model = set()
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        if "RouteSpec spec()" in text:
+            continue
+        for name, spellings in argument_spellings(text).items():
+            shared_args.setdefault(name, set()).update(spellings)
+        for decl in ROUTE_ARG_DECL.finditer(text):
+            if REQUIRED_MODEL_ARG.search(decl.group(0)):
+                required_model.add(decl.group(1))
 
     problems = []
     for path in sources:
@@ -491,6 +527,12 @@ def lint_sources() -> list[str]:
             line = text.count("\n", 0, match.start()) + 1
             problems.append(
                 f"{where}:{line} writes an error status that is not a RouteError's"
+            )
+        for match in BUILT_REQUEST_KEY.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{where}:{line} names another route's argument {match.group(1)} by a string "
+                "literal; write it through that route's RouteArg constant"
             )
         if path.parent.name == "services" or "RouteSpec spec()" not in text:
             continue
@@ -513,7 +555,15 @@ def lint_sources() -> list[str]:
             if "RequestFormat::Form" in text:
                 base_errors.append("kFormNotMultipart")
             fills_model = re.search(r'req\.body\[(?:"model"|kModel\.name)\]\s*=', text)
-            if not (REQUIRED_MODEL_ARG.search(text) or fills_model):
+            own_required = {
+                decl.group(1)
+                for decl in ROUTE_ARG_DECL.finditer(text)
+                if REQUIRED_MODEL_ARG.search(decl.group(0))
+            }
+            lists_required_model = bool(
+                listed_constants(text) & (own_required | required_model)
+            )
+            if not (lists_required_model or fills_model):
                 base_errors.append("kModelMissing")
         for name in base_errors:
             if name not in lists:
@@ -545,7 +595,7 @@ def lint_sources() -> list[str]:
                 problems.append(
                     f"{where} reads {name}, which its route's args do not list"
                 )
-        for line, name in literal_argument_reads(text):
+        for line, name in literal_argument_reads(text, shared_args):
             problems.append(
                 f"{where}:{line} names {name} by a string literal; read it through its RouteArg constant"
             )

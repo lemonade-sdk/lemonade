@@ -16,6 +16,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 
@@ -410,7 +411,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
     json openai_req;
 
     std::string model = strip_latest_tag(req.value(kModel, ""));
-    openai_req["model"] = model;
+    openai_req[openai::text::kModel.name] = model;
 
     json messages = json::array();
 
@@ -582,23 +583,23 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         }
     }
 
-    openai_req["messages"] = messages;
+    openai_req[openai::chat::kMessages.name] = messages;
 
     if (req.has(kMaxTokens)) {
-        openai_req["max_completion_tokens"] = req.arg(kMaxTokens);
+        openai_req[openai::chat::kMaxCompletionTokens.name] = req.arg(kMaxTokens);
     }
     if (req.has(kTemperature)) {
-        openai_req["temperature"] = req.arg(kTemperature);
+        openai_req[openai::text::kTemperature.name] = req.arg(kTemperature);
     }
     if (req.has(kTopP)) {
-        openai_req["top_p"] = req.arg(kTopP);
+        openai_req[openai::text::kTopP.name] = req.arg(kTopP);
     }
     if (req.has(kTopK)) {
-        openai_req["top_k"] = req.arg(kTopK);
+        openai_req[openai::text::kTopK.name] = req.arg(kTopK);
     }
 
     if (req.has(kStopSequences)) {
-        openai_req["stop"] = req.arg(kStopSequences);
+        openai_req[openai::text::kStop.name] = req.arg(kStopSequences);
     }
 
     if (req.has(kTools) && req.arg(kTools).is_array()) {
@@ -625,7 +626,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         }
 
         if (!openai_tools.empty()) {
-            openai_req["tools"] = openai_tools;
+            openai_req[openai::chat::kTools.name] = openai_tools;
         }
     }
 
@@ -633,17 +634,17 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         const auto& tc = req.arg(kToolChoice);
         std::string type = tc.value("type", "auto");
         if (type == "auto") {
-            openai_req["tool_choice"] = "auto";
+            openai_req[openai::chat::kToolChoice.name] = "auto";
         } else if (type == "any") {
-            openai_req["tool_choice"] = "required";
+            openai_req[openai::chat::kToolChoice.name] = "required";
         } else if (type == "none") {
-            openai_req["tool_choice"] = "none";
+            openai_req[openai::chat::kToolChoice.name] = "none";
         } else if (type == "tool") {
             std::string name = tc.value("name", "");
             if (name.empty()) {
                 add_warning(warnings, "Ignored tool_choice.type=tool without name");
             } else {
-                openai_req["tool_choice"] = {
+                openai_req[openai::chat::kToolChoice.name] = {
                     {"type", "function"},
                     {"function", {{"name", name}}}
                 };
@@ -660,7 +661,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
             std::string type = format.value("type", "");
 
             if (type == "json_schema" && format.contains("schema") && format["schema"].is_object()) {
-                openai_req["response_format"] = {
+                openai_req[openai::chat::kResponseFormat.name] = {
                     {"type", "json_schema"},
                     {"json_schema", {
                         {"name", "response"},
@@ -668,7 +669,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
                     }}
                 };
             } else if (type == "json_object") {
-                openai_req["response_format"] = { {"type", "json_object"} };
+                openai_req[openai::chat::kResponseFormat.name] = { {"type", "json_object"} };
             } else {
                 add_warning(warnings, "Ignored unsupported output_config.format type: " + type);
             }
@@ -678,9 +679,9 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
     if (req.has(kThinking) && req.arg(kThinking).is_object()) {
         std::string thinking_type = req.arg(kThinking).value("type", "");
         if (thinking_type == "enabled") {
-            openai_req["enable_thinking"] = true;
+            openai_req[openai::chat::kEnableThinking.name] = true;
         } else if (thinking_type == "disabled") {
-            openai_req["enable_thinking"] = false;
+            openai_req[openai::chat::kEnableThinking.name] = false;
         } else {
             add_warning(warnings, "Ignored unsupported thinking.type: " + thinking_type);
         }
@@ -693,7 +694,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         add_warning(warnings, "Ignored 'context_management' field");
     }
 
-    openai_req["stream"] = req.value(kStream, false);
+    openai_req[openai::text::kStream.name] = req.value(kStream, false);
 
     return openai_req;
 }
@@ -963,11 +964,11 @@ public:
                 return;
             }
 
-            bool stream = openai_req.value("stream", false);
+            bool stream = openai_req.value(openai::text::kStream.name, false);
             emit_warning_header();
 
             if (stream) {
-                openai_req["stream"] = true;
+                openai_req[openai::text::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model, warnings](const std::string& openai_body,
@@ -980,7 +981,7 @@ public:
                 return;
             }
 
-            openai_req["stream"] = false;
+            openai_req[openai::text::kStream.name] = false;
             auto openai_response = ctx_.router->chat_completion(openai_req);
             if (set_anthropic_backend_error_response(openai_response, res)) {
                 return;

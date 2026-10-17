@@ -94,7 +94,7 @@ protected:
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/variations" << std::endl;
-        return attach_form_image(req, res);
+        return attach_form_image(req, res, kImage);
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
