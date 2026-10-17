@@ -235,20 +235,6 @@ json ModelManager::model_sources() {
     return models::model_sources_json(*std::atomic_load(&store_snapshot_));
 }
 
-void ModelManager::publish_store_locked() {
-    auto next = std::make_shared<models::StoreSnapshot>();
-    next->models = models_cache_;
-    next->public_model_aliases = public_model_aliases_;
-    next->canonical_public_names = canonical_public_names_;
-    next->reasons = hardware_filter_;
-    next->catalogs = catalog_set_->descriptors();
-    next->helper_models = collect_helper_models(models_cache_);
-    next->valid = cache_valid_;
-    next->generation = ++store_generation_;
-    std::atomic_store(&store_snapshot_,
-                      std::const_pointer_cast<const models::StoreSnapshot>(next));
-}
-
 ModelManager::StoreWrite::StoreWrite(ModelManager& manager)
     : manager_(manager), lock_(manager.models_cache_mutex_) {}
 
@@ -256,7 +242,10 @@ ModelManager::StoreWrite::~StoreWrite() {
     // Copying the model set can fail; readers keep the previous snapshot rather
     // than unwinding an exception out of a destructor.
     try {
-        manager_.publish_store_locked();
+        // A patch says nothing about hardware fit, so the table already published
+        // is the one that carries forward.
+        const auto published = std::atomic_load(&manager_.store_snapshot_);
+        manager_.publish_store_locked(published ? published->reasons : nullptr);
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Could not publish model store: " << e.what() << std::endl;
     }
@@ -659,23 +648,29 @@ void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
                                        models::UpdateScanResult& result) {
     StoreWrite store_write(*this);
 
+    const auto published = std::atomic_load(&store_snapshot_);
+    if (!published) {
+        return;  // Nothing published, so nothing was examined either
+    }
+    // Membership is untouched here, so the published tables still name the models
+    // this scan reports on.
+    const auto wire_name = [&published](const std::string& cache_key) {
+        auto name = published->canonical_public_names.find(cache_key);
+        return name == published->canonical_public_names.end() ? cache_key : name->second;
+    };
+
     for (auto& [name, info] : models_cache_) {
         if (settled.verified.count(name) == 0) {
             continue;
         }
-        auto pub_it = canonical_public_names_.find(name);
-        const std::string pub_name =
-            pub_it != canonical_public_names_.end() ? pub_it->second : name;
-        if (result.failed_models.find(pub_name) != result.failed_models.end()) {
+        if (result.failed_models.find(wire_name(name)) != result.failed_models.end()) {
             continue;
         }
         info.update_available = settled.updated.count(name) != 0;
     }
 
     for (const auto& name : settled.updated) {
-        auto pub_it = canonical_public_names_.find(name);
-        const std::string pub_name =
-            pub_it != canonical_public_names_.end() ? pub_it->second : name;
+        const std::string pub_name = wire_name(name);
         if (result.failed_models.find(pub_name) == result.failed_models.end()) {
             result.updated_models.push_back(pub_name);
         }
@@ -685,9 +680,7 @@ void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
         if (settled.verified.count(name) == 0 || settled.updated.count(name) != 0) {
             continue;
         }
-        auto pub_it = canonical_public_names_.find(name);
-        const std::string pub_name =
-            pub_it != canonical_public_names_.end() ? pub_it->second : name;
+        const std::string pub_name = wire_name(name);
         if (result.failed_models.find(pub_name) == result.failed_models.end()) {
             result.up_to_date_models.push_back(pub_name);
         }
@@ -795,12 +788,18 @@ void ModelManager::download_from_huggingface_engine(
     ingest_->fetch_registry_artifacts(info, progress_callback);
 }
 
-// Every alias form rebuild_public_model_aliases_locked() computes -- bare
-// name (by source precedence), builtin.<X>, and ModelInfo::input_aliases --
-// as a pure function of an arbitrary model set, so it can also run against
-// the pre-filter set (#2748): a component's alias must resolve the same way
-// whether or not its model currently survives hardware filtering. See that
-// function's own doc comment for what each field means.
+// The two tables every API surface reads. `public_model_aliases` turns a name from
+// a request into a cache key: the precedence-winner (Registered > Imported >
+// Builtin) for a bare name, builtin.<X> for the bare key X, and
+// ModelInfo::input_aliases entries; user.<X> and extra.<X> resolve through the
+// cache lookup fallback and need no entry. `canonical_public_names` turns a cache
+// key into the ID the API emits: the bare name for a winner, except a non-built-in
+// collection, which emits its canonical-prefixed ID so the listed ID matches the
+// one used to register, fetch and chat it; shadowed keys emit that too.
+//
+// Pure over an arbitrary model set, so build_cache() also runs it on the pre-filter
+// set (#2748): a component's alias resolves the same way whether or not its model
+// survives hardware filtering.
 struct ModelAliasMaps {
     std::map<std::string, std::string> public_model_aliases;
     std::map<std::string, std::string> canonical_public_names;
@@ -1226,11 +1225,9 @@ void ModelManager::build_cache() {
             return;
         }
         models_cache_ = std::move(composed);
-        hardware_filter_ = std::move(composed_reasons);
-        rebuild_public_model_aliases_locked();
         catalog_set_->replace_with(built.snapshot());
         cache_valid_ = true;
-        publish_store_locked();
+        publish_store_locked(std::move(composed_reasons));
     }
 
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
@@ -1325,7 +1322,6 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
         bool is_user_model = is_user_model_name(model_name);
         if (is_user_model || it->second.source == "local_upload") {
             models_cache_.erase(model_name);
-            rebuild_public_model_aliases_locked();
             LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
@@ -1646,8 +1642,6 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         ++added;
     }
 
-    rebuild_public_model_aliases_locked();
-
     LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
                                << provider << "': " << added << " model(s)"
                                << std::endl;
@@ -1667,7 +1661,6 @@ size_t ModelManager::evict_cloud_models(const std::string& provider) {
         }
     }
     if (removed > 0) {
-        rebuild_public_model_aliases_locked();
         LOG(DEBUG, "ModelManager") << "Evicted " << removed
                                     << " cloud model(s) for provider '"
                                     << provider << "'" << std::endl;
@@ -2250,32 +2243,26 @@ std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
     return std::set<std::string>(hidden.begin(), hidden.end());
 }
 
-// Must be called with models_cache_mutex_ held.
+// Called by StoreWrite on scope exit, with models_cache_mutex_ held.
 //
-// Populates two maps that drive the friendly-name / canonical-ID system:
-//
-//   public_model_aliases_ - input alias → cache key (canonical name in cache):
-//     - <bare> → cache key of the precedence-winner for that bare name
-//     - builtin.<X> → bare cache key X (built-ins are keyed bare in the cache)
-//     - ModelInfo::input_aliases entries → cache key, without changing API output
-//     - user.<X>, extra.<X> resolve directly via cache lookup fallback in the
-//       callers, so no identity entries are required here
-//
-//   canonical_public_names_ - cache key → wire-format ID emitted by the API:
-//     - winner cache keys → bare name, EXCEPT a non-built-in collection winner
-//       (user.* / extra.* collection.omni / collection.router) → its canonical-
-//       prefixed ID, so the listed ID matches the one used for registration,
-//       fetch, and chat (the bare name still resolves via public_model_aliases_)
-//     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
-//
-// Precedence: Registered > Imported > Builtin. The algorithm itself is
-// compute_model_alias_maps(), shared with build_cache()'s pre-filter
-// resolver snapshot (#2748); this just runs it against models_cache_ and
-// commits the result to member state.
-void ModelManager::rebuild_public_model_aliases_locked() {
-    ModelAliasMaps computed = compute_model_alias_maps(models_cache_);
-    public_model_aliases_ = std::move(computed.public_model_aliases);
-    canonical_public_names_ = std::move(computed.canonical_public_names);
+// Publishing derives the alias tables and the helper projection from the set
+// published beside them, so a name cannot outlive the model it points at.
+// `reasons` is the filter table the store ends with: a full build hands over the
+// one it composed, a patch the one already published.
+void ModelManager::publish_store_locked(
+    std::shared_ptr<const models::FilterReasons> reasons) {
+    auto next = std::make_shared<models::StoreSnapshot>();
+    next->models = models_cache_;
+    ModelAliasMaps aliases = compute_model_alias_maps(models_cache_);
+    next->public_model_aliases = std::move(aliases.public_model_aliases);
+    next->canonical_public_names = std::move(aliases.canonical_public_names);
+    next->reasons = std::move(reasons);
+    next->catalogs = catalog_set_->descriptors();
+    next->helper_models = collect_helper_models(models_cache_);
+    next->valid = cache_valid_;
+    next->generation = ++store_generation_;
+    std::atomic_store(&store_snapshot_,
+                      std::const_pointer_cast<const models::StoreSnapshot>(next));
 }
 
 } // namespace lemon
