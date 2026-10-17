@@ -1153,29 +1153,8 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("think", response.json()["error"])
 
-    def test_037_chat_ignores_malformed_ctx_size(self):
-        """Ollama ignores fields it does not define, so a malformed ctx_size is ignored."""
-        self.ensure_model_pulled()
-        request = {
-            "model": ENDPOINT_TEST_MODEL,
-            "messages": [{"role": "user", "content": "Hi"}],
-            "stream": False,
-            "options": {"num_predict": 1},
-        }
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat", json=request, timeout=TIMEOUT_MODEL_OPERATION
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={**request, "ctx_size": "4096"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-    def test_038_malformed_ctx_size_unknown_model(self):
-        """A malformed ctx_size is ignored on every Ollama route that takes one."""
+    def test_037_malformed_ctx_size_rejected(self):
+        """A malformed ctx_size answers 400 on every Ollama route that takes one."""
         model = "nonexistent-model-xyz"
         requests_by_path = {
             "/api/chat": {
@@ -1194,9 +1173,10 @@ class OllamaTests(ServerTestBase):
                     json={**request, "ctx_size": "4096"},
                     timeout=TIMEOUT_DEFAULT,
                 )
-                self.assertEqual(response.status_code, 404, response.text)
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertIn("ctx_size", response.text)
 
-    def test_039_embeddings_reads_prompt_over_input(self):
+    def test_038_embeddings_reads_prompt_over_input(self):
         """/api/embeddings reads prompt, and Ollama has no input field there to check."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/embeddings",
@@ -1205,7 +1185,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 404, response.text)
 
-    def test_040_chat_rejects_non_object_options(self):
+    def test_039_chat_rejects_non_object_options(self):
         """As in Ollama, options that are not an object answer 400."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
