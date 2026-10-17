@@ -19,6 +19,30 @@ public:
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting zip to " << dest_dir << std::endl;
 
+        // unzip has no --strip-components, so decide from the entry listing
+        // whether the payload sits under a single wrapper folder (as the
+        // tarball path does) and flatten it after extraction. If the listing
+        // fails, keep the historical behavior and extract as-is.
+        std::string entries;
+        int list_result = ProcessManager::run_process_with_output(
+            "unzip",
+            {"-Z1", zip_path},
+            [&entries](const std::string& line) {
+                entries += line + "\n";
+                return true;
+            },
+            "",
+            30,
+            false
+        );
+        const auto strip = resolve_archive_strip_components(list_result, entries);
+        if (strip.has_value()) {
+            LOG(DEBUG, backend_name) << "Zip strip-components: " << *strip << std::endl;
+        } else {
+            LOG(WARNING, backend_name) << "Could not list zip contents, code: "
+                                       << list_result << "; extracting without wrapper stripping" << std::endl;
+        }
+
         std::string output;
         int result = ProcessManager::run_process_with_output(
             "unzip",
@@ -34,6 +58,12 @@ public:
         if (result != 0) {
             LOG(ERROR, backend_name) << "Extraction failed. Ensure 'unzip' is installed. Code: "
                                     << result << (output.empty() ? "" : " - " + output) << std::endl;
+            return false;
+        }
+
+        if (strip.has_value() && *strip == 1 && !flatten_single_wrapper_directory(dest_dir)) {
+            LOG(ERROR, backend_name) << "Zip payload is wrapped in a single top-level folder "
+                                        "that could not be flattened into " << dest_dir << std::endl;
             return false;
         }
         return true;
