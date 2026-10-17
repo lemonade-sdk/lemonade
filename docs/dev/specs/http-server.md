@@ -190,7 +190,7 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 - **Aliases.** A client may send an argument under any of its `aliases`. `serve()` reads the argument from the first spelling that has a value, the name and then each alias in order, checks only that value, and drops the other spellings unchecked. It renames an alias to the argument's name, so a handler reads only the name. An empty string is not a value when another spelling has one. The docs list the aliases beside the name.
 - **Ignored values.** An argument marked `drop_invalid` has a value that fails its schema removed, as if the client had not sent it, instead of answered with `kArgInvalid`.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
-- **Reading arguments.** Each argument is a `RouteArg` constant beside its handler, and `spec()` lists it. Route code names an argument only through its constant: `req.has()`, `req.arg()` and `req.value()` read it, `req.file()` reads an uploaded file, and `req.body[kStream.name]` changes a value the route forwards. A `Query` or `Path` value is converted to its schema's type. A shared helper receives the values of the arguments it needs, not the request. A helper that uses the whole body, such as one that forwards it to a backend or saves it as a model definition, receives the body. An argument that several routes take alike is one constant they all list, such as `ModelLoader::kCtxSize`, which `ModelRoute` reads. A route that builds another route's request, as the gateways do, names that route's arguments through its constants.
+- **Reading arguments.** Each argument is a `RouteArg` constant beside its handler, and `spec()` lists it. Route code names an argument only through its constant: `req.has()`, `req.arg()` and `req.value()` read it, `req.file()` reads an uploaded file, and `req.body[kStream.name]` changes a value the route forwards. A `Query` or `Path` value is converted to its schema's type. A shared helper receives the values of the arguments it needs, not the request. A helper that uses the whole body, such as one that forwards it to a backend or saves it as a model definition, receives the body. An argument that several routes take alike is one constant in `shared_args.h` that they all list, such as `generation::kTemperature`. Routes take an argument alike when everything about it matches except how its description is worded. A route that builds another route's request, as the gateways do, names that route's arguments through its constants.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
 
 | `ErrorFormat` | Body |
@@ -366,8 +366,6 @@ const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Supp
                       "Model to run; loaded on first use."};
 const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
                          "Conversation in OpenAI format."};
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Stream tokens as server-sent events."};
 const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
                          "Return the log probability of each output token.", {}, true};
 
@@ -383,7 +381,7 @@ public:
         s.prefixes = Prefixes::Quad;
         s.summary = "Chat Completions";
         s.description = "Generates the next assistant message for a conversation.";
-        s.args = {kModel, kMessages, kStream, kLogprobs};
+        s.args = {kModel, kMessages, generation::kStream, kLogprobs};
 
         s.responses = {
             {ResponseFormat::Json, chat_completion_schema()},
@@ -428,7 +426,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (req.value(kStream, false)) {
+        if (req.value(generation::kStream, false)) {
             stream_response(req, res, [this](const std::string& body, httplib::DataSink& sink) {
                 ctx_.router->chat_completion_stream(body, sink);
             });
@@ -492,7 +490,7 @@ src/cpp/server/
 
 Registration follows these rules:
 
-- **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header. The arguments of the OpenAI routes, whose requests the gateways build, are declared in `openai_args.h` there and defined in `routes/openai/`.
+- **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header. The arguments of the OpenAI routes, whose requests the gateways build, are declared in `openai_args.h` there and defined in `routes/openai/`. Arguments that several routes take alike are declared in `shared_args.h` there and defined in `routes/shared_args.cpp`.
 - **One list per folder.** Each folder's `routes.cpp` declares its factories and adds them to the `RouteRegistry` in registration order. `Server` calls each folder's registration function. CMake collects `routes/` sources with `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`, as it does for `docs/api`, so adding a route edits no CMake file.
 - **Order.** httplib uses the first registered route that matches, so routes register in the order each folder's `routes.cpp` lists them, and a folder lists a specific path before a pattern that also matches it, such as `models/{id}/files` before `models/{id}`. `WebUi` registers its catch-all route after every API route.
 - **Pages.** The [Router API](../../api/router.md) page documents the routing concepts and `/routing/validate`. The [Internal API](../../api/internal.md) page documents all 14 internal routes.
