@@ -18,8 +18,8 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
-    // Response headers, names lowercased. Populated by post(); other verbs
-    // leave this empty.
+    // Response headers, names lowercased. Populated by get() and post();
+    // streaming verbs leave this empty.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
