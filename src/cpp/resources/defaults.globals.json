@@ -1,0 +1,53 @@
+{
+  "_comment": "Hand-maintained global config defaults. Add new global keys here; resources/defaults.json is generated from this file plus each backend descriptor's config_defaults().",
+  "auto_check_model_updates": true,
+  "auto_update_models": false,
+  "broadcast": true,
+  "cloud_providers": [],
+  "config_version": 2,
+  "ctx_size": -1,
+  "default_model_source": "huggingface",
+  "disable_model_filtering": false,
+  "download_rate_limit": "",
+  "enable_dgpu_gtt": false,
+  "extra_models_dir": "",
+  "global_timeout": 600,
+  "host": "localhost",
+  "inhibit_suspend": true,
+  "log_level": "info",
+  "max_loaded_models": 1,
+  "models_dir": "auto",
+  "no_fetch_executables": false,
+  "offline": false,
+  "port": 13305,
+  "rocm_channel": "stable",
+  "rocm_install_method": "auto",
+  "telemetry": {
+    "enabled": false,
+    "hide_inputs": false,
+    "hide_outputs": false,
+    "hide_thinking": false,
+    "max_queue_capacity": 1000,
+    "otlp": {
+      "batch_timeout_s": 1.0,
+      "endpoint": "http://localhost:4318/v1/traces",
+      "headers": {},
+      "max_retries": 0,
+      "protocol": "http/protobuf",
+      "retry_backoff_base_s": 5.0,
+      "semantics": [
+        "openinference",
+        "otel_genai"
+      ],
+      "send_batch_size": 100
+    },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
+    },
+    "trust_incoming_trace_context": false
+  },
+  "websocket_port": "auto"
+}
