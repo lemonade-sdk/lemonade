@@ -12,7 +12,6 @@ on:
     paths:
       - '.github/workflows/validate_containers.yml'
   schedule:
-    # Every Sunday at 18:00 UTC
     - cron: "0 18 * * 0"
 
 permissions:
