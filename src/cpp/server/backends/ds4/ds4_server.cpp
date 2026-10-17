@@ -23,9 +23,10 @@ namespace {
 // ds4-server sizes its expert cache from the whole device arena, which on an
 // APU is the GTT window. That leaves a long prompt's prefill too little: its
 // next expert span pushes free memory under ds4's own 16 GiB reserve, the arena
-// refuses it and the request fails with "rocm prefill failed". Half the arena
-// leaves the prefill its room.
-constexpr double kExpertCacheFraction = 0.5;
+// refuses it and the request fails with "rocm prefill failed". At half the
+// arena, the model's own tensor cache still pushed free memory to 11 GiB on a
+// 62 GiB Strix Halo. 40% leaves about 7 GB more.
+constexpr double kExpertCacheFraction = 0.4;
 
 // The larger of the integrated GPU's carve-out and its GTT window, in GiB, or
 // 0 when there is no integrated AMD GPU.
