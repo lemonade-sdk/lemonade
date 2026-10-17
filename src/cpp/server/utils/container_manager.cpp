@@ -108,7 +108,8 @@ std::string read_file(const std::string& path) {
     return buffer.str();
 }
 
-CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seconds) {
+CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seconds,
+                          bool capture_stderr) {
     CommandResult result;
     const std::vector<std::string> args(argv.begin() + 1, argv.end());
     result.exit_code = ProcessManager::run_process_with_output(
@@ -118,7 +119,7 @@ CommandResult run_on_host(const std::vector<std::string>& argv, int timeout_seco
             result.output += "\n";
             return true;
         },
-        "", timeout_seconds, /*capture_stderr=*/true);
+        "", timeout_seconds, capture_stderr);
     return result;
 }
 
@@ -170,7 +171,7 @@ std::optional<bool> ContainerManager::podman_info_rootless() const {
     if (podman_rootless_) return podman_rootless_;
     const CommandResult info =
         host_.run({"podman", "info", "--format", "{{.Host.Security.Rootless}}"},
-                  kCommandTimeoutSeconds);
+                  kCommandTimeoutSeconds, /*capture_stderr=*/false);
     if (info.exit_code != 0) return std::nullopt;
     podman_rootless_ = trim(info.output) == "true";
     return podman_rootless_;
@@ -289,14 +290,14 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
 }
 
 CommandResult ContainerManager::invoke(const std::vector<std::string>& args,
-                                       int timeout_seconds) const {
+                                       int timeout_seconds, bool capture_stderr) const {
     const std::optional<ContainerTool> chosen = tool();
     if (!chosen) {
         throw std::runtime_error("Neither podman nor docker is on PATH");
     }
     std::vector<std::string> argv = {tool_name(*chosen)};
     argv.insert(argv.end(), args.begin(), args.end());
-    return host_.run(argv, timeout_seconds);
+    return host_.run(argv, timeout_seconds, capture_stderr);
 }
 
 bool ContainerManager::has_image(const std::string& image) const {
@@ -434,7 +435,7 @@ std::string ContainerManager::address(const std::string& name) const {
     if (!tool()) return "";
     const CommandResult result = invoke(
         {"inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name},
-        kCommandTimeoutSeconds);
+        kCommandTimeoutSeconds, /*capture_stderr=*/false);
     return result.exit_code == 0 ? trim(result.output) : "";
 }
 
@@ -442,7 +443,8 @@ void ContainerManager::sweep() const {
     if (!tool()) return;
     const std::string filter = std::string("label=") + kLabel;
     const CommandResult containers = invoke(
-        {"ps", "--all", "--filter", filter, "--format", "{{.Names}}"}, kCommandTimeoutSeconds);
+        {"ps", "--all", "--filter", filter, "--format", "{{.Names}}"}, kCommandTimeoutSeconds,
+        /*capture_stderr=*/false);
     if (containers.exit_code == 0) {
         for (const auto& name : lines_of(containers.output)) {
             LOG(INFO, "Container") << "Removing leftover container " << name << std::endl;
@@ -450,7 +452,8 @@ void ContainerManager::sweep() const {
         }
     }
     const CommandResult networks = invoke(
-        {"network", "ls", "--filter", filter, "--format", "{{.Name}}"}, kCommandTimeoutSeconds);
+        {"network", "ls", "--filter", filter, "--format", "{{.Name}}"}, kCommandTimeoutSeconds,
+        /*capture_stderr=*/false);
     if (networks.exit_code == 0) {
         for (const auto& name : lines_of(networks.output)) {
             remove_network(name);
