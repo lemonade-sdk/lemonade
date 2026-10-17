@@ -12,10 +12,10 @@ pub mod webview_shim;
 use tauri::{Emitter, Manager, WindowEvent};
 
 #[cfg(target_os = "windows")]
-const ELECTRON_WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../../assets/favicon.ico");
+const WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../icons/icon.ico");
 
 fn parse_protocol_url(raw: &str) -> Option<serde_json::Value> {
-    // lemonade://open?view=logs&model=foo
+    // lemonade://open?view=dashboard/logs&model=foo
     // The url crate treats unknown schemes as opaque, so swap to http:// for
     // parsing and rely on query_pairs() instead of hand-splitting on '?'/'&'.
     let normalized = raw.strip_prefix("lemonade://")?;
@@ -135,7 +135,7 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 {
                     let icon =
-                        tauri::image::Image::from_bytes(ELECTRON_WINDOWS_ICON_BYTES)?;
+                        tauri::image::Image::from_bytes(WINDOWS_ICON_BYTES)?;
                     window.set_icon(icon)?;
                 }
 
@@ -188,8 +188,8 @@ mod tests {
 
     #[test]
     fn parse_protocol_url_extracts_view_and_model() {
-        let nav = parse_protocol_url("lemonade://open?view=logs&model=foo").unwrap();
-        assert_eq!(nav.get("view").unwrap(), "logs");
+        let nav = parse_protocol_url("lemonade://open?view=dashboard/logs&model=foo").unwrap();
+        assert_eq!(nav.get("view").unwrap(), "dashboard/logs");
         assert_eq!(nav.get("model").unwrap(), "foo");
     }
 
