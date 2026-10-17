@@ -14,6 +14,8 @@ Release candidates are published for Ubuntu, Windows, Docker, macOS, Fedora, and
 
 Any PR intended for the next release should be merged before the cutoff time. A commit merged after the cutoff belongs to the following release cycle. Maintainers may postpone merging a PR to protect release quality.
 
+The weekly branch schedule is independent of stable publication. Even when a candidate is not promoted, automation creates the next release branch from `main` at the normal cutoff. The branch schedule and version sequence continue unchanged when the preceding release is skipped.
+
 ## Versioning
 
 Lemonade versions have the deterministic format `year.week.number`:
@@ -78,7 +80,18 @@ Stable publication is always a human decision. Before tagging a candidate:
 - Review the candidate feedback and all open issues carrying the `candidate` label.
 - Review and edit `notes.md` as described below.
 
-If blocking issues remain at 19:00 UTC on Friday, skip that week's stable release by leaving the release branch untagged. Hold a postmortem to decide whether the review, testing, or release policy needs adjustment. Candidate artifacts keep their existing versions; version numbers are never reused.
+If blocking issues remain at 19:00 UTC on Wednesday, skip that week's stable release by leaving the release branch untagged. This does not change the weekly branching schedule: automation creates the next release branch from `main` at the normal cutoff even if the preceding branch is irredeemable.
+
+Fix the blocking problem on `main` first. If the next release branch was created before the fix landed, either cherry-pick the reviewed fix into that branch and test a new candidate, or skip that release as well. Repeat this process until a candidate meets the quality bar; never release a known-bad candidate merely to preserve the weekly cadence.
+
+For example, if testing finds that `v2026.40.x` cannot be released:
+
+1. Leave `release-v2026.40` untagged and skip its stable release.
+2. At the regularly scheduled cutoff, automation creates `release-v2026.41` from `main`.
+3. Land the fix on `main`, then cherry-pick it into `release-v2026.41` if that branch needs it.
+4. Promote a fully tested `v2026.41.x` candidate, or skip it too and continue with the next scheduled branch.
+
+Hold a postmortem to decide whether the review, testing, or release policy needs adjustment. Candidate artifacts keep their existing versions; version numbers are never reused.
 
 ### 4. Review the Release Notes
 
