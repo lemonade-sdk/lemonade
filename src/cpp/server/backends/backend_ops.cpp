@@ -137,7 +137,7 @@ std::optional<utils::SetupFailure> container_setup_failure(const std::string& re
                                                            const std::string& backend) {
     const auto* cfg = RuntimeConfig::global();
     if (!cfg || !cfg->enable_containers()) {
-        return utils::SetupFailure{"Container backends are disabled",
+        return utils::SetupFailure{"enable_containers is false",
                                    "lemonade config set enable_containers=true"};
     }
     const auto& manager = utils::ContainerManager::global();

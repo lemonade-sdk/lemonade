@@ -207,7 +207,7 @@ void test_tool_choice_and_setup() {
     broken.podman_info_exit = 125;
     const auto silent = ContainerManager(broken.host()).check_setup();
     check("Podman must answer podman info",
-          silent && silent->message == "Podman does not answer `podman info`" &&
+          silent && silent->message == "`podman info` fails" &&
               silent->action == "Run `podman info` and fix the error it prints");
 
     FakeHost docker;
