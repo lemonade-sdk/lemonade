@@ -82,6 +82,7 @@ class ModelArtifactStore;
 class ModelCatalog;
 struct CatalogSetDeps;
 struct FilterReasons;
+struct HostFilter;
 struct ResolvedModel;
 struct StoreSnapshot;
 }  // namespace models
@@ -115,7 +116,7 @@ struct ModelInfo {
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
     double size = 0.0;   // Model size in GB
     // Resident working set for a streaming backend; 0 = filter on full `size`.
-    // See streaming_working_set_gb() / filter_models_by_backend.
+    // See streaming_working_set_gb() / filter_for_host.
     double min_resident_gb = 0.0;
     int64_t max_context_window = 0;  // Static model-supported text context, when known
     int64_t max_output_tokens = 0;    // Static model-supported completion/output token limit, when known
@@ -269,12 +270,12 @@ public:
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
 
-// Filter models by available backends. Set track_recipe_availability only on the
-// full-cache build. Callers must hold a StoreWrite: filter reasons change but are
-// not published.
-    std::map<std::string, ModelInfo> filter_models_by_backend(
+    // Which of `models` this host can run, and the reasons for the rest. Writes
+    // nothing: whoever owns the published reasons keeps them, and passes the table
+    // it is replacing as `carried` -- only a full-registry pass replaces it.
+    models::HostFilter filter_for_host(
         const std::map<std::string, ModelInfo>& models,
-        bool track_recipe_availability = false);
+        const std::shared_ptr<const models::FilterReasons>& carried = nullptr) const;
 
     // Register a user model
     void register_user_model(const std::string& model_name,
@@ -542,6 +543,9 @@ private:
     // Serializes writers of the model set. Writers use StoreWrite, which
     // publishes for them; snapshot readers need no lock.
     mutable std::mutex models_cache_mutex_;
+    // One rebuild composes at a time, and it holds this rather than
+    // models_cache_mutex_ while it reads catalogs and disk.
+    std::mutex store_build_mutex_;
     // Serializes an options write end to end: store mutation plus the matching
     // cache patch. The store orders its own state; this keeps the two in step so
     // two concurrent writers cannot leave the cache holding the earlier entry.

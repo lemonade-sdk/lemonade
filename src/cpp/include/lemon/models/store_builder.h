@@ -4,6 +4,7 @@
 #include <lemon/models/backend_availability.h>
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -38,6 +39,13 @@ struct FilterResult {
 struct FilterReasons {
     std::vector<RejectedModel> rejected;
     std::vector<std::string> empty_recipes;
+};
+
+// One hardware-filter pass, ready for whoever runs it to keep: the visible set,
+// and the reasons carrying the recipe availability table forward.
+struct HostFilter {
+    std::map<std::string, ModelInfo> visible;
+    std::shared_ptr<const FilterReasons> reasons;
 };
 
 // Recipes left with nothing visible after memory fit.

@@ -1,0 +1,223 @@
+// A rebuild holds no store lock while it reads catalogs and disk. These tests stop a
+// rebuild inside that work and ask what the rest of the server can do meanwhile, and
+// what becomes of a write that lands in the window.
+
+#include <lemon/model_manager.h>
+#include <lemon/models/catalog.h>
+#include <lemon/utils/path_utils.h>
+#include <nlohmann/json.hpp>
+
+#include "support/test_state_isolation.h"
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdio>
+#include <filesystem>
+#include <future>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace fs = std::filesystem;
+using lemon::ModelInfo;
+using lemon::ModelManager;
+using lemon::ModelManagerConfig;
+using lemon::models::CatalogAccumulator;
+using lemon::models::CatalogDescriptor;
+using lemon::models::EnumeratedCatalog;
+using nlohmann::json;
+
+static int g_failures = 0;
+
+static void check(const std::string& name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
+    if (!ok) ++g_failures;
+}
+
+// A catalog that reports how many times it was read and can be held inside one
+// read, which is where a rebuild spends nearly all of its time.
+class HeldCatalog {
+  public:
+    explicit HeldCatalog(std::string id, std::vector<ModelInfo> rows)
+        : id_(std::move(id)), rows_(std::move(rows)) {}
+
+    std::shared_ptr<EnumeratedCatalog> make() {
+        return std::make_shared<EnumeratedCatalog>(
+            CatalogDescriptor{id_},
+            [this](const CatalogAccumulator&) {
+                ++reads;
+                std::unique_lock<std::mutex> lock(mutex_);
+                if (!armed) return rows_;
+                inside = true;
+                arrived_.notify_all();
+                released_.wait(lock, [this] { return released; });
+                return rows_;
+            });
+    }
+
+    // Every read then stops inside, so a reader that reached this catalog instead
+    // of waiting behind the builder cannot slip past unnoticed.
+    void arm() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        armed = true;
+        inside = false;
+        released = false;
+    }
+
+    void wait_until_inside() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        arrived_.wait(lock, [this] { return inside; });
+    }
+
+    void release() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            armed = false;
+            released = true;
+        }
+        released_.notify_all();
+    }
+
+    std::atomic<int> reads{0};
+
+  private:
+    std::string id_;
+    std::vector<ModelInfo> rows_;
+    std::mutex mutex_;
+    std::condition_variable arrived_;
+    std::condition_variable released_;
+    bool armed = false;
+    bool inside = false;
+    bool released = false;
+};
+
+static ModelInfo row(const std::string& name) {
+    ModelInfo info;
+    info.model_name = name;
+    info.recipe = "llamacpp";
+    info.labels = {"chat"};
+    info.checkpoints["main"] = "org/" + name + ":main.gguf";
+    return info;
+}
+
+static ModelManagerConfig fixture(HeldCatalog& held) {
+    ModelManagerConfig config;
+    const fs::path scratch = lemon::test::make_scratch_dir("store_build");
+    lemon::utils::set_models_dir((scratch / "models").string());
+    config.cache_dir = scratch.string();
+    config.extra_catalogs = {held.make()};
+    return config;
+}
+
+// A writer must not wait for a rebuild that is only reading catalogs and disk.
+static void test_a_writer_answers_during_a_rebuild() {
+    HeldCatalog held("held", {row("Held-Model")});
+    ModelManager manager(fixture(held));
+    held.arm();
+
+    std::thread reader([&manager] { manager.get_supported_models(); });
+    held.wait_until_inside();
+
+    auto writer = std::async(std::launch::async, [&manager] {
+        manager.invalidate_models_cache();
+    });
+    const bool answered =
+        writer.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+
+    held.release();
+    writer.get();
+    reader.join();
+
+    check("a writer answers while a rebuild composes", answered);
+    check("the rebuild still finishes and lists what it read",
+          manager.model_exists("Held-Model"));
+}
+
+// A write that lands mid-composition outranks the candidate that predates it.
+static void test_a_write_during_a_rebuild_survives_it() {
+    HeldCatalog held("raced", {row("Raced-Base")});
+    ModelManager manager(fixture(held));
+
+    check("the store is built before the race", manager.model_exists("Raced-Base"));
+
+    manager.invalidate_models_cache();
+    held.arm();
+    std::thread reader([&manager] { manager.get_supported_models(); });
+    held.wait_until_inside();
+
+    // Bounded wait on a side thread: a build that held the store lock across its
+    // composition fails this instead of hanging it.
+    auto registration = std::async(std::launch::async, [&manager] {
+        manager.register_user_model("user.Raced",
+                                    json{{"model_name", "user.Raced"},
+                                         {"recipe", "llamacpp"},
+                                         {"checkpoint", "org/raced:main.gguf"}});
+    });
+    const bool answered =
+        registration.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+
+    held.release();
+    registration.get();
+    reader.join();
+
+    check("a registration landing during a rebuild is not blocked by it", answered);
+
+    // The candidate was composed before the registration existed, so it yields
+    // and the next read rebuilds with the registration in it.
+    const auto models = manager.get_supported_models();
+    const bool listed = models.count("user.Raced") == 1 || models.count("Raced") == 1;
+    check("a model registered during a rebuild is listed", listed);
+    check("and the rebuild that yielded did not leave the store short",
+          manager.model_exists("Raced-Base"));
+}
+
+// The reasons a model is not offered belong to the set published with them.
+static void test_the_commit_publishes_the_filter_reasons() {
+    ModelInfo absent = row("Absent-Model");
+    absent.recipe = "no-such-backend-xyz";
+    HeldCatalog held("reasons", {row("Present-Model"), absent});
+    ModelManager manager(fixture(held));
+
+    const auto models = manager.get_supported_models();
+    check("a model whose backend is absent is not listed",
+          models.count("Present-Model") == 1 && models.count("Absent-Model") == 0);
+    check("the rebuild published why it is not listed",
+          !manager.get_model_filter_reason("Absent-Model").empty());
+}
+
+// Rebuilds serialize, so concurrent readers pay for one.
+static void test_concurrent_readers_compose_once() {
+    HeldCatalog held("shared", {row("Shared-Model")});
+    ModelManager manager(fixture(held));
+    held.arm();
+
+    std::thread first([&manager] { manager.get_supported_models(); });
+    held.wait_until_inside();
+    std::thread second([&manager] { manager.get_supported_models(); });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    held.release();
+    first.join();
+    second.join();
+
+    check("two readers cold-starting read the catalogs once", held.reads == 1);
+    check("and both see the composed set", manager.model_exists("Shared-Model"));
+}
+
+int main() {
+    test_a_writer_answers_during_a_rebuild();
+    test_a_write_during_a_rebuild_survives_it();
+    test_the_commit_publishes_the_filter_reasons();
+    test_concurrent_readers_compose_once();
+
+    if (g_failures == 0) {
+        std::printf("All store build tests passed.\n");
+    } else {
+        std::printf("%d store build test(s) failed.\n", g_failures);
+    }
+    return g_failures == 0 ? 0 : 1;
+}

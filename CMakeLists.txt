@@ -3312,6 +3312,20 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
     add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
 endif()
 
+set(_STORE_BUILD_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_build.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_BUILD_TEST_SRC}")
+    add_executable(test_store_build
+        test/cpp/test_store_build.cpp
+    )
+    target_link_libraries(test_store_build PRIVATE lemonade-server-core)
+    add_dependencies(test_store_build copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(StoreBuildTest CI ON COMMAND test_store_build)
+endif()
+
 set(_MODEL_ENTRY_IDENTITY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_entry_identity.cpp"
 )
