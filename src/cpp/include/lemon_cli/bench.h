@@ -214,6 +214,8 @@ struct BenchCliOptions {
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;
     int timeout = 300;
+    bool submit = false;
+    std::string submit_file;
 };
 
 // ============================================================
@@ -240,6 +242,8 @@ struct BenchConfig {
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
     int timeout = 300;
+    bool submit = false;
+    std::string submit_file;
 };
 
 // Main entry point for bench command
