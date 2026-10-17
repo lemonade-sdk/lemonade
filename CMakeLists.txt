@@ -3112,6 +3112,20 @@ if(BUILD_TESTING AND EXISTS "${_UPDATE_SCAN_TEST_SRC}")
     add_cpp_ci_test(UpdateScanTest CI ON COMMAND test_update_scan)
 endif()
 
+# The update_available flag: what a scan publishes to the row a client reads.
+set(_UPDATE_AVAILABLE_FLAG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_update_available.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_UPDATE_AVAILABLE_FLAG_TEST_SRC}")
+    add_executable(test_update_available
+        test/cpp/test_update_available.cpp
+    )
+    target_link_libraries(test_update_available PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(UpdateAvailableFlagTest CI ON COMMAND test_update_available)
+endif()
+
 set(_DOWNLOAD_PLAN_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_plan.cpp"
 )
