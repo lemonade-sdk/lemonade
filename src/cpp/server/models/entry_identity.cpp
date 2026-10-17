@@ -29,18 +29,11 @@ int entry_precedence_rank(const EntryIdentity& identity) {
     return 99;
 }
 
-// The two tables every API surface reads. `public_model_aliases` turns a name from
-// a request into a cache key: the precedence-winner (Registered > Imported >
-// Builtin) for a bare name, builtin.<X> for the bare key X, and
-// ModelInfo::input_aliases entries; user.<X> and extra.<X> resolve through the
-// cache lookup fallback and need no entry. `canonical_public_names` turns a cache
-// key into the ID the API emits: the bare name for a winner, except a non-built-in
-// collection, which emits its canonical-prefixed ID so the listed ID matches the
-// one used to register, fetch and chat it; shadowed keys emit that too.
-//
-// Pure over an arbitrary model set, so build_cache() also runs it on the pre-filter
-// set (#2748): a component's alias resolves the same way whether or not its model
-// survives hardware filtering.
+// `user.` and `extra.` keys earn no alias because the cache lookup resolves them, and a
+// non-built-in collection is listed under its prefixed ID: the ID its register, fetch
+// and chat calls use. Pure over an arbitrary model set, so build_cache() also runs it on
+// the pre-filter set (#2748) — a component's alias resolves the same way whether or not
+// its model survives hardware filtering.
 ModelAliasMaps compute_model_alias_maps(const std::map<std::string, ModelInfo>& models) {
     ModelAliasMaps result;
 
