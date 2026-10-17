@@ -9,6 +9,7 @@
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/definition_labels.h>
 #include <lemon/models/entry_identity.h>
+#include <lemon/models/host_availability.h>
 #include <lemon/models/ingest.h>
 #include <lemon/models/catalog_set.h>
 #include <lemon/models/json_catalog.h>
@@ -26,7 +27,6 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/safe_fs.h>
-#include <lemon/system_info.h>
 #include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/backend_utils.h>
@@ -795,106 +795,6 @@ void ModelManager::download_from_huggingface_engine(
     ingest_->fetch_registry_artifacts(info, progress_callback);
 }
 
-// The two tables every API surface reads. `public_model_aliases` turns a name from
-// a request into a cache key: the precedence-winner (Registered > Imported >
-// Builtin) for a bare name, builtin.<X> for the bare key X, and
-// ModelInfo::input_aliases entries; user.<X> and extra.<X> resolve through the
-// cache lookup fallback and need no entry. `canonical_public_names` turns a cache
-// key into the ID the API emits: the bare name for a winner, except a non-built-in
-// collection, which emits its canonical-prefixed ID so the listed ID matches the
-// one used to register, fetch and chat it; shadowed keys emit that too.
-//
-// Pure over an arbitrary model set, so build_cache() also runs it on the pre-filter
-// set (#2748): a component's alias resolves the same way whether or not its model
-// survives hardware filtering.
-struct ModelAliasMaps {
-    std::map<std::string, std::string> public_model_aliases;
-    std::map<std::string, std::string> canonical_public_names;
-};
-
-static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, ModelInfo>& models) {
-    ModelAliasMaps result;
-
-    struct Entry {
-        std::string cache_key;
-        models::EntryIdentity identity;
-    };
-    std::map<std::string, std::vector<Entry>> by_bare;
-
-    for (const auto& [cache_key, info] : models) {
-        models::EntryIdentity identity = models::entry_identity(cache_key, info);
-        by_bare[identity.bare].push_back({cache_key, std::move(identity)});
-    }
-
-    for (auto& [bare, entries] : by_bare) {
-        std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-            return models::entry_precedence_rank(a.identity) <
-                   models::entry_precedence_rank(b.identity);
-        });
-
-        const Entry& winner = entries.front();
-        result.public_model_aliases[bare] = winner.cache_key;
-
-        const auto winner_it = models.find(winner.cache_key);
-        const bool winner_is_prefixed_collection =
-            winner.identity.source != ModelSource::Builtin &&
-            winner_it != models.end() &&
-            is_model_collection_recipe(winner_it->second.recipe);
-        result.canonical_public_names[winner.cache_key] =
-            winner_is_prefixed_collection ? canonical_id(winner.identity.source, bare) : bare;
-
-        for (size_t i = 1; i < entries.size(); ++i) {
-            const Entry& shadowed = entries[i];
-            std::string canonical = canonical_id(shadowed.identity.source, bare);
-            result.canonical_public_names[shadowed.cache_key] = canonical;
-            if (canonical != shadowed.cache_key) {
-                result.public_model_aliases[canonical] = shadowed.cache_key;
-            }
-        }
-    }
-
-    for (const auto& [cache_key, info] : models) {
-        if (parse_canonical_id(cache_key)) continue;
-        if (models::entry_identity(cache_key, info).qualifies_itself) continue;
-        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
-        result.public_model_aliases.try_emplace(canonical, cache_key);
-    }
-
-    // Only an unqualified built-in can be pushed aside by an input alias; a
-    // provider-qualified id already carries where it came from.
-    auto demotable_builtin = [&models](const std::string& cache_key) {
-        auto it = models.find(cache_key);
-        if (it == models.end()) return false;
-        const models::EntryIdentity identity = models::entry_identity(cache_key, it->second);
-        return identity.source == ModelSource::Builtin && !identity.qualifies_itself;
-    };
-
-    for (const auto& [cache_key, info] : models) {
-        for (const auto& alias : info.input_aliases) {
-            if (parse_canonical_id(alias)) {
-                if (models.find(alias) == models.end()) {
-                    result.public_model_aliases[alias] = cache_key;
-                }
-            } else {
-                auto existing = result.public_model_aliases.find(alias);
-                if (existing == result.public_model_aliases.end()) {
-                    result.public_model_aliases[alias] = cache_key;
-                    continue;
-                }
-
-                if (demotable_builtin(existing->second)) {
-                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
-                    result.canonical_public_names[existing->second] = builtin_canonical;
-                    result.public_model_aliases[builtin_canonical] = existing->second;
-                    result.public_model_aliases[alias] = cache_key;
-                }
-            }
-        }
-    }
-
-    return result;
-}
-
 std::vector<ModelInfo> ModelManager::scan_extra_models(
     const models::CatalogAccumulator& claimed) {
     std::set<fs::path> registered_extra_paths;
@@ -1098,7 +998,7 @@ void ModelManager::build_cache() {
         for (const auto& [name, info] : all_models) {
             pre_filter_types[name] = info.type;
         }
-        pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
+        pre_filter_aliases = models::compute_model_alias_maps(all_models).public_model_aliases;
     }
 
     // Step 2: Filter by backend availability. This is the full-registry pass, so
@@ -1365,224 +1265,11 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     return downloaded;
 }
 
-// Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double
-// Returns 0.0 if parsing fails
-static double parse_physical_memory_gb(const std::string& memory_str) {
-    if (memory_str.empty()) {
-        return 0.0;
-    }
-
-    // Expected format: "XX.XX GB" or "XX GB"
-    std::istringstream iss(memory_str);
-    double value = 0.0;
-    std::string unit;
-
-    if (iss >> value >> unit) {
-        // Convert to lowercase for comparison
-        std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
-        if (unit == "gb") {
-            return value;
-        } else if (unit == "mb") {
-            return value / 1024.0;
-        } else if (unit == "tb") {
-            return value * 1024.0;
-        }
-    }
-
-    return 0.0;
-}
-
-double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
-    // Get the maximum POSSIBLE accessible memory of the device in question,
-    // taking into account the respective memory allocation behavior.
-
-    double virtual_mem_gb = 0.0;
-    double vram_gb = 0.0;
-
-    if (device.contains("vram_gb")) {
-        vram_gb = device["vram_gb"].get<double>();
-    }
-    if (device.contains("virtual_mem_gb"))
-    {
-        virtual_mem_gb = device["virtual_mem_gb"].get<double>();
-    }
-
-    switch (mem_alloc_behavior)
-    {
-    case MemoryAllocBehavior::Hardware:
-        return vram_gb;
-
-    case MemoryAllocBehavior::Virtual:
-        return virtual_mem_gb;
-
-    case MemoryAllocBehavior::Largest:
-        return vram_gb > virtual_mem_gb ? vram_gb : virtual_mem_gb;
-
-    case MemoryAllocBehavior::Unified:
-        return virtual_mem_gb + vram_gb;
-
-    default:
-        return vram_gb;
-    }
-}
-
-bool parse_TF_env_var(const char* env_var_name) {
-    const char* env = std::getenv(env_var_name);
-    return env && (std::string(env) == "1" ||
-                   std::string(env) == "true" ||
-                   std::string(env) == "TRUE" ||
-                   std::string(env) == "yes");
-}
-
-// Resolves everything the hardware filter needs from configuration and system
-// info. Keeping the reads here is what lets filter_hardware() stay a pure
-// function of its inputs instead of reaching into backend and system headers.
-static models::BackendAvailability probe_backend_availability(
-    const std::map<std::string, ModelInfo>& models) {
-    using namespace models;
-    BackendAvailability availability;
-
-    if (auto* cfg = lemon::RuntimeConfig::global()) {
-        availability.filtering_disabled = cfg->disable_model_filtering();
-        availability.assume_dgpu_gtt = cfg->enable_dgpu_gtt();
-    }
-
-    if (availability.filtering_disabled) {
-        return availability;
-    }
-
-    if (availability.assume_dgpu_gtt) {
-        LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
-                                  << "     Models are being filtered assuming GTT memory."
-                                  << std::endl
-                                  << "     Using GTT on a dGPU will have a significant "
-                                     "performance impact."
-                                  << std::endl;
-    }
-
-    json system_info = SystemInfoCache::get_system_info_with_cache();
-    json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
-
-    bool npu_available = hardware.contains("amd_npu") && hardware["amd_npu"].is_object() &&
-                         hardware["amd_npu"].value("available", false);
-
-    double largest_mem_pool_gb = 0.0;
-    double curr_mem_pool_gb = 0.0;
-
-    for (const auto& [dev_type, devices] : hardware.items()) {
-        // Because we have mixed types this just makes every device_type an array.
-        nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
-
-        for (const auto& dev : dev_list) {
-            if (!dev.is_object())
-                continue;
-
-            // Behavior is chosen per device, not per device-type: AMD APUs are
-            // reported under "amd_gpu" with "integrated": true and their GTT
-            // pool in virtual_mem_gb -- an "amd_igpu" container key is never
-            // emitted, so default to integrated when the flag is absent.
-            MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
-            if (dev_type == "amd_gpu" && dev.value("integrated", true))
-                dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
-            if (availability.assume_dgpu_gtt)
-                dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
-            curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
-            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb
-                                                                         : largest_mem_pool_gb;
-        }
-    }
-    availability.largest_mem_pool_gb = largest_mem_pool_gb;
-
-    double system_ram_gb = 0.0;
-    if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
-        system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
-    }
-    availability.system_ram_gb = system_ram_gb;
-
-    if (system_info.contains("Processor") && system_info["Processor"].is_string()) {
-        availability.processor = system_info["Processor"].get<std::string>();
-    }
-    if (system_info.contains("OS Version") && system_info["OS Version"].is_string()) {
-        availability.os_version = system_info["OS Version"].get<std::string>();
-    }
-
-    static bool debug_printed = false;
-    if (!debug_printed) {
-        double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8)
-                                       ? largest_mem_pool_gb
-                                       : (system_ram_gb * 0.8);
-        LOG(INFO, "ModelManager") << "Backend availability:" << std::endl;
-        LOG(INFO, "ModelManager") << "  - NPU hardware: " << (npu_available ? "Yes" : "No")
-                                  << std::endl;
-        if (system_ram_gb > 0.0) {
-            LOG(INFO, "ModelManager") << "  - System RAM: " << std::fixed << std::setprecision(1)
-                                      << system_ram_gb << " GB (max model size: "
-                                      << max_model_size_gb << " GB)" << std::endl;
-        }
-        if (largest_mem_pool_gb > 0.0) {
-            LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed
-                                      << std::setprecision(1) << largest_mem_pool_gb << std::endl;
-        }
-        if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu")) {
-            const auto& nvidia_gpus = system_info["devices"]["nvidia_gpu"];
-            if (nvidia_gpus.is_array()) {
-                for (const auto& gpu : nvidia_gpus) {
-                    if (gpu.value("available", false)) {
-                        std::string gpu_name = gpu.value("name", "unknown");
-                        std::string family = gpu.value("family", "");
-                        std::string cc = gpu.value("compute_capability", "");
-                        std::string suffix;
-                        if (!cc.empty())
-                            suffix = " (compute " + cc + ", " +
-                                     (family.empty() ? "unsupported arch" : family) + ")";
-                        else if (!family.empty())
-                            suffix = " (" + family + ")";
-                        else
-                            suffix = " (arch unknown -- nvidia-smi may have failed)";
-                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: " << gpu_name << suffix
-                                                  << std::endl;
-                    } else if (gpu.contains("error")) {
-                        LOG(INFO, "ModelManager")
-                            << "  - NVIDIA GPU: detection error: "
-                            << gpu["error"].get<std::string>() << std::endl;
-                    }
-                }
-                if (system_info["devices"].contains("nvidia_gpu_error")) {
-                    LOG(INFO, "ModelManager")
-                        << "  - NVIDIA GPU: detection error: "
-                        << system_info["devices"]["nvidia_gpu_error"].get<std::string>()
-                        << std::endl;
-                }
-            }
-        }
-        debug_printed = true;
-    }
-
-    for (const auto& [name, info] : models) {
-        const std::string& recipe = info.recipe;
-        if (availability.recipes.count(recipe)) {
-            continue;
-        }
-
-        RecipeAvailability recipe_availability;
-        recipe_availability.unsupported_reason = SystemInfo::check_recipe_supported(recipe);
-        if (recipe_availability.unsupported_reason.empty()) {
-            recipe_availability.guest_backend_missing_reason =
-                SystemInfo::check_guest_backend_installed(recipe, system_info);
-        }
-        if (const auto* desc = backends::descriptor_for(recipe)) {
-            recipe_availability.streams_model_from_storage = desc->streams_model_from_storage;
-        }
-        availability.recipes.emplace(recipe, std::move(recipe_availability));
-    }
-
-    return availability;
-}
-
 models::HostFilter ModelManager::filter_for_host(
     const std::map<std::string, ModelInfo>& models) const {
     models::BackendAvailability availability =
-        config_.availability ? config_.availability(models) : probe_backend_availability(models);
+        config_.availability ? config_.availability(models)
+                             : models::probe_backend_availability(models);
     // Over a declared machine too: turning filtering off is the operator's call, not
     // the probe's. The GTT hint stays probe-only, since it describes real pools.
     if (auto* cfg = RuntimeConfig::global()) {
@@ -2123,123 +1810,11 @@ std::optional<std::string> ModelManager::validate_collection_request(
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
     const models::RegistryDocuments::Pin registries = registries_.pin();
-    auto exists_in_registries = [&](const std::string& name) -> bool {
-        // Built-ins are keyed bare.
-        if (registries.contains(models::RegistryDocument::Builtin, name)) {
-            return true;
-        }
-        if (auto canon = parse_canonical_id(name)) {
-            switch (canon->source) {
-                case ModelSource::Registered:
-                    return registries.contains(models::RegistryDocument::User,
-                                               canon->bare_name);
-                case ModelSource::Builtin:
-                    return registries.contains(models::RegistryDocument::Builtin,
-                                               canon->bare_name);
-                case ModelSource::Imported:
-                    // extra.* models are filesystem-discovered; not in either JSON registry.
-                    return false;
-            }
-        }
-        return false;
-    };
-
-    if (exists_in_registries(model_name)) {
+    if (models::find_registry_row(registries, model_name)) {
         return true;
     }
-
-    std::string canonical_name = resolve_model_name(model_name);
-    if (exists_in_registries(canonical_name)) {
-        return true;
-    }
-
-    return false;
-}
-
-ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
-    ModelInfo info;
-    std::string registry_name = model_name;
-    bool is_user_lookup = false;
-
-    const models::RegistryDocuments::Pin registries = registries_.pin();
-    auto try_resolve = [&](const std::string& name) -> bool {
-        if (registries.contains(models::RegistryDocument::Builtin, name)) {
-            registry_name = name;
-            is_user_lookup = false;
-            return true;
-        }
-        if (auto canon = parse_canonical_id(name)) {
-            if (canon->source == ModelSource::Builtin &&
-                registries.contains(models::RegistryDocument::Builtin, canon->bare_name)) {
-                registry_name = canon->bare_name;
-                is_user_lookup = false;
-                return true;
-            }
-            if (canon->source == ModelSource::Registered &&
-                registries.contains(models::RegistryDocument::User, canon->bare_name)) {
-                registry_name = canon->bare_name;
-                is_user_lookup = true;
-                return true;
-            }
-        }
-        return false;
-    };
-
-    bool resolved = try_resolve(model_name);
-    if (!resolved) {
-        std::string canonical_name = resolve_model_name(model_name);
-        if (canonical_name != model_name) {
-            resolved = try_resolve(canonical_name);
-        }
-    }
-
-    const json* model_json =
-        registries.row(is_user_lookup ? models::RegistryDocument::User
-                                      : models::RegistryDocument::Builtin,
-                       registry_name);
-
-    if (!model_json) {
-        throw std::runtime_error("Model not found in registry: " + model_name);
-    }
-
-    info.model_name = is_user_lookup
-        ? canonical_id(ModelSource::Registered, registry_name)
-        : registry_name;
-    models::parse_checkpoints(info, *model_json);
-    models::parse_components(info, *model_json);
-    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
-    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
-    models::parse_model_source_fields(info, *model_json);
-    info.system_prompt = JsonUtils::get_or_default<std::string>(*model_json, "system_prompt", "");
-
-    // Parse labels array
-    if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
-        for (const auto& label : (*model_json)["labels"]) {
-            if (label.is_string()) {
-                info.labels.push_back(label.get<std::string>());
-            }
-        }
-    }
-    // This path reads the registry json directly rather than the cache the
-    // illegal entries were skipped from, so it refuses them again in its own
-    // "no such model" terms.
-    std::string illegal =
-        lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
-    if (!illegal.empty()) {
-        throw std::runtime_error(describe_illegal_labels(info.model_name, illegal));
-    }
-    lemon::backends::ensure_deployment_label(info.labels, info.recipe);
-
-    // Parse size
-    if (model_json->contains("size")) {
-        if ((*model_json)["size"].is_number()) {
-            info.size = (*model_json)["size"].get<double>();
-        }
-    }
-
-    models::parse_extras(info, *model_json);
-
-    return info;
+    return static_cast<bool>(
+        models::find_registry_row(registries, resolve_model_name(model_name)));
 }
 
 std::string ModelManager::get_model_filter_reason(const std::string& model_name) {
@@ -2273,7 +1848,7 @@ void ModelManager::publish_store_locked(
     std::shared_ptr<const models::FilterReasons> reasons) {
     auto next = std::make_shared<models::StoreSnapshot>();
     next->models = std::move(draft_models_);
-    ModelAliasMaps aliases = compute_model_alias_maps(next->models);
+    models::ModelAliasMaps aliases = models::compute_model_alias_maps(next->models);
     next->public_model_aliases = std::move(aliases.public_model_aliases);
     next->canonical_public_names = std::move(aliases.canonical_public_names);
     next->reasons = std::move(reasons);

@@ -357,10 +357,6 @@ public:
     // Returns true even for NPU models on systems without NPU
     bool model_exists_unfiltered(const std::string& model_name);
 
-    // Get model info from raw registry (without filtering)
-    // Useful for generating helpful error messages about unsupported models
-    ModelInfo get_model_info_unfiltered(const std::string& model_name);
-
     // Get the reason why a model was filtered out (empty string if not filtered)
     // Returns a user-friendly message explaining why the model is not available
     std::string get_model_filter_reason(const std::string& model_name);

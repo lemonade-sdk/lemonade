@@ -1048,6 +1048,7 @@ set(SOURCES_CORE
     src/cpp/server/models/definition_labels.cpp
     src/cpp/server/models/entry_identity.cpp
     src/cpp/server/models/fetchable_repository.cpp
+    src/cpp/server/models/host_availability.cpp
     src/cpp/server/models/ingest.cpp
     src/cpp/server/models/json_catalog.cpp
     src/cpp/server/models/listed_catalog.cpp
@@ -3392,6 +3393,30 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
+endif()
+
+# Which memory a reported device can offer a model, and what the availability
+# probe answers for the rest of the machine.
+set(_HOST_AVAILABILITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_host_availability.cpp")
+if(BUILD_TESTING AND EXISTS "${_HOST_AVAILABILITY_TEST_SRC}")
+    add_executable(test_host_availability test/cpp/test_host_availability.cpp)
+    target_link_libraries(test_host_availability PRIVATE lemonade-server-core)
+    add_dependencies(test_host_availability copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(HostAvailabilityTest CI ON COMMAND test_host_availability)
+endif()
+
+# The name tables a store build derives from its model set: precedence winners,
+# listed ids, and what a shadowed entry falls back to.
+set(_ALIAS_MAPS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_alias_maps.cpp")
+if(BUILD_TESTING AND EXISTS "${_ALIAS_MAPS_TEST_SRC}")
+    add_executable(test_alias_maps test/cpp/test_alias_maps.cpp)
+    target_link_libraries(test_alias_maps PRIVATE lemonade-server-core)
+    add_dependencies(test_alias_maps copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(AliasMapsTest CI ON COMMAND test_alias_maps)
 endif()
 
 # Streaming memory filter: backends that stream the model from storage are

@@ -105,6 +105,29 @@ void parse_extras(ModelInfo& info, const json& row) {
     }
 }
 
+std::optional<RegistryRowRef> find_registry_row(const RegistryDocuments::Pin& pin,
+                                                const std::string& requested) {
+    // Built-ins are keyed bare.
+    if (pin.contains(RegistryDocument::Builtin, requested)) {
+        return RegistryRowRef{RegistryDocument::Builtin, requested, requested};
+    }
+    const auto canonical = parse_canonical_id(requested);
+    if (!canonical) {
+        return std::nullopt;
+    }
+    if (canonical->source == ModelSource::Builtin &&
+        pin.contains(RegistryDocument::Builtin, canonical->bare_name)) {
+        return RegistryRowRef{RegistryDocument::Builtin, canonical->bare_name,
+                              canonical->bare_name};
+    }
+    if (canonical->source == ModelSource::Registered &&
+        pin.contains(RegistryDocument::User, canonical->bare_name)) {
+        return RegistryRowRef{RegistryDocument::User, canonical->bare_name,
+                              canonical_id(ModelSource::Registered, canonical->bare_name)};
+    }
+    return std::nullopt;
+}
+
 std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& row,
                                             const RegistryRowRules& rules) {
     ModelInfo info;
