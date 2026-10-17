@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -536,8 +537,16 @@ std::string ContainerManager::gpu_index(const std::vector<int>& gfx_target_versi
 }
 
 std::string ContainerManager::kfd_gpu_index(const std::string& arch) {
+    std::vector<int> versions;
+    for (const std::string& properties : kfd_node_properties()) {
+        versions.push_back(
+            static_cast<int>(parse_kfd_properties(properties)["gfx_target_version"]));
+    }
+    return gpu_index(versions, arch);
+}
+
+std::vector<std::string> ContainerManager::kfd_node_properties() {
     std::error_code ec;
-    if (!fs::is_directory(kKfdTopologyNodes, ec)) return "";
     std::vector<std::pair<long, fs::path>> nodes;
     for (const auto& entry : fs::directory_iterator(kKfdTopologyNodes, ec)) {
         try {
@@ -546,19 +555,26 @@ std::string ContainerManager::kfd_gpu_index(const std::string& arch) {
         }
     }
     std::sort(nodes.begin(), nodes.end());
-    std::vector<int> versions;
+    std::vector<std::string> properties;
     for (const auto& [number, path] : nodes) {
         (void)number;
-        std::ifstream properties(path / "properties");
-        std::string key;
-        long value = 0;
-        int version = 0;
-        while (properties >> key >> value) {
-            if (key == "gfx_target_version") version = static_cast<int>(value);
-        }
-        versions.push_back(version);
+        std::ifstream file(path / "properties");
+        properties.emplace_back(std::istreambuf_iterator<char>(file),
+                                std::istreambuf_iterator<char>());
     }
-    return gpu_index(versions, arch);
+    return properties;
+}
+
+std::map<std::string, unsigned long long> ContainerManager::parse_kfd_properties(
+    const std::string& properties) {
+    std::map<std::string, unsigned long long> values;
+    std::istringstream lines(properties);
+    std::string key;
+    unsigned long long value = 0;
+    while (lines >> key >> value) {
+        values[key] = value;
+    }
+    return values;
 }
 
 std::vector<ContainerMount> ContainerManager::model_mounts(const std::string& host_path,
