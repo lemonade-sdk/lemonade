@@ -118,6 +118,11 @@ const RouteArg kSubscribe{"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, f
                           "With `true`, closing the stream cancels the download. Defaults to `true`."};
 } // namespace downloads
 
+namespace model_management {
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "[Lemonade Server model name](https://lemonade-server.ai/models.html).", {"model"}};
+} // namespace model_management
+
 namespace model_options {
 const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
                         "Context size: a positive whole number, or `-1` to size it automatically even when the "

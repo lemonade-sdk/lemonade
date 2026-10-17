@@ -70,6 +70,10 @@ namespace downloads {
 extern const RouteArg kSubscribe;
 } // namespace downloads
 
+namespace model_management {
+extern const RouteArg kModelName;
+} // namespace model_management
+
 namespace model_options {
 extern const RouteArg kCtxSize;
 } // namespace model_options

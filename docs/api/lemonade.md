@@ -1033,7 +1033,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model_name` or `model` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_name` or `model` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A file still held open, for example by a download that was just cancelled, is retried up to 3 times, 5 seconds apart.
 
