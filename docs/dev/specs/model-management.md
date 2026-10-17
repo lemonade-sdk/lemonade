@@ -148,7 +148,9 @@ struct ModelManagerConfig {
     std::string cache_dir;
     std::string config_dir;
     std::string extra_models_dir;
-    std::function<BackendAvailability()> availability;   // installed backends and their pools
+    // Installed backends and their pools; empty means probe this machine. It is asked
+    // per rebuild with the models in play, since the probe asks per recipe.
+    std::function<BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
     CloudProviderRegistry* cloud_providers = nullptr;    // listings for ListedCatalog
     std::vector<std::shared_ptr<ModelCatalog>> extra_catalogs;  // tests and embedders
 };

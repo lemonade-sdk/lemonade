@@ -547,12 +547,12 @@ bool RuntimeConfig::no_fetch_executables() const {
 
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
-    return config_["disable_model_filtering"].get<bool>();
+    return config_.value("disable_model_filtering", false);
 }
 
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
-    return config_["enable_dgpu_gtt"].get<bool>();
+    return config_.value("enable_dgpu_gtt", false);
 }
 
 std::string RuntimeConfig::default_model_source() const {
