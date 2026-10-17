@@ -8,10 +8,11 @@
 #include <stdexcept>
 #include <thread>
 
-#include <lemon/utils/aixlog.hpp>
 #include "lemon/backends/backend_ops.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
+
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 
