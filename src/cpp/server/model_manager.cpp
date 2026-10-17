@@ -34,7 +34,6 @@
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/backends/hf_cache_util.h>
 #include <lemon/cloud_provider_registry.h>
-#include <lemon/gguf_shard_utils.h>
 #include <lemon/registry_files.h>
 #include <filesystem>
 #include <iostream>
@@ -67,12 +66,6 @@ using namespace lemon::models;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
-    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
-    "image_defaults", "audio_defaults", "components", "recipe_options",
-    "routing", "system_prompt", "version", "source", "registry_source",
-    "auto_update"
-};
 
 // Built-ins are keyed bare in the draft model set; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
@@ -168,64 +161,7 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
         info.recipe, image_defaults, json_recipe_options, user_saved);
 }
 
-std::uintmax_t sharded_gguf_size_bytes(const fs::path& shard_path) {
-    std::string base;
-    int total = 0;
-    if (!is_gguf_shard_filename(shard_path.filename().string(), &base, &total)) {
-        return 0;
-    }
 
-    const fs::path dir = shard_path.parent_path();
-    if (!safe_is_directory(dir)) {
-        return 0;
-    }
-
-    uintmax_t sum = 0;
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(dir, safe_dir_options, ec)) {
-        if (!entry.is_regular_file(ec)) {
-            if (ec) ec.clear();
-            continue;
-        }
-        if (!same_shard_family(entry.path().filename().string(), base, total)) {
-            continue;
-        }
-
-        auto size = fs::file_size(entry.path(), ec);
-        if (!ec) {
-            sum += size;
-        } else {
-            ec.clear();
-        }
-    }
-    return sum;
-}
-
-// Replace the static registry size with the aggregate on-disk size once the
-// files exist, so directory-checkpoint models (whose repos can carry more than
-// the registry estimate) report what was actually downloaded. A sharded GGUF
-// resolves to a single shard, which for unsloth-style layouts is a small stub,
-// so the whole family is summed instead.
-static void refresh_on_disk_size(ModelInfo& info) {
-    uintmax_t total_size = 0;
-    for (auto& [type, path] : info.resolved_paths) {
-        (void)type;
-        fs::path resolved = path_from_utf8(path);
-        uintmax_t shard_total = sharded_gguf_size_bytes(resolved);
-        total_size += (shard_total > 0) ? shard_total : models::ModelArtifactStore::size_bytes(resolved);
-    }
-    if (total_size == 0) {
-        return;
-    }
-    double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
-    if (file_size_gb < 1.0) {
-        info.size = std::round(file_size_gb * 1000) / 1000;
-    } else if (file_size_gb < 10.0) {
-        info.size = std::round(file_size_gb * 100) / 100;
-    } else {
-        info.size = std::round(file_size_gb * 10) / 10;
-    }
-}
 
 std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
     return artifacts_->list_files(get_model_info(model_name));
@@ -264,6 +200,9 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
         if (!default_model_source_provider_) return std::optional<RegistryId>{};
         return std::make_optional(parse_remote_registry_source(default_model_source_provider_()));
     };
+    deps.registries = &registries_;
+    deps.store = &store_;
+    deps.models_changed = [this] { notify_models_changed(); };
     deps.model_exists = [this](const std::string& name) { return model_exists(name); };
     deps.model_exists_unfiltered =
         [this](const std::string& name) { return model_exists_unfiltered(name); };
@@ -272,10 +211,6 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.resolve_name = [this](const std::string& name) { return resolve_model_name(name); };
     deps.is_downloaded = [this](const std::string& name) { return is_model_downloaded(name); };
     deps.resolved_paths = [this](const std::string& name) { return resolved_paths_for(name); };
-    deps.register_model = [this](const std::string& name, const json& model_data) {
-        register_user_model(name, model_data);
-    };
-    deps.unregister_model = [this](const std::string& name) { unregister_user_model(name); };
     deps.patch_downloaded = [this](const std::string& name, bool downloaded) {
         update_model_in_cache(name, downloaded);
     };
@@ -321,7 +256,10 @@ ModelManager::ModelManager(ModelManagerConfig config)
           [this] { return extra_models_dir_; },
       })),
       ingest_(std::make_unique<models::ModelIngest>(make_ingest_deps())),
-      sync_(make_sync_deps()) {
+      sync_(make_sync_deps()),
+      cloud_rows_(store_, [this](const std::string& provider) {
+          return backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
+      }) {
     cloud_registry_ = config_.cloud_providers;
     default_model_source_provider_ = std::move(config_.default_model_source);
 
@@ -999,7 +937,7 @@ void ModelManager::build_cache() {
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
         if (info.downloaded && download_policy(info) != backends::DownloadPolicy::SelfManaged) {
-            refresh_on_disk_size(info);
+            models::ModelArtifactStore::refresh_on_disk_size(info);
         }
         composed[name] = std::move(info);
     }
@@ -1124,7 +1062,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         downloaded && backends::ops_for(patched.recipe)->invalidates_cache_after_download();
     if (!backend_lists_models) {
         populate_model_metadata(patched);
-        refresh_on_disk_size(patched);
+        models::ModelArtifactStore::refresh_on_disk_size(patched);
     }
 
     // Collections carrying this model follow it without a full rebuild.
@@ -1206,238 +1144,6 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
         }
     }
     return downloaded;
-}
-
-models::HostFilter ModelManager::filter_for_host(
-    const std::map<std::string, ModelInfo>& models) const {
-    models::BackendAvailability availability =
-        config_.availability ? config_.availability(models)
-                             : models::probe_backend_availability(models);
-    // Over a declared machine too: turning filtering off is the operator's call, not
-    // the probe's. The GTT hint stays probe-only, since it describes real pools.
-    if (auto* cfg = RuntimeConfig::global()) {
-        availability.filtering_disabled = cfg->disable_model_filtering();
-    }
-
-    models::FilterResult result = models::filter_hardware(models, availability);
-
-    auto reasons = std::make_shared<models::FilterReasons>();
-    reasons->rejected = std::move(result.rejected);
-    reasons->empty_recipes = std::move(result.empty_recipes);
-
-    models::HostFilter outcome;
-    outcome.visible = std::move(result.visible);
-    outcome.reasons = std::const_pointer_cast<const models::FilterReasons>(reasons);
-    return outcome;
-}
-
-std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
-    auto snapshot = store_.read();
-    const std::vector<std::string> hidden = snapshot->empty_recipes();
-    return std::set<std::string>(hidden.begin(), hidden.end());
-}
-
-size_t ModelManager::refresh_cloud_models(const std::string& provider) {
-    if (provider.empty() || cloud_registry_ == nullptr) {
-        return 0;
-    }
-
-    // The same listing the catalogs enumerate, and it never throws: no key,
-    // plaintext policy or an upstream failure all mean "nothing listed", which
-    // reseeds to none and reports 0 present. Runs outside the cache lock because
-    // a slow provider can take 15 s.
-    const std::vector<ModelInfo> models =
-        backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
-
-    StoreWrite store_write(*this);
-
-    // Reseed: drop this provider's previously-registered entries before
-    // inserting the fresh list, so a model the provider stopped exposing
-    // disappears. Other providers' entries are untouched.
-    for (auto it = store_write.draft().begin(); it != store_write.draft().end();) {
-        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = store_write.draft().erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    size_t added = 0;
-    for (const auto& m : models) {
-        if (m.recipe != "cloud" || m.model_name.empty()) continue;
-        // Match build_cache()'s precedence exactly: emplace, don't overwrite.
-        // Any pre-existing entry under the same bare cache key wins - whether
-        // it's an FLM model, another cloud provider that discovered first, or
-        // a builtin/extra/user record. This provider's previously-registered
-        // entries are already cleared above, so emplace here is symmetric
-        // with build_cache and immune to a fast /cloud/auth racing past an
-        // already-populated cache.
-        ModelInfo info = m;
-        // discover_models() populates name/checkpoint/labels/context/cost but
-        // not recipe_options; Router needs it to construct CloudServer.
-        info.recipe_options = RecipeOptions("cloud", json::object());
-        auto [it, inserted] = store_write.draft().emplace(info.model_name, std::move(info));
-        if (!inserted) {
-            LOG(INFO, "ModelManager")
-                << "Cloud discovery for '" << provider << "' skipping '"
-                << it->first << "': name already held (recipe="
-                << it->second.recipe << ")" << std::endl;
-            continue;
-        }
-        ++added;
-    }
-
-    LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
-                               << provider << "': " << added << " model(s)"
-                               << std::endl;
-    return added;
-}
-
-size_t ModelManager::evict_cloud_models(const std::string& provider) {
-    if (provider.empty()) return 0;
-    StoreWrite store_write(*this);
-    size_t removed = 0;
-    for (auto it = store_write.draft().begin(); it != store_write.draft().end();) {
-        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = store_write.draft().erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
-    if (removed > 0) {
-        LOG(DEBUG, "ModelManager") << "Evicted " << removed
-                                    << " cloud model(s) for provider '"
-                                    << provider << "'" << std::endl;
-    }
-    return removed;
-}
-
-size_t ModelManager::count_cloud_models(const std::string& provider) const {
-    auto snapshot = store_.read();
-    return std::count_if(snapshot->models.begin(), snapshot->models.end(),
-                         [&](const auto& kv) {
-                             return kv.second.recipe == "cloud" &&
-                                    kv.second.cloud_provider == provider;
-                         });
-}
-
-// Whether the persisted user-model entry under `key` is a router collection.
-// Both register (checking the entry being overwritten) and unregister (checking
-// the entry being removed) must decide whether a routing policy is disappearing,
-// so the recipe lookup lives in one place.
-static bool user_entry_is_router_collection(const json& user_models,
-                                            const std::string& key) {
-    if (!user_models.is_object() || !user_models.contains(key)) {
-        return false;
-    }
-    return is_router_collection_recipe(
-        user_models.at(key).value("recipe", std::string()));
-}
-
-void ModelManager::register_user_model(const std::string& model_name,
-                                      const json& model_data,
-                                      const std::string& source) {
-    const std::string recipe = model_data.value("recipe", std::string());
-
-    // Remove "user." prefix if present
-    std::string clean_name = model_name;
-    if (is_user_model_name(clean_name)) {
-        clean_name = strip_user_model_prefix(clean_name);
-    }
-
-    // Filter only known, user-definable model props
-    json model_entry;
-    for (const std::string& prop : USER_DEFINED_MODEL_PROPS) {
-        if (model_data.contains(prop)) {
-            model_entry[prop] = model_data[prop];
-        }
-    }
-    // Every registration path funnels through here — direct registration, an
-    // imported collection's inline components, re-registration — so this is the
-    // one gate that refuses an illegal set of mode labels. Loading an
-    // already-persisted entry does not come through here; it is checked again on
-    // load, where an entry written by an older version is skipped rather than
-    // blocking startup.
-    std::string illegal;
-    std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
-    if (!illegal.empty()) {
-        throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
-    }
-
-    model_entry["labels"] = labels;
-    model_entry["suggested"] = true; // Always set suggested=true for user models
-
-    if (!source.empty()) {
-        model_entry["source"] = source;
-    }
-
-    // A registry-backed collection persists only its repo pointer, so a refreshed
-    // manifest cannot be shadowed by a stale local list.
-    if (is_model_collection_recipe(recipe)) {
-        std::string pointer = model_entry.value("checkpoint", std::string());
-        if (pointer.empty() && model_entry.contains("checkpoints") &&
-            model_entry["checkpoints"].is_object()) {
-            pointer = model_entry["checkpoints"].value("main", std::string());
-        }
-        if (!pointer.empty()) {
-            model_entry.erase("components");
-        }
-    }
-
-    // update_user re-reads the file, so a concurrent pull's entry survives this
-    // one — a lost registration is a hard "Model not found" on the next
-    // auto-load. The store write keeps save and invalidation one step.
-    bool overwrote_router_collection = false;
-    {
-        StoreWrite store_write(*this);
-        registries_.update_user([&](json& user_models) {
-            overwrote_router_collection =
-                user_entry_is_router_collection(user_models, clean_name);
-            user_models[clean_name] = model_entry;
-            return true;
-        });
-        store_write.invalidate_cache();
-    }
-
-    // A router collection carries a routing policy, so its lifecycle affects the
-    // routing-helper working set. Notify when the new entry is a router
-    // collection, but also when a router collection is being *replaced* by a
-    // non-router recipe — otherwise the old policy silently disappears without a
-    // reconcile. Registering ordinary models (e.g. a collection's helper
-    // components) still must not trigger one.
-    if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
-        notify_models_changed();
-    }
-}
-
-void ModelManager::unregister_user_model(const std::string& model_name) {
-    std::string clean_name = model_name;
-    if (is_user_model_name(clean_name)) {
-        clean_name = strip_user_model_prefix(clean_name);
-    }
-
-    bool was_router_collection = false;
-    {
-        StoreWrite store_write(*this);
-        const bool wrote = registries_.update_user([&](json& user_models) {
-            if (!user_models.contains(clean_name)) {
-                return false;
-            }
-            was_router_collection =
-                user_entry_is_router_collection(user_models, clean_name);
-            user_models.erase(clean_name);
-            return true;
-        });
-        if (!wrote) {
-            return;
-        }
-        store_write.invalidate_cache();
-    }
-
-    if (was_router_collection) {
-        notify_models_changed();
-    }
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
@@ -1649,20 +1355,70 @@ std::map<std::string, std::filesystem::path> ModelManager::resolved_paths_for(
     return paths;
 }
 
-// Drop the model's own registration, if it has one. Rows the catalog re-creates
-// have none.
-void ModelManager::forget_registered_model(const std::string& canonical_model_name) {
-    if (!is_user_model_name(canonical_model_name)) {
-        return;
-    }
-    StoreWrite store_write(*this);
-    registries_.update_user([&](json& user_models) {
-        user_models.erase(strip_user_model_prefix(canonical_model_name));
-        return true;
-    });
-    store_write.invalidate_cache();
-    LOG(INFO, "ModelManager") << "\u2713 Removed from user_models.json" << std::endl;
+
+void ModelManager::register_user_model(const std::string& model_name,
+                                       const json& model_data,
+                                       const std::string& source) {
+    ingest_->register_user_model(model_name, model_data, source);
 }
+
+void ModelManager::unregister_user_model(const std::string& model_name) {
+    ingest_->unregister_user_model(model_name);
+}
+
+void ModelManager::forget_registered_model(const std::string& canonical_model_name) {
+    ingest_->forget_registered_model(canonical_model_name);
+}
+
+std::size_t ModelManager::refresh_cloud_models(const std::string& provider) {
+    if (cloud_registry_ == nullptr) {
+        return 0;
+    }
+    return cloud_rows_.refresh(provider);
+}
+
+std::size_t ModelManager::evict_cloud_models(const std::string& provider) {
+    return cloud_rows_.evict(provider);
+}
+
+std::size_t ModelManager::count_cloud_models(const std::string& provider) const {
+    return cloud_rows_.count(provider);
+}
+
+models::HostFilter ModelManager::filter_for_host(
+    const std::map<std::string, ModelInfo>& models) const {
+    models::BackendAvailability availability =
+        config_.availability ? config_.availability(models)
+                             : models::probe_backend_availability(models);
+    // Over a declared machine too: turning filtering off is the operator's call, not
+    // the probe's. The GTT hint stays probe-only, since it describes real pools.
+    if (auto* cfg = RuntimeConfig::global()) {
+        availability.filtering_disabled = cfg->disable_model_filtering();
+    }
+
+    models::FilterResult result = models::filter_hardware(models, availability);
+
+    auto reasons = std::make_shared<models::FilterReasons>();
+    reasons->rejected = std::move(result.rejected);
+    reasons->empty_recipes = std::move(result.empty_recipes);
+
+    models::HostFilter outcome;
+    outcome.visible = std::move(result.visible);
+    outcome.reasons = std::const_pointer_cast<const models::FilterReasons>(reasons);
+    return outcome;
+}
+
+std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
+    auto snapshot = store_.read();
+    const std::vector<std::string> hidden = snapshot->empty_recipes();
+    return std::set<std::string>(hidden.begin(), hidden.end());
+}
+
+
+// Whether the persisted user-model entry under `key` is a router collection.
+// Both register (checking the entry being overwritten) and unregister (checking
+// the entry being removed) must decide whether a routing policy is disappearing,
+// so the recipe lookup lives in one place.
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();

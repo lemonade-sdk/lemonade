@@ -1110,5 +1110,32 @@ void ModelArtifactStore::resolve_all(ModelInfo& info) const {
     }
 }
 
+// Replace the static registry size with the aggregate on-disk size once the
+// files exist, so directory-checkpoint models (whose repos can carry more than
+// the registry estimate) report what was actually downloaded. A sharded GGUF
+// resolves to a single shard, which for unsloth-style layouts is a small stub,
+// so the whole family is summed instead.
+void ModelArtifactStore::refresh_on_disk_size(ModelInfo& info) {
+    uintmax_t total_size = 0;
+    for (auto& [type, path] : info.resolved_paths) {
+        (void)type;
+        fs::path resolved = utils::path_from_utf8(path);
+        uintmax_t shard_total = sharded_gguf_size_bytes(resolved);
+        total_size += (shard_total > 0) ? shard_total : models::ModelArtifactStore::size_bytes(resolved);
+    }
+    if (total_size == 0) {
+        return;
+    }
+    double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+    if (file_size_gb < 1.0) {
+        info.size = std::round(file_size_gb * 1000) / 1000;
+    } else if (file_size_gb < 10.0) {
+        info.size = std::round(file_size_gb * 100) / 100;
+    } else {
+        info.size = std::round(file_size_gb * 10) / 10;
+    }
+}
+
 }  // namespace models
+
 }  // namespace lemon

@@ -15,6 +15,7 @@
 #include <lemon/models/definition_labels.h>
 #include <lemon/models/routing_parse_options.h>
 #include <lemon/models/registry_documents.h>
+#include <lemon/models/store.h>
 #include <lemon/registry_files.h>
 #include <lemon/runtime_config.h>
 #include <lemon/system_info.h>
@@ -676,7 +677,7 @@ void ModelIngest::pull(const std::string& model_name,
     // failures can roll it back instead of leaving a broken entry behind.
     bool collection_registered_this_call = false;
     if (is_model_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
-        deps_.register_model(model_name, registration_data);
+        register_user_model(model_name, registration_data);
         model_registered = true;
         collection_registered_this_call = true;
     }
@@ -721,7 +722,7 @@ void ModelIngest::pull(const std::string& model_name,
                 if (is_user_model_name(model_name) && !components.empty()) {
                     json reg = registration_data;
                     reg["components"] = components;
-                    deps_.register_model(model_name, reg);
+                    register_user_model(model_name, reg);
                 }
             } else if (!repo_id.empty() && (components.empty() || !do_not_upgrade)) {
                 // A non-empty checkpoint marks a registry-backed collection: the list
@@ -742,7 +743,7 @@ void ModelIngest::pull(const std::string& model_name,
             if (collection_registered_this_call) {
                 LOG(WARNING, "ModelManager") << "Component resolution failed; unregistering "
                     << "collection: " << model_name << std::endl;
-                deps_.unregister_model(model_name);
+                unregister_user_model(model_name);
             }
             throw;
         }
@@ -824,7 +825,7 @@ void ModelIngest::pull(const std::string& model_name,
     // otherwise an import that reports success would silently leave the old
     // checkpoints/options in place.
     if (is_user_model_name(model_name) && !model_registered) {
-        deps_.register_model(model_name, registration_data);
+        register_user_model(model_name, registration_data);
     }
 
     auto model_info = deps_.model_info(model_name);
@@ -1071,7 +1072,7 @@ std::vector<std::string> ModelIngest::register_components(const json& component_
     for (const auto& [canonical, def] : pending_registrations) {
         LOG(INFO, "ModelManager") << "Registering collection component as user model: "
             << canonical << std::endl;
-        deps_.register_model(canonical, def);
+        register_user_model(canonical, def);
     }
     return components;
 }
@@ -1279,6 +1280,142 @@ void ModelIngest::populate_from_cached_manifest(ModelInfo& info) {
         manifest["system_prompt"].is_string()) {
         info.system_prompt = manifest["system_prompt"].get<std::string>();
     }
+}
+
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
+    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+    "image_defaults", "audio_defaults", "components", "recipe_options",
+    "routing", "system_prompt", "version", "source", "registry_source",
+    "auto_update"
+};
+
+static bool user_entry_is_router_collection(const json& user_models,
+                                            const std::string& key) {
+    if (!user_models.is_object() || !user_models.contains(key)) {
+        return false;
+    }
+    return is_router_collection_recipe(
+        user_models.at(key).value("recipe", std::string()));
+}
+
+void ModelIngest::register_user_model(const std::string& model_name,
+                                      const json& model_data,
+                                      const std::string& source) {
+    const std::string recipe = model_data.value("recipe", std::string());
+
+    // Remove "user." prefix if present
+    std::string clean_name = model_name;
+    if (is_user_model_name(clean_name)) {
+        clean_name = strip_user_model_prefix(clean_name);
+    }
+
+    // Filter only known, user-definable model props
+    json model_entry;
+    for (const std::string& prop : USER_DEFINED_MODEL_PROPS) {
+        if (model_data.contains(prop)) {
+            model_entry[prop] = model_data[prop];
+        }
+    }
+    // Every registration path funnels through here — direct registration, an
+    // imported collection's inline components, re-registration — so this is the
+    // one gate that refuses an illegal set of mode labels. Loading an
+    // already-persisted entry does not come through here; it is checked again on
+    // load, where an entry written by an older version is skipped rather than
+    // blocking startup.
+    std::string illegal;
+    std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
+    if (!illegal.empty()) {
+        throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
+    }
+
+    model_entry["labels"] = labels;
+    model_entry["suggested"] = true; // Always set suggested=true for user models
+
+    if (!source.empty()) {
+        model_entry["source"] = source;
+    }
+
+    // A registry-backed collection persists only its repo pointer, so a refreshed
+    // manifest cannot be shadowed by a stale local list.
+    if (is_model_collection_recipe(recipe)) {
+        std::string pointer = model_entry.value("checkpoint", std::string());
+        if (pointer.empty() && model_entry.contains("checkpoints") &&
+            model_entry["checkpoints"].is_object()) {
+            pointer = model_entry["checkpoints"].value("main", std::string());
+        }
+        if (!pointer.empty()) {
+            model_entry.erase("components");
+        }
+    }
+
+    // update_user re-reads the file, so a concurrent pull's entry survives this
+    // one — a lost registration is a hard "Model not found" on the next
+    // auto-load. The store write keeps save and invalidation one step.
+    bool overwrote_router_collection = false;
+    {
+        ModelStore::Write store_write(*deps_.store);
+        deps_.registries->update_user([&](json& user_models) {
+            overwrote_router_collection =
+                user_entry_is_router_collection(user_models, clean_name);
+            user_models[clean_name] = model_entry;
+            return true;
+        });
+        store_write.invalidate_cache();
+    }
+
+    // A router collection carries a routing policy, so its lifecycle affects the
+    // routing-helper working set. Notify when the new entry is a router
+    // collection, but also when a router collection is being *replaced* by a
+    // non-router recipe — otherwise the old policy silently disappears without a
+    // reconcile. Registering ordinary models (e.g. a collection's helper
+    // components) still must not trigger one.
+    if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
+        deps_.models_changed();
+    }
+}
+
+void ModelIngest::unregister_user_model(const std::string& model_name) {
+    std::string clean_name = model_name;
+    if (is_user_model_name(clean_name)) {
+        clean_name = strip_user_model_prefix(clean_name);
+    }
+
+    bool was_router_collection = false;
+    {
+        ModelStore::Write store_write(*deps_.store);
+        const bool wrote = deps_.registries->update_user([&](json& user_models) {
+            if (!user_models.contains(clean_name)) {
+                return false;
+            }
+            was_router_collection =
+                user_entry_is_router_collection(user_models, clean_name);
+            user_models.erase(clean_name);
+            return true;
+        });
+        if (!wrote) {
+            return;
+        }
+        store_write.invalidate_cache();
+    }
+
+    if (was_router_collection) {
+        deps_.models_changed();
+    }
+}
+
+// Drop the model's own registration, if it has one. Rows the catalog re-creates
+// have none.
+void ModelIngest::forget_registered_model(const std::string& canonical_model_name) {
+    if (!is_user_model_name(canonical_model_name)) {
+        return;
+    }
+    ModelStore::Write store_write(*deps_.store);
+    deps_.registries->update_user([&](json& user_models) {
+        user_models.erase(strip_user_model_prefix(canonical_model_name));
+        return true;
+    });
+    store_write.invalidate_cache();
+    LOG(INFO, "ModelIngest") << "\u2713 Removed from user_models.json" << std::endl;
 }
 
 }  // namespace models
