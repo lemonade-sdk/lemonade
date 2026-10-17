@@ -152,7 +152,7 @@ public:
             "    ```",
         };
         s.args = {
-            openai::image_uploads::kModel, kImage, kPrompt, kMask, kSize, openai::image_uploads::kN,
+            model_loading::kFormModel, kImage, kPrompt, kMask, kSize, openai::image_uploads::kN,
             openai::image_uploads::kResponseFormat, kSteps, kCfgScale, kSeed,
             openai::image_uploads::kUser, kBackground, kQuality, kInputFidelity, kOutputCompression
         };
@@ -183,7 +183,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return openai::image_uploads::kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kFormModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;

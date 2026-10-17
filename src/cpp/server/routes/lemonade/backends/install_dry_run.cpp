@@ -3,6 +3,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
 
 namespace lemon {
@@ -18,8 +19,6 @@ const RouteError kResolveFailed{
 
 const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
                        "The recipe, such as `llamacpp`, `whispercpp` or `vllm`."};
-const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                        "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."};
 const RouteArg kArch{"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                      "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
                      "detected one, so CI can check an architecture's asset on a runner without that GPU."};
@@ -48,7 +47,7 @@ public:
             "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
             "manifest, to verify it.",
         };
-        s.args = {kRecipe, kBackend, kArch};
+        s.args = {kRecipe, backend_routes::kBackend, kArch};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -87,7 +86,7 @@ public:
         std::string requested_arch;
         try {
             const std::string recipe = req.arg(kRecipe).get<std::string>();
-            const std::string backend = req.arg(kBackend).get<std::string>();
+            const std::string backend = req.arg(backend_routes::kBackend).get<std::string>();
             requested_arch = req.value(kArch, "");
 
             if (!requested_arch.empty()) {

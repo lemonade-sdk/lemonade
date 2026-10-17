@@ -38,9 +38,6 @@ const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, fal
                          "Ignored unless a number.", {}, false, true};
 const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                      "Random seed for reproducible output. Ignored unless an integer.", {}, false, true};
-const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-                          "`0` with an empty `prompt` unloads the model, answering with "
-                          "`done_reason: \"unload\"`. Other values are ignored."};
 const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
                        "System prompt. Ignored."};
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
@@ -50,7 +47,7 @@ json convert_ollama_to_openai_completion(const RouteRequest& req) {
     json openai_req;
 
     std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
-    openai_req[openai::text::kModel.name] = model;
+    openai_req[model_loading::kModel.name] = model;
 
     if (req.has(kPrompt)) {
         openai_req[openai::completions::kPrompt.name] = req.arg(kPrompt);
@@ -109,13 +106,13 @@ void generate_image(Router& router, const RouteRequest& req, httplib::Response& 
         }
 
         json openai_req;
-        openai_req[openai::images::kModel.name] = model;
+        openai_req[model_loading::kModel.name] = model;
         openai_req[openai::images::kPrompt.name] = prompt;
         openai_req[openai::images::kSize.name] = std::to_string(width) + "x" + std::to_string(height);
         openai_req[openai::images::kResponseFormat.name] = "b64_json";
 
         if (steps > 0) {
-            openai_req[openai::images::kSteps.name] = steps;
+            openai_req[inference::kSteps.name] = steps;
         }
         if (cfg_scale > 0.0) {
             openai_req[openai::images::kCfgScale.name] = cfg_scale;
@@ -199,7 +196,7 @@ public:
         };
         s.args = {
             gateway::kModel, kPrompt, ollama::kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale,
-            kSeed, kKeepAlive, ollama::kCtxSize, kSystem, kFormat
+            kSeed, ollama::kKeepAlive, ollama::kCtxSize, kSystem, kFormat
         };
 
         RouteResponse full;
@@ -244,7 +241,7 @@ public:
             std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             std::string prompt = req.value(kPrompt, "");
-            if (prompt.empty() && req.has(kKeepAlive) && req.arg(kKeepAlive) == 0) {
+            if (prompt.empty() && req.has(ollama::kKeepAlive) && req.arg(ollama::kKeepAlive) == 0) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Unloading model: " << model << std::endl;
                 try {
                     ctx_.router->unload_model(model);

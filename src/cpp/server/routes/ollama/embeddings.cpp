@@ -31,7 +31,7 @@ public:
         s.description =
             "Returns the embedding of one text in Ollama's older format, loading the model on "
             "first use.";
-        s.args = {ollama::embed::kModel, kPrompt, ollama::embed::kOptions, ollama::kCtxSize};
+        s.args = {gateway::kModel, kPrompt, ollama::embed::kOptions, ollama::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -61,7 +61,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(ollama::embed::kModel).get<std::string>());
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
                                        gateway_load_options(req.arg(ollama::embed::kOptions), req.arg(ollama::kCtxSize)),
@@ -70,7 +70,7 @@ public:
             }
 
             json openai_req;
-            openai_req[openai::embeddings::kModel.name] = model;
+            openai_req[model_loading::kModel.name] = model;
 
             openai_req[openai::embeddings::kInput.name] = req.arg(kPrompt);
 

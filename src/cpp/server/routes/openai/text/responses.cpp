@@ -101,7 +101,7 @@ public:
             "see [Router API](./router.md).",
         };
         s.args = {
-            kInput, openai::text::kModel, kMaxOutputTokens, generation::kTemperature,
+            kInput, model_loading::kModel, kMaxOutputTokens, generation::kTemperature,
             openai::text::kRepeatPenalty, generation::kTopK, generation::kTopP, common::kStream,
             openai::text::kRouteTrace, model_loading::kCtxSize
         };
@@ -145,7 +145,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return openai::text::kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response&) override {
         // Router policies call backends here, before run() does.

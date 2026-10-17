@@ -20,7 +20,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | Yes | Conversation so far, as `user` and `assistant` messages. `content` is a string or an array of `text`, `image` (base64 source), `tool_use` and `tool_result` blocks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `system` | No | System prompt, as a string or an array of `text` blocks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

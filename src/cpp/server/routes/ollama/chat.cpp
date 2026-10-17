@@ -93,15 +93,12 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
                       "accepts for models that define none of their own. Not applied: reasoning models "
                       "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
                       "`/no_think`."};
-const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-                          "`0` with an empty `messages` array unloads the model, answering with "
-                          "`done_reason: \"unload\"`. Other values are ignored."};
 
 json convert_ollama_to_openai_chat(const RouteRequest& req) {
     json openai_req;
 
     std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
-    openai_req[openai::text::kModel.name] = model;
+    openai_req[model_loading::kModel.name] = model;
 
     if (req.has(kMessages)) {
         json messages = json::array();
@@ -343,7 +340,7 @@ public:
         };
         s.args = {
             gateway::kModel, kMessages, ollama::kStream, kOptions, generation::kTools, kFormat,
-            kThink, kKeepAlive, ollama::kCtxSize
+            kThink, ollama::kKeepAlive, ollama::kCtxSize
         };
 
         RouteResponse full;
@@ -386,8 +383,8 @@ public:
             std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             auto messages = req.value(kMessages, json::array());
-            if (messages.empty() && req.has(kKeepAlive) &&
-                req.arg(kKeepAlive) == 0) {
+            if (messages.empty() && req.has(ollama::kKeepAlive) &&
+                req.arg(ollama::kKeepAlive) == 0) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Unloading model: " << model << std::endl;
                 try {
                     ctx_.router->unload_model(model);

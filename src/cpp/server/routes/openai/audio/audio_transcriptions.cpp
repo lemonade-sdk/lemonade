@@ -4,6 +4,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -20,8 +21,6 @@ const RouteError kNoTimestamps{
 
 const RouteArg kFile{"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
                      "The audio file to transcribe, as WAV."};
-const RouteArg kModel{"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
-                      "The transcription model to use (e.g., `Whisper-Tiny`)."};
 const RouteArg kLanguage{"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
                          "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, "
                          "which detects it, for whisper.cpp models, and to the backend's own for the others."};
@@ -51,7 +50,9 @@ public:
         s.notes = {
             "On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.",
         };
-        s.args = {kFile, kModel, kLanguage, kResponseFormat, kPrompt, kTemperature};
+        s.args = {
+            kFile, model_loading::kFormModel, kLanguage, kResponseFormat, kPrompt, kTemperature
+        };
 
         RouteResponse transcript;
         transcript.format = ResponseFormat::Json;
@@ -90,7 +91,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kFormModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/audio/transcriptions" << std::endl;

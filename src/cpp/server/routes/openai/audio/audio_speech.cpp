@@ -5,6 +5,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/audio_formats.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -17,8 +18,6 @@ const RouteError kNotTtsModel{
 
 const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                       "The text to speak."};
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                      "The model to use (e.g., `kokoro-v1`)."};
 const RouteArg kSpeed{"speed", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                       "Speaking speed. Defaults to `1.0`.", {}, true};
 const RouteArg kVoice{"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
@@ -68,8 +67,8 @@ public:
             "`OpenMOSS-TTS`, 48 kHz stereo for `MOSS-TTS-Local`).",
         };
         s.args = {
-            kInput, kModel, kSpeed, kVoice, kReferenceWavB64, kVoiceDesignDescription,
-            kResponseFormat, kStreamFormat, kStream
+            kInput, model_loading::kModel, kSpeed, kVoice, kReferenceWavB64,
+            kVoiceDesignDescription, kResponseFormat, kStreamFormat, kStream
         };
 
         RouteResponse audio;
@@ -102,7 +101,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         if (auto info = ctx_.router->try_get_model_info(req.model);

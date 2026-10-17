@@ -399,7 +399,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
     json openai_req;
 
     std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
-    openai_req[openai::text::kModel.name] = model;
+    openai_req[model_loading::kModel.name] = model;
 
     json messages = json::array();
 

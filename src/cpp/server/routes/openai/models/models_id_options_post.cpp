@@ -64,9 +64,6 @@ const RouteError kInvalidOptionValue{
     400, "",
     "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};
 
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-                        "Context size to save: a positive whole number, or `-1` to pin the model to automatic "
-                        "sizing even when the server-wide `ctx_size` is a specific number."};
 const RouteArg kDryRun{"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                        "`true` validates and resolves the request identically but persists nothing: "
                        "`effective` and `resolved_ctx_size` describe the state the save would produce, while "
@@ -100,7 +97,7 @@ public:
             "[`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",
         };
-        s.args = {openai::models::kId, kCtxSize, kDryRun, kModelName};
+        s.args = {openai::models::kId, model_options::kCtxSize, kDryRun, kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -151,7 +148,7 @@ public:
                     // except ctx_size, where -1 is a value and a malformed size is
                     // an error rather than an absence.
                     const bool clears = value.is_null() ||
-                        (key != kCtxSize.name && RecipeOptions::is_default_sentinel(key, value));
+                        (key != model_options::kCtxSize.name && RecipeOptions::is_default_sentinel(key, value));
                     if (clears) {
                         changes[key] = nullptr;
                         continue;

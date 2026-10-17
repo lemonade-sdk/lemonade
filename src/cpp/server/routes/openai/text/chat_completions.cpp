@@ -186,7 +186,7 @@ public:
             "Models](../dev/lemonade-omni.md) for details.",
         };
         s.args = {
-            kMessages, openai::text::kModel, common::kStream, openai::text::kStop, kLogprobs,
+            kMessages, model_loading::kModel, common::kStream, openai::text::kStop, kLogprobs,
             generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
             openai::text::kSeed, generation::kTopK, generation::kTopP, generation::kTools,
             kToolChoice, kResponseFormat, openai::text::kMaxTokens, kMaxCompletionTokens,
@@ -260,7 +260,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return openai::text::kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         // Router policies and Omni collections call backends here, before run() does.

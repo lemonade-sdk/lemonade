@@ -24,18 +24,15 @@ extern const RouteArg kLogprobs;
 
 namespace embeddings {
 extern const RouteArg kInput;
-extern const RouteArg kModel;
 extern const RouteArg kEncodingFormat;
 } // namespace embeddings
 
 // images/generations
 namespace images {
 extern const RouteArg kPrompt;
-extern const RouteArg kModel;
 extern const RouteArg kSize;
 extern const RouteArg kN;
 extern const RouteArg kResponseFormat;
-extern const RouteArg kSteps;
 extern const RouteArg kCfgScale;
 extern const RouteArg kSeed;
 } // namespace images

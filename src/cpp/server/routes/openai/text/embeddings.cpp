@@ -19,8 +19,6 @@ namespace openai::embeddings {
 
 const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
                       "The text to embed, as a string or an array of strings.", {}, true};
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                      "The embedding model to run."};
 const RouteArg kEncodingFormat{"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
                                "`float` or `base64`. Defaults to `float`.", {}, true};
 
@@ -45,7 +43,7 @@ public:
             "Returns vector representations (embeddings) of the input text for semantic search, "
             "clustering and similarity comparisons, downloading and loading the model if it is not "
             "loaded. Embedding models use the `llamacpp` or `flm` recipe.";
-        s.args = {kInput, kModel, kEncodingFormat, model_loading::kCtxSize};
+        s.args = {kInput, model_loading::kModel, kEncodingFormat, model_loading::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -93,7 +91,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->embeddings(req.body);

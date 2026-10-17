@@ -17,8 +17,6 @@ const RouteError kMalformedImage{
     400, "", "`image` is not base64 data, or is a `data:` URL without a base64 payload"};
 const RouteError kUnsupportedImage{400, "", "`image` is not a PNG, JPEG, BMP or GIF"};
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                      "The 3D-generation model."};
 const RouteArg kImage{"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                       "Base64-encoded PNG, JPEG, BMP or GIF image, optionally as a `data:` URL."};
 const RouteArg kResolution{"resolution", ArgIn::JsonBody,
@@ -55,7 +53,10 @@ public:
             "`resolution` values take longer.",
             "Errors carry a JSON `error` object.",
         };
-        s.args = {kModel, kImage, kResolution, kBgRemoval, kUv, inference::kSeed, kResponseFormat};
+        s.args = {
+            model_loading::kModel, kImage, kResolution, kBgRemoval, kUv, inference::kSeed,
+            kResponseFormat
+        };
 
         RouteResponse response;
         response.format = ResponseFormat::Binary;
@@ -80,7 +81,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     // All cheap validation runs before the load, so a malformed request can never
     // trigger a multi-gigabyte model load.

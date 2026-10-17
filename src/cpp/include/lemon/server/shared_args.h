@@ -6,6 +6,8 @@
 namespace lemon {
 
 namespace model_loading {
+extern const RouteArg kModel;
+extern const RouteArg kFormModel;
 extern const RouteArg kCtxSize;
 } // namespace model_loading
 
@@ -21,7 +23,6 @@ extern const RouteArg kTools;
 } // namespace generation
 
 namespace openai::text {
-extern const RouteArg kModel;
 extern const RouteArg kStop;
 extern const RouteArg kRepeatPenalty;
 extern const RouteArg kFrequencyPenalty;
@@ -31,7 +32,6 @@ extern const RouteArg kRouteTrace;
 } // namespace openai::text
 
 namespace openai::image_uploads {
-extern const RouteArg kModel;
 extern const RouteArg kN;
 extern const RouteArg kResponseFormat;
 extern const RouteArg kUser;
@@ -48,10 +48,10 @@ extern const RouteArg kModel;
 namespace ollama {
 extern const RouteArg kCtxSize;
 extern const RouteArg kStream;
+extern const RouteArg kKeepAlive;
 } // namespace ollama
 
 namespace ollama::embed {
-extern const RouteArg kModel;
 extern const RouteArg kOptions;
 } // namespace ollama::embed
 
@@ -70,11 +70,16 @@ namespace downloads {
 extern const RouteArg kSubscribe;
 } // namespace downloads
 
+namespace model_options {
+extern const RouteArg kCtxSize;
+} // namespace model_options
+
 namespace job_routes {
 extern const RouteArg kId;
 } // namespace job_routes
 
 namespace inference {
+extern const RouteArg kSteps;
 extern const RouteArg kSeed;
 } // namespace inference
 

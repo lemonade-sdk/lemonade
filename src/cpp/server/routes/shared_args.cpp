@@ -5,6 +5,10 @@ namespace lemon {
 using json = nlohmann::json;
 
 namespace model_loading {
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "The model to run; loaded on first use."};
+const RouteArg kFormModel{"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
+                          "The model to run; loaded on first use."};
 const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                         "Lemonade extension: context size to load the model with, when this request loads it. "
                         "Ignored when the model is already loaded."};
@@ -29,8 +33,6 @@ const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Supp
 } // namespace generation
 
 namespace openai::text {
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                      "The model to run."};
 const RouteArg kStop{"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
                      "Sequences that stop generation, as a string or an array of strings. The returned "
                      "text leaves them out.", {}, true};
@@ -50,8 +52,6 @@ const RouteArg kRouteTrace{"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}
 } // namespace openai::text
 
 namespace openai::image_uploads {
-const RouteArg kModel{"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
-                      "The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."};
 const RouteArg kN{"n", ArgIn::Form, {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}, false, Support::Available,
                   "Number of images to generate, from `1` to `10`. Defaults to `1`."};
 const RouteArg kResponseFormat{"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
@@ -67,7 +67,7 @@ const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, t
 
 namespace gateway {
 const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Model to run; loaded on first use."};
+                      "The model to run; loaded on first use."};
 } // namespace gateway
 
 namespace ollama {
@@ -77,11 +77,12 @@ const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, fals
 const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                        "`true` streams the response as newline-delimited JSON; `false` sends one response "
                        "once complete. Defaults to `true`."};
+const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
+                          "`0` with nothing to generate, an empty `messages` array or `prompt`, unloads the "
+                          "model, answering with `done_reason: \"unload\"`. Other values are ignored."};
 } // namespace ollama
 
 namespace ollama::embed {
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Embedding model to run."};
 const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
                         "`num_ctx` sets the context size when this request loads the model. Other keys are "
                         "ignored."};
@@ -97,11 +98,11 @@ const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLeng
                        "Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, "
                        "`sd-cpp` or `ryzenai-llm`."};
 const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                        "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
-                        "`default`. Cloud providers: `\"cloud\"`."};
+                        "The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`."};
 const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                         "Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as "
-                         "`fireworks`, used as the provider's model-name prefix."};
+                         "Cloud providers, which take `backend: \"cloud\"`, required: a short identifier "
+                         "matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name "
+                         "prefix."};
 const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false,
                                   Support::Available,
                                   "Must be `true` to send an API key to a provider whose base URL is "
@@ -117,12 +118,22 @@ const RouteArg kSubscribe{"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, f
                           "With `true`, closing the stream cancels the download. Defaults to `true`."};
 } // namespace downloads
 
+namespace model_options {
+const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
+                        "Context size: a positive whole number, or `-1` to size it automatically even when the "
+                        "server-wide `ctx_size` is a specific number. Only recipes that take a context size use "
+                        "it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`."};
+} // namespace model_options
+
 namespace job_routes {
 const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available,
                    "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
 } // namespace job_routes
 
 namespace inference {
+const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                      "Number of inference steps; lower is faster, higher can improve quality. Defaults to "
+                      "the model's own setting, else the backend's."};
 const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                      "Random seed for reproducibility. Defaults to the backend's own."};
 } // namespace inference

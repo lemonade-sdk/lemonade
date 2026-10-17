@@ -9,6 +9,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -60,9 +61,6 @@ const RouteArg kSaveOptions{"save_options", ArgIn::JsonBody, {{"type", "boolean"
                             "save options without loading, or to change one option without resending the rest, "
                             "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
                             "`false`."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-                        "Recipes that take a context size, such as `llamacpp`, `flm`, `ryzenai-llm` and "
-                        "`vllm`: context size, or `-1` to size it automatically."};
 const RouteArg kLlamacppBackend{"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
                                 "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
                                 "or `system` for a `llama-server` already installed where supported."};
@@ -142,8 +140,9 @@ public:
             "```",
         };
         s.args = {
-            kModelName, kPinned, kSaveOptions, kCtxSize, kLlamacppBackend, kLlamacppArgs,
-            kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale, kWidth, kHeight, kMergeArgs
+            kModelName, kPinned, kSaveOptions, model_options::kCtxSize, kLlamacppBackend,
+            kLlamacppArgs, kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale, kWidth, kHeight,
+            kMergeArgs
         };
 
         RouteResponse response;

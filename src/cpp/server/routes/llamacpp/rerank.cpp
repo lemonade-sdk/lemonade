@@ -15,8 +15,6 @@ const RouteArg kQuery{"query", ArgIn::JsonBody, {{"type", "string"}}, true, Supp
                       "The search query text.", {}, true};
 const RouteArg kDocuments{"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
                           true, Support::Available, "Documents to score against the query.", {}, true};
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                      "Reranker model to run; loaded on first use."};
 
 class RerankRoute : public ModelRoute {
 public:
@@ -32,7 +30,7 @@ public:
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
-        s.args = {kQuery, kDocuments, kModel, model_loading::kCtxSize};
+        s.args = {kQuery, kDocuments, model_loading::kModel, model_loading::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -83,7 +81,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->reranking(req.body);
