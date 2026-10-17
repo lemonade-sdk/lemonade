@@ -1950,8 +1950,54 @@ jobs:
   # GUI Playwright tests
   # ========================================================================
 
+  test-gui-no-server:
+    name: GUI tests (no Lemonade server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+
+      - name: Install GUI dependencies
+        working-directory: src/app
+        run: npm ci
+
+      - name: Build GUI
+        working-directory: src/app
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: src/app
+        run: npx playwright install --with-deps chromium
+
+      - name: Run GUI tests without server
+        working-directory: src/app
+        env:
+          CI: true
+        run: npm test -- --reporter=list,html
+
+      - name: Upload GUI test artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gui-no-server-artifacts
+          path: |
+            src/app/test-results
+            src/app/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
   test-gui-playwright:
-    name: GUI Playwright tests
+    name: GUI real-server smoke test
     runs-on: ubuntu-latest
     needs: build-lemonade-deb
     timeout-minutes: 25
@@ -1987,6 +2033,7 @@ jobs:
         working-directory: src/app
         run: npm ci
 
+
       - name: Build GUI
         working-directory: src/app
         run: npm run build
@@ -1995,11 +2042,12 @@ jobs:
         working-directory: src/app
         run: npx playwright install --with-deps chromium
 
-      - name: Run GUI Playwright tests
+      - name: Test actual GUI connection to lemond
         working-directory: src/app
-        run: npm run test -- --reporter=list,html
+        run: npm run test:server
         env:
           CI: true
+          LEMONADE_TEST_PORT: '13305'
 
       - name: Collect GUI test artifacts
         if: always()
@@ -2015,6 +2063,7 @@ jobs:
           name: gui-playwright-artifacts
           path: |
             src/app/test-results
+            src/app/test-results-real-server
             src/app/playwright-report
             gui-ci-artifacts
           if-no-files-found: ignore
@@ -2875,6 +2924,7 @@ jobs:
       - test-embeddable-macos
       - test-embeddable-windows
       - test-gui-playwright
+      - test-gui-no-server
       - source-tarball
       - repo-manager-release
     # Candidates skip sign-msi-installers, so a plain `needs` would skip this

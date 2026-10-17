@@ -70,7 +70,7 @@ const managerSource = sources.get(managerPath);
 const globalSettingsSource = sources.get(globalSettingsPath);
 const storageSource = sources.get(storagePath);
 
-assert.match(appSource, /<header className="titlebar" data-tauri-drag-region>/);
+assert.match(appSource, /<header className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\} data-tauri-drag-region>/);
 assert.doesNotMatch(appSource, /titlebar--chat/);
 assert.doesNotMatch(styles, /\.titlebar--chat\s+\.titlebar__nav/);
 
@@ -103,8 +103,8 @@ assert.match(detailSource, /const baseCtxSize = positiveCtxValue\(resolvedCtxSiz
 assert.match(detailSource, /const stepContextSize = \(direction: -1 \| 1\) =>/);
 assert.match(detailSource, /className="detail-configuration__context-number"/);
 assert.match(detailSource, /className="detail-configuration__context-stepper"/);
-assert.match(detailSource, /aria-label=\{`Increase context size by \$\{ctxStep\} tokens`\}/);
-assert.match(detailSource, /aria-label=\{`Decrease context size by \$\{ctxStep\} tokens`\}/);
+assert.match(detailSource, /aria-label=\{t\('Increase context size by \{count\} tokens', \{ count: ctxStep \}\)\}/);
+assert.match(detailSource, /aria-label=\{t\('Decrease context size by \{count\} tokens', \{ count: ctxStep \}\)\}/);
 // The number box reads as the slider's current value, so it sits after it on
 // the same row rather than stacked above it.
 const autoTunePosition = detailSource.indexOf('className="detail-configuration__autotune"');
@@ -244,8 +244,8 @@ assert.match(detailSource, /className="model-detail-panel__source"\s*\n\s*emphas
 assert.match(styles, /\.model-detail-panel__source > svg\s*\{[^}]*flex:\s*0 0 auto;/s);
 assert.match(detailSource, /import \{ TTS_VOICES \}/);
 assert.match(detailSource, /knownVoiceOptionsForModel/);
-assert.match(detailSource, /<option value=\{customVoiceSentinel\}>Custom voice…<\/option>/);
-assert.match(detailSource, /placeholder="Enter custom voice ID"/);
+assert.match(detailSource, /<option value=\{customVoiceSentinel\}>\{t\('Custom voice…'\)\}<\/option>/);
+assert.match(detailSource, /placeholder=\{t\('Enter custom voice ID'\)\}/);
 
 assert.doesNotMatch(apiSource, /save_options:\s*true/, 'ordinary GUI loads must never persist model options');
 assert.match(apiSource, /\.\.\.recipeOptions,[\s\S]*save_options:\s*false/, 'save_options=false must come after caller options');

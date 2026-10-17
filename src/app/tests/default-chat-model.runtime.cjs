@@ -63,6 +63,8 @@ assert.deepEqual(
   ],
   'the two replaceable Lemonade defaults and their roles must stay centralized',
 );
+assert.ok(defaults.LEMONADE_DEFAULT_CHAT_MODELS.every(model => !Object.hasOwn(model, 'icon')),
+  'default model roles are text labels, not icons');
 assert.equal(defaults.loadPreferredDefaultModelName(), 'Bonsai-8B-gguf');
 assert.equal(defaults.savePreferredDefaultModelName('Qwen3.5-4B-GGUF'), 'Qwen3.5-4B-GGUF');
 assert.equal(defaults.loadPreferredDefaultModelName(), 'Qwen3.5-4B-GGUF');
@@ -96,7 +98,7 @@ assert.match(chatSource, /resolveLastReadyChatModel\(knownModelInfos, lastReadyM
 assert.match(chatSource, /const currentModel = fallbackModelOverride\s*\|\| selectedModel/,
   'an explicitly selected deferred default must not be displaced by a background health refresh');
 assert.match(chatSource, /\|\| preferredDefaultModelName/);
-assert.match(chatSource, /const preparedSnapshot = await ensureChatModelReady\(currentModel, currentKnownModelInfo/);
+assert.match(chatSource, /const preparedSnapshot = await ensureChatModelReady\(currentModel, currentKnownModelInfo, convoId\)/);
 assert.match(chatSource, /await api\.pullModel\(modelName/);
 assert.match(chatSource, /if \(!sawDownload\) return false;[\s\S]*terminal\?\.status === 'error'/,
   'a previous failed download must remain retryable on the next send');
@@ -104,12 +106,15 @@ assert.match(chatSource, /messages: \[userMessage\]/,
   'the user message must become visible before a potentially long first download');
 assert.match(chatSource, /Lemonade Server is not connected[\s\S]*isError: true/,
   'send failures must produce an assistant response instead of returning silently');
+assert.match(chatSource, /defaultLabel: configuredDefault\.label/);
 assert.match(chatSource,
   /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);/,
   'the Tiny/Quality role must travel in the picker row detail parts');
 assert.match(chatSource,
   /const detailParts = \[[\s\S]*?option\.defaultLabel,[\s\S]*?\]\.filter\(Boolean\);[\s\S]*?meta=\{detailParts\}/,
   'those detail parts must reach the picker row as its meta line');
+assert.match(chatSource, /ariaLabel=.*option\.defaultLabel/,
+  'default roles must remain accessible in picker rows');
 assert.doesNotMatch(chatSource, /Bonsai-8B-gguf|Qwen3\.5-4B-GGUF/,
   'default model names must remain isolated in the replaceable configuration module');
 assert.doesNotMatch(chatSource, /composer__model-default-icon/,
