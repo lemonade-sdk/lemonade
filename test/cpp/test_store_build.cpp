@@ -298,6 +298,27 @@ static void test_the_published_names_follow_the_set() {
     check("nothing resolves to the deleted model", !manager.model_exists("user.Alpha"));
 }
 
+// A write seeds its draft from the set readers hold, so patching one row cannot drop
+// what an earlier write put into the set.
+static void test_a_write_seeds_from_what_readers_hold() {
+    HeldCatalog held("seed", {row("Alpha"), row("Beta")});
+    ModelManager manager(fixture(held));
+    manager.get_supported_models();
+
+    manager.register_user_model("user.Gamma", json{{"model_name", "user.Gamma"},
+                                                   {"recipe", "llamacpp"},
+                                                   {"checkpoint", "org/gamma:main.gguf"}});
+    manager.get_supported_models();  // the registration invalidated the set
+    check("the registration is in the published set", manager.model_exists("user.Gamma"));
+
+    ModelInfo alpha = manager.get_model_info("Alpha");
+    alpha.recipe_options = RecipeOptions("llamacpp", json{{"ctx_size", 2048}});
+    manager.save_model_options(alpha);  // a write that changes one row
+    check("a patch to one row leaves the rest of the set published",
+          manager.model_exists("Alpha") && manager.model_exists("Beta") &&
+              manager.model_exists("user.Gamma"));
+}
+
 int main() {
     test_a_writer_answers_during_a_rebuild();
     test_a_write_during_a_rebuild_survives_it();
@@ -305,6 +326,7 @@ int main() {
     test_concurrent_readers_compose_once();
     test_collections_follow_their_components();
     test_the_published_names_follow_the_set();
+    test_a_write_seeds_from_what_readers_hold();
 
     if (g_failures == 0) {
         std::printf("All store build tests passed.\n");

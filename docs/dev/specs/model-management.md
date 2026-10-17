@@ -389,7 +389,9 @@ Rules:
 
 10. Publishing derives what a reader could recompute — the alias maps and the helper-model projection — from the set published beside them, so no writer has to remember to update a name table and none can point at a model that is gone. Deriving costs 206 µs on a 143-model store, against 100 µs to copy the set itself; writes are rare enough (62 across a whole CLI suite) that the invariant is worth the arithmetic. The filter table is the one thing a build hands over explicitly, because a patch says nothing about hardware fit and carries the published table forward.
 
-11. A rebuild whose generation moved while it composed does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next read composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
+11. Outside a write the model set exists once, in the published snapshot. A write seeds a draft from the snapshot readers hold and works on that; the publish moves the draft into the new snapshot. Nothing mutates a published snapshot in place, so a reader cannot see a set half-updated, and there is no member left holding a second copy that a later edit could read by mistake.
+
+12. A rebuild whose generation moved while it composed does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next read composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
 
 ## Hardware Filtering
 
