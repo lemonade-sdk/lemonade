@@ -28,6 +28,7 @@ from utils.server_base import (
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    MULTI_MODEL_TERTIARY,
     TIMEOUT_MODEL_OPERATION,
     get_default_lemond_binary,
 )
@@ -80,6 +81,11 @@ try:
         json.dump(state, f)
 except Exception as e:
     print("Failed to write state:", e)
+
+fail_arg = state.get("fail_startup_arg")
+if state.get("fail_startup") or (fail_arg and any(fail_arg in a for a in sys.argv)):
+    print("Mock llama-server failing at startup")
+    sys.exit(1)
 
 # Parse command line args to find the port
 port = 8080
@@ -560,6 +566,63 @@ class TestGpuHangRecovery(unittest.TestCase):
             f"Expected exactly 2 requests to hit attempt 1, but got {attempt_1_reqs}",
         )
         print("[PASS] Concurrent GPU Hang recovery succeeded!")
+
+    def test_failed_load_with_nothing_loaded_is_not_retried(self):
+        """A backend that fails at startup with no other model loaded is launched once:
+        evicting frees nothing, so the nuclear evict-and-retry would only repeat it."""
+        with open(STATE_FILE, "w") as f:
+            json.dump({"attempt": 0, "fail_startup": True}, f)
+
+        load_resp = self.session.post(
+            f"{self.base_url}/api/v1/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertNotEqual(load_resp.status_code, 200, load_resp.text)
+        attempts = self._get_attempt_count()
+        self.assertEqual(
+            attempts, 1, f"Expected one backend launch, got {attempts} (retried)"
+        )
+        print("[PASS] Failed load with nothing to evict was not retried!")
+
+    def test_failed_load_with_another_model_loaded_is_retried(self):
+        """With another model loaded, a failed load still evicts it and retries once."""
+        pull_model_with_retry(MULTI_MODEL_TERTIARY, port=self.port)
+        resp = self.session.post(
+            f"{self.base_url}/internal/set",
+            json={"max_loaded_models": 2},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+        load_resp = self.session.post(
+            f"{self.base_url}/api/v1/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_resp.status_code, 200, load_resp.text)
+
+        # Only launches of the second model (its path contains the name) fail.
+        with open(STATE_FILE, "w") as f:
+            json.dump(
+                {"attempt": 1, "fail_startup_arg": MULTI_MODEL_TERTIARY[: -len("-GGUF")]},
+                f,
+            )
+        load_resp = self.session.post(
+            f"{self.base_url}/api/v1/load",
+            json={"model_name": MULTI_MODEL_TERTIARY},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertNotEqual(load_resp.status_code, 200, load_resp.text)
+        attempts = self._get_attempt_count()
+        self.assertEqual(
+            attempts, 3, f"Expected first launch + failed load + one retry, got {attempts}"
+        )
+
+        health = self.session.get(f"{self.base_url}/api/v1/health", timeout=5).json()
+        loaded = [m.get("model_name") for m in health.get("all_models_loaded", [])]
+        self.assertNotIn(ENDPOINT_TEST_MODEL, loaded, "retry should have evicted it")
+        print("[PASS] Failed load with another model loaded was retried once!")
 
 
 if __name__ == "__main__":
