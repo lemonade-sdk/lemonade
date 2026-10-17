@@ -49,6 +49,9 @@ struct FakeHost {
     // `podman info`'s exit code and its Host.Security.Rootless answer.
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
+    // What Podman prints on stderr, which reaches `output` only when captured.
+    std::string stderr_noise =
+        "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
 
     ContainerHost host() const {
@@ -64,7 +67,7 @@ struct FakeHost {
             const auto it = files.find(path);
             return it == files.end() ? std::string() : it->second;
         };
-        h.run = [this](const std::vector<std::string>& argv, int) {
+        h.run = [this](const std::vector<std::string>& argv, int, bool capture_stderr) {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
@@ -74,6 +77,7 @@ struct FakeHost {
                 result.exit_code = it == subids.end() ? 1 : 0;
                 if (it != subids.end()) result.output = it->second;
             }
+            if (capture_stderr) result.output += stderr_noise;
             return result;
         };
         return h;
@@ -191,6 +195,11 @@ void test_tool_choice_and_setup() {
     rootful.tools = {"podman"};
     rootful.podman_rootless = "false";
     check("rootful Podman needs neither group", !ContainerManager(rootful.host()).check_setup());
+
+    FakeHost noisy;
+    noisy.tools = {"podman"};
+    check("Podman's stderr warnings do not hide that it is rootless",
+          ContainerManager(noisy.host()).rootless_podman());
 
     FakeHost broken;
     broken.tools = {"podman"};

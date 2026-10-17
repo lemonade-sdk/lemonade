@@ -68,8 +68,12 @@ struct ContainerHost {
     std::function<bool()> docker_socket_accepts;
     // The contents of a file, or "" when it cannot be read.
     std::function<std::string(const std::string& path)> read_file;
-    // Runs a command line and waits for it.
-    std::function<CommandResult(const std::vector<std::string>& argv, int timeout_seconds)> run;
+    // Runs a command line and waits for it. Without `capture_stderr`, stderr
+    // stays out of `output`, since Podman prints warnings there even when the
+    // command succeeds.
+    std::function<CommandResult(const std::vector<std::string>& argv, int timeout_seconds,
+                                bool capture_stderr)>
+        run;
 
     static ContainerHost real();
 };
@@ -142,7 +146,8 @@ public:
                                                     const std::string& destination);
 
 private:
-    CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds) const;
+    CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds,
+                         bool capture_stderr = true) const;
     void remove_network(const std::string& name) const;
     // `podman info`'s answer, nullopt while it fails. Cached once it answers,
     // since setup checks run on every /system-info request.
