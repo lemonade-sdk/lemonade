@@ -430,6 +430,34 @@ void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
     handle(req, res);
 }
 
+namespace {
+
+bool is_empty_string(const json& value) {
+    return value.is_string() && value.get_ref<const std::string&>().empty();
+}
+
+// Reads an argument sent under several spellings the way Ollama reads model and name
+// (cmp.Or): the first spelling with a value is kept and the rest are dropped unchecked. An
+// empty string is no value when another spelling has one, because Ollama's Go client sends
+// both spellings and leaves the one it does not use empty.
+void keep_first_spelling(json& body, const std::vector<std::string>& names) {
+    auto filled = [&body](const std::string& name) {
+        auto it = body.find(name);
+        return it != body.end() && !it->is_null() && !is_empty_string(*it);
+    };
+    const bool any_filled = std::any_of(names.begin(), names.end(), filled);
+    auto kept = std::find_if(names.begin(), names.end(), [&](const std::string& name) {
+        auto it = body.find(name);
+        return it != body.end() && !it->is_null() && !(any_filled && is_empty_string(*it));
+    });
+    if (kept == names.end()) return;
+    for (auto name = names.begin(); name != names.end(); ++name) {
+        if (name != kept) body.erase(*name);
+    }
+}
+
+} // namespace
+
 bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
     for (const auto& arg : req.spec.args) {
         if (arg.forwarded || arg.in == ArgIn::Path) {
@@ -437,6 +465,9 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
         }
         std::vector<std::string> names = {arg.name};
         names.insert(names.end(), arg.aliases.begin(), arg.aliases.end());
+        if (arg.in == ArgIn::JsonBody && names.size() > 1) {
+            keep_first_spelling(req.body, names);
+        }
         bool present = false;
         for (const auto& name : names) {
             json value;
@@ -461,15 +492,22 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res) const {
                 if (it == req.body.end()) continue;
                 value = *it;
             }
-            present = true;
             std::string path = name;
             if (const json* failed =
                     find_mismatch(value, arg.schema, arg.in == ArgIn::Query, path)) {
+                if (arg.drop_invalid && arg.in == ArgIn::JsonBody) {
+                    LOG(DEBUG, "Server") << req.spec.id << ": ignoring '" << path
+                                         << "', expected " << describe_schema(*failed)
+                                         << std::endl;
+                    req.body.erase(name);
+                    continue;
+                }
                 write_error(res, req.spec.error_format, kArgInvalid,
                             "Invalid value for '" + path + "': expected " +
                                 describe_schema(*failed));
                 return false;
             }
+            present = true;
         }
         if (arg.in == ArgIn::JsonBody) {
             for (const auto& alias : arg.aliases) {

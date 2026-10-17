@@ -43,9 +43,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `tools` | No | Tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `format` | No | `json` constrains the reply to a JSON object. A JSON schema is accepted but not applied. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `think` | No | Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `think` | No | `true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama accepts for models that define none of their own. Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `keep_alive` | No | `0` with an empty `messages` array unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A request with tools and streaming runs non-streaming on the backend and answers with two NDJSON lines: the whole message, then the final line.
 
@@ -203,13 +203,13 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `prompt` | No | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `width` | No | Image models only: image width in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `height` | No | Image models only: image height in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `steps` | No | Image models only: inference steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `cfg_scale` | No | Image models only: classifier-free guidance scale. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `seed` | No | Random seed for reproducible output. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `width` | No | Image models only: image width in pixels. Defaults to `512`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `height` | No | Image models only: image height in pixels. Defaults to `512`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | Image models only: inference steps. Defaults to the model's own. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Image models only: classifier-free guidance scale. Defaults to the model's own. Ignored unless a number. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducible output. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `keep_alive` | No | `0` with an empty `prompt` unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `system` | No | System prompt. Ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `format` | No | Output format constraint. Ignored. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
@@ -407,7 +407,7 @@ This endpoint does not take any parameters.
   - `name` - Lemonade model name with a `:latest` tag.
   - `model` - Same as `name`.
   - `modified_at` - Always `2024-01-01T00:00:00Z`.
-  - `size` - Size in bytes, from the registry's estimate.
+  - `size` - Size in bytes of the model's files on disk, rounded to a few significant digits.
   - `digest` - Always an all-zero sha256.
   - `details` - Inferred from the model name, recipe and checkpoint.
     - `parent_model` - Always empty.
@@ -678,7 +678,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` | Yes | Text to embed, or an array of texts. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -748,7 +748,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | Embedding model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` or `input` | Yes | Text to embed. For an array, only the first text's embedding is returned. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Wins over `options.num_ctx`. Ignored unless an integer. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
