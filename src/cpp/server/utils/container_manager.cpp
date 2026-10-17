@@ -11,10 +11,11 @@
 #include <stdexcept>
 #include <thread>
 
-#include <lemon/utils/aixlog.hpp>
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
+
+#include <lemon/utils/aixlog.hpp>
 
 #ifndef _WIN32
 #include <grp.h>
@@ -167,14 +168,18 @@ std::optional<ContainerTool> ContainerManager::tool() const {
 }
 
 std::optional<bool> ContainerManager::podman_info_rootless() const {
-    std::lock_guard<std::mutex> lock(podman_mode_mutex_);
-    if (podman_rootless_) return podman_rootless_;
+    {
+        std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+        if (podman_rootless_) return podman_rootless_;
+    }
     const CommandResult info =
         host_.run({"podman", "info", "--format", "{{.Host.Security.Rootless}}"},
                   kCommandTimeoutSeconds, /*capture_stderr=*/false);
     if (info.exit_code != 0) return std::nullopt;
-    podman_rootless_ = trim(info.output) == "true";
-    return podman_rootless_;
+    const bool rootless = trim(info.output) == "true";
+    std::lock_guard<std::mutex> lock(podman_mode_mutex_);
+    podman_rootless_ = rootless;
+    return rootless;
 }
 
 bool ContainerManager::rootless_podman() const {
@@ -190,7 +195,7 @@ std::optional<SetupFailure> ContainerManager::check_setup() const {
     if (*chosen == ContainerTool::Podman) {
         const std::optional<bool> rootless = podman_info_rootless();
         if (!rootless) {
-            return SetupFailure{"Podman does not answer `podman info`",
+            return SetupFailure{"`podman info` fails",
                                 "Run `podman info` and fix the error it prints"};
         }
         if (*rootless && (!host_.in_group("video") || !host_.in_group("render"))) {
