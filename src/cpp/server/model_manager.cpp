@@ -1237,88 +1237,6 @@ void ModelManager::build_cache() {
               << " total, " << downloaded_count << " downloaded" << std::endl;
 }
 
-void ModelManager::add_model_to_cache(const std::string& model_name) {
-    StoreWrite store_write(*this);
-
-    if (!cache_valid_) {
-        return; // Will initialize on next access
-    }
-
-    const bool is_user_model = is_user_model_name(model_name);
-    const models::RegistryDocuments::Pin rows = registries_.pin();
-    const json* model_json = registry_row(rows, model_name);
-
-    if (!model_json) {
-        LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in JSON" << std::endl;
-        return;
-    }
-
-    // Build ModelInfo
-    ModelInfo info;
-    info.model_name = model_name;
-    models::parse_checkpoints(info, *model_json);
-    models::parse_components(info, *model_json);
-    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
-    info.cloud_provider = JsonUtils::get_or_default<std::string>(*model_json, "cloud_provider", "");
-
-    models::parse_image_defaults(info, *model_json);
-    models::parse_extras(info, *model_json);
-    info.recipe_options = build_recipe_options(info, models::row_recipe_options(*model_json),
-                                               cache_key_to_canonical_id(model_name),
-                                               recipe_options_.all());
-
-    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
-    models::parse_model_source_fields(info, *model_json);
-    info.system_prompt = JsonUtils::get_or_default<std::string>(*model_json, "system_prompt", "");
-
-    if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
-        for (const auto& label : (*model_json)["labels"]) {
-            info.labels.push_back(label.get<std::string>());
-        }
-    }
-    std::string illegal =
-        lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
-    if (!illegal.empty()) {
-        LOG(ERROR, "ModelManager")
-            << "Skipping " << describe_illegal_labels(model_name, illegal) << std::endl;
-        return;
-    }
-    lemon::backends::ensure_deployment_label(info.labels, info.recipe);
-
-    // Populate type and device fields (multi-model support)
-    info.type = get_model_type_from_labels(info.labels);
-    info.device = device_type_for_recipe(info.recipe);
-
-    resolve_all_model_paths(info);
-
-    // Check if it should be filtered out by backend availability
-    std::map<std::string, ModelInfo> temp_map = {{model_name, info}};
-    models::HostFilter host = filter_for_host(temp_map, hardware_filter_);
-    hardware_filter_ = std::move(host.reasons);
-    auto& filtered = host.visible;
-
-    if (filtered.empty()) {
-        LOG(INFO, "ModelManager") << "Model '" << model_name << "' filtered out by backend availability" << std::endl;
-        return; // Backend not available, don't add to cache
-    }
-
-    // Check download status (collections aggregate their components; everyone
-    // else asks its backend ops).
-    if (is_model_collection_recipe(info.recipe)) {
-        info.downloaded = check_component_downloaded(info, models_cache_);
-    } else {
-        backends::BackendOpsContext octx;
-        octx.fetch = ingest_.get();
-        octx.artifacts = artifacts_.get();
-        info.downloaded = backends::ops_for(info.recipe)->is_downloaded(info, octx);
-    }
-
-    populate_model_metadata(info);
-    models_cache_[model_name] = info;
-    rebuild_public_model_aliases_locked();
-    LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
-}
-
 void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
     if (!cache_valid_) {
         return; // Will rebuild on next access
@@ -1333,61 +1251,64 @@ void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
 }
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    StoreWrite store_write(*this);
-
-    if (!cache_valid_) {
-        return; // Will rebuild on next access
+    // Everything here is filesystem work, so it runs against the published view on
+    // a private copy and only the rows it changed are committed.
+    auto view = std::atomic_load(&store_snapshot_);
+    if (!view || !view->valid) {
+        return;  // Will rebuild on next access
     }
-
-    auto it = models_cache_.find(model_name);
-    if (it != models_cache_.end()) {
-        it->second.downloaded = downloaded;
-
-        // After a fresh download the model is up to date
-        if (downloaded) {
-            it->second.update_available = false;
-        }
-
-        // Recompute resolved_path after download
-        // The path changes now that files exist on disk
-        if (downloaded) {
-            resolve_all_model_paths(it->second);
-            if (backends::ops_for(it->second.recipe)->invalidates_cache_after_download()) {
-                cache_valid_ = false;
-                LOG(INFO, "ModelManager") << "Invalidated model cache after download for '"
-                          << model_name << "' (backend rebuilds its model list)" << std::endl;
-                return;
-            }
-            populate_model_metadata(it->second);
-            LOG(INFO, "ModelManager") << "Updated '" << model_name
-                      << "' downloaded=" << downloaded
-                      << ", resolved_path=" << it->second.resolved_path() << std::endl;
-        } else {
-            it->second.max_context_window = 0;
-            LOG(INFO, "ModelManager") << "Updated '" << model_name
-                      << "' downloaded=" << downloaded << std::endl;
-        }
-        refresh_on_disk_size(it->second);
-
-        // Recompute downloaded status for any collections that
-        // depend on this model, so the collection reflects component changes
-        // without requiring a full cache rebuild.
-        for (auto& [name, entry] : models_cache_) {
-            if (!is_model_collection_recipe(entry.recipe)) continue;
-            if (std::find(entry.components.begin(), entry.components.end(),
-                          model_name) == entry.components.end()) {
-                continue;
-            }
-            bool new_state = check_component_downloaded(entry, models_cache_);
-            if (entry.downloaded != new_state) {
-                entry.downloaded = new_state;
-                LOG(INFO, "ModelManager") << "Collection '" << name
-                          << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
-            }
-        }
-    } else {
+    const ModelInfo* found = view->find(model_name);
+    if (!found) {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
+        return;
     }
+
+    ModelInfo patched = *found;
+    patched.downloaded = downloaded;
+    if (downloaded) {
+        // Up to date, and the path resolves now that the files exist.
+        patched.update_available = false;
+        resolve_all_model_paths(patched);
+    } else {
+        patched.max_context_window = 0;
+    }
+    const bool backend_lists_models =
+        downloaded && backends::ops_for(patched.recipe)->invalidates_cache_after_download();
+    if (!backend_lists_models) {
+        populate_model_metadata(patched);
+        refresh_on_disk_size(patched);
+    }
+
+    // Collections carrying this model follow it without a full rebuild.
+    const auto dependents =
+        models::collection_states_after_component(view->models, model_name, downloaded);
+    const std::string resolved = patched.resolved_path();
+
+    StoreWrite store_write(*this);
+    if (!cache_valid_) {
+        return;  // Something else rebuilt while this ran, and it read the disk again
+    }
+    if (auto it = models_cache_.find(model_name); it != models_cache_.end()) {
+        // Options are patched into the live row without invalidating, so a save that
+        // landed while this read the disk keeps its answer.
+        patched.recipe_options = it->second.recipe_options;
+        it->second = std::move(patched);
+    }
+    for (const auto& [name, state] : dependents) {
+        auto it = models_cache_.find(name);
+        if (it == models_cache_.end() || it->second.downloaded == state) continue;
+        it->second.downloaded = state;
+        LOG(INFO, "ModelManager") << "Collection '" << name << "' downloaded=" << state
+                                 << " (dependent on " << model_name << ")" << std::endl;
+    }
+    if (backend_lists_models) {
+        cache_valid_ = false;
+        LOG(INFO, "ModelManager") << "Invalidated model cache after download for '" << model_name
+                                 << "' (backend rebuilds its model list)" << std::endl;
+        return;
+    }
+    LOG(INFO, "ModelManager") << "Updated '" << model_name << "' downloaded=" << downloaded
+                             << ", resolved_path=" << resolved << std::endl;
 }
 
 void ModelManager::remove_model_from_cache(const std::string& model_name) {
@@ -1655,20 +1576,13 @@ static models::BackendAvailability probe_backend_availability(
 }
 
 models::HostFilter ModelManager::filter_for_host(
-    const std::map<std::string, ModelInfo>& models,
-    const std::shared_ptr<const models::FilterReasons>& carried) const {
+    const std::map<std::string, ModelInfo>& models) const {
     models::FilterResult result =
         models::filter_hardware(models, probe_backend_availability(models));
 
     auto reasons = std::make_shared<models::FilterReasons>();
     reasons->rejected = std::move(result.rejected);
     reasons->empty_recipes = std::move(result.empty_recipes);
-
-    // An incremental pass would otherwise reduce the recipe availability table to
-    // the one model it looked at.
-    if (carried) {
-        reasons->empty_recipes = carried->empty_recipes;
-    }
 
     models::HostFilter outcome;
     outcome.visible = std::move(result.visible);

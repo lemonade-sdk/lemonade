@@ -1,9 +1,11 @@
 #include <lemon/canonical_id.h>
 #include <lemon/model_registry.h>
+#include <lemon/model_types.h>
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/routing_policy.h>
 
+#include <algorithm>
 #include <sstream>
 
 namespace lemon {
@@ -179,6 +181,31 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
     }
 
     return result;
+}
+
+std::vector<std::pair<std::string, bool>> collection_states_after_component(
+    const std::map<std::string, ModelInfo>& models, const std::string& model_name,
+    bool component_downloaded) {
+    std::vector<std::pair<std::string, bool>> changed;
+    for (const auto& [name, entry] : models) {
+        if (!is_model_collection_recipe(entry.recipe) || entry.components.empty()) continue;
+        if (std::find(entry.components.begin(), entry.components.end(), model_name) ==
+            entry.components.end()) {
+            continue;
+        }
+        bool all_present = true;
+        for (const auto& component_name : entry.components) {
+            if (component_name == model_name) {
+                if (!component_downloaded) all_present = false;
+            } else {
+                auto component = models.find(component_name);
+                if (component == models.end() || !component->second.downloaded) all_present = false;
+            }
+            if (!all_present) break;
+        }
+        if (entry.downloaded != all_present) changed.emplace_back(name, all_present);
+    }
+    return changed;
 }
 
 }  // namespace models

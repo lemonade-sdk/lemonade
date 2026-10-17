@@ -101,28 +101,6 @@ static void test_full_pass_recomputes(ModelManager& manager, const std::string& 
           !reports(manager.filter_for_host(partial).reasons->empty_recipes, recipe));
 }
 
-// add_model_to_cache looks at one model and passes the published table in, so a
-// single-model pass cannot reduce that table to what it happened to look at.
-static void test_incremental_pass_carries_the_table(ModelManager& manager,
-                                                    const std::string& recipe) {
-    std::map<std::string, ModelInfo> full = {{"Huge", model(recipe, HUGE_GB)}};
-    const Reasons seeded = manager.filter_for_host(full).reasons;
-
-    check("seeded table actually holds the all-filtered recipe",
-          reports(seeded->empty_recipes, recipe));
-
-    std::map<std::string, ModelInfo> one = {{"Tiny", model(recipe, 0.01)}};
-    const Reasons carried = manager.filter_for_host(one, seeded).reasons;
-
-    check("incremental pass leaves the availability side table unchanged",
-          carried->empty_recipes == seeded->empty_recipes);
-    check("incremental pass does not drop the recorded recipe",
-          reports(carried->empty_recipes, recipe));
-
-    check("carrying the table does not hide the model that fits",
-          manager.filter_for_host(one, seeded).visible.count("Tiny") == 1);
-}
-
 int main() {
     test_pure_set_difference();
 
@@ -136,7 +114,6 @@ int main() {
     } else {
         std::printf("Using probe recipe: %s\n", probe.c_str());
         test_full_pass_recomputes(manager, probe);
-        test_incremental_pass_carries_the_table(manager, probe);
     }
 
     if (g_failures == 0) {
