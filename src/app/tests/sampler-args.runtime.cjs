@@ -154,6 +154,26 @@ const ordered = '--zeta 1 --alpha 2 --no-mmap';
 assert.equal(splitSamplerArgs(ordered).rest, ordered);
 assert.equal(splitSamplerArgs(composeSamplerArgs({ '--temp': '0.6' }, ordered)).rest, ordered);
 
+// ── Newlines: stored for readability, treated as separators (matching C++) ───
+
+// lemond stores `*_args` with newlines so the field can read one flag per line,
+// yet the argv it builds splits on them — so the port must too, not glue a flag
+// that follows a line break into the preceding value.
+assert.deepEqual(parseCustomArgs('--a 1\n--b 2'), ['--a', '1', '--b', '2']);
+assert.deepEqual(parseCustomArgs('--temp 0.8\r\n--top-p 0.9'), ['--temp', '0.8', '--top-p', '0.9']);
+
+// The freeform remainder keeps the line breaks it was written with, so saving
+// one flag per line survives the page reload instead of collapsing to one line.
+const multiline = '--gpu-layers 35\n--threads 4\n--no-mmap';
+assert.equal(splitSamplerArgs(multiline).rest, multiline);
+assert.equal(composeSamplerArgs({}, multiline), multiline);
+
+// A sampler flag written on its own line still becomes a typed field and leaves
+// the freeform box, rather than being stranded behind a glued newline.
+const sampled = splitSamplerArgs('--temp 0.6\n--gpu-layers 35');
+assert.equal(sampled.fields['--temp'], '0.6');
+assert.equal(sampled.rest, '--gpu-layers 35');
+
 // Only one half may emit a given flag.
 for (const source of ['--temp 0.6 --temp 0.7', '--temp 0.6 --gpu-layers 35']) {
   const split = splitSamplerArgs(source);
