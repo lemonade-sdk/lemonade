@@ -24,6 +24,11 @@ const RouteError kUpscaleFailed{500, "", "The backend produces no upscaled image
 
 // Upscaling runs the model once through its backend's command-line tool instead of a
 // loaded server, so this route never auto-loads and is not a ModelRoute.
+const RouteArg kImage{"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "Base64-encoded PNG image to upscale."};
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                      "The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."};
+
 class ImagesUpscaleRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -45,12 +50,7 @@ public:
             "To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgenerations), "
             "pass its `b64_json` as `image`.",
         };
-        s.args = {
-            {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Base64-encoded PNG image to upscale."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."},
-        };
+        s.args = {kImage, kModel};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -80,7 +80,7 @@ public:
         try {
             LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
 
-            std::string upscale_model_name = req.body["model"].get<std::string>();
+            std::string upscale_model_name = req.arg(kModel).get<std::string>();
 
             ModelInfo info;
             try {
@@ -105,7 +105,7 @@ public:
                 return;
             }
 
-            std::string b64_image = req.body["image"].get<std::string>();
+            std::string b64_image = req.arg(kImage).get<std::string>();
 
             backends::BackendContext context;
             context.log_level = ctx_.config->log_level();

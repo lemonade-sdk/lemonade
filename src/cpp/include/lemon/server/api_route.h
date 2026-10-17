@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "lemon/server/route_arg.h"
 #include "lemon/server/route_error.h"
 #include "lemon/server/router_dispatch.h"
 #include "lemon/server/server_context.h"
@@ -17,7 +18,6 @@
 namespace lemon {
 
 enum class Prefixes { Quad, Internal, Root };      // URLs and auth; see RouteRegistry
-enum class ArgIn { JsonBody, Query, Path, Form };  // where an argument comes from
 enum class RequestFormat { Raw, Json, OptionalJson, Form };  // how ApiRoute parses the request body
 enum class ErrorFormat { Plain, OpenAi, Anthropic };          // the body shape of the base class's error responses
 
@@ -30,21 +30,6 @@ enum class ResponseFormat {
     Binary,        // e.g. audio, a glTF mesh
     BinaryStream,  // binary, streamed as generated, e.g. speech
     Empty,         // e.g. the 202 answering an MCP notification
-};
-
-// How much of an argument Lemonade honors; the docs give each argument a badge for it.
-enum class Support { Available, Partial, NotAvailable };
-
-struct RouteArg {
-    std::string name;
-    ArgIn in;
-    nlohmann::json schema;            // JSON-schema subset
-    bool required = false;
-    Support supported = Support::Available;  // Partial: the description states the limit
-    std::string description;
-    std::vector<std::string> aliases;  // other names clients send it under, e.g. "model" for "model_name"
-    bool forwarded = false;            // lemond passes it to the backend without acting on it
-    bool drop_invalid = false;         // a value that fails the schema is ignored instead of answered with 400
 };
 
 // Each format a route returns gets its own schema in the docs.
@@ -101,11 +86,25 @@ struct RouteRequest {
     const httplib::Request& http;
     const RouteSpec& spec;
     nlohmann::json body;              // parsed unless spec.request_format is Raw
+    nlohmann::json params = nlohmann::json::object();  // Query and Path arguments, converted to their schema types
     std::string model;                // ModelRoute: the resolved model name
     // Set by validate() when it picked an already-loaded model: loading it again with the
     // default purpose would demote a routing helper to a standard model.
     bool model_already_loaded = false;
     std::optional<RouterDispatchResult> route_decision;
+
+    // serve() has renamed every alias to the argument's name, so these read one place: the body
+    // for JsonBody and Form arguments, params for Query and Path ones.
+    bool has(const RouteArg& arg) const;
+    const nlohmann::json& arg(const RouteArg& arg) const;  // null when the argument was not sent
+    template <typename T>
+    T value(const RouteArg& arg, const T& fallback) const {
+        return has(arg) ? this->arg(arg).template get<T>() : fallback;
+    }
+    std::string value(const RouteArg& arg, const char* fallback) const {
+        return value<std::string>(arg, fallback);
+    }
+    const httplib::FormData* file(const RouteArg& arg) const;  // a Form file argument, or nullptr
 };
 
 class ApiRoute {
@@ -148,6 +147,7 @@ public:
     static const RouteError kModelMissing;
 
 protected:
+    virtual const RouteArg& model_arg() const = 0;  // the argument that names the model
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
 
@@ -168,9 +168,9 @@ private:
     bool build_form_body(RouteRequest& req, httplib::Response& res);
 };
 
-// Clients name models by aliases and, following Ollama, with a ":latest" tag; this
-// rewrites "model" and "model_name" in request to the name the registry knows.
-void resolve_model_name(ServerContext& ctx, nlohmann::json& request, bool strip_latest = true);
+// Clients name models by aliases and, following Ollama, with a ":latest" tag; this returns
+// the name the registry knows.
+std::string canonical_model_name(ServerContext& ctx, const std::string& name, bool strip_latest = true);
 std::string strip_latest_tag(const std::string& name);
 
 // Aborts the upstream backend request when the client disconnects during a non-streaming
@@ -204,10 +204,6 @@ void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
 // Writes one named server-sent event. Returns false when the client has disconnected.
 bool write_sse_event(httplib::DataSink& sink, const std::string& event,
                      const nlohmann::json& data);
-
-// The one form file a route accepts under any of names, or nullptr.
-const httplib::FormData* find_form_file(const httplib::Request& http,
-                                        std::initializer_list<const char*> names);
 
 std::vector<RouteError> join_errors(std::initializer_list<std::vector<RouteError>> lists);
 

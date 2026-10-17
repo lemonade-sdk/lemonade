@@ -27,8 +27,8 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 |-----------|----------|-------------|--------|
 | `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `documents` | Yes | Documents to score against the query. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | Reranker model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 

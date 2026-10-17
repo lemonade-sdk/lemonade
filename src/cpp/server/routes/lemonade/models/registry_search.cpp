@@ -28,6 +28,18 @@ const RouteError kUpstreamError{
 const RouteError kSearchFailed{
     502, "", "The search fails with no upstream status, for example on a network error"};
 
+const RouteArg kQuery{"query", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
+                      "Search text, minimum 3 characters after trimming.",
+                      {"q"}};
+const RouteArg kSource{"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
+                       "Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. "
+                       "Defaults to `huggingface`."};
+const RouteArg kLimit{"limit", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
+                      "Maximum number of results, from `1` to `50`. Defaults to `12`."};
+const RouteArg kFormat{"format", ArgIn::Query, {{"enum", json::array({"gguf"})}}, false, Support::Available,
+                       "Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them "
+                       "in a ModelScope search."};
+
 class RegistrySearchRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -43,18 +55,7 @@ public:
             "results are candidates chosen from registry metadata, so the desktop app's Model "
             "Manager checks each one with [`GET /v1/pull/variants`](#get-v1pullvariants) and offers a "
             "download only for repositories whose files pass.";
-        s.args = {
-            {"query", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
-             "Search text, minimum 3 characters after trimming. `q` is accepted as an alias."},
-            {"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
-             "Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. "
-             "Defaults to `huggingface`."},
-            {"limit", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
-             "Maximum number of results, from `1` to `50`. Defaults to `12`."},
-            {"format", ArgIn::Query, {{"enum", json::array({"gguf"})}}, false, Support::Available,
-             "Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them "
-             "in a ModelScope search."},
-        };
+        s.args = {kQuery, kSource, kLimit, kFormat};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -96,11 +97,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const httplib::Request& http = req.http;
         try {
-            std::string query = http.has_param("query")
-                ? http.get_param_value("query")
-                : (http.has_param("q") ? http.get_param_value("q") : "");
+            std::string query = req.value(kQuery, "");
             const auto first = query.find_first_not_of(" \t\r\n");
             const auto last = query.find_last_not_of(" \t\r\n");
             query = first == std::string::npos ? "" : query.substr(first, last - first + 1);
@@ -110,20 +108,24 @@ public:
                 return;
             }
 
-            const std::string source_text = http.has_param("source")
-                ? http.get_param_value("source") : "huggingface";
+            const std::string source_text = req.value(kSource, "huggingface");
             const auto source = parse_remote_registry_source(source_text);
 
             std::size_t limit = 12;
-            if (http.has_param("limit")) {
-                const std::string limit_text = http.get_param_value("limit");
+            if (req.has(kLimit)) {
+                const json& limit_arg = req.arg(kLimit);
                 std::size_t parsed = 0;
-                try {
-                    std::size_t consumed = 0;
-                    parsed = static_cast<std::size_t>(std::stoul(limit_text, &consumed));
-                    if (consumed != limit_text.size()) throw std::invalid_argument("trailing characters");
-                } catch (...) {
-                    throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
+                if (limit_arg.is_number_integer()) {
+                    parsed = limit_arg.get<std::size_t>();
+                } else {
+                    const std::string limit_text = limit_arg.get<std::string>();
+                    try {
+                        std::size_t consumed = 0;
+                        parsed = static_cast<std::size_t>(std::stoul(limit_text, &consumed));
+                        if (consumed != limit_text.size()) throw std::invalid_argument("trailing characters");
+                    } catch (...) {
+                        throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
+                    }
                 }
                 if (parsed < 1 || parsed > 50) {
                     throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
@@ -132,8 +134,8 @@ public:
             }
 
             bool gguf_only = false;
-            if (http.has_param("format")) {
-                const std::string format = http.get_param_value("format");
+            if (req.has(kFormat)) {
+                const std::string format = req.arg(kFormat).get<std::string>();
                 if (format != "gguf") {
                     throw std::invalid_argument(
                         "Unsupported registry search format '" + format + "' (expected 'gguf')");

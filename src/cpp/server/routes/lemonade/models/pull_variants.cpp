@@ -26,6 +26,13 @@ const RouteError kVariantsFailed{
     "Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection "
     "files, or a network error"};
 
+const RouteArg kCheckpoint{"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
+                           "Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is "
+                           "normalized to `owner/repo` and selects its registry."};
+const RouteArg kSource{"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
+                       "Registry: `huggingface` or `modelscope`. Defaults to the server's "
+                       "`default_model_source`."};
+
 class PullVariantsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -42,14 +49,7 @@ public:
             "<owner/repo>` command and the desktop app's model search use it to fill in the "
             "install form. Lemonade reads public registry metadata, and sends the server's "
             "`HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.";
-        s.args = {
-            {"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
-             "Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is "
-             "normalized to `owner/repo` and selects its registry."},
-            {"source", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
-             "Registry: `huggingface` or `modelscope`. Defaults to the server's "
-             "`default_model_source`."},
-        };
+        s.args = {kCheckpoint, kSource};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -95,9 +95,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const httplib::Request& http = req.http;
         try {
-            std::string checkpoint = http.get_param_value("checkpoint");
+            std::string checkpoint = req.value(kCheckpoint, "");
             if (checkpoint.empty()) {
                 write_plain_error(res, kMissingCheckpoint, "Missing required query parameter 'checkpoint'");
                 return;
@@ -106,10 +105,7 @@ public:
             std::string url_repo_id;
             bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
 
-            std::string raw_source;
-            if (http.has_param("source")) {
-                raw_source = http.get_param_value("source");
-            }
+            const std::string raw_source = req.value(kSource, "");
 
             // Canonicalize the raw param first so accepted aliases (e.g. `hf`) are
             // not rejected against the URL's canonical registry name.
@@ -129,8 +125,8 @@ public:
             if (has_url) {
                 source = remote_registry_source_name(url_source);
             } else {
-                source = http.has_param("source")
-                    ? http.get_param_value("source") : ctx_.config->default_model_source();
+                source = req.has(kSource)
+                    ? req.arg(kSource).get<std::string>() : ctx_.config->default_model_source();
             }
             if (checkpoint.find('/') == std::string::npos) {
                 write_plain_error(res, kMalformedCheckpoint,

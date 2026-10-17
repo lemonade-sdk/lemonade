@@ -1,6 +1,7 @@
 #include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -23,9 +24,7 @@ public:
             "Removes a job at once, even a running one, which is interrupted. The models a "
             "running or paused job loaded are unloaded in the background; a finished job's "
             "models stay loaded.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
-        };
+        s.args = {job_routes::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -47,7 +46,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         bool active = false;
-        if (!ctx_.job_manager->remove(req.http.matches[1], active)) {
+        if (!ctx_.job_manager->remove(req.value(job_routes::kId, std::string()), active)) {
             write_unknown_job(res);
             return;
         }

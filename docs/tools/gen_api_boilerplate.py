@@ -424,6 +424,313 @@ ERROR_LISTS = re.compile(r"\berrors\s*=\s*[^;]*;", re.S)
 REQUIRED_MODEL_ARG = re.compile(r'\{"model", ArgIn::\w+, [^\n]*?, true,')
 RECEIVES_BODY = re.compile(r"RequestFormat::(?:Json|OptionalJson|Form)\b")
 ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
+ROUTE_ARG_DECL = re.compile(
+    r'\bconst RouteArg (?:\w+::)*(k[A-Z]\w*)\{\s*"([^"]+)", ArgIn::(\w+),(.*?)\};', re.S
+)
+ROUTE_ARG_ALIASES = re.compile(r'"\s*,\s*\{((?:"[^"]+"\s*,?\s*)+)\}')
+ROUTE_ARG_USE = re.compile(
+    r"\breq\.(?:arg|has|value|file)\(\s*((?:\w+::)*k[A-Z]\w*)\b|(?<!::)\b(k[A-Z]\w*)\.name\b"
+)
+NAMESPACE_MARK = re.compile(r"\bnamespace\s+([\w:]*)\s*\{|\}\s*//\s*namespace\b")
+ARG_LISTS = re.compile(r"\bargs\s*=\s*\{[^;]*\};", re.S)
+INLINE_ARG = re.compile(r'\{"[^"]+", ArgIn::')
+BODY_ALIAS = re.compile(r"\b(\w+)\s*=\s*req\.body\s*;")
+# A route's own helpers name the request body after the request they take, such as
+# ollama_request or request_json.
+BODY_PARAM = re.compile(r"\bjson&\s*(\w*(?:request|body)\w*)\s*[,)]")
+# The gateways name the request they build for an OpenAI route openai_req.
+BUILT_REQUEST_KEY = re.compile(
+    r'\bopenai_req\w*\s*(?:\[\s*|\.(?:value|contains|find|at|erase|count)\(\s*)"([^"]+)"'
+)
+
+
+JSON_CONSTANT = re.compile(r"\bconst (?:ordered_)?json (k\w+)\s*=\s*(\{.*?\});")
+# Groups of RouteArg constants that share their spellings, location, schema and flags but
+# that the routes treat differently, so one description cannot be true of every member.
+DISTINCT_ARGUMENTS = {
+    frozenset(members): reason
+    for reason, members in [
+        (
+            "Anthropic's message format, converted to OpenAI's",
+            [
+                "routes/anthropic/messages.cpp:kMessages",
+                "routes/openai/text/chat_completions.cpp:openai::chat::kMessages",
+            ],
+        ),
+        (
+            "Anthropic's tools carry an input_schema and are converted to OpenAI's",
+            [
+                "routes/anthropic/messages.cpp:kTools",
+                "routes/shared_args.cpp:generation::kTools",
+            ],
+        ),
+        (
+            "Cache cleanup defaults to a dry run; the others default to false",
+            [
+                "routes/internal/cleanup_cache.cpp:kDryRun",
+                "routes/shared_args.cpp:common::kDryRun",
+            ],
+        ),
+        (
+            "Audio's prompt is the style caption, with lyrics separate; images' is the image",
+            [
+                "routes/lemonade/inference/audio_generations.cpp:kPrompt",
+                "routes/openai/images/images_generations.cpp:openai::images::kPrompt",
+            ],
+        ),
+        (
+            "3D takes data: URLs and sniffs JPEG, BMP and GIF; upscale does neither",
+            [
+                "routes/lemonade/inference/generations_3d.cpp:kImage",
+                "routes/openai/images/images_upscale.cpp:kImage",
+            ],
+        ),
+        (
+            "Register takes only user.* names; load takes any registered model",
+            [
+                "routes/lemonade/load/load.cpp:kModelName",
+                "routes/lemonade/models/register.cpp:kModelName",
+            ],
+        ),
+        (
+            "Only pull normalizes Hugging Face and ModelScope URLs",
+            [
+                "routes/lemonade/models/pull.cpp:kCheckpoint",
+                "routes/lemonade/models/register.cpp:kCheckpoint",
+            ],
+        ),
+        (
+            "Pull also registers a new user.* name",
+            [
+                "routes/lemonade/models/pull.cpp:kModelName",
+                "routes/shared_args.cpp:model_management::kModelName",
+            ],
+        ),
+        (
+            "Pull defaults to the server's source; register takes local sources",
+            [
+                "routes/lemonade/models/pull.cpp:kSource",
+                "routes/lemonade/models/register.cpp:kSource",
+            ],
+        ),
+        (
+            "Variants default to the server's source; search defaults to huggingface",
+            [
+                "routes/lemonade/models/pull_variants.cpp:kSource",
+                "routes/lemonade/models/registry_search.cpp:kSource",
+            ],
+        ),
+        (
+            "Each Ollama route honors a different set of option keys",
+            [
+                "routes/ollama/chat.cpp:kOptions",
+                "routes/ollama/generate.cpp:kOptions",
+                "routes/shared_args.cpp:ollama::embed::kOptions",
+            ],
+        ),
+        (
+            "Texts to embed, versus a conversation's input items",
+            [
+                "routes/ollama/embed.cpp:kInput",
+                "routes/openai/text/responses.cpp:kInput",
+            ],
+        ),
+        (
+            "Text to continue or an image to generate, versus text to route",
+            [
+                "routes/ollama/generate.cpp:kPrompt",
+                "routes/router/routing_validate.cpp:kPrompt",
+            ],
+        ),
+        (
+            "Speech streams audio; server-sent events default to false; Ollama's NDJSON "
+            "defaults to true",
+            [
+                "routes/openai/audio/audio_speech.cpp:kStream",
+                "routes/shared_args.cpp:common::kStream",
+                "routes/shared_args.cpp:ollama::kStream",
+            ],
+        ),
+        (
+            "Only edits takes several images",
+            [
+                "routes/openai/images/images_edits.cpp:kImage",
+                "routes/openai/images/images_variations.cpp:kImage",
+            ],
+        ),
+        (
+            "Edits defaults to the reference image's size; variations to the model's own",
+            [
+                "routes/openai/images/images_edits.cpp:kSize",
+                "routes/openai/images/images_variations.cpp:kSize",
+            ],
+        ),
+        (
+            "sd.cpp turns a negative seed into a random one; the audio and 3D backends "
+            "forward it",
+            [
+                "routes/openai/images/images_generations.cpp:openai::images::kSeed",
+                "routes/shared_args.cpp:inference::kSeed",
+            ],
+        ),
+        (
+            "Upscale runs its model once without loading it and needs the upscaling label",
+            [
+                "routes/openai/images/images_upscale.cpp:kModel",
+                "routes/shared_args.cpp:gateway::kModel",
+            ],
+        ),
+        (
+            "Files does not resolve aliases",
+            [
+                "routes/openai/models/models_id_files.cpp:kId",
+                "routes/shared_args.cpp:openai::models::kId",
+            ],
+        ),
+    ]
+}
+
+
+def split_initializer(text: str) -> list[str]:
+    """A brace initializer's fields, split at its top-level commas."""
+    parts, depth, current, i, in_string = [], 0, "", 0, False
+    while i < len(text):
+        c = text[i]
+        current += c
+        if in_string:
+            if c == "\\":
+                current += text[i + 1]
+                i += 1
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c in "{([":
+            depth += 1
+        elif c in "})]":
+            depth -= 1
+        elif c == "," and depth == 0:
+            parts.append(current[:-1].strip())
+            current = ""
+        i += 1
+    if current.strip():
+        parts.append(current.strip())
+    return parts
+
+
+def argument_signature(text: str, decl: re.Match) -> tuple:
+    """What a RouteArg constant accepts and how it is handled, apart from its description:
+    its spellings, location, schema, and required, support, forwarded and drop_invalid
+    flags."""
+    fields = split_initializer(decl.group(4))
+    fields += [""] * (7 - len(fields))
+    schema, required, supported, _, aliases, forwarded, drop_invalid = fields[:7]
+    local_schemas = {name: value for name, value in JSON_CONSTANT.findall(text)}
+    schema = re.sub(r"\s+", " ", local_schemas.get(schema, schema))
+    return (
+        frozenset([decl.group(2)] + re.findall(r'"([^"]+)"', aliases)),
+        decl.group(3),
+        schema,
+        required or "false",
+        supported or "Support::Available",
+        forwarded or "false",
+        drop_invalid or "false",
+    )
+
+
+def duplicate_arguments(sources: list[Path]) -> list[str]:
+    """Each group of RouteArg constants that only their descriptions tell apart, which
+    belongs in shared_args.h as one constant unless DISTINCT_ARGUMENTS lists it."""
+    server = REPO_ROOT / "src" / "cpp" / "server"
+    groups = {}
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        for decl in ROUTE_ARG_DECL.finditer(text):
+            member = (
+                f"{path.relative_to(server).as_posix()}:{qualified_name(text, decl)}"
+            )
+            groups.setdefault(argument_signature(text, decl), set()).add(member)
+    found = {frozenset(members) for members in groups.values() if len(members) > 1}
+    problems = []
+    for members in sorted(found - set(DISTINCT_ARGUMENTS), key=sorted):
+        problems.append(
+            f"{', '.join(sorted(members))} declare the same argument with the same schema "
+            "and flags; make it one constant in shared_args.h, or list the group in "
+            "DISTINCT_ARGUMENTS with how the routes treat it differently"
+        )
+    for members in sorted(set(DISTINCT_ARGUMENTS) - found, key=sorted):
+        problems.append(
+            f"DISTINCT_ARGUMENTS lists {', '.join(sorted(members))}, which no longer "
+            "share a schema and flags; remove or update the entry"
+        )
+    return problems
+
+
+def spellings_of(decl: re.Match) -> set[str]:
+    names = {decl.group(2)}
+    for aliases in ROUTE_ARG_ALIASES.finditer(decl.group(4)):
+        names.update(re.findall(r'"([^"]+)"', aliases.group(1)))
+    return names
+
+
+def argument_spellings(text: str) -> dict[str, set[str]]:
+    """Each RouteArg constant text defines, with its name and aliases."""
+    spellings = {}
+    for decl in ROUTE_ARG_DECL.finditer(text):
+        spellings.setdefault(decl.group(1), set()).update(spellings_of(decl))
+    return spellings
+
+
+def qualified_name(text: str, decl: re.Match) -> str:
+    """A RouteArg constant's name as other files write it, such as generation::kStream."""
+    stack = []
+    for mark in NAMESPACE_MARK.finditer(text, 0, decl.start()):
+        if mark.group(0).startswith("namespace"):
+            stack.append(mark.group(1))
+        elif stack:
+            stack.pop()
+    written = re.match(r"const RouteArg ((?:\w+::)*k\w+)", decl.group(0)).group(1)
+    return "::".join([n for n in stack if n and n != "lemon"] + [written])
+
+
+def listed_constants(text: str) -> set[str]:
+    """The RouteArg constants a route file's args lists, as written there."""
+    lists = " ".join(m.group(0) for m in ARG_LISTS.finditer(text))
+    return {
+        name.removeprefix("lemon::")
+        for name in re.findall(r"\b((?:\w+::)*k[A-Z]\w*)\b", lists)
+    }
+
+
+def literal_argument_reads(
+    text: str, shared: dict[str, set[str]]
+) -> list[tuple[int, str]]:
+    """Each place a route file names one of its arguments, or an alias, by a string literal
+    on the request, where RouteArg constants belong. shared holds the constants defined in
+    other files, such as generation::kStream."""
+    own = argument_spellings(text)
+    spelled = set().union(*own.values()) if own else set()
+    for name in listed_constants(text) - set(own):
+        spelled |= shared.get(name, set())
+    if not spelled:
+        return []
+    names = "|".join(re.escape(name) for name in sorted(spelled, key=len, reverse=True))
+    receivers = (
+        {"req.body"} | set(BODY_ALIAS.findall(text)) | set(BODY_PARAM.findall(text))
+    )
+    receiver = "|".join(re.escape(r) for r in sorted(receivers, key=len, reverse=True))
+    patterns = [
+        rf'\b(?:{receiver})\s*(?:\.(?:value|contains|find|at|erase|count)\(\s*|\[\s*)"({names})"',
+        rf'\b(?:get_param_value|has_param|has_field|get_field|has_file|get_file_value)\(\s*"({names})"',
+    ]
+    found = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            found.append((text.count("\n", 0, match.start()) + 1, match.group(1)))
+    if re.search(r"ArgIn::Path\b", text):
+        for match in re.finditer(r"\bmatches\s*\[", text):
+            found.append((text.count("\n", 0, match.start()) + 1, "a path argument"))
+    return sorted(found)
 
 
 def lint_sources() -> list[str]:
@@ -440,8 +747,21 @@ def lint_sources() -> list[str]:
         + [server / "core" / "api_route.cpp"]
     ):
         declared.update(ROUTE_ERROR_NAME.findall(path.read_text(encoding="utf-8")))
+    # Constants that several routes list, such as generation::kStream, are defined outside
+    # the route files that list them, and route files name them with their namespaces.
+    shared_args = {}
+    required_model = set()
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        if "RouteSpec spec()" in text:
+            continue
+        for decl in ROUTE_ARG_DECL.finditer(text):
+            name = qualified_name(text, decl)
+            shared_args.setdefault(name, set()).update(spellings_of(decl))
+            if REQUIRED_MODEL_ARG.search(decl.group(0)):
+                required_model.add(name)
 
-    problems = []
+    problems = duplicate_arguments(sources)
     for path in sources:
         text = path.read_text(encoding="utf-8")
         where = path.relative_to(REPO_ROOT)
@@ -449,6 +769,12 @@ def lint_sources() -> list[str]:
             line = text.count("\n", 0, match.start()) + 1
             problems.append(
                 f"{where}:{line} writes an error status that is not a RouteError's"
+            )
+        for match in BUILT_REQUEST_KEY.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{where}:{line} names another route's argument {match.group(1)} by a string "
+                "literal; write it through that route's RouteArg constant"
             )
         if path.parent.name == "services" or "RouteSpec spec()" not in text:
             continue
@@ -470,8 +796,16 @@ def lint_sources() -> list[str]:
                 base_errors.append("kUnexpectedException")
             if "RequestFormat::Form" in text:
                 base_errors.append("kFormNotMultipart")
-            fills_model = 'req.body["model"] =' in text
-            if not (REQUIRED_MODEL_ARG.search(text) or fills_model):
+            fills_model = re.search(r'req\.body\[(?:"model"|kModel\.name)\]\s*=', text)
+            own_required = {
+                decl.group(1)
+                for decl in ROUTE_ARG_DECL.finditer(text)
+                if REQUIRED_MODEL_ARG.search(decl.group(0))
+            }
+            lists_required_model = bool(
+                listed_constants(text) & (own_required | required_model)
+            )
+            if not (lists_required_model or fills_model):
                 base_errors.append("kModelMissing")
         for name in base_errors:
             if name not in lists:
@@ -487,7 +821,28 @@ def lint_sources() -> list[str]:
             problems.append(
                 f"{where} uses {name}, which its route's errors do not list"
             )
-    return problems
+        arg_lists = " ".join(m.group(0) for m in ARG_LISTS.finditer(text))
+        if INLINE_ARG.search(arg_lists):
+            problems.append(
+                f"{where} declares an argument inline instead of as a RouteArg constant"
+            )
+        arg_constants = {decl.group(1) for decl in ROUTE_ARG_DECL.finditer(text)}
+        for name in sorted(arg_constants & declared):
+            problems.append(
+                f"{where} names a RouteArg {name}, which is also a RouteError's name"
+            )
+        listed = listed_constants(text)
+        for pair in ROUTE_ARG_USE.findall(text):
+            name = (pair[0] or pair[1]).removeprefix("lemon::")
+            if (name in arg_constants or name in shared_args) and name not in listed:
+                problems.append(
+                    f"{where} reads {name}, which its route's args do not list"
+                )
+        for line, name in literal_argument_reads(text, shared_args):
+            problems.append(
+                f"{where}:{line} names {name} by a string literal; read it through its RouteArg constant"
+            )
+    return sorted(set(problems))
 
 
 # --------------------------------------------------------------------------

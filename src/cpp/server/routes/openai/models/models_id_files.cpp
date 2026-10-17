@@ -10,6 +10,12 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kFilesUnreadable{404, "model_load_error", "Resolving or listing `id`'s files fails"};
 
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
+                   "Model id, as listed by [`GET /v1/models`](#get-v1models)."};
+const RouteArg kIncludePaths{"include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
+                             "`true` adds each file's absolute `path`, which can reveal local usernames and the "
+                             "cache layout. Defaults to `false`."};
+
 class ModelsIdFilesRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -24,13 +30,7 @@ public:
         s.description =
             "Lists the resolved local files of one model, for model-detail views such as the "
             "app's Files tab. It inventories one model, not drive storage.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Model id, as listed by [`GET /v1/models`](#get-v1models)."},
-            {"include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
-             "`true` adds each file's absolute `path`, which can reveal local usernames and the "
-             "cache layout. Defaults to `false`."},
-        };
+        s.args = {kId, kIncludePaths};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -64,9 +64,8 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager& model_manager = *ctx_.model_manager;
-        std::string model_id = req.http.matches[1];
-        const bool include_paths = req.http.has_param("include_paths") &&
-            req.http.get_param_value("include_paths") == "true";
+        std::string model_id = req.value(kId, std::string());
+        const bool include_paths = req.value(kIncludePaths, false);
 
         try {
             if (!model_manager.model_exists(model_id)) {

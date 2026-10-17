@@ -3,12 +3,17 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
+                      "Text to embed, or an array of texts."};
 
 class EmbedRoute : public ApiRoute {
 public:
@@ -23,18 +28,7 @@ public:
         s.summary = "Embed one or more texts";
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Embedding model to run."},
-            {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "Text to embed, or an array of texts."},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
-             "`num_ctx` sets the context size when this request loads the model. Other keys are "
-             "ignored."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request loads "
-             "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true},
-        };
+        s.args = {gateway::kModel, kInput, ollama::embed::kOptions, ollama::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -67,19 +61,18 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
-            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
-
-            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
-                                       res)) {
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model,
+                                       gateway_load_options(req.arg(ollama::embed::kOptions), req.arg(ollama::kCtxSize)),
+                                       ErrorFormat::Plain, res)) {
                 return;
             }
 
             json openai_req;
-            openai_req["model"] = model;
+            openai_req[model_loading::kModel.name] = model;
 
-            openai_req["input"] = request_json["input"];
+            openai_req[openai::embeddings::kInput.name] = req.arg(kInput);
 
             auto openai_response = ctx_.router->embeddings(openai_req);
 

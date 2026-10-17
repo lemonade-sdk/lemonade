@@ -19,6 +19,12 @@ const RouteError kAliasChain{
     409, "alias_conflict",
     "The alias would form a cycle or an alias chain deeper than 10 links"};
 
+const RouteArg kAlias{"alias", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "The alias name to create or update."};
+const RouteArg kTarget{"target", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                       "The model name, canonical ID or other alias to point at, which is not checked to "
+                       "exist.", {"model"}};
+
 class AliasesCreateRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -33,13 +39,7 @@ public:
         s.description =
             "Points an alias at a target model, replacing any target it had. The "
             "`lemonade alias add` command uses it.";
-        s.args = {
-            {"alias", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The alias name to create or update."},
-            {"target", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model name, canonical ID or other alias to point at, which is not checked to "
-             "exist.", {"model"}},
-        };
+        s.args = {kAlias, kTarget};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -66,9 +66,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const json& req_json = req.body;
-        std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
-        std::string target = utils::normalize_model_name(req_json.value("target", ""));
+        std::string alias = utils::normalize_model_name(req.value(kAlias, ""));
+        std::string target = utils::normalize_model_name(req.value(kTarget, ""));
 
         if (alias.empty() || target.empty()) {
             write_alias_error(res, kBlankField, "Alias and target fields are required");

@@ -53,10 +53,10 @@ ordered_json model_options_schema() {
     })");
 }
 
-void respond_with_model_options(ServerContext& ctx, const httplib::Request& http,
+void respond_with_model_options(ServerContext& ctx, const std::string& id,
                                 httplib::Response& res, const ModelOptionsMutation& mutation) {
     ModelManager& model_manager = *ctx.model_manager;
-    const std::string model_id = utils::normalize_model_name(http.matches[1]);
+    const std::string model_id = utils::normalize_model_name(id);
     std::string model_key = model_id;
 
     if (!model_manager.model_exists(model_key)) {

@@ -119,7 +119,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model_name` or `model` | Yes | Loaded model to pin or unpin. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model_name` or `model` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pinned` | Yes | `true` pins the model; `false` unpins it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a slot held only by pinned models fails with a `slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).
@@ -503,7 +503,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `models` | No | Models to sync. Defaults to every downloaded model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `dry_run` | No | Check for updates without downloading them. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `dry_run` | No | `true` reports what the request would do without doing it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `async` | No | Run in the background and answer immediately. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `attach_if_running` | No | `true` reports a running sync, or with `async: false` waits for it, without adding this request's models to it. Defaults to `false`, which queues the models into the running sync. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 

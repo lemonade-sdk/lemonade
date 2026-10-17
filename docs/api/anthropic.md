@@ -20,22 +20,22 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | Yes | Conversation so far, as `user` and `assistant` messages. `content` is a string or an array of `text`, `image` (base64 source), `tool_use` and `tool_result` blocks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `system` | No | System prompt, as a string or an array of `text` blocks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `top_p` | No | Nucleus sampling probability. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `top_k` | No | Number of top tokens considered during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `top_p` | No | Cumulative probability of the top tokens to consider during nucleus sampling, from `0.0` to `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop_sequences` | No | Sequences where generation stops. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `stream` | No | Stream server-sent events as tokens are generated. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | `true` sends the response as server-sent events as it progresses; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tools` | No | Tools the model may call, each with a `name`, `description` and `input_schema`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tool_choice` | No | `{"type": "auto"}`, `any`, `none`, or `tool` with a `name`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `output_config` | No | `format` of type `json_schema` (with a `schema`) or `json_object` constrains the reply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `thinking` | No | Not applied to local models: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `metadata` | No | Ignored for local models, with a warning. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `context_management` | No | Ignored for local models, with a warning. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `beta` (query) | No | Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; `true` is passed on to providers that are relayed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Lemonade runs the request as an OpenAI chat completion and converts both ways. Some values it cannot convert, such as an unsupported content block type or `metadata`, are ignored and reported in the `X-Lemonade-Warning` header (joined with ` | `) and in a `warnings` array. Unknown fields are ignored without a warning. A cloud provider registered with `--wire-format anthropic` is relayed unconverted, so nothing is dropped; see [Cloud Offload](../guide/configuration/cloud.md#providers-that-speak-the-anthropic-messages-format).

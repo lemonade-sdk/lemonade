@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 
 namespace lemon {
@@ -76,6 +77,11 @@ ordered_json response_event_schema() {
     return schema;
 }
 
+const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
+                      "The input, as a string or an array of input items."};
+const RouteArg kMaxOutputTokens{"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                                "Upper bound on generated tokens."};
+
 class ResponsesRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -95,31 +101,9 @@ public:
             "see [Router API](./router.md).",
         };
         s.args = {
-            {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The input, as a string or an array of input items."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to run."},
-            {"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens."},
-            {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature.", {}, true},
-            {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition.", {}, true},
-            {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling.", {}, true},
-            {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`.", {}, true},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` sends tokens as server-sent events as they are generated; `false` sends one "
-             "response once complete. Defaults to `false`."},
-            {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Lemonade extension for `collection.router` models: `true` adds the per-condition "
-             "`trace` to `x_lemonade_route`. Defaults to `false`."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request "
-             "loads it. Ignored when the model is already loaded."},
+            kInput, model_loading::kModel, kMaxOutputTokens, generation::kTemperature,
+            openai::text::kRepeatPenalty, generation::kTopK, generation::kTopP, common::kStream,
+            openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse response;
@@ -161,6 +145,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
+
     bool validate(RouteRequest& req, httplib::Response&) override {
         // Router policies call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
@@ -169,7 +155,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        bool is_streaming = req.body.contains("stream") && req.body["stream"].get<bool>();
+        bool is_streaming = req.value(common::kStream, false);
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
             Router* router = ctx_.router;

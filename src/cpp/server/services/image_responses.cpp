@@ -1,5 +1,7 @@
 #include "lemon/server/image_responses.h"
 
+#include <algorithm>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/utils/json_utils.h"
@@ -71,17 +73,22 @@ std::vector<RouteError> attach_form_image_errors(bool allow_multiple) {
     return {};
 }
 
-bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_multiple) {
+bool attach_form_image(RouteRequest& req, httplib::Response& res, const RouteArg& image,
+                       bool allow_multiple) {
     const auto& files = req.http.form.files;
+    std::vector<std::string> spellings = {image.name};
+    spellings.insert(spellings.end(), image.aliases.begin(), image.aliases.end());
     // A multipart map groups files by field name, losing mixed upload order.
-    if (allow_multiple && files.count("image") > 0 && files.count("image[]") > 0) {
+    const auto spellings_sent = std::count_if(spellings.begin(), spellings.end(),
+                                              [&files](const std::string& name) { return files.count(name) > 0; });
+    if (allow_multiple && spellings_sent > 1) {
         write_openai_error(res, kImageFieldsMixed, "Use either 'image' or 'image[]', not both");
         return false;
     }
 
     json images = json::array();
     for (const auto& [field, file] : files) {
-        if (field != "image" && field != "image[]") {
+        if (std::find(spellings.begin(), spellings.end(), field) == spellings.end()) {
             continue;
         }
         const std::string encoded = utils::JsonUtils::base64_encode(file.content);

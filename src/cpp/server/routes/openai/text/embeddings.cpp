@@ -1,6 +1,8 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -10,6 +12,21 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kCannotEmbed{400, "", "`model`'s backend cannot embed, such as a text-to-speech model"};
 const RouteError kNotEmbeddingModel{501, "", "`model` is a llama.cpp model that is not an embedding model"};
+
+} // namespace
+
+namespace openai::embeddings {
+
+const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
+                      "The text to embed, as a string or an array of strings.", {}, true};
+const RouteArg kEncodingFormat{"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
+                               "`float` or `base64`. Defaults to `float`.", {}, true};
+
+} // namespace openai::embeddings
+
+namespace {
+
+using namespace openai::embeddings;
 
 class EmbeddingsRoute : public ModelRoute {
 public:
@@ -26,17 +43,7 @@ public:
             "Returns vector representations (embeddings) of the input text for semantic search, "
             "clustering and similarity comparisons, downloading and loading the model if it is not "
             "loaded. Embedding models use the `llamacpp` or `flm` recipe.";
-        s.args = {
-            {"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The text to embed, as a string or an array of strings.", {}, true},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The embedding model to run."},
-            {"encoding_format", ArgIn::JsonBody, {{"enum", json::array({"float", "base64"})}}, false, Support::Available,
-             "`float` or `base64`. Defaults to `float`.", {}, true},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request "
-             "loads it. Ignored when the model is already loaded."},
-        };
+        s.args = {kInput, model_loading::kModel, kEncodingFormat, model_loading::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -84,6 +91,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
+
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->embeddings(req.body);
         if (response.contains("error")) {

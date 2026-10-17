@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 
@@ -15,6 +16,23 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kMalformedImage{
     400, "", "`image` is not base64 data, or is a `data:` URL without a base64 payload"};
 const RouteError kUnsupportedImage{400, "", "`image` is not a PNG, JPEG, BMP or GIF"};
+
+const RouteArg kImage{"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "Base64-encoded PNG, JPEG, BMP or GIF image, optionally as a `data:` URL."};
+const RouteArg kResolution{"resolution", ArgIn::JsonBody,
+                           {{"enum", json::array({512, 1024, 1536, "512", "1024", "1536"})}}, false, Support::Available,
+                           "Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."};
+const RouteArg kBgRemoval{"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
+                          false, Support::Available,
+                          "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
+                          "real backgrounds. Defaults to the backend's own."};
+const RouteArg kUv{"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
+                   "UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
+                   "texture quality, but slows down on large meshes. `box` is a faster six-plane "
+                   "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."};
+const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
+                               "Output encoding. Only `glb`, the format the backend produces, is accepted. "
+                               "Defaults to `glb`."};
 
 class Generations3dRoute : public ModelRoute {
 public:
@@ -36,26 +54,8 @@ public:
             "Errors carry a JSON `error` object.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The 3D-generation model."},
-            {"image", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Base64-encoded PNG, JPEG, BMP or GIF image, optionally as a `data:` URL."},
-            {"resolution", ArgIn::JsonBody,
-             {{"enum", json::array({512, 1024, 1536, "512", "1024", "1536"})}}, false, Support::Available,
-             "Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."},
-            {"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
-             false, Support::Available,
-             "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
-             "real backgrounds. Defaults to the backend's own."},
-            {"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
-             "UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
-             "texture quality, but slows down on large meshes. `box` is a faster six-plane "
-             "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."},
-            {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducibility. Defaults to the backend's own."},
-            {"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
-             "Output encoding. Only `glb`, the format the backend produces, is accepted. "
-             "Defaults to `glb`."},
+            model_loading::kModel, kImage, kResolution, kBgRemoval, kUv, inference::kSeed,
+            kResponseFormat
         };
 
         RouteResponse response;
@@ -81,15 +81,16 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
+
     // All cheap validation runs before the load, so a malformed request can never
     // trigger a multi-gigabyte model load.
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        const json& request_json = req.body;
         auto reject = [&res](const RouteError& error, const std::string& message) {
             write_openai_error(res, error, message);
             return false;
         };
-        std::string image = request_json["image"].get<std::string>();
+        std::string image = req.arg(kImage).get<std::string>();
         if (image.rfind("data:", 0) == 0) {
             const auto comma = image.find(',');
             if (comma == std::string::npos) {

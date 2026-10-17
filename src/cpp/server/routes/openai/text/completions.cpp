@@ -3,6 +3,8 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 #include "require_llm.h"
 
@@ -73,6 +75,25 @@ ordered_json text_completion_schema(bool chunk) {
     return schema;
 }
 
+} // namespace
+
+namespace openai::completions {
+
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
+                       "The text to continue, as a string or an array of strings."};
+const RouteArg kEcho{"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Partial,
+                     "`true` asks the backend to return the prompt before the completion. llama.cpp "
+                     "models ignore it.", {}, true};
+const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
+                         "`true`, or a number of top alternatives per token, returns the log probability of each "
+                         "output token. Defaults to `false`.", {}, true};
+
+} // namespace openai::completions
+
+namespace {
+
+using namespace openai::completions;
+
 class CompletionsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -91,40 +112,10 @@ public:
             "see [Router API](./router.md).",
         };
         s.args = {
-            {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "The text to continue, as a string or an array of strings."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The model to run."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` sends tokens as server-sent events as they are generated; `false` sends one "
-             "response once complete. Defaults to `false`."},
-            {"stop", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "Sequences that stop generation, as a string or an array of strings. The returned "
-             "text leaves them out.", {}, true},
-            {"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Partial,
-             "`true` asks the backend to return the prompt before the completion. llama.cpp "
-             "models ignore it.", {}, true},
-            {"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
-             "`true`, or a number of top alternatives per token, returns the log probability of each "
-             "output token. Defaults to `false`.", {}, true},
-            {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature.", {}, true},
-            {"repeat_penalty", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage "
-             "repetition.", {}, true},
-            {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens to consider during sampling.", {}, true},
-            {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Cumulative probability of the top tokens to consider during nucleus sampling, from "
-             "`0.0` to `1.0`.", {}, true},
-            {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens.", {}, true},
-            {"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Lemonade extension for `collection.router` models: `true` adds the per-condition "
-             "`trace` to `x_lemonade_route`. Defaults to `false`."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request "
-             "loads it. Ignored when the model is already loaded."},
+            kPrompt, model_loading::kModel, common::kStream, openai::text::kStop, kEcho, kLogprobs,
+            generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
+            openai::text::kSeed, generation::kTopK, generation::kTopP, openai::text::kMaxTokens,
+            openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;
@@ -168,6 +159,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
+
     bool validate(RouteRequest& req, httplib::Response&) override {
         // Router policies call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
@@ -180,7 +173,7 @@ protected:
             return;
         }
 
-        bool is_streaming = req.body.contains("stream") && req.body["stream"].get<bool>();
+        bool is_streaming = req.value(common::kStream, false);
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
             Router* router = ctx_.router;

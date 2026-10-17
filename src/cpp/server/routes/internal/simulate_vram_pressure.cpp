@@ -7,6 +7,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kPct{"pct", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                    "Simulated fraction of VRAM in use, such as `0.95`. Defaults to `0`."};
+
 class SimulateVramPressureRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -30,10 +33,7 @@ public:
             "right away. While an exclusive job session is active no evaluation runs, and the "
             "answer is still `200`.",
         };
-        s.args = {
-            {"pct", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Simulated fraction of VRAM in use, such as `0.95`. Defaults to `0`."},
-        };
+        s.args = {kPct};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -56,7 +56,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        double pct = req.body.value("pct", 0.0);
+        double pct = req.value(kPct, 0.0);
         ctx_.router->simulate_vram_pressure(pct);
         res.set_content(R"({"status": "ok"})", "application/json");
     }

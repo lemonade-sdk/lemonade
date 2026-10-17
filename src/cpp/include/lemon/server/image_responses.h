@@ -26,7 +26,8 @@ void write_image_backend_response(const nlohmann::json& response, httplib::Respo
 // images/edits and images/variations accept the same n and source image fields; the
 // backend expects each image base64-encoded in the request body. images/edits takes several
 // reference images, which allow_multiple also forwards in upload order as image_files.
-bool attach_form_image(RouteRequest& req, httplib::Response& res, bool allow_multiple = false);
+bool attach_form_image(RouteRequest& req, httplib::Response& res, const RouteArg& image,
+                       bool allow_multiple = false);
 std::vector<RouteError> attach_form_image_errors(bool allow_multiple = false);
 
 } // namespace lemon

@@ -4,6 +4,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -11,6 +12,15 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const ordered_json kStringSchema = {{"type", "string"}};
+
+const RouteArg kImage{"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
+                      "The source image (PNG).", {"image[]"}};
+const RouteArg kPrompt{"prompt", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
+                       "Ignored; the variation depends only on the image."};
+const RouteArg kSize{"size", ArgIn::Form, kStringSchema, false, Support::Available,
+                     "Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`."};
 
 class ImagesVariationsRoute : public ModelRoute {
 public:
@@ -46,23 +56,9 @@ public:
             "    open(\"variation.png\", \"wb\").write(image_data)\n"
             "    ```",
         };
-        const ordered_json text = {{"type", "string"}};
         s.args = {
-            {"model", ArgIn::Form, text, true, Support::Available,
-             "The image model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
-            {"image", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Available,
-             "The source image (PNG).", {"image[]"}},
-            {"prompt", ArgIn::Form, text, false, Support::NotAvailable,
-             "Ignored; the variation depends only on the image."},
-            {"size", ArgIn::Form, text, false, Support::Available,
-             "Output size as `WIDTHxHEIGHT`. Defaults to the model's own, else `512x512`."},
-            {"n", ArgIn::Form, {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}, false, Support::Available,
-             "Number of images to generate, from `1` to `10`. "
-             "Defaults to `1`."},
-            {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
-            {"user", ArgIn::Form, text, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
+            model_loading::kFormModel, kImage, kPrompt, kSize, openai::image_uploads::kN,
+            openai::image_uploads::kResponseFormat, openai::image_uploads::kUser
         };
 
         RouteResponse response;
@@ -89,9 +85,11 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kFormModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/variations" << std::endl;
-        return attach_form_image(req, res);
+        return attach_form_image(req, res, kImage);
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {

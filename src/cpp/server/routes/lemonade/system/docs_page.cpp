@@ -11,6 +11,10 @@ using json = nlohmann::json;
 
 const RouteError kUnknownPage{404, "", "`page` names no bundled page"};
 
+const RouteArg kPage{"page", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
+                     "The `id` from the [`GET /v1/docs`](#get-v1docs) index, which mirrors the page's path "
+                     "on the documentation website. The `.md` suffix is optional."};
+
 class DocsPageRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -38,11 +42,7 @@ public:
             "| Linux (optional prefix) | `/opt/share/lemonade-server/resources/docs/` |\n"
             "| Linux (per-user) | `~/.local/share/lemonade-server/resources/docs/` |",
         };
-        s.args = {
-            {"page", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "The `id` from the [`GET /v1/docs`](#get-v1docs) index, which mirrors the page's path "
-             "on the documentation website. The `.md` suffix is optional."},
-        };
+        s.args = {kPage};
 
         RouteResponse response;
         response.format = ResponseFormat::Text;
@@ -60,7 +60,7 @@ public:
         std::string docs_dir = utils::get_resource_path("resources/docs");
 
         std::string content;
-        if (!read_api_doc(docs_dir, req.http.matches[1].str(), content)) {
+        if (!read_api_doc(docs_dir, req.value(kPage, std::string()), content)) {
             write_plain_error(res, kUnknownPage, "Documentation page not found");
             return;
         }

@@ -4,6 +4,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -17,6 +18,20 @@ const RouteError kNoTimestamps{
     400, "",
     "`response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no "
     "segment timestamps"};
+
+const RouteArg kFile{"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
+                     "The audio file to transcribe, as WAV."};
+const RouteArg kLanguage{"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
+                         "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, "
+                         "which detects it, for whisper.cpp models, and to the backend's own for the others."};
+const RouteArg kResponseFormat{"response_format", ArgIn::Form,
+                               {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
+                               "`json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`."};
+const RouteArg kPrompt{"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
+                       "Text to guide the transcription's style or continue a previous segment."};
+const RouteArg kTemperature{"temperature", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
+                            "Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own "
+                            "for FastFlowLM models. Moonshine models ignore it."};
 
 class AudioTranscriptionsRoute : public ModelRoute {
 public:
@@ -36,21 +51,7 @@ public:
             "On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.",
         };
         s.args = {
-            {"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
-             "The audio file to transcribe, as WAV."},
-            {"model", ArgIn::Form, {{"type", "string"}}, true, Support::Available,
-             "The transcription model to use (e.g., `Whisper-Tiny`)."},
-            {"language", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
-             "The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, "
-             "which detects it, for whisper.cpp models, and to the backend's own for the others."},
-            {"response_format", ArgIn::Form,
-             {{"enum", json::array({"json", "verbose_json", "text", "srt", "vtt"})}}, false, Support::Available,
-             "`json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`."},
-            {"prompt", ArgIn::Form, {{"type", "string"}}, false, Support::Available,
-             "Text to guide the transcription's style or continue a previous segment."},
-            {"temperature", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own "
-             "for FastFlowLM models. Moonshine models ignore it."},
+            kFile, model_loading::kFormModel, kLanguage, kResponseFormat, kPrompt, kTemperature
         };
 
         RouteResponse transcript;
@@ -90,13 +91,15 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kFormModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/audio/transcriptions" << std::endl;
 
         const std::string response_format =
-            req.body.value("response_format", lemon::audio::ResponseFormat::JSON);
+            req.value(kResponseFormat, lemon::audio::ResponseFormat::JSON);
 
-        const httplib::FormData* file = find_form_file(req.http, {"file"});
+        const httplib::FormData* file = req.file(kFile);
         req.body["file_data"] = file->content;
         req.body["filename"] = file->filename;
         LOG(INFO, "Server") << "Audio file: " << file->filename
@@ -106,7 +109,7 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         const std::string response_format =
-            req.body.value("response_format", lemon::audio::ResponseFormat::JSON);
+            req.value(kResponseFormat, lemon::audio::ResponseFormat::JSON);
 
         auto response = ctx_.router->audio_transcriptions(req.body);
         if (response.contains("error")) {

@@ -10,6 +10,15 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kContent{"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                        "The text to tokenize."};
+const RouteArg kAddSpecial{"add_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                           "Insert special tokens, such as `BOS`. Defaults to `false`.", {}, true};
+const RouteArg kParseSpecial{"parse_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`.", {}, true};
+const RouteArg kWithPieces{"with_pieces", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                           "Return each token's text piece with its ID. Defaults to `false`.", {}, true};
+
 class TokenizeRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -24,16 +33,7 @@ public:
         s.description =
             "Tokenizes text without using the model's context window. After a request to a "
             "reranker, for example, the reranker's tokenizer answers.";
-        s.args = {
-            {"content", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The text to tokenize."},
-            {"add_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Insert special tokens, such as `BOS`. Defaults to `false`.", {}, true},
-            {"parse_special", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Tokenize special tokens; `false` treats them as plain text. Defaults to `true`.", {}, true},
-            {"with_pieces", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Return each token's text piece with its ID. Defaults to `false`.", {}, true},
-        };
+        s.args = {kContent, kAddSpecial, kParseSpecial, kWithPieces};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

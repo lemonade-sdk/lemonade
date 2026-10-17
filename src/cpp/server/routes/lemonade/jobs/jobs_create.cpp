@@ -25,6 +25,19 @@ json step_list_schema() {
     }}})");
 }
 
+const RouteArg kName{"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                     "Display name. Defaults to `\"\"`."};
+const RouteArg kSteps{"steps", ArgIn::JsonBody, step_list_schema(), false, Support::Available,
+                      "The steps, in order, at least one; see "
+                      "[Recipe: steps](../dev/job-system.md#recipe-steps). Required unless `definition` "
+                      "holds them."};
+const RouteArg kDefinition{"definition", ArgIn::JsonBody,
+                           {{"type", "object"}, {"properties", {{"steps", step_list_schema()}}}}, false, Support::Available,
+                           "Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over "
+                           "`steps`."};
+const RouteArg kInputs{"inputs", ArgIn::JsonBody, json::object(), false, Support::Available,
+                       "Values the steps read as `context.inputs`."};
+
 class JobsCreateRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -49,20 +62,7 @@ public:
             "lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) "
             "the `when`/`branch` expression grammar.",
         };
-        s.args = {
-            {"name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Display name. Defaults to `\"\"`."},
-            {"steps", ArgIn::JsonBody, step_list_schema(), false, Support::Available,
-             "The steps, in order, at least one; see "
-             "[Recipe: steps](../dev/job-system.md#recipe-steps). Required unless `definition` "
-             "holds them."},
-            {"definition", ArgIn::JsonBody,
-             {{"type", "object"}, {"properties", {{"steps", step_list_schema()}}}}, false, Support::Available,
-             "Alternative to `steps`: an object whose `steps` holds the steps. Takes precedence over "
-             "`steps`."},
-            {"inputs", ArgIn::JsonBody, json::object(), false, Support::Available,
-             "Values the steps read as `context.inputs`."},
-        };
+        s.args = {kName, kSteps, kDefinition, kInputs};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -89,20 +89,20 @@ public:
         try {
             // Parsed again as ordered_json, so `GET jobs/{id}` echoes the keys in the client's order.
             auto body = lemon::jobs::json::parse(req.http.body);
-            const std::string name = body.value("name", "");
+            const std::string name = body.value(kName.name, "");
             lemon::jobs::json steps_json = lemon::jobs::json::array();
-            if (body.contains("definition") && body["definition"].is_object()
-                && body["definition"].contains("steps")) {
-                steps_json = body["definition"]["steps"];
-            } else if (body.contains("steps")) {
-                steps_json = body["steps"];
+            if (body.contains(kDefinition.name) && body[kDefinition.name].is_object()
+                && body[kDefinition.name].contains("steps")) {
+                steps_json = body[kDefinition.name]["steps"];
+            } else if (body.contains(kSteps.name)) {
+                steps_json = body[kSteps.name];
             }
             std::vector<lemon::jobs::StepRecord> steps;
             if (steps_json.is_array())
                 for (const auto& s : steps_json)
                     steps.push_back(lemon::jobs::StepRecord::from_json(s));
             lemon::jobs::json inputs =
-                body.contains("inputs") ? body["inputs"] : lemon::jobs::json::object();
+                body.contains(kInputs.name) ? body[kInputs.name] : lemon::jobs::json::object();
             const std::string id = ctx_.job_manager->create(name, std::move(steps), inputs);
             res.status = 202;
             res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");

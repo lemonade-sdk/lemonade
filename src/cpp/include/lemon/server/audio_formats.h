@@ -25,13 +25,14 @@ struct AudioFormat {
 
 // A backend's streaming encoder is often narrower than its buffered one, so streaming
 // changes which formats apply. An explicit response_format always wins; only the default
-// (mp3 buffered, pcm streaming) yields to what the backend declares.
+// (mp3 buffered, pcm streaming) yields to what the backend declares. response_format is null
+// when the request sends none.
 AudioFormat negotiate_speech_format(Router& router, const std::string& model,
-                                    const nlohmann::json& request, bool streaming);
+                                    const nlohmann::json& response_format, bool streaming);
 
 // Only formats the backend produces natively are accepted; the default is wav.
 AudioFormat negotiate_audio_generation_format(Router& router, const std::string& model,
-                                              const nlohmann::json& request);
+                                              const nlohmann::json& response_format);
 
 extern const RouteError kUnsupportedAudioFormat;
 

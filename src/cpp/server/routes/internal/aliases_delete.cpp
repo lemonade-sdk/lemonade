@@ -11,6 +11,9 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kAliasNotFound{404, "alias_not_found", "`alias` names no alias"};
 
+const RouteArg kAlias{"alias", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
+                      "The alias name to remove."};
+
 class AliasesDeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -23,10 +26,7 @@ public:
         s.prefixes = Prefixes::Internal;
         s.summary = "Remove a model alias";
         s.description = "Removes a model alias.";
-        s.args = {
-            {"alias", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "The alias name to remove."},
-        };
+        s.args = {kAlias};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -50,7 +50,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        std::string alias = utils::normalize_model_name(req.http.matches[1]);
+        std::string alias = utils::normalize_model_name(req.value(kAlias, std::string()));
         try {
             if (!ctx_.alias_manager || !ctx_.alias_manager->remove_alias(alias)) {
                 write_alias_error(res, kAliasNotFound, "Alias not found: " + alias);

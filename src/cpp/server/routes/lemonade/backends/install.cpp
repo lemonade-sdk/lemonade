@@ -11,6 +11,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/cloud_providers.h"
 #include "lemon/server/download_manager.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
 
 namespace lemon {
@@ -93,6 +94,26 @@ ordered_json install_schema() {
     return {{"oneOf", ordered_json::array({local, manual, cloud, job})}};
 }
 
+const RouteArg kForce{"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                      "Local backends: if `true`, installs a backend this system does not support anyway. "
+                      "Defaults to `false`."};
+const RouteArg kBaseUrl{"base_url", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                        "Cloud providers, required: the provider's base URL, such as one ending in `/v1`."};
+const RouteArg kApiKey{"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Cloud providers: an API key, held in `lemond`'s memory. The provider's environment "
+                       "variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth)."};
+const RouteArg kAuthHeaderName{"auth_header_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                               "Cloud providers: the header that carries the API key. Defaults to "
+                               "`\"Authorization\"`."};
+const RouteArg kAuthHeaderPrefix{"auth_header_prefix", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                                 "Cloud providers: the text before the key in that header. Defaults to `\"Bearer \"`; "
+                                 "pass `\"\"` for gateways that expect the bare key."};
+const RouteArg kWireFormat{"wire_format", ArgIn::JsonBody, {{"enum", json::array({"openai", "anthropic"})}},
+                           false, Support::Available,
+                           "Cloud providers: `\"openai\"` or `\"anthropic\"`. An `\"anthropic\"` provider is "
+                           "served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults "
+                           "to `\"openai\"`."};
+
 class InstallRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -120,44 +141,9 @@ public:
             "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
-             "Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, "
-             "`sd-cpp` or `ryzenai-llm`."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
-             "`default`. Cloud providers: `\"cloud\"`."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends: if `true`, sends progress as server-sent events. Defaults to `false`."},
-            {"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends: if `true`, installs a backend this system does not support anyway. "
-             "Defaults to `false`."},
-            {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as "
-             "`fireworks`, used as the provider's model-name prefix."},
-            {"base_url", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers, required: the provider's base URL, such as one ending in `/v1`."},
-            {"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: an API key, held in `lemond`'s memory. The provider's environment "
-             "variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth)."},
-            {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Cloud providers: must be `true` to send an API key to an `http://` base URL. Defaults "
-             "to `false`."},
-            {"auth_header_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: the header that carries the API key. Defaults to "
-             "`\"Authorization\"`."},
-            {"auth_header_prefix", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Cloud providers: the text before the key in that header. Defaults to `\"Bearer \"`; "
-             "pass `\"\"` for gateways that expect the bare key."},
-            {"wire_format", ArgIn::JsonBody, {{"enum", json::array({"openai", "anthropic"})}},
-             false, Support::Available,
-             "Cloud providers: `\"openai\"` or `\"anthropic\"`. An `\"anthropic\"` provider is "
-             "served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults "
-             "to `\"openai\"`."},
-            {"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Local backends with `stream: true`: `false` makes the download server-owned and "
-             "answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) "
-             "and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
-             "With `true`, closing the stream cancels the download. Defaults to `true`."},
+            backend_routes::kRecipe, backend_routes::kBackend, common::kStream, kForce,
+            backend_routes::kProvider, kBaseUrl, kApiKey, backend_routes::kAllowInsecureHttp,
+            kAuthHeaderName, kAuthHeaderPrefix, kWireFormat, downloads::kSubscribe
         };
 
         RouteResponse response;
@@ -216,21 +202,19 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
-
-            if (request_json.value("backend", "") == "cloud") {
-                install_cloud_provider(request_json, res);
+            if (req.value(backend_routes::kBackend, "") == "cloud") {
+                install_cloud_provider(req, res);
                 return;
             }
 
-            std::string recipe;
-            std::string backend;
-            if (!read_local_backend(request_json, recipe, backend, res)) {
+            const std::string recipe = req.value(backend_routes::kRecipe, "");
+            const std::string backend = req.value(backend_routes::kBackend, "");
+            if (!require_local_recipe(recipe, res)) {
                 return;
             }
-            bool stream = request_json.value("stream", false);
-            bool subscribe = request_json.value("subscribe", true);
-            bool force = request_json.value("force", false);
+            bool stream = req.value(common::kStream, false);
+            bool subscribe = req.value(downloads::kSubscribe, true);
+            bool force = req.value(kForce, false);
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
@@ -317,11 +301,11 @@ private:
     // A cloud provider has no binary to fetch: installing one registers its base URL so
     // ModelManager can discover its catalog once an API key resolves. Optional fields
     // apply only when present, so a re-install that omits one keeps the stored value.
-    void install_cloud_provider(const json& request_json, httplib::Response& res) {
+    void install_cloud_provider(const RouteRequest& req, httplib::Response& res) {
         CloudProviderRegistry& registry = *ctx_.cloud_registry;
-        const std::string provider = request_json.value("provider", "");
-        const std::string base_url = request_json.value("base_url", "");
-        const std::string api_key = request_json.value("api_key", "");
+        const std::string provider = req.value(backend_routes::kProvider, "");
+        const std::string base_url = req.value(kBaseUrl, "");
+        const std::string api_key = req.value(kApiKey, "");
 
         auto reject = [&](const RouteError& error, const std::string& message) {
             write_openai_error(res, error, message);
@@ -341,11 +325,11 @@ private:
         }
 
         CloudProviderRegistry::InstallOptions install_options;
-        auto read_validated_field = [&](const char* field,
+        auto read_validated_field = [&](const RouteArg& field,
                                         std::string (*validate)(const std::string&),
                                         std::optional<std::string>& out) {
-            if (!request_json.contains(field)) return true;
-            auto value = request_json[field].get<std::string>();
+            if (!req.has(field)) return true;
+            auto value = req.arg(field).get<std::string>();
             if (auto err = validate(value); !err.empty()) {
                 reject(kInvalidCloudOption, err);
                 return false;
@@ -353,20 +337,20 @@ private:
             out = std::move(value);
             return true;
         };
-        if (!read_validated_field("auth_header_name",
+        if (!read_validated_field(kAuthHeaderName,
                                   CloudProviderRegistry::validate_auth_header_name,
                                   install_options.auth_header_name) ||
-            !read_validated_field("auth_header_prefix",
+            !read_validated_field(kAuthHeaderPrefix,
                                   CloudProviderRegistry::validate_auth_header_prefix,
                                   install_options.auth_header_prefix)) {
             return;
         }
-        if (request_json.contains("wire_format")) {
-            install_options.wire_format = request_json["wire_format"].get<std::string>();
+        if (req.has(kWireFormat)) {
+            install_options.wire_format = req.arg(kWireFormat).get<std::string>();
         }
-        if (request_json.contains("allow_insecure_http")) {
+        if (req.has(backend_routes::kAllowInsecureHttp)) {
             install_options.allow_insecure_http =
-                request_json["allow_insecure_http"].get<bool>();
+                req.arg(backend_routes::kAllowInsecureHttp).get<bool>();
         }
         // The http:// opt-in gate below reflects the effective state: an
         // omitted flag on a re-install keeps whatever was stored.

@@ -13,6 +13,9 @@ namespace {
 const RouteError kInvalidSyncId{
     400, "", "`sync_id` does not start with a number, or is too large for 64 bits"};
 
+const RouteArg kSyncId{"sync_id", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
+                       "Sync to report. Defaults to the latest."};
+
 class ModelsSyncStatusRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -31,10 +34,7 @@ public:
             "A `sync_id` that is neither running nor recorded answers `200` with "
             "`status: \"not_found\"`.",
         };
-        s.args = {
-            {"sync_id", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
-             "Sync to report. Defaults to the latest."},
-        };
+        s.args = {kSyncId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -53,9 +53,11 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
             uint64_t sync_id = 0;
-            if (req.http.has_param("sync_id")) {
+            if (req.has(kSyncId)) {
+                const json& value = req.arg(kSyncId);
                 try {
-                    sync_id = std::stoull(req.http.get_param_value("sync_id"));
+                    sync_id = value.is_number_integer() ? value.get<uint64_t>()
+                                                        : std::stoull(value.get<std::string>());
                 } catch (...) {
                     write_plain_error(res, kInvalidSyncId, "Invalid sync_id parameter");
                     return;

@@ -15,6 +15,7 @@
 #include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 
 namespace lemon {
@@ -230,6 +231,64 @@ bool is_file_arg(const RouteArg& arg) {
     return arg.schema.value("format", std::string()) == "binary";
 }
 
+// Query and path values arrive as strings. A value that spells the schema's integer, number
+// or boolean becomes that type; any other stays a string for the route to reject.
+json typed_param(const std::string& text, const json& schema) {
+    if (!schema.contains("type")) return text;
+    const json& types = schema["type"];
+    for (const auto& type : types.is_array() ? types : json::array({types})) {
+        const std::string name = type.get<std::string>();
+        try {
+            size_t used = 0;
+            if (name == "integer" && matches_query_type(text, name)) {
+                const long long number = std::stoll(text, &used);
+                if (used == text.size()) return number;
+            } else if (name == "number" && matches_query_type(text, name)) {
+                return std::stod(text, &used);
+            }
+        } catch (const std::exception&) {
+        }
+        if (name == "boolean") return text == "true";
+    }
+    return text;
+}
+
+// httplib numbers a path's capture groups in the order its {name} parameters appear, and
+// RouteRegistry gives every path of a route the same parameters in the same order.
+void collect_params(RouteRequest& req) {
+    if (!req.spec.paths.empty()) {
+        const std::string& path = req.spec.paths.front();
+        size_t group = 0;
+        for (size_t open = path.find('{'); open != std::string::npos; open = path.find('{', open + 1)) {
+            ++group;
+            const size_t close = path.find('}', open);
+            const std::string name = path.substr(open + 1, close - open - 1);
+            for (const auto& arg : req.spec.args) {
+                if (arg.in == ArgIn::Path && arg.name == name && group < req.http.matches.size()) {
+                    req.params[arg.name] = typed_param(req.http.matches[group].str(), arg.schema);
+                }
+            }
+        }
+    }
+    for (const auto& arg : req.spec.args) {
+        if (arg.in != ArgIn::Query) continue;
+        std::vector<std::string> names = {arg.name};
+        names.insert(names.end(), arg.aliases.begin(), arg.aliases.end());
+        for (const auto& name : names) {
+            if (req.http.has_param(name)) {
+                req.params[arg.name] = typed_param(req.http.get_param_value(name), arg.schema);
+                break;
+            }
+        }
+    }
+}
+
+const json kAbsent;
+
+const json& argument_source(const RouteRequest& req, const RouteArg& arg) {
+    return arg.in == ArgIn::Query || arg.in == ArgIn::Path ? req.params : req.body;
+}
+
 // The streaming plumbing reports a backend failure as a payload in the sink rather than
 // throwing: an SSE-style "data: {\"error\":...}" event or the backend's own JSON error body.
 json extract_error_payload(const std::string& buf) {
@@ -389,9 +448,32 @@ nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
     };
 }
 
+bool RouteRequest::has(const RouteArg& arg) const {
+    const json& source = argument_source(*this, arg);
+    return source.is_object() && source.contains(arg.name);
+}
+
+const json& RouteRequest::arg(const RouteArg& arg) const {
+    const json& source = argument_source(*this, arg);
+    if (!source.is_object()) return kAbsent;
+    auto it = source.find(arg.name);
+    return it == source.end() ? kAbsent : *it;
+}
+
+const httplib::FormData* RouteRequest::file(const RouteArg& arg) const {
+    for (const auto& [field, file] : http.form.files) {
+        if (field == arg.name ||
+            std::find(arg.aliases.begin(), arg.aliases.end(), field) != arg.aliases.end()) {
+            return &file;
+        }
+    }
+    return nullptr;
+}
+
 void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
                      httplib::Response& res) {
     RouteRequest req{http, spec};
+    collect_params(req);
 
     if (spec.request_format == RequestFormat::Json ||
         spec.request_format == RequestFormat::OptionalJson) {
@@ -573,17 +655,18 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
             return;
         }
 
-        resolve_model_name(ctx_, req.body);
-        if (req.body.contains("model") && req.body["model"].is_string()) {
-            req.model = req.body["model"].get<std::string>();
+        const RouteArg& model = model_arg();
+        if (req.arg(model).is_string()) {
+            req.model = canonical_model_name(ctx_, req.arg(model).get<std::string>());
+            req.body[model.name] = req.model;
         }
 
         if (!validate(req, res)) {
             return;
         }
 
-        if (!req.body.contains("model")) {
-            write_openai_error(res, kModelMissing, "Missing 'model' field in request");
+        if (!req.has(model)) {
+            write_openai_error(res, kModelMissing, "Missing '" + model.name + "' field in request");
             return;
         }
 
@@ -595,7 +678,8 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
                                                           load_span_name.name, req.model,
                                                           req.body);
             try {
-                ctx_.model_loader->ensure_loaded(req.model, ModelLoader::load_options(req.body));
+                ctx_.model_loader->ensure_loaded(req.model,
+                                                 ModelLoader::load_options(req.arg(model_loading::kCtxSize)));
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 ctx_.model_loader->write_load_error(res, req.model, e.what());
@@ -667,21 +751,12 @@ std::string strip_latest_tag(const std::string& name) {
     return name;
 }
 
-void resolve_model_name(ServerContext& ctx, json& request, bool strip_latest) {
-    if (!request.is_object()) return;
-    auto resolve = [&ctx](const std::string& name) {
-        if (auto target = ctx.alias_manager->resolve_alias(name)) {
-            return *target;
-        }
-        return name;
-    };
-    if (request.contains("model") && request["model"].is_string()) {
-        std::string name = request["model"].get<std::string>();
-        request["model"] = resolve(strip_latest ? strip_latest_tag(name) : name);
+std::string canonical_model_name(ServerContext& ctx, const std::string& name, bool strip_latest) {
+    const std::string base = strip_latest ? strip_latest_tag(name) : name;
+    if (auto target = ctx.alias_manager->resolve_alias(base)) {
+        return *target;
     }
-    if (request.contains("model_name") && request["model_name"].is_string()) {
-        request["model_name"] = resolve(request["model_name"].get<std::string>());
-    }
+    return base;
 }
 
 std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const RouteRequest& req) {
@@ -754,18 +829,6 @@ void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
 bool write_sse_event(httplib::DataSink& sink, const std::string& event, const json& data) {
     std::string payload = "event: " + event + "\ndata: " + data.dump() + "\n\n";
     return sink.write(payload.c_str(), payload.size());
-}
-
-const httplib::FormData* find_form_file(const httplib::Request& http,
-                                        std::initializer_list<const char*> names) {
-    for (const auto& [field, file] : http.form.files) {
-        for (const char* name : names) {
-            if (field == name) {
-                return &file;
-            }
-        }
-    }
-    return nullptr;
 }
 
 std::vector<RouteError> join_errors(std::initializer_list<std::vector<RouteError>> lists) {

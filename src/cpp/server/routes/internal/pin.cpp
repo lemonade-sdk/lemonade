@@ -3,6 +3,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -11,6 +12,9 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kNotLoaded{400, "", "The model is not loaded"};
+
+const RouteArg kPinned{"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, true, Support::Available,
+                       "`true` pins the model; `false` unpins it."};
 
 class PinRoute : public ApiRoute {
 public:
@@ -31,12 +35,7 @@ public:
             "slot held only by pinned models fails with a "
             "`slots_pinned_error` code; see [Model Pinning](../guide/configuration/multi-model.md#model-pinning).",
         };
-        s.args = {
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Loaded model to pin or unpin.", {"model"}},
-            {"pinned", ArgIn::JsonBody, {{"type", "boolean"}}, true, Support::Available,
-             "`true` pins the model; `false` unpins it."},
-        };
+        s.args = {model_management::kModelName, kPinned};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -64,9 +63,8 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
-            std::string model_name = request_json["model_name"].get<std::string>();
-            bool pinned = request_json["pinned"].get<bool>();
+            std::string model_name = req.arg(model_management::kModelName).get<std::string>();
+            bool pinned = req.arg(kPinned).get<bool>();
 
             std::string canonical_name = ctx_.model_manager->resolve_model_name(model_name);
             ctx_.router->set_model_pinned(canonical_name, pinned);

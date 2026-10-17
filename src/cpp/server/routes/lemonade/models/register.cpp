@@ -17,6 +17,24 @@ const RouteError kRegisterFailed{
     "`checkpoint` without a variant, a recipe this system cannot run, or labels that name two "
     "deployment modes"};
 
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "Non-empty namespaced model name under `user.*`."};
+const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                       "Recipe that loads the model, such as `llamacpp`."};
+const RouteArg kCheckpoint{"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                           "Main checkpoint. Model types with no local weights have none."};
+const RouteArg kCheckpoints{"checkpoints", ArgIn::JsonBody,
+                            {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
+                            "Named checkpoints for multi-checkpoint models."};
+const RouteArg kSource{"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Registry or local source. Remote values are `huggingface` or `modelscope`."};
+const RouteArg kLabels{"labels", ArgIn::JsonBody,
+                       {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
+                       "Model labels; see [Model Labels](./openai.md#model-labels)."};
+const RouteArg kComponents{"components", ArgIn::JsonBody,
+                           {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
+                           "Collections only: the component model names, each already registered."};
+
 class RegisterRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -31,25 +49,7 @@ public:
             "Registers or updates a `user.*` model definition in `user_models.json` without "
             "downloading any files, for clients that register and install as separate steps. "
             "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
-        s.args = {
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Non-empty namespaced model name under `user.*`."},
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Recipe that loads the model, such as `llamacpp`."},
-            {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Main checkpoint. Model types with no local weights have none."},
-            {"checkpoints", ArgIn::JsonBody,
-             {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
-             "Named checkpoints for multi-checkpoint models."},
-            {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Registry or local source. Remote values are `huggingface` or `modelscope`."},
-            {"labels", ArgIn::JsonBody,
-             {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
-             "Model labels; see [Model Labels](./openai.md#model-labels)."},
-            {"components", ArgIn::JsonBody,
-             {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
-             "Collections only: the component model names, each already registered."},
-        };
+        s.args = {kModelName, kRecipe, kCheckpoint, kCheckpoints, kSource, kLabels, kComponents};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -86,13 +86,12 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        json& request_json = req.body;
         try {
-            const std::string model_name = request_json["model_name"].get<std::string>();
+            const std::string model_name = req.arg(kModelName).get<std::string>();
             const auto registered = try_register_model_definition(
                 ctx_,
                 model_name,
-                request_json,
+                req.body,
                 /*require_definition=*/true,
                 /*allow_embedded_models=*/false,
                 /*local_import=*/false,

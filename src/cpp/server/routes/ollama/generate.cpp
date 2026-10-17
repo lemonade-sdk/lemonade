@@ -7,6 +7,8 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -14,30 +16,57 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-json convert_ollama_to_openai_completion(const json& ollama_request) {
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Text to continue, or the image to generate for an image model."};
+const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
+                        "Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum "
+                        "generated tokens), `repeat_penalty`, which is sent as OpenAI's "
+                        "`frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` "
+                        "documented below. A key given at the top level wins. `num_ctx` sets the context "
+                        "size when this request loads the model. Other keys are ignored."};
+const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                      "Image models only: image width in pixels. Defaults to `512`. Ignored unless an "
+                      "integer.", {}, false, true};
+const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                       "Image models only: image height in pixels. Defaults to `512`. Ignored unless an "
+                       "integer.", {}, false, true};
+const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                      "Image models only: inference steps. Defaults to the model's own. Ignored unless "
+                      "an integer.", {}, false, true};
+const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                         "Image models only: classifier-free guidance scale. Defaults to the model's own. "
+                         "Ignored unless a number.", {}, false, true};
+const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                     "Random seed for reproducible output. Ignored unless an integer.", {}, false, true};
+const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
+                       "System prompt. Ignored."};
+const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
+                       Support::NotAvailable, "Output format constraint. Ignored."};
+
+json convert_ollama_to_openai_completion(const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(ollama_request.value("model", ""));
-    openai_req["model"] = model;
+    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
+    openai_req[model_loading::kModel.name] = model;
 
-    if (ollama_request.contains("prompt")) {
-        openai_req["prompt"] = ollama_request["prompt"];
+    if (req.has(kPrompt)) {
+        openai_req[openai::completions::kPrompt.name] = req.arg(kPrompt);
     }
 
-    map_ollama_options(ollama_request, openai_req);
+    map_ollama_options(req.arg(kOptions), req.body, openai_req);
 
-    openai_req["stream"] = false;
+    openai_req[common::kStream.name] = false;
 
     return openai_req;
 }
 
 // /api/generate also serves image models, answering with the image as base64.
-void generate_image(Router& router, const json& request_json, httplib::Response& res,
+void generate_image(Router& router, const RouteRequest& req, httplib::Response& res,
                     const std::string& model) {
     try {
         LOG(INFO, "OllamaApi") << "POST /api/generate - Image generation (model: " << model << ")" << std::endl;
 
-        std::string prompt = request_json.value("prompt", "");
+        std::string prompt = req.value(kPrompt, "");
 
         // Each parameter is read from the top level first, then from options.
         int width = 512;
@@ -46,50 +75,50 @@ void generate_image(Router& router, const json& request_json, httplib::Response&
         double cfg_scale = 0.0;
         int seed = -1;
 
-        if (request_json.contains("width")) {
-            width = request_json["width"].get<int>();
-        } else if (request_json.contains("options") && request_json["options"].contains("width")) {
-            width = request_json["options"]["width"].get<int>();
+        if (req.has(kWidth)) {
+            width = req.arg(kWidth).get<int>();
+        } else if (req.has(kOptions) && req.arg(kOptions).contains("width")) {
+            width = req.arg(kOptions)["width"].get<int>();
         }
 
-        if (request_json.contains("height")) {
-            height = request_json["height"].get<int>();
-        } else if (request_json.contains("options") && request_json["options"].contains("height")) {
-            height = request_json["options"]["height"].get<int>();
+        if (req.has(kHeight)) {
+            height = req.arg(kHeight).get<int>();
+        } else if (req.has(kOptions) && req.arg(kOptions).contains("height")) {
+            height = req.arg(kOptions)["height"].get<int>();
         }
 
-        if (request_json.contains("steps")) {
-            steps = request_json["steps"].get<int>();
-        } else if (request_json.contains("options") && request_json["options"].contains("steps")) {
-            steps = request_json["options"]["steps"].get<int>();
+        if (req.has(kSteps)) {
+            steps = req.arg(kSteps).get<int>();
+        } else if (req.has(kOptions) && req.arg(kOptions).contains("steps")) {
+            steps = req.arg(kOptions)["steps"].get<int>();
         }
 
-        if (request_json.contains("cfg_scale")) {
-            cfg_scale = request_json["cfg_scale"].get<double>();
-        } else if (request_json.contains("options") && request_json["options"].contains("cfg_scale")) {
-            cfg_scale = request_json["options"]["cfg_scale"].get<double>();
+        if (req.has(kCfgScale)) {
+            cfg_scale = req.arg(kCfgScale).get<double>();
+        } else if (req.has(kOptions) && req.arg(kOptions).contains("cfg_scale")) {
+            cfg_scale = req.arg(kOptions)["cfg_scale"].get<double>();
         }
 
-        if (request_json.contains("seed")) {
-            seed = request_json["seed"].get<int>();
-        } else if (request_json.contains("options") && request_json["options"].contains("seed")) {
-            seed = request_json["options"]["seed"].get<int>();
+        if (req.has(kSeed)) {
+            seed = req.arg(kSeed).get<int>();
+        } else if (req.has(kOptions) && req.arg(kOptions).contains("seed")) {
+            seed = req.arg(kOptions)["seed"].get<int>();
         }
 
         json openai_req;
-        openai_req["model"] = model;
-        openai_req["prompt"] = prompt;
-        openai_req["size"] = std::to_string(width) + "x" + std::to_string(height);
-        openai_req["response_format"] = "b64_json";
+        openai_req[model_loading::kModel.name] = model;
+        openai_req[openai::images::kPrompt.name] = prompt;
+        openai_req[openai::images::kSize.name] = std::to_string(width) + "x" + std::to_string(height);
+        openai_req[openai::images::kResponseFormat.name] = "b64_json";
 
         if (steps > 0) {
-            openai_req["steps"] = steps;
+            openai_req[inference::kSteps.name] = steps;
         }
         if (cfg_scale > 0.0) {
-            openai_req["cfg_scale"] = cfg_scale;
+            openai_req[openai::images::kCfgScale.name] = cfg_scale;
         }
         if (seed >= 0) {
-            openai_req["seed"] = seed;
+            openai_req[openai::images::kSeed.name] = seed;
         }
 
         auto openai_response = router.image_generations(openai_req);
@@ -166,42 +195,8 @@ public:
             "Image generation never streams.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Model to run."},
-            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Text to continue, or the image to generate for an image model."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
-             "Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum "
-             "generated tokens), `repeat_penalty`, which is sent as OpenAI's "
-             "`frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` "
-             "documented below. A key given at the top level wins. `num_ctx` sets the context "
-             "size when this request loads the model. Other keys are ignored."},
-            {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: image width in pixels. Defaults to `512`. Ignored unless an "
-             "integer.", {}, false, true},
-            {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: image height in pixels. Defaults to `512`. Ignored unless an "
-             "integer.", {}, false, true},
-            {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: inference steps. Defaults to the model's own. Ignored unless "
-             "an integer.", {}, false, true},
-            {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Image models only: classifier-free guidance scale. Defaults to the model's own. "
-             "Ignored unless a number.", {}, false, true},
-            {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducible output. Ignored unless an integer.", {}, false, true},
-            {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-             "`0` with an empty `prompt` unloads the model, answering with "
-             "`done_reason: \"unload\"`. Other values are ignored."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request loads "
-             "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true},
-            {"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
-             "System prompt. Ignored."},
-            {"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
-             Support::NotAvailable, "Output format constraint. Ignored."},
+            gateway::kModel, kPrompt, ollama::kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale,
+            kSeed, ollama::kKeepAlive, ollama::kCtxSize, kSystem, kFormat
         };
 
         RouteResponse full;
@@ -243,13 +238,10 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
-            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
-
-            std::string prompt = request_json.value("prompt", "");
-            if (prompt.empty() && request_json.contains("keep_alive") &&
-                request_json["keep_alive"] == 0) {
+            std::string prompt = req.value(kPrompt, "");
+            if (prompt.empty() && req.has(ollama::kKeepAlive) && req.arg(ollama::kKeepAlive) == 0) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Unloading model: " << model << std::endl;
                 try {
                     ctx_.router->unload_model(model);
@@ -267,8 +259,9 @@ public:
                 return;
             }
 
-            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
-                                       res)) {
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model,
+                                       gateway_load_options(req.arg(kOptions), req.arg(ollama::kCtxSize)),
+                                       ErrorFormat::Plain, res)) {
                 return;
             }
 
@@ -276,18 +269,18 @@ public:
             ModelType model_type = get_model_type_from_labels(model_info.labels);
 
             if (model_type == ModelType::IMAGE) {
-                generate_image(*ctx_.router, request_json, res, model);
+                generate_image(*ctx_.router, req, res, model);
                 return;
             }
 
-            bool stream = request_json.value("stream", true);
+            bool stream = req.value(ollama::kStream, true);
 
-            auto openai_req = convert_ollama_to_openai_completion(request_json);
+            auto openai_req = convert_ollama_to_openai_completion(req);
 
             if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req["stream"] = true;
+                openai_req[common::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

@@ -15,6 +15,9 @@ const RouteError kCleanupFailed{
     500, "model_not_found",
     "Scanning or removing cache files fails"};
 
+const RouteArg kDryRun{"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "List the orphaned files without removing them. Defaults to `true`."};
+
 class CleanupCacheRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -33,10 +36,7 @@ public:
             "An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different "
             "repository, found inside the `main` checkpoint's cache folder.",
         };
-        s.args = {
-            {"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "List the orphaned files without removing them. Defaults to `true`."},
-        };
+        s.args = {kDryRun};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -73,7 +73,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            bool dry_run = req.body.value("dry_run", true);
+            bool dry_run = req.value(kDryRun, true);
 
             auto result = ctx_.model_manager->cleanup_orphaned_cache(dry_run);
             res.set_content(result.dump(), "application/json");

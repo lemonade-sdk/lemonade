@@ -16,6 +16,8 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 
@@ -39,6 +41,33 @@ const RouteError kCloudRequestFailed{
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
+                         "Conversation so far, as `user` and `assistant` messages. `content` is a string or "
+                         "an array of `text`, `image` (base64 source), `tool_use` and `tool_result` blocks."};
+const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
+                       "System prompt, as a string or an array of `text` blocks."};
+const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                          "Upper bound on generated tokens."};
+const RouteArg kStopSequences{"stop_sequences", ArgIn::JsonBody, {{"type", json::array({"array", "string"})}}, false,
+                              Support::Available, "Sequences where generation stops."};
+const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+                      "Tools the model may call, each with a `name`, `description` and `input_schema`."};
+const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+                           "`{\"type\": \"auto\"}`, `any`, `none`, or `tool` with a `name`."};
+const RouteArg kOutputConfig{"output_config", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+                             "`format` of type `json_schema` (with a `schema`) or `json_object` constrains the "
+                             "reply."};
+const RouteArg kThinking{"thinking", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
+                         "Not applied to local models: reasoning models think regardless. Qwen3 models "
+                         "skip their reasoning when the prompt ends with `/no_think`."};
+const RouteArg kMetadata{"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
+                         "Ignored for local models, with a warning."};
+const RouteArg kContextManagement{"context_management", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
+                                  "Ignored for local models, with a warning."};
+const RouteArg kBeta{"beta", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
+                     "Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; "
+                     "`true` is passed on to providers that are relayed."};
 
 void add_warning(std::vector<std::string>& warnings, const std::string& warning) {
     if (std::find(warnings.begin(), warnings.end(), warning) == warnings.end()) {
@@ -194,8 +223,7 @@ using anthropic::is_forwardable_response_header;
 
 AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
                                                          const std::string& model,
-                                                         const json& request_json,
-                                                         const httplib::Request& req) {
+                                                         const RouteRequest& req) {
     AnthropicUpstreamMatch match;
     if (model_manager == nullptr) return match;
     CloudProviderRegistry* registry = model_manager->cloud_registry();
@@ -247,15 +275,15 @@ AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
 
     // The body passes through byte-for-byte apart from "model", which must name
     // the provider's own id rather than lemonade's "<provider>.<id>" public one.
-    json forwarded = request_json;
-    forwarded["model"] = info.checkpoint();
+    json forwarded = req.body;
+    forwarded[gateway::kModel.name] = info.checkpoint();
 
     const auto auth_header = registry->auth_header_for(info.cloud_provider);
     AnthropicUpstream upstream;
     upstream.url = backends::CloudServer::upstream_url(base_url, "/messages");
     // The Anthropic API reads `beta` from the query string, so it has to be
     // reattached to the upstream URL rather than folded into a header.
-    if (req.has_param("beta") && req.get_param_value("beta") == "true") {
+    if (req.value(kBeta, std::string()) == "true") {
         upstream.url += "?beta=true";
     }
     upstream.headers = backends::CloudServer::upstream_headers(auth_header, api_key,
@@ -265,7 +293,7 @@ AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
     // a repeat of the same name is joined, since a client may send
     // anthropic-beta as several headers rather than one comma-separated value.
     std::set<std::string> from_client;
-    for (const auto& [name, value] : req.headers) {
+    for (const auto& [name, value] : req.http.headers) {
         std::string lower = name;
         for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
         if (!is_forwardable_request_header(lower)) continue;
@@ -367,23 +395,23 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
         });
 }
 
-json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector<std::string>& warnings) {
+json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::string>& warnings) {
     json openai_req;
 
-    std::string model = strip_latest_tag(anthropic_request.value("model", ""));
-    openai_req["model"] = model;
+    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
+    openai_req[model_loading::kModel.name] = model;
 
     json messages = json::array();
 
-    if (anthropic_request.contains("system")) {
-        std::string system_text = join_text_blocks(anthropic_request["system"], warnings, "system");
+    if (req.has(kSystem)) {
+        std::string system_text = join_text_blocks(req.arg(kSystem), warnings, "system");
         if (!system_text.empty()) {
             messages.push_back({{"role", "system"}, {"content", system_text}});
         }
     }
 
-    if (anthropic_request.contains("messages") && anthropic_request["messages"].is_array()) {
-        for (const auto& msg : anthropic_request["messages"]) {
+    if (req.has(kMessages) && req.arg(kMessages).is_array()) {
+        for (const auto& msg : req.arg(kMessages)) {
             if (!msg.is_object()) {
                 add_warning(warnings, "Ignored non-object item in 'messages'");
                 continue;
@@ -543,28 +571,28 @@ json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector
         }
     }
 
-    openai_req["messages"] = messages;
+    openai_req[openai::chat::kMessages.name] = messages;
 
-    if (anthropic_request.contains("max_tokens")) {
-        openai_req["max_completion_tokens"] = anthropic_request["max_tokens"];
+    if (req.has(kMaxTokens)) {
+        openai_req[openai::chat::kMaxCompletionTokens.name] = req.arg(kMaxTokens);
     }
-    if (anthropic_request.contains("temperature")) {
-        openai_req["temperature"] = anthropic_request["temperature"];
+    if (req.has(generation::kTemperature)) {
+        openai_req[generation::kTemperature.name] = req.arg(generation::kTemperature);
     }
-    if (anthropic_request.contains("top_p")) {
-        openai_req["top_p"] = anthropic_request["top_p"];
+    if (req.has(generation::kTopP)) {
+        openai_req[generation::kTopP.name] = req.arg(generation::kTopP);
     }
-    if (anthropic_request.contains("top_k")) {
-        openai_req["top_k"] = anthropic_request["top_k"];
-    }
-
-    if (anthropic_request.contains("stop_sequences")) {
-        openai_req["stop"] = anthropic_request["stop_sequences"];
+    if (req.has(generation::kTopK)) {
+        openai_req[generation::kTopK.name] = req.arg(generation::kTopK);
     }
 
-    if (anthropic_request.contains("tools") && anthropic_request["tools"].is_array()) {
+    if (req.has(kStopSequences)) {
+        openai_req[openai::text::kStop.name] = req.arg(kStopSequences);
+    }
+
+    if (req.has(kTools) && req.arg(kTools).is_array()) {
         json openai_tools = json::array();
-        for (const auto& tool : anthropic_request["tools"]) {
+        for (const auto& tool : req.arg(kTools)) {
             if (!tool.is_object() || !tool.contains("name") || !tool["name"].is_string()) {
                 add_warning(warnings, "Ignored invalid tool definition in 'tools'");
                 continue;
@@ -586,25 +614,25 @@ json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector
         }
 
         if (!openai_tools.empty()) {
-            openai_req["tools"] = openai_tools;
+            openai_req[generation::kTools.name] = openai_tools;
         }
     }
 
-    if (anthropic_request.contains("tool_choice") && anthropic_request["tool_choice"].is_object()) {
-        const auto& tc = anthropic_request["tool_choice"];
+    if (req.has(kToolChoice) && req.arg(kToolChoice).is_object()) {
+        const auto& tc = req.arg(kToolChoice);
         std::string type = tc.value("type", "auto");
         if (type == "auto") {
-            openai_req["tool_choice"] = "auto";
+            openai_req[openai::chat::kToolChoice.name] = "auto";
         } else if (type == "any") {
-            openai_req["tool_choice"] = "required";
+            openai_req[openai::chat::kToolChoice.name] = "required";
         } else if (type == "none") {
-            openai_req["tool_choice"] = "none";
+            openai_req[openai::chat::kToolChoice.name] = "none";
         } else if (type == "tool") {
             std::string name = tc.value("name", "");
             if (name.empty()) {
                 add_warning(warnings, "Ignored tool_choice.type=tool without name");
             } else {
-                openai_req["tool_choice"] = {
+                openai_req[openai::chat::kToolChoice.name] = {
                     {"type", "function"},
                     {"function", {{"name", name}}}
                 };
@@ -614,14 +642,14 @@ json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector
         }
     }
 
-    if (anthropic_request.contains("output_config") && anthropic_request["output_config"].is_object()) {
-        const auto& output_config = anthropic_request["output_config"];
+    if (req.has(kOutputConfig) && req.arg(kOutputConfig).is_object()) {
+        const auto& output_config = req.arg(kOutputConfig);
         if (output_config.contains("format") && output_config["format"].is_object()) {
             const auto& format = output_config["format"];
             std::string type = format.value("type", "");
 
             if (type == "json_schema" && format.contains("schema") && format["schema"].is_object()) {
-                openai_req["response_format"] = {
+                openai_req[openai::chat::kResponseFormat.name] = {
                     {"type", "json_schema"},
                     {"json_schema", {
                         {"name", "response"},
@@ -629,32 +657,32 @@ json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector
                     }}
                 };
             } else if (type == "json_object") {
-                openai_req["response_format"] = { {"type", "json_object"} };
+                openai_req[openai::chat::kResponseFormat.name] = { {"type", "json_object"} };
             } else {
                 add_warning(warnings, "Ignored unsupported output_config.format type: " + type);
             }
         }
     }
 
-    if (anthropic_request.contains("thinking") && anthropic_request["thinking"].is_object()) {
-        std::string thinking_type = anthropic_request["thinking"].value("type", "");
+    if (req.has(kThinking) && req.arg(kThinking).is_object()) {
+        std::string thinking_type = req.arg(kThinking).value("type", "");
         if (thinking_type == "enabled") {
-            openai_req["enable_thinking"] = true;
+            openai_req[openai::chat::kEnableThinking.name] = true;
         } else if (thinking_type == "disabled") {
-            openai_req["enable_thinking"] = false;
+            openai_req[openai::chat::kEnableThinking.name] = false;
         } else {
             add_warning(warnings, "Ignored unsupported thinking.type: " + thinking_type);
         }
     }
 
-    if (anthropic_request.contains("metadata")) {
+    if (req.has(kMetadata)) {
         add_warning(warnings, "Ignored 'metadata' field");
     }
-    if (anthropic_request.contains("context_management")) {
+    if (req.has(kContextManagement)) {
         add_warning(warnings, "Ignored 'context_management' field");
     }
 
-    openai_req["stream"] = anthropic_request.value("stream", false);
+    openai_req[common::kStream.name] = req.value(common::kStream, false);
 
     return openai_req;
 }
@@ -792,45 +820,10 @@ public:
             "\"message\"}}`.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Model to run; loaded on first use."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
-             "Conversation so far, as `user` and `assistant` messages. `content` is a string or "
-             "an array of `text`, `image` (base64 source), `tool_use` and `tool_result` blocks."},
-            {"system", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, false, Support::Available,
-             "System prompt, as a string or an array of `text` blocks."},
-            {"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Upper bound on generated tokens."},
-            {"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Sampling temperature.", {}, true},
-            {"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Nucleus sampling probability.", {}, true},
-            {"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of top tokens considered during sampling.", {}, true},
-            {"stop_sequences", ArgIn::JsonBody, {{"type", json::array({"array", "string"})}}, false,
-             Support::Available, "Sequences where generation stops."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream server-sent events as tokens are generated. Defaults to `false`."},
-            {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Tools the model may call, each with a `name`, `description` and `input_schema`."},
-            {"tool_choice", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "`{\"type\": \"auto\"}`, `any`, `none`, or `tool` with a `name`."},
-            {"output_config", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "`format` of type `json_schema` (with a `schema`) or `json_object` constrains the "
-             "reply."},
-            {"thinking", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
-             "Not applied to local models: reasoning models think regardless. Qwen3 models "
-             "skip their reasoning when the prompt ends with `/no_think`."},
-            {"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
-             "Ignored for local models, with a warning."},
-            {"context_management", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
-             "Ignored for local models, with a warning."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request loads "
-             "it."},
-            {"beta", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
-             "Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; "
-             "`true` is passed on to providers that are relayed."},
+            gateway::kModel, kMessages, kSystem, kMaxTokens, generation::kTemperature,
+            generation::kTopP, generation::kTopK, kStopSequences, common::kStream, kTools,
+            kToolChoice, kOutputConfig, kThinking, kMetadata, kContextManagement,
+            model_loading::kCtxSize, kBeta
         };
 
         RouteResponse message;
@@ -920,13 +913,12 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
             std::vector<std::string> warnings;
 
-            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
-            if (req.http.has_param("beta")) {
-                std::string beta_value = req.http.get_param_value("beta");
+            if (req.has(kBeta)) {
+                std::string beta_value = req.arg(kBeta).get<std::string>();
                 if (beta_value != "true") {
                     add_warning(warnings, "Ignored unsupported beta query value: " + beta_value);
                 }
@@ -941,7 +933,7 @@ public:
 
             // Relaying verbatim keeps thinking blocks, tool use, and cache control
             // intact. No router slot is taken — there is no local resource to hold.
-            auto match = resolve_anthropic_upstream(ctx_.model_manager, model, request_json, req.http);
+            auto match = resolve_anthropic_upstream(ctx_.model_manager, model, req);
             if (match.claimed) {
                 emit_warning_header();
                 if (!match.upstream) {
@@ -949,22 +941,23 @@ public:
                     return;
                 }
                 forward_anthropic_upstream(std::move(*match.upstream),
-                                           request_json.value("stream", false), model, req, res);
+                                           req.value(common::kStream, false), model, req, res);
                 return;
             }
 
-            auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
+            auto openai_req = convert_anthropic_to_openai_chat(req, warnings);
 
-            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json,
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model,
+                                       gateway_load_options(nullptr, req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Anthropic, res)) {
                 return;
             }
 
-            bool stream = openai_req.value("stream", false);
+            bool stream = openai_req.value(common::kStream.name, false);
             emit_warning_header();
 
             if (stream) {
-                openai_req["stream"] = true;
+                openai_req[common::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model, warnings](const std::string& openai_body,
@@ -977,7 +970,7 @@ public:
                 return;
             }
 
-            openai_req["stream"] = false;
+            openai_req[common::kStream.name] = false;
             auto openai_response = ctx_.router->chat_completion(openai_req);
             if (set_anthropic_backend_error_response(openai_response, res)) {
                 return;
