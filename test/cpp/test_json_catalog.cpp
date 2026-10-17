@@ -11,7 +11,10 @@ using lemon::ModelInfo;
 using lemon::json;
 using lemon::models::CatalogAccumulator;
 using lemon::models::CatalogDescriptor;
+using lemon::models::find_registry_row;
 using lemon::models::JsonCatalog;
+using lemon::models::RegistryDocument;
+using lemon::models::RegistryDocuments;
 using lemon::models::RegistryRowRules;
 
 static int g_failures = 0;
@@ -244,6 +247,41 @@ static void test_unconsumed_keys_survive_as_extras() {
           info.extras.count("checkpoint") == 0 && info.extras.count("labels") == 0);
 }
 
+static lemon::models::RegistryDocuments::Pin pin() {
+    lemon::models::RegistryDocuments::Pin documents;
+    documents.builtin = std::make_shared<const json>(
+        json{{"Foo", json{{"recipe", "llamacpp"}}}, {"Bar", json{{"recipe", "llamacpp"}}}});
+    documents.user = std::make_shared<const json>(
+        json{{"Bar", json{{"recipe", "llamacpp"}}}, {"Mine", json{{"recipe", "llamacpp"}}}});
+    return documents;
+}
+
+static void test_a_requested_name_finds_its_row() {
+    const lemon::models::RegistryDocuments::Pin documents = pin();
+
+    const auto bare_builtin = find_registry_row(documents, "Foo");
+    check("a bare name finds the built-in row",
+          bare_builtin && bare_builtin->document == RegistryDocument::Builtin &&
+              bare_builtin->key == "Foo" && bare_builtin->canonical_id == "Foo");
+
+    const auto registered = find_registry_row(documents, "user.Mine");
+    check("a user handle finds the user row by its bare part",
+          registered && registered->document == RegistryDocument::User &&
+              registered->key == "Mine" && registered->canonical_id == "user.Mine");
+
+    const auto prefixed_builtin = find_registry_row(documents, "builtin.Bar");
+    check("a built-in handle finds the row the registry keys bare",
+          prefixed_builtin && prefixed_builtin->document == RegistryDocument::Builtin &&
+              prefixed_builtin->key == "Bar");
+
+    check("a scanned handle names bytes, not a row",
+          !find_registry_row(documents, "extra.Foo").has_value());
+    check("a name no document holds finds no row",
+          !find_registry_row(documents, "Nothing").has_value());
+    check("a user handle whose row is gone finds no row",
+          !find_registry_row(documents, "user.Gone").has_value());
+}
+
 int main() {
     test_the_name_prefix_is_minted_not_read();
     test_checkpoint_grammar();
@@ -254,6 +292,7 @@ int main() {
     test_hooks_run_once_per_row_and_never_sink_it();
     test_the_authored_options_layer_is_reported();
     test_unconsumed_keys_survive_as_extras();
+    test_a_requested_name_finds_its_row();
 
     if (g_failures == 0) {
         std::printf("All JSON catalog tests passed.\n");
