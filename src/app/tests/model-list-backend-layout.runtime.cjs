@@ -89,7 +89,7 @@ assert.match(component, /secondaryTags = capTags\.filter\(tag => tag !== \(prima
 
 // Status is transient-only, and never carried by dot colour alone: a row that
 // is doing something says so in words, and a steady row says nothing at all.
-assert.match(component, /t\('Downloading\{progress\}', \{ progress: downloadPct != null/);
+assert.match(component, /t\('Downloading\{progress\}', \{ progress: downloadPct != null \? ` \$\{downloadPct\.toFixed\(0\)\}%` : '…' \}\)/);
 assert.match(component, /\? backendReadinessMessage\(backendReadiness!, t\)/);
 assert.match(panels, /export type WorkspaceListRowStatus = 'live' \| 'busy' \| 'attention' \| 'error';/,
   'the status vocabulary is only the states that render; steady states are section facts');
@@ -219,6 +219,8 @@ assert.match(panels, /showAnchor = Boolean\(anchor && !action\?\.latched\)/,
   'a latched action replaces the anchor rather than crowding it');
 assert.match(panels, /latched\?: boolean;/,
   'the row action declares whether it holds the slot or waits for hover');
+assert.match(component, /className=\{pinned \? 'workspace-list-row--pinned' : undefined\}/,
+  'a pinned model still marks its row, now through the class rather than the action slot');
 assert.doesNotMatch(component, /latched: pinned,/,
   'pin state must not replace the backend label on every catalog row');
 assert.match(component, /active: favorited,/,

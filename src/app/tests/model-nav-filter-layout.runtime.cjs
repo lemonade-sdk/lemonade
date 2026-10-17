@@ -140,14 +140,21 @@ function loadListHelpers() {
     if (request === '../modelCapabilities') return capModule.exports;
     if (request === './Icon') return { Icon() {}, CapabilityIcon() {} };
     if (request.includes('downloadStore')) return { activeDownloadForModel() { return undefined; } };
-    if (request === './WorkspacePanels') return { WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {} };
+    if (request === './WorkspacePanels') return {
+      WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {},
+      WorkspaceList() {}, WorkspaceListGroup() {}, WorkspaceListRow() {},
+    };
+    if (request === '../features/backends/recipeMetadata') return { recipeBackendOptionName() { return null; } };
+    if (request === '../i18n') return {
+      useI18n() {
+        return { t: (key, vars = {}) => key.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? '')) };
+      },
+    };
     if (request === '../modelPresentation') return {
       backendColor: recipe => `color:${recipe}`,
       backendCompactLabel: recipe => recipe,
       backendLabel: recipe => recipe,
     };
-    if (request === '../features/backends/recipeMetadata') return { recipeBackendOptionName: () => null };
-    if (request === '../i18n') return { useI18n: () => ({ t: key => key }) };
     throw new Error(`Unexpected dependency while loading ModelListPanel helpers: ${request}`);
   };
   Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(

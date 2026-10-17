@@ -194,7 +194,7 @@ assert.doesNotMatch(capabilitiesSource, /MULTIMODAL_CHAT_NAME_PATTERNS|capabilit
   'classification must never guess from a model or repository name');
 assert.doesNotMatch(capabilitiesSource, /registry_source/,
   'an installed model must not be classified by which registry it came from');
-assert.match(remoteCapabilitiesSource, /Repository IDs, display names and the user's search query are deliberately\n \* excluded/,
+assert.match(remoteCapabilitiesSource, /Repository IDs, display names and the user's search query are deliberately\r?\n \* excluded/,
   'remote registry rows must avoid name guessing');
 assert.match(listPanelSource, /const identity = identityFromModelInfo\(m\);/,
   'task filtering asks for the identity rather than re-deriving collection rules');
@@ -222,6 +222,8 @@ assert.doesNotMatch(styles, /model-nav-rail__section--providers\s*\{[\s\S]*borde
   'Online Catalogs must not add a divider below Backends');
 assert.match(styles, /\.model-nav-rail__provider-list \{[\s\S]*padding: 2px var\(--space-2\) 0;/,
   'catalog checkboxes must align horizontally with the task/backend controls');
+assert.match(styles, /input\[type="checkbox"\] \{[^}]*width: 16px;[^}]*height: 16px;[^}]*border-radius: 4px;/,
+  'catalog checkboxes must inherit the exact Backends checkbox geometry, now shared by one global rule');
 assert.match(styles, /\.model-nav-rail__provider-option \{[^}]*width:\s*100%;[^}]*min-height:\s*25px;/s,
   'catalog options must remain aligned and occupy the available rail width');
 assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{searchActive\}/,
