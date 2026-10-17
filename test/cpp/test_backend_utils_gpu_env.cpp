@@ -169,7 +169,13 @@ int main() {
         const auto* spec = lemon::backends::try_get_spec_for_recipe("llamacpp");
         check(spec != nullptr && !spec->binary.empty(), "llamacpp spec has a binary name");
         if (spec != nullptr && !spec->binary.empty()) {
-            const fs::path dir = fs::temp_directory_path() / "lemonade_bin_dir_test";
+            clear_env_var("LEMONADE_LLAMACPP_VULKAN_BIN");
+#ifdef _WIN32
+            const int pid = _getpid();
+#else
+            const int pid = getpid();
+#endif
+            const fs::path dir = fs::temp_directory_path() / ("lemonade_bin_dir_test_" + std::to_string(pid));
             const fs::path empty_dir = dir / "empty";
             fs::remove_all(dir);
             fs::create_directories(empty_dir);
