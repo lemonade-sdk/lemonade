@@ -61,6 +61,22 @@ fs::path active_snapshot_path(const fs::path& model_cache_path) {
     return lemon::backends::hf_cache::exists(snapshot_path) ? snapshot_path : fs::path();
 }
 
+bool is_in_uncommitted_snapshot(const fs::path& model_cache_path,
+                                const fs::path& candidate) {
+    const fs::path snapshots_path = model_cache_path / "snapshots";
+    fs::path relative = candidate.lexically_relative(snapshots_path);
+    if (relative.empty()) {
+        return false;
+    }
+
+    auto first = relative.begin();
+    if (first == relative.end() || *first == "." || *first == "..") {
+        return false;
+    }
+
+    return lemon::backends::hf_cache::exists(snapshots_path / *first / ".download_manifest.json");
+}
+
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
                                       const std::string& registry_source) {
     return registry_repo_cache_dir_name(repo_id,

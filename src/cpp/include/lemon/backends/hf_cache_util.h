@@ -22,6 +22,13 @@ std::filesystem::directory_options dir_options();
 // dir, or an empty path if there is no recorded ref / it doesn't exist.
 std::filesystem::path active_snapshot_path(const std::filesystem::path& model_cache_path);
 
+// True when `candidate` lives inside a snapshot of `model_cache_path` whose
+// download is still in progress (a live .download_manifest.json sits at the
+// snapshot root). Files in such a snapshot are not a completed download yet,
+// even when the individual file has fully arrived.
+bool is_in_uncommitted_snapshot(const std::filesystem::path& model_cache_path,
+                                const std::filesystem::path& candidate);
+
 // Provider-qualified cache directory name for a repository id.
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,
                                       const std::string& registry_source = "huggingface");
