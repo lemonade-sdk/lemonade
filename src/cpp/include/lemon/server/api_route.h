@@ -173,7 +173,7 @@ void resolve_model_name(ServerContext& ctx, nlohmann::json& request, bool strip_
 std::string strip_latest_tag(const std::string& name);
 
 // Aborts the upstream backend request when the client disconnects during a non-streaming
-// request (Invariant #11), for as long as the returned scope lives.
+// request (Invariant #10), for as long as the returned scope lives.
 std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const RouteRequest& req);
 
 // Adds the router decision to the response body and headers.
