@@ -17,7 +17,6 @@ namespace utils {
 
 enum class ContainerTool { Podman, Docker };
 
-// A host file the container reads, mounted read-only.
 struct ContainerMount {
     std::string source;       // path on the host
     std::string destination;  // path inside the container, under /mnt/models
@@ -56,9 +55,7 @@ struct CommandResult {
 
 // Each host read, defaulting to the real host so tests can fake every branch.
 struct ContainerHost {
-    // True when `name` is an executable on PATH.
     std::function<bool(const std::string& name)> on_path;
-    // True when this process belongs to `group`.
     std::function<bool(const std::string& group)> in_group;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
@@ -66,7 +63,6 @@ struct ContainerHost {
     std::function<std::string()> account;
     // True when /var/run/docker.sock accepts a connection from this process.
     std::function<bool()> docker_socket_accepts;
-    // The contents of a file, or "" when it cannot be read.
     std::function<std::string(const std::string& path)> read_file;
     // Runs a command line and waits for it. Without `capture_stderr`, stderr
     // stays out of `output`, since Podman prints warnings there even when the
@@ -101,7 +97,6 @@ public:
     // nullopt when it passes.
     std::optional<SetupFailure> check_selinux() const;
 
-    // The complete `run` command line for `spec`, starting with the tool.
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
 
     bool has_image(const std::string& image) const;
@@ -128,7 +123,6 @@ public:
     // The command that installs Podman on the distribution `os_release`
     // describes, matched on ID, then each word of ID_LIKE.
     static std::string podman_install_command(const std::string& os_release);
-    // True for the images container backends may pull.
     static bool allowed_image(const std::string& image);
     // "gfx1151" for KFD's gfx_target_version 110501.
     static std::string gfx_name(int gfx_target_version);
