@@ -102,7 +102,7 @@ public:
         };
         s.args = {
             kInput, openai::text::kModel, kMaxOutputTokens, generation::kTemperature,
-            openai::text::kRepeatPenalty, generation::kTopK, generation::kTopP, generation::kStream,
+            openai::text::kRepeatPenalty, generation::kTopK, generation::kTopP, common::kStream,
             openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
@@ -155,7 +155,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        bool is_streaming = req.value(generation::kStream, false);
+        bool is_streaming = req.value(common::kStream, false);
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
             Router* router = ctx_.router;

@@ -158,7 +158,7 @@ json convert_ollama_to_openai_chat(const RouteRequest& req) {
         openai_req[openai::chat::kMessages.name] = messages;
     }
 
-    map_ollama_options(req.arg(kOptions), req.body, openai_req, openai::chat::kMaxTokens);
+    map_ollama_options(req.arg(kOptions), req.body, openai_req);
 
     if (req.has(generation::kTools)) {
         openai_req[generation::kTools.name] = req.arg(generation::kTools);
@@ -174,7 +174,7 @@ json convert_ollama_to_openai_chat(const RouteRequest& req) {
     }
 
     // The caller decides whether to stream.
-    openai_req[generation::kStream.name] = false;
+    openai_req[common::kStream.name] = false;
 
     return openai_req;
 }
@@ -446,7 +446,7 @@ public:
             } else if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req[generation::kStream.name] = true;
+                openai_req[common::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

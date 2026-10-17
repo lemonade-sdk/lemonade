@@ -9,8 +9,11 @@ namespace model_loading {
 extern const RouteArg kCtxSize;
 } // namespace model_loading
 
-namespace generation {
+namespace common {
 extern const RouteArg kStream;
+} // namespace common
+
+namespace generation {
 extern const RouteArg kTemperature;
 extern const RouteArg kTopK;
 extern const RouteArg kTopP;
@@ -23,6 +26,7 @@ extern const RouteArg kStop;
 extern const RouteArg kRepeatPenalty;
 extern const RouteArg kFrequencyPenalty;
 extern const RouteArg kSeed;
+extern const RouteArg kMaxTokens;
 extern const RouteArg kRouteTrace;
 } // namespace openai::text
 
@@ -58,11 +62,11 @@ extern const RouteArg kModel;
 namespace backend_routes {
 extern const RouteArg kRecipe;
 extern const RouteArg kBackend;
+extern const RouteArg kProvider;
 extern const RouteArg kAllowInsecureHttp;
 } // namespace backend_routes
 
 namespace downloads {
-extern const RouteArg kStream;
 extern const RouteArg kSubscribe;
 } // namespace downloads
 

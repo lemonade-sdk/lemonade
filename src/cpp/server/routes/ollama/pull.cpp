@@ -15,8 +15,6 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kPullFailed{500, "", "A non-streaming download fails"};
 
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Stream newline-delimited JSON progress. Defaults to `true`."};
 
 class PullRoute : public ApiRoute {
 public:
@@ -36,7 +34,7 @@ public:
             "Only models already in Lemonade's registry can be pulled; use "
             "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
         };
-        s.args = {ollama::management::kModel, kStream};
+        s.args = {ollama::management::kModel, ollama::kStream};
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
@@ -85,7 +83,7 @@ public:
                 return;
             }
 
-            bool stream = req.value(kStream, true);
+            bool stream = req.value(ollama::kStream, true);
 
             if (refuse_offline_download(ctx_, res)) {
                 return;

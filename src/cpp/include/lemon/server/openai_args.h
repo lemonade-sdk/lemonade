@@ -12,7 +12,6 @@ extern const RouteArg kMessages;
 extern const RouteArg kLogprobs;
 extern const RouteArg kToolChoice;
 extern const RouteArg kResponseFormat;
-extern const RouteArg kMaxTokens;
 extern const RouteArg kMaxCompletionTokens;
 extern const RouteArg kEnableThinking;
 } // namespace chat
@@ -21,7 +20,6 @@ namespace completions {
 extern const RouteArg kPrompt;
 extern const RouteArg kEcho;
 extern const RouteArg kLogprobs;
-extern const RouteArg kMaxTokens;
 } // namespace completions
 
 namespace embeddings {

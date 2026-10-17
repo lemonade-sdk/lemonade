@@ -134,9 +134,9 @@ public:
             "for the file format and workflows.",
         };
         s.args = {
-            downloads::kStream, downloads::kSubscribe, kModelName, kRecipe, kCheckpoint,
-            kCheckpoints, kReasoning, kVision, kEmbedding, kReranking, kMmproj, kComponents,
-            kModels, kLabels, kSource, kRegistrySource, kDoNotUpgrade, kLocalImport
+            common::kStream, downloads::kSubscribe, kModelName, kRecipe, kCheckpoint, kCheckpoints,
+            kReasoning, kVision, kEmbedding, kReranking, kMmproj, kComponents, kModels, kLabels,
+            kSource, kRegistrySource, kDoNotUpgrade, kLocalImport
         };
 
         RouteResponse job;
@@ -211,7 +211,7 @@ public:
             std::string checkpoint = req.value(kCheckpoint, "");
             std::string recipe = req.value(kRecipe, "");
             bool do_not_upgrade = req.value(kDoNotUpgrade, false);
-            bool stream = req.value(downloads::kStream, false);
+            bool stream = req.value(common::kStream, false);
             bool subscribe = req.value(downloads::kSubscribe, true);
             bool local_import = req.value(kLocalImport, false);
 

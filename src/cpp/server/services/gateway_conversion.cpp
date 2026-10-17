@@ -134,14 +134,13 @@ struct OptionMapping { const char* ollama_key; const RouteArg& openai_arg; };
 } // namespace
 
 // Ollama accepts these both inside options and at the top level; top-level wins.
-void map_ollama_options(const json& options, const json& ollama_request, json& openai_req,
-                        const RouteArg& max_tokens) {
+void map_ollama_options(const json& options, const json& ollama_request, json& openai_req) {
     const OptionMapping mappings[] = {
         {"temperature",    generation::kTemperature},
         {"top_p",          generation::kTopP},
         {"seed",           openai::text::kSeed},
         {"stop",           openai::text::kStop},
-        {"num_predict",    max_tokens},
+        {"num_predict",    openai::text::kMaxTokens},
         {"repeat_penalty", openai::text::kFrequencyPenalty},
     };
     if (options.is_object()) {

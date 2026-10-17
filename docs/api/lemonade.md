@@ -331,7 +331,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `stream` | No | If `true`, sends download progress as server-sent events. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | `true` sends the response as server-sent events as it progresses; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `subscribe` | No | Only applies when `stream` is `true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` or `model` | Yes | A [registered model](https://lemonade-server.ai/models.html) to install, or a new `user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps registered models from colliding with built-in ones. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `recipe` | No | Required when registering: the recipe that loads and runs the model, such as `llamacpp`, or `collection.omni` for an omni collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2189,7 +2189,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `recipe` | No | Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, `sd-cpp` or `ryzenai-llm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `backend` | Yes | Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. Cloud providers: `"cloud"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `stream` | No | If `true`, sends download progress as server-sent events. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | `true` sends the response as server-sent events as it progresses; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `force` | No | Local backends: if `true`, installs a backend this system does not support anyway. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `provider` | No | Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name prefix. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `base_url` | No | Cloud providers, required: the provider's base URL, such as one ending in `/v1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2543,7 +2543,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `recipe` | No | Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, `sd-cpp` or `ryzenai-llm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `backend` | Yes | Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. Cloud providers: `"cloud"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `provider` | No | The installed cloud provider to remove. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `provider` | No | Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name prefix. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Uninstall a Cloud Provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>

@@ -682,7 +682,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         add_warning(warnings, "Ignored 'context_management' field");
     }
 
-    openai_req[generation::kStream.name] = req.value(generation::kStream, false);
+    openai_req[common::kStream.name] = req.value(common::kStream, false);
 
     return openai_req;
 }
@@ -821,7 +821,7 @@ public:
         };
         s.args = {
             gateway::kModel, kMessages, kSystem, kMaxTokens, generation::kTemperature,
-            generation::kTopP, generation::kTopK, kStopSequences, generation::kStream, kTools,
+            generation::kTopP, generation::kTopK, kStopSequences, common::kStream, kTools,
             kToolChoice, kOutputConfig, kThinking, kMetadata, kContextManagement,
             model_loading::kCtxSize, kBeta
         };
@@ -941,7 +941,7 @@ public:
                     return;
                 }
                 forward_anthropic_upstream(std::move(*match.upstream),
-                                           req.value(generation::kStream, false), model, req, res);
+                                           req.value(common::kStream, false), model, req, res);
                 return;
             }
 
@@ -953,11 +953,11 @@ public:
                 return;
             }
 
-            bool stream = openai_req.value(generation::kStream.name, false);
+            bool stream = openai_req.value(common::kStream.name, false);
             emit_warning_header();
 
             if (stream) {
-                openai_req[generation::kStream.name] = true;
+                openai_req[common::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model, warnings](const std::string& openai_body,
@@ -970,7 +970,7 @@ public:
                 return;
             }
 
-            openai_req[generation::kStream.name] = false;
+            openai_req[common::kStream.name] = false;
             auto openai_response = ctx_.router->chat_completion(openai_req);
             if (set_anthropic_backend_error_response(openai_response, res)) {
                 return;

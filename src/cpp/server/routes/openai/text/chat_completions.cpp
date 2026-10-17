@@ -127,11 +127,8 @@ const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", json::array
 const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
                                "The format the model must output, in OpenAI's format, such as "
                                "`{\"type\": \"json_object\"}`.", {}, true};
-const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                          "Upper bound on generated tokens. Wins over `max_completion_tokens` when both are "
-                          "sent.", {}, true};
 const RouteArg kMaxCompletionTokens{"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                                    "OpenAI's name for `max_tokens`.", {}, true};
+                                    "OpenAI's name for `max_tokens`, which wins when both are sent.", {}, true};
 const RouteArg kEnableThinking{"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                                "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
                                "false` does the same, and `enable_thinking` wins when both are sent."};
@@ -189,11 +186,11 @@ public:
             "Models](../dev/lemonade-omni.md) for details.",
         };
         s.args = {
-            kMessages, openai::text::kModel, generation::kStream, openai::text::kStop, kLogprobs,
+            kMessages, openai::text::kModel, common::kStream, openai::text::kStop, kLogprobs,
             generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
             openai::text::kSeed, generation::kTopK, generation::kTopP, generation::kTools,
-            kToolChoice, kResponseFormat, kMaxTokens, kMaxCompletionTokens, kEnableThinking,
-            openai::text::kRouteTrace, model_loading::kCtxSize
+            kToolChoice, kResponseFormat, openai::text::kMaxTokens, kMaxCompletionTokens,
+            kEnableThinking, openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;
@@ -290,7 +287,7 @@ protected:
             return;
         }
 
-        bool is_streaming = req.value(generation::kStream, false);
+        bool is_streaming = req.value(common::kStream, false);
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.

@@ -87,8 +87,6 @@ const RouteArg kEcho{"echo", ArgIn::JsonBody, {{"type", "boolean"}}, false, Supp
 const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", json::array({"boolean", "integer"})}}, false, Support::Available,
                          "`true`, or a number of top alternatives per token, returns the log probability of each "
                          "output token. Defaults to `false`.", {}, true};
-const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                          "Upper bound on generated tokens.", {}, true};
 
 } // namespace openai::completions
 
@@ -114,10 +112,10 @@ public:
             "see [Router API](./router.md).",
         };
         s.args = {
-            kPrompt, openai::text::kModel, generation::kStream, openai::text::kStop, kEcho,
-            kLogprobs, generation::kTemperature, openai::text::kRepeatPenalty,
-            openai::text::kFrequencyPenalty, openai::text::kSeed, generation::kTopK,
-            generation::kTopP, kMaxTokens, openai::text::kRouteTrace, model_loading::kCtxSize
+            kPrompt, openai::text::kModel, common::kStream, openai::text::kStop, kEcho, kLogprobs,
+            generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
+            openai::text::kSeed, generation::kTopK, generation::kTopP, openai::text::kMaxTokens,
+            openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;
@@ -175,7 +173,7 @@ protected:
             return;
         }
 
-        bool is_streaming = req.value(generation::kStream, false);
+        bool is_streaming = req.value(common::kStream, false);
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
             Router* router = ctx_.router;

@@ -56,9 +56,9 @@ json convert_ollama_to_openai_completion(const RouteRequest& req) {
         openai_req[openai::completions::kPrompt.name] = req.arg(kPrompt);
     }
 
-    map_ollama_options(req.arg(kOptions), req.body, openai_req, openai::completions::kMaxTokens);
+    map_ollama_options(req.arg(kOptions), req.body, openai_req);
 
-    openai_req[generation::kStream.name] = false;
+    openai_req[common::kStream.name] = false;
 
     return openai_req;
 }
@@ -283,7 +283,7 @@ public:
             if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req[generation::kStream.name] = true;
+                openai_req[common::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

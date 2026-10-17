@@ -42,7 +42,7 @@ void run_omni_collection(ServerContext& ctx, RouteRequest& req, httplib::Respons
     ModelManager* model_manager = ctx.model_manager;
     auto ensure_loaded = [loader](const std::string& model) { loader->ensure_loaded(model); };
 
-    const bool is_streaming = req.value(generation::kStream, false);
+    const bool is_streaming = req.value(common::kStream, false);
     if (is_streaming) {
         LOG(INFO, "Server") << "POST /api/v1/chat/completions - Collection (streaming): "
                             << info.model_name << std::endl;

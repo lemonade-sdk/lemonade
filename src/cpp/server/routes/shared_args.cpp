@@ -10,10 +10,13 @@ const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, fals
                         "Ignored when the model is already loaded."};
 } // namespace model_loading
 
-namespace generation {
+namespace common {
 const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "`true` sends tokens as server-sent events as they are generated; `false` sends one "
+                       "`true` sends the response as server-sent events as it progresses; `false` sends one "
                        "response once complete. Defaults to `false`."};
+} // namespace common
+
+namespace generation {
 const RouteArg kTemperature{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                             "Sampling temperature.", {}, true};
 const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
@@ -39,6 +42,8 @@ const RouteArg kFrequencyPenalty{"frequency_penalty", ArgIn::JsonBody, {{"type",
                                  "often they have appeared.", {}, true};
 const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                      "Random seed for reproducible sampling.", {}, true};
+const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                          "Upper bound on generated tokens.", {}, true};
 const RouteArg kRouteTrace{"route_trace", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                            "Lemonade extension for `collection.router` models: `true` adds the per-condition "
                            "`trace` to `x_lemonade_route`. Defaults to `false`."};
@@ -70,7 +75,8 @@ const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, fals
                         "Lemonade extension: context size to load the model with, when this request loads "
                         "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
 const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."};
+                       "`true` streams the response as newline-delimited JSON; `false` sends one response "
+                       "once complete. Defaults to `true`."};
 } // namespace ollama
 
 namespace ollama::embed {
@@ -93,6 +99,9 @@ const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLeng
 const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
                         "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
                         "`default`. Cloud providers: `\"cloud\"`."};
+const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                         "Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as "
+                         "`fireworks`, used as the provider's model-name prefix."};
 const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false,
                                   Support::Available,
                                   "Must be `true` to send an API key to a provider whose base URL is "
@@ -100,8 +109,6 @@ const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"typ
 } // namespace backend_routes
 
 namespace downloads {
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "If `true`, sends download progress as server-sent events. Defaults to `false`."};
 const RouteArg kSubscribe{"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                           "Only applies when `stream` is `true`. If `false`, the server owns the download and "
                           "answers at once with a snapshot of its job, which "
