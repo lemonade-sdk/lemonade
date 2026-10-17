@@ -7,6 +7,8 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 #include <vector>
 
 namespace lemon {
@@ -41,8 +43,8 @@ struct FilterReasons {
     std::vector<std::string> empty_recipes;
 };
 
-// One hardware-filter pass, ready for whoever runs it to keep: the visible set,
-// and the reasons carrying the recipe availability table forward.
+// One hardware-filter pass, ready for whoever ran it to keep: the visible set,
+// and the reasons the rest were held back.
 struct HostFilter {
     std::map<std::string, ModelInfo> visible;
     std::shared_ptr<const FilterReasons> reasons;
@@ -62,6 +64,14 @@ bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
 // What this machine can run now, and why not the rest. Pure.
 FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
                              const BackendAvailability& availability);
+
+// Collections that list `model_name` among their components, each with the
+// download state it has once that component has `component_downloaded`. Only the
+// collections whose state moves come back: a caller applies the result as a
+// patch. A component row missing from `models` counts as not downloaded.
+std::vector<std::pair<std::string, bool>> collection_states_after_component(
+    const std::map<std::string, ModelInfo>& models, const std::string& model_name,
+    bool component_downloaded);
 
 }  // namespace models
 }  // namespace lemon

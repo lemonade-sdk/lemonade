@@ -1,9 +1,11 @@
-// A rebuild holds no store lock while it reads catalogs and disk. These tests stop a
-// rebuild inside that work and ask what the rest of the server can do meanwhile, and
-// what becomes of a write that lands in the window.
+// A store lock covers the commit, not the computation. These tests stop a rebuild inside the
+// work it used to hold the lock for and ask what the rest of the server can do meanwhile, what
+// becomes of a write that lands in the window, and which rows a download landing patches.
 
 #include <lemon/model_manager.h>
+#include <lemon/model_types.h>
 #include <lemon/models/catalog.h>
+#include <lemon/models/store_builder.h>
 #include <lemon/utils/path_utils.h>
 #include <nlohmann/json.hpp>
 
@@ -20,6 +22,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -208,11 +211,67 @@ static void test_concurrent_readers_compose_once() {
     check("and both see the composed set", manager.model_exists("Shared-Model"));
 }
 
+// A download landing patches the collections that carry the model. That decision
+// is a pure function of the published set, so it is tested as one.
+static ModelInfo row(const std::string& name, bool downloaded,
+                     std::vector<std::string> components = {}) {
+    ModelInfo info;
+    info.model_name = name;
+    info.downloaded = downloaded;
+    info.components = std::move(components);
+    if (!info.components.empty()) info.recipe = lemon::COLLECTION_ROUTER_MODEL_RECIPE;
+    return info;
+}
+
+static bool reports(const std::vector<std::pair<std::string, bool>>& changed,
+                    const std::string& name, bool state) {
+    for (const auto& [model, value] : changed) {
+        if (model == name) return value == state;
+    }
+    return false;
+}
+
+static void test_collections_follow_their_components() {
+    std::map<std::string, ModelInfo> rows = {
+        {"coll", row("coll", false, {"comp", "other"})},
+        {"comp", row("comp", false)},
+        {"other", row("other", true)},
+    };
+
+    const auto landed = lemon::models::collection_states_after_component(rows, "comp", true);
+    check("a collection completes when its last component lands", reports(landed, "coll", true));
+
+    check("a collection already down is not reported",
+          lemon::models::collection_states_after_component(rows, "comp", false).empty());
+
+    check("a model no collection carries changes nothing",
+          lemon::models::collection_states_after_component(rows, "stranger", true).empty());
+
+    rows["coll"] = row("coll", false, {"comp", "ghost"});
+    check("a collection missing a component it never had stays down",
+          lemon::models::collection_states_after_component(rows, "comp", true).empty());
+
+    rows["ghost"] = row("ghost", true);
+    rows["coll"] = row("coll", true, {"comp", "ghost"});
+    const auto lost = lemon::models::collection_states_after_component(rows, "comp", false);
+    check("a collection up for its components comes down when one goes",
+          reports(lost, "coll", false));
+
+    std::map<std::string, ModelInfo> plain_rows = {
+        {"plain", row("plain", false)},
+    };
+    plain_rows["plain"].recipe = "llamacpp";
+    plain_rows["plain"].components = {"comp"};
+    check("a row that is not a collection is not treated as one",
+          lemon::models::collection_states_after_component(plain_rows, "comp", true).empty());
+}
+
 int main() {
     test_a_writer_answers_during_a_rebuild();
     test_a_write_during_a_rebuild_survives_it();
     test_the_commit_publishes_the_filter_reasons();
     test_concurrent_readers_compose_once();
+    test_collections_follow_their_components();
 
     if (g_failures == 0) {
         std::printf("All store build tests passed.\n");

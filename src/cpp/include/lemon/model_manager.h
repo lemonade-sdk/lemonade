@@ -271,11 +271,8 @@ public:
     std::map<std::string, ModelInfo> get_downloaded_models();
 
     // Which of `models` this host can run, and the reasons for the rest. Writes
-    // nothing: whoever owns the published reasons keeps them, and passes the table
-    // it is replacing as `carried` -- only a full-registry pass replaces it.
-    models::HostFilter filter_for_host(
-        const std::map<std::string, ModelInfo>& models,
-        const std::shared_ptr<const models::FilterReasons>& carried = nullptr) const;
+    // nothing; the build that ran it keeps what comes back.
+    models::HostFilter filter_for_host(const std::map<std::string, ModelInfo>& models) const;
 
     // Register a user model
     void register_user_model(const std::string& model_name,
@@ -514,7 +511,6 @@ private:
     // The host reads a catalog set needs; see models::CatalogSetDeps.
     models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
     std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
-    void add_model_to_cache(const std::string& model_name);
     // Caller must hold models_cache_mutex_.
     void update_model_options_in_cache_locked(const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);

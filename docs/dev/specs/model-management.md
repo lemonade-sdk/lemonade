@@ -385,13 +385,15 @@ Rules:
 5. The five steps are private methods of `StoreBuilder`. The pipeline is fixed, not a pluggable stage list: a new stage is an edit to `StoreBuilder`, which is exactly the friction wanted here.
 6. A read publishes nothing. `generation` is the signal clients watch for "the set changed", so a read answers from the published snapshot and never takes the store lock — a read that published would invalidate every watcher without changing anything.
 7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a candidate that the published set cannot see, and one builder runs at a time. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build made every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
-8. A rebuild whose generation moved while it composed does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next read composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
+9. A download landing patches the rows it changed rather than rebuilding the set: the model, and the collections that carry it. It decides from the published snapshot, so the filesystem walk — resolved paths, the header a backend reads for metadata, the on-disk size — happens outside the store lock, and it keeps any options another writer committed while it worked. Held this way the patch costs 15 µs of store lock against 2.0 ms when it did its work inside the lock.
+
+10. A rebuild whose generation moved while it composed does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next read composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
 
 ## Hardware Filtering
 
 This section defines how backend availability and memory fit narrow the visible model set.
 
-`filter_hardware()` answers which of these models this machine can run now, and returns the visible set and the reasons for the rest together. It is a function, not a class: it holds no state, and the store and the ingest path are its only two callers — the whole set during a rebuild, and one entry when a definition is added to the set.
+`filter_hardware()` answers which of these models this machine can run now, and returns the visible set and the reasons for the rest together. It is a function, not a class: it holds no state, and the rebuild is its caller — over the whole set, never one entry at a time.
 
 ```cpp
 struct FilterResult {
@@ -412,7 +414,7 @@ Rules:
 1. Every build produces `StoreSnapshot::rejected` and `StoreSnapshot::empty_recipes` for the whole set. There is no build mode that skips them, and no side table for a caller to remember to consult.
 2. Memory-fit inputs are `ModelInfo::size` and `ModelInfo::min_resident_gb`, against the streaming pools in `BackendAvailability`. The working-set comparison — `streaming_working_set_gb()` and `streaming_model_exceeds_pool()` — are file-local helpers beside `filter_hardware()`.
 3. A rejection reason is retrieved from the snapshot by canonical id, so an error message and the set it describes are always the same generation.
-4. A filter pass writes nothing: it answers with the visible set and its reasons, and the caller that owns the published table keeps them. A pass over part of the registry passes that table in and gets it back, because recomputing it from one model would report every other recipe as having nothing runnable.
+4. A filter pass writes nothing: it answers with the visible set and its reasons, and the rebuild that ran it keeps them. A pass over part of the registry would report every recipe it did not look at as having nothing runnable, which is why the incremental add path carries no filter of its own.
 
 ## Name Resolution
 
