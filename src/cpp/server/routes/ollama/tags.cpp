@@ -36,7 +36,7 @@ public:
                         "name": {"type": "string", "description": "Lemonade model name with a `:latest` tag."},
                         "model": {"type": "string", "description": "Same as `name`."},
                         "modified_at": {"type": "string", "description": "Always `2024-01-01T00:00:00Z`."},
-                        "size": {"type": "integer", "description": "Size in bytes, from the registry's estimate."},
+                        "size": {"type": "integer", "description": "Size in bytes of the model's files on disk, rounded to a few significant digits."},
                         "digest": {"type": "string", "description": "Always an all-zero sha256."},
                         "details": {}
                     }

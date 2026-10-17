@@ -33,7 +33,7 @@ public:
              "ignored."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request loads "
-             "it. Wins over `options.num_ctx`."},
+             "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true},
         };
 
         RouteResponse response;
