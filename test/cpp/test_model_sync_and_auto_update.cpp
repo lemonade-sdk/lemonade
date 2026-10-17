@@ -36,6 +36,55 @@ static void set_env_var(const std::string& name, const std::string& value) {
 #endif
 }
 
+
+// Parks the sync worker at a named phase so a test can act while a generation
+// is genuinely in flight. release() must run before the ModelManager dies, or
+// its destructor waits on a worker parked here.
+struct HoldWorker {
+    std::string phase_prefix;
+    std::mutex m;
+    std::condition_variable cv;
+    bool reached = false;
+    bool released = false;
+    bool dead = false;
+
+    HoldWorker(lemon::ModelManager& mm, const std::string& phase) : phase_prefix(phase) {
+        mm.set_sync_phase_callback([this](const std::string& name) {
+            if (name.rfind(phase_prefix, 0) != 0) {
+                return;
+            }
+            std::unique_lock<std::mutex> lock(m);
+            if (dead) {
+                return;
+            }
+            reached = true;
+            cv.notify_all();
+            cv.wait(lock, [this] { return released || dead; });
+        });
+    }
+
+    ~HoldWorker() {
+        {
+            std::lock_guard<std::mutex> lock(m);
+            dead = true;
+        }
+        cv.notify_all();
+    }
+
+    void wait_until_reached() {
+        std::unique_lock<std::mutex> lock(m);
+        cv.wait(lock, [this] { return reached || dead; });
+    }
+
+    void release() {
+        {
+            std::lock_guard<std::mutex> lock(m);
+            released = true;
+        }
+        cv.notify_all();
+    }
+};
+
 int main() {
     std::cout << "=== Model Sync & Auto-Update Unit Tests ===" << std::endl;
 
@@ -171,9 +220,9 @@ int main() {
     });
     mm3.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
     mm3.enqueue_sync({});
-    json exec_res = mm3.execute_sync();
+    json exec_res = mm3.wait_for_sync();
     std::string s_status = exec_res.value("status", "");
-    check("execute_sync single pass returns valid status", s_status == "idle" || s_status == "success" || s_status == "failed");
+    check("a queued sync finishes with a valid status", s_status == "idle" || s_status == "success" || s_status == "failed");
 
     // Test 10: UpdateCheckResult registry failure handling
     lemon::ModelManager mm_fail;
@@ -198,9 +247,15 @@ int main() {
         }
         return r;
     });
-    mm_dedup.enqueue_sync({"non_existent_model_test_xyz"});
+    HoldWorker during_full_check(mm_dedup, "full_check_done");
+    mm_dedup.enqueue_sync({});
+    during_full_check.wait_until_reached();
+
     auto second_enqueue = mm_dedup.enqueue_sync({"non_existent_model_test_xyz"});
     check("overlapping enqueue detects existing sync running", second_enqueue.already_running == true);
+
+    during_full_check.release();
+    mm_dedup.wait_for_sync();
 
     // Test 12: Deterministic overlapping full check and targeted enqueue deduplication
     {
@@ -232,9 +287,6 @@ int main() {
         });
 
         mm_overlap.enqueue_sync({});
-        std::thread worker([&]() {
-            mm_overlap.execute_sync();
-        });
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -250,7 +302,7 @@ int main() {
             pause_cv.notify_all();
         }
 
-        worker.join();
+        mm_overlap.wait_for_sync();
 
         json overlap_exec = mm_overlap.get_sync_status();
         std::string o_status = overlap_exec.value("status", "");
@@ -302,9 +354,6 @@ int main() {
         });
 
         mm_sync_join.enqueue_sync({});
-        std::thread worker([&]() {
-            mm_sync_join.execute_sync();
-        });
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -327,7 +376,7 @@ int main() {
             pause_c.notify_all();
         }
 
-        worker.join();
+        mm_sync_join.wait_for_sync();
         joiner.join();
 
         check("synchronous joiner finishes after sync completes", join_finished.load() == true);
@@ -338,6 +387,7 @@ int main() {
     // Test 14: Generation ID tracking and historical status lookup
     {
         lemon::ModelManager mm_gen;
+        HoldWorker during_full_check(mm_gen, "full_check_done");
         mm_gen.set_update_check_override_for_test([](const auto& t) {
             lemon::ModelManager::UpdateCheckResult r;
             r.up_to_date_models = {"Tiny-Test-Model-GGUF"};
@@ -348,12 +398,14 @@ int main() {
         auto enq1 = mm_gen.enqueue_sync({});
         check("first sync enqueue allocates sync_id > 0", enq1.sync_id > 0);
         check("first sync enqueue already_running is false", enq1.already_running == false);
+        during_full_check.wait_until_reached();
 
         auto enq2 = mm_gen.enqueue_sync({"non_existent_model_test_xyz"});
         check("overlapping sync enqueue returns same sync_id", enq2.sync_id == enq1.sync_id);
         check("overlapping sync enqueue already_running is true", enq2.already_running == true);
 
-        json sync1_res = mm_gen.execute_sync();
+        during_full_check.release();
+        mm_gen.wait_for_sync();
         uint64_t completed_gen = mm_gen.get_sync_status().value("completed_sync_id", 0);
         check("completed_sync_id matches first sync_id", completed_gen == enq1.sync_id);
 
@@ -369,7 +421,7 @@ int main() {
         check("historical status for previous sync_id is preserved while new job is running",
               hist_old.value("status", "") != "in_progress" &&
               hist_old.value("sync_id", 0) == enq1.sync_id);
-        mm_gen.execute_sync();
+        mm_gen.wait_for_sync();
     }
 
     // Test 15: Stale update_available cache flag is ignored when fresh check fails
@@ -388,8 +440,8 @@ int main() {
         });
 
         // Targeted sync on a model whose remote check fails
-        auto enq_stale = mm_stale.enqueue_sync({"non_existent_model_test_xyz"});
-        json stale_exec = mm_stale.execute_sync();
+        mm_stale.enqueue_sync({"non_existent_model_test_xyz"});
+        json stale_exec = mm_stale.wait_for_sync();
         check("failed fresh check populates failed_models",
               stale_exec.contains("failed_models") && stale_exec["failed_models"].contains("non_existent_model_test_xyz"));
         check("failed fresh check does not schedule update",
@@ -425,9 +477,6 @@ int main() {
 
         // 1. Enqueue targeted sync
         mm_full_attach.enqueue_sync({"Tiny-Test-Model-GGUF"});
-        std::thread worker([&]() {
-            mm_full_attach.execute_sync();
-        });
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -444,13 +493,13 @@ int main() {
             pause_cv.notify_all();
         }
 
-        worker.join();
+        mm_full_attach.wait_for_sync();
 
         // 3. Verify that full check was triggered and completed
         check("full check was executed following empty sync enqueue", full_check_count.load() == 1);
     }
 
-    // Test 17: Synchronous execute_sync returns correct generation snapshot directly
+    // Test 17: Waiting for a queued sync returns that generation's snapshot
     {
         lemon::ModelManager mm_exec_snap;
         mm_exec_snap.set_update_check_override_for_test([](const auto& t) {
@@ -463,9 +512,9 @@ int main() {
         mm_exec_snap.set_download_model_override_for_test([](const auto&, const auto&, bool, auto) {});
 
         auto enq = mm_exec_snap.enqueue_sync({"non_existent_model_test_xyz"});
-        json res = mm_exec_snap.execute_sync();
-        check("execute_sync returns completed snapshot not in_progress", res.value("status", "") != "in_progress");
-        check("execute_sync snapshot sync_id matches generation", res.value("sync_id", 0) == enq.sync_id);
+        json res = mm_exec_snap.wait_for_sync();
+        check("a completed sync reports a terminal status", res.value("status", "") != "in_progress");
+        check("the completed snapshot carries its own generation id", res.value("sync_id", 0) == enq.sync_id);
     }
 
     // Test 18: attach_if_running flag preserves targeted sync and prevents unexpected full sync expansion
@@ -497,9 +546,6 @@ int main() {
 
         // 1. Start targeted sync
         mm_attach_only.enqueue_sync({"Tiny-Test-Model-GGUF"});
-        std::thread worker([&]() {
-            mm_attach_only.execute_sync();
-        });
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -516,7 +562,7 @@ int main() {
             pause_cv.notify_all();
         }
 
-        worker.join();
+        mm_attach_only.wait_for_sync();
 
         // 3. Full check should NOT have run
         check("attach_if_running does not expand targeted sync to full sync", full_check_count.load() == 0);
@@ -565,9 +611,6 @@ int main() {
 
         // 1. Start targeted sync where model is initially up to date
         mm_fresh.enqueue_sync({"Tiny-Test-Model-GGUF"});
-        std::thread worker([&]() {
-            mm_fresh.execute_sync();
-        });
 
         {
             std::unique_lock<std::mutex> lock(pause_m);
@@ -590,12 +633,73 @@ int main() {
             pause_cv.notify_all();
         }
 
-        worker.join();
+        mm_fresh.wait_for_sync();
 
         json fresh_status = mm_fresh.get_sync_status();
         check("fresh full check authoritatively schedules model update",
               std::find(downloaded_models.begin(), downloaded_models.end(), "Tiny-Test-Model-GGUF") != downloaded_models.end());
     }
+
+    // Test 21: Teardown during a sync joins the worker before the store dies
+    {
+        std::atomic<int> downloads_started{0};
+        std::atomic<int> downloads_finished{0};
+        std::atomic<bool> saw_cancel{false};
+
+        auto mm_teardown = std::make_unique<lemon::ModelManager>();
+        mm_teardown->set_update_check_override_for_test([](const auto&) {
+            lemon::ModelManager::UpdateCheckResult r;
+            r.updated_models = {"Tiny-Test-Model-GGUF"};
+            return r;
+        });
+        // Stands in for a download: it keeps reporting progress until the sync
+        // tells it to stop, which is the only way cancellation reaches a worker
+        // already transferring bytes.
+        mm_teardown->set_download_model_override_for_test(
+            [&](const auto&, const auto&, bool, lemon::DownloadProgressCallback progress) {
+                ++downloads_started;
+                for (int i = 0; i < 2000; ++i) {
+                    if (!progress(lemon::DownloadProgress{})) {
+                        saw_cancel = true;
+                        // The cleanup a real transfer does after aborting: work
+                        // still in flight, so it must not outlive the manager.
+                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                        ++downloads_finished;
+                        return;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+            });
+
+        mm_teardown->enqueue_sync({});
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (downloads_started.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        check("the sync worker runs the download", downloads_started.load() > 0);
+
+        // Cancellation has to reach a worker already transferring bytes, not
+        // just one that has not started.
+        mm_teardown->cancel_sync();
+        const auto cancel_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!saw_cancel.load() && std::chrono::steady_clock::now() < cancel_deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        check("cancellation reaches the worker mid-transfer", saw_cancel.load());
+
+        const auto cancel_started = std::chrono::steady_clock::now();
+        mm_teardown.reset();
+        const auto teardown_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - cancel_started)
+                .count();
+        check("teardown joins the worker promptly", teardown_ms < 5000);
+        check("nothing the worker does outlives the manager", downloads_finished.load() == 1);
+    }
+
+    lemon::utils::set_cache_dir("");
+    lemon::utils::set_config_dir("");
+    std::filesystem::remove_all(temp_cache, ec);
 
     if (failures == 0) {
         std::cout << "All Model Sync & Auto-Update tests passed successfully!" << std::endl;

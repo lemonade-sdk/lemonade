@@ -14,6 +14,18 @@ namespace {
 
 int failures = 0;
 
+// A config that never named a setting has to answer with its default. Reaching for a
+// missing key through a const object reads past the end, and the model store reads
+// both of these on every rebuild.
+void expect_absent_key_answers_default(const std::string& key, bool answered) {
+    if (answered) {
+        std::printf("[FAIL] an absent %s did not answer its default\n", key.c_str());
+        ++failures;
+    } else {
+        std::printf("[PASS] an absent %s answers its default\n", key.c_str());
+    }
+}
+
 void expect_accepted(const std::string& section, const std::string& key, const json& value) {
     RuntimeConfig config(json::object());
     try {
@@ -51,6 +63,12 @@ void expect_unknown_key(const std::string& section, const std::string& key, cons
 }  // namespace
 
 int main() {
+    {
+        RuntimeConfig config(json::object());
+        expect_absent_key_answers_default("disable_model_filtering", config.disable_model_filtering());
+        expect_absent_key_answers_default("enable_dgpu_gtt", config.enable_dgpu_gtt());
+    }
+
     try {
         RuntimeConfig::validate_backend_choice("llamacpp", "system");
 #ifdef __linux__

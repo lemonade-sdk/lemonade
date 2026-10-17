@@ -7,6 +7,7 @@
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
+#include "lemon/models/store_snapshot.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
@@ -476,11 +477,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         }
     }
 
-    alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
-    model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
-    model_manager_->set_cloud_registry(cloud_registry_.get());
-    model_manager_->set_default_model_source_provider(
-        [this]() { return config_->default_model_source(); });
+    ModelManagerConfig manager_config;
+    manager_config.cache_dir = cache_dir_;
+    manager_config.extra_models_dir = config_->extra_models_dir();
+    manager_config.cloud_providers = cloud_registry_.get();
+    manager_config.default_model_source = [this]() { return config_->default_model_source(); };
+    manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
+    model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -492,23 +495,18 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
-    model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+    model_manager_->on_models_changed([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(model_manager_->active_helper_models(), generation);
     });
 
-    // Seed the router's needed-helper set from policies already present at
-    // startup so a helper loaded before the first policy change still validates
-    // against an authoritative set (see Router::load_model). Reserve the
-    // generation BEFORE snapshotting the policies: the directory watcher may
-    // already be publishing newer snapshots, and evaluating next_notify_generation()
-    // after computing the snapshot (argument evaluation order is unspecified in
-    // C++) could stamp this stale snapshot with a newer generation and clobber
-    // the watcher's authoritative state.
-    const uint64_t seed_generation = model_manager_->next_notify_generation();
-    const std::set<std::string> seed_needed = active_policy_helper_models();
-    router_->reconcile_routing_helpers(seed_needed, seed_generation);
+    // Reconcile once at startup so a helper loaded before the first policy
+    // change still validates against an authoritative set (see
+    // Router::load_model). The helper set and its generation come from one
+    // published snapshot, so they cannot disagree the way two separate reads
+    // could.
+    model_manager_->notify_models_changed();
 
-    model_manager_->set_model_updated_callback([this](const std::string& model_name) {
+    model_manager_->on_model_updated([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
             LOG(INFO, "Server") << "Evicting updated model from memory: " << model_name << std::endl;
             router_->unload_model(model_name);
@@ -926,13 +924,9 @@ Server::~Server() {
         model_cache_warmup_thread_.join();
     }
 
-    std::lock_guard<std::mutex> lock(background_sync_mutex_);
-    for (auto& entry : background_sync_threads_) {
-        if (entry.thread.joinable()) {
-            entry.thread.join();
-        }
+    if (model_manager_) {
+        model_manager_->wait_until_sync_idle();
     }
-    background_sync_threads_.clear();
 }
 
 
@@ -1502,6 +1496,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Get("/internal/models/sync/status", [this](const httplib::Request& req, httplib::Response& res) {
         handle_models_sync_status(req, res);
     });
+
+    web_server.Get("/internal/model-sources",
+                   [this](const httplib::Request& req, httplib::Response& res) {
+                       res.set_content(model_manager_->model_sources().dump(2), "application/json");
+                   });
 
     web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
         handle_aliases_get(req, res);
@@ -2354,14 +2353,8 @@ void Server::stop() {
         model_cache_warmup_thread_.join();
     }
 
-    {
-        std::lock_guard<std::mutex> lock(background_sync_mutex_);
-        for (auto& task : background_sync_threads_) {
-            if (task.thread.joinable()) {
-                task.thread.join();
-            }
-        }
-        background_sync_threads_.clear();
+    if (model_manager_) {
+        model_manager_->wait_until_sync_idle();
     }
 }
 
@@ -2567,7 +2560,7 @@ void Server::auto_load_model_if_needed(
     //   - If model is NOT downloaded: Download it from its recorded registry
     //   - If model IS downloaded: Skip the registry API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+    if (model_manager_->download_policy(info) != lemon::backends::DownloadPolicy::SelfManaged &&
         !model_manager_->is_model_downloaded(requested_model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from "
                             << remote_registry_display_name(
@@ -2874,31 +2867,7 @@ void Server::handle_models_sync(const httplib::Request& req, httplib::Response& 
             return;
         }
 
-        std::lock_guard<std::mutex> lock(background_sync_mutex_);
-
-        for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end(); ) {
-            if (it->finished->load() && it->thread.joinable()) {
-                it->thread.join();
-                it = background_sync_threads_.erase(it);
-            } else {
-                ++it;
-            }
-        }
-
-        auto finished_flag = std::make_shared<std::atomic<bool>>(false);
-        std::thread worker([this, finished_flag]() {
-            try {
-                LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
-                model_manager_->execute_sync();
-                LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
-            } catch (const std::exception& e) {
-                LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
-            }
-            finished_flag->store(true);
-        });
-
-        background_sync_threads_.push_back({std::move(worker), finished_flag});
-
+        // Enqueueing is dispatching: the sync service's own worker drains it.
         nlohmann::json dispatched_result = model_manager_->get_sync_status(enqueue_res.sync_id);
         dispatched_result["message"] = "Model synchronization dispatched in background";
         dispatched_result["async"] = true;
@@ -2971,27 +2940,8 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     response["data"] = nlohmann::json::array();
     response["object"] = "list";
 
-    for (const auto& [model_id, model_info] : models) {
-        response["data"].push_back(model_info_to_json(model_id, model_info));
-    }
-
-    if (alias_manager_) {
-        auto all_aliases = alias_manager_->get_all_aliases();
-        for (const auto& [alias_id, target_name] : all_aliases) {
-            if (models.count(alias_id) > 0) {
-                continue;
-            }
-            std::string ultimate_target = target_name;
-            if (auto resolved = alias_manager_->resolve_alias(alias_id)) {
-                ultimate_target = *resolved;
-            }
-            std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
-            if (models.count(canonical_target) > 0) {
-                response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
-            } else if (models.count(ultimate_target) > 0) {
-                response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
-            }
-        }
+    for (const auto& [row_id, model_info] : model_manager_->listing_rows(models)) {
+        response["data"].push_back(model_info_to_json(row_id, *model_info));
     }
 
     res.set_content(response.dump(), "application/json");
@@ -3043,9 +2993,7 @@ void Server::normalize_model_registration_source(nlohmann::json& request_json,
             }
             normalized_registry = normalized_public;
             request_json["source"] = normalized_public;
-        } else if (!local_import && public_source != "local_upload" &&
-                   public_source != "local_path" &&
-                   public_source != "extra_models_dir") {
+        } else if (!local_import && !is_local_origin(public_source)) {
             throw std::invalid_argument(
                 "Unsupported model source '" + public_source +
                 "' (expected 'huggingface', 'modelscope', or a local source)");
@@ -3230,7 +3178,7 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
     }
 }
 
-int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) const {
+int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) {
     // ctx_size stores -1 for "size this automatically", so only a positive
     // value answers; anything else falls through to the next source.
     auto ctx_size_of = [](const RecipeOptions& options) -> int64_t {
@@ -3394,36 +3342,13 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
     std::string model_id = utils::normalize_model_name(req.matches[1]);
 
-    if (model_manager_->model_exists(model_id)) {
-        auto info = model_manager_->get_model_info(model_id);
-        std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
-        std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
-        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
-            wire_id = model_id;
-        }
-        res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
-    } else if (alias_manager_ && alias_manager_->has_alias(model_id)) {
-        auto resolved_target = alias_manager_->resolve_alias(model_id);
-        if (resolved_target) {
-            std::string canonical_target = model_manager_->resolve_model_name(*resolved_target);
-            if (model_manager_->model_exists(canonical_target)) {
-                auto info = model_manager_->get_model_info(canonical_target);
-                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
-                return;
-            } else if (model_manager_->model_exists(*resolved_target)) {
-                auto info = model_manager_->get_model_info(*resolved_target);
-                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
-                return;
-            }
-        }
-        res.status = 404;
-        auto error_response = create_model_error(model_id, "Model not found");
-        res.set_content(error_response.dump(), "application/json");
-    } else {
-        res.status = 404;
-        auto error_response = create_model_error(model_id, "Model not found");
-        res.set_content(error_response.dump(), "application/json");
+    if (auto resolved = model_manager_->resolve(model_id)) {
+        res.set_content(model_info_to_json(resolved->wire_id, *resolved->info).dump(),
+                        "application/json");
+        return;
     }
+    res.status = 404;
+    res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
 }
 
 void Server::handle_model_files(const httplib::Request& req, httplib::Response& res) {
@@ -3527,28 +3452,13 @@ void Server::respond_with_model_options(
     const httplib::Request& req, httplib::Response& res,
     const std::function<bool(const std::string&, ModelInfo&, httplib::Response&)>& mutation) {
     const std::string model_id = utils::normalize_model_name(req.matches[1]);
-    std::string model_key = model_id;
-
-    if (!model_manager_->model_exists(model_key)) {
-        std::optional<std::string> target;
-        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
-            target = alias_manager_->resolve_alias(model_id);
-        }
-        std::string canonical_target = target ? model_manager_->resolve_model_name(*target) : "";
-        if (target && model_manager_->model_exists(canonical_target)) {
-            model_key = canonical_target;
-        } else if (target && model_manager_->model_exists(*target)) {
-            model_key = *target;
-        } else {
-            res.status = 404;
-            res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
-            return;
-        }
+    const auto resolved = model_manager_->resolve(model_id);
+    if (!resolved) {
+        res.status = 404;
+        res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
+        return;
     }
-
-    // Work in canonical names from here on: a user model's requested id is its
-    // bare public name, which not every downstream lookup resolves for itself.
-    model_key = model_manager_->resolve_model_name(model_key);
+    std::string model_key = resolved->canonical_id;
 
     try {
         ModelInfo info = model_manager_->get_model_info(model_key);
@@ -3946,20 +3856,6 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
                                << requested_model << "': " << e.what() << std::endl;
     }
     return std::nullopt;
-}
-
-std::set<std::string> Server::active_policy_helper_models() {
-    std::set<std::string> needed;
-    for (const auto& [name, info] : model_manager_->get_supported_models()) {
-        (void)name;
-        if (!info.route_policy) {
-            continue;
-        }
-        for (const auto& helper : info.route_policy->helper_models) {
-            needed.insert(helper);
-        }
-    }
-    return needed;
 }
 
 void Server::record_response_telemetry(const nlohmann::json& response,
@@ -6161,7 +6057,7 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         }
         // Detect the URL provider upfront so we can reject mismatches with
         // an explicit `--source` param (just like /pull and the CLI do).
-        lemon::RemoteRegistrySource url_source;
+        lemon::RegistryId url_source;
         std::string url_repo_id;
         bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
 
@@ -6615,26 +6511,24 @@ static nlohmann::json create_alias_error(const std::string& message, const std::
 void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
     try {
         nlohmann::json alias_list = nlohmann::json::array();
-        if (alias_manager_) {
-            for (const auto& [alias, target] : alias_manager_->get_all_aliases()) {
-                bool downloaded = false;
-                std::string recipe = "llamacpp";
-                try {
-                    if (model_manager_->model_exists(target)) {
-                        std::string canonical = model_manager_->resolve_model_name(target);
-                        downloaded = model_manager_->is_model_downloaded(canonical);
-                        ModelInfo info = model_manager_->get_model_info(canonical);
-                        recipe = info.recipe;
-                    }
-                } catch (...) {}
-                alias_list.push_back({
-                    {"alias", alias},
-                    {"target", target},
-                    {"downloaded", downloaded},
-                    {"recipe", recipe}
-                });
-            }
-        }
+        for (const auto& [alias, target] : model_manager_->aliases()) {
+            bool downloaded = false;
+            std::string recipe = "llamacpp";
+            try {
+                if (model_manager_->model_exists(target)) {
+                    std::string canonical = model_manager_->resolve_model_name(target);
+                    downloaded = model_manager_->is_model_downloaded(canonical);
+                    ModelInfo info = model_manager_->get_model_info(canonical);
+                    recipe = info.recipe;
+                }
+            } catch (...) {}
+            alias_list.push_back({
+                {"alias", alias},
+                {"target", target},
+                {"downloaded", downloaded},
+                {"recipe", recipe}
+            });
+    }
         res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
@@ -6675,14 +6569,8 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
             }
         }
 
-        if (!alias_manager_) {
-            res.status = 500;
-            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error", "server_error").dump(), "application/json");
-            return;
-        }
-
         std::string err_msg;
-        if (!alias_manager_->set_alias(alias, target, err_msg)) {
+        if (!model_manager_->set_alias(alias, target, err_msg)) {
             res.status = 409;
             res.set_content(create_alias_error(err_msg, "alias_conflict").dump(), "application/json");
             return;
@@ -6703,7 +6591,7 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
 void Server::handle_aliases_remove(const httplib::Request& req, httplib::Response& res) {
     std::string alias = utils::normalize_model_name(req.matches[1]);
     try {
-        if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
+        if (!model_manager_->remove_alias(alias)) {
             res.status = 404;
             res.set_content(create_alias_error("Alias not found: " + alias, "alias_not_found").dump(), "application/json");
             return;
@@ -6719,29 +6607,17 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
     }
 }
 
-std::string Server::resolve_alias_target(const std::string& model_name) const {
-    if (alias_manager_) {
-        auto resolved = alias_manager_->resolve_alias(model_name);
-        if (resolved.has_value()) {
-            return resolved.value();
-        }
-    }
-    return model_name;
+std::string Server::resolve_alias_target(const std::string& model_name) {
+    return model_manager_->canonical_for_request(model_name);
 }
 
-void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) const {
-    if (request_json.contains("model") && request_json["model"].is_string()) {
-        std::string raw_name = request_json["model"].get<std::string>();
-        std::string resolved = resolve_alias_target(raw_name);
-        if (resolved != raw_name) {
-            request_json["model"] = resolved;
-        }
-    }
-    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
-        std::string raw_name = request_json["model_name"].get<std::string>();
-        std::string resolved = resolve_alias_target(raw_name);
-        if (resolved != raw_name) {
-            request_json["model_name"] = resolved;
+void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) {
+    for (const char* field : {"model", "model_name"}) {
+        if (!request_json.contains(field) || !request_json[field].is_string()) continue;
+        const std::string raw_name = request_json[field].get<std::string>();
+        auto resolved = model_manager_->resolve(raw_name);
+        if (resolved && resolved->via_alias) {
+            request_json[field] = resolved->canonical_id;
         }
     }
 }
@@ -6980,7 +6856,7 @@ void Server::resolve_and_register_local_model(
     model_manager_->register_user_model(
         model_name,
         actual_model_data,
-        "local_upload"
+        local_origin::upload
     );
 
     LOG(INFO, "Server") << "Model registered successfully" << std::endl;
@@ -7505,6 +7381,9 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     udp_beacon_.startBroadcasting(13305, port_, 2);
                 }
             }
+        } else if (key == "model_catalogs") {
+            LOG(INFO, "Server") << "Configured model catalogs changed" << std::endl;
+            model_manager_->catalog_set_changed();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;

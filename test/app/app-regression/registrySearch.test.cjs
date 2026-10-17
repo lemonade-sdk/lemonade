@@ -57,11 +57,11 @@ module.exports.tests = [
     name: 'ModelScope candidate search avoids the previous third upstream request',
     run() {
       const functionStart = registrySource.indexOf('RegistrySearchResponse search_registry_models');
-      const functionEnd = registrySource.indexOf('RemoteRegistrySource parse_remote_registry_source', functionStart);
+      const functionEnd = registrySource.indexOf('RegistryId parse_remote_registry_source', functionStart);
       const searchFunction = registrySource.slice(functionStart, functionEnd);
       assert.match(searchFunction, /percent_encode\(query \+ " GGUF"\)/);
       assert.match(searchFunction, /filter\.library=gguf/);
-      const ggufBlockStart = searchFunction.indexOf('if (gguf_only) {', searchFunction.indexOf('RemoteRegistrySource::HuggingFace'));
+      const ggufBlockStart = searchFunction.indexOf('if (gguf_only) {', searchFunction.indexOf('models::huggingface_descriptor().id'));
       const ggufBlockEnd = searchFunction.indexOf('} else {', ggufBlockStart);
       const ggufBlock = searchFunction.slice(ggufBlockStart, ggufBlockEnd);
       assert.equal((ggufBlock.match(/requests\.push_back/g) || []).length, 2);

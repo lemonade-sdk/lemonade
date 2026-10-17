@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <stdexcept>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "lemon/model_manager.h"
@@ -74,6 +75,20 @@ std::vector<fs::path> get_flm_models_dir_candidates() {
 #endif
 
     return roots;
+}
+
+// The protocol of the host a pull would run against. An unnamed host is the
+// default host, which is what flm assumed before.
+std::string pull_protocol(const RegistryId& source) {
+    const std::optional<models::RegistryId> host = models::registry_id_from(source.str());
+    if (host == std::nullopt) {
+        throw std::runtime_error("flm cannot pull from '" + source.str() + "': no such registry");
+    }
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(*host);
+    if (descriptor == nullptr) {
+        throw std::runtime_error("flm cannot pull from '" + host->str() + "': unknown registry");
+    }
+    return descriptor->download_protocol;
 }
 
 } // namespace
@@ -318,7 +333,7 @@ std::vector<ModelInfo> flm_discover_models() {
                     }
 
                     info.type = get_model_type_from_labels(info.labels);
-                    const BackendDescriptor* flm_desc = descriptor_for("flm");
+                    const BackendDescriptor* flm_desc = backends::descriptor_for("flm");
                     info.device = flm_desc ? flm_desc->default_device : DEVICE_NPU;
 
                     flm_models.push_back(info);
@@ -337,21 +352,25 @@ std::vector<ModelInfo> flm_discover_models() {
 
 std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
                                             bool do_not_upgrade,
-                                            RemoteRegistrySource source) {
+                                            RegistryId source) {
     std::vector<std::string> args = {"pull", checkpoint};
     if (!do_not_upgrade) {
         args.push_back("--force");
     }
-    if (source == RemoteRegistrySource::ModelScope) {
+
+    const std::string protocol = pull_protocol(source);
+    if (protocol == models::download_protocols::modelscope_api) {
         args.push_back("--modelscope");
         args.push_back("1");
+    } else if (protocol != models::download_protocols::hf_hub) {
+        throw std::runtime_error("flm has no pull flag for protocol '" + protocol + "'");
     }
     return args;
 }
 
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                   DownloadProgressCallback progress_callback,
-                  RemoteRegistrySource source) {
+                  RegistryId source) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
     auto status = SystemInfoCache::get_flm_status();

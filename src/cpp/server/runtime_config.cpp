@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -410,6 +411,15 @@ std::string RuntimeConfig::extra_models_dir() const {
     return config_["extra_models_dir"].get<std::string>();
 }
 
+json RuntimeConfig::model_catalogs() const {
+    std::shared_lock lock(mutex_);
+    const auto found = config_.find("model_catalogs");
+    if (found == config_.end() || !found->is_array()) {
+        return json::array();
+    }
+    return *found;
+}
+
 bool RuntimeConfig::broadcast() const {
     std::shared_lock lock(mutex_);
     if (broadcast_override_.has_value()) {
@@ -534,12 +544,12 @@ bool RuntimeConfig::no_fetch_executables() const {
 
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
-    return config_["disable_model_filtering"].get<bool>();
+    return config_.value("disable_model_filtering", false);
 }
 
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
-    return config_["enable_dgpu_gtt"].get<bool>();
+    return config_.value("enable_dgpu_gtt", false);
 }
 
 std::string RuntimeConfig::default_model_source() const {
@@ -860,6 +870,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (n < 0 || n > 100) {
             throw std::invalid_argument("'log_max_files' must be between 0 and 100");
         }
+    } else if (key == "model_catalogs") {
+        models::reject_refused_catalogs(value);
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");

@@ -157,7 +157,7 @@ std::string strip_query_fragment(std::string value) {
 
 std::string normalize_registry_url(const std::string& arg,
                                    std::string& source) {
-    lemon::RemoteRegistrySource detected;
+    lemon::RegistryId detected;
     std::string repo_id;
     if (lemon::detect_registry_url(arg, detected, repo_id)) {
         source = lemon::remote_registry_source_name(detected);

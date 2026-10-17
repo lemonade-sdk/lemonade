@@ -3582,6 +3582,68 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(model_res_del.status_code, 404)
         print(f"[OK] /internal/aliases POST/GET/DELETE verified")
 
+    def test_021ab_alias_resolves_on_every_surface(self):
+        """An alias means the same model on OpenAI, Ollama and Anthropic surfaces."""
+        alias_name = "test-surface-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        add_res = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": target_model},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200)
+
+        try:
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            ollama_res = requests.post(
+                f"http://localhost:{PORT}/api/chat",
+                json={
+                    "model": alias_name,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4},
+                },
+                timeout=240,
+            )
+            self.assertEqual(ollama_res.status_code, 200, ollama_res.text)
+            self.assertEqual(ollama_res.json()["model"], target_model)
+
+            anthropic_res = requests.post(
+                f"http://localhost:{PORT}/v1/messages",
+                headers=_auth_headers(),
+                json={
+                    "model": alias_name,
+                    "max_tokens": 4,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                },
+                timeout=240,
+            )
+            self.assertEqual(anthropic_res.status_code, 200, anthropic_res.text)
+            self.assertEqual(anthropic_res.json()["model"], target_model)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        gone_res = requests.get(
+            f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(gone_res.status_code, 404)
+        print("[OK] alias resolves on OpenAI, Ollama and Anthropic surfaces")
+
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
 
@@ -6488,6 +6550,94 @@ class EndpointTests(ServerTestBase):
             response.status_code, 200, f"/internal/set failed: {response.text}"
         )
         return prior
+
+    def _set_config_key(self, key, value):
+        """Set one config.json key through /internal/set; returns the prior value."""
+        prior = (
+            requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            .json()
+            .get(key)
+        )
+        response = requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            json={key: value},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code, 200, f"/internal/set failed: {response.text}"
+        )
+        return prior
+
+    @contextlib.contextmanager
+    def _model_catalogs(self, catalogs):
+        """Run with config.json's model_catalogs set, then put back what it was."""
+        prior = self._set_config_key("model_catalogs", catalogs)
+        try:
+            yield
+        finally:
+            self._set_config_key("model_catalogs", prior if prior is not None else [])
+
+    def _catalog_sources(self):
+        """Every catalog GET /internal/model-sources says built the store."""
+        response = requests.get(
+            f"http://localhost:{PORT}/internal/model-sources",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        return {source["id"]: source for source in response.json()["catalogs"]}
+
+    def test_021n_configured_model_catalog(self):
+        """A registry named in config.json adds a model, and removing it takes it back."""
+        catalog_id = "endpoints-tmp-catalog"
+        model_name = "endpoints-tmp-configured-model"
+        directory = tempfile.mkdtemp(prefix=f"lemon_catalog_{self._testMethodName}_")
+        document = os.path.join(directory, "catalog.json")
+        with open(document, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    model_name: {
+                        "recipe": "llamacpp",
+                        "labels": ["chat"],
+                        "checkpoints": {"main": "lemonade-tests/configured:main.gguf"},
+                    }
+                },
+                handle,
+            )
+        try:
+            with self._model_catalogs([{"id": catalog_id, "path": document}]):
+                self.assertIn(catalog_id, self._catalog_sources())
+                self.assertIn(model_name, self._listed_models())
+
+            # What is left of the set is what the catalogs say built it.
+            self.assertNotIn(catalog_id, self._catalog_sources())
+            self.assertNotIn(model_name, self._listed_models())
+            print(f"[OK] configured catalog {catalog_id} adds and removes a model")
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    def test_021n2_configured_model_catalog_rejects_unsafe_url(self):
+        """A plaintext catalog URL is refused rather than saved for later."""
+        with self._model_catalogs([]):
+            response = requests.post(
+                f"http://localhost:{PORT}/internal/set",
+                json={
+                    "model_catalogs": [
+                        {"id": "unsafe", "url": "http://example.invalid/models.json"}
+                    ]
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn("allow_insecure_http", response.text)
+            self.assertNotIn("unsafe", self._catalog_sources())
+            print("[OK] a plaintext catalog url costs the setting")
 
     def _write_stub_gguf_file(self, path):
         """Write a tiny valid-enough GGUF file at an exact path."""

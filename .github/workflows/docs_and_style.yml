@@ -63,6 +63,8 @@ jobs:
         run: python3 docs/tools/gen_backend_boilerplate.py --check
       - name: Check MCP reference docs are up to date
         run: python3 docs/tools/gen_mcp_boilerplate.py --check
+      - name: Check model source docs are up to date
+        run: python3 docs/tools/gen_model_source_boilerplate.py --check
 
   pre-commit:
     runs-on: ubuntu-latest

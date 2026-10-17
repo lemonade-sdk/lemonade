@@ -19,9 +19,26 @@
 #include "gguf_reader.h"
 #include "model_registry.h"
 #include "model_types.h"
+#include "models/alias_manager.h"
+#include "models/backend_availability.h"
+#include "models/catalog_descriptor.h"
+#include "models/catalog_fetch_clock.h"
+#include "models/change_notifier.h"
+#include "models/cloud_rows.h"
+#include "models/download_progress.h"
+#include "models/ingest.h"
+#include "models/registry_documents.h"
+#include "models/recipe_options_store.h"
+#include "models/store.h"
+#include "models/sync_service.h"
+#include "models/update_scan.h"
 #include "recipe_options.h"
 
 namespace lemon {
+
+namespace backends {
+enum class DownloadPolicy : int;
+}  // namespace backends
 
 using json = nlohmann::json;
 
@@ -55,28 +72,25 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-// Progress information for download operations
-struct DownloadProgress {
-    std::string file;           // Current file being downloaded
-    int file_index = 0;         // Current file index (1-based)
-    int total_files = 0;        // Total number of files to download
-    size_t bytes_downloaded = 0; // Bytes downloaded for current file
-    size_t bytes_total = 0;     // Total bytes for current file
-    size_t total_download_size = 0; // Total bytes across ALL files in this download
-    size_t bytes_previously_downloaded = 0; // Bytes already on disk (resume offset or skipped file)
-    int percent = 0;            // Overall percentage (0-100)
-    bool complete = false;      // True when all downloads finished
-    std::string error;          // Error message if failed
-};
-
-// Callback for download progress updates
-// Returns bool: true = continue download, false = cancel download
-using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
-
 // Parsed collection.router routing policy (defined in routing_policy.h). Only
 // forward-declared here so this widely-included header stays light; ModelInfo
 // holds it behind a shared_ptr, which supports incomplete types.
 struct RoutePolicy;
+
+namespace models {
+
+class ModelComposition;
+class ArtifactSource;
+class CatalogAccumulator;
+class CatalogSet;
+class ModelArtifactStore;
+class ModelCatalog;
+struct CatalogSetDeps;
+struct FilterReasons;
+struct HostFilter;
+struct ResolvedModel;
+struct StoreSnapshot;
+}  // namespace models
 
 // Image generation defaults for SD models
 struct ImageDefaults {
@@ -107,7 +121,7 @@ struct ModelInfo {
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
     double size = 0.0;   // Model size in GB
     // Resident working set for a streaming backend; 0 = filter on full `size`.
-    // See streaming_working_set_gb() / filter_models_by_backend.
+    // See streaming_working_set_gb() / filter_for_host.
     double min_resident_gb = 0.0;
     int64_t max_context_window = 0;  // Static model-supported text context, when known
     int64_t max_output_tokens = 0;    // Static model-supported completion/output token limit, when known
@@ -175,65 +189,110 @@ struct ModelFileInfo {
 
 class CloudProviderRegistry;
 
+// Everything the composition root needs. Server fills it in; a test points the
+// same struct at fixture paths and fixture catalogs.
+struct ModelManagerConfig {
+    std::string cache_dir;  // empty: whatever utils::get_cache_dir() resolves to
+    std::string extra_models_dir;
+    CloudProviderRegistry* cloud_providers = nullptr;  // Not owned
+    std::function<std::string()> default_model_source;
+    std::function<json()> model_catalogs;
+    std::vector<std::shared_ptr<models::ModelCatalog>> extra_catalogs;
+
+    // What this machine can run, read at the start of every rebuild; empty probes the
+    // hardware. A caller that means a particular machine says so here.
+    std::function<models::BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
+
+    // Which registry answers for a source when a scan looks for updates; empty uses the
+    // configured ones. What it returns is not owned.
+    std::function<const ModelRegistry&(models::RegistryId source)> registry_for;
+};
+
 class ModelManager {
 public:
+// Locks the store and publishes on release, so a mutating path cannot forget to
+// publish and readers never see a half-built set.
+    class StoreWrite {
+      public:
+        explicit StoreWrite(ModelManager& manager) : write_(manager.store_) {}
+        StoreWrite(const StoreWrite&) = delete;
+        StoreWrite& operator=(const StoreWrite&) = delete;
+
+        // The published set, editable until this goes out of scope.
+        std::map<std::string, ModelInfo>& draft() { return write_.draft(); }
+        bool cache_valid() const { return write_.cache_valid(); }
+        void invalidate_cache() { write_.invalidate_cache(); }
+
+      private:
+        models::ModelStore::Write write_;
+    };
+
+    explicit ModelManager(ModelManagerConfig config);
+
+    // The paths-only shorthand.
     explicit ModelManager(const std::string& extra_models_dir = "");
 
-    // Joins the watcher thread. Required, not incidental: the watcher callback
-    // locks models_cache_mutex_, which is declared after directory_watcher_ and
-    // so freed first by reverse-order destruction.
+// Joins the watcher thread: its callback locks the store, declared
+// after directory_watcher_ and so freed first.
     ~ModelManager();
 
     std::map<std::string, ModelInfo> discover_extra_models_for_test() const {
         return discover_extra_models();
     }
 
-    // Wires the cloud provider registry. ModelManager uses it to look up
-    // {base_url, api_key} per provider when refreshing cloud models during
-    // build_cache(). Pointer (not ownership) — Server owns the registry.
-    // Must be called before the first build_cache() / get_supported_models().
-    void set_cloud_registry(CloudProviderRegistry* registry);
-
-    // The wired registry, or nullptr if set_cloud_registry was never called.
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
 
-    // Wires a provider returning the server-wide default_model_source
-    // ("huggingface"/"modelscope"). Self-managed backends (flm) are excluded
-    // from apply_default_pull_source, so they consult this to honor the default.
-    void set_default_model_source_provider(std::function<std::string()> provider);
+    json model_sources();
 
-    RemoteRegistrySource download_source_for(const ModelInfo& info) const;
+    // The registry a pull of this model reads: what the model was registered with
+    // wins over the server-wide default.
+    RegistryId download_source_for(const ModelInfo& info) const;
+
+    // The ArtifactSource for one checkpoint.
+    std::unique_ptr<models::ArtifactSource> source_for(
+        const ModelInfo& info, const std::string& checkpoint_type) const;
+
+    // Unfiltered: see models::KnownModels.
+    std::map<std::string, ModelInfo> all_models() const;
+
+    // Absolute paths recorded for a model, empty if nothing is recorded.
+    std::map<std::string, std::filesystem::path> resolved_paths_for(
+        const std::string& canonical_model_name) const;
+
+    // Drop the model's own registration, if it has one. Rows the catalog re-creates
+    // have none.
+    void forget_registered_model(const std::string& canonical_model_name);
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
     // provider's entries (drop-then-add semantics). No-op + warning if the
     // provider has no resolvable key. Returns the number of models present
     // after refresh. Throws never — errors logged, empty result returned.
-    size_t refresh_cloud_models(const std::string& provider);
+    std::size_t refresh_cloud_models(const std::string& provider);
 
     // Drop every cached model for one provider (used by uninstall). Returns
     // the count removed. Doesn't touch the registry — caller already did.
-    size_t evict_cloud_models(const std::string& provider);
+    std::size_t evict_cloud_models(const std::string& provider);
 
     // Count of currently-cached cloud models for a provider. For system-info.
-    size_t count_cloud_models(const std::string& provider) const;
+    std::size_t count_cloud_models(const std::string& provider) const;
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
 
-    // Register a callback fired after a router collection's policy changes (it
-    // is added, edited, or removed — via the API or an on-disk edit picked up by
-    // the directory watcher). Used to reconcile router-collection policy state,
-    // e.g. evicting routing helpers no active policy still references. Invoked
-    // outside all ModelManager locks. Set once during startup. The callback
-    // receives a monotonic generation number identifying this change; consumers
-    // use it to discard notifications that arrive out of order.
-    void set_models_changed_callback(std::function<void(uint64_t)> cb);
+// The two change signals; see models/change_notifier.h. Fires only when a routing
+// policy could have changed.
+    void on_models_changed(std::function<void(std::uint64_t)> subscriber);
+    void on_model_updated(std::function<void(const std::string&)> subscriber);
 
-    // Reserve the next monotonic registry-change generation. Callers that
-    // reconcile registry state outside notify_models_changed() (e.g. the startup
-    // seed) use this so their publication participates in the same ordering.
-    uint64_t next_notify_generation();
+    // Server also calls this once at startup, so a subscriber starts from an
+    // authoritative set instead of waiting for the first change.
+    void notify_models_changed();
+
+    // Snapshot generation, for consumers that need currency not a callback.
+    std::uint64_t generation();
+
+    std::set<std::string> active_helper_models();
 
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
@@ -241,12 +300,6 @@ public:
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
 
-    // Filter models by available backends. Set track_recipe_availability only on
-    // the full-cache build: the single-model temp maps used by incremental
-    // updates must not overwrite the whole-registry availability side table.
-    std::map<std::string, ModelInfo> filter_models_by_backend(
-        const std::map<std::string, ModelInfo>& models,
-        bool track_recipe_availability = false);
 
     // Register a user model
     void register_user_model(const std::string& model_name,
@@ -273,6 +326,26 @@ public:
 
     // Delete a model
     void delete_model(const std::string& model_name);
+
+    // The rows of a listing: the models given, plus one row per alias that resolves
+    // to one of them, keyed by the alias. Pointers into `listed`.
+    std::vector<std::pair<std::string, const ModelInfo*>> listing_rows(
+        const std::map<std::string, ModelInfo>& listed);
+
+    // One requested name to one model: normalize, snapshot precedence, then the
+    // alias map. Every surface that accepts a model name answers through this.
+    std::optional<models::ResolvedModel> resolve(const std::string& requested);
+
+    // A requested alias settles to the model it points at; anything else passes
+    // through. Every surface that acts on a model name goes through this.
+    std::string canonical_for_request(const std::string& requested);
+
+    // Aliases: one map, held here, delegated everywhere.
+    std::map<std::string, std::string> aliases() const;
+    bool set_alias(const std::string& alias, const std::string& target, std::string& err_msg);
+    bool remove_alias(const std::string& alias);
+    std::optional<std::string> resolve_alias(const std::string& alias_or_name) const;
+    bool has_alias(const std::string& alias) const;
 
     // Clean up orphaned files from multi-repo models downloaded in old layout
     nlohmann::json cleanup_orphaned_cache(bool dry_run);
@@ -302,10 +375,6 @@ public:
     // Returns true even for NPU models on systems without NPU
     bool model_exists_unfiltered(const std::string& model_name);
 
-    // Get model info from raw registry (without filtering)
-    // Useful for generating helpful error messages about unsupported models
-    ModelInfo get_model_info_unfiltered(const std::string& model_name);
-
     // Get the reason why a model was filtered out (empty string if not filtered)
     // Returns a user-friendly message explaining why the model is not available
     std::string get_model_filter_reason(const std::string& model_name);
@@ -318,17 +387,7 @@ public:
     // Builds the cache if needed.
     std::set<std::string> recipes_with_all_models_filtered();
 
-    // The set difference behind the above: recipes that had a model dropped by
-    // the memory heuristic and kept none visible. Pure and hardware-independent
-    // so it can be unit-tested directly.
-    static std::set<std::string> recipes_missing_all_models(
-        const std::set<std::string>& size_filtered_recipes,
-        const std::set<std::string>& visible_recipes);
-
-    // Memory-fit helpers for streaming backends (see filter_models_by_backend
-    // for the rationale). Pure and hardware-independent, so unit-tested directly.
-    static double streaming_working_set_gb(double min_resident_gb, double size_gb);
-    static bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
+// Recipes that lost every model to the memory heuristic and kept none visible.
 
     // Test-only raw view of the side table without a cache rebuild; prefer
     // recipes_with_all_models_filtered() everywhere else.
@@ -337,11 +396,7 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-struct UpdateCheckResult {
-    std::vector<std::string> updated_models;
-    std::vector<std::string> up_to_date_models;
-    std::map<std::string, std::string> failed_models;
-};
+    using UpdateCheckResult = models::UpdateScanResult;
 
     // Check downloaded models for updates in their configured remote registry.
     // Fetches the latest commit SHA for each model's repo and compares it
@@ -355,11 +410,6 @@ struct UpdateCheckResult {
     // Check if model should be automatically updated when updates are detected
     bool should_auto_update(const ModelInfo& info) const;
 
-    // Register a callback triggered when a model's files are updated on disk (e.g. to evict loaded router backends).
-    void set_model_updated_callback(std::function<void(const std::string&)> cb) {
-        on_model_updated_cb_ = std::move(cb);
-    }
-
     // Register a callback triggered during synchronization phases (e.g. for deterministic unit testing).
     void set_sync_phase_callback(std::function<void(const std::string&)> cb) {
         sync_phase_callback_ = std::move(cb);
@@ -368,9 +418,9 @@ struct UpdateCheckResult {
     // Set update_available in cache for deterministic unit testing.
     void set_model_update_available_for_test(const std::string& model_name, bool available) {
         std::string canonical = resolve_model_name(model_name);
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto it = models_cache_.find(canonical);
-        if (it != models_cache_.end()) {
+        StoreWrite store_write(*this);
+        auto it = store_write.draft().find(canonical);
+        if (it != store_write.draft().end()) {
             it->second.update_available = available;
         }
     }
@@ -389,10 +439,7 @@ struct UpdateCheckResult {
     void cancel_sync();
 
 
-    struct SyncEnqueueResult {
-        bool already_running = false;
-        uint64_t sync_id = 0;
-    };
+    using SyncEnqueueResult = models::SyncService::Enqueued;
 
     // Query model sync status (running state, active/pending targets, completed count, or specific sync_id outcome)
     json get_sync_status(uint64_t sync_id = 0) const;
@@ -400,8 +447,11 @@ struct UpdateCheckResult {
     // Synchronously queue targets for sync. Returns dispatch result with sync_id and whether sync was already in progress.
     SyncEnqueueResult enqueue_sync(const std::vector<std::string>& target_models = {}, bool attach_if_running = false);
 
-    // Execute background queue processing until empty.
-    json execute_sync();
+    // Blocks until the generation in flight (or the last one queued) is done.
+    json wait_for_sync();
+
+    // Shutdown waits here, so a download cannot outlive the store it wrote.
+    void wait_until_sync_idle();
 
     // Trigger sync/update of specified or all outdated models.
     // When target_models is empty, targets all downloaded outdated models.
@@ -409,18 +459,12 @@ struct UpdateCheckResult {
     json sync_models(const std::vector<std::string>& target_models = {}, bool dry_run = false, bool attach_if_running = false);
 
 
-    // True if the model's backend pulls its own models on demand (e.g. flm) and
-    // so should be skipped by the router's load-time auto-download path.
-    bool backend_self_manages_downloads(const std::string& recipe) const;
+    // The artifact store's answer, exposed for the HTTP and Ollama layers.
+    backends::DownloadPolicy download_policy(const ModelInfo& info) const;
 
-    // Shared registry-backed completeness check: true if all required checkpoints
-    // are present and complete (per-backend file validation runs via ops).
+
+    // The artifact store's completeness answer for this model.
     bool checkpoints_complete(const ModelInfo& info) const;
-
-    // Shared remote-registry download engine. The default BackendOps::download_model
-    // delegates here; flm/cloud override with their own download.
-    void download_from_registry_engine(const ModelInfo& info,
-                                       DownloadProgressCallback progress_callback = nullptr);
 
     // Source-compatible alias for integrations built against the original API.
     // The model's registry_source still controls which provider is contacted.
@@ -435,6 +479,9 @@ struct UpdateCheckResult {
     // automatically refreshes the model cache when files are added or
     // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
+
+    // The catalogs a build reads changed: rebuild and publish.
+    void catalog_set_changed();
 
     // Per-architecture default recipe options (loaded from resources).
     // Override global config defaults but are overridden by model-level recipe_options.
@@ -466,179 +513,88 @@ struct UpdateCheckResult {
     void start_directory_watcher();
 
 private:
-    // Cycle-detecting overload used by the collection fan-out in download_model.
-    // `visited` accumulates collection names already entered on the current
-    // call chain; re-entering one throws.
-    void download_model(const std::string& model_name,
-                       const json& model_data,
-                       bool do_not_upgrade,
-                       DownloadProgressCallback progress_callback,
-                       std::set<std::string>& visited,
-                       bool register_only,
-                       bool allow_missing_checkpoint,
-                       bool replace_existing);
-
-    json load_server_models();
+    static json load_server_models();
     json load_architecture_defaults();
-    json load_optional_json(const std::string& path);
-    void save_user_models(const json& user_models);
 
     // Remove a user model entry from user_models.json (no file deletion).
-    // Used to roll back a collection registered earlier in the same call when
-    // its component resolution fails.
     void unregister_user_model(const std::string& model_name);
 
-    std::string get_user_models_file();
+    static std::string get_user_models_file();
     std::string get_recipe_options_file();
 
-    // Collection manifests (recipe="collection.omni" with a registry checkpoint):
-    // the full collection definition lives in the configured remote registry as
-    // an exported collection JSON (discovered by content, not filename).
-    nlohmann::json fetch_collection_manifest(const std::string& repo_id,
-                                               const std::string& registry_source,
-                                               bool do_not_upgrade);
-
-    // Resolve a collection's component list against the registry: known names
-    // keep the local definition (local-wins, drift logged); unknown names are
-    // registered as `user.` models from their inline definition in
-    // `component_defs` (the `models` array of a collection file/manifest).
-    // Returns the components as canonical cache names, preserving order.
-    std::vector<std::string> register_components(const nlohmann::json& component_names,
-                                                 const nlohmann::json& component_defs,
-                                                 const std::string& registry_source = "huggingface");
-
-    // Resolve a registry-backed collection's components at pull time: fetch the
-    // manifest, then register_components() against its components/models arrays.
-    std::vector<std::string> resolve_collection_components_from_manifest(
-        const std::string& repo_id,
-        const std::string& registry_source, bool do_not_upgrade);
-
-    // Populate a collection's components from a manifest already cached on disk
-    // (offline, no registration). Used by build_cache so a pulled collection keeps
-    // its components across restarts. No-op if the manifest is not cached.
-    // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
-    void populate_collection_components_from_cache_locked(ModelInfo& info);
-
-    // Fire the models-changed callback (if set) outside all locks. Guarded
-    // against same-thread reentrancy so a callback that reads the registry
-    // cannot recursively re-fire.
-    void notify_models_changed();
-
+    // The authored layer of build_recipe_options()'s ladder, read from the
+    // registry row. Takes no store lock.
     json registry_recipe_options(const std::string& cache_key);
-    // Caller must hold models_cache_mutex_.
-    json registry_recipe_options_locked(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
 
     // Cache management
     void build_cache();
-    void add_model_to_cache(const std::string& model_name);
-    // Caller must hold models_cache_mutex_.
-    void update_model_options_in_cache_locked(const ModelInfo& info);
+
+    // The host reads a catalog set needs; see models::CatalogSetDeps.
+    models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
+    std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
+    void update_model_options_in_cache_locked(StoreWrite& store_write,
+                                              const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
-    // Resolve model checkpoint to absolute path on disk
-    std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
+    // Fills info.resolved_paths from the artifact store, adopting a complete
+    // repository from the extra models directory when the managed cache lacks it.
     void resolve_all_model_paths(ModelInfo& info);
-
-    // Download from a JSON manifest
-    void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
-
-    // Download from the model's configured remote registry
-    void download_from_registry(const ModelInfo& info,
-                                   DownloadProgressCallback progress_callback = nullptr);
 
     // Discover independent GGUF models, excluding complete registered cache files.
     std::map<std::string, ModelInfo> discover_extra_models(
         const std::set<std::filesystem::path>& registered_paths = {}) const;
 
-    ModelInfo init_extra_model_info(const std::string& name) const;
-
-    // Scan one extra_models_dir subfolder and add either one folder model or one model per variant.
-    void discover_extra_models_in_directory(
-        const std::filesystem::path& dir_path,
-        const std::vector<std::filesystem::path>& gguf_files,
-        std::map<std::string, ModelInfo>& discovered,
-        const std::filesystem::path& search_path,
-        std::set<std::string>& claimed_names) const;
-
-    json server_models_;
-    json user_models_;
-    json recipe_options_;
+    models::RegistryDocuments registries_;
+    RecipeOptionsStore recipe_options_;
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
+    ModelManagerConfig config_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
+    models::AliasManager alias_manager_;
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::function<std::string()> default_model_source_provider_;
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
-    // Fired after the model registry changes (add/edit/remove). Guarded by its
-    // own mutex; invoked outside all other ModelManager locks.
-    std::mutex models_changed_callback_mutex_;
-    std::function<void(uint64_t)> models_changed_callback_;
-    // Monotonic counter identifying each registry change. The callback may read
-    // the live registry to compute a snapshot and publish it downstream;
-    // concurrent runs can publish an older snapshot after a newer one, so the
-    // generation lets the consumer keep only the newest.
-    std::atomic<uint64_t> notify_generation_{0};
+    models::ModelChangeNotifier change_notifier_;
 
-    // Cache of all models with their download status
-    mutable std::mutex models_cache_mutex_;
-    // Orders recipe_options.json rewrites without holding models_cache_mutex_
-    // (which every request thread contends on) across disk I/O.
+    // Serializes an options write end to end: store mutation plus the matching
+    // cache patch. The store orders its own state; this keeps the two in step so
+    // two concurrent writers cannot leave the cache holding the earlier entry.
     std::mutex recipe_options_write_mutex_;
 
-    // Serializes concurrent downloads that write into the same snapshot
-    // (keyed by checkpoint repo). See download_registered_model.
-    std::mutex download_locks_mutex_;
-    std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
-
-    // Prevent startup and manual update checks from running concurrently.
-    std::mutex update_check_mutex_;
-
-    // Server sync state and queue management
-    struct ModelSyncState {
-        mutable std::mutex mutex;
-        mutable std::condition_variable cv;
-        bool is_sync_running = false;
-        bool is_full_sync = false;
-        bool cancel_requested = false;
-        uint64_t current_generation = 0;
-        uint64_t completed_generation = 0;
-        std::map<uint64_t, json> completed_generation_results;
-        std::set<std::string> active_targets;
-        std::set<std::string> pending_targets;
-        std::vector<std::string> completed_targets;
-        std::vector<std::string> models_up_to_date;
-        std::map<std::string, std::string> failed_models;
-        int checked_count = 0;
-        std::string terminal_error;
-
-        // Progress metrics for active model download
-        std::string current_model;
-        std::string current_file;
-        int file_index = 0;
-        int total_files = 0;
-        size_t bytes_downloaded = 0;
-        size_t bytes_total = 0;
-        int percent = 0;
-    };
-    mutable ModelSyncState sync_state_;
-    std::function<void(const std::string&)> on_model_updated_cb_;
     std::function<void(const std::string&)> sync_phase_callback_;
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
 
-    mutable std::map<std::string, ModelInfo> models_cache_;
-    mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
-    mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
-    mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
-    // Real-backend recipes whose entire built-in model set was size-filtered
-    // with no model left visible. Populated alongside filtered_out_models_.
-    mutable std::set<std::string> recipes_all_models_filtered_;
-    mutable bool cache_valid_ = false;
+    std::shared_ptr<const models::CatalogFetchClock> catalog_fetch_clock_ =
+        std::make_shared<models::CatalogFetchClock>();
+    // The published model set, its catalogs and the rules for changing either. Declared
+    // before what reads it: destruction runs in reverse.
+    models::ModelStore store_;
 
-    json get_sync_status_locked() const;
-    void rebuild_public_model_aliases_locked();
+
+
+  private:
+
+    UpdateCheckResult run_update_scan(const std::vector<std::string>& targets);
+    models::SyncService::Deps make_sync_deps();
+    models::ModelIngest::Deps make_ingest_deps();
+    std::unique_ptr<models::ModelComposition> make_composition();
+
+    void publish_update_scan(const models::ScanDetermination& settled,
+                             models::UpdateScanResult& result);
+
+    // Declared last so it dies first: the worker joins before the store it
+    // publishes to does.
+    const std::unique_ptr<models::ModelArtifactStore> artifacts_;
+    // Fetches registry bytes; also the ArtifactFetchService the backends ask.
+    std::unique_ptr<models::ModelIngest> ingest_;
+    // Everything a set needs that no catalog can answer for itself.
+    const std::unique_ptr<models::ModelComposition> composition_;
+    models::SyncService sync_;
+    // A provider's rows in that store, for the moments that cannot wait for a build.
+    models::CloudRows cloud_rows_;
 };
 
 } // namespace lemon

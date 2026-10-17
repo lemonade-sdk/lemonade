@@ -33,7 +33,7 @@ This spec defines how lemond answers three questions: which models exist, what a
 The three goals that decide every design choice here:
 
 - **Two axes.** *Which models exist* and *where the bytes come from* are separate questions with separate interfaces, joined by one value, the `ArtifactRef`. Every component sits on one axis or the other.
-- **Extension is local.** A new catalog, artifact repository, or download source is one `.cpp` file, one registration line, and one descriptor. It documents itself: [Generated Docs](#generated-docs) fails CI when a registered source has no docs.
+- **Extension is local.** A new catalog, artifact repository, or download source is one `.cpp` file, one build line, one registration line, and one descriptor. It documents itself: [Generated Docs](#generated-docs) fails CI when a registered source has no docs.
 - **Clear separation of concerns.** One function resolves a name, one site binds a checkpoint to a source, one component publishes the model set, one counter announces a new set. A caller never re-derives an answer, and no component branches on another's identity to get one.
 
 ## Scope
@@ -148,7 +148,9 @@ struct ModelManagerConfig {
     std::string cache_dir;
     std::string config_dir;
     std::string extra_models_dir;
-    std::function<BackendAvailability()> availability;   // installed backends and their pools
+    // Installed backends and their pools; empty means probe this machine. It is asked
+    // per rebuild with the models in play, since the probe asks per recipe.
+    std::function<BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
     CloudProviderRegistry* cloud_providers = nullptr;    // listings for ListedCatalog
     std::vector<std::shared_ptr<ModelCatalog>> extra_catalogs;  // tests and embedders
 };
@@ -261,11 +263,6 @@ public:
     virtual CatalogId id() const = 0;
     virtual CatalogDescriptor descriptor() const = 0;
 
-    // Middle segment minted into machine-authored IDs; empty when the catalog
-    // mints none. An open set — ModelSource stays closed, see
-    // [Identity](#identity-handles-and-provenance).
-    virtual std::string locality() const { return {}; }
-
     // True: a load failure aborts startup. False: the catalog contributes none.
     virtual bool required() const { return false; }
 
@@ -279,14 +276,15 @@ public:
 
 The catalogs lemond ships, with the policy each one carries:
 
-| Catalog | Entries come from | `required()` | `locality()` | Enumeration staleness |
-| --- | --- | --- | --- | --- |
-| `JsonCatalog(ResourceLocator{"resources/server_models.json"}, true)` | the built-in registry shipped with lemond | true | empty | contents digest of the installed resource |
-| `JsonCatalog(FileLocator{config_dir + "/user_models.json"}, false)` | `lemonade pull` and `POST /pull` | false | empty | file mtime |
-| `JsonCatalog(FileLocator{<path>}, bool)` | any other JSON document of the same shape, added by code | per construction | per construction | file mtime |
-| `ScanCatalog(extra_models_dir)` | an `--extra-models-dir` scan plus GGUF identification | false | empty | a `DirectoryWatcher` callback for the directory |
-| `ListedCatalog(provider)` | a cloud provider's model listing | false | the provider id, e.g. `fireworks` | digest of the listing |
-| `DiscoveredCatalog(recipe)` | a backend's `BackendOps::discover_models()`, used by cloud providers and `dynamic_models` descriptors | false | the recipe id | the backend reports a change, or a refresh interval elapses |
+| Catalog | Entries come from | `required()` | Enumeration staleness |
+| --- | --- | --- | --- |
+| `JsonCatalog(ResourceLocator{"resources/server_models.json"}, true)` | the built-in registry shipped with lemond | true | contents digest of the installed resource |
+| `JsonCatalog(FileLocator{config_dir + "/user_models.json"}, false)` | `lemonade pull` and `POST /pull` | false | file mtime |
+| `JsonCatalog(FileLocator{<path>}, bool)` | any other JSON document of the same shape, added by code | per construction | file mtime |
+| `ConfiguredCatalog` (`config.json`'s `model_catalogs`) | a file or an HTTP URL naming a document of the same shape | per record | file mtime, or the ETag / Last-Modified pair |
+| `ScanCatalog(extra_models_dir)` | an `--extra-models-dir` scan plus GGUF identification | false | a `DirectoryWatcher` callback for the directory |
+| `ListedCatalog(provider)` | a cloud provider's model listing | false | digest of the listing |
+| `DiscoveredCatalog(recipe)` | a backend's `BackendOps::discover_models()`, used by cloud providers and `dynamic_models` descriptors | false | the backend reports a change, or a refresh interval elapses |
 
 Rules:
 
@@ -307,6 +305,7 @@ struct ResourceLocator { std::string resource_path; };     // an embedded resour
 struct HttpLocator {
     std::string url;
     std::string cache_path;    // last good body, used when the fetch fails
+    size_t max_body_bytes = 0; // 0: unbounded
 };
 
 using Locator = std::variant<FileLocator, ResourceLocator, HttpLocator>;
@@ -324,13 +323,15 @@ The locator decides how a body is fetched and how a change is detected:
 | --- | --- | --- | --- |
 | `FileLocator` | read the file | mtime or size differs | missing or unparseable contributes no entries when `required()` is false; throws when it is true |
 | `ResourceLocator` | `utils::get_resource_path()`, then read | contents digest differs | throws when `required()` |
-| `HttpLocator` | `GET url` with `If-None-Match` / `If-Modified-Since` from `cache_path`; a 304 keeps the cached body | ETag or Last-Modified differs from the cached pair | falls back to the cached body, then to no entries, when `required()` is false; with `required()` true and no cache, throws |
+| `HttpLocator` | `GET url` with `If-None-Match` / `If-Modified-Since` from `cache_path`; a 304 keeps the cached body; a body over `max_body_bytes` aborts the transfer | ETag or Last-Modified differs from the cached pair | falls back to the cached body, then to no entries, when `required()` is false; with `required()` true and no cache, throws |
 
 Rules:
 
 1. One parse primitive turns a fetched body into `CatalogEntry` values, so an error message reads the same whichever locator supplied the document.
 2. `HttpLocator` fetches during its own catalog's refresh, never on another catalog's startup path.
 3. `HttpLocator` stores only the response body and its validators in `cache_path`. It touches no model bytes and no sync queue.
+4. A body over `max_body_bytes` is refused before it is buffered, and is never cached: the last good body stays, so a runaway or hostile host cannot grow the cache or evict a working document.
+5. A cached body belongs to the catalog set. When a catalog leaves the setting, its cached body and validators are removed with it; the sweep touches only files of that shape, and a file it does not recognize is left alone.
 
 ## Model Store
 
@@ -384,12 +385,21 @@ Rules:
 3. Download status comes from artifact sources, never from a comparison on `ModelInfo::source`.
 4. The store runs no thread. A rebuild runs on the executor of whoever requested it — the sync service's worker, the directory watcher, or the call that changed the model set — and publishes with `std::atomic_store` and one notification.
 5. The five steps are private methods of `StoreBuilder`. The pipeline is fixed, not a pluggable stage list: a new stage is an edit to `StoreBuilder`, which is exactly the friction wanted here.
+6. A read publishes nothing. `generation` is the signal clients watch for "the set changed", so a read answers from the published snapshot and never takes the store lock — a read that published would invalidate every watcher without changing anything.
+7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a candidate that the published set cannot see, and one builder runs at a time. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build made every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
+9. A download landing patches the rows it changed rather than rebuilding the set: the model, and the collections that carry it. It decides from the published snapshot, so the filesystem walk — resolved paths, the header a backend reads for metadata, the on-disk size — happens outside the store lock, and it keeps any options another writer committed while it worked. Held this way the patch costs 15 µs of store lock against 2.0 ms when it did its work inside the lock.
+
+10. Publishing derives what a reader could recompute — the alias maps and the helper-model projection — from the set published beside them, so no writer has to remember to update a name table and none can point at a model that is gone. Deriving costs 206 µs on a 143-model store, against 100 µs to copy the set itself; writes are rare enough (62 across a whole CLI suite) that the invariant is worth the arithmetic. The filter table is the one thing a build hands over explicitly, because a patch says nothing about hardware fit and carries the published table forward.
+
+11. Outside a write the model set exists once, in the published snapshot. A write seeds a draft from the snapshot readers hold and works on that; the publish moves the draft into the new snapshot. Nothing mutates a published snapshot in place, so a reader cannot see a set half-updated, and there is no member left holding a second copy that a later edit could read by mistake.
+
+12. A rebuild whose generation moved while it composed does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next read composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
 
 ## Hardware Filtering
 
 This section defines how backend availability and memory fit narrow the visible model set.
 
-`filter_hardware()` answers which of these models this machine can run now, and returns the visible set and the reasons for the rest together. It is a function, not a class: it holds no state, and the store and the ingest path are its only two callers — the whole set during a rebuild, and one entry when a definition is added to the set.
+`filter_hardware()` answers which of these models this machine can run now, and returns the visible set and the reasons for the rest together. It is a function, not a class: it holds no state, and the rebuild is its caller — over the whole set, never one entry at a time.
 
 ```cpp
 struct FilterResult {
@@ -410,6 +420,7 @@ Rules:
 1. Every build produces `StoreSnapshot::rejected` and `StoreSnapshot::empty_recipes` for the whole set. There is no build mode that skips them, and no side table for a caller to remember to consult.
 2. Memory-fit inputs are `ModelInfo::size` and `ModelInfo::min_resident_gb`, against the streaming pools in `BackendAvailability`. The working-set comparison — `streaming_working_set_gb()` and `streaming_model_exceeds_pool()` — are file-local helpers beside `filter_hardware()`.
 3. A rejection reason is retrieved from the snapshot by canonical id, so an error message and the set it describes are always the same generation.
+4. A filter pass writes nothing: it answers with the visible set and its reasons, and the rebuild that ran it keeps them. A pass over part of the registry would report every recipe it did not look at as having nothing runnable, which is why the incremental add path carries no filter of its own.
 
 ## Name Resolution
 
@@ -489,31 +500,30 @@ The artifact key is `f(registry, repo, snapshot)`, computed without touching the
 `ModelSource` and the prefixes `user.`, `extra.` and `builtin.` stay closed. The guard is a security boundary: `is_reserved_registration_name()` (`canonical_id.h`) prevents `user.builtin.Foo` from taking a built-in alias slot, and `precedence_rank()` defines shadowing. New catalogs register into the store; they mint no new source token.
 
 ```text
-handle ::= <source-token> '.' <bare>     // closed set: user | extra | builtin
-bare   ::= [ <locality> '.' ] <name>     // locality only when the ID is machine-minted
+handle ::= <source-token> '.' <name>     // closed set: user | extra | builtin
 ```
 
 Each source mints handles under these rules:
 
-| Catalog | Source token | Authored by | Locality | Handle minted |
-| --- | --- | --- | --- | --- |
-| `JsonCatalog` over `server_models.json` | `builtin.` | the registry shipped with lemond | none | `builtin.Qwen3-0.6B-GGUF` |
-| `JsonCatalog` over `user_models.json` | `user.` | a human at `lemonade pull` | never | `user.MyQwen` |
-| `ScanCatalog` | `extra.` | the extra-directory scan | registry of origin, when inferable | `extra.Qwen3-0.6B-GGUF` |
-| `ListedCatalog` | `extra.` | a cloud provider listing | the provider id | `extra.fireworks.deepseek-v3` |
-| `DiscoveredCatalog` | `extra.` | a backend's `discover_models()` | the recipe id | `extra.flm.deepseek-r1` |
+| Catalog | Source token | Authored by | Handle minted |
+| --- | --- | --- | --- |
+| `JsonCatalog` over `server_models.json` | `builtin.` | the registry shipped with lemond | `builtin.Qwen3-0.6B-GGUF` |
+| `JsonCatalog` over `user_models.json` | `user.` | a human at `lemonade pull` | `user.MyQwen` |
+| `ScanCatalog` | `extra.` | the extra-directory scan | `extra.Qwen3-0.6B-GGUF` |
+| `ListedCatalog` | `extra.` | a cloud provider listing | `extra.fireworks.deepseek-v3` |
+| `DiscoveredCatalog` | `extra.` | a backend's `discover_models()` | `extra.deepseek-r1-FLM` |
 
-The source token is part of every handle, including a catalog's, and `builtin.` `user.` and `extra.` are the only three. A listing emits the bare name for a precedence winner, so `extra.fireworks.deepseek-v3` is listed as `fireworks.deepseek-v3` — the locality carries the minter, and the source token carries the precedence class.
+The source token is part of every handle, including a catalog's, and `builtin.` `user.` and `extra.` are the only three. A listing emits the bare name for a precedence winner, so `extra.fireworks.deepseek-v3` is listed as `fireworks.deepseek-v3` — the source token carries the precedence class, and the minter identifies itself inside the name: a listing leads with its provider id, a backend minter carries its recipe, a scan qualifies a colliding stem with its directory. Nothing in the grammar recognizes that difference. It is a naming rule each minter owns, and the minter travels on the entry as data (`cloud_provider`, `source`).
 
-A locality token set is open, `ModelSource` stays closed, and both are known at compile time. `is_reserved_registration_name()` rejects `user.<known-locality>.…`, which closes the case where a user registers `user.fireworks.foo` and shadows a cloud entry's public name through precedence.
+There is no locality vocabulary, and no registry of minted namespaces to validate against. A name that reads like a namespace is just a name: whether `fireworks.foo` means a provider's model or a user's own file is answered by [precedence](#model-store), which the user guide documents. A `user.` registration that collides with a machine-minted public name takes it, exactly as one that collides with a built-in takes it, and installing a provider afterwards never hides a model a user already registered.
 
 Rules:
 
-1. The rejection applies at registration: `ModelManager::validate()`, `ModelIngest`, and `lemonade recipe-import`. An entry already on disk under a name the rule would reject keeps loading and resolving, so an upgrade never hides a user's model.
+1. The reserved-token guard applies at registration — `ModelManager::validate()`, `ModelIngest`, and `lemonade recipe-import` — and rejects a name whose source token is reserved, or whose bare part begins with one. Nothing is rejected for the *shape* of a name. An entry already on disk keeps loading and resolving, so an upgrade never hides a user's model.
 2. `user.` holds one repository per bare name. Repointing a `user.` model at a different registry is a provenance change: an explicit replace that errors on conflict, never two coexisting IDs a user disambiguates.
 3. Every registered catalog's minted IDs round-trip through `parse_canonical_id()` and pass `is_reserved_registration_name()`, asserted in a unit test that enumerates the catalogs. The grammar is a checked contract, and its [generated table](#descriptors) is the same list.
-4. `extra.` is the token a machine mints under, because no human authors it, and the locality names which machine: a scan with no inferable origin mints none, a listing mints its provider id, a backend mints its recipe id. `builtin.` and `user.` are never machine-minted.
-5. Two registered catalogs never claim the same locality under one source token. The `(source token, locality)` pairs come from the descriptors, startup checks them for duplicates, and the [drift check](#drift-check) holds the docs to the same set.
+4. `extra.` is the token a machine mints under, because no human authors it. `builtin.` and `user.` are never machine-minted.
+5. Two catalogs never contribute one ID. A collision means two minters emitted the same name, and the [accumulator](#model-catalogs) settles it: the first claimant keeps the ID, the loser is reported rather than dropped in silence. Startup rejects no catalog for the shape of its name.
 
 ### Registry Identity
 
@@ -532,7 +542,7 @@ This section separates the two change questions a client can ask.
 | Question | did the list of models change? | did a model's bytes change? |
 | Signals | file mtime, contents digest, HTTP ETag / Last-Modified, listing digest | commit SHA, LFS content id, tree fingerprint |
 | Cost | one stat call or one metadata request | one or more network round trips per repository |
-| Detector | `ModelCatalog::enumeration_changed()` | `FetchableRepository::compare()` |
+| Detector | a stat against the last read `CatalogState`, or an in-process window on a fetched body | `FetchableRepository::compare()` |
 | Result | a rebuild, then one `models changed` notification carrying the new generation | `update_available` in the snapshot |
 | Client surface | none; an event inside lemond | `/v1/models`, `POST /models/check-updates`, `POST /internal/models/sync` |
 
@@ -587,7 +597,7 @@ The sources lemond ships, with the behavior each declares:
 
 | Implementation | Roles | `list()` / `file_url()` | Staleness | Layout | Transfer | Deletion |
 | --- | --- | --- | --- | --- | --- | --- |
-| `HuggingFaceRepository` | both | tree API | commit SHA plus LFS content id | HF snapshots and blobs with `refs/main` | HTTP | `CacheDir`; blob GC is decided by [Local Artifact Store](#local-artifact-store) |
+| `HuggingFaceRepository` | both | tree API | commit SHA plus LFS content id | HF snapshots with `refs/main` | HTTP | `CacheDir`; deletion is decided by [Local Artifact Store](#local-artifact-store) |
 | `ModelScopeRepository` | both | files API | tree fingerprint | snapshot per tree, own namespace | HTTP | `CacheDir` in its namespace |
 | `LocalPathArtifactSource` | core | none | never stale | n/a | n/a | `Nothing` or `CacheDir` by origin, see [Deletion](#deletion) |
 | `SelfManagedArtifactSource` | core | none | the backend's concern | the backend's | `Delegated` | `Delegate` |
@@ -618,8 +628,8 @@ For each entry of `ModelInfo::checkpoints`, the resolver picks the first matchin
 2. `BackendOps::plan_download()` returns `SelfManaged`: `SelfManagedArtifactSource`.
 3. The catalog entry's origin is `local_path`, `local_upload` or `extra_models_dir`: `LocalPathArtifactSource`.
 4. The entry names an explicit scheme (`hf://`, `ms://`, `file://`): the repository registered for that scheme.
-5. `checkpoint_looks_like_repo_id()` matches: the registry in `ArtifactRef::registry`, defaulting to the `default_model_source` config key.
-6. The checkpoint path exists on disk: `LocalPathArtifactSource`.
+5. The checkpoint path exists on disk: `LocalPathArtifactSource`.
+6. `checkpoint_looks_like_repo_id()` matches: the registry in `ArtifactRef::registry`, defaulting to the `default_model_source` config key.
 7. Otherwise: a registration error.
 
 Rules:
@@ -763,12 +773,12 @@ Rules:
 2. A repository's `auth_headers()` are sent only while the origin still matches the origin that produced them. `HttpFileTransfer` strips them before following a redirect to a different scheme, host or port, at every hop, and never adds a credential a repository did not supply.
 3. A plan whose files all resolve to `file://` moves no byte over a network, so it succeeds when `offline=true`.
 
-`ArtifactLayout` names the on-disk shape of a repository's cache: snapshot directory, `refs/main`, blob directory, `.partial` and `.download_manifest.json` locations, and the call that makes a staged snapshot current. Two layouts ship:
+`ArtifactLayout` names the on-disk shape of a repository's cache: the directory a placement's files go to, the final path of one repository-relative name, and the call that makes a staged revision current. Staging through `.partial` and writing `.download_manifest.json` belong to [ArtifactTransfer](#transfer-and-layout) inside whatever directory the layout names, so a layout says nothing about transport. Two layouts ship:
 
 | Layout | Placement | Used by |
 | --- | --- | --- |
-| `HfHubLayout` | `refs/main`, `snapshots/<snapshot-id>/`, `blobs/`, staged through `.partial` | every registry checkpoint, per `docs/dev/model-registries.md` |
-| `SiblingLayout` | the file lands next to the model's `main` checkpoint file, after a containment check on the resolved name | the `npu_cache` checkpoint, which `whispercpp` requires beside its `.bin` |
+| `HfHubLayout` | `snapshots/<snapshot-id>/` holding real files, with `refs/main` recording the current snapshot id | every registry checkpoint, per `docs/dev/model-registries.md` |
+| `SiblingLayout` | the file lands in the directory of the checkpoint it belongs to, by its final component only, so no name can escape that directory; there is no revision to make current | the `npu_cache` checkpoint, which `whispercpp` requires beside its `.bin` |
 
 Layout selection rules:
 
@@ -803,8 +813,9 @@ Deleting a checkpoint is polymorphic, because a forgotten branch deletes a user'
 
 | Source | `Deletion` | Effect |
 | --- | --- | --- |
-| `HuggingFaceRepository`, `ModelScopeRepository` | `CacheDir` | remove the repository directory; blob GC only for blobs no other model references |
-| `LocalPathArtifactSource`, `local_path` or `extra_models_dir` origin | `Nothing` | unregister the model; the bytes the user placed stay |
+| `HuggingFaceRepository`, `ModelScopeRepository` | `CacheDir` | remove the repository directory; when another model shares the repository, only this checkpoint's variant path goes |
+| `LocalPathArtifactSource`, `local_path` origin | `Nothing` | unregister the model; the bytes the user placed stay |
+| `LocalPathArtifactSource`, `extra_models_dir` origin | `Nothing` | the bytes are the user's, and rule 5 refuses the request before any of it applies |
 | `LocalPathArtifactSource`, `local_upload` origin | `CacheDir` | remove the copy lemond wrote inside its own cache directory |
 | `SelfManagedArtifactSource` | `Delegate("flm remove")` | the backend removes its own weights |
 | `NoArtifactsSource` | `Nothing` | unregister only |
@@ -812,9 +823,10 @@ Deleting a checkpoint is polymorphic, because a forgotten branch deletes a user'
 Rules:
 
 1. `CacheDir` requires a containment proof: the resolved path is inside the configured models directory after resolving symlinks. A checkpoint that cannot prove containment is unregistered and logged, never deleted.
-2. Blob reachability and shared-repository scope are computed here, not by the source: both need the whole model map, which a per-checkpoint source never sees. A source answers only `CacheDir` or `Nothing`. A shared repository referenced by several models loses only the variant being removed.
+2. Blob reachability and shared-repository scope are computed here, not by the source: both need the whole model map, which a per-checkpoint source never sees. A source answers only `CacheDir` or `Nothing`. A shared repository referenced by several models loses only the variant being removed, and an auxiliary checkpoint loses nothing while another model names that same checkpoint: a dependency belongs to everyone who asked for it, and removing it would quietly un-download someone else's model.
 3. `delete_artifacts()` completes for every source, including bytes that sit outside any cache directory: the answer there is `Nothing`, not a failure.
 4. A collection removes components by the same per-checkpoint rules, and a model still referenced by a loaded collection is refused.
+5. `Deletion` answers what may happen to bytes. Whether the model may be forgotten at all is a separate question, settled by who authors the definition: a row a catalog re-creates — an `--extra-models-dir` scan, a provider listing, a backend's `discover_models()` — has no registration to remove. The request is refused with the path or provider named, because reporting a success the next scan contradicts is worse than refusing. A `local_path` registration is the opposite case: the registration is the whole record of the model, so refusing it would strand an entry nobody else can see.
 
 ### Provenance File
 
@@ -888,7 +900,8 @@ enum class DownloadPolicy { Repository, SelfManaged, None };
 
 // backend_ops.h forward-declares ModelArtifactStore.
 struct BackendOpsContext {
-    const ModelArtifactStore& artifacts;         // disk state, const calls only
+    const ModelArtifactStore* artifacts;         // disk state, const calls only
+    ArtifactFetchService* fetch;                 // registry choice + download engine
     CloudProviderRegistry* cloud_registry;       // dynamic discovery
 };
 
@@ -908,7 +921,7 @@ public:
 
 1. `plan_download()` states *what* a backend needs fetched; `ModelIngest` performs it. This is where a backend that pulls its own weights declares that fact, and the ingest path has no per-backend branch.
 2. A lazily fetched side cache — the whisper `npu_cache` `.rai` file — is a checkpoint with `required = false`, a repository, an explicit filename, `SiblingLayout`, and the shared engine's traversal guards, retries, resume, hash verification and cancellation. The backend keeps no download code and no path-resolution branch.
-3. `BackendOpsContext` holds `ModelArtifactStore` by const reference. Backend policy reads disk state through `complete()` and holds no reference to the model layer.
+3. `BackendOpsContext` names no model-layer type. `ModelArtifactStore` answers disk state through const calls; `ArtifactFetchService` answers the two fetch questions a backend cannot answer for itself — which registry a model reads from, and the engine that writes bytes into the models directory — and is the seam `ModelIngest` renames.
 
 ## Sync
 
@@ -977,7 +990,7 @@ Rules:
 2. `StoreSnapshot::generation` is the change signal for everything else. A reader compares generations to decide whether to re-read, a rebuild coalesces on it, and `ModelManager::generation()` exposes it without a callback.
 3. Callbacks run outside every lock. A subscriber reads the snapshot published at the generation it was handed, never a draft: the notification follows the atomic swap.
 4. Producers of `models_changed`: a catalog whose `enumeration_changed()` returned true, a completed ingest, deletion or sync scan, and a config change that alters the catalog set. Producers of `model_updated`: a completed re-download whose resolved checkpoint paths differ from the paths in the published snapshot. An alias mutation produces neither.
-5. Catalog change detection is polled, not pushed. A rebuild asks each catalog `enumeration_changed()`, and a `DirectoryWatcher` callback only requests a rebuild — the watcher publishes nothing and holds no subscriber list.
+5. Catalog change detection is polled, not pushed. A file catalog answers from a stat of its document (`CatalogLocator::changed()`), and a fetched one answers from an in-process window over its cached body — `CatalogFetchClock`, one minute — because a rebuild is triggered by local events that cannot have changed what a remote host serves. The window is in-memory, so a restart always asks the origin, and a change to the catalog set clears it. A `DirectoryWatcher` callback holds no subscriber list and carries no data: it invalidates, and the rebuild that follows is what notifies.
 6. A subscriber is added only where the snapshot cannot carry the answer. A consumer that needs currency rather than a signal compares `generation()`.
 
 ## Recipe Options
@@ -1064,7 +1077,7 @@ src/cpp/server/models/
   model_change_notifier.cpp recipe_options_store.cpp alias_manager.cpp
 ```
 
-1. `src/cpp/server/models/*.cpp` is collected by `file(GLOB ... CONFIGURE_DEPENDS)` in the `lemonade-server-core` target, as `docs/api` is, so a new catalog or repository edits no CMake file.
+1. Every `.cpp` under `src/cpp/server/models/` is named in the `lemonade-server-core` source list in the root `CMakeLists.txt`, so a new catalog or repository adds one line there. The CLI compiles its own `COMMON_SOURCES` list in `src/cpp/cli/CMakeLists.txt`; a file that reaches the backend registry stays out of it, which is what lets one binary name a host without being able to pull from it.
 2. `alias_manager.{h,cpp}` moves into `lemon/models/` and `src/cpp/server/models/`, because resolution is the only consumer of its lookup half. Its header includes the standard library alone; `load()` and `save()` keep the file I/O in the `.cpp`.
 3. Headers in `lemon/models/` include the standard library, `nlohmann/json`, and each other. None includes a backend header, `router.h` or `server.h`. Contact with backends is `BackendOps`, `BackendAvailability`, and injected `std::function` seams — the idiom `routing_policy.h` documents.
 4. One component per `.cpp`. A file past roughly 500 lines signals a component that is holding two responsibilities, and `ModelArtifactStore` and `ModelIngest` are the ones to watch.
@@ -1087,7 +1100,7 @@ This section states the persistent and wire formats this design owns.
 | Cache directories | `<repo-cache>/{refs/main, snapshots/<snapshot-id>/, .lemonade_registry.json}` under a provider-qualified directory, per `docs/dev/model-registries.md` |
 | `.partial`, `.download_manifest.json` | In-flight transfer state, cleared on commit |
 
-`ModelSource` tokens, registry ids and locality tokens are stable across releases: a value written by any release resolves in every later one. An id a build does not recognize skips its model with a warning and never aborts startup.
+`ModelSource` tokens, registry ids and local origin tokens are stable across releases: a value written by any release resolves in every later one. An id a build does not recognize skips its model with a warning and never aborts startup.
 
 ### API Surfaces
 
@@ -1134,20 +1147,19 @@ struct CatalogDescriptor {
     DocEntry doc;
     LocatorKind kind;                    // File | Resource | Http | Directory | Provider | Backend
     bool required;
-    std::string locality;                // minted middle segment, empty when none
     std::string config_key;              // "" when not user-configurable
     MintedBy minted_by;                  // Human | Machine
 };
 ```
 
-Registration carries the descriptor, and a catalog receives one in its constructor. `GET /internal/model-sources` returns both lists plus the closed sets they depend on: source tokens, locality tokens, local origin tokens, and the accepted `source` values for `/pull`.
+Registration carries the descriptor, and a catalog receives one in its constructor. `GET /internal/model-sources` returns both lists plus the closed sets they depend on: source tokens, local origin tokens, and the accepted `source` values for `/pull`.
 
 ### Generator
 
 `docs/tools/gen_model_source_boilerplate.py` follows `gen_backend_boilerplate.py`: it starts lemond through that file's `Lemond` harness with no model loaded, reads `/internal/model-sources`, and rewrites only `BEGIN`/`END GENERATED` regions.
 
 1. `docs/dev/model-registries.md` — the source table, and one region per repository with its endpoint, environment variables, cache-directory prefix, revision semantics, staleness basis, capabilities and a URL example.
-2. `docs/guide/configuration/custom-models.md` — the canonical-ID table and the locality-token list in *Model naming spec*, the reserved-prefix text, and the accepted `--source` values.
+2. `docs/guide/configuration/custom-models.md` — the canonical-ID table in *Model naming spec*, the reserved-prefix text, and the accepted `--source` values.
 3. `docs/guide/cli.md` — the `--source` value list, in a region keyed separately from `recipe-values`.
 
 Page intros and prose that is not a table stay hand-written between the regions.
@@ -1169,7 +1181,6 @@ CatalogDescriptor scan_catalog_descriptor() {
                  ""},
         LocatorKind::Directory,
         false,                  // required
-        "",                     // locality: minted IDs carry none
         "extra_models_dir",     // config_key
         MintedBy::Machine,
     };
@@ -1180,10 +1191,10 @@ The generator writes those fields into `docs/guide/configuration/custom-models.m
 
 ```markdown
 <!-- BEGIN GENERATED model-catalogs -->
-| Catalog | Entries come from | Required | Locality | Config key | Handle minted |
-| --- | --- | --- | --- | --- | --- |
-| Extra models directory | a scan of the extra models directory; GGUF by header | no | none | `extra_models_dir` | `extra.NAME` |
-| Cloud: Fireworks | a provider's model listing | no | `fireworks` | `cloud_providers` | `extra.fireworks.NAME` |
+| Catalog | Entries come from | Required | Config key | Handle minted |
+| --- | --- | --- | --- | --- |
+| Extra models directory | a scan of the extra models directory; GGUF by header | no | `extra_models_dir` | `extra.NAME` |
+| Cloud: Fireworks | a provider's model listing | no | `cloud_providers` | `extra.fireworks.NAME` |
 <!-- END GENERATED model-catalogs -->
 ```
 
@@ -1244,7 +1255,7 @@ CI runs `gen_model_source_boilerplate.py --check` beside the other generators, w
 - a registered repository or catalog has no descriptor, or a descriptor with an empty `summary`
 - a region has no source, or a source has no region
 - any generated text is stale
-- a source token, locality token or accepted `source` value in the docs is not in the compiled set, or the reverse
+- a source token, local origin token or accepted `source` value in the docs is not in the compiled set, or the reverse
 
 The author fixes it by running the generator and committing the result, which is the same loop as the API docs.
 
@@ -1262,12 +1273,13 @@ This section states the coverage that protects the design and the tests that pro
 | `test_artifact_resolver` | the seven selection rules, per-checkpoint independence, a model with two sources |
 | `test_download_plan` | manifest JSON to `DownloadPlan`, disk-space accounting, GGUF magic rejection, hash mismatch fails without retry, cancellation throws |
 | `test_file_transfer` | scheme dispatch across `http` and `file`, one mixed-scheme plan reporting one progress total, a `file://` plan that completes with `offline=true`, `auth_headers()` stripped on a cross-origin redirect and still sent on a same-origin one |
-| `test_model_deletion` | every `Deletion` row, the containment check, shared-repo variant delete, blob GC only for unreferenced blobs |
+| `test_model_deletion` | every `Deletion` row, the containment check, shared-repo variant delete |
 | `test_registry_provenance` | v1 read, v2 write, per-checkpoint snapshot keys, `selection` mismatch triggering a fetch |
 | `test_identity_round_trip` | every registered catalog's minted IDs survive `parse_canonical_id()` and `is_reserved_registration_name()` |
 | `test_model_change_notifier` | one subscriber per signal, callbacks run unlocked and after the swap, a reader at generation N never sees generation N+1 |
 | `test_model_sync_service` | target selection, `can_go_stale()` filtering, per-group listing, auto-update override, cancellation |
 | `test_model_source_descriptors` | every registered source has a descriptor with a non-empty `summary`, and the `/internal/model-sources` payload matches the compiled sets |
+| `test_update_available` | the flag a scan publishes to the row a client reads: set for a newer snapshot, cleared when the registry answers the snapshot on disk, unmoved by a failed check, never set for a model with no remote registry to ask, and never announced for a model whose repositories did not all answer. The registry arrives through `ModelManagerConfig.registry_for` |
 
 These suites cover behavior this spec pins, and they are the contract: `test_model_manager_collection_validation`, `test_model_download_state`, `test_model_sync_and_auto_update`, `test_extra_model_discovery`, `test_model_registry`, `test_hf_update_check`, `test_recipe_hiding`, `test_streaming_memory_filter`, `test_config_default_source`, `test_model_alias`, `test_directory_watcher`, `test_recipe_options_precedence`.
 

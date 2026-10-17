@@ -18,8 +18,7 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
-    // Response headers, names lowercased. Populated by post(); other verbs
-    // leave this empty.
+    // Response headers, names lowercased.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
@@ -150,10 +149,18 @@ public:
     }
 
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
+    // max_body_bytes > 0 aborts and throws once the response grows past it.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
                            long timeout_seconds = 0,
-                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+                           size_t max_body_bytes = 0);
+
+    // HEAD request: headers only, no body.
+    static HttpResponse head(const std::string& url,
+                            const std::map<std::string, std::string>& headers = {},
+                            long timeout_seconds = 0,
+                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Simple POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
@@ -199,6 +206,16 @@ public:
         std::map<std::string, std::string>* out_response_headers = nullptr);
 
     // Download file to disk with automatic retry and resume support
+    // Verifies a file against an expected digest using the same algorithm
+    // parsing and digests as download_file, so a transfer that does not go over
+    // HTTP can still honour a manifest hash. Returns true when the file matches
+    // or nothing was expected; `error` describes a mismatch or a malformed
+    // expectation.
+    static bool verify_file_digest(const std::string& path,
+                                   const std::string& algorithm,
+                                   const std::string& value,
+                                   std::string& error);
+
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,

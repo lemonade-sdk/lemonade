@@ -4,17 +4,36 @@
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
 
 namespace lemon {
 
 class CloudProviderRegistry;
 
+namespace models {
+struct CheckpointRef;
+class ArtifactLayout;
+class ModelArtifactStore;
+}  // namespace models
+
 namespace backends {
+
+// What a model needs fetched, asked once so the fetch path never branches on a
+// backend name: a repository to pull into the models directory, a backend that
+// pulls its own weights, or nothing at all. The default answer for a recipe comes
+// from its descriptor, which is where a backend already declares itself.
+enum class DownloadPolicy : int {
+    Repository,
+    SelfManaged,
+    None,
+};
 
 // Context handed to BackendOps methods: the server state model management needs
 // without a running subprocess.
 struct BackendOpsContext {
-    ModelManager* model_manager = nullptr;
+    const models::ModelArtifactStore* artifacts = nullptr;
+    // Fetching mutates the models directory, so the service is not const.
+    models::ArtifactFetchService* fetch = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
 };
 
@@ -71,6 +90,26 @@ public:
         return "";
     }
 
+// Whether this engine can fetch a checkpoint by registry id for a host speaking
+// `protocol`. Default false: lemonade downloads and hands over local paths.
+    virtual bool resolves_download_protocol(const std::string& protocol) const {
+        (void)protocol;
+        return false;
+    }
+
+// The ArtifactLayout for one of this backend's checkpoint types; null means the
+// snapshot layout.
+    virtual const models::ArtifactLayout* checkpoint_layout(
+        const models::CheckpointRef& checkpoint) const {
+        (void)checkpoint;
+        return nullptr;
+    }
+
+    virtual bool acquires_lazily(const std::string& checkpoint_type) const {
+        (void)checkpoint_type;
+        return false;
+    }
+
     // Validate a user-supplied checkpoint string when registering a new model.
     // Return an error message if invalid, "" if acceptable. Default: accept.
     virtual std::string validate_registration_checkpoint(const std::string& checkpoint) const {
@@ -96,9 +135,12 @@ public:
         return {};
     }
 
-    // Whether a model's local artifacts are present. Default: the shared registry
-    // checkpoint-completeness check (ModelManager::checkpoints_complete).
+    // Whether a model's local artifacts are present. Default: the artifact
+    // store's checkpoint-completeness check.
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+
+    virtual DownloadPolicy plan_download(const ModelInfo& info,
+                                         const BackendOpsContext& ctx) const;
 
     // Validate a resolved checkpoint file for the cache. Returns "" if valid, or
     // a reason it should be treated as not-downloaded. Default: always valid.
@@ -111,6 +153,13 @@ public:
     virtual void download_model(const ModelInfo& info, bool do_not_upgrade,
                                 DownloadProgressCallback progress,
                                 const BackendOpsContext& ctx) const;
+
+    // Remove weights this backend fetched for itself, as its descriptor's
+    // self_manages_downloads promises. Default: nothing to do, because lemond
+    // wrote the bytes and its own cache removal reaches them.
+    virtual void remove_self_managed_model(const ModelInfo& info) const {
+        (void)info;
+    }
 
     // Whether the model cache must be rebuilt after this backend downloads a
     // model. Default: false.

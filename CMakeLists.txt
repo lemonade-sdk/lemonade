@@ -1033,9 +1033,46 @@ set(SOURCES_CORE
     src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/directory_watcher.cpp
-    src/cpp/server/alias_manager.cpp
+    src/cpp/server/models/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
+    src/cpp/server/registry_files.cpp
+    src/cpp/server/models/artifact_layout.cpp
+    src/cpp/server/models/artifact_ref.cpp
+    src/cpp/server/models/artifact_resolver.cpp
+    src/cpp/server/models/artifact_store.cpp
+    src/cpp/server/models/artifact_transfer.cpp
+    src/cpp/server/models/catalog.cpp
+    src/cpp/server/models/change_notifier.cpp
+    src/cpp/server/models/checkpoint_grammar.cpp
+    src/cpp/server/models/definition_labels.cpp
+    src/cpp/server/models/entry_identity.cpp
+    src/cpp/server/models/fetchable_repository.cpp
+    src/cpp/server/models/host_availability.cpp
+    src/cpp/server/models/ingest.cpp
+    src/cpp/server/models/json_catalog.cpp
+    src/cpp/server/models/listed_catalog.cpp
+    src/cpp/server/models/model_sources.cpp
+    src/cpp/server/models/catalog_set.cpp
+    src/cpp/server/models/catalog_fetch_clock.cpp
+    src/cpp/server/models/catalog_locator.cpp
+    src/cpp/server/models/configured_catalog.cpp
+    src/cpp/server/models/registry_documents.cpp
+    src/cpp/server/models/model_index.cpp
+    src/cpp/server/gguf_shard_utils.cpp
+    src/cpp/server/models/cloud_rows.cpp
+    src/cpp/server/models/recipe_option_layers.cpp
+    src/cpp/server/models/composition.cpp
+    src/cpp/server/models/store.cpp
+    src/cpp/server/models/store_builder.cpp
+    src/cpp/server/models/sync_service.cpp
+    src/cpp/server/models/update_scan.cpp
+    src/cpp/server/models/recipe_options_store.cpp
+    src/cpp/server/models/scan_catalog.cpp
+    src/cpp/server/models/registry_id.cpp
+    src/cpp/server/models/registry_descriptors.cpp
+    src/cpp/server/models/routing_parse_options.cpp
+    src/cpp/server/models/registry_repository.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/server_process.cpp
@@ -1056,9 +1093,11 @@ set(SOURCES_CORE
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/http_client.cpp
+    src/cpp/server/utils/json_file.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/safe_fs.cpp
     src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
@@ -2508,6 +2547,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
     add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
 endif()
 
+# The KV-header reader and the capability hints it may (and may not) take from
+# the arrays it walks past.
+set(_GGUF_READER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_reader.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GGUF_READER_TEST_SRC}")
+    add_executable(test_gguf_reader
+        test/cpp/test_gguf_reader.cpp
+    )
+    target_include_directories(test_gguf_reader PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_gguf_reader PRIVATE lemonade-server-core)
+    add_dependencies(test_gguf_reader copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(GgufReaderTest CI ON COMMAND test_gguf_reader)
+endif()
+
 # Per-model artifact selection and snapshot baselines used to decide whether an
 # upstream commit actually touches a downloaded model.
 set(_HF_UPDATE_CHECK_TEST_SRC
@@ -3002,6 +3061,341 @@ if(BUILD_TESTING AND EXISTS "${_EXTRA_MODEL_DISCOVERY_TEST_SRC}")
     add_cpp_ci_test(ExtraModelDiscoveryTest CI ON COMMAND test_extra_model_discovery)
 endif()
 
+set(_MODEL_CATALOG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_catalog.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_CATALOG_TEST_SRC}")
+    add_executable(test_model_catalog
+        test/cpp/test_model_catalog.cpp
+    )
+    target_link_libraries(test_model_catalog PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ModelCatalogTest CI ON COMMAND test_model_catalog)
+endif()
+
+set(_JSON_CATALOG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_json_catalog.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_JSON_CATALOG_TEST_SRC}")
+    add_executable(test_json_catalog
+        test/cpp/test_json_catalog.cpp
+    )
+    target_link_libraries(test_json_catalog PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(JsonCatalogTest CI ON COMMAND test_json_catalog)
+endif()
+
+set(_REGISTRY_DOCUMENTS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_documents.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_REGISTRY_DOCUMENTS_TEST_SRC}")
+    add_executable(test_registry_documents
+        test/cpp/test_registry_documents.cpp
+    )
+    target_link_libraries(test_registry_documents PRIVATE lemonade-server-core)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_registry_documents PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_cpp_ci_test(RegistryDocumentsTest CI ON COMMAND test_registry_documents)
+endif()
+
+# Update scanning: which models are eligible, and what a pass may settle.
+set(_UPDATE_SCAN_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_update_scan.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_UPDATE_SCAN_TEST_SRC}")
+    add_executable(test_update_scan
+        test/cpp/test_update_scan.cpp
+    )
+    target_link_libraries(test_update_scan PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(UpdateScanTest CI ON COMMAND test_update_scan)
+endif()
+
+# The update_available flag: what a scan publishes to the row a client reads.
+set(_UPDATE_AVAILABLE_FLAG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_update_available.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_UPDATE_AVAILABLE_FLAG_TEST_SRC}")
+    add_executable(test_update_available
+        test/cpp/test_update_available.cpp
+    )
+    target_link_libraries(test_update_available PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(UpdateAvailableFlagTest CI ON COMMAND test_update_available)
+endif()
+
+set(_DOWNLOAD_PLAN_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_plan.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_PLAN_TEST_SRC}")
+    add_executable(test_download_plan
+        test/cpp/test_download_plan.cpp
+    )
+    target_link_libraries(test_download_plan PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(DownloadPlanTest CI ON COMMAND test_download_plan)
+endif()
+
+set(_FILTER_HARDWARE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_filter_hardware.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_FILTER_HARDWARE_TEST_SRC}")
+    add_executable(test_filter_hardware
+        test/cpp/test_filter_hardware.cpp
+    )
+    target_link_libraries(test_filter_hardware PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(FilterHardwareTest CI ON COMMAND test_filter_hardware)
+endif()
+
+set(_STORE_PUBLICATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_publication.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_PUBLICATION_TEST_SRC}")
+    add_executable(test_store_publication
+        test/cpp/test_store_publication.cpp
+    )
+    target_link_libraries(test_store_publication PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(StorePublicationTest CI ON COMMAND test_store_publication)
+endif()
+
+set(_CHANGE_NOTIFIER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_change_notifier.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CHANGE_NOTIFIER_TEST_SRC}")
+    add_executable(test_change_notifier
+        test/cpp/test_change_notifier.cpp
+    )
+    target_link_libraries(test_change_notifier PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ChangeNotifierTest CI ON COMMAND test_change_notifier)
+endif()
+
+set(_REGISTRY_IDENTITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_identity.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_REGISTRY_IDENTITY_TEST_SRC}")
+    add_executable(test_registry_identity
+        test/cpp/test_registry_identity.cpp
+    )
+    target_link_libraries(test_registry_identity PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(RegistryIdentityTest CI ON COMMAND test_registry_identity)
+endif()
+
+set(_ARTIFACT_SOURCE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_source.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARTIFACT_SOURCE_TEST_SRC}")
+    add_executable(test_artifact_source
+        test/cpp/test_artifact_source.cpp
+    )
+    target_link_libraries(test_artifact_source PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ArtifactSourceTest CI ON COMMAND test_artifact_source)
+endif()
+
+set(_ENGINE_PROTOCOLS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_engine_protocols.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ENGINE_PROTOCOLS_TEST_SRC}")
+    add_executable(test_engine_protocols
+        test/cpp/test_engine_protocols.cpp
+    )
+    target_link_libraries(test_engine_protocols PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(EngineProtocolsTest CI ON COMMAND test_engine_protocols)
+endif()
+
+set(_FLM_PULL_ARGS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_pull_args.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_FLM_PULL_ARGS_TEST_SRC}")
+    add_executable(test_flm_pull_args
+        test/cpp/test_flm_pull_args.cpp
+    )
+    target_link_libraries(test_flm_pull_args PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(FlmPullArgsTest CI ON COMMAND test_flm_pull_args)
+endif()
+
+set(_ARTIFACT_LAYOUT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_layout.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARTIFACT_LAYOUT_TEST_SRC}")
+    add_executable(test_artifact_layout
+        test/cpp/test_artifact_layout.cpp
+    )
+    target_link_libraries(test_artifact_layout PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ArtifactLayoutTest CI ON COMMAND test_artifact_layout)
+endif()
+
+set(_ARTIFACT_RESOLVER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_resolver.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARTIFACT_RESOLVER_TEST_SRC}")
+    add_executable(test_artifact_resolver
+        test/cpp/test_artifact_resolver.cpp
+    )
+    target_link_libraries(test_artifact_resolver PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ArtifactResolverTest CI ON COMMAND test_artifact_resolver)
+endif()
+
+set(_CONFIGURED_CATALOG_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_configured_catalog.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIGURED_CATALOG_TEST_SRC}")
+    add_executable(test_configured_catalog
+        test/cpp/test_configured_catalog.cpp
+    )
+    target_link_libraries(test_configured_catalog PRIVATE lemonade-server-core)
+    add_dependencies(test_configured_catalog copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ConfiguredCatalogTest CI ON COMMAND test_configured_catalog)
+endif()
+
+set(_CATALOG_LOCATOR_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_catalog_locator.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CATALOG_LOCATOR_TEST_SRC}")
+    add_executable(test_catalog_locator
+        test/cpp/test_catalog_locator.cpp
+    )
+    target_link_libraries(test_catalog_locator PRIVATE lemonade-server-core)
+    add_dependencies(test_catalog_locator copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(CatalogLocatorTest CI ON COMMAND test_catalog_locator)
+endif()
+
+set(_CATALOG_SET_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_catalog_set.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CATALOG_SET_TEST_SRC}")
+    add_executable(test_catalog_set
+        test/cpp/test_catalog_set.cpp
+    )
+    target_link_libraries(test_catalog_set PRIVATE lemonade-server-core)
+    add_dependencies(test_catalog_set copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(CatalogSetTest CI ON COMMAND test_catalog_set)
+endif()
+
+set(_MODEL_SOURCE_DESCRIPTORS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_source_descriptors.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_SOURCE_DESCRIPTORS_TEST_SRC}")
+    add_executable(test_model_source_descriptors
+        test/cpp/test_model_source_descriptors.cpp
+    )
+    target_link_libraries(test_model_source_descriptors PRIVATE lemonade-server-core)
+    add_dependencies(test_model_source_descriptors copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelSourceDescriptorsTest CI ON COMMAND test_model_source_descriptors)
+endif()
+
+set(_MODEL_MANAGER_SHIM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_manager_shim.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
+    add_executable(test_model_manager_shim
+        test/cpp/test_model_manager_shim.cpp
+    )
+    target_link_libraries(test_model_manager_shim PRIVATE lemonade-server-core)
+    add_dependencies(test_model_manager_shim copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
+endif()
+
+set(_COMPOSITION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_composition.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_COMPOSITION_TEST_SRC}")
+    add_executable(test_composition
+        test/cpp/test_composition.cpp
+    )
+    target_link_libraries(test_composition PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(CompositionTest CI ON COMMAND test_composition)
+endif()
+
+set(_CLOUD_ROWS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_rows.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CLOUD_ROWS_TEST_SRC}")
+    add_executable(test_cloud_rows
+        test/cpp/test_cloud_rows.cpp
+    )
+    target_link_libraries(test_cloud_rows PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(CloudRowsTest CI ON COMMAND test_cloud_rows)
+endif()
+
+set(_STORE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_TEST_SRC}")
+    add_executable(test_store
+        test/cpp/test_store.cpp
+    )
+    target_link_libraries(test_store PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(StoreTest CI ON COMMAND test_store)
+endif()
+
+set(_STORE_BUILD_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_build.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_BUILD_TEST_SRC}")
+    add_executable(test_store_build
+        test/cpp/test_store_build.cpp
+    )
+    target_link_libraries(test_store_build PRIVATE lemonade-server-core)
+    add_dependencies(test_store_build copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(StoreBuildTest CI ON COMMAND test_store_build)
+endif()
+
+set(_MODEL_ENTRY_IDENTITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_entry_identity.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_ENTRY_IDENTITY_TEST_SRC}")
+    add_executable(test_model_entry_identity
+        test/cpp/test_model_entry_identity.cpp
+    )
+    target_link_libraries(test_model_entry_identity PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ModelEntryIdentityTest CI ON COMMAND test_model_entry_identity)
+endif()
+
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_download_state.cpp"
 )
@@ -3043,6 +3437,30 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
     add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
 endif()
 
+# Which memory a reported device can offer a model, and what the availability
+# probe answers for the rest of the machine.
+set(_HOST_AVAILABILITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_host_availability.cpp")
+if(BUILD_TESTING AND EXISTS "${_HOST_AVAILABILITY_TEST_SRC}")
+    add_executable(test_host_availability test/cpp/test_host_availability.cpp)
+    target_link_libraries(test_host_availability PRIVATE lemonade-server-core)
+    add_dependencies(test_host_availability copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(HostAvailabilityTest CI ON COMMAND test_host_availability)
+endif()
+
+# The name tables a store build derives from its model set: precedence winners,
+# listed ids, and what a shadowed entry falls back to.
+set(_ALIAS_MAPS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_alias_maps.cpp")
+if(BUILD_TESTING AND EXISTS "${_ALIAS_MAPS_TEST_SRC}")
+    add_executable(test_alias_maps test/cpp/test_alias_maps.cpp)
+    target_link_libraries(test_alias_maps PRIVATE lemonade-server-core)
+    add_dependencies(test_alias_maps copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(AliasMapsTest CI ON COMMAND test_alias_maps)
+endif()
+
 # Streaming memory filter: backends that stream the model from storage are
 # size-filtered on their resident working set vs the device pool, not full size.
 set(_STREAMING_MEM_FILTER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_memory_filter.cpp")
@@ -3079,6 +3497,61 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_ALIAS_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelAliasTest CI ON COMMAND test_model_alias)
+endif()
+
+# Deletion semantics per checkpoint source.
+set(_MODEL_DELETION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_deletion.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_DELETION_TEST_SRC}")
+    add_executable(test_model_deletion test/cpp/test_model_deletion.cpp)
+    target_link_libraries(test_model_deletion PRIVATE lemonade-server-core)
+    add_dependencies(test_model_deletion copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelDeletionTest CI ON COMMAND test_model_deletion)
+endif()
+
+# What each backend says its models need fetched.
+set(_DOWNLOAD_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_policy.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_POLICY_TEST_SRC}")
+    add_executable(test_download_policy test/cpp/test_download_policy.cpp)
+    target_link_libraries(test_download_policy PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(DownloadPolicyTest CI ON COMMAND test_download_policy)
+endif()
+
+# Golden of the published model cache plus the file inventory and orphan sweep, the
+# three build_cache() readers that later steps rewrite.
+set(_STORE_SNAPSHOT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_snapshot.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_SNAPSHOT_TEST_SRC}")
+    add_executable(test_store_snapshot test/cpp/test_store_snapshot.cpp)
+    target_link_libraries(test_store_snapshot PRIVATE lemonade-server-core)
+    add_dependencies(test_store_snapshot copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(StoreSnapshotTest CI ON COMMAND test_store_snapshot)
+endif()
+
+# recipe_options.json persistence: key migration, replace/merge CRUD and read-back.
+# Written against the pre-extraction ModelManager so step 1 cannot move behaviour.
+set(_RECIPE_OPTIONS_PERSISTENCE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_options_persistence.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RECIPE_OPTIONS_PERSISTENCE_TEST_SRC}")
+    add_executable(test_recipe_options_persistence
+        test/cpp/test_recipe_options_persistence.cpp
+    )
+    target_link_libraries(test_recipe_options_persistence PRIVATE lemonade-server-core)
+    add_dependencies(test_recipe_options_persistence copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RecipeOptionsPersistenceTest CI ON COMMAND test_recipe_options_persistence)
 endif()
 
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's

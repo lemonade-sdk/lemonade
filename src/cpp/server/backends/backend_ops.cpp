@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <filesystem>
+#include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/models/artifact_ref.h"
+#include "lemon/models/artifact_store.h"
 #include "lemon/utils/path_utils.h"
 
 namespace fs = std::filesystem;
@@ -18,11 +22,10 @@ using lemon::utils::path_to_utf8;
 // falling back to the main repo and finally the model cache directory.
 std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const {
-    (void)info;
-
-    // NPU side-cache checkpoints have no resolvable local file here (the backend
-    // that uses them resolves them itself at load time).
-    if (ctx.type == "npu_cache") {
+    // A checkpoint that lives in no snapshot of its own — a side cache placed beside
+    // the file it was built for — has nothing to find here. The source that fetches
+    // it knows where it lands.
+    if (checkpoint_layout(models::CheckpointRef{info.model_name, ctx.type}) != nullptr) {
         return "";
     }
 
@@ -112,17 +115,25 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
 }
 
 bool BackendOps::is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const {
-    // Default: the shared registry checkpoint-completeness check.
-    return ctx.model_manager != nullptr && ctx.model_manager->checkpoints_complete(info);
+    return ctx.artifacts != nullptr && ctx.artifacts->complete(info);
+}
+
+DownloadPolicy BackendOps::plan_download(const ModelInfo& info,
+                                         const BackendOpsContext&) const {
+    const lemon::BackendDescriptor* descriptor = descriptor_for(info.recipe);
+    if (descriptor != nullptr && descriptor->self_manages_downloads) {
+        return DownloadPolicy::SelfManaged;
+    }
+    return DownloadPolicy::Repository;
 }
 
 void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
                                 DownloadProgressCallback progress, const BackendOpsContext& ctx) const {
-    // Default: the shared remote-registry download engine.
     (void)do_not_upgrade;
-    if (ctx.model_manager != nullptr) {
-        ctx.model_manager->download_from_registry_engine(info, progress);
+    if (ctx.fetch == nullptr) {
+        throw std::runtime_error("No fetch service for " + info.checkpoint());
     }
+    ctx.fetch->fetch_registry_artifacts(info, progress);
 }
 
 const BackendOps* default_backend_ops() {

@@ -1,4 +1,4 @@
-#include "lemon/alias_manager.h"
+#include "lemon/models/alias_manager.h"
 #include "lemon/utils/path_utils.h"
 
 #include <chrono>
@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace fs = std::filesystem;
-using lemon::AliasManager;
+using lemon::models::AliasManager;
 
 static int g_failures = 0;
 
@@ -141,6 +141,31 @@ static void test_alias_disk_cycle_pruning() {
     fs::remove_all(temp_dir, ec);
 }
 
+// /internal/aliases and the alias rows of /v1/models serialize this map directly,
+// so the order it iterates in is the order a client sees.
+static void test_alias_listing_is_sorted() {
+    fs::path temp_dir = make_temp_dir();
+    AliasManager mgr(temp_dir.string());
+    std::string err;
+    check("sorted: set zebra", mgr.set_alias("zebra", "Qwen3-8B-GGUF", err));
+    check("sorted: set coding", mgr.set_alias("coding", "Qwen3-8B-GGUF", err));
+    check("sorted: set alpha", mgr.set_alias("alpha", "Qwen3-8B-GGUF", err));
+
+    std::vector<std::string> listed;
+    for (const auto& [name, target] : mgr.get_all_aliases()) {
+        listed.push_back(name);
+    }
+    check("get_all_aliases iterates in name order",
+          listed == std::vector<std::string>{"alpha", "coding", "zebra"});
+
+    AliasManager reloaded(temp_dir.string());
+    std::vector<std::string> again;
+    for (const auto& [name, target] : reloaded.get_all_aliases()) {
+        again.push_back(name);
+    }
+    check("reloaded listing is sorted too", again == listed);
+}
+
 int main() {
     std::printf("Running Standalone AliasManager Unit Tests...\n");
 
@@ -149,6 +174,7 @@ int main() {
     test_alias_corrupted_json_recovery();
     test_alias_manager_standalone_resolution();
     test_alias_disk_cycle_pruning();
+    test_alias_listing_is_sorted();
 
     if (g_failures > 0) {
         std::printf("\n!!! %d TEST(S) FAILED !!!\n", g_failures);

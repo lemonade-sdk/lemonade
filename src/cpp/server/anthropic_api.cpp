@@ -410,6 +410,7 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
     json openai_req;
 
     std::string model = normalize_model_name(anthropic_request.value("model", ""));
+    model = model_manager_->canonical_for_request(model);
     openai_req["model"] = model;
 
     json messages = json::array();
@@ -1146,6 +1147,7 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         std::vector<std::string> warnings;
 
         std::string model = normalize_model_name(request_json.value("model", ""));
+        model = model_manager_->canonical_for_request(model);
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"type":"error","error":{"type":"invalid_request_error","message":"model is required"}})", "application/json");

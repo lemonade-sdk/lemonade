@@ -1,5 +1,7 @@
 #include "lemon/model_registry.h"
 
+#include "lemon/models/registry_id.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -259,7 +261,7 @@ std::uint64_t registry_search_total(const json& body, std::uint64_t fallback) {
     return total;
 }
 
-std::string registry_search_status_message(RemoteRegistrySource source,
+std::string registry_search_status_message(RegistryId source,
                                            int status_code,
                                            const std::string& response_body) {
     std::string message;
@@ -358,8 +360,8 @@ void ensure_modelscope_success(const json& body, const std::string& repo_id) {
 
 class HuggingFaceRegistry final : public ModelRegistry {
 public:
-    RemoteRegistrySource source() const override {
-        return RemoteRegistrySource::HuggingFace;
+    RegistryId source() const override {
+        return models::huggingface_descriptor().id;
     }
 
     std::string default_revision() const override { return "main"; }
@@ -441,8 +443,8 @@ public:
 
 class ModelScopeRegistry final : public ModelRegistry {
 public:
-    RemoteRegistrySource source() const override {
-        return RemoteRegistrySource::ModelScope;
+    RegistryId source() const override {
+        return models::modelscope_descriptor().id;
     }
 
     std::string default_revision() const override { return "master"; }
@@ -537,7 +539,7 @@ private:
 }  // namespace
 
 RegistrySearchResult normalize_registry_search_result(
-    RemoteRegistrySource source,
+    RegistryId source,
     const nlohmann::json& metadata) {
     RegistrySearchResult result;
     result.source = source;
@@ -602,11 +604,11 @@ RegistrySearchResult normalize_registry_search_result(
 }
 
 RegistrySearchResponse normalize_registry_search_response(
-    RemoteRegistrySource source,
+    RegistryId source,
     const nlohmann::json& body,
     std::size_t limit) {
     limit = std::clamp<std::size_t>(limit, 1, 50);
-    if (source == RemoteRegistrySource::ModelScope) {
+    if (source == models::modelscope_descriptor().id) {
         ensure_modelscope_success(body, "model search");
     }
 
@@ -691,14 +693,14 @@ std::optional<json> fetch_huggingface_compatibility_metadata(
         endpoint, repo_id, revision) +
         "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag";
     const auto response = HttpClient::get(
-        url, model_registry(RemoteRegistrySource::HuggingFace).auth_headers());
+        url, model_registry(models::huggingface_descriptor().id).auth_headers());
     return parse_huggingface_compatibility_response(
         response.status_code,
         response.body,
         is_official_huggingface_endpoint(endpoint));
 }
 
-RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
+RegistrySearchResponse search_registry_models(RegistryId source,
                                               const std::string& query,
                                               std::size_t limit,
                                               bool gguf_only) {
@@ -713,7 +715,7 @@ RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
 
     std::string endpoint;
     std::vector<SearchRequest> requests;
-    if (source == RemoteRegistrySource::HuggingFace) {
+    if (source == models::huggingface_descriptor().id) {
         endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
         if (endpoint.empty()) endpoint = "https://huggingface.co";
         std::string url = endpoint + "/api/models?search=" + percent_encode(query) +
@@ -756,7 +758,7 @@ RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
 
     RegistrySearchResponse merged;
     for (const auto& request : requests) {
-        if (source == RemoteRegistrySource::ModelScope && gguf_only && request.optional) {
+        if (source == models::modelscope_descriptor().id && gguf_only && request.optional) {
             const std::size_t confirmed = static_cast<std::size_t>(std::count_if(
                 merged.results.begin(), merged.results.end(),
                 [](const RegistrySearchResult& model) { return model.has_gguf; }));
@@ -811,44 +813,70 @@ RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
     return merged;
 }
 
-RemoteRegistrySource parse_remote_registry_source(const std::string& source) {
-    const std::string normalized = lower_copy(source);
-    if (normalized.empty() || normalized == "huggingface" || normalized == "hf") {
-        return RemoteRegistrySource::HuggingFace;
+// Everything reaching this point has already resolved its spelling, so an id
+// with no descriptor is a caller that invented one.
+const models::RegistryDescriptor& require_descriptor(const RegistryId& id) {
+    const models::RegistryDescriptor* descriptor = models::descriptor_for(id);
+    if (descriptor == nullptr) {
+        throw std::invalid_argument("Unsupported model source '" + id.str() + "'");
     }
-    if (normalized == "modelscope" || normalized == "ms") {
-        return RemoteRegistrySource::ModelScope;
+    return *descriptor;
+}
+
+RegistryId parse_remote_registry_source(const std::string& source) {
+    const auto id = models::registry_id_from(source);
+    if (id == models::huggingface_descriptor().id) {
+        return models::huggingface_descriptor().id;
+    }
+    if (id == models::modelscope_descriptor().id) {
+        return models::modelscope_descriptor().id;
     }
     throw std::invalid_argument("Unsupported model source '" + source +
                                 "' (expected 'huggingface' or 'modelscope')");
 }
 
-std::string remote_registry_source_name(RemoteRegistrySource source) {
-    return source == RemoteRegistrySource::ModelScope ? "modelscope" : "huggingface";
+std::string remote_registry_source_name(RegistryId source) {
+    return require_descriptor(source).id.str();
 }
 
-std::string remote_registry_display_name(RemoteRegistrySource source) {
-    return source == RemoteRegistrySource::ModelScope ? "ModelScope" : "Hugging Face";
+std::string remote_registry_display_name(RegistryId source) {
+    return require_descriptor(source).display_name;
+}
+
+std::string remote_registry_scheme_prefix(RegistryId source) {
+    return require_descriptor(source).scheme_prefix;
+}
+
+bool is_local_origin(const std::string& source) {
+    static const std::vector<std::string> kTokens = {
+        local_origin::upload, local_origin::path, local_origin::extra_models_dir};
+    return std::find(kTokens.begin(), kTokens.end(), source) != kTokens.end();
+}
+
+const std::vector<std::string>& local_origin_tokens() {
+    static const std::vector<std::string> kTokens = {
+        local_origin::upload, local_origin::path, local_origin::extra_models_dir};
+    return kTokens;
 }
 
 bool is_remote_registry_source(const std::string& source) {
-    const std::string normalized = lower_copy(source);
-    return normalized == "huggingface" || normalized == "hf" ||
-           normalized == "modelscope" || normalized == "ms";
+    // Unlike parse, which reads an absent source as the default host, this asks
+    // whether the caller named one.
+    return !source.empty() && models::registry_id_from(source).has_value();
 }
 
 bool detect_registry_url(const std::string& value,
-                         RemoteRegistrySource& out_source,
+                         RegistryId& out_source,
                          std::string& out_repo_id) {
-    static const std::initializer_list<std::pair<const char*, RemoteRegistrySource>> prefixes = {
-        {"https://huggingface.co/", RemoteRegistrySource::HuggingFace},
-        {"http://huggingface.co/", RemoteRegistrySource::HuggingFace},
-        {"https://modelscope.cn/models/", RemoteRegistrySource::ModelScope},
-        {"https://www.modelscope.cn/models/", RemoteRegistrySource::ModelScope},
-        {"http://modelscope.cn/models/", RemoteRegistrySource::ModelScope},
-        {"http://www.modelscope.cn/models/", RemoteRegistrySource::ModelScope},
-        {"https://modelscope.ai/models/", RemoteRegistrySource::ModelScope},
-        {"https://www.modelscope.ai/models/", RemoteRegistrySource::ModelScope},
+    static const std::initializer_list<std::pair<const char*, RegistryId>> prefixes = {
+        {"https://huggingface.co/", models::huggingface_descriptor().id},
+        {"http://huggingface.co/", models::huggingface_descriptor().id},
+        {"https://modelscope.cn/models/", models::modelscope_descriptor().id},
+        {"https://www.modelscope.cn/models/", models::modelscope_descriptor().id},
+        {"http://modelscope.cn/models/", models::modelscope_descriptor().id},
+        {"http://www.modelscope.cn/models/", models::modelscope_descriptor().id},
+        {"https://modelscope.ai/models/", models::modelscope_descriptor().id},
+        {"https://www.modelscope.ai/models/", models::modelscope_descriptor().id},
     };
     for (const auto& [prefix, source] : prefixes) {
         const std::string prefix_str(prefix);
@@ -875,7 +903,7 @@ namespace {
 // Returns the caller's explicitly named remote registry, if any. Non-registry
 // `source` values (local_upload/local_path/…) are ignored so only genuine
 // registry provenance participates in provider-URL conflict checks.
-std::optional<RemoteRegistrySource> explicit_registry_source(const json& request_json) {
+std::optional<RegistryId> explicit_registry_source(const json& request_json) {
     if (request_json.contains("registry_source") &&
         request_json["registry_source"].is_string()) {
         return parse_remote_registry_source(
@@ -919,9 +947,7 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     }
     if (request_json.contains("source") && request_json["source"].is_string()) {
         const auto& src = request_json["source"].get<std::string>();
-        if (!is_remote_registry_source(src) &&
-            src != "local_upload" && src != "local_path" &&
-            src != "extra_models_dir") {
+        if (!is_remote_registry_source(src) && !is_local_origin(src)) {
             throw std::invalid_argument(
                 "Unsupported model source '" + src +
                 "' (expected remote registry or local import type)");
@@ -949,15 +975,15 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     }
     if (primary_slot == nullptr || primary_slot->empty()) return;
 
-    std::optional<RemoteRegistrySource> explicit_source =
+    std::optional<RegistryId> explicit_source =
         explicit_registry_source(request_json);
 
     // A provider URL is authoritative for its registry. Normalize every
     // registry-backed checkpoint to owner/repo, enforce a single registry across
     // the whole model, and reject a URL that contradicts an explicit source.
-    std::optional<RemoteRegistrySource> url_source;
+    std::optional<RegistryId> url_source;
     for (std::string* slot : checkpoint_slots) {
-        RemoteRegistrySource detected;
+        RegistryId detected;
         std::string repo_id;
         if (!detect_registry_url(*slot, detected, repo_id)) continue;
         *slot = repo_id;
@@ -986,7 +1012,7 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     if (url_source && !explicit_source &&
         request_json.contains("registry_source") &&
         request_json["registry_source"].is_string()) {
-        RemoteRegistrySource registry_parsed =
+        RegistryId registry_parsed =
             parse_remote_registry_source(
                 request_json["registry_source"].get<std::string>());
         if (*url_source != registry_parsed) {
@@ -1019,27 +1045,25 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     request_json["source"] = default_source;
 }
 
-std::string registry_tree_snapshot_id(RemoteRegistrySource source,
+std::string registry_tree_snapshot_id(RegistryId source,
                                       const std::string& revision,
                                       const std::vector<RegistryFile>& files) {
     return tree_snapshot_id(remote_registry_source_name(source), revision, files);
 }
 
 std::string registry_repo_cache_dir_name(const std::string& repo_id,
-                                         RemoteRegistrySource source) {
-    std::string cache_dir_name = source == RemoteRegistrySource::ModelScope
-        ? "modelscope--models--"
-        : "models--";
+                                         RegistryId source) {
+    std::string cache_dir_name = require_descriptor(source).cache_dir_prefix;
     for (char c : repo_id) {
         cache_dir_name += (c == '/') ? "--" : std::string(1, c);
     }
     return cache_dir_name;
 }
 
-const ModelRegistry& model_registry(RemoteRegistrySource source) {
+const ModelRegistry& model_registry(RegistryId source) {
     static const HuggingFaceRegistry huggingface;
     static const ModelScopeRegistry modelscope;
-    return source == RemoteRegistrySource::ModelScope
+    return source == models::modelscope_descriptor().id
         ? static_cast<const ModelRegistry&>(modelscope)
         : static_cast<const ModelRegistry&>(huggingface);
 }

@@ -169,6 +169,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class should b
 | `src/cpp/resources/server_models.json` | Model registry |
 | `src/cpp/resources/backend_versions.json` | Backend version pins |
 | `docs/tools/gen_backend_boilerplate.py` | Regenerates committed artifacts from the C++ backend descriptors. Outputs: the whole of `src/cpp/resources/defaults.json` (per-recipe sections only; global keys stay hand-maintained in that file), and `<!-- BEGIN/END GENERATED -->` regions in `docs/dev/backends-reference.md`, root `README.md`, `docs/guide/cli.md`, `docs/guide/configuration/{README,multi-model,custom-models}.md`, and `docs/assets/models.js`. Don't hand-edit those regions/sections; CI runs `--check` and fails on drift. |
+| `docs/tools/gen_model_source_boilerplate.py` | Regenerates the model-source doc regions (`docs/dev/model-registries.md`, the catalog/`--source` regions of `docs/guide/configuration/custom-models.md` and `docs/guide/cli.md`) from the live `GET /internal/model-sources` payload. Facts come from `RegistryDescriptor` and `CatalogDescriptor`; rows whose `CatalogDescriptor.host_specific` is true vary by machine and are never written to a committed page. CI runs `--check` and fails on drift. |
 | `src/cpp/server/anthropic_api.cpp` | Anthropic API compatibility |
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
 | `src/cpp/server/mcp_server.cpp` | MCP gateway (POST /mcp) |
