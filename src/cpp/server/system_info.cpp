@@ -2128,9 +2128,116 @@ std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_fami
     return "";
 }
 
+// On a heterogeneous AMD host ROCR_VISIBLE_DEVICES pins the HIP runtime to a subset of the
+// physical GPUs, but the device detection below still enumerates every GPU KFD exposes, so
+// the first-discrete-by-name pick can select the wrong ISA family's lib set (e.g. the
+// gfx1201 TheRock) while the model runs on a pinned gfx1100 GPU. ROCR/HIP orders devices by
+// PCI BDF ascending, which is exactly the KFD topology nodes sorted by `location_id`, so
+// ROCR device N == the Nth GPU node in location_id order; this maps a visible index to its
+// gfx arch by reading the KFD topology at runtime. Returns "" when ROCR_VISIBLE_DEVICES is
+// unset/empty or the index can't be resolved, in which case the caller falls back to the
+// existing first-discrete-wins behavior.
+static std::string rocm_arch_for_visible_devices() {
+    const char* visible = std::getenv("ROCR_VISIBLE_DEVICES");
+    if (visible == nullptr || visible[0] == '\0') {
+        return "";
+    }
+    // Take the first (lowest) visible index — the arch is read from that device.
+    int first_index = -1;
+    {
+        const std::string s(visible);
+        size_t start = 0;
+        while (start < s.size()) {
+            const size_t comma = s.find(',', start);
+            std::string token =
+                s.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            const size_t b = token.find_first_not_of(" \t");
+            const size_t e = token.find_last_not_of(" \t");
+            if (b != std::string::npos) {
+                try {
+                    first_index = std::stoi(token.substr(b, e - b + 1));
+                    break;  // first listed index wins
+                } catch (const std::exception&) {
+                }
+            }
+            if (comma == std::string::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
+    }
+    if (first_index < 0) {
+        return "";
+    }
+
+    const fs::path nodes_dir = "/sys/class/kfd/kfd/topology/nodes";
+    std::error_code ec;
+    if (!fs::is_directory(nodes_dir, ec)) {
+        return "";
+    }
+
+    struct GpuNode {
+        long long location_id;
+        std::string arch;
+    };
+    std::vector<GpuNode> gpus;
+    for (fs::directory_iterator it(nodes_dir, ec), end; it != end && !ec; it.increment(ec)) {
+        if (!it->is_directory(ec)) {
+            continue;
+        }
+        std::ifstream props(it->path() / "properties");
+        if (!props.is_open()) {
+            continue;
+        }
+        std::string line;
+        std::string gfx_target_version;
+        std::string location_id_str;
+        while (std::getline(props, line)) {
+            const size_t space = line.find(' ');
+            if (space == std::string::npos) {
+                continue;
+            }
+            const std::string key = line.substr(0, space);
+            std::string value = line.substr(space + 1);
+            const size_t ve = value.find_last_not_of(" \t\n\r");
+            value = ve == std::string::npos ? "" : value.substr(0, ve + 1);
+            if (key == "gfx_target_version") {
+                gfx_target_version = value;
+            } else if (key == "location_id") {
+                location_id_str = value;
+            }
+        }
+        // The CPU node reports gfx_target_version 0 -> "gfx000"; skip anything that is not
+        // a real GPU ISA.
+        const std::string arch = system_info_detail::gfx_target_version_to_arch(gfx_target_version);
+        if (arch.empty() || arch == "gfx000") {
+            continue;
+        }
+        long long location_id = 0;
+        try {
+            location_id = std::stoll(location_id_str);
+        } catch (const std::exception&) {
+            continue;
+        }
+        gpus.push_back({location_id, arch});
+    }
+    if (static_cast<int>(gpus.size()) <= first_index) {
+        return "";
+    }
+    std::sort(gpus.begin(), gpus.end(),
+              [](const GpuNode& a, const GpuNode& b) { return a.location_id < b.location_id; });
+    return gpus[static_cast<size_t>(first_index)].arch;
+}
+
 std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
     if (!amd_gpu_devices.is_array()) {
         return "";
+    }
+    // Respect ROCR_VISIBLE_DEVICES: on a heterogeneous AMD host the pinned devices may be a
+    // different ISA family than the first discrete GPU by name. See the helper above.
+    const std::string visible_arch = rocm_arch_for_visible_devices();
+    if (!visible_arch.empty()) {
+        return visible_arch;
     }
     // The device array is iGPU-first, so taking the first supported match would pick the
     // APU on a hybrid host. Prefer a discrete GPU; fall back to integrated.
