@@ -554,19 +554,16 @@ private:
     std::unique_ptr<models::CatalogSet> catalog_set_;
     std::shared_ptr<const models::CatalogFetchClock> catalog_fetch_clock_ =
         std::make_shared<models::CatalogFetchClock>();
+    // The writer-side model set.
     mutable std::map<std::string, ModelInfo> models_cache_;
-    mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
-    mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
-// Why each model was hidden, and which recipes lost their whole set.
-    std::shared_ptr<const models::FilterReasons> hardware_filter_;
 
-    // Immutable view of the fields above. Written under models_cache_mutex_,
-    // read with atomic load/store rather than under it.
+    // Immutable view of that set and the tables derived from it, read with an
+    // atomic load rather than under the lock that guards the set.
     std::shared_ptr<const models::StoreSnapshot> store_snapshot_;
     std::uint64_t store_generation_ = 0;
 
-    // Requires models_cache_mutex_ held; StoreWrite calls it on scope exit.
-    void publish_store_locked();
+    // Publishes `models_cache_`; see its definition for what is derived there.
+    void publish_store_locked(std::shared_ptr<const models::FilterReasons> reasons);
 
   public:
 // Locks the store and publishes on release, so a mutating path cannot forget to
@@ -592,7 +589,6 @@ private:
 
     void publish_update_scan(const models::ScanDetermination& settled,
                              models::UpdateScanResult& result);
-    void rebuild_public_model_aliases_locked();
 
     // Declared last so it dies first: the worker joins before the store it
     // publishes to does.

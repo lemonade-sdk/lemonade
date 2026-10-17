@@ -29,6 +29,7 @@ namespace fs = std::filesystem;
 using lemon::ModelInfo;
 using lemon::ModelManager;
 using lemon::ModelManagerConfig;
+using lemon::RecipeOptions;
 using lemon::models::CatalogAccumulator;
 using lemon::models::CatalogDescriptor;
 using lemon::models::EnumeratedCatalog;
@@ -190,6 +191,14 @@ static void test_the_commit_publishes_the_filter_reasons() {
           models.count("Present-Model") == 1 && models.count("Absent-Model") == 0);
     check("the rebuild published why it is not listed",
           !manager.get_model_filter_reason("Absent-Model").empty());
+
+    // A patch says nothing about hardware fit, so the table the rebuild computed
+    // is the one that stays published.
+    ModelInfo present = manager.get_model_info("Present-Model");
+    present.recipe_options = RecipeOptions("llamacpp", json{{"ctx_size", 1024}});
+    manager.save_model_options(present);
+    check("a patch to one row keeps the table of what the host cannot run",
+          !manager.get_model_filter_reason("Absent-Model").empty());
 }
 
 // Rebuilds serialize, so concurrent readers pay for one.
@@ -266,12 +275,36 @@ static void test_collections_follow_their_components() {
           lemon::models::collection_states_after_component(plain_rows, "comp", true).empty());
 }
 
+// The names a reader is given are derived when the store publishes, so a write that
+// changes the set cannot leave a name pointing at a model that is no longer there.
+static void test_the_published_names_follow_the_set() {
+    HeldCatalog held("names", {row("Alpha")});
+    ModelManager manager(fixture(held));
+    manager.get_supported_models();
+
+    check("the built-in answers to its bare name",
+          manager.resolve_model_name("Alpha") == "Alpha");
+
+    manager.register_user_model("user.Alpha", json{{"model_name", "user.Alpha"},
+                                                   {"recipe", "llamacpp"},
+                                                   {"checkpoint", "someone/Alpha:main.gguf"}});
+    manager.get_supported_models();  // the registration invalidated the set
+    check("the registration wins the bare name",
+          manager.resolve_model_name("Alpha") == "user.Alpha");
+
+    manager.delete_model("user.Alpha");
+    check("with the registration gone the built-in answers to the bare name again",
+          manager.resolve_model_name("Alpha") == "Alpha");
+    check("nothing resolves to the deleted model", !manager.model_exists("user.Alpha"));
+}
+
 int main() {
     test_a_writer_answers_during_a_rebuild();
     test_a_write_during_a_rebuild_survives_it();
     test_the_commit_publishes_the_filter_reasons();
     test_concurrent_readers_compose_once();
     test_collections_follow_their_components();
+    test_the_published_names_follow_the_set();
 
     if (g_failures == 0) {
         std::printf("All store build tests passed.\n");
