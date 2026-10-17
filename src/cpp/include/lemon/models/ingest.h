@@ -22,6 +22,8 @@ struct ModelInfo;
 
 namespace models {
 
+class ModelStore;
+
 class ModelArtifactStore;
 
 // Collection files name components by public name while a definition may carry the
@@ -49,9 +51,11 @@ class ModelIngest : public ArtifactFetchService {
         std::function<std::map<std::string, std::filesystem::path>(const std::string&)>
             resolved_paths;
 
-        // Registration, and keeping the published set in step with it.
-        std::function<void(const std::string&, const nlohmann::json&)> register_model;
-        std::function<void(const std::string&)> unregister_model;
+        // The user registry and the published set it keeps in step: a registration
+        // writes the entry and invalidates the store in one move.
+        RegistryDocuments* registries;
+        ModelStore* store;
+        std::function<void()> models_changed;
         std::function<void(const std::string&, bool)> patch_downloaded;
         std::function<void()> invalidate;
         std::function<void(const std::string&)> persist_size;
@@ -73,6 +77,14 @@ class ModelIngest : public ArtifactFetchService {
                                                    const nlohmann::json& model_data);
 
     // Register a definition and its recipe options without fetching anything.
+    // Writes, and forgets, a user registration. Each keeps the published set in step:
+    // the entry and the invalidation are one move, so no reader can see one without the
+    // other. A router collection also reconciles the routing-helper working set.
+    void register_user_model(const std::string& model_name, const nlohmann::json& model_data,
+                             const std::string& source = "");
+    void unregister_user_model(const std::string& model_name);
+    void forget_registered_model(const std::string& canonical_model_name);
+
     void register_model(const std::string& model_name, const nlohmann::json& model_data,
                         bool allow_missing_checkpoint, bool replace_existing);
 

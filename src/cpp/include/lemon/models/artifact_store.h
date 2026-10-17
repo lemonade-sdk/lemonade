@@ -125,6 +125,9 @@ class ModelArtifactStore {
     // them.
     static std::uint64_t size_bytes(const std::filesystem::path& path);
 
+    // Replace a model's registry size with what its checkpoints actually occupy.
+    static void refresh_on_disk_size(ModelInfo& info);
+
     // What the model's resolved checkpoints look like on disk.
     std::vector<ModelFileInfo> list_files(const ModelInfo& info) const;
 

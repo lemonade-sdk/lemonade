@@ -1059,6 +1059,8 @@ set(SOURCES_CORE
     src/cpp/server/models/configured_catalog.cpp
     src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/model_index.cpp
+    src/cpp/server/gguf_shard_utils.cpp
+    src/cpp/server/models/cloud_rows.cpp
     src/cpp/server/models/store.cpp
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/sync_service.cpp
@@ -3326,6 +3328,19 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
+endif()
+
+set(_CLOUD_ROWS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_rows.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CLOUD_ROWS_TEST_SRC}")
+    add_executable(test_cloud_rows
+        test/cpp/test_cloud_rows.cpp
+    )
+    target_link_libraries(test_cloud_rows PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(CloudRowsTest CI ON COMMAND test_cloud_rows)
 endif()
 
 set(_STORE_TEST_SRC

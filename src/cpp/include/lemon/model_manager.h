@@ -24,6 +24,7 @@
 #include "models/catalog_descriptor.h"
 #include "models/catalog_fetch_clock.h"
 #include "models/change_notifier.h"
+#include "models/cloud_rows.h"
 #include "models/download_progress.h"
 #include "models/ingest.h"
 #include "models/registry_documents.h"
@@ -265,14 +266,14 @@ public:
     // provider's entries (drop-then-add semantics). No-op + warning if the
     // provider has no resolvable key. Returns the number of models present
     // after refresh. Throws never — errors logged, empty result returned.
-    size_t refresh_cloud_models(const std::string& provider);
+    std::size_t refresh_cloud_models(const std::string& provider);
 
     // Drop every cached model for one provider (used by uninstall). Returns
     // the count removed. Doesn't touch the registry — caller already did.
-    size_t evict_cloud_models(const std::string& provider);
+    std::size_t evict_cloud_models(const std::string& provider);
 
     // Count of currently-cached cloud models for a provider. For system-info.
-    size_t count_cloud_models(const std::string& provider) const;
+    std::size_t count_cloud_models(const std::string& provider) const;
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
@@ -591,6 +592,8 @@ private:
     // Fetches registry bytes; also the ArtifactFetchService the backends ask.
     std::unique_ptr<models::ModelIngest> ingest_;
     models::SyncService sync_;
+    // A provider's rows in that store, for the moments that cannot wait for a build.
+    models::CloudRows cloud_rows_;
 };
 
 } // namespace lemon
