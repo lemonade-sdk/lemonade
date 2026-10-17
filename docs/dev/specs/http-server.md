@@ -166,6 +166,7 @@ public:
     using ApiRoute::ApiRoute;
     void handle(RouteRequest& req, httplib::Response& res) final;  // resolve, validate, load, run
 protected:
+    virtual const RouteArg& model_arg() const = 0;  // the argument that names the model
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
 };
@@ -186,7 +187,8 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 This section defines how `ApiRoute::serve()` checks a request against the route's `RouteArg`s before it calls `handle()`, so a handler never receives a value its schema does not allow.
 
 - **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument, and for a `Form` route, `ModelRoute` checks every `Form` argument once it has built `req.body`. A `required` argument or file must be present, and a value must match its schema's `type`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength` and `pattern`, as must each value nested in it under `items`, `properties` or `additionalProperties`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
-- **Aliases.** A client may send an argument under any of its `aliases`. `serve()` reads the argument from the first spelling that has a value, the name and then each alias in order, checks only that value, and drops the other spellings unchecked. It renames an alias to the argument's name, so a handler reads only the name. An empty string is not a value when another spelling has one. The docs list the aliases beside the name.
+- **Aliases.** A client may send an argument under any of its `aliases`. `serve()` reads the argument from the first spelling that has a value, the name and then each alias in order, checks only that value, and drops the other spellings unchecked. It renames an alias to the argument's name, so the request holds each argument under one name. An empty string is not a value when another spelling has one. The docs list the aliases beside the name.
+- **Reading arguments.** Each argument is a `RouteArg` constant beside its handler, and `spec()` lists it, as it lists each `RouteError` (see [Errors](#errors)). After `serve()` resolves the aliases, route code names an argument only through its constant: `req.has(kStream)`, `req.value(kStream, false)` and `req.arg(kMessages)` read it from the place its `in` names, with query and path values converted to the schema's type, and `req.body[kModel.name]` changes a body value the route forwards. No route code spells an argument's name or aliases. A shared helper is handed values rather than the request, unless it reads the body as a document in another component's format, such as a model definition, recipe options, or an OpenAI request forwarded to a backend; those keys belong to that format.
 - **Ignored values.** An argument marked `drop_invalid` has a value that fails its schema removed, as if the client had not sent it, instead of answered with `kArgInvalid`.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
@@ -198,10 +200,16 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 | `Anthropic` | `{"type": "error", "error": {"type": "invalid_request_error", "message", "code"}}` |
 
 ```cpp
-{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
- "The model to delete.", {"model"}},
-{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
- "Sampling temperature.", {}, true},
+// routes/lemonade/models/delete.cpp
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "The model to delete.", {"model"}};
+
+s.args = {kModelName};                                     // in spec()
+const std::string model_name = req.value(kModelName, "");  // in handle(), never req.body["model_name"]
+
+// routes/openai/text/chat_completions.cpp
+const RouteArg kTemperature{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                            "Sampling temperature.", {}, true};
 ```
 
 ### `ModelRoute`
@@ -209,9 +217,9 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 `ModelRoute` is the base for routes that run a loaded model: chat/completions, images/generations, etc. Its `handle()` is final and runs these steps:
 
 1. Builds `req.body`. For a `RequestFormat::Form` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, answers 400 when the request is not `multipart/form-data`, and checks the arguments as [Argument Validation](#argument-validation) describes. File parts stay on the httplib request. Registration rejects a `ModelRoute` whose `request_format` is `Raw`, since step 2 reads the model from `req.body`.
-2. Resolves the model name.
+2. Reads the model through `model_arg()` and replaces it with its `canonical_model_name()`.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
-4. Requires a model. With no `model` in the request, it answers 400.
+4. Requires a model. With no model in the request, it answers 400.
 5. Auto-loads the model through `ModelLoader`, unless `validate()` set `req.model_already_loaded` because it picked a model that is already loaded; loading it again would demote a routing helper to a standard model. On failure it writes the `create_model_error` response, the same shape for every model route.
 6. Calls `run()`.
 
@@ -221,7 +229,7 @@ Every other route extends `ApiRoute` directly, including `images/upscale`, which
 
 ### Request and Context
 
-`RouteRequest` holds one request's data: the httplib request, the parsed request body unless `request_format` is `Raw`, the resolved model name, and the router decision when there is one.
+`RouteRequest` holds one request's data: the httplib request, the parsed request body unless `request_format` is `Raw`, the query and path arguments converted to their schema types, the resolved model name, and the router decision when there is one. Its `arg()`, `has()` and `value()` read an argument through its constant, as [Argument Validation](#argument-validation) describes.
 
 `ServerContext` holds pointers to the subsystems (`Router`, `ModelManager`, `BackendManager`, `CloudProviderRegistry`, `AliasManager`, `RuntimeConfig`), to `HttpListener`, and to the services in [Core Components](#core-components). It holds no state of its own. Everything it points to lives as long as lemond, so it has no `WebSocketServer` pointer: a `host` or `websocket_port` change replaces that server, and `/health` reads its port from `HttpListener::websocket_port()`.
 
@@ -234,6 +242,7 @@ Routes call these helpers from their own code, so the flow stays visible in the 
 | Helper | Purpose |
 | --- | --- |
 | `ApiRoute::stream_response()` | The only way a route streams. Wraps httplib's chunked content provider, sets the SSE headers, and carries the cancel token and telemetry span into the stream, since they must outlive `handle()` |
+| `canonical_model_name()` | Takes a model name a client sent and returns the name the registry knows: strips a `:latest` tag, as Ollama clients send, then follows model aliases |
 | `cancel_on_disconnect()` | Aborts the upstream backend request when the client disconnects during a non-streaming request (Invariant #10) |
 | `router_dispatch()` | Runs `collection.router` policies and returns the decision; lives in `routes/router/` |
 | `attach_route_decision()` | Adds the router decision to the response body and headers |
@@ -356,6 +365,15 @@ nlohmann::json chat_completion_chunk_schema() {
     })");
 }
 
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "Model to run; loaded on first use."};
+const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
+                         "Conversation in OpenAI format."};
+const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "Stream tokens as server-sent events."};
+const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
+                         "Return the log probability of each output token.", {}, true};
+
 class ChatCompletionsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -368,12 +386,7 @@ public:
         s.prefixes = Prefixes::Quad;
         s.summary = "Chat Completions";
         s.description = "Generates the next assistant message for a conversation.";
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available, "Model to run; loaded on first use."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available, "Conversation in OpenAI format."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available, "Stream tokens as server-sent events."},
-            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable, "Return the log probability of each output token.", {}, true},
-        };
+        s.args = {kModel, kMessages, kStream, kLogprobs};
 
         s.responses = {
             {ResponseFormat::Json, chat_completion_schema()},
@@ -406,6 +419,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return kModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
         if (is_omni_collection(ctx_, req.model)) {
             run_omni_collection(ctx_, req, res);
@@ -416,7 +431,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (req.body.value("stream", false)) {
+        if (req.value(kStream, false)) {
             stream_response(req, res, [this](const std::string& body, httplib::DataSink& sink) {
                 ctx_.router->chat_completion_stream(body, sink);
             });
@@ -583,6 +598,7 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one, or a shape in a `oneOf` has no `title`
 - a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it or lists one its base class never writes for it
+- a route file names one of its arguments by a string literal, such as `req.body["stream"]` or `get_param_value("show_all")`, instead of through its `RouteArg` constant, or reads a `RouteArg` that its route's `args` do not list
 - a route's `description`, `notes` or argument descriptions name an error status, such as `404`
 - a `Raw` route other than MCP's JSON-RPC endpoint reads its request body
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
