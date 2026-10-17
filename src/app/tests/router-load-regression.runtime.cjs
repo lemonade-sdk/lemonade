@@ -59,7 +59,7 @@ try {
   const chat = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
   assert.match(chat, /deferredUntilSend: isRouterModelInfo\(info\) \|\| Boolean\(configuredDefault\)/);
   const routerGuard = chat.indexOf('if (isRouterModelInfo(info)) {', chat.indexOf('const ensureChatModelReady'));
-  const ordinaryLoad = chat.indexOf('await loadModelWithPolicy(modelName', routerGuard);
+  const ordinaryLoad = chat.indexOf('await loadModelForChat(modelName, info || initialInfo)', routerGuard);
   assert.ok(routerGuard >= 0 && ordinaryLoad > routerGuard, 'Chat readiness must handle Router before ordinary /load');
   assert.match(chat.slice(routerGuard, ordinaryLoad), /preflightRouter/);
 
@@ -117,9 +117,11 @@ try {
   const handleLoadStart = manager.indexOf('const handleLoad = async');
   const handleUnloadStart = manager.indexOf('const handleUnload = async', handleLoadStart);
   const handleLoadSource = manager.slice(handleLoadStart, handleUnloadStart);
-  assert.match(handleLoadSource, /ensureServerRouterReady\(name\)/, 'Use Router click must read/validate the server definition');
+  assert.match(handleLoadSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/,
+    'Use Router click must use server-fresh Router readiness via the shared runtime loader');
   assert.doesNotMatch(handleLoadSource, /registerModelDefinition/, 'Use Router click must never write a stale local Router definition');
-  assert.match(handleLoadSource, /loadWithGlobalPolicy\(model, overrideOptions\)/, 'ordinary models must preserve the new-base load-options path');
+  assert.match(manager.slice(runtimeStart, handleLoadStart), /await api\.loadModel\(name, options, info\)/,
+    'ordinary model loads must still forward the resolved recipe options');
 
   const saveStart = manager.indexOf('const handleRegisterRouter = async');
   const saveEnd = manager.indexOf('const handleRouterSaved', saveStart);

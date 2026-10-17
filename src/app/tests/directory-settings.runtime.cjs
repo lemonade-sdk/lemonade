@@ -47,7 +47,7 @@ assert.match(connectSource,
 
 assert.match(runtimeConfigSource, /validate_extra_models_dir_access/,
   'runtime config must preflight external directory access before applying it');
-assert.match(runtimeConfigSource, /fs::directory_iterator probe\(dir, read_ec\)/,
+assert.match(runtimeConfigSource, /fs::directory_iterator\{dir, read_ec\};/,
   'runtime config must verify that an existing external directory can be enumerated');
 assert.match(runtimeConfigSource, /not readable by the Lemonade server/,
   'permission failures must surface a user-facing server error');
@@ -55,7 +55,7 @@ assert.match(runtimeConfigSource, /not readable by the Lemonade server/,
 assert.match(modelManagerSource, /fs::directory_options::skip_permission_denied/,
   'extra-model discovery must skip inaccessible nested directories');
 assert.match(modelManagerSource,
-  /try \{\s*discovered_models = discover_extra_models\(\);\s*\} catch \(const std::exception& e\)/,
+  /try \{\s*discovered_models = discover_extra_models\(registered_extra_paths\);\s*\} catch \(const std::exception& e\)/,
   'optional extra-model discovery failures must not abort the registered model cache rebuild');
 assert.match(modelManagerSource, /keeping registered models/,
   'the cache fallback should document preservation of registered models');

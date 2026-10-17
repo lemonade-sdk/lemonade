@@ -194,7 +194,7 @@ assert.doesNotMatch(i18nSource, /api\.|fetch\(/);
 // stack must carry the CJK families too or zh-CN text swaps font on first paint.
 const tokensCss = fs.readFileSync(path.join(srcRoot, 'styles/tokens.css'), 'utf8');
 const criticalCss = fs.readFileSync(path.join(srcRoot, 'styles/critical.generated.css'), 'utf8');
-for (const family of ['"Microsoft YaHei"', '"Noto Sans CJK SC"']) {
+for (const family of ['"Microsoft YaHei UI"', '"Noto Sans CJK SC"']) {
   assert.ok(tokensCss.includes(family), `tokens.css --font-sans must list ${family}`);
   assert.ok(criticalCss.includes(family), `critical.generated.css --font-sans must list ${family}`);
 }

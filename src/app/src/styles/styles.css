@@ -15384,16 +15384,6 @@ button.workspace-metadata-chip:hover {
   font-weight: var(--weight-semibold);
 }
 
-/* Lemonade chat defaults: the icon carries the Tiny/Quality definition via
-   its native hover title while keeping the model name itself uncluttered. */
-.composer__model-default-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  color: var(--accent);
-}
-
 /* Router connection topology: local models and provider-backed endpoints. */
 .router-editor__source-badge {
   display: inline-flex;
