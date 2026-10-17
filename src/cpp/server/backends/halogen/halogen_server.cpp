@@ -5,16 +5,13 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/halogen/halogen.h"
 #include "lemon/model_manager.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/http_client.h"
 
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <map>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -38,32 +35,6 @@ constexpr long kStartupTimeoutSeconds = 1800;
 bool ends_with(const std::string& value, const std::string& suffix) {
     return value.size() >= suffix.size() &&
            value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-std::map<std::string, unsigned long long> parse_properties(const std::string& properties) {
-    std::map<std::string, unsigned long long> values;
-    std::istringstream lines(properties);
-    std::string key;
-    unsigned long long value = 0;
-    while (lines >> key >> value) {
-        values[key] = value;
-    }
-    return values;
-}
-
-// The properties of the gfx1151 KFD node, or "" when there is none.
-std::string gfx1151_kfd_properties() {
-    std::error_code ec;
-    for (const auto& node :
-         fs::directory_iterator("/sys/devices/virtual/kfd/kfd/topology/nodes", ec)) {
-        std::ifstream file(node.path() / "properties");
-        const std::string properties((std::istreambuf_iterator<char>(file)),
-                                     std::istreambuf_iterator<char>());
-        if (parse_properties(properties)["gfx_target_version"] == 110501) {
-            return properties;
-        }
-    }
-    return "";
 }
 
 class HalogenOps : public BackendOps {
@@ -102,11 +73,13 @@ public:
     std::optional<utils::SetupFailure> check_container_host(
         const std::string& backend) const override {
         (void)backend;
-        const std::string properties = gfx1151_kfd_properties();
-        if (properties.empty()) {
-            return std::nullopt;
+        for (const std::string& properties : utils::ContainerManager::kfd_node_properties()) {
+            if (utils::ContainerManager::parse_kfd_properties(properties)["gfx_target_version"] ==
+                110501) {
+                return halogen::check_kfd_node(properties);
+            }
         }
-        return halogen::check_kfd_node(properties);
+        return std::nullopt;
     }
 };
 
@@ -115,10 +88,10 @@ public:
 namespace halogen {
 
 std::optional<utils::SetupFailure> check_kfd_node(const std::string& properties) {
-    auto values = parse_properties(properties);
+    auto values = utils::ContainerManager::parse_kfd_properties(properties);
     if ((values["capability"] & 0x08000000ULL) == 0) {
         return utils::SetupFailure{
-            "The kernel was built without SVM (KFD capability & 0x08000000 is 0)",
+            "capability & 0x08000000 is 0",
             "Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"};
     }
     const bool reported = values.count("cwsr_size") && values.count("ctl_stack_size") &&
@@ -126,8 +99,7 @@ std::optional<utils::SetupFailure> check_kfd_node(const std::string& properties)
     if (!reported || values["cwsr_size"] !=
                          values["ctl_stack_size"] + (values["simd_count"] / 2) * 479232ULL) {
         return utils::SetupFailure{
-            "The kernel lacks the gfx1151 fixes (KFD cwsr_size is not ctl_stack_size + "
-            "(simd_count / 2) * 479232)",
+            "cwsr_size is not ctl_stack_size + (simd_count / 2) * 479232",
             "Install Linux 6.18.4 or newer"};
     }
     return std::nullopt;

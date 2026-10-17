@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -132,6 +133,10 @@ public:
                                  const std::string& arch);
     // The same, read from /sys/devices/virtual/kfd/kfd/topology/nodes.
     static std::string kfd_gpu_index(const std::string& arch);
+    // Each KFD topology node's properties file, in node order.
+    static std::vector<std::string> kfd_node_properties();
+    static std::map<std::string, unsigned long long> parse_kfd_properties(
+        const std::string& properties);
     // Read-only mounts that put `host_path` at `destination`, each source
     // resolved through symlinks. A directory becomes one mount per file inside
     // it, because a Hugging Face cache's links point into a blobs/ folder the
