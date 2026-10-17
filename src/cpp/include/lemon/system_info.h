@@ -94,10 +94,19 @@ public:
 
     // Get list of supported backends for a recipe (in preference order)
     static SupportedBackendsResult get_supported_backends(const std::string& recipe);
+    // True when `backend` runs on this OS and is installed, including one
+    // installed with `force` on hardware that does not support it.
+    static bool is_backend_installed(const std::string& recipe, const std::string& backend);
 
     // Check if a recipe is supported on the current system
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
+
+    // Reruns the setup checks of every container backend in `recipes` (the
+    // /system-info recipes object), marking the ones that fail action_required.
+    // Returns true when a backend cached as action_required now passes, so the
+    // caller rebuilds its cached state.
+    static bool refresh_container_setup(nlohmann::json& recipes);
 
     // Why the models of `recipe` stay hidden, or "" when they show. A recipe
     // whose only backends on this host are guest backends keeps its models hidden

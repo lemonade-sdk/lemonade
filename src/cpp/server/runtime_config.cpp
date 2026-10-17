@@ -238,7 +238,7 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
     auto result = SystemInfo::get_supported_backends(recipe);
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
-        == result.backends.end()) {
+        == result.backends.end() && !SystemInfo::is_backend_installed(recipe, value)) {
         std::string allowed = "auto";
         for (const auto& b : result.backends) {
             allowed += ", " + b;
@@ -535,6 +535,11 @@ bool RuntimeConfig::no_fetch_executables() const {
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
     return config_["disable_model_filtering"].get<bool>();
+}
+
+bool RuntimeConfig::enable_containers() const {
+    std::shared_lock lock(mutex_);
+    return config_["enable_containers"].get<bool>();
 }
 
 bool RuntimeConfig::enable_dgpu_gtt() const {
@@ -893,7 +898,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                key == "auto_check_model_updates" ||
                key == "auto_update_models" ||
                key == "no_fetch_executables" ||
-               key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
+               key == "disable_model_filtering" || key == "enable_containers" ||
+               key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + key + "' must be a boolean");
         }

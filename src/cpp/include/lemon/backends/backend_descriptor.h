@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -32,6 +33,14 @@ enum class SlotPolicy {
 enum class VersionPolicy {
     Exact,    // installed must match the expected version
     AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
+};
+
+// A container backend's image, and the device nodes and Linux permissions its
+// container gets.
+struct ContainerPolicy {
+    std::string image;                  // only docker.io/kyuz0/* and ghcr.io/peonist-ai/*
+    std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
+    std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
 };
 
 inline const char* slot_policy_to_string(SlotPolicy p) {
@@ -117,6 +126,14 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
+
+    // The backends in `support` that run from an OCI image, keyed by backend name.
+    std::map<std::string, ContainerPolicy> containers;
+
+    const ContainerPolicy* container_for(const std::string& backend) const {
+        auto it = containers.find(backend);
+        return it == containers.end() ? nullptr : &it->second;
+    }
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

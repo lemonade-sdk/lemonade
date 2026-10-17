@@ -66,6 +66,14 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 
   The filename must look like `libggml-hip*.so*` (versioned sonames such as `libggml-hip.so.0` are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.
 
+### nathanw
+- **Platform**: Linux only
+- **Hardware**: AMD Strix Halo (gfx1151)
+- **Use Case**: The Strix Halo Vulkan performance fork of llama.cpp, running ordinary GGUF models
+- **Tier and format**: experimental, container
+- **Installation**: `lemonade backends install llamacpp:nathanw` pulls the `vulkan-radv-performance` build of `docker.io/kyuz0/amd-strix-halo-toolboxes`, pinned by digest. Podman or Docker is required; see [Container Backends](container-backends.md)
+- **Enable**: `lemonade config set llamacpp.backend=nathanw`, or `--llamacpp nathanw` for one load
+
 ## ROCm Channel Configuration
 
 The ROCm backend supports three channels to balance stability, performance, and access to latest features:
