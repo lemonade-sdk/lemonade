@@ -3,6 +3,7 @@
 #include <lemon/model_manager.h>
 #include <lemon/models/backend_availability.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -64,6 +65,15 @@ bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
 // What this machine can run now, and why not the rest. Pure.
 FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
                              const BackendAvailability& availability);
+
+// Who reads the machine: `probe_backend_availability()` unless the operator replaced it.
+using AvailabilityProbe =
+    std::function<BackendAvailability(const std::map<std::string, ModelInfo>&)>;
+
+// One filtering pass for whoever is composing a set: the machine reading, then the
+// filter, with the reasons kept.
+HostFilter filter_for_host(const std::map<std::string, ModelInfo>& models,
+                           const AvailabilityProbe& probe = nullptr);
 
 // Collections that list `model_name` among their components, each with the
 // download state it has once that component has `component_downloaded`. Only the

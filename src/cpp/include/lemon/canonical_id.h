@@ -87,6 +87,15 @@ inline std::optional<CanonicalId> parse_canonical_id(const std::string& id) {
     return std::nullopt;
 }
 
+// The canonical ID behind a model-set key. Built-ins are keyed bare there, so a key with
+// no prefix is a built-in's; the canonical form is what saved options key by on disk.
+inline std::string cache_key_to_canonical_id(const std::string& cache_key) {
+    if (parse_canonical_id(cache_key)) {
+        return cache_key;
+    }
+    return canonical_id(ModelSource::Builtin, cache_key);
+}
+
 inline int precedence_rank(ModelSource source) {
     switch (source) {
         case ModelSource::Registered: return 0;

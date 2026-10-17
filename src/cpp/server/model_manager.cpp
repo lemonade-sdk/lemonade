@@ -11,10 +11,12 @@
 #include <lemon/models/entry_identity.h>
 #include <lemon/models/host_availability.h>
 #include <lemon/models/ingest.h>
+#include <lemon/models/composition.h>
 #include <lemon/models/catalog_set.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/listed_catalog.h>
 #include <lemon/models/model_sources.h>
+#include <lemon/models/recipe_option_layers.h>
 #include <lemon/models/scan_catalog.h>
 #include <lemon/models/store.h>
 #include <lemon/models/store_builder.h>
@@ -67,36 +69,12 @@ namespace lemon {
 
 // Properties which are defined by the user for model registration.
 
-// Built-ins are keyed bare in the draft model set; user.* and extra.* keys already
-// include their canonical prefix. This helper returns the canonical ID for any
-// cache key, which is the form used by recipe_options.json on disk.
-static std::string cache_key_to_canonical_id(const std::string& cache_key) {
-    if (parse_canonical_id(cache_key)) {
-        return cache_key;
-    }
-    return canonical_id(ModelSource::Builtin, cache_key);
-}
-
 // Candidate roots that FLM may use to store models. FLM resolves its model
 // directory from the FLM_MODEL_PATH env var (set by the installer) and falls
 // back to a built-in default that has changed across releases. lemond is often
 // launched from a parent process that predates the FLM install and therefore
 // doesn't see FLM_MODEL_PATH, so we also probe every documented default.
 // Order is most-specific to most-historical.
-
-void ModelManager::populate_model_metadata(ModelInfo& info) {
-    // A route to someone else's GPU has no local bytes to read metadata from.
-    if (download_policy(info) == backends::DownloadPolicy::None) {
-        return;
-    }
-    info.max_context_window = 0;
-    if (!info.downloaded) return;
-
-    // Per-backend metadata (GGUF arch/labels for llamacpp, config.json ctx for
-    // flm, …) is read by the backend's ops, not a recipe switchboard here.
-    backends::BackendOpsContext ctx;
-    backends::ops_for(info.recipe)->populate_metadata(info, ctx);
-}
 
 static bool is_extra_model_name(const std::string& model_name) {
     return model_name.rfind(models::extra_model_prefix, 0) == 0;
@@ -127,41 +105,20 @@ static DeviceType device_type_for_recipe(const std::string& recipe) {
     return get_device_type_from_recipe(recipe);
 }
 
-// Fold the model-level precedence layers, lowest first: the document's image
-// defaults, the row's authored `recipe_options`, then what the user saved. The
-// full ladder is documented in SDServer::build_extra_args().
-// json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
-// two-phase pattern). Pass a null json if the model JSON should be read directly instead.
-// saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
-// user's saved options are keyed in recipe_options.json. Translate from the cache key with
-// cache_key_to_canonical_id() before calling.
-static RecipeOptions build_recipe_options(const ModelInfo& info,
-                                          const json& json_recipe_options,
-                                          const std::string& saved_recipe_options_key,
-                                          const json& saved_recipe_options) {
-    // Non-sd recipes pass an empty image_defaults layer.
-    json image_defaults = json::object();
-
-    if (info.image_defaults.has_defaults) {
-        image_defaults["steps"] = info.image_defaults.steps;
-        image_defaults["cfg_scale"] = info.image_defaults.cfg_scale;
-        image_defaults["width"] = info.image_defaults.width;
-        image_defaults["height"] = info.image_defaults.height;
-        if (!info.image_defaults.sampling_method.empty())
-            image_defaults["sampling_method"] = info.image_defaults.sampling_method;
-        if (info.image_defaults.flow_shift > 0.0f)
-            image_defaults["flow_shift"] = info.image_defaults.flow_shift;
-    }
-
-    json user_saved = JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)
-                          ? saved_recipe_options[saved_recipe_options_key]
-                          : json(nullptr);
-
-    return RecipeOptions::merge_precedence_layers(
-        info.recipe, image_defaults, json_recipe_options, user_saved);
+std::unique_ptr<models::ModelComposition> ModelManager::make_composition() {
+    models::ModelComposition::Deps deps;
+    deps.load_catalogs = [this](std::map<std::string, json>& authored, models::CatalogSet& built) {
+        built.replace_with(models::product_catalogs(make_catalog_deps(authored)));
+        for (const auto& catalog : config_.extra_catalogs) {
+            built.add(catalog);
+        }
+    };
+    deps.saved_options = [this] { return recipe_options_.all(); };
+    deps.availability = config_.availability;
+    deps.fetch = ingest_.get();
+    deps.artifacts = artifacts_.get();
+    return std::make_unique<models::ModelComposition>(std::move(deps));
 }
-
-
 
 std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
     return artifacts_->list_files(get_model_info(model_name));
@@ -256,6 +213,7 @@ ModelManager::ModelManager(ModelManagerConfig config)
           [this] { return extra_models_dir_; },
       })),
       ingest_(std::make_unique<models::ModelIngest>(make_ingest_deps())),
+      composition_(make_composition()),
       sync_(make_sync_deps()),
       cloud_rows_(store_, [this](const std::string& provider) {
           return backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
@@ -436,7 +394,7 @@ json ModelManager::get_saved_model_options(const std::string& model_name) {
 }
 
 RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
-    return build_recipe_options(info, registry_recipe_options(resolve_model_name(info.model_name)),
+    return models::build_recipe_options(info, registry_recipe_options(resolve_model_name(info.model_name)),
                                 "", json::object());
 }
 
@@ -454,7 +412,7 @@ RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, c
     }
     // Same layering as write_saved_model_options, so a preview cannot differ
     // from the state the real write would produce.
-    return build_recipe_options(info, registry_recipe_options(cache_key), id, json{{id, saved}});
+    return models::build_recipe_options(info, registry_recipe_options(cache_key), id, json{{id, saved}});
 }
 
 json ModelManager::registry_recipe_options(const std::string& cache_key) {
@@ -504,7 +462,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
     if (have_info) {
         StoreWrite store_write(*this);
         // Same layering as build_cache(), so the two can't drift.
-        info.recipe_options = build_recipe_options(
+        info.recipe_options = models::build_recipe_options(
             info, registry_recipe_options(cache_key), id, json{{id, saved}});
         update_model_options_in_cache_locked(store_write, info);
     } else {
@@ -689,19 +647,6 @@ json ModelManager::sync_models(const std::vector<std::string>& target_models, bo
     return sync_.wait_for(enqueue_res.sync_id);
 }
 
-// Check if all components of a collection model are downloaded.
-static bool check_component_downloaded(const ModelInfo& info,
-                                        const std::map<std::string, ModelInfo>& model_map) {
-    if (info.components.empty()) return false;
-    for (const auto& component_name : info.components) {
-        auto it = model_map.find(component_name);
-        if (it == model_map.end() || !it->second.downloaded) {
-            return false;
-        }
-    }
-    return true;
-}
-
 void ModelManager::download_from_huggingface_engine(
         const ModelInfo& info, DownloadProgressCallback progress_callback) {
     ingest_->fetch_registry_artifacts(info, progress_callback);
@@ -828,198 +773,15 @@ void ModelManager::build_cache() {
 
     LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
 
-    std::map<std::string, ModelInfo> composed;
-    std::shared_ptr<const models::FilterReasons> composed_reasons;
+    models::CompositionResult composed = composition_->run();
 
-    // Collected as rows parse so build_recipe_options() never re-read a document.
-    std::map<std::string, json> json_recipe_options;
-
-    models::CatalogSet built;
-
-    built.replace_with(models::product_catalogs(make_catalog_deps(json_recipe_options)));
-
-    for (const auto& catalog : config_.extra_catalogs) {
-        built.add(catalog);
-    }
-
-    models::CatalogAccumulator accumulated;
-    for (const auto& catalog : built.snapshot()) {
-        catalog->enumerate(accumulated);
-    }
-
-    std::map<std::string, ModelInfo> all_models = accumulated.take();
-
-    // Clients are not guaranteed to handle a model that declares no deployment
-    // label. Every ingest path above stamps one; name any model that reached
-    // here without.
-    for (const auto& [name, info] : all_models) {
-        ModelType mode = ModelType::LLM;
-        if (!find_deployment_mode(info.labels, mode)) {
-            LOG(WARNING, "ModelManager")
-                << "Model '" << name << "' (recipe " << info.recipe
-                << ") has no deployment label; add one (chat, transcription, embeddings, ...)"
-                << std::endl;
-        }
-    }
-
-    // One snapshot of the saved options for the whole pass, so a concurrent
-    // options write cannot split the build across two states.
-    const json saved_options = recipe_options_.all();
-    for (auto& [name, info] : all_models) {
-        json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
-        info.recipe_options =
-            build_recipe_options(info, jro, cache_key_to_canonical_id(name), saved_options);
-        if (info.recipe_options.to_json().contains("auto_update") &&
-            info.recipe_options.to_json()["auto_update"].is_boolean()) {
-            info.auto_update = info.recipe_options.to_json()["auto_update"].get<bool>();
-        }
-    }
-
-    // Pre-filter snapshots for the routing-policy resolver below (#2748); see
-    // compute_model_alias_maps() for why the alias needs the full algorithm
-    // rather than a plain bare-name map. Only router collections read them and
-    // the alias rebuild is O(n log n) over the whole registry, so a host with
-    // no router collection -- the common case, across ~15 build_cache() call
-    // sites -- pays nothing.
-    const bool needs_routing_snapshots =
-        std::any_of(all_models.begin(), all_models.end(), [](const auto& entry) {
-            return is_router_collection_recipe(entry.second.recipe);
-        });
-
-    std::map<std::string, ModelType> pre_filter_types;
-    std::map<std::string, std::string> pre_filter_aliases;
-    if (needs_routing_snapshots) {
-        for (const auto& [name, info] : all_models) {
-            pre_filter_types[name] = info.type;
-        }
-        pre_filter_aliases = models::compute_model_alias_maps(all_models).public_model_aliases;
-    }
-
-    // Step 2: Filter by backend availability. This is the full-registry pass, so
-    // its reasons replace the recipe availability table wholesale.
-    models::HostFilter host = filter_for_host(all_models);
-    composed_reasons = host.reasons;
-    all_models = std::move(host.visible);
-
-    // Step 3: Check download status for all models. Dynamic-discovery backends
-    // (flm, cloud) already set downloaded during discovery; everyone else asks
-    // its backend ops (default = shared registry-cache completeness check).
-    backends::BackendOpsContext status_ctx;
-    status_ctx.fetch = ingest_.get();
-    status_ctx.artifacts = artifacts_.get();
-
-    int downloaded_count = 0;
-    // First pass: determine download status for non-collection models
-    for (auto& [name, info] : all_models) {
-        if (is_model_collection_recipe(info.recipe)) {
-            continue;  // Handled in second pass after components are resolved
-        }
-        const auto* desc = backends::descriptor_for(info.recipe);
-        if (!(desc && desc->dynamic_models)) {
-            info.downloaded = backends::ops_for(info.recipe)->is_downloaded(info, status_ctx);
-        }
-
-        if (info.downloaded) {
-            downloaded_count++;
-        }
-    }
-
-    // Second pass: determine download status for collection models
-    // (must happen after components have their downloaded status set)
-    for (auto& [name, info] : all_models) {
-        if (!is_model_collection_recipe(info.recipe)) continue;
-        info.downloaded = check_component_downloaded(info, all_models);
-        if (info.downloaded) {
-            downloaded_count++;
-        }
-    }
-
-    for (auto& [name, info] : all_models) {
-        populate_model_metadata(info);
-        if (info.downloaded && download_policy(info) != backends::DownloadPolicy::SelfManaged) {
-            models::ModelArtifactStore::refresh_on_disk_size(info);
-        }
-        composed[name] = std::move(info);
-    }
-
-    // Parse each collection.router model's routing policy over the candidate. The
-    // resolver reads the candidate directly instead of going through
-    // resolve_model_name()/get_model_info(), which answer from the set this build
-    // has not published yet. pre_filter_aliases is computed over all_models, a
-    // strict superset of composed, so it alone covers everything the alias map
-    // would (#2748).
-    //
-    // Components only the pre-filter tier can resolve are unavailable on this
-    // host: a classifier bound to one takes its on_error path on every
-    // request. Recorded here, where that is known, and reported per collection
-    // below so the operator sees degraded routing instead of silence (#2748).
-    std::set<std::string> unavailable_components;
-
-    RoutingPolicyParseOptions policy_options = make_routing_parse_options({
-        [&pre_filter_aliases](const std::string& name) -> std::optional<std::string> {
-            auto it = pre_filter_aliases.find(name);
-            if (it == pre_filter_aliases.end()) return std::nullopt;
-            return it->second;
-        },
-        [&composed](const std::string& name) -> std::optional<ModelType> {
-            auto it = composed.find(name);
-            if (it == composed.end()) return std::nullopt;
-            return it->second.type;
-        },
-        [&pre_filter_types, &unavailable_components](
-            const std::string& name) -> std::optional<ModelType> {
-            auto it = pre_filter_types.find(name);
-            if (it == pre_filter_types.end()) return std::nullopt;
-            unavailable_components.insert(name);
-            return it->second;
-        },
-    });
-    for (auto& [name, info] : composed) {
-        if (!is_router_collection_recipe(info.recipe)) {
-            continue;
-        }
-        json doc;
-        doc["recipe"] = info.recipe;
-        doc["components"] = info.components;
-        auto version_it = info.extras.find("version");
-        if (version_it != info.extras.end()) {
-            doc["version"] = version_it->second;
-        }
-        auto routing_it = info.extras.find("routing");
-        if (routing_it != info.extras.end()) {
-            doc["routing"] = routing_it->second;
-        }
-        unavailable_components.clear();
-        try {
-            info.route_policy = std::make_shared<const RoutePolicy>(
-                parse_route_policy_collection(doc, policy_options));
-        } catch (const std::exception& e) {
-            LOG(WARNING, "ModelManager") << "Failed to parse routing policy for '"
-                                         << name << "': " << e.what() << std::endl;
-        }
-        if (!unavailable_components.empty()) {
-            std::ostringstream joined;
-            bool first = true;
-            for (const auto& component : unavailable_components) {
-                if (!first) joined << ", ";
-                joined << component;
-                first = false;
-            }
-            LOG(WARNING, "ModelManager")
-                << "Routing policy for '" << name << "' references component(s) "
-                << "unavailable on this host: " << joined.str()
-                << ". Any classifier bound to them will fall back to its on_error "
-                << "result on every request." << std::endl;
-        }
-    }
-
-    if (!build.commit(std::move(composed), std::move(composed_reasons), built.snapshot())) {
+    if (!build.commit(std::move(composed.models), std::move(composed.reasons),
+                      std::move(composed.catalogs))) {
         return;
     }
 
-    LOG(INFO, "ModelManager") << "Cache built: "
-              << store_.read()->models.size() << " total, "
-              << downloaded_count << " downloaded" << std::endl;
+    LOG(INFO, "ModelManager") << "Cache built: " << store_.read()->models.size() << " total, "
+                              << composed.downloaded << " downloaded" << std::endl;
 }
 
 void ModelManager::update_model_options_in_cache_locked(StoreWrite& store_write,
@@ -1061,7 +823,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
     const bool backend_lists_models =
         downloaded && backends::ops_for(patched.recipe)->invalidates_cache_after_download();
     if (!backend_lists_models) {
-        populate_model_metadata(patched);
+        models::populate_model_metadata(patched, *artifacts_);
         models::ModelArtifactStore::refresh_on_disk_size(patched);
     }
 
@@ -1383,29 +1145,6 @@ std::size_t ModelManager::evict_cloud_models(const std::string& provider) {
 
 std::size_t ModelManager::count_cloud_models(const std::string& provider) const {
     return cloud_rows_.count(provider);
-}
-
-models::HostFilter ModelManager::filter_for_host(
-    const std::map<std::string, ModelInfo>& models) const {
-    models::BackendAvailability availability =
-        config_.availability ? config_.availability(models)
-                             : models::probe_backend_availability(models);
-    // Over a declared machine too: turning filtering off is the operator's call, not
-    // the probe's. The GTT hint stays probe-only, since it describes real pools.
-    if (auto* cfg = RuntimeConfig::global()) {
-        availability.filtering_disabled = cfg->disable_model_filtering();
-    }
-
-    models::FilterResult result = models::filter_hardware(models, availability);
-
-    auto reasons = std::make_shared<models::FilterReasons>();
-    reasons->rejected = std::move(result.rejected);
-    reasons->empty_recipes = std::move(result.empty_recipes);
-
-    models::HostFilter outcome;
-    outcome.visible = std::move(result.visible);
-    outcome.reasons = std::const_pointer_cast<const models::FilterReasons>(reasons);
-    return outcome;
 }
 
 std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
