@@ -296,6 +296,79 @@ int main() {
                 "invalid persisted wire_format falls back to openai");
     }
 
+    {
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1");
+        r.check(!registry.alpha_generate_fallback_for("acme"),
+                "alpha_generate_fallback defaults to off");
+        r.check(!registry.alpha_generate_fallback_for("not-installed"),
+                "alpha_generate_fallback_for() on unknown provider -> false");
+        r.check(registry.alpha_generate_url_for("acme").empty(),
+                "alpha_generate_url defaults to empty (derived at request time)");
+        r.check(registry.alpha_cli_version_for("acme") == "1.15.1",
+                "alpha_cli_version defaults to 1.15.1");
+        r.check(!registry.to_config_array()[0].contains("alpha_generate_fallback") &&
+                    !registry.to_config_array()[0].contains("alpha_generate_url") &&
+                    !registry.to_config_array()[0].contains("alpha_cli_version"),
+                "default alpha fallback fields are omitted from the serialized config");
+    }
+
+    {
+        CloudProviderRegistry::InstallOptions options;
+        options.alpha_generate_fallback = true;
+        options.alpha_generate_url = "https://gateway.example.com/alpha/generate";
+        options.alpha_cli_version = "1.15.1";
+
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1", options);
+        r.check(registry.alpha_generate_fallback_for("acme"),
+                "install() with alpha_generate_fallback=true -> stored");
+        r.check(registry.alpha_generate_url_for("acme") ==
+                    "https://gateway.example.com/alpha/generate",
+                "install() with alpha_generate_url -> stored verbatim");
+        r.check(!registry.install("acme", "https://gateway.example.com/v1", options),
+                "re-install with identical alpha options -> reports no change");
+
+        CloudProviderRegistry reloaded;
+        reloaded.load_from_config(registry.to_config_array());
+        r.check(reloaded.alpha_generate_fallback_for("acme"),
+                "alpha_generate_fallback round-trips through the config");
+        r.check(reloaded.alpha_generate_url_for("acme") ==
+                    "https://gateway.example.com/alpha/generate",
+                "alpha_generate_url round-trips through the config");
+        r.check(reloaded.alpha_cli_version_for("acme") == "1.15.1",
+                "alpha_cli_version round-trips through the config");
+    }
+
+    {
+        CloudProviderRegistry::InstallOptions options;
+        options.alpha_generate_fallback = true;
+
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1", options);
+        r.check(registry.install("acme", "https://gateway.example.com/v2"),
+                "re-install with only a new base_url -> reports a change");
+        r.check(registry.alpha_generate_fallback_for("acme"),
+                "re-install without alpha options -> fallback preserved");
+        r.check(registry.base_url_for("acme") == "https://gateway.example.com/v2",
+                "re-install without alpha options -> base_url still updated");
+    }
+
+    {
+        r.check(CloudProviderRegistry::validate_alpha_cli_version("1.15.1").empty(),
+                "validate_alpha_cli_version() accepts a version");
+        r.check(!CloudProviderRegistry::validate_alpha_cli_version("").empty(),
+                "validate_alpha_cli_version() rejects empty");
+        r.check(!CloudProviderRegistry::validate_alpha_cli_version("1.15 1").empty(),
+                "validate_alpha_cli_version() rejects whitespace");
+        r.check(CloudProviderRegistry::default_alpha_generate_url(
+                    "https://api.example.com/provider/v1") ==
+                    "https://api.example.com/alpha/generate",
+                "default_alpha_generate_url() derives scheme://host/alpha/generate");
+        r.check(CloudProviderRegistry::default_alpha_generate_url("notaurl").empty(),
+                "default_alpha_generate_url() rejects a schemeless base URL");
+    }
+
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);
     return r.failed == 0 ? 0 : 1;
 }

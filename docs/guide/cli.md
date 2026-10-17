@@ -773,6 +773,9 @@ lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
 | `--auth-header-name HEADER` | No | Header carrying the API key. Default `Authorization`. |
 | `--auth-header-prefix PREFIX` | No | Value prefix before the key. Default `Bearer `; pass `""` for none. |
 | `--wire-format FORMAT` | No | `openai` (default) or `anthropic`. `anthropic` providers are reachable via `POST /v1/messages` only. |
+| `--alpha-generate-fallback` | No | Retry model-not-found errors through the vendor's proprietary agent endpoint (`/alpha/generate`), translated back to the OpenAI shape. Off by default. |
+| `--alpha-generate-url URL` | No | Proprietary endpoint URL override. Defaults to `scheme://host/alpha/generate` derived from `--base-url`. |
+| `--alpha-cli-version VERSION` | No | Version sent as `x-command-code-version` on fallback requests (default: `1.15.1`). |
 
 Omitted options keep the provider's current setting, so re-running `cloud install` to change only the base URL won't reset a custom auth header.
 

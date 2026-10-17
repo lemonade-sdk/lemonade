@@ -11,6 +11,9 @@ interface CloudProviderRow {
   name: string;
   base_url: string;
   allow_insecure_http: boolean;
+  alpha_generate_fallback: boolean;
+  alpha_generate_url: string;
+  alpha_cli_version: string;
   env_var: string;
   env_var_set: boolean;
   runtime_key_set: boolean;
@@ -56,6 +59,9 @@ const fetchCloudProviders = async (): Promise<CloudProviderRow[]> => {
       name: String(p.name),
       base_url: typeof p.base_url === 'string' ? p.base_url : '',
       allow_insecure_http: p.allow_insecure_http === true,
+      alpha_generate_fallback: p.alpha_generate_fallback === true,
+      alpha_generate_url: typeof p.alpha_generate_url === 'string' ? p.alpha_generate_url : '',
+      alpha_cli_version: typeof p.alpha_cli_version === 'string' ? p.alpha_cli_version : '',
       env_var: typeof p.env_var === 'string' ? p.env_var : '',
       env_var_set: p.env_var_set === true,
       runtime_key_set: p.runtime_key_set === true,
@@ -81,6 +87,7 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [alphaFallback, setAlphaFallback] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,6 +113,7 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
       };
       if (needsInsecureOptIn) body.allow_insecure_http = true;
       if (normalizedApiKey) body.api_key = normalizedApiKey;
+      if (alphaFallback) body.alpha_generate_fallback = true;
       const response = await serverConfig.fetch('/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,7 +134,7 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
       setError(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
       setBusy(false);
     }
-  }, [provider, baseUrl, apiKey, onInstalled, showSuccess, showWarning]);
+  }, [provider, baseUrl, apiKey, alphaFallback, onInstalled, showSuccess, showWarning]);
 
   return (
     <>
@@ -184,6 +192,23 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
             onChange={(e) => setBaseUrl(e.target.value)}
             disabled={busy}
           />
+        </div>
+
+        <div className="form-section">
+          <label className="form-label" title="When the OpenAI-compatible endpoint 404s a model the vendor still serves behind its agent endpoint, retry there and translate the response back.">
+            <input
+              type="checkbox"
+              checked={alphaFallback}
+              onChange={(e) => setAlphaFallback(e.target.checked)}
+              disabled={busy}
+              style={{ marginRight: '6px' }}
+            />
+            Support fallback to alpha generate
+          </label>
+          <div style={{ fontSize: '0.8rem', opacity: 0.75, marginTop: '4px' }}>
+            Retries model-not-found errors through the vendor's proprietary agent
+            endpoint, translated back to the OpenAI shape.
+          </div>
         </div>
 
         <div className="form-section">
@@ -354,6 +379,20 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
             </div>
           </div>
         )}
+
+        <div className="form-section">
+          <label className="form-label">Alpha generate fallback</label>
+          <div style={{ fontSize: '0.85rem', lineHeight: 1.5 }}>
+            {row.alpha_generate_fallback ? (
+              <span>
+                ✅ On{row.alpha_generate_url ? <> — <code>{row.alpha_generate_url}</code></> : ' — URL derived from base URL'}
+                {row.alpha_cli_version && row.alpha_cli_version !== '1.15.1' && <> (CLI {row.alpha_cli_version})</>}.
+              </span>
+            ) : (
+              <span>➖ Off. Model-not-found errors from the OpenAI-compatible endpoint are returned as-is.</span>
+            )}
+          </div>
+        </div>
 
         <div className="form-section">
           <label className="form-label">API key</label>

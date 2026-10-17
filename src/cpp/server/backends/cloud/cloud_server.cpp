@@ -1,3 +1,4 @@
+#include "lemon/backends/cloud/alpha_translate.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <curl/curl.h>
 #include <limits>
 #include <map>
@@ -521,7 +523,8 @@ json CloudServer::rewrite_model_field(const json& request) const {
 }
 
 json CloudServer::post_with_auth(const std::string& path, const json& request,
-                                  const ResolvedCreds& creds, long timeout_seconds) {
+                                  const ResolvedCreds& creds, long timeout_seconds,
+                                  int* out_status) {
     if (!loaded_) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
     }
@@ -549,6 +552,9 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             timeout_seconds,
             creds.policy,
             cancel_token);
+        if (out_status != nullptr) {
+            *out_status = response.status_code;
+        }
         if (response.status_code == 200) {
             // Return the body unchanged so the server.cpp handler picks up the
             // `usage` telemetry like every other backend.
@@ -582,7 +588,17 @@ json CloudServer::chat_completion(const json& request) {
         return wire_format_error();
     }
     json modified = rewrite_model_field(request);
-    return post_with_auth("/chat/completions", modified, resolve_creds());
+    const ResolvedCreds creds = resolve_creds();
+    int status = 0;
+    json response = post_with_auth("/chat/completions", modified, creds, 0, &status);
+    if (!response.contains("error") || !alpha_fallback_enabled() ||
+        !alpha_error_qualifies(status, response)) {
+        return response;
+    }
+    LOG(INFO, "Cloud") << "OpenAI-compatible endpoint returned HTTP " << status
+                       << " for model '" << upstream_model_
+                       << "'; retrying via the proprietary agent endpoint" << std::endl;
+    return alpha_chat_completion(request, creds, /*legacy=*/false);
 }
 
 json CloudServer::completion(const json& request) {
@@ -590,7 +606,17 @@ json CloudServer::completion(const json& request) {
         return wire_format_error();
     }
     json modified = rewrite_model_field(request);
-    return post_with_auth("/completions", modified, resolve_creds());
+    const ResolvedCreds creds = resolve_creds();
+    int status = 0;
+    json response = post_with_auth("/completions", modified, creds, 0, &status);
+    if (!response.contains("error") || !alpha_fallback_enabled() ||
+        !alpha_error_qualifies(status, response)) {
+        return response;
+    }
+    LOG(INFO, "Cloud") << "OpenAI-compatible endpoint returned HTTP " << status
+                       << " for model '" << upstream_model_
+                       << "'; retrying via the proprietary agent endpoint" << std::endl;
+    return alpha_chat_completion(request, creds, /*legacy=*/true);
 }
 
 json CloudServer::responses(const json& /*request*/) {
@@ -697,6 +723,24 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             telemetry_callback(error_telemetry("Missing API credentials"));
         }
         return;
+    }
+
+    const bool legacy = (suffix == "/completions");
+    const bool is_completion_endpoint =
+        (suffix == "/chat/completions" || suffix == "/completions");
+    // Whether the downstream client asked for usage in the stream. The
+    // OpenAI-compatible path injects include_usage below for its own
+    // telemetry; the proprietary path reports usage only when asked, passing
+    // the flag straight through.
+    bool include_usage = false;
+    if (sse && is_completion_endpoint) {
+        try {
+            const json pre = json::parse(request_body);
+            if (pre.contains("stream_options") && pre["stream_options"].is_object()) {
+                include_usage = pre["stream_options"].value("include_usage", false);
+            }
+        } catch (const json::exception&) {
+        }
     }
 
     std::string url = upstream_url(creds.base_url, endpoint);
@@ -857,6 +901,36 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             }
 
             if (result.status_code != 200) {
+                // Proprietary-endpoint fallback: the OpenAI-compatible URL may
+                // serve a stale catalog (model listed in /models but 404 at
+                // inference). The first-chunk peek above already buffered the
+                // JSON error body; on a model-not-found class error, retry
+                // through the vendor's agent endpoint and translate the
+                // proprietary event stream back to OpenAI SSE. The healthy
+                // path above already flushed live, so this costs nothing
+                // unless the upstream actually errored.
+                if (sse && is_completion_endpoint && alpha_fallback_enabled()) {
+                    bool fell_back = false;
+                    try {
+                        if (alpha_error_qualifies(result.status_code,
+                                                  json::parse(body_buffer))) {
+                            LOG(INFO, "Cloud")
+                                << "OpenAI-compatible endpoint returned HTTP "
+                                << result.status_code << " for model '"
+                                << upstream_model_
+                                << "'; retrying via the proprietary agent endpoint"
+                                << std::endl;
+                            forward_alpha_stream(request_body, creds, legacy,
+                                                 include_usage, sink, timeout_seconds,
+                                                 telemetry_callback);
+                            fell_back = true;
+                        }
+                    } catch (const json::exception&) {
+                    }
+                    if (fell_back) {
+                        return;
+                    }
+                }
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code
                                     << ", body: " << body_buffer.substr(0, 200) << std::endl;
                 json extra = {{"status_code", result.status_code}};
@@ -1101,6 +1175,339 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                        << " model(s) from provider '" << provider
                        << "' via " << url << std::endl;
     return models;
+}
+
+
+bool CloudServer::alpha_fallback_enabled() const {
+    return registry_ != nullptr && registry_->alpha_generate_fallback_for(provider_);
+}
+
+CloudServer::AlphaTarget CloudServer::resolve_alpha_target(
+    const ResolvedCreds& creds) const {
+    AlphaTarget target;
+    if (registry_ == nullptr) {
+        return target;
+    }
+    const std::string override = registry_->alpha_generate_url_for(provider_);
+    target.url = override.empty()
+                     ? CloudProviderRegistry::default_alpha_generate_url(creds.base_url)
+                     : override;
+    target.cli_version = registry_->alpha_cli_version_for(provider_);
+    target.policy = discovery_policy(
+        target.url.empty() ? creds.base_url : target.url,
+        registry_->allow_insecure_http_for(provider_));
+    return target;
+}
+
+bool CloudServer::alpha_error_qualifies(int http_status,
+                                          const json& error_response) const {
+    if (!error_response.is_object() || !error_response.contains("error")) {
+        return false;
+    }
+    int status = http_status;
+    if (status == 0) {
+        const auto& error = error_response["error"];
+        if (error.is_object() && error.contains("details") &&
+            error["details"].is_object()) {
+            const auto& details = error["details"];
+            auto it = details.find("status_code");
+            if (it != details.end() && it->is_number_integer()) {
+                status = static_cast<int>(it->get<int64_t>());
+            }
+        }
+    }
+    return cloud::alpha::is_model_not_found(status, error_response);
+}
+
+namespace {
+
+std::map<std::string, std::string> alpha_headers(
+    const CloudProviderRegistry::AuthHeader& auth_header, const std::string& api_key,
+    const std::string& cli_version) {
+    std::map<std::string, std::string> headers = {
+        {auth_header.name, auth_header.prefix + api_key},
+        {"x-command-code-version", cli_version},
+    };
+    session::apply_forwardable_session(headers);
+    return headers;
+}
+
+// Folds buffered alpha event-stream text into StreamState: newline-delimited
+// JSON objects, one event per line. A trailing partial line is left in
+// line_buffer for the next chunk; end_of_stream flushes it.
+void feed_alpha_text(const std::string& text, bool end_of_stream,
+                     cloud::alpha::StreamState& state, std::string& line_buffer) {
+    auto feed_line = [&](const std::string& line) {
+        if (line.empty()) {
+            return;
+        }
+        try {
+            cloud::alpha::feed_event(json::parse(line), state);
+        } catch (const json::exception&) {
+        }
+    };
+    line_buffer += text;
+    StreamingProxy::process_sse_lines(line_buffer, feed_line, end_of_stream);
+    if (end_of_stream && !line_buffer.empty()) {
+        // process_sse_lines only dispatches terminated lines; the final
+        // event may arrive without a trailing newline.
+        feed_line(line_buffer);
+        line_buffer.clear();
+    }
+}
+
+}  // namespace
+
+json CloudServer::alpha_chat_completion(const json& openai_request,
+                                        const ResolvedCreds& creds, bool legacy) {
+    if (!loaded_) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+    if (creds.insecure_http_blocked) {
+        return insecure_http_error();
+    }
+    if (creds.api_key.empty()) {
+        return missing_creds_error();
+    }
+    const AlphaTarget target = resolve_alpha_target(creds);
+    if (target.url.empty()) {
+        return ErrorResponse::create(
+            "Cloud provider '" + provider_ +
+                "' has the proprietary fallback enabled but no usable endpoint URL "
+                "(set alpha_generate_url or use a base_url with a scheme://host "
+                "prefix).",
+            ErrorType::BACKEND_ERROR, {{"provider", provider_}});
+    }
+
+    const json envelope = cloud::alpha::build_envelope(upstream_model_, openai_request);
+    auto cancel_token = current_request_cancel_context();
+    if (cancel_token.cancelled()) {
+        return ErrorResponse::create("Request cancelled by client",
+                                     ErrorType::INVALID_REQUEST);
+    }
+    utils::HttpResponse response;
+    try {
+        response = utils::HttpClient::post(
+            target.url, envelope.dump(),
+            alpha_headers(creds.auth_header, creds.api_key, target.cli_version),
+            /*timeout_seconds=*/0, target.policy, cancel_token);
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "CloudServer") << "Alpha fallback aborted due to client disconnect: "
+                                    << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client",
+                                     ErrorType::INVALID_REQUEST);
+    } catch (const std::exception& e) {
+        return ErrorResponse::from_exception(NetworkException(e.what()));
+    }
+    if (response.status_code != 200) {
+        json error_details;
+        try {
+            error_details = json::parse(response.body);
+        } catch (...) {
+            error_details = response.body;
+        }
+        return ErrorResponse::create(
+            "cloud (" + provider_ + ") proprietary fallback failed",
+            ErrorType::BACKEND_ERROR,
+            {{"status_code", response.status_code}, {"response", error_details}});
+    }
+
+    cloud::alpha::StreamState state;
+    std::string line_buffer;
+    feed_alpha_text(response.body, /*end_of_stream=*/true, state, line_buffer);
+    if (state.error) {
+        return ErrorResponse::create(
+            "cloud (" + provider_ + ") proprietary fallback failed: " +
+                state.error_message,
+            ErrorType::BACKEND_ERROR, {{"provider", provider_}});
+    }
+    const std::string completion_id = cloud::alpha::new_completion_id();
+    const auto created = static_cast<int64_t>(std::time(nullptr));
+    const std::string model =
+        openai_request.value("model", upstream_model_.empty() ? provider_ : upstream_model_);
+    return legacy ? cloud::alpha::to_text_completion(state, model, completion_id, created)
+                  : cloud::alpha::to_chat_completion(state, model, completion_id, created);
+}
+
+void CloudServer::forward_alpha_stream(const std::string& openai_body,
+                                       const ResolvedCreds& creds, bool legacy,
+                                       bool include_usage, httplib::DataSink& sink,
+                                       long timeout_seconds,
+                                       TelemetryCallback telemetry_callback) {
+    auto error_telemetry = [](const std::string& message) {
+        StreamingProxy::TelemetryData telemetry;
+        telemetry.error_message = message;
+        return telemetry;
+    };
+    auto sse_error = [](const std::string& message) {
+        const json err = {{"error",
+                           {{"message", message}, {"type", ErrorType::BACKEND_ERROR}}}};
+        return "data: " + err.dump() + "\n\n";
+    };
+
+    const AlphaTarget target = resolve_alpha_target(creds);
+    if (target.url.empty()) {
+        const std::string message =
+            "Cloud provider '" + provider_ +
+            "' has the proprietary fallback enabled but no usable endpoint URL.";
+        const std::string error_msg = sse_error(message);
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(error_telemetry(message));
+        }
+        return;
+    }
+
+    json openai_request;
+    try {
+        openai_request = json::parse(openai_body);
+    } catch (const json::exception&) {
+        openai_request = json::object();
+    }
+    const json envelope = cloud::alpha::build_envelope(upstream_model_, openai_request);
+    const std::string completion_id = cloud::alpha::new_completion_id();
+    const auto created = static_cast<int64_t>(std::time(nullptr));
+    const std::string model =
+        openai_request.value("model", upstream_model_.empty() ? provider_ : upstream_model_);
+
+    const auto headers =
+        alpha_headers(creds.auth_header, creds.api_key, target.cli_version);
+
+    cloud::alpha::StreamState state;
+    std::string line_buffer;
+    bool role_sent = false;
+    bool client_ok = true;
+    const auto start_time = std::chrono::steady_clock::now();
+    auto last_reasoning_len = std::string::size_type{0};
+    auto last_text_len = std::string::size_type{0};
+
+    auto flush_new_text = [&]() {
+        if (!client_ok) {
+            return;
+        }
+        if (!role_sent && (!state.text.empty() || !state.reasoning.empty())) {
+            const std::string role = cloud::alpha::sse_role_chunk(completion_id, created, model,
+                                                           legacy);
+            if (!sink.write(role.data(), role.size())) {
+                client_ok = false;
+                return;
+            }
+            role_sent = true;
+        }
+        if (state.reasoning.size() > last_reasoning_len) {
+            const std::string reasoning_delta =
+                state.reasoning.substr(last_reasoning_len);
+            last_reasoning_len = state.reasoning.size();
+            if (!legacy && !reasoning_delta.empty()) {
+                const std::string chunk = cloud::alpha::sse_reasoning_chunk(
+                    completion_id, created, model, reasoning_delta);
+                if (!sink.write(chunk.data(), chunk.size())) {
+                    client_ok = false;
+                    return;
+                }
+            }
+        }
+        if (state.text.size() > last_text_len) {
+            const std::string text_delta = state.text.substr(last_text_len);
+            last_text_len = state.text.size();
+            if (!text_delta.empty()) {
+                const std::string chunk = cloud::alpha::sse_content_chunk(
+                    completion_id, created, model, text_delta, legacy);
+                if (!sink.write(chunk.data(), chunk.size())) {
+                    client_ok = false;
+                }
+            }
+        }
+    };
+
+    try {
+        const utils::HttpResponse result = utils::HttpClient::post_stream(
+            target.url, envelope.dump(),
+            [&](const char* data, size_t length) -> bool {
+                if (length == 0) {
+                    return client_ok;
+                }
+                feed_alpha_text(std::string(data, length), /*end_of_stream=*/false,
+                                state, line_buffer);
+                if (state.error) {
+                    return false;
+                }
+                flush_new_text();
+                return client_ok;
+            },
+            headers, timeout_seconds, nullptr, target.policy);
+        if (result.curl_code != CURLE_OK) {
+            if (result.curl_code == CURLE_WRITE_ERROR) {
+                if (telemetry_callback) {
+                    telemetry_callback(error_telemetry("Client disconnected during stream"));
+                }
+                return;
+            }
+            throw std::runtime_error(std::string("Alpha fallback stream failed: ") +
+                                     result.curl_error);
+        }
+        if (result.status_code != 200) {
+            const std::string message = "cloud (" + provider_ +
+                                        ") proprietary fallback failed with status " +
+                                        std::to_string(result.status_code);
+            LOG(ERROR, "Cloud") << message << std::endl;
+            const std::string error_msg = sse_error(message);
+            sink.write(error_msg.c_str(), error_msg.size());
+            sink.done();
+            if (telemetry_callback) {
+                telemetry_callback(error_telemetry(message));
+            }
+            return;
+        }
+        feed_alpha_text("", /*end_of_stream=*/true, state, line_buffer);
+        flush_new_text();
+        if (state.error) {
+            const std::string message = "cloud (" + provider_ +
+                                        ") proprietary fallback failed: " +
+                                        state.error_message;
+            const std::string error_msg = sse_error(message);
+            sink.write(error_msg.c_str(), error_msg.size());
+            sink.done();
+            if (telemetry_callback) {
+                telemetry_callback(error_telemetry(message));
+            }
+            return;
+        }
+        if (!role_sent) {
+            const std::string role = cloud::alpha::sse_role_chunk(completion_id, created, model,
+                                                           legacy);
+            sink.write(role.data(), role.size());
+        }
+        const std::string final_chunk = cloud::alpha::sse_final_chunk(
+            state, completion_id, created, model, legacy, include_usage);
+        sink.write(final_chunk.data(), final_chunk.size());
+        const char* done_marker = "data: [DONE]\n\n";
+        sink.write(done_marker, std::strlen(done_marker));
+        sink.done();
+
+        if (telemetry_callback) {
+            StreamingProxy::TelemetryData telemetry;
+            telemetry.input_tokens =
+                state.input_tokens >= 0 ? static_cast<int>(state.input_tokens) : 0;
+            telemetry.output_tokens =
+                state.output_tokens >= 0 ? static_cast<int>(state.output_tokens) : 0;
+            telemetry.time_to_first_token = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - start_time).count();
+            telemetry_callback(telemetry);
+        }
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Cloud") << "Alpha fallback streaming failed: " << e.what() << std::endl;
+        if (telemetry_callback) {
+            telemetry_callback(error_telemetry(e.what()));
+        }
+        try {
+            const std::string error_msg = sse_error(e.what());
+            sink.write(error_msg.c_str(), error_msg.size());
+            sink.done();
+        } catch (...) {
+        }
+    }
 }
 
 } // namespace backends

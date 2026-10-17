@@ -3431,6 +3431,13 @@ if(BUILD_TESTING AND EXISTS "${_CLOUD_PROVIDER_REGISTRY_CONFIG_TEST_SRC}")
     add_cpp_ci_test(CloudProviderRegistryConfigTest CI ON COMMAND test_cloud_provider_registry_config)
 endif()
 
+set(_ALPHA_TRANSLATE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_alpha_translate.cpp")
+if(BUILD_TESTING AND EXISTS "${_ALPHA_TRANSLATE_TEST_SRC}")
+    add_executable(test_alpha_translate test/cpp/test_alpha_translate.cpp src/cpp/server/backends/cloud/alpha_translate.cpp)
+    target_link_libraries(test_alpha_translate PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AlphaTranslateTest CI ON COMMAND test_alpha_translate)
+endif()
+
 set(_ANTHROPIC_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_error.cpp")
 if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)

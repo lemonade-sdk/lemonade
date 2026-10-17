@@ -61,6 +61,37 @@ lemonade cloud install acme \
 
 Both settings persist per provider in `config.json` and apply to discovery and every forwarded request. `lemonade cloud list` prints the header when either value isn't the default. They are sticky: a later `cloud install` for the same provider that omits these flags keeps the configured header rather than reverting to `Authorization: Bearer`.
 
+### Proprietary agent-endpoint fallback
+
+Some vendors serve a model behind their agent endpoint while the OpenAI-compatible
+endpoint for the same model id answers `404 model_not_found` (a stale catalog:
+the model is still listed by `GET /v1/models`). For those providers, `lemond`
+can retry the request through the proprietary endpoint and translate the event
+stream back to the OpenAI shape, so downstream clients never see the vendor
+envelope.
+
+```bash
+lemonade cloud install commandcode --base-url https://api.commandcode.ai/provider/v1 \
+  --alpha-generate-fallback
+```
+
+This is opt-in per provider ("Support fallback to alpha generate") and off by
+default. When enabled:
+
+- A `404`, or a `400` naming a missing/unsupported model, from the
+  OpenAI-compatible endpoint triggers one retry through the vendor endpoint.
+  Auth, quota, and validation errors never trigger the fallback.
+- The retry always requests a vendor stream and translates `reasoning-delta` /
+  `text-delta` events into OpenAI deltas (`reasoning_content` / `content`);
+  non-streaming callers get a buffered complete object.
+- The endpoint URL defaults to `scheme://host/alpha/generate` derived from
+  `base_url`; override it with `--alpha-generate-url URL`.
+- The `x-command-code-version` header defaults to `1.15.1`; override it with
+  `--alpha-cli-version VERSION`. The endpoint refuses callers without a
+  current CLI version.
+- Optional fields are sticky like the auth settings: re-installing without
+  them keeps the stored values, and defaults are omitted from `config.json`.
+
 ### Providers that speak the Anthropic Messages format
 
 Some providers serve their models over the Anthropic Messages wire format rather than OpenAI chat completions. Register those with `--wire-format anthropic`:
@@ -162,6 +193,7 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | `POST /v1/cloud/auth` returns 409 | Env var is set for that provider. Unset it or use the env-var value going forward. |
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
 | Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
+| Chat returns `404 model_not_found` for a model listed in `/v1/models` | Stale provider catalog — the model id isn't served behind the OpenAI-compatible endpoint. If the vendor still serves it on their agent endpoint, re-install with `--alpha-generate-fallback` (see above). |
 | Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. With `stream: true` this arrives as an SSE error frame on a `200`, not a `400`. |
 | An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. With `stream: true` on `/v1/messages` the `401` appears as an SSE `error` event on a `200`, so check the event body rather than the status code. |
 

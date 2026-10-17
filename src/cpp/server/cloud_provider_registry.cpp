@@ -38,6 +38,19 @@ apply_options(CloudProviderRegistry::Record record,
     if (options.auth_header_name) record.auth_header_name = *options.auth_header_name;
     if (options.auth_header_prefix) record.auth_header_prefix = *options.auth_header_prefix;
     if (options.wire_format) record.wire_format = *options.wire_format;
+    if (options.alpha_generate_fallback) {
+        record.alpha_generate_fallback = *options.alpha_generate_fallback;
+    }
+    if (options.alpha_generate_url) {
+        std::string url = *options.alpha_generate_url;
+        while (!url.empty() && url.back() == '/') {
+            url.pop_back();
+        }
+        record.alpha_generate_url = std::move(url);
+    }
+    if (options.alpha_cli_version) {
+        record.alpha_cli_version = *options.alpha_cli_version;
+    }
     return record;
 }
 
@@ -129,6 +142,36 @@ std::string CloudProviderRegistry::validate_wire_format(const std::string& wire_
     return "Wire format must be one of: openai, anthropic";
 }
 
+std::string CloudProviderRegistry::validate_alpha_cli_version(const std::string& version) {
+    if (version.empty() || version.size() > 32) {
+        return "Alpha CLI version must be 1-32 characters";
+    }
+    const bool ok = std::all_of(version.begin(), version.end(), [](unsigned char c) {
+        return c > 0x20 && c < 0x7F;
+    });
+    if (!ok) {
+        return "Alpha CLI version must be printable ASCII without whitespace";
+    }
+    return "";
+}
+
+std::string CloudProviderRegistry::default_alpha_generate_url(const std::string& base_url) {
+    const size_t scheme_end = base_url.find("://");
+    if (scheme_end == std::string::npos) {
+        return "";
+    }
+    const size_t host_start = scheme_end + 3;
+    const size_t host_end = base_url.find_first_of("/?#", host_start);
+    const std::string host =
+        base_url.substr(host_start, host_end == std::string::npos
+                                         ? std::string::npos
+                                         : host_end - host_start);
+    if (host.empty()) {
+        return "";
+    }
+    return base_url.substr(0, host_start) + host + "/alpha/generate";
+}
+
 bool CloudProviderRegistry::is_http_base_url(const std::string& base_url) {
     return starts_with_scheme(base_url, "http://");
 }
@@ -194,6 +237,26 @@ void CloudProviderRegistry::load_from_config(const json& cloud_providers_array) 
             validate_wire_format(entry["wire_format"].get<std::string>()).empty()) {
             r.wire_format = entry["wire_format"].get<std::string>();
         }
+        if (entry.contains("alpha_generate_fallback") &&
+            entry["alpha_generate_fallback"].is_boolean()) {
+            r.alpha_generate_fallback =
+                entry["alpha_generate_fallback"].get<bool>();
+        }
+        if (entry.contains("alpha_generate_url") &&
+            entry["alpha_generate_url"].is_string()) {
+            const auto url = normalize_base_url(
+                entry["alpha_generate_url"].get<std::string>());
+            if (validate_base_url(url).empty()) {
+                r.alpha_generate_url = url;
+            }
+        }
+        if (entry.contains("alpha_cli_version") &&
+            entry["alpha_cli_version"].is_string()) {
+            const auto version = entry["alpha_cli_version"].get<std::string>();
+            if (validate_alpha_cli_version(version).empty()) {
+                r.alpha_cli_version = version;
+            }
+        }
         if (r.name.empty() || r.base_url.empty()) continue;
         installed_.push_back(std::move(r));
     }
@@ -219,6 +282,15 @@ json CloudProviderRegistry::to_config_array() const {
         }
         if (r.wire_format != defaults.wire_format) {
             entry["wire_format"] = r.wire_format;
+        }
+        if (r.alpha_generate_fallback != defaults.alpha_generate_fallback) {
+            entry["alpha_generate_fallback"] = r.alpha_generate_fallback;
+        }
+        if (r.alpha_generate_url != defaults.alpha_generate_url) {
+            entry["alpha_generate_url"] = r.alpha_generate_url;
+        }
+        if (r.alpha_cli_version != defaults.alpha_cli_version) {
+            entry["alpha_cli_version"] = r.alpha_cli_version;
         }
         arr.push_back(std::move(entry));
     }
@@ -310,6 +382,33 @@ std::string CloudProviderRegistry::wire_format_for(const std::string& provider) 
         if (r.name == provider) return r.wire_format;
     }
     return "openai";
+}
+
+bool CloudProviderRegistry::alpha_generate_fallback_for(
+    const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return r.alpha_generate_fallback;
+    }
+    return false;
+}
+
+std::string CloudProviderRegistry::alpha_generate_url_for(
+    const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return r.alpha_generate_url;
+    }
+    return "";
+}
+
+std::string CloudProviderRegistry::alpha_cli_version_for(
+    const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return r.alpha_cli_version;
+    }
+    return Record{}.alpha_cli_version;
 }
 
 std::string CloudProviderRegistry::resolve_key(const std::string& provider) const {

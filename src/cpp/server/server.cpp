@@ -7083,6 +7083,9 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"auth_header_name", rec.auth_header_name},
                 {"auth_header_prefix", rec.auth_header_prefix},
                 {"wire_format", rec.wire_format},
+                {"alpha_generate_fallback", rec.alpha_generate_fallback},
+                {"alpha_generate_url", rec.alpha_generate_url},
+                {"alpha_cli_version", rec.alpha_cli_version},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -8015,6 +8018,8 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //    allow_insecure_http: false,
         //    auth_header_name / auth_header_prefix / wire_format: see
         //      CloudProviderRegistry::Record,
+        //    alpha_generate_fallback / alpha_generate_url /
+        //      alpha_cli_version: proprietary agent-endpoint fallback,
         //    api_key: "..."}
         //
         // Every field after base_url is optional and applied only when
@@ -8082,6 +8087,46 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 install_options.allow_insecure_http =
                     request_json["allow_insecure_http"].get<bool>();
             }
+            if (request_json.contains("alpha_generate_fallback")) {
+                if (!request_json["alpha_generate_fallback"].is_boolean()) {
+                    reject("alpha_generate_fallback must be a boolean when provided");
+                    return;
+                }
+                install_options.alpha_generate_fallback =
+                    request_json["alpha_generate_fallback"].get<bool>();
+            }
+            if (request_json.contains("alpha_generate_url")) {
+                if (!request_json["alpha_generate_url"].is_string()) {
+                    reject("alpha_generate_url must be a string when provided");
+                    return;
+                }
+                auto url =
+                    request_json["alpha_generate_url"].get<std::string>();
+                if (!url.empty()) {
+                    if (auto err =
+                            CloudProviderRegistry::validate_base_url(url);
+                        !err.empty()) {
+                        reject(err);
+                        return;
+                    }
+                }
+                install_options.alpha_generate_url = std::move(url);
+            }
+            if (request_json.contains("alpha_cli_version")) {
+                if (!request_json["alpha_cli_version"].is_string()) {
+                    reject("alpha_cli_version must be a string when provided");
+                    return;
+                }
+                auto version =
+                    request_json["alpha_cli_version"].get<std::string>();
+                if (auto err =
+                        CloudProviderRegistry::validate_alpha_cli_version(version);
+                    !err.empty()) {
+                    reject(err);
+                    return;
+                }
+                install_options.alpha_cli_version = std::move(version);
+            }
             // The http:// opt-in gate below reflects the effective state: an
             // omitted flag on a re-install keeps whatever was stored.
             const bool allow_insecure_http =
@@ -8132,6 +8177,12 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"auth_header_name", auth_header.name},
                 {"auth_header_prefix", auth_header.prefix},
                 {"wire_format", cloud_registry_->wire_format_for(provider)},
+                {"alpha_generate_fallback",
+                 cloud_registry_->alpha_generate_fallback_for(provider)},
+                {"alpha_generate_url",
+                 cloud_registry_->alpha_generate_url_for(provider)},
+                {"alpha_cli_version",
+                 cloud_registry_->alpha_cli_version_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},

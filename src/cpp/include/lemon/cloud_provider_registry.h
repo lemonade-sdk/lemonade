@@ -42,13 +42,27 @@ public:
         // is what CloudServer implements; "anthropic" providers are relayed
         // from lemond's /v1/messages instead.
         std::string wire_format = "openai";
+        // Opt-in fallback to the vendor's proprietary agent endpoint
+        // (CommandCode's /alpha/generate). When true, a model-not-found class
+        // error from the OpenAI-compatible base URL is retried through the
+        // proprietary envelope, translated back to the OpenAI shape.
+        bool alpha_generate_fallback = false;
+        // Proprietary endpoint URL. Empty derives scheme://host/alpha/generate
+        // from base_url at request time.
+        std::string alpha_generate_url;
+        // Value sent as x-command-code-version on fallback requests. The
+        // endpoint refuses callers without a current CLI version.
+        std::string alpha_cli_version = "1.15.1";
 
         bool operator==(const Record& other) const {
             return name == other.name && base_url == other.base_url &&
                    allow_insecure_http == other.allow_insecure_http &&
                    auth_header_name == other.auth_header_name &&
                    auth_header_prefix == other.auth_header_prefix &&
-                   wire_format == other.wire_format;
+                   wire_format == other.wire_format &&
+                   alpha_generate_fallback == other.alpha_generate_fallback &&
+                   alpha_generate_url == other.alpha_generate_url &&
+                   alpha_cli_version == other.alpha_cli_version;
         }
     };
 
@@ -77,6 +91,9 @@ public:
         std::optional<std::string> auth_header_name;
         std::optional<std::string> auth_header_prefix;
         std::optional<std::string> wire_format;
+        std::optional<bool> alpha_generate_fallback;
+        std::optional<std::string> alpha_generate_url;
+        std::optional<std::string> alpha_cli_version;
     };
 
     // Idempotent. Adds the provider if absent, updates base_url if present.
@@ -120,6 +137,18 @@ public:
     // Wire format for a provider. Returns "openai" for a provider that isn't
     // installed, matching the default for records that predate this field.
     std::string wire_format_for(const std::string& provider) const;
+
+    // Whether the proprietary agent-endpoint fallback is enabled for a
+    // provider. False for providers that predate this field or aren't
+    // installed.
+    bool alpha_generate_fallback_for(const std::string& provider) const;
+
+    // Proprietary endpoint URL override for a provider, or empty when the
+    // default derivation (scheme://host/alpha/generate from base_url) applies.
+    std::string alpha_generate_url_for(const std::string& provider) const;
+
+    // CLI version string sent as x-command-code-version on fallback requests.
+    std::string alpha_cli_version_for(const std::string& provider) const;
 
     // Resolves an API key for a provider:
     //   1. Returns the LEMONADE_<PROVIDER_UPPER>_API_KEY env var if set.
@@ -176,6 +205,15 @@ public:
     // Only "openai" and "anthropic" are recognized; anything else would leave
     // the provider undispatchable.
     static std::string validate_wire_format(const std::string& wire_format);
+
+    // CLI version for the proprietary fallback: non-empty, printable ASCII,
+    // no whitespace (it travels as a single HTTP header value).
+    static std::string validate_alpha_cli_version(const std::string& version);
+
+    // Derives the default proprietary endpoint URL from an OpenAI-compatible
+    // base URL: scheme://host/alpha/generate. Returns empty when the base URL
+    // has no usable scheme://host prefix.
+    static std::string default_alpha_generate_url(const std::string& base_url);
 
     // Returns true for an http:// base URL, false for https:// or invalid input.
     static bool is_http_base_url(const std::string& base_url);

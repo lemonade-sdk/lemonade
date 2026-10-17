@@ -1981,6 +1981,9 @@ curl "http://localhost:13305/v1/system-info"
     - `auth_header_name` - Header this provider's API key is sent in (default `Authorization`).
     - `auth_header_prefix` - Value prefix placed before the key (default `Bearer `).
     - `wire_format` - Request/response shape this provider speaks: `openai` (default) or `anthropic`.
+    - `alpha_generate_fallback` - Retry model-not-found class errors through the vendor's proprietary agent endpoint (`/alpha/generate`), translated back to the OpenAI shape. Off by default.
+    - `alpha_generate_url` - Proprietary endpoint URL override. Empty derives `scheme://host/alpha/generate` from `base_url` at request time.
+    - `alpha_cli_version` - Version sent as `x-command-code-version` on fallback requests (default `"1.15.1"`).
     - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
@@ -2057,6 +2060,9 @@ Registers an OpenAI-compatible chat provider. The base URL is persisted to `conf
 | `auth_header_name` | No | Header carrying the API key. Must be a valid HTTP header name. Default `"Authorization"`. |
 | `auth_header_prefix` | No | Value prefix before the key. Default `"Bearer "`; pass `""` for gateways that expect the bare key. |
 | `wire_format` | No | `"openai"` (default) or `"anthropic"`. An `"anthropic"` provider is served from `POST /v1/messages` only; any other value returns 400. |
+| `alpha_generate_fallback` | No | `true` to retry model-not-found class errors through the vendor's proprietary agent endpoint. Default `false`. |
+| `alpha_generate_url` | No | Proprietary endpoint URL override. Empty (default) derives `scheme://host/alpha/generate` from `base_url` at request time. |
+| `alpha_cli_version` | No | Version sent as `x-command-code-version` on fallback requests. Default `"1.15.1"`. |
 
 Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
@@ -2083,6 +2089,9 @@ Response format:
   "auth_header_name": "Authorization",
   "auth_header_prefix": "Bearer ",
   "wire_format": "openai",
+  "alpha_generate_fallback": false,
+  "alpha_generate_url": "",
+  "alpha_cli_version": "1.15.1",
   "models_discovered": 12,
   "auth_state": {
     "env_var_set": true,
