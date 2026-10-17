@@ -450,9 +450,14 @@ namespace lemon::backends {
         return parsed ? parsed->tag + "@" + parsed->digest.substr(7, 12) : pin;
     }
 
-    std::string BackendUtils::get_backend_image(const std::string& recipe, const std::string& backend) {
+    const ContainerPolicy* BackendUtils::get_container_policy(const std::string& recipe,
+                                                              const std::string& backend) {
         const BackendDescriptor* descriptor = descriptor_for(recipe);
-        const ContainerPolicy* policy = descriptor ? descriptor->container_for(backend) : nullptr;
+        return descriptor ? descriptor->container_for(backend) : nullptr;
+    }
+
+    std::string BackendUtils::get_backend_image(const std::string& recipe, const std::string& backend) {
+        const ContainerPolicy* policy = get_container_policy(recipe, backend);
         if (!policy) {
             throw std::runtime_error(recipe + ":" + backend + " is not a container backend");
         }
@@ -467,8 +472,7 @@ namespace lemon::backends {
 
     std::string BackendUtils::get_installed_backend_image(const std::string& recipe,
                                                           const std::string& backend) {
-        const BackendDescriptor* descriptor = descriptor_for(recipe);
-        const ContainerPolicy* policy = descriptor ? descriptor->container_for(backend) : nullptr;
+        const ContainerPolicy* policy = get_container_policy(recipe, backend);
         if (!policy) {
             return "";
         }

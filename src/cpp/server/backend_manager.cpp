@@ -154,11 +154,6 @@ void report_backend_ready(const std::string& recipe,
     progress_cb(p);
 }
 
-const ContainerPolicy* container_policy(const std::string& recipe, const std::string& backend) {
-    const BackendDescriptor* descriptor = backends::descriptor_for(recipe);
-    return descriptor ? descriptor->container_for(backend) : nullptr;
-}
-
 // A container backend's install directory holds only its version.txt, which
 // records the pin its image was pulled for.
 fs::path container_version_file(const std::string& recipe, const std::string& backend) {
@@ -176,7 +171,7 @@ void install_container_backend(const std::string& recipe, const std::string& bac
                                  failure->text());
     }
 
-    const ContainerPolicy* policy = container_policy(recipe, backend);
+    const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
     if (!utils::ContainerManager::allowed_image(policy->image)) {
         throw std::runtime_error(recipe + ":" + backend + " names the image " + policy->image +
                                  ", which is not one Lemonade pulls container backends from");
@@ -674,7 +669,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    if (container_policy(recipe, resolved_backend)) {
+    if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
         install_container_backend(recipe, resolved_backend, force, progress_cb);
         return;
     }
@@ -939,7 +934,7 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << resolved_backend << std::endl;
 
-    if (container_policy(recipe, resolved_backend)) {
+    if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
         uninstall_container_backend(recipe, resolved_backend);
         return;
     }
@@ -1039,7 +1034,7 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     BackendEnrichment result;
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
-        if (const ContainerPolicy* policy = container_policy(recipe, resolved_backend)) {
+        if (const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
             result.version = backends::short_container_pin(
                 backends::BackendUtils::get_backend_version(recipe, resolved_backend));
             result.download_filename =

@@ -4,6 +4,7 @@
 #include <filesystem>
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
@@ -141,8 +142,7 @@ std::optional<utils::SetupFailure> container_setup_failure(const std::string& re
                                    "lemonade config set enable_containers=true"};
     }
     const auto& manager = utils::ContainerManager::global();
-    const BackendDescriptor* desc = descriptor_for(recipe);
-    const ContainerPolicy* policy = desc ? desc->container_for(backend) : nullptr;
+    const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
     if (policy && std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
                       policy->devices.end()) {
         if (auto failure = manager.check_selinux()) {
