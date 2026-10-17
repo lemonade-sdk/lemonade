@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import MarkdownMessage from '../../MarkdownMessage';
+import ChatErrorMessage from '../ChatErrorMessage';
 import AudioButton from '../../AudioButton';
 import {
   AppSettings,
   buildChatRequestOverrides,
 } from '../../utils/appSettings';
 import { serverFetch } from '../../utils/serverConfig';
+import { ChatErrorInfo, buildChatErrorInfo, isServerRejection, readHttpError } from '../../utils/httpErrors';
 import { useModels } from '../../hooks/useModels';
 import { useSystem } from '../../hooks/useSystem';
 import { Modality } from '../../hooks/useInferenceState';
@@ -136,7 +138,7 @@ interface LLMChatPanelProps {
   isPreFlight: boolean;
   isInferring: boolean;
   activeModality: Modality | null;
-  runPreFlight: (modality: Modality, options: { modelName: string; modelsData: ModelsData; onError: (msg: string) => void }) => Promise<boolean>;
+  runPreFlight: (modality: Modality, options: { modelName: string; modelsData: ModelsData; onError: (msg: string, error?: unknown) => void }) => Promise<boolean>;
   reset: () => void;
   showError: (msg: string) => void;
   appSettings: AppSettings | null;
@@ -498,41 +500,41 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
-    // Strip UI-only fields (e.g. `thinking`) so strict providers like
-    // Fireworks don't 400 on unknown keys in the assistant turn.
-    messages: messageHistory.map(({ role, content }) => ({ role, content })),
+    // Strip UI-only fields (e.g. `thinking`) and error bubbles, which carry no
+    // model-visible content, so strict providers like Fireworks don't 400 on
+    // unknown keys or empty assistant turns.
+    messages: messageHistory
+      .filter((message) => !message.error)
+      .map(({ role, content }) => ({ role, content })),
     stream: true,
     ...buildChatRequestOverrides(appSettings),
   });
 
-  /** Build an error message enriched with backend action help text when available. */
-  const buildErrorMessage = (error: any): string => {
-    const errorMessage = error.message || 'Failed to get response from the model.';
+  const findBackendAction = (): string | undefined => {
     const modelInfo = modelsData[chatModelName];
     // collection.router is not a hardware recipe, so backend setup help must
     // come from the candidates' recipes instead.
     const recipes = isRouterCollection(modelInfo)
       ? getCollectionComponents(modelInfo).map((component) => modelsData[component]?.recipe)
       : [modelInfo?.recipe];
-    let backendAction: string | undefined;
     for (const recipe of recipes) {
       const recipeInfo = recipe ? systemInfo?.recipes?.[recipe] : undefined;
       const action = recipeInfo?.backends?.[recipeInfo.default_backend || '']?.action;
-      if (action) {
-        backendAction = action;
-        break;
-      }
+      if (action) return action;
     }
-    const helpText = backendAction ? `\n\n${backendAction}` : '';
+    return undefined;
+  };
 
-    if (backendAction && backendAction.match(/https?:\/\/[^\s]+\.html/)) {
+  /** Build a structured error for the chat, opening backend docs when offered. */
+  const buildErrorInfo = (error: any): ChatErrorInfo => {
+    const backendAction = findBackendAction();
+    if (backendAction && !isServerRejection(error) && backendAction.match(/https?:\/\/[^\s]+\.html/)) {
       const urlMatch = backendAction.match(/https?:\/\/[^\s]+/);
       if (urlMatch) {
         window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
       }
     }
-
-    return `Error: ${errorMessage}${helpText}`;
+    return buildChatErrorInfo(error, window.location.origin, backendAction);
   };
 
   /**
@@ -549,7 +551,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const extractedAudio: Array<{ data: string; mime: string }> = [];
     const extractedImages: Array<{ dataUrl: string }> = [];
 
-    const processedMessages: any[] = messageHistory.map(msg => {
+    const processedMessages: any[] = messageHistory.filter((msg) => !msg.error).map(msg => {
       if (typeof msg.content === 'string') {
         return { role: msg.role, content: msg.content };
       }
@@ -658,7 +660,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         signal: abortControllerRef.current?.signal,
       });
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw await readHttpError(response);
       const data = await response.json();
 
       // Notify UI that model is loaded on first response
@@ -860,7 +862,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       signal: abortControllerRef.current!.signal,
     });
 
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    if (!response.ok) throw await readHttpError(response);
     if (!response.body) throw new Error('Response body is null');
 
     const reader = response.body.getReader();
@@ -930,8 +932,15 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const ready = await runPreFlight('llm', {
       modelName: chatModelName,
       modelsData,
-      onError: (msg) => {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Error preparing model: ${msg}` }]);
+      onError: (msg, preflightError) => {
+        const error = preflightError ?? new Error(msg);
+        const info = buildErrorInfo(error);
+        const keepsSpecificTitle = isServerRejection(error) || error instanceof TypeError;
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: '',
+          error: keepsSpecificTitle ? info : { ...info, title: 'Could not prepare the model' },
+        }]);
       },
     });
     if (!ready) return;
@@ -989,7 +998,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: buildErrorMessage(error),
+            content: '',
+            error: buildErrorInfo(error),
           };
           return newMessages;
         });
@@ -1068,7 +1078,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: buildErrorMessage(error),
+            content: '',
+            error: buildErrorInfo(error),
           };
           return newMessages;
         });
@@ -1114,8 +1125,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     message.content.every((item) => item.type === 'image_url')
   );
 
-  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string) => (
+  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string, error?: ChatErrorInfo) => (
     <>
+      {error && <ChatErrorMessage error={error} />}
       {thinking && (
         <div className="thinking-section">
           <button
@@ -1248,8 +1260,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const renderAudioButton = (role: string, message: MessageContent, btnIndex: number) => {
     let isTextContent = (typeof message === 'object')
-      ? (message.filter((chunk) => chunk.type === 'text').length != 0)
-      : true;
+      ? message.some((chunk) => chunk.type === 'text' && chunk.text.trim().length > 0)
+      : message.trim().length > 0;
 
     return (appSettings?.tts.enableTTS.value) &&
       isTextContent &&
@@ -1409,7 +1421,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                   onClick={(e) => message.role === 'user' && !isBusy && handleEditMessage(index, e)}
                   style={{ cursor: message.role === 'user' && !isBusy ? 'pointer' : 'default' }}
                 >
-                  {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant', message.role)}
+                  {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant', message.role, message.error)}
                 </div>
               )}
             </div>
