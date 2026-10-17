@@ -24,9 +24,24 @@ if [ "$1" = "configure" ]; then
 		usermod -a -G systemd-journal lemonade
 	fi
 
-	# Add lemonade user to render group for GPU access
-	if getent group render > /dev/null; then
-		usermod -a -G render lemonade
+	# Add lemonade user to video and render groups for GPU access
+	for gpu_group in video render; do
+		if getent group "$gpu_group" > /dev/null; then
+			usermod -a -G "$gpu_group" lemonade
+		fi
+	done
+
+	# Rootless Podman maps the container's users onto a subordinate ID range,
+	# which useradd allocates only for regular accounts. The range starts past
+	# every range already allocated. A subid: line in nsswitch.conf means a
+	# central directory allocates ranges, so that is left to its administrator.
+	if ! grep -qs '^subid:' /etc/nsswitch.conf; then
+		touch /etc/subuid /etc/subgid
+		subid_start=$(cat /etc/subuid /etc/subgid |
+			awk -F: 'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }')
+		subid_range="$subid_start-$((subid_start + 65535))"
+		grep -qs '^lemonade:' /etc/subuid || usermod --add-subuids "$subid_range" lemonade || true
+		grep -qs '^lemonade:' /etc/subgid || usermod --add-subgids "$subid_range" lemonade || true
 	fi
 
 	# Create /var/lib/lemonade (writable state + config for lemonade user).

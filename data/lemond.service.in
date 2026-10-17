@@ -15,6 +15,8 @@ CacheDirectoryMode=0755
 # RuntimeDirectory for ephemeral state (PID files, Unix sockets)
 RuntimeDirectory=lemonade
 RuntimeDirectoryMode=0700
+# Rootless Podman keeps its runtime state here, since the service has no login session.
+Environment=XDG_RUNTIME_DIR=%t/lemonade
 WorkingDirectory=%S/lemonade
 # Server settings (port, host, models_dir, …) live in config.json, not env vars.
 # The few env vars lemond still reads (HF_TOKEN, LEMONADE_API_KEY,
@@ -28,13 +30,13 @@ RestartSec=5s
 KillSignal=SIGINT
 AmbientCapabilities=CAP_SYS_RESOURCE
 
-# Security hardening
+# Security hardening. Rootless Podman creates user namespaces and runs the
+# setuid newuidmap/newgidmap helpers, so NoNewPrivileges and RestrictNamespaces
+# stay off.
 PrivateTmp=yes
-NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=yes
 RestrictRealtime=yes
-RestrictNamespaces=yes
 LockPersonality=yes
 
 [Install]
