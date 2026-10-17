@@ -207,15 +207,23 @@ export function useChatStreaming(
 
     let toolRound = 0;
     const allToolCalls: ToolCallEntry[] = [];
+    let mermaidRepair: import('../mermaidFeedback').MermaidRepairSession | null = null;
+    let mermaidOriginalStats: ChatCompletionStats | null = null;
+    const mermaidCorrectionMessages: ChatMessage[] = [];
+    const isMermaidCorrection = () => !!mermaidRepair?.attempts;
+    const currentMermaidAnswer = (stats: ChatCompletionStats): ChatCompletionStats => ({
+      ...(mermaidOriginalStats || stats),
+      content: mermaidRepair?.answer || (mermaidOriginalStats || stats).content,
+    });
 
     const runCompletion = async (): Promise<void> => {
       const { default: api } = await import(/* webpackChunkName: "api-client" */ '../api');
       return new Promise<void>((resolve, reject) => {
-        api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : fullMessages, {
+        api.chatCompletion(model, retriedWithoutTools ? [...withoutToolPrompt, ...mermaidCorrectionMessages] : fullMessages, {
           params: chatThinkingParams(thinkingMode),
-          tools: !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
+          tools: !retriedWithoutTools && !isMermaidCorrection() && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
-            if (!ownsConversation()) return;
+            if (!ownsConversation() || isMermaidCorrection()) return;
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].thinking = fullReasoning;
@@ -223,14 +231,14 @@ export function useChatStreaming(
             if (!thinkingExpanded) setThinkingExpanded(true);
           },
           onToken: (_token, full) => {
-            if (!ownsConversation()) return;
+            if (!ownsConversation() || isMermaidCorrection()) return;
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].content = full;
             scheduleTokenFlush();
           },
           onStats: (stats) => {
-            if (!ownsConversation()) return;
+            if (!ownsConversation() || isMermaidCorrection()) return;
             setLiveStats(prev => ({ ...prev, [convoId]: stats }));
           },
           onToolCalls: async (toolCalls) => {
@@ -390,21 +398,66 @@ export function useChatStreaming(
               return;
             }
 
-            if (stats.finishReason === 'length') {
-              onError(convoId, 'The model reached its context or output token limit (finish_reason=length). Increase context size or reduce chat history/tools.');
-            } else if (!stats.content.trim() && allToolCalls.length === 0) {
-              onError(convoId, 'The model returned no visible answer (reasoning-only or empty completion). Its context may be full; increase context size or disable tools.');
-            } else {
-              onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
-            }
-
-            cleanupIfOwned();
-            resolve();
+            const finish = async (): Promise<void> => {
+              if (stats.finishReason === 'length') {
+                if (isMermaidCorrection()) {
+                  onDone(convoId, currentMermaidAnswer(stats), allToolCalls.length ? [...allToolCalls] : undefined);
+                } else {
+                  onError(convoId, 'The model reached its context or output token limit (finish_reason=length). Increase context size or reduce chat history/tools.');
+                }
+              } else if (!stats.content.trim() && allToolCalls.length === 0 && !isMermaidCorrection()) {
+                onError(convoId, 'The model returned no visible answer (reasoning-only or empty completion). Its context may be full; increase context size or disable tools.');
+              } else {
+                let finalStats = stats;
+                if (mermaidRepair || /`{3}mermaid\s*\n/i.test(stats.content)) {
+                  if (!mermaidRepair) {
+                    const { MermaidRepairSession } = await import(
+                      /* webpackChunkName: "mermaid-feedback" */ '../mermaidFeedback'
+                    );
+                    mermaidRepair = new MermaidRepairSession();
+                    mermaidOriginalStats = stats;
+                  }
+                  const step = await mermaidRepair.process(stats.content);
+                  if (!ownsConversation() || controller.signal.aborted) return;
+                  if (step.kind === 'retry') {
+                    const correction: ChatMessage[] = [
+                      { role: 'assistant', content: stats.content },
+                      { role: 'user', content: step.prompt },
+                    ];
+                    mermaidCorrectionMessages.push(...correction);
+                    fullMessages = [...fullMessages, ...correction];
+                    setActiveStreams(prev => prev[convoId] ? {
+                      ...prev,
+                      [convoId]: { ...prev[convoId], content: step.content, toolStatus: 'Correcting Mermaid diagrams...' },
+                    } : prev);
+                    await runCompletion();
+                    return;
+                  }
+                  finalStats = { ...(mermaidOriginalStats || stats), content: step.content };
+                }
+                if (ownsConversation() && !controller.signal.aborted) {
+                  onDone(convoId, finalStats, allToolCalls.length ? [...allToolCalls] : undefined);
+                }
+              }
+              cleanupIfOwned();
+            };
+            void finish().then(resolve, error => {
+              console.warn('Mermaid feedback failed:', error);
+              if (ownsConversation() && !controller.signal.aborted) {
+                onDone(convoId, currentMermaidAnswer(stats), allToolCalls.length ? [...allToolCalls] : undefined);
+              }
+              cleanupIfOwned();
+              resolve();
+            });
           },
           onError: (err) => {
             if (err.name === 'AbortError') { cleanupIfOwned(); resolve(); return; }
             dropTokenBufferIfOwned();
-            onError(convoId, err.message);
+            if (isMermaidCorrection()) {
+              if (ownsConversation()) onDone(convoId, currentMermaidAnswer(mermaidOriginalStats!), allToolCalls.length ? [...allToolCalls] : undefined);
+            } else {
+              onError(convoId, err.message);
+            }
             cleanupIfOwned();
             resolve();
           },

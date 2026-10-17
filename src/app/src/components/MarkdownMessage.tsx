@@ -104,7 +104,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
 
 /* ── Mermaid Block — proper React component with its own SVG state ── */
 
-const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ source, isComplete }) => {
+const MermaidBlock: React.FC<{ source: string; isComplete: boolean; onFix?: (message: string) => void }> = ({ source, isComplete, onFix }) => {
   const { t } = useI18n();
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<MermaidFailure | null>(null);
@@ -164,6 +164,15 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
               );
             }}
           >{copiedDiagnostic ? t('Copied') : t('Copy diagnostics')}</button>
+          {onFix && (
+            <button type="button" className="mermaid-block__toggle" onClick={() => onFix([
+              'Please fix this Mermaid diagram for the renderer in this GUI. Return only one corrected Mermaid code block.',
+              `Renderer error: ${error.message}`,
+              '```mermaid\n' + source + '\n```',
+            ].join('\n\n'))}>
+              {t('Ask AI to fix')}
+            </button>
+          )}
         </div>
       )}
       {svg && (
@@ -379,7 +388,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     <div ref={containerRef} className="message__content">
       {segments.map((seg, i) =>
         seg.type === 'mermaid' ? (
-          <MermaidBlock key={`m-${i}`} source={seg.content} isComplete={isComplete} />
+          <MermaidBlock key={`m-${i}`} source={seg.content} isComplete={isComplete} onFix={onOptionSelect} />
         ) : (
           <div key={`t-${i}`} dangerouslySetInnerHTML={{ __html: segmentHtmls.get(i) || '' }} />
         )

@@ -830,6 +830,7 @@ const ZH_CN: Record<string, string> = {
   'Diagram syntax error': '图表语法错误',
   'Diagram rendering failed': '图表渲染失败',
   'Copy diagnostics': '复制诊断信息',
+  'Ask AI to fix': '让 AI 修复',
   'Show diagram': '显示图表',
   'Show source': '显示源码',
   'Copy code': '复制代码',
