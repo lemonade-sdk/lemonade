@@ -13,6 +13,7 @@ extern const RouteArg kCtxSize;
 
 namespace common {
 extern const RouteArg kStream;
+extern const RouteArg kDryRun;
 } // namespace common
 
 namespace generation {

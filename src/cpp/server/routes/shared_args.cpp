@@ -18,6 +18,8 @@ namespace common {
 const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                        "`true` sends the response as server-sent events as it progresses; `false` sends one "
                        "response once complete. Defaults to `false`."};
+const RouteArg kDryRun{"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "`true` reports what the request would do without doing it. Defaults to `false`."};
 } // namespace common
 
 namespace generation {

@@ -503,7 +503,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `models` | No | Models to sync. Defaults to every downloaded model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `dry_run` | No | Check for updates without downloading them. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `dry_run` | No | `true` reports what the request would do without doing it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `async` | No | Run in the background and answer immediately. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `attach_if_running` | No | `true` reports a running sync, or with `async: false` waits for it, without adding this request's models to it. Defaults to `false`, which queues the models into the running sync. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 

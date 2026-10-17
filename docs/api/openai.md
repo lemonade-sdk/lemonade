@@ -2085,12 +2085,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `dry_run` | No | `true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `dry_run` | No | `true` reports what the request would do without doing it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The request merges into the model's saved entry, so keys it leaves out keep their values. `null` removes an option, as do `-1`, `""` and `"auto"` for any option but `ctx_size`, and the model falls back to the next layer of the [priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
 
 A request that fails validation saves nothing.
+
+With `dry_run`, the request is validated and resolved as a save would be, but nothing is persisted: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk.
 
 A running model keeps its current options until it is next loaded.
 

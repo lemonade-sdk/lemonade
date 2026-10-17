@@ -7,6 +7,7 @@
 #include "lemon/server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_sync.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -18,8 +19,6 @@ namespace {
 
 const RouteArg kModels{"models", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
                        "Models to sync. Defaults to every downloaded model."};
-const RouteArg kDryRun{"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Check for updates without downloading them. Defaults to `false`."};
 const RouteArg kAsync{"async", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                       "Run in the background and answer immediately. Defaults to `true`."};
 const RouteArg kAttachIfRunning{"attach_if_running", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
@@ -52,7 +51,7 @@ public:
             "See Model Synchronization & Auto-Updates in "
             "[Server Configuration](../guide/configuration/README.md).",
         };
-        s.args = {kModels, kDryRun, kAsync, kAttachIfRunning};
+        s.args = {kModels, common::kDryRun, kAsync, kAttachIfRunning};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -83,8 +82,8 @@ public:
         if (req.has(kModels)) {
             target_models = req.arg(kModels).get<std::vector<std::string>>();
         }
-        if (req.has(kDryRun)) {
-            dry_run = req.arg(kDryRun).get<bool>();
+        if (req.has(common::kDryRun)) {
+            dry_run = req.arg(common::kDryRun).get<bool>();
         }
         if (req.has(kAsync)) {
             async_dispatch = req.arg(kAsync).get<bool>();

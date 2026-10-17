@@ -64,10 +64,6 @@ const RouteError kInvalidOptionValue{
     400, "",
     "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};
 
-const RouteArg kDryRun{"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "`true` validates and resolves the request identically but persists nothing: "
-                       "`effective` and `resolved_ctx_size` describe the state the save would produce, while "
-                       "`saved` keeps reporting the entry on disk. Use it to preview a change."};
 const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                           "Ignored; the URL names the model. Accepted so `effective` can be posted back as is."};
 
@@ -92,12 +88,15 @@ public:
             "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
             "removes every saved option at once.",
             "A request that fails validation saves nothing.",
+            "With `dry_run`, the request is validated and resolved as a save would be, but nothing "
+            "is persisted: `effective` and `resolved_ctx_size` describe the state the save would "
+            "produce, while `saved` keeps reporting the entry on disk.",
             "A running model keeps its current options until it is next loaded.",
             "`pinned` is omitted from `effective` and `defaults`; it belongs to "
             "[`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",
         };
-        s.args = {openai::models::kId, model_options::kCtxSize, kDryRun, kModelName};
+        s.args = {openai::models::kId, model_options::kCtxSize, common::kDryRun, kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -121,8 +120,8 @@ public:
             [model_manager, &req](const std::string& model_key, ModelInfo& info,
                                   httplib::Response& r) {
                 json body = req.body;
-                const bool dry_run = req.value(kDryRun, false);
-                body.erase(kDryRun.name);
+                const bool dry_run = req.value(common::kDryRun, false);
+                body.erase(common::kDryRun.name);
 
                 const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
                 const std::set<std::string> allowed(keys.begin(), keys.end());
