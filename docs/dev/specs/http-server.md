@@ -381,7 +381,7 @@ public:
         s.prefixes = Prefixes::Quad;
         s.summary = "Chat Completions";
         s.description = "Generates the next assistant message for a conversation.";
-        s.args = {kModel, kMessages, generation::kStream, kLogprobs};
+        s.args = {kModel, kMessages, common::kStream, kLogprobs};
 
         s.responses = {
             {ResponseFormat::Json, chat_completion_schema()},
@@ -426,7 +426,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (req.value(generation::kStream, false)) {
+        if (req.value(common::kStream, false)) {
             stream_response(req, res, [this](const std::string& body, httplib::DataSink& sink) {
                 ctx_.router->chat_completion_stream(body, sink);
             });
