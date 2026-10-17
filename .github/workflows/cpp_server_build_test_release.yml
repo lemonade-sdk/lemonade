@@ -1575,6 +1575,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The .deb links libraries that Ubuntu 24.04 ships only in this PPA, the
+      # same one the 24.04 build image uses.
+      - name: Add the Lemonade PPA
+        run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
