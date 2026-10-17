@@ -44,6 +44,7 @@ struct RouteArg {
     std::string description;
     std::vector<std::string> aliases;  // other names clients send it under, e.g. "model" for "model_name"
     bool forwarded = false;            // lemond passes it to the backend without acting on it
+    bool drop_invalid = false;         // a value that fails the schema is ignored instead of answered with 400
 };
 
 // Each format a route returns gets its own schema in the docs.

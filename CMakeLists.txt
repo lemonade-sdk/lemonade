@@ -3018,6 +3018,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_DELETE_SHARED_REPO_TEST_SRC}")
 endif()
 
 
+# Route argument checks: an argument sent under several spellings is read from the first one
+# with a value, and a drop_invalid argument's bad value is ignored.
+set(_ROUTE_ARGS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_route_args.cpp")
+if(BUILD_TESTING AND EXISTS "${_ROUTE_ARGS_TEST_SRC}")
+    add_executable(test_route_args test/cpp/test_route_args.cpp)
+    target_link_libraries(test_route_args PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(RouteArgsTest CI ON COMMAND test_route_args)
+endif()
+
+
 # Recipe hiding: a backend with every built-in model dropped by the system-memory
 # heuristic (and no user model left) is hidden from the recipe/backends listing.
 set(_RECIPE_HIDING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_hiding.cpp")

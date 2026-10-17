@@ -38,6 +38,7 @@ This section lists what lemond keeps so that clients built against v2026.42 and 
 - **URL prefixes.** Every endpoint that existed in v2026.42 or earlier is still served under `/api/v0/`, `/api/v1/`, `/v0/` and `/v1/`, through the `Quad` policy in [Prefixes](#prefixes). Only `/v1/` is documented from here on: docs, examples and new client code use `/v1/`, and the [drift check](#drift-check) fails a route whose text names one of the other three.
 - **Older names.** Argument aliases, such as `model` for `/delete`'s `model_name`, and path aliases, such as `reranking` and `reranker` for `rerank`, accept the names older clients send. [Argument Validation](#argument-validation) defines how they are read.
 - **Empty bodies.** An `OptionalJson` route reads an empty or `null` body as `{}`, because released CLIs send the literal `null` to `POST /unload` when no model is named.
+- **Ollama clients.** The Ollama routes read requests the way Ollama does. Ollama's Go client, which the `ollama` CLI uses, always sends both `model` and `name` on `/api/show`, `/api/pull` and `/api/delete` and leaves one empty, and Ollama reads `cmp.Or(model, name)`; the alias rule in [Argument Validation](#argument-validation) reads them the same way. Ollama ignores fields it does not define, so the Lemonade extensions on these routes, such as `ctx_size`, are marked `drop_invalid`. A field Ollama does define keeps Ollama's own check: `options` must be an object, and `think` is a boolean or one of the levels `low`, `medium`, `high` and `max`.
 
 ## Architecture
 
@@ -96,6 +97,7 @@ struct RouteArg {
     std::string description;
     std::vector<std::string> aliases;  // other names clients send it under, e.g. "model" for "model_name"
     bool forwarded = false;            // lemond passes it to the backend without acting on it
+    bool drop_invalid = false;         // a value that fails the schema is ignored instead of answered with 400
 };
 
 struct RouteError {
@@ -184,7 +186,8 @@ The prefix policy sets a route's URLs and the key its requests need, enforced in
 This section defines how `ApiRoute::serve()` checks a request against the route's `RouteArg`s before it calls `handle()`, so a handler never receives a value its schema does not allow.
 
 - **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument, and for a `Form` route, `ModelRoute` checks every `Form` argument once it has built `req.body`. A `required` argument or file must be present, and a value must match its schema's `type`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength` and `pattern`, as must each value nested in it under `items`, `properties` or `additionalProperties`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
-- **Aliases.** A client may send an argument under any of its `aliases`. `serve()` renames an alias to the argument's name, so a handler reads only the name, and the name wins when a request sends both. The docs list the aliases beside the name.
+- **Aliases.** A client may send an argument under any of its `aliases`. `serve()` reads the argument from the first spelling that has a value, the name and then each alias in order, checks only that value, and drops the other spellings unchecked. It renames an alias to the argument's name, so a handler reads only the name. An empty string is not a value when another spelling has one. The docs list the aliases beside the name.
+- **Ignored values.** An argument marked `drop_invalid` has a value that fails its schema removed, as if the client had not sent it, instead of answered with `kArgInvalid`.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
 
