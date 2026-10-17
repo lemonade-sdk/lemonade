@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -206,6 +207,28 @@ inline bool add_label_once(std::vector<std::string>& labels, const std::string& 
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     (void)recipe;
     return DEVICE_NONE;
+}
+
+inline std::vector<std::string> infer_labels_from_name(const std::string& model_name,
+                                                       const std::string& checkpoint = "") {
+    std::vector<std::string> labels;
+    auto to_lower = [](const std::string& s) {
+        std::string result = s;
+        std::transform(result.begin(), result.end(), result.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return result;
+    };
+    const std::string name_lower = to_lower(model_name);
+    const std::string checkpoint_lower = to_lower(checkpoint);
+    if (name_lower.find("embed") != std::string::npos ||
+        checkpoint_lower.find("embed") != std::string::npos) {
+        labels.push_back("embeddings");
+    }
+    if (name_lower.find("rerank") != std::string::npos ||
+        checkpoint_lower.find("rerank") != std::string::npos) {
+        labels.push_back("reranking");
+    }
+    return labels;
 }
 
 } // namespace lemon
