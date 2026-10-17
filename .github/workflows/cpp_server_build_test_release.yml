@@ -2013,10 +2013,19 @@ jobs:
 
       - name: Enable the Ubuntu packaging PPA
         shell: bash
+        env:
+          TARGET_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
         run: |
+          case "$TARGET_REF" in
+            refs/tags/v*)                  channel=stable ;;
+            release-v*|refs/heads/release-v*) channel=candidate ;;
+            *)                             channel=bleeding-edge ;;
+          esac
+
+          echo "Using PPA channel: $channel"
           sudo apt-get update
           sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+          sudo add-apt-repository -y "ppa:lemonade-team/$channel"
 
       - name: Extract Lemonade (.deb) and start server
         uses: ./.github/actions/install-lemonade-deb
