@@ -20,6 +20,7 @@
 #include "model_registry.h"
 #include "model_types.h"
 #include "models/alias_manager.h"
+#include "models/backend_availability.h"
 #include "models/catalog_descriptor.h"
 #include "models/catalog_fetch_clock.h"
 #include "models/change_notifier.h"
@@ -193,6 +194,10 @@ struct ModelManagerConfig {
     std::function<std::string()> default_model_source;
     std::function<json()> model_catalogs;
     std::vector<std::shared_ptr<models::ModelCatalog>> extra_catalogs;
+
+    // What this machine can run, read at the start of every rebuild; empty probes the
+    // hardware. A caller that means a particular machine says so here.
+    std::function<models::BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
 };
 
 class ModelManager {

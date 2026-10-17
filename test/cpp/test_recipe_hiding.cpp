@@ -2,11 +2,11 @@
 // from the recipe/backends listing) when every one of its built-in models was
 // dropped by the system-memory heuristic. Two layers are covered:
 //   * the pure set-difference at the heart of the rule, and
-//   * the contract that a pass over part of the registry carries the availability
-//     side table instead of reducing it to that part.
+//   * the manager filtering against the machine its caller declared.
 
 #include "lemon/model_manager.h"
 #include "lemon/models/store_builder.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
@@ -19,6 +19,9 @@
 
 using lemon::ModelInfo;
 using lemon::ModelManager;
+using lemon::ModelManagerConfig;
+using lemon::RuntimeConfig;
+using lemon::json;
 
 static int g_failures = 0;
 
@@ -54,26 +57,25 @@ static void test_pure_set_difference() {
           lemon::models::recipes_missing_all_models({"ds4"}, {"ds4", "llamacpp"}) == S{});
 }
 
-// A size so large no real machine can hold it, so the model is always
-// memory-filtered regardless of where the test runs.
 static constexpr double HUGE_GB = 1.0e6;
 
-// The memory heuristic only sees models that already cleared the hardware/OS
-// gate (check_recipe_supported) and only runs when system RAM is readable, so
-// these tests cannot assume any particular recipe reaches it. Probe for one that
-// does: a tiny model must survive (recipe supported here) and a huge one must
-// not (size filter actually active).
-static std::string find_probe_recipe(ModelManager& manager) {
-    for (const char* candidate : {"llamacpp", "whispercpp", "kokoro", "sd-cpp"}) {
-        std::map<std::string, ModelInfo> tiny = {{"ProbeTiny", model(candidate, 0.01)}};
-        if (manager.filter_for_host(tiny).visible.empty()) continue;
+// The machine these tests mean: RAM the heuristic can read, a pool a 0.01 GB model
+// fits and a 1e6 GB one does not, and a recipe the machine can run. Declaring it is
+// what keeps the test honest on a host with terabytes of RAM, and on one with no
+// backend installed at all.
+static lemon::models::BackendAvailability test_machine() {
+    lemon::models::BackendAvailability availability;
+    availability.system_ram_gb = 32.0;
+    availability.largest_mem_pool_gb = 24.0;
+    availability.processor = "Declared for the test";
+    return availability;
+}
 
-        std::map<std::string, ModelInfo> huge = {{"ProbeHuge", model(candidate, HUGE_GB)}};
-        if (!manager.filter_for_host(huge).visible.empty()) continue;
-
-        return candidate;
-    }
-    return "";
+static ModelManager manager_on_test_machine(
+    lemon::models::BackendAvailability machine = test_machine()) {
+    ModelManagerConfig config;
+    config.availability = [machine](const std::map<std::string, ModelInfo>&) { return machine; };
+    return ModelManager(std::move(config));
 }
 
 using Reasons = std::shared_ptr<const lemon::models::FilterReasons>;
@@ -101,20 +103,48 @@ static void test_full_pass_recomputes(ModelManager& manager, const std::string& 
           !reports(manager.filter_for_host(partial).reasons->empty_recipes, recipe));
 }
 
+static void test_the_declared_machine_decides() {
+    std::map<std::string, ModelInfo> huge = {{"Huge", model("llamacpp", HUGE_GB)}};
+    check("the declared pool decides a model no machine can hold",
+          manager_on_test_machine().filter_for_host(huge).visible.empty());
+
+    auto switched_off = test_machine();
+    switched_off.filtering_disabled = true;
+    check("filtering off hides nothing even from a pool that cannot hold it",
+          manager_on_test_machine(switched_off).filter_for_host(huge).visible.count("Huge") == 1);
+
+    auto without_backend = test_machine();
+    without_backend.recipes["llamacpp"] =
+        lemon::models::RecipeAvailability{"no backend here", "", false};
+    check("a recipe the declared machine cannot run hides its model",
+          manager_on_test_machine(without_backend).filter_for_host(
+              std::map<std::string, ModelInfo>{{"Tiny", model("llamacpp", 0.01)}})
+              .visible.empty());
+
+    // A recipe this host probably cannot run, listed because the declared machine can.
+    check("a recipe this machine may not run shows when the declared one does",
+          manager_on_test_machine().filter_for_host(
+              std::map<std::string, ModelInfo>{{"NPU", model("ryzenai-llm", 0.01)}})
+              .visible.count("NPU") == 1);
+}
+
+static void test_the_operator_switch_outranks_a_declared_machine() {
+    RuntimeConfig config(json{{"disable_model_filtering", true}});
+    RuntimeConfig::set_global(&config);
+    check("filtering off outranks the declared pool",
+          manager_on_test_machine().filter_for_host(
+              std::map<std::string, ModelInfo>{{"Huge", model("llamacpp", HUGE_GB)}})
+              .visible.count("Huge") == 1);
+    RuntimeConfig::set_global(nullptr);
+}
+
 int main() {
     test_pure_set_difference();
 
-    ModelManager manager;
-    // A vacuous pass is exactly what this test guards against, so a host where
-    // no recipe reaches the memory heuristic is reported as a failure rather
-    // than skipped silently.
-    std::string probe = find_probe_recipe(manager);
-    if (probe.empty()) {
-        check("found a recipe that reaches the memory heuristic on this host", false);
-    } else {
-        std::printf("Using probe recipe: %s\n", probe.c_str());
-        test_full_pass_recomputes(manager, probe);
-    }
+    ModelManager manager = manager_on_test_machine();
+    test_full_pass_recomputes(manager, "llamacpp");
+    test_the_declared_machine_decides();
+    test_the_operator_switch_outranks_a_declared_machine();
 
     if (g_failures == 0) {
         std::printf("All recipe hiding tests passed.\n");

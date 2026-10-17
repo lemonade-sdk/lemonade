@@ -1580,8 +1580,15 @@ static models::BackendAvailability probe_backend_availability(
 
 models::HostFilter ModelManager::filter_for_host(
     const std::map<std::string, ModelInfo>& models) const {
-    models::FilterResult result =
-        models::filter_hardware(models, probe_backend_availability(models));
+    models::BackendAvailability availability =
+        config_.availability ? config_.availability(models) : probe_backend_availability(models);
+    // Over a declared machine too: turning filtering off is the operator's call, not
+    // the probe's. The GTT hint stays probe-only, since it describes real pools.
+    if (auto* cfg = RuntimeConfig::global()) {
+        availability.filtering_disabled = cfg->disable_model_filtering();
+    }
+
+    models::FilterResult result = models::filter_hardware(models, availability);
 
     auto reasons = std::make_shared<models::FilterReasons>();
     reasons->rejected = std::move(result.rejected);
