@@ -3,15 +3,13 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_json.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/model_name_utils.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
-
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
 
 class ModelsIdRoute : public ApiRoute {
 public:
@@ -26,7 +24,7 @@ public:
         s.modality = "n/a";
         s.description =
             "Returns one model, as the same model object [`GET /v1/models`](#get-v1models) lists.";
-        s.args = {kId};
+        s.args = {openai::models::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -44,7 +42,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager& model_manager = *ctx_.model_manager;
         AliasManager* alias_manager = ctx_.alias_manager;
-        std::string model_id = utils::normalize_model_name(req.value(kId, std::string()));
+        std::string model_id = utils::normalize_model_name(req.value(openai::models::kId, std::string()));
 
         if (model_manager.model_exists(model_id)) {
             auto info = model_manager.get_model_info(model_id);

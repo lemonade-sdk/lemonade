@@ -4,6 +4,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -11,16 +12,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Embedding model to run."};
 const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
                       "Text to embed, or an array of texts."};
-const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
-                        "`num_ctx` sets the context size when this request loads the model. Other keys are "
-                        "ignored."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request loads "
-                        "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
 
 class EmbedRoute : public ApiRoute {
 public:
@@ -35,7 +28,7 @@ public:
         s.summary = "Embed one or more texts";
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
-        s.args = {kModel, kInput, kOptions, kCtxSize};
+        s.args = {ollama::embed::kModel, kInput, ollama::embed::kOptions, ollama::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -68,11 +61,11 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(kModel).get<std::string>());
+            std::string model = strip_latest_tag(req.arg(ollama::embed::kModel).get<std::string>());
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(req.arg(kOptions), req.arg(kCtxSize)), ErrorFormat::Plain,
-                                       res)) {
+                                       gateway_load_options(req.arg(ollama::embed::kOptions), req.arg(ollama::kCtxSize)),
+                                       ErrorFormat::Plain, res)) {
                 return;
             }
 

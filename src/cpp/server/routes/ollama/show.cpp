@@ -4,6 +4,7 @@
 #include "lemon/model_types.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -36,10 +37,6 @@ json build_ollama_capabilities(const ModelInfo& info) {
     return capabilities;
 }
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Model to describe.",
-                      {"name"}};
-
 class ShowRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -52,7 +49,7 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Describe a model";
         s.description = "Describes one registered model in Ollama's format.";
-        s.args = {kModel};
+        s.args = {ollama::management::kModel};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -82,7 +79,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string name = strip_latest_tag(req.arg(kModel).get<std::string>());
+            std::string name = strip_latest_tag(req.arg(ollama::management::kModel).get<std::string>());
             if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }

@@ -6,6 +6,7 @@
 #include "lemon/recipe_options.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_options.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -63,8 +64,6 @@ const RouteError kInvalidOptionValue{
     400, "",
     "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};
 
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
 const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
                         "Context size to save: a positive whole number, or `-1` to pin the model to automatic "
                         "sizing even when the server-wide `ctx_size` is a specific number."};
@@ -101,7 +100,7 @@ public:
             "[`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",
         };
-        s.args = {kId, kCtxSize, kDryRun, kModelName};
+        s.args = {openai::models::kId, kCtxSize, kDryRun, kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -121,7 +120,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager* model_manager = ctx_.model_manager;
-        respond_with_model_options(ctx_, req.value(kId, std::string()), res,
+        respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res,
             [model_manager, &req](const std::string& model_key, ModelInfo& info,
                                   httplib::Response& r) {
                 json body = req.body;

@@ -11,7 +11,7 @@
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/model_loader.h"
-#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -137,8 +137,8 @@ struct OptionMapping { const char* ollama_key; const RouteArg& openai_arg; };
 void map_ollama_options(const json& options, const json& ollama_request, json& openai_req,
                         const RouteArg& max_tokens) {
     const OptionMapping mappings[] = {
-        {"temperature",    openai::text::kTemperature},
-        {"top_p",          openai::text::kTopP},
+        {"temperature",    generation::kTemperature},
+        {"top_p",          generation::kTopP},
         {"seed",           openai::text::kSeed},
         {"stop",           openai::text::kStop},
         {"num_predict",    max_tokens},

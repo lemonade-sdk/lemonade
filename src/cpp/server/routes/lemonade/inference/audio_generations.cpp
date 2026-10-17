@@ -5,6 +5,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/audio_formats.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -34,8 +35,6 @@ const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Su
                       "Number of inference steps. Lower is faster, higher can improve quality."};
 const RouteArg kCfg{"cfg", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                     "Classifier-free guidance strength (ThinkSound only)."};
-const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                     "Random seed for reproducibility."};
 const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                                "Output encoding. Only `wav`, the format the backend produces, is accepted. "
                                "Defaults to `wav`."};
@@ -76,7 +75,7 @@ public:
             "- Lyrics may be in any supported language; set `vocal_language` to match.",
         };
         s.args = {
-            kModel, kPrompt, kLyrics, kVocalLanguage, kDuration, kSteps, kCfg, kSeed,
+            kModel, kPrompt, kLyrics, kVocalLanguage, kDuration, kSteps, kCfg, inference::kSeed,
             kResponseFormat
         };
 

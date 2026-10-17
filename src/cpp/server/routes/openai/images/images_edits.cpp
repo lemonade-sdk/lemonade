@@ -12,6 +12,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/json_utils.h"
 
 namespace lemon {
@@ -90,8 +91,6 @@ const ordered_json kIntegerSchema = {{"type", "integer"}};
 const ordered_json kStringSchema = {{"type", "string"}};
 const ordered_json kFileSchema = {{"type", "string"}, {"format", "binary"}};
 
-const RouteArg kModel{"model", ArgIn::Form, kStringSchema, true, Support::Available,
-                      "The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."};
 const RouteArg kImage{"image", ArgIn::Form, kFileSchema, true, Support::Available,
                       "PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files "
                       "are forwarded without re-encoding.", {"image[]"}};
@@ -104,18 +103,11 @@ const RouteArg kSize{"size", ArgIn::Form, kStringSchema, false, Support::Availab
                      "image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` "
                      "(2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips "
                      "that cap; backend limits still apply."};
-const RouteArg kN{"n", ArgIn::Form, {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}, false, Support::Available,
-                  "Number of images to generate, from `1` to `10`. "
-                  "Defaults to `1`."};
-const RouteArg kResponseFormat{"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-                               "Only `b64_json`, a base64-encoded image, is supported.", {}, true};
 const RouteArg kSteps{"steps", ArgIn::Form, kIntegerSchema, false, Support::Available,
                       "Number of inference steps. Defaults to the model's own."};
 const RouteArg kCfgScale{"cfg_scale", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
                          "Classifier-free guidance scale. Defaults to the model's own."};
 const RouteArg kSeed{"seed", ArgIn::Form, kIntegerSchema, false, Support::Available, "Random seed for reproducible output."};
-const RouteArg kUser{"user", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
-                     "Accepted for OpenAI compatibility and ignored."};
 const RouteArg kBackground{"background", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
                            "Accepted for OpenAI compatibility and ignored."};
 const RouteArg kQuality{"quality", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
@@ -160,8 +152,9 @@ public:
             "    ```",
         };
         s.args = {
-            kModel, kImage, kPrompt, kMask, kSize, kN, kResponseFormat, kSteps, kCfgScale, kSeed,
-            kUser, kBackground, kQuality, kInputFidelity, kOutputCompression
+            openai::image_uploads::kModel, kImage, kPrompt, kMask, kSize, openai::image_uploads::kN,
+            openai::image_uploads::kResponseFormat, kSteps, kCfgScale, kSeed,
+            openai::image_uploads::kUser, kBackground, kQuality, kInputFidelity, kOutputCompression
         };
 
         RouteResponse response;
@@ -190,7 +183,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return openai::image_uploads::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;

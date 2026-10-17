@@ -9,7 +9,6 @@
 #include "lemon/model_manager.h"
 #include "lemon/model_residency.h"
 #include "lemon/router.h"
-#include "lemon/server/route_arg.h"
 #include "lemon/server/route_error.h"
 
 namespace lemon {
@@ -31,10 +30,7 @@ public:
     // A collection has no backend of its own, so loading one loads each component.
     void ensure_collection_loaded(const ModelInfo& info);
 
-    // The context size an inference route takes for the load its request may cause.
-    static const RouteArg kCtxSize;
-
-    // The load-level options for a request's kCtxSize value, null when it sent none.
+    // The load-level options for a request's ctx_size value, null when it sent none.
     static nlohmann::json load_options(const nlohmann::json& ctx_size);
 
     // An actionable error for a model that is filtered out on this system, not in the

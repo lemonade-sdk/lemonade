@@ -4,6 +4,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 #include "require_llm.h"
 
@@ -94,7 +95,6 @@ const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, 
 namespace {
 
 using namespace openai::completions;
-using namespace openai::text;
 
 class CompletionsRoute : public ModelRoute {
 public:
@@ -114,9 +114,10 @@ public:
             "see [Router API](./router.md).",
         };
         s.args = {
-            kPrompt, kModel, kStream, kStop, kEcho, kLogprobs, kTemperature, kRepeatPenalty,
-            kFrequencyPenalty, kSeed, kTopK, kTopP, kMaxTokens, kRouteTrace,
-            ModelLoader::kCtxSize
+            kPrompt, openai::text::kModel, generation::kStream, openai::text::kStop, kEcho,
+            kLogprobs, generation::kTemperature, openai::text::kRepeatPenalty,
+            openai::text::kFrequencyPenalty, openai::text::kSeed, generation::kTopK,
+            generation::kTopP, kMaxTokens, openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;
@@ -160,7 +161,7 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return openai::text::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response&) override {
         // Router policies call backends here, before run() does.
@@ -174,7 +175,7 @@ protected:
             return;
         }
 
-        bool is_streaming = req.value(kStream, false);
+        bool is_streaming = req.value(generation::kStream, false);
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
             Router* router = ctx_.router;

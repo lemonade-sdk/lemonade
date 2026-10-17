@@ -37,11 +37,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `messages` | No | Conversation so far. Each message has a `role` and `content`, plus optional `images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or `tool_call_id`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum generated tokens) and `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`. These keys are also accepted at the top level, where they win. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `tools` | No | Tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `tools` | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `format` | No | `json` constrains the reply to a JSON object. A JSON schema is accepted but not applied. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `think` | No | `true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama accepts for models that define none of their own. Not applied: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `keep_alive` | No | `0` with an empty `messages` array unloads the model, answering with `done_reason: "unload"`. Other values are ignored. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -199,7 +199,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | Model to run. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | Model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON as tokens are generated. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
@@ -436,7 +436,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` or `name` | Yes | Model to describe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | The model's name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -522,7 +522,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` or `name` | Yes | Model to delete. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | The model's name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Success answers `200` with an empty body, as Ollama does.
 
@@ -571,7 +571,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` or `name` | Yes | Model to download. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` or `name` | Yes | The model's name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | Stream newline-delimited JSON progress. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.

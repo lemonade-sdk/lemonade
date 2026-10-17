@@ -5,6 +5,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/model_sync.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -14,9 +15,6 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kPullFailed{500, "", "A non-streaming download fails"};
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Model to download.",
-                      {"name"}};
 const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                        "Stream newline-delimited JSON progress. Defaults to `true`."};
 
@@ -38,7 +36,7 @@ public:
             "Only models already in Lemonade's registry can be pulled; use "
             "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
         };
-        s.args = {kModel, kStream};
+        s.args = {ollama::management::kModel, kStream};
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
@@ -82,7 +80,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string name = strip_latest_tag(req.arg(kModel).get<std::string>());
+            std::string name = strip_latest_tag(req.arg(ollama::management::kModel).get<std::string>());
             if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }

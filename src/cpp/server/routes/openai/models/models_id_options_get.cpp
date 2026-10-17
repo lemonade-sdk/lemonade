@@ -3,15 +3,13 @@
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_options.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
 namespace {
 
 using json = nlohmann::json;
-
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
 
 class ModelsIdOptionsGetRoute : public ApiRoute {
 public:
@@ -33,7 +31,7 @@ public:
             "metadata, so a model that has not been downloaded yet shows every key with the "
             "value it has before those defaults apply.",
         };
-        s.args = {kId};
+        s.args = {openai::models::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -49,7 +47,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        respond_with_model_options(ctx_, req.value(kId, std::string()), res, nullptr);
+        respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res, nullptr);
     }
 };
 

@@ -1,14 +1,13 @@
 #include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
 
 class JobsDeleteRoute : public ApiRoute {
 public:
@@ -25,7 +24,7 @@ public:
             "Removes a job at once, even a running one, which is interrupted. The models a "
             "running or paused job loaded are unloaded in the background; a finished job's "
             "models stay loaded.";
-        s.args = {kId};
+        s.args = {job_routes::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -47,7 +46,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         bool active = false;
-        if (!ctx_.job_manager->remove(req.value(kId, std::string()), active)) {
+        if (!ctx_.job_manager->remove(req.value(job_routes::kId, std::string()), active)) {
             write_unknown_job(res);
             return;
         }

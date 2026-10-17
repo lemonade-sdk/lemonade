@@ -15,6 +15,7 @@
 #include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 
 namespace lemon {
@@ -678,7 +679,7 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
                                                           req.body);
             try {
                 ctx_.model_loader->ensure_loaded(req.model,
-                                                 ModelLoader::load_options(req.arg(ModelLoader::kCtxSize)));
+                                                 ModelLoader::load_options(req.arg(model_loading::kCtxSize)));
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 ctx_.model_loader->write_load_error(res, req.model, e.what());

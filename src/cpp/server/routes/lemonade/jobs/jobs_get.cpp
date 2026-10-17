@@ -1,14 +1,13 @@
 #include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
 
 class JobsGetRoute : public ApiRoute {
 public:
@@ -24,7 +23,7 @@ public:
         s.description =
             "Returns a job's full record: its status, the state of each step, and the context "
             "the steps have written.";
-        s.args = {kId};
+        s.args = {job_routes::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -70,7 +69,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const auto job = ctx_.job_manager->get(req.value(kId, std::string()));
+        const auto job = ctx_.job_manager->get(req.value(job_routes::kId, std::string()));
         if (!job) {
             write_unknown_job(res);
             return;

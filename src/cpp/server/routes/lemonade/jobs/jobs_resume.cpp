@@ -1,5 +1,6 @@
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -8,8 +9,6 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kJobNotFound{404, "", "`id` names no job, a deleted one, or one that is not paused or interrupted"};
-
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
 
 class JobsResumeRoute : public ApiRoute {
 public:
@@ -25,7 +24,7 @@ public:
         s.description =
             "Continues a paused job at its next step, or re-runs an interrupted job's pending "
             "step after reloading the models the interrupt unloaded.";
-        s.args = {kId};
+        s.args = {job_routes::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -46,7 +45,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->resume(req.value(kId, std::string()))) {
+        if (!ctx_.job_manager->resume(req.value(job_routes::kId, std::string()))) {
             write_plain_error(res, kJobNotFound, "job not found or not resumable");
             return;
         }

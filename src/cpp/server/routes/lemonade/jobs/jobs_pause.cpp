@@ -1,14 +1,13 @@
 #include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
-
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
 
 class JobsPauseRoute : public ApiRoute {
 public:
@@ -24,7 +23,7 @@ public:
         s.description =
             "Stops a job after its current step and releases the model slot, so queued requests "
             "run. A queued job pauses at once. Models the job loaded stay loaded for the resume.";
-        s.args = {kId};
+        s.args = {job_routes::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -45,7 +44,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->pause(req.value(kId, std::string()))) {
+        if (!ctx_.job_manager->pause(req.value(job_routes::kId, std::string()))) {
             write_job_not_active(res, "pausable");
             return;
         }

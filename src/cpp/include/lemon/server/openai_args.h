@@ -3,27 +3,13 @@
 #include "lemon/server/route_arg.h"
 
 // The arguments of the OpenAI routes that other code builds requests for, such as the Ollama
-// and Anthropic gateways. Each route file defines its own.
+// and Anthropic gateways. Each route file defines its own; the arguments several routes
+// take alike are in shared_args.h.
 namespace lemon::openai {
-
-// chat/completions and completions take these alike.
-namespace text {
-extern const RouteArg kModel;
-extern const RouteArg kStream;
-extern const RouteArg kStop;
-extern const RouteArg kTemperature;
-extern const RouteArg kRepeatPenalty;
-extern const RouteArg kFrequencyPenalty;
-extern const RouteArg kSeed;
-extern const RouteArg kTopK;
-extern const RouteArg kTopP;
-extern const RouteArg kRouteTrace;
-} // namespace text
 
 namespace chat {
 extern const RouteArg kMessages;
 extern const RouteArg kLogprobs;
-extern const RouteArg kTools;
 extern const RouteArg kToolChoice;
 extern const RouteArg kResponseFormat;
 extern const RouteArg kMaxTokens;

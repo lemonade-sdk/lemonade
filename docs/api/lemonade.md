@@ -331,8 +331,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `stream` | No | If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `subscribe` | No | Only applies when `stream=true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | If `true`, sends download progress as server-sent events. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `subscribe` | No | Only applies when `stream` is `true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` or `model` | Yes | A [registered model](https://lemonade-server.ai/models.html) to install, or a new `user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps registered models from colliding with built-in ones. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `recipe` | No | Required when registering: the recipe that loads and runs the model, such as `llamacpp`, or `collection.omni` for an omni collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoint` | No | The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1308,7 +1308,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `duration` | No | Length of the clip in seconds. Defaults to the backend's own default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `steps` | No | Number of inference steps. Lower is faster, higher can improve quality. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg` | No | Classifier-free guidance strength (ThinkSound only). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Output encoding. Only `wav`, the format the backend produces, is accepted. Defaults to `wav`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Generation runs on the GPU (Vulkan, ROCm or CUDA) and takes from seconds for a short sound effect to minutes for full-length music, depending on duration and hardware.
@@ -2189,16 +2189,16 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `recipe` | No | Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, `sd-cpp` or `ryzenai-llm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `backend` | Yes | Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. Cloud providers: `"cloud"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `stream` | No | Local backends: if `true`, sends progress as server-sent events. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | If `true`, sends download progress as server-sent events. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `force` | No | Local backends: if `true`, installs a backend this system does not support anyway. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `provider` | No | Cloud providers, required: a short identifier matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name prefix. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `base_url` | No | Cloud providers, required: the provider's base URL, such as one ending in `/v1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `api_key` | No | Cloud providers: an API key, held in `lemond`'s memory. The provider's environment variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `allow_insecure_http` | No | Cloud providers: must be `true` to send an API key to an `http://` base URL. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `allow_insecure_http` | No | Must be `true` to send an API key to a provider whose base URL is `http://`; the opt-in is saved with the provider. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auth_header_name` | No | Cloud providers: the header that carries the API key. Defaults to `"Authorization"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auth_header_prefix` | No | Cloud providers: the text before the key in that header. Defaults to `"Bearer "`; pass `""` for gateways that expect the bare key. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `wire_format` | No | Cloud providers: `"openai"` or `"anthropic"`. An `"anthropic"` provider is served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults to `"openai"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `subscribe` | No | Local backends with `stream: true`: `false` makes the download server-owned and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `subscribe` | No | Only applies when `stream` is `true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A local install's errors carry an `error` string, and a cloud provider's invalid field an `error` object.
 
@@ -2541,8 +2541,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `recipe` | No | The recipe of the local backend to remove. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `backend` | Yes | Local backends: the backend within the recipe. Cloud providers: `"cloud"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `recipe` | No | Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, `sd-cpp` or `ryzenai-llm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `backend` | Yes | Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. Cloud providers: `"cloud"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `provider` | No | The installed cloud provider to remove. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Uninstall a Cloud Provider
@@ -2650,7 +2650,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `provider` | Yes | The installed provider's name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `api_key` | Yes | The API key. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `allow_insecure_http` | No | Opt in to sending the key to a provider whose base URL is `http://`; the opt-in is saved with the provider. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `allow_insecure_http` | No | Must be `true` to send an API key to a provider whose base URL is `http://`; the opt-in is saved with the provider. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 

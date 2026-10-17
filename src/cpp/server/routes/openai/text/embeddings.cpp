@@ -2,6 +2,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -44,7 +45,7 @@ public:
             "Returns vector representations (embeddings) of the input text for semantic search, "
             "clustering and similarity comparisons, downloading and loading the model if it is not "
             "loaded. Embedding models use the `llamacpp` or `flm` recipe.";
-        s.args = {kInput, kModel, kEncodingFormat, ModelLoader::kCtxSize};
+        s.args = {kInput, kModel, kEncodingFormat, model_loading::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

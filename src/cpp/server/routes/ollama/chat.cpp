@@ -7,6 +7,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -70,22 +71,16 @@ json normalize_openai_tool_calls(json tool_calls) {
     return tool_calls;
 }
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Model to run."};
 const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
                          "Conversation so far. Each message has a `role` and `content`, plus optional "
                          "`images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or "
                          "`tool_call_id`."};
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."};
 const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
                         "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
                         "generated tokens) and `repeat_penalty`, which is sent as OpenAI's "
                         "`frequency_penalty`. These keys are also accepted at the top level, where they win. "
                         "`num_ctx` sets the context size when this request loads the model. Other keys are "
                         "ignored."};
-const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-                      "Tools the model may call."};
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
                        Support::Partial,
                        "`json` constrains the reply to a JSON object. A JSON schema is accepted but not "
@@ -101,14 +96,11 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
 const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
                           "`0` with an empty `messages` array unloads the model, answering with "
                           "`done_reason: \"unload\"`. Other values are ignored."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request loads "
-                        "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
 
 json convert_ollama_to_openai_chat(const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(kModel, ""));
+    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
     openai_req[openai::text::kModel.name] = model;
 
     if (req.has(kMessages)) {
@@ -168,8 +160,8 @@ json convert_ollama_to_openai_chat(const RouteRequest& req) {
 
     map_ollama_options(req.arg(kOptions), req.body, openai_req, openai::chat::kMaxTokens);
 
-    if (req.has(kTools)) {
-        openai_req[openai::chat::kTools.name] = req.arg(kTools);
+    if (req.has(generation::kTools)) {
+        openai_req[generation::kTools.name] = req.arg(generation::kTools);
     }
 
     if (req.has(kFormat) && req.arg(kFormat).is_string() &&
@@ -182,7 +174,7 @@ json convert_ollama_to_openai_chat(const RouteRequest& req) {
     }
 
     // The caller decides whether to stream.
-    openai_req[openai::text::kStream.name] = false;
+    openai_req[generation::kStream.name] = false;
 
     return openai_req;
 }
@@ -350,7 +342,8 @@ public:
             "with two NDJSON lines: the whole message, then the final line.",
         };
         s.args = {
-            kModel, kMessages, kStream, kOptions, kTools, kFormat, kThink, kKeepAlive, kCtxSize
+            gateway::kModel, kMessages, ollama::kStream, kOptions, generation::kTools, kFormat,
+            kThink, kKeepAlive, ollama::kCtxSize
         };
 
         RouteResponse full;
@@ -390,7 +383,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(kModel).get<std::string>());
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             auto messages = req.value(kMessages, json::array());
             if (messages.empty() && req.has(kKeepAlive) &&
@@ -413,18 +406,18 @@ public:
             }
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(req.arg(kOptions), req.arg(kCtxSize)), ErrorFormat::Plain,
-                                       res)) {
+                                       gateway_load_options(req.arg(kOptions), req.arg(ollama::kCtxSize)),
+                                       ErrorFormat::Plain, res)) {
                 return;
             }
 
-            bool stream = req.value(kStream, true);
+            bool stream = req.value(ollama::kStream, true);
 
             auto openai_req = convert_ollama_to_openai_chat(req);
 
-            bool has_tools = req.has(kTools) &&
-                             req.arg(kTools).is_array() &&
-                             !req.arg(kTools).empty();
+            bool has_tools = req.has(generation::kTools) &&
+                             req.arg(generation::kTools).is_array() &&
+                             !req.arg(generation::kTools).empty();
 
             if (stream && has_tools) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming requested with tools; using non-streaming backend call (model: " << model << ")" << std::endl;
@@ -453,7 +446,7 @@ public:
             } else if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req[openai::text::kStream.name] = true;
+                openai_req[generation::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

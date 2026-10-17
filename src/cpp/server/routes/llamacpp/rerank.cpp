@@ -1,6 +1,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -31,7 +32,7 @@ public:
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
-        s.args = {kQuery, kDocuments, kModel, ModelLoader::kCtxSize};
+        s.args = {kQuery, kDocuments, kModel, model_loading::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

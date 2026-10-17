@@ -17,6 +17,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 
@@ -41,8 +42,6 @@ const RouteError kCloudRequestFailed{
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Model to run; loaded on first use."};
 const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
                          "Conversation so far, as `user` and `assistant` messages. `content` is a string or "
                          "an array of `text`, `image` (base64 source), `tool_use` and `tool_result` blocks."};
@@ -50,16 +49,8 @@ const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", json::array({"string
                        "System prompt, as a string or an array of `text` blocks."};
 const RouteArg kMaxTokens{"max_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                           "Upper bound on generated tokens."};
-const RouteArg kTemperature{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-                            "Sampling temperature.", {}, true};
-const RouteArg kTopP{"top_p", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-                     "Nucleus sampling probability.", {}, true};
-const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                     "Number of top tokens considered during sampling.", {}, true};
 const RouteArg kStopSequences{"stop_sequences", ArgIn::JsonBody, {{"type", json::array({"array", "string"})}}, false,
                               Support::Available, "Sequences where generation stops."};
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Stream server-sent events as tokens are generated. Defaults to `false`."};
 const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
                       "Tools the model may call, each with a `name`, `description` and `input_schema`."};
 const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
@@ -74,9 +65,6 @@ const RouteArg kMetadata{"metadata", ArgIn::JsonBody, {{"type", "object"}}, fals
                          "Ignored for local models, with a warning."};
 const RouteArg kContextManagement{"context_management", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
                                   "Ignored for local models, with a warning."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request loads "
-                        "it."};
 const RouteArg kBeta{"beta", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
                      "Accepted for Anthropic SDK compatibility. Values other than `true` add a warning; "
                      "`true` is passed on to providers that are relayed."};
@@ -288,7 +276,7 @@ AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
     // The body passes through byte-for-byte apart from "model", which must name
     // the provider's own id rather than lemonade's "<provider>.<id>" public one.
     json forwarded = req.body;
-    forwarded[kModel.name] = info.checkpoint();
+    forwarded[gateway::kModel.name] = info.checkpoint();
 
     const auto auth_header = registry->auth_header_for(info.cloud_provider);
     AnthropicUpstream upstream;
@@ -410,7 +398,7 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
 json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::string>& warnings) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(kModel, ""));
+    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
     openai_req[openai::text::kModel.name] = model;
 
     json messages = json::array();
@@ -588,14 +576,14 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
     if (req.has(kMaxTokens)) {
         openai_req[openai::chat::kMaxCompletionTokens.name] = req.arg(kMaxTokens);
     }
-    if (req.has(kTemperature)) {
-        openai_req[openai::text::kTemperature.name] = req.arg(kTemperature);
+    if (req.has(generation::kTemperature)) {
+        openai_req[generation::kTemperature.name] = req.arg(generation::kTemperature);
     }
-    if (req.has(kTopP)) {
-        openai_req[openai::text::kTopP.name] = req.arg(kTopP);
+    if (req.has(generation::kTopP)) {
+        openai_req[generation::kTopP.name] = req.arg(generation::kTopP);
     }
-    if (req.has(kTopK)) {
-        openai_req[openai::text::kTopK.name] = req.arg(kTopK);
+    if (req.has(generation::kTopK)) {
+        openai_req[generation::kTopK.name] = req.arg(generation::kTopK);
     }
 
     if (req.has(kStopSequences)) {
@@ -626,7 +614,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         }
 
         if (!openai_tools.empty()) {
-            openai_req[openai::chat::kTools.name] = openai_tools;
+            openai_req[generation::kTools.name] = openai_tools;
         }
     }
 
@@ -694,7 +682,7 @@ json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::
         add_warning(warnings, "Ignored 'context_management' field");
     }
 
-    openai_req[openai::text::kStream.name] = req.value(kStream, false);
+    openai_req[generation::kStream.name] = req.value(generation::kStream, false);
 
     return openai_req;
 }
@@ -832,9 +820,10 @@ public:
             "\"message\"}}`.",
         };
         s.args = {
-            kModel, kMessages, kSystem, kMaxTokens, kTemperature, kTopP, kTopK, kStopSequences,
-            kStream, kTools, kToolChoice, kOutputConfig, kThinking, kMetadata,
-            kContextManagement, kCtxSize, kBeta
+            gateway::kModel, kMessages, kSystem, kMaxTokens, generation::kTemperature,
+            generation::kTopP, generation::kTopK, kStopSequences, generation::kStream, kTools,
+            kToolChoice, kOutputConfig, kThinking, kMetadata, kContextManagement,
+            model_loading::kCtxSize, kBeta
         };
 
         RouteResponse message;
@@ -926,7 +915,7 @@ public:
         try {
             std::vector<std::string> warnings;
 
-            std::string model = strip_latest_tag(req.arg(kModel).get<std::string>());
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             if (req.has(kBeta)) {
                 std::string beta_value = req.arg(kBeta).get<std::string>();
@@ -952,23 +941,23 @@ public:
                     return;
                 }
                 forward_anthropic_upstream(std::move(*match.upstream),
-                                           req.value(kStream, false), model, req, res);
+                                           req.value(generation::kStream, false), model, req, res);
                 return;
             }
 
             auto openai_req = convert_anthropic_to_openai_chat(req, warnings);
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(nullptr, req.arg(kCtxSize)),
+                                       gateway_load_options(nullptr, req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Anthropic, res)) {
                 return;
             }
 
-            bool stream = openai_req.value(openai::text::kStream.name, false);
+            bool stream = openai_req.value(generation::kStream.name, false);
             emit_warning_header();
 
             if (stream) {
-                openai_req[openai::text::kStream.name] = true;
+                openai_req[generation::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model, warnings](const std::string& openai_body,
@@ -981,7 +970,7 @@ public:
                 return;
             }
 
-            openai_req[openai::text::kStream.name] = false;
+            openai_req[generation::kStream.name] = false;
             auto openai_response = ctx_.router->chat_completion(openai_req);
             if (set_anthropic_backend_error_response(openai_response, res)) {
                 return;

@@ -7,6 +7,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/download_manager.h"
 #include "lemon/server/model_registration.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -49,14 +50,6 @@ ordered_json pull_schema() {
     return {{"oneOf", ordered_json::array({success, job})}};
 }
 
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to "
-                       "`false`."};
-const RouteArg kSubscribe{"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                          "Only applies when `stream=true`. If `false`, the server owns the download and answers "
-                          "at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and "
-                          "[`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
-                          "With `true`, closing the stream cancels the download. Defaults to `true`."};
 const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                           "A [registered model](https://lemonade-server.ai/models.html) to install, or a new "
                           "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
@@ -141,9 +134,9 @@ public:
             "for the file format and workflows.",
         };
         s.args = {
-            kStream, kSubscribe, kModelName, kRecipe, kCheckpoint, kCheckpoints, kReasoning,
-            kVision, kEmbedding, kReranking, kMmproj, kComponents, kModels, kLabels, kSource,
-            kRegistrySource, kDoNotUpgrade, kLocalImport
+            downloads::kStream, downloads::kSubscribe, kModelName, kRecipe, kCheckpoint,
+            kCheckpoints, kReasoning, kVision, kEmbedding, kReranking, kMmproj, kComponents,
+            kModels, kLabels, kSource, kRegistrySource, kDoNotUpgrade, kLocalImport
         };
 
         RouteResponse job;
@@ -218,8 +211,8 @@ public:
             std::string checkpoint = req.value(kCheckpoint, "");
             std::string recipe = req.value(kRecipe, "");
             bool do_not_upgrade = req.value(kDoNotUpgrade, false);
-            bool stream = req.value(kStream, false);
-            bool subscribe = req.value(kSubscribe, true);
+            bool stream = req.value(downloads::kStream, false);
+            bool subscribe = req.value(downloads::kSubscribe, true);
             bool local_import = req.value(kLocalImport, false);
 
             // The registry is resolved once, up front, so download, cache layout and

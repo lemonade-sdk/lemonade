@@ -429,8 +429,9 @@ ROUTE_ARG_DECL = re.compile(
 )
 ROUTE_ARG_ALIASES = re.compile(r'"\s*,\s*\{((?:"[^"]+"\s*,?\s*)+)\}')
 ROUTE_ARG_USE = re.compile(
-    r"\breq\.(?:arg|has|value|file)\(\s*(k[A-Z]\w*)\b|\b(k[A-Z]\w*)\.name\b"
+    r"\breq\.(?:arg|has|value|file)\(\s*((?:\w+::)*k[A-Z]\w*)\b|(?<!::)\b(k[A-Z]\w*)\.name\b"
 )
+NAMESPACE_MARK = re.compile(r"\bnamespace\s+([\w:]*)\s*\{|\}\s*//\s*namespace\b")
 ARG_LISTS = re.compile(r"\bargs\s*=\s*\{[^;]*\};", re.S)
 INLINE_ARG = re.compile(r'\{"[^"]+", ArgIn::')
 BODY_ALIAS = re.compile(r"\b(\w+)\s*=\s*req\.body\s*;")
@@ -443,21 +444,40 @@ BUILT_REQUEST_KEY = re.compile(
 )
 
 
+def spellings_of(decl: re.Match) -> set[str]:
+    names = {decl.group(2)}
+    for aliases in ROUTE_ARG_ALIASES.finditer(decl.group(4)):
+        names.update(re.findall(r'"([^"]+)"', aliases.group(1)))
+    return names
+
+
 def argument_spellings(text: str) -> dict[str, set[str]]:
     """Each RouteArg constant text defines, with its name and aliases."""
     spellings = {}
     for decl in ROUTE_ARG_DECL.finditer(text):
-        names = spellings.setdefault(decl.group(1), set())
-        names.add(decl.group(2))
-        for aliases in ROUTE_ARG_ALIASES.finditer(decl.group(4)):
-            names.update(re.findall(r'"([^"]+)"', aliases.group(1)))
+        spellings.setdefault(decl.group(1), set()).update(spellings_of(decl))
     return spellings
 
 
+def qualified_name(text: str, decl: re.Match) -> str:
+    """A RouteArg constant's name as other files write it, such as generation::kStream."""
+    stack = []
+    for mark in NAMESPACE_MARK.finditer(text, 0, decl.start()):
+        if mark.group(0).startswith("namespace"):
+            stack.append(mark.group(1))
+        elif stack:
+            stack.pop()
+    written = re.match(r"const RouteArg ((?:\w+::)*k\w+)", decl.group(0)).group(1)
+    return "::".join([n for n in stack if n and n != "lemon"] + [written])
+
+
 def listed_constants(text: str) -> set[str]:
-    """The RouteArg constants a route file's args lists name, without their namespaces."""
+    """The RouteArg constants a route file's args lists, as written there."""
     lists = " ".join(m.group(0) for m in ARG_LISTS.finditer(text))
-    return set(re.findall(r"\b(k[A-Z]\w*)\b", lists))
+    return {
+        name.removeprefix("lemon::")
+        for name in re.findall(r"\b((?:\w+::)*k[A-Z]\w*)\b", lists)
+    }
 
 
 def literal_argument_reads(
@@ -465,7 +485,7 @@ def literal_argument_reads(
 ) -> list[tuple[int, str]]:
     """Each place a route file names one of its arguments, or an alias, by a string literal
     on the request, where RouteArg constants belong. shared holds the constants defined in
-    other files, such as ModelLoader::kCtxSize."""
+    other files, such as generation::kStream."""
     own = argument_spellings(text)
     spelled = set().union(*own.values()) if own else set()
     for name in listed_constants(text) - set(own):
@@ -505,19 +525,19 @@ def lint_sources() -> list[str]:
         + [server / "core" / "api_route.cpp"]
     ):
         declared.update(ROUTE_ERROR_NAME.findall(path.read_text(encoding="utf-8")))
-    # Constants that several routes list, such as ModelLoader::kCtxSize, are defined outside
-    # the route files that list them.
+    # Constants that several routes list, such as generation::kStream, are defined outside
+    # the route files that list them, and route files name them with their namespaces.
     shared_args = {}
     required_model = set()
     for path in sources:
         text = path.read_text(encoding="utf-8")
         if "RouteSpec spec()" in text:
             continue
-        for name, spellings in argument_spellings(text).items():
-            shared_args.setdefault(name, set()).update(spellings)
         for decl in ROUTE_ARG_DECL.finditer(text):
+            name = qualified_name(text, decl)
+            shared_args.setdefault(name, set()).update(spellings_of(decl))
             if REQUIRED_MODEL_ARG.search(decl.group(0)):
-                required_model.add(decl.group(1))
+                required_model.add(name)
 
     problems = []
     for path in sources:
@@ -589,9 +609,10 @@ def lint_sources() -> list[str]:
             problems.append(
                 f"{where} names a RouteArg {name}, which is also a RouteError's name"
             )
+        listed = listed_constants(text)
         for pair in ROUTE_ARG_USE.findall(text):
-            name = pair[0] or pair[1]
-            if name in arg_constants and not re.search(rf"\b{name}\b", arg_lists):
+            name = (pair[0] or pair[1]).removeprefix("lemon::")
+            if (name in arg_constants or name in shared_args) and name not in listed:
                 problems.append(
                     f"{where} reads {name}, which its route's args do not list"
                 )

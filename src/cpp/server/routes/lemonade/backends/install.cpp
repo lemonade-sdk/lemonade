@@ -11,6 +11,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/cloud_providers.h"
 #include "lemon/server/download_manager.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
 
 namespace lemon {
@@ -93,14 +94,6 @@ ordered_json install_schema() {
     return {{"oneOf", ordered_json::array({local, manual, cloud, job})}};
 }
 
-const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
-                       "Local backends, required: the recipe, such as `llamacpp`, `flm`, `whispercpp`, "
-                       "`sd-cpp` or `ryzenai-llm`."};
-const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                        "Local backends: the backend within the recipe, such as `vulkan`, `rocm`, `cpu` or "
-                        "`default`. Cloud providers: `\"cloud\"`."};
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Local backends: if `true`, sends progress as server-sent events. Defaults to `false`."};
 const RouteArg kForce{"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                       "Local backends: if `true`, installs a backend this system does not support anyway. "
                       "Defaults to `false`."};
@@ -112,9 +105,6 @@ const RouteArg kBaseUrl{"base_url", ArgIn::JsonBody, {{"type", "string"}}, false
 const RouteArg kApiKey{"api_key", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                        "Cloud providers: an API key, held in `lemond`'s memory. The provider's environment "
                        "variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth)."};
-const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                                  "Cloud providers: must be `true` to send an API key to an `http://` base URL. Defaults "
-                                  "to `false`."};
 const RouteArg kAuthHeaderName{"auth_header_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                                "Cloud providers: the header that carries the API key. Defaults to "
                                "`\"Authorization\"`."};
@@ -126,11 +116,6 @@ const RouteArg kWireFormat{"wire_format", ArgIn::JsonBody, {{"enum", json::array
                            "Cloud providers: `\"openai\"` or `\"anthropic\"`. An `\"anthropic\"` provider is "
                            "served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults "
                            "to `\"openai\"`."};
-const RouteArg kSubscribe{"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                          "Local backends with `stream: true`: `false` makes the download server-owned and "
-                          "answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) "
-                          "and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
-                          "With `true`, closing the stream cancels the download. Defaults to `true`."};
 
 class InstallRoute : public ApiRoute {
 public:
@@ -159,8 +144,9 @@ public:
             "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
-            kRecipe, kBackend, kStream, kForce, kProvider, kBaseUrl, kApiKey, kAllowInsecureHttp,
-            kAuthHeaderName, kAuthHeaderPrefix, kWireFormat, kSubscribe
+            backend_routes::kRecipe, backend_routes::kBackend, downloads::kStream, kForce,
+            kProvider, kBaseUrl, kApiKey, backend_routes::kAllowInsecureHttp, kAuthHeaderName,
+            kAuthHeaderPrefix, kWireFormat, downloads::kSubscribe
         };
 
         RouteResponse response;
@@ -219,18 +205,18 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            if (req.value(kBackend, "") == "cloud") {
+            if (req.value(backend_routes::kBackend, "") == "cloud") {
                 install_cloud_provider(req, res);
                 return;
             }
 
-            const std::string recipe = req.value(kRecipe, "");
-            const std::string backend = req.value(kBackend, "");
+            const std::string recipe = req.value(backend_routes::kRecipe, "");
+            const std::string backend = req.value(backend_routes::kBackend, "");
             if (!require_local_recipe(recipe, res)) {
                 return;
             }
-            bool stream = req.value(kStream, false);
-            bool subscribe = req.value(kSubscribe, true);
+            bool stream = req.value(downloads::kStream, false);
+            bool subscribe = req.value(downloads::kSubscribe, true);
             bool force = req.value(kForce, false);
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
@@ -365,9 +351,9 @@ private:
         if (req.has(kWireFormat)) {
             install_options.wire_format = req.arg(kWireFormat).get<std::string>();
         }
-        if (req.has(kAllowInsecureHttp)) {
+        if (req.has(backend_routes::kAllowInsecureHttp)) {
             install_options.allow_insecure_http =
-                req.arg(kAllowInsecureHttp).get<bool>();
+                req.arg(backend_routes::kAllowInsecureHttp).get<bool>();
         }
         // The http:// opt-in gate below reflects the effective state: an
         // omitted flag on a re-install keeps whatever was stored.

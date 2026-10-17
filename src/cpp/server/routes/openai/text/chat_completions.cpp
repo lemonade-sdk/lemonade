@@ -3,8 +3,9 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
-#include "lemon/server/openai_args.h"
 #include "lemon/server/omni_collection.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/thinking_controls.h"
 #include "require_llm.h"
@@ -120,8 +121,6 @@ const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true,
                          "`content`."};
 const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                          "`true` returns the log probability of each output token. Defaults to `false`.", {}, true};
-const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-                      "A list of tools the model may call."};
 const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false, Support::Available,
                            "Which tool the model must call, in OpenAI's format: `auto`, `none`, `required` or an "
                            "object naming a function.", {}, true};
@@ -142,7 +141,6 @@ const RouteArg kEnableThinking{"enable_thinking", ArgIn::JsonBody, {{"type", "bo
 namespace {
 
 using namespace openai::chat;
-using namespace openai::text;
 
 class ChatCompletionsRoute : public ModelRoute {
 public:
@@ -191,10 +189,11 @@ public:
             "Models](../dev/lemonade-omni.md) for details.",
         };
         s.args = {
-            kMessages, kModel, kStream, kStop, kLogprobs, kTemperature, kRepeatPenalty,
-            kFrequencyPenalty, kSeed, kTopK, kTopP, kTools, kToolChoice, kResponseFormat,
-            kMaxTokens, kMaxCompletionTokens, kEnableThinking, kRouteTrace,
-            ModelLoader::kCtxSize
+            kMessages, openai::text::kModel, generation::kStream, openai::text::kStop, kLogprobs,
+            generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
+            openai::text::kSeed, generation::kTopK, generation::kTopP, generation::kTools,
+            kToolChoice, kResponseFormat, kMaxTokens, kMaxCompletionTokens, kEnableThinking,
+            openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;
@@ -264,14 +263,14 @@ public:
     }
 
 protected:
-    const RouteArg& model_arg() const override { return kModel; }
+    const RouteArg& model_arg() const override { return openai::text::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
         // Router policies and Omni collections call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
-        if (req.has(kTools)) {
-            LOG(DEBUG, "Server") << "Tools present in request: " << req.arg(kTools).size() << " tool(s)" << std::endl;
-            LOG(DEBUG, "Server") << "Tools JSON: " << req.arg(kTools).dump() << std::endl;
+        if (req.has(generation::kTools)) {
+            LOG(DEBUG, "Server") << "Tools present in request: " << req.arg(generation::kTools).size() << " tool(s)" << std::endl;
+            LOG(DEBUG, "Server") << "Tools JSON: " << req.arg(generation::kTools).dump() << std::endl;
         } else {
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
@@ -291,7 +290,7 @@ protected:
             return;
         }
 
-        bool is_streaming = req.value(kStream, false);
+        bool is_streaming = req.value(generation::kStream, false);
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.

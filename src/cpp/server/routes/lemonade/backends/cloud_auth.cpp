@@ -6,6 +6,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/cloud_providers.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -22,9 +23,6 @@ const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}, {"min
                          "The installed provider's name."};
 const RouteArg kApiKey{"api_key", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
                        "The API key."};
-const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                                  "Opt in to sending the key to a provider whose base URL is `http://`; the opt-in is "
-                                  "saved with the provider. Defaults to `false`."};
 
 class CloudAuthRoute : public ApiRoute {
 public:
@@ -42,7 +40,7 @@ public:
             "discovered models. The key is held in `lemond`'s memory only, never written to disk, "
             "and is gone after a restart; for a key that persists, set "
             "`LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.";
-        s.args = {kProvider, kApiKey, kAllowInsecureHttp};
+        s.args = {kProvider, kApiKey, backend_routes::kAllowInsecureHttp};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -87,7 +85,7 @@ public:
         try {
             const auto provider = req.arg(kProvider).get<std::string>();
             const auto api_key = req.arg(kApiKey).get<std::string>();
-            const bool allow_insecure_http = req.value(kAllowInsecureHttp, false);
+            const bool allow_insecure_http = req.value(backend_routes::kAllowInsecureHttp, false);
 
             if (!registry.is_installed(provider)) {
                 write_provider_not_installed(res, provider);

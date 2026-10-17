@@ -8,6 +8,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -15,12 +16,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
-const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-                      "Model to run."};
 const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                        "Text to continue, or the image to generate for an image model."};
-const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                       "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."};
 const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
                         "Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum "
                         "generated tokens), `repeat_penalty`, which is sent as OpenAI's "
@@ -44,9 +41,6 @@ const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Supp
 const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
                           "`0` with an empty `prompt` unloads the model, answering with "
                           "`done_reason: \"unload\"`. Other values are ignored."};
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request loads "
-                        "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
 const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
                        "System prompt. Ignored."};
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
@@ -55,7 +49,7 @@ const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string
 json convert_ollama_to_openai_completion(const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(kModel, ""));
+    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
     openai_req[openai::text::kModel.name] = model;
 
     if (req.has(kPrompt)) {
@@ -64,7 +58,7 @@ json convert_ollama_to_openai_completion(const RouteRequest& req) {
 
     map_ollama_options(req.arg(kOptions), req.body, openai_req, openai::completions::kMaxTokens);
 
-    openai_req[openai::text::kStream.name] = false;
+    openai_req[generation::kStream.name] = false;
 
     return openai_req;
 }
@@ -204,8 +198,8 @@ public:
             "Image generation never streams.",
         };
         s.args = {
-            kModel, kPrompt, kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale, kSeed,
-            kKeepAlive, kCtxSize, kSystem, kFormat
+            gateway::kModel, kPrompt, ollama::kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale,
+            kSeed, kKeepAlive, ollama::kCtxSize, kSystem, kFormat
         };
 
         RouteResponse full;
@@ -247,7 +241,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(kModel).get<std::string>());
+            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             std::string prompt = req.value(kPrompt, "");
             if (prompt.empty() && req.has(kKeepAlive) && req.arg(kKeepAlive) == 0) {
@@ -269,8 +263,8 @@ public:
             }
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(req.arg(kOptions), req.arg(kCtxSize)), ErrorFormat::Plain,
-                                       res)) {
+                                       gateway_load_options(req.arg(kOptions), req.arg(ollama::kCtxSize)),
+                                       ErrorFormat::Plain, res)) {
                 return;
             }
 
@@ -282,14 +276,14 @@ public:
                 return;
             }
 
-            bool stream = req.value(kStream, true);
+            bool stream = req.value(ollama::kStream, true);
 
             auto openai_req = convert_ollama_to_openai_completion(req);
 
             if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;
 
-                openai_req[openai::text::kStream.name] = true;
+                openai_req[generation::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
                 stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {

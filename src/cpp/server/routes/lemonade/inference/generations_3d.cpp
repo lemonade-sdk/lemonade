@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 
@@ -31,8 +32,6 @@ const RouteArg kUv{"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"
                    "UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
                    "texture quality, but slows down on large meshes. `box` is a faster six-plane "
                    "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."};
-const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                     "Random seed for reproducibility. Defaults to the backend's own."};
 const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
                                "Output encoding. Only `glb`, the format the backend produces, is accepted. "
                                "Defaults to `glb`."};
@@ -56,7 +55,7 @@ public:
             "`resolution` values take longer.",
             "Errors carry a JSON `error` object.",
         };
-        s.args = {kModel, kImage, kResolution, kBgRemoval, kUv, kSeed, kResponseFormat};
+        s.args = {kModel, kImage, kResolution, kBgRemoval, kUv, inference::kSeed, kResponseFormat};
 
         RouteResponse response;
         response.format = ResponseFormat::Binary;
