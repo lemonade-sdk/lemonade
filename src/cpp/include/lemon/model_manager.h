@@ -198,6 +198,10 @@ struct ModelManagerConfig {
     // What this machine can run, read at the start of every rebuild; empty probes the
     // hardware. A caller that means a particular machine says so here.
     std::function<models::BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
+
+    // Which registry answers for a source when a scan looks for updates; empty uses the
+    // configured ones. What it returns is not owned.
+    std::function<const ModelRegistry&(models::RegistryId source)> registry_for;
 };
 
 class ModelManager {

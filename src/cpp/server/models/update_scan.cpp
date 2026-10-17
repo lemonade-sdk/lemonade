@@ -152,7 +152,8 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
         try {
             const auto source =
                 parse_remote_registry_source(entry.registry_source);
-            const auto& registry = model_registry(source);
+            const ModelRegistry& registry =
+                deps.registry_for ? deps.registry_for(source) : model_registry(source);
 
             LOG(DEBUG, "ModelManager")
                 << "Checking for updates on "

@@ -1279,6 +1279,7 @@ This section states the coverage that protects the design and the tests that pro
 | `test_model_change_notifier` | one subscriber per signal, callbacks run unlocked and after the swap, a reader at generation N never sees generation N+1 |
 | `test_model_sync_service` | target selection, `can_go_stale()` filtering, per-group listing, auto-update override, cancellation |
 | `test_model_source_descriptors` | every registered source has a descriptor with a non-empty `summary`, and the `/internal/model-sources` payload matches the compiled sets |
+| `test_update_available` | the flag a scan publishes to the row a client reads: set for a newer snapshot, cleared when the registry answers the snapshot on disk, unmoved by a failed check, never set for a model with no remote registry to ask, and never announced for a model whose repositories did not all answer. The registry arrives through `ModelManagerConfig.registry_for` |
 
 These suites cover behavior this spec pins, and they are the contract: `test_model_manager_collection_validation`, `test_model_download_state`, `test_model_sync_and_auto_update`, `test_extra_model_discovery`, `test_model_registry`, `test_hf_update_check`, `test_recipe_hiding`, `test_streaming_memory_filter`, `test_config_default_source`, `test_model_alias`, `test_directory_watcher`, `test_recipe_options_precedence`.
 
