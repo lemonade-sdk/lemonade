@@ -16,6 +16,14 @@ const RouteError kResolveFailed{
     "Resolving the install parameters fails, for example for an unknown recipe/backend pair, an unsupported platform "
     "or a failed version lookup; the body also carries `arch` when the request set one"};
 
+const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                       "The recipe, such as `llamacpp`, `whispercpp` or `vllm`."};
+const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                        "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."};
+const RouteArg kArch{"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                     "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
+                     "detected one, so CI can check an architecture's asset on a runner without that GPU."};
+
 class InstallDryRunRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -40,15 +48,7 @@ public:
             "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
             "manifest, to verify it.",
         };
-        s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "The recipe, such as `llamacpp`, `whispercpp` or `vllm`."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "The backend within the recipe, such as `vulkan`, `rocm` or `rocm-nightly`."},
-            {"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
-             "detected one, so CI can check an architecture's asset on a runner without that GPU."},
-        };
+        s.args = {kRecipe, kBackend, kArch};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -86,11 +86,9 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         std::string requested_arch;
         try {
-            const json& request_json = req.body;
-
-            const std::string recipe = request_json["recipe"].get<std::string>();
-            const std::string backend = request_json["backend"].get<std::string>();
-            requested_arch = request_json.value("arch", "");
+            const std::string recipe = req.arg(kRecipe).get<std::string>();
+            const std::string backend = req.arg(kBackend).get<std::string>();
+            requested_arch = req.value(kArch, "");
 
             if (!requested_arch.empty()) {
                 SystemInfo::set_rocm_arch_override(requested_arch);

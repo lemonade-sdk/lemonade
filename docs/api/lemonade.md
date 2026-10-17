@@ -845,7 +845,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `query` (query) | Yes | Search text, minimum 3 characters after trimming. `q` is accepted as an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `query` or `q` (query) | Yes | Search text, minimum 3 characters after trimming. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` (query) | No | Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. Defaults to `huggingface`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `limit` (query) | No | Maximum number of results, from `1` to `50`. Defaults to `12`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `format` (query) | No | Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

@@ -9,6 +9,10 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kShowAll{"show_all", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
+                        "`true` also lists catalog models that are not downloaded. Defaults to `false`, "
+                        "which lists downloaded models only."};
+
 class ModelsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -34,11 +38,7 @@ public:
             "[Cloud Offload](../guide/configuration/cloud.md).",
             "`HEAD` returns `200 OK` with an empty body.",
         };
-        s.args = {
-            {"show_all", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
-             "`true` also lists catalog models that are not downloaded. Defaults to `false`, "
-             "which lists downloaded models only."},
-        };
+        s.args = {kShowAll};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -69,8 +69,7 @@ public:
         }
 
         // OpenAI lists only downloaded models; the CLI's list command asks for all of them.
-        bool show_all = req.http.has_param("show_all") &&
-                        req.http.get_param_value("show_all") == "true";
+        bool show_all = req.value(kShowAll, false);
 
         std::map<std::string, ModelInfo> models;
         if (show_all) {

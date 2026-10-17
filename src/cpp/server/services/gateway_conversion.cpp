@@ -84,17 +84,16 @@ static std::string extract_quantization_level(const std::string& checkpoint) {
 } // namespace
 
 
-json gateway_load_options(const json& request) {
+json gateway_load_options(const json& options, const json& ctx_size) {
     json result = json::object();
 
-    if (request.contains("options") && request["options"].is_object() &&
-        request["options"].contains("num_ctx")) {
-        result["ctx_size"] = request["options"]["num_ctx"];
+    if (options.is_object() && options.contains("num_ctx")) {
+        result["ctx_size"] = options["num_ctx"];
     }
 
     // Top-level wins over options.num_ctx, matching map_ollama_options precedence.
-    if (request.contains("ctx_size")) {
-        result["ctx_size"] = request["ctx_size"];
+    if (!ctx_size.is_null()) {
+        result["ctx_size"] = ctx_size;
     }
 
     return result;
@@ -193,10 +192,10 @@ void write_residency_conflict(const std::exception& error, ErrorFormat format,
 
 } // namespace
 
-bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model, const json& request,
+bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model, const json& load_options,
                            ErrorFormat format, httplib::Response& res) {
     try {
-        loader.ensure_loaded(model, gateway_load_options(request));
+        loader.ensure_loaded(model, load_options);
         return true;
     } catch (const RouterResidencyConflictException& e) {
         write_residency_conflict(e, format, res);

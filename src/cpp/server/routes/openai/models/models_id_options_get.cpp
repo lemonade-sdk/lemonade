@@ -10,6 +10,9 @@ namespace {
 
 using json = nlohmann::json;
 
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
+                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
+
 class ModelsIdOptionsGetRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -30,10 +33,7 @@ public:
             "metadata, so a model that has not been downloaded yet shows every key with the "
             "value it has before those defaults apply.",
         };
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
-        };
+        s.args = {kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -49,7 +49,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        respond_with_model_options(ctx_, req.http, res, nullptr);
+        respond_with_model_options(ctx_, req.value(kId, std::string()), res, nullptr);
     }
 };
 

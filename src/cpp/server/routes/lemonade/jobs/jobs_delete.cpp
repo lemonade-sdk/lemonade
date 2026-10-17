@@ -8,6 +8,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
+
 class JobsDeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -23,9 +25,7 @@ public:
             "Removes a job at once, even a running one, which is interrupted. The models a "
             "running or paused job loaded are unloaded in the background; a finished job's "
             "models stay loaded.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
-        };
+        s.args = {kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -47,7 +47,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         bool active = false;
-        if (!ctx_.job_manager->remove(req.http.matches[1], active)) {
+        if (!ctx_.job_manager->remove(req.value(kId, std::string()), active)) {
             write_unknown_job(res);
             return;
         }

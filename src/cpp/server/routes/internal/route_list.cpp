@@ -7,6 +7,9 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kId{"id", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
+                   "Return only the route with this id, such as `lemonade.health`."};
+
 class RouteListRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -27,10 +30,7 @@ public:
             "reference, including this page. See the "
             "[HTTP Server Spec](../dev/specs/http-server.md#route-base-classes) for each field.",
         };
-        s.args = {
-            {"id", ArgIn::Query, {{"type", "string"}}, false, Support::Available,
-             "Return only the route with this id, such as `lemonade.health`."},
-        };
+        s.args = {kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -119,8 +119,8 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         auto routes = ctx_.registry->list();
-        if (req.http.has_param("id")) {
-            const std::string id = req.http.get_param_value("id");
+        if (req.has(kId)) {
+            const std::string id = req.arg(kId).get<std::string>();
             auto matching = ordered_json::array();
             for (const auto& route : routes) {
                 if (route.value("id", std::string()) == id) {

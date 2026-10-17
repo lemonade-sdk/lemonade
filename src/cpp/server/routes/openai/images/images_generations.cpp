@@ -12,6 +12,24 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                       "The text description of the image to generate."};
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`)."};
+const RouteArg kSize{"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                     "Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to the model's own, else `512x512`."};
+const RouteArg kN{"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                  "Number of images to generate. Defaults to `1`."};
+const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
+                               "Only `b64_json`, a base64-encoded image, is supported.", {}, true};
+const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                      "Number of inference steps. Defaults to the model's own, else `20`."};
+const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                         "Classifier-free guidance scale. Defaults to the model's own, else `7.0`."};
+const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                     "Random seed for reproducible output; a negative value picks a random seed. Defaults "
+                     "to the backend's fixed seed."};
+
 class ImagesGenerationsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -25,25 +43,7 @@ public:
         s.modality = "prompt -> image";
         s.description =
             "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
-        s.args = {
-            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The text description of the image to generate."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`)."},
-            {"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to the model's own, else `512x512`."},
-            {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of images to generate. Defaults to `1`."},
-            {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
-            {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of inference steps. Defaults to the model's own, else `20`."},
-            {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. Defaults to the model's own, else `7.0`."},
-            {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducible output; a negative value picks a random seed. Defaults "
-             "to the backend's fixed seed."},
-        };
+        s.args = {kPrompt, kModel, kSize, kN, kResponseFormat, kSteps, kCfgScale, kSeed};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -68,6 +68,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return kModel; }
+
     bool validate(RouteRequest&, httplib::Response&) override {
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
         return true;

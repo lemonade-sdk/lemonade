@@ -29,6 +29,14 @@ std::vector<std::string> prefixed_paths(const RouteSpec& spec, const std::string
     return {};
 }
 
+std::vector<std::string> path_parameters(const std::string& path) {
+    std::vector<std::string> names;
+    for (size_t open = path.find('{'); open != std::string::npos; open = path.find('{', open + 1)) {
+        names.push_back(path.substr(open + 1, path.find('}', open) - open - 1));
+    }
+    return names;
+}
+
 // httplib matches a route by regex, so each {name} in a path becomes a capture group.
 // A Path arg's schema picks the group: its "pattern", digits for an integer, or one
 // path segment otherwise.
@@ -58,7 +66,13 @@ std::string to_pattern(const RouteSpec& spec, const std::string& path) {
                                    "} has no ArgIn::Path argument");
         }
         if (arg->schema.contains("pattern")) {
-            pattern += "(" + arg->schema["pattern"].get<std::string>() + ")";
+            const std::string group = arg->schema["pattern"].get<std::string>();
+            if (group.find('(') != std::string::npos) {
+                // RouteRequest numbers path parameters by their capture group.
+                throw std::logic_error(spec.id + ": path parameter {" + name +
+                                       "} has a pattern with its own group");
+            }
+            pattern += "(" + group + ")";
         } else if (arg->schema.value("type", std::string()) == "integer") {
             pattern += "(\\d+)";
         } else {
@@ -95,6 +109,11 @@ void RouteRegistry::add(std::unique_ptr<ApiRoute> route) {
     }
 
     for (const auto& path : spec.paths) {
+        if (path_parameters(path) != path_parameters(spec.paths.front())) {
+            // RouteRequest numbers path parameters by their order in the first path.
+            throw std::logic_error(spec.id + ": path " + path +
+                                   " has different parameters from " + spec.paths.front());
+        }
         const std::string pattern = to_pattern(spec, path);
         for (const auto& url : prefixed_paths(spec, pattern)) {
             entry->patterns.push_back(url);

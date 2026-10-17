@@ -33,8 +33,8 @@ void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                         ApiRoute::StreamFn call_router);
 
 // The load-level options a gateway request may carry: Ollama's options.num_ctx, or a
-// top-level ctx_size, which wins.
-nlohmann::json gateway_load_options(const nlohmann::json& request);
+// top-level ctx_size, which wins. Either may be null when the request does not send it.
+nlohmann::json gateway_load_options(const nlohmann::json& options, const nlohmann::json& ctx_size);
 
 // Ollama's "details" object, inferred from the model name, recipe and checkpoint.
 nlohmann::json ollama_details(const std::string& model_name, const std::string& recipe,
@@ -50,7 +50,7 @@ extern const RouteError kGatewayModelNotLoaded;
 // gateway_load_options(). Writes the residency conflict or kGatewayModelNotLoaded in format
 // and returns false when the load fails.
 bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model,
-                           const nlohmann::json& request, ErrorFormat format,
+                           const nlohmann::json& load_options, ErrorFormat format,
                            httplib::Response& res);
 
 // What gateway_ensure_loaded() writes.

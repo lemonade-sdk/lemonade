@@ -11,6 +11,18 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                      "Embedding model to run."};
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
+                       "Text to embed. For an array, only the first text's embedding is returned.",
+                       {"input"}};
+const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
+                        "`num_ctx` sets the context size when this request loads the model. Other keys are "
+                        "ignored."};
+const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                        "Lemonade extension: context size to load the model with, when this request loads "
+                        "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
+
 class EmbeddingsRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -25,19 +37,7 @@ public:
         s.description =
             "Returns the embedding of one text in Ollama's older format, loading the model on "
             "first use.";
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Embedding model to run."},
-            {"prompt", ArgIn::JsonBody, {{"type", json::array({"string", "array"})}}, true, Support::Available,
-             "Text to embed. For an array, only the first text's embedding is returned.",
-             {"input"}},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
-             "`num_ctx` sets the context size when this request loads the model. Other keys are "
-             "ignored."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request loads "
-             "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true},
-        };
+        s.args = {kModel, kPrompt, kOptions, kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -67,11 +67,10 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
+            std::string model = strip_latest_tag(req.arg(kModel).get<std::string>());
 
-            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
-
-            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model,
+                                       gateway_load_options(req.arg(kOptions), req.arg(kCtxSize)), ErrorFormat::Plain,
                                        res)) {
                 return;
             }
@@ -79,7 +78,7 @@ public:
             json openai_req;
             openai_req["model"] = model;
 
-            openai_req["input"] = request_json["prompt"];
+            openai_req["input"] = req.arg(kPrompt);
 
             auto openai_response = ctx_.router->embeddings(openai_req);
 

@@ -14,6 +14,12 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kPullFailed{500, "", "A non-streaming download fails"};
 
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                      "Model to download.",
+                      {"name"}};
+const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "Stream newline-delimited JSON progress. Defaults to `true`."};
+
 class PullRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -32,13 +38,7 @@ public:
             "Only models already in Lemonade's registry can be pulled; use "
             "[`POST /v1/pull`](./lemonade.md#post-v1pull) to register a new one.",
         };
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Model to download.",
-             {"name"}},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream newline-delimited JSON progress. Defaults to `true`."},
-        };
+        s.args = {kModel, kStream};
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
@@ -82,13 +82,12 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
-            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
+            std::string name = strip_latest_tag(req.arg(kModel).get<std::string>());
             if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }
 
-            bool stream = request_json.value("stream", true);
+            bool stream = req.value(kStream, true);
 
             if (refuse_offline_download(ctx_, res)) {
                 return;

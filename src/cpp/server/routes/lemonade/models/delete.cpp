@@ -14,6 +14,10 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kUnknownModel{
     422, "", "The model is not in the registry, or this system does not support it"};
 
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "[Lemonade Server model name](https://lemonade-server.ai/models.html) to delete.",
+                          {"model"}};
+
 class DeleteRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -33,11 +37,7 @@ public:
             "A file still held open, for example by a download that was just cancelled, is retried "
             "up to 3 times, 5 seconds apart.",
         };
-        s.args = {
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to delete.",
-             {"model"}},
-        };
+        s.args = {kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -62,9 +62,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const json& request_json = req.body;
         try {
-            std::string model_name = request_json["model_name"].get<std::string>();
+            std::string model_name = req.arg(kModelName).get<std::string>();
 
             LOG(INFO, "Server") << "Deleting model: " << model_name << std::endl;
 

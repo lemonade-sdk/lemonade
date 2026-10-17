@@ -8,6 +8,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
+
 class JobsInterruptRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -22,9 +24,7 @@ public:
         s.description =
             "Cancels a job's current step now, aborting an in-flight load or chat. The step "
             "returns to pending, so resuming re-runs it, and the models the job loaded are unloaded.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
-        };
+        s.args = {kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -45,7 +45,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->interrupt(req.http.matches[1])) {
+        if (!ctx_.job_manager->interrupt(req.value(kId, std::string()))) {
             write_job_not_active(res, "interruptible");
             return;
         }

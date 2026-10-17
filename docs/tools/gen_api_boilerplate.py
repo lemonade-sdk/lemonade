@@ -424,6 +424,48 @@ ERROR_LISTS = re.compile(r"\berrors\s*=\s*[^;]*;", re.S)
 REQUIRED_MODEL_ARG = re.compile(r'\{"model", ArgIn::\w+, [^\n]*?, true,')
 RECEIVES_BODY = re.compile(r"RequestFormat::(?:Json|OptionalJson|Form)\b")
 ROUTE_ERROR_USE = re.compile(r"\b(?:ModelLoader::)?(k[A-Z]\w*)\b")
+ROUTE_ARG_DECL = re.compile(
+    r'\bconst RouteArg (k[A-Z]\w*)\{"([^"]+)", ArgIn::(\w+),(.*?)\};', re.S
+)
+ROUTE_ARG_ALIASES = re.compile(r'"\s*,\s*\{((?:"[^"]+"\s*,?\s*)+)\}')
+ROUTE_ARG_USE = re.compile(
+    r"\breq\.(?:arg|has|value|file)\(\s*(k[A-Z]\w*)\b|\b(k[A-Z]\w*)\.name\b"
+)
+ARG_LISTS = re.compile(r"\bargs\s*=\s*\{[^;]*\};", re.S)
+INLINE_ARG = re.compile(r'\{"[^"]+", ArgIn::')
+BODY_ALIAS = re.compile(r"\b(\w+)\s*=\s*req\.body\s*;")
+# A route's own helpers name the request body after the request they take, such as
+# ollama_request or request_json.
+BODY_PARAM = re.compile(r"\bjson&\s*(\w*(?:request|body)\w*)\s*[,)]")
+
+
+def literal_argument_reads(text: str) -> list[tuple[int, str]]:
+    """Each place a route file names one of its arguments, or an alias, by a string literal
+    on the request, where RouteArg constants belong."""
+    spelled = set()
+    for decl in ROUTE_ARG_DECL.finditer(text):
+        spelled.add(decl.group(2))
+        for aliases in ROUTE_ARG_ALIASES.finditer(decl.group(4)):
+            spelled.update(re.findall(r'"([^"]+)"', aliases.group(1)))
+    if not spelled:
+        return []
+    names = "|".join(re.escape(name) for name in sorted(spelled, key=len, reverse=True))
+    receivers = (
+        {"req.body"} | set(BODY_ALIAS.findall(text)) | set(BODY_PARAM.findall(text))
+    )
+    receiver = "|".join(re.escape(r) for r in sorted(receivers, key=len, reverse=True))
+    patterns = [
+        rf'\b(?:{receiver})\s*(?:\.(?:value|contains|find|at|erase|count)\(\s*|\[\s*)"({names})"',
+        rf'\b(?:get_param_value|has_param|has_field|get_field|has_file|get_file_value)\(\s*"({names})"',
+    ]
+    found = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            found.append((text.count("\n", 0, match.start()) + 1, match.group(1)))
+    if re.search(r"ArgIn::Path\b", text):
+        for match in re.finditer(r"\bmatches\s*\[", text):
+            found.append((text.count("\n", 0, match.start()) + 1, "a path argument"))
+    return sorted(found)
 
 
 def lint_sources() -> list[str]:
@@ -470,7 +512,7 @@ def lint_sources() -> list[str]:
                 base_errors.append("kUnexpectedException")
             if "RequestFormat::Form" in text:
                 base_errors.append("kFormNotMultipart")
-            fills_model = 'req.body["model"] =' in text
+            fills_model = re.search(r'req\.body\[(?:"model"|kModel\.name)\]\s*=', text)
             if not (REQUIRED_MODEL_ARG.search(text) or fills_model):
                 base_errors.append("kModelMissing")
         for name in base_errors:
@@ -487,7 +529,27 @@ def lint_sources() -> list[str]:
             problems.append(
                 f"{where} uses {name}, which its route's errors do not list"
             )
-    return problems
+        arg_lists = " ".join(m.group(0) for m in ARG_LISTS.finditer(text))
+        if INLINE_ARG.search(arg_lists):
+            problems.append(
+                f"{where} declares an argument inline instead of as a RouteArg constant"
+            )
+        arg_constants = {decl.group(1) for decl in ROUTE_ARG_DECL.finditer(text)}
+        for name in sorted(arg_constants & declared):
+            problems.append(
+                f"{where} names a RouteArg {name}, which is also a RouteError's name"
+            )
+        for pair in ROUTE_ARG_USE.findall(text):
+            name = pair[0] or pair[1]
+            if name in arg_constants and not re.search(rf"\b{name}\b", arg_lists):
+                problems.append(
+                    f"{where} reads {name}, which its route's args do not list"
+                )
+        for line, name in literal_argument_reads(text):
+            problems.append(
+                f"{where}:{line} names {name} by a string literal; read it through its RouteArg constant"
+            )
+    return sorted(set(problems))
 
 
 # --------------------------------------------------------------------------

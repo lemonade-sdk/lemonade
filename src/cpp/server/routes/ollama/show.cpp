@@ -36,6 +36,10 @@ json build_ollama_capabilities(const ModelInfo& info) {
     return capabilities;
 }
 
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                      "Model to describe.",
+                      {"name"}};
+
 class ShowRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -48,11 +52,7 @@ public:
         s.prefixes = Prefixes::Root;
         s.summary = "Describe a model";
         s.description = "Describes one registered model in Ollama's format.";
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Model to describe.",
-             {"name"}},
-        };
+        s.args = {kModel};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -82,9 +82,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
-
-            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
+            std::string name = strip_latest_tag(req.arg(kModel).get<std::string>());
             if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }

@@ -10,6 +10,9 @@ namespace {
 
 using json = nlohmann::json;
 
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
+                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
+
 class ModelsIdRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -23,10 +26,7 @@ public:
         s.modality = "n/a";
         s.description =
             "Returns one model, as the same model object [`GET /v1/models`](#get-v1models) lists.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
-        };
+        s.args = {kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -44,7 +44,7 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager& model_manager = *ctx_.model_manager;
         AliasManager* alias_manager = ctx_.alias_manager;
-        std::string model_id = utils::normalize_model_name(req.http.matches[1]);
+        std::string model_id = utils::normalize_model_name(req.value(kId, std::string()));
 
         if (model_manager.model_exists(model_id)) {
             auto info = model_manager.get_model_info(model_id);

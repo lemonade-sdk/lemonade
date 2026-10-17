@@ -69,16 +69,51 @@ json normalize_openai_tool_calls(json tool_calls) {
     return tool_calls;
 }
 
-json convert_ollama_to_openai_chat(const json& ollama_request) {
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                      "Model to run."};
+const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+                         "Conversation so far. Each message has a `role` and `content`, plus optional "
+                         "`images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or "
+                         "`tool_call_id`."};
+const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."};
+const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
+                        "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
+                        "generated tokens) and `repeat_penalty`, which is sent as OpenAI's "
+                        "`frequency_penalty`. These keys are also accepted at the top level, where they win. "
+                        "`num_ctx` sets the context size when this request loads the model. Other keys are "
+                        "ignored."};
+const RouteArg kTools{"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+                      "Tools the model may call."};
+const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
+                       Support::Partial,
+                       "`json` constrains the reply to a JSON object. A JSON schema is accepted but not "
+                       "applied."};
+const RouteArg kThink{"think", ArgIn::JsonBody,
+                      {{"type", json::array({"boolean", "string"})},
+                       {"enum", json::array({true, false, "low", "medium", "high", "max"})}},
+                      false, Support::NotAvailable,
+                      "`true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama "
+                      "accepts for models that define none of their own. Not applied: reasoning models "
+                      "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
+                      "`/no_think`."};
+const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
+                          "`0` with an empty `messages` array unloads the model, answering with "
+                          "`done_reason: \"unload\"`. Other values are ignored."};
+const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                        "Lemonade extension: context size to load the model with, when this request loads "
+                        "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
+
+json convert_ollama_to_openai_chat(const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(ollama_request.value("model", ""));
+    std::string model = strip_latest_tag(req.value(kModel, ""));
     openai_req["model"] = model;
 
-    if (ollama_request.contains("messages")) {
+    if (req.has(kMessages)) {
         json messages = json::array();
         std::unordered_map<std::string, std::string> tool_call_ids_by_name;
-        for (const auto& msg : ollama_request["messages"]) {
+        for (const auto& msg : req.arg(kMessages)) {
             json openai_msg;
             std::string role = msg.value("role", "user");
             openai_msg["role"] = role;
@@ -130,19 +165,19 @@ json convert_ollama_to_openai_chat(const json& ollama_request) {
         openai_req["messages"] = messages;
     }
 
-    map_ollama_options(ollama_request, openai_req);
+    map_ollama_options(req.body, openai_req);
 
-    if (ollama_request.contains("tools")) {
-        openai_req["tools"] = ollama_request["tools"];
+    if (req.has(kTools)) {
+        openai_req["tools"] = req.arg(kTools);
     }
 
-    if (ollama_request.contains("format") && ollama_request["format"].is_string() &&
-        ollama_request["format"].get<std::string>() == "json") {
+    if (req.has(kFormat) && req.arg(kFormat).is_string() &&
+        req.arg(kFormat).get<std::string>() == "json") {
         openai_req["response_format"] = {{"type", "json_object"}};
     }
 
-    if (ollama_request.contains("think")) {
-        openai_req["enable_thinking"] = ollama_request["think"];
+    if (req.has(kThink)) {
+        openai_req["enable_thinking"] = req.arg(kThink);
     }
 
     // The caller decides whether to stream.
@@ -314,40 +349,7 @@ public:
             "with two NDJSON lines: the whole message, then the final line.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Model to run."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Conversation so far. Each message has a `role` and `content`, plus optional "
-             "`images` (base64 strings), `tool_calls`, and, on `tool` messages, `tool_name` or "
-             "`tool_call_id`."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Stream newline-delimited JSON as tokens are generated. Defaults to `true`."},
-            {"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
-             "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
-             "generated tokens) and `repeat_penalty`, which is sent as OpenAI's "
-             "`frequency_penalty`. These keys are also accepted at the top level, where they win. "
-             "`num_ctx` sets the context size when this request loads the model. Other keys are "
-             "ignored."},
-            {"tools", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Tools the model may call."},
-            {"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
-             Support::Partial,
-             "`json` constrains the reply to a JSON object. A JSON schema is accepted but not "
-             "applied."},
-            {"think", ArgIn::JsonBody,
-             {{"type", json::array({"boolean", "string"})},
-              {"enum", json::array({true, false, "low", "medium", "high", "max"})}},
-             false, Support::NotAvailable,
-             "`true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama "
-             "accepts for models that define none of their own. Not applied: reasoning models "
-             "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
-             "`/no_think`."},
-            {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
-             "`0` with an empty `messages` array unloads the model, answering with "
-             "`done_reason: \"unload\"`. Other values are ignored."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request loads "
-             "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true},
+            kModel, kMessages, kStream, kOptions, kTools, kFormat, kThink, kKeepAlive, kCtxSize
         };
 
         RouteResponse full;
@@ -387,13 +389,11 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
+            std::string model = strip_latest_tag(req.arg(kModel).get<std::string>());
 
-            std::string model = strip_latest_tag(request_json["model"].get<std::string>());
-
-            auto messages = request_json.value("messages", json::array());
-            if (messages.empty() && request_json.contains("keep_alive") &&
-                request_json["keep_alive"] == 0) {
+            auto messages = req.value(kMessages, json::array());
+            if (messages.empty() && req.has(kKeepAlive) &&
+                req.arg(kKeepAlive) == 0) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Unloading model: " << model << std::endl;
                 try {
                     ctx_.router->unload_model(model);
@@ -411,18 +411,19 @@ public:
                 return;
             }
 
-            if (!gateway_ensure_loaded(*ctx_.model_loader, model, request_json, ErrorFormat::Plain,
+            if (!gateway_ensure_loaded(*ctx_.model_loader, model,
+                                       gateway_load_options(req.arg(kOptions), req.arg(kCtxSize)), ErrorFormat::Plain,
                                        res)) {
                 return;
             }
 
-            bool stream = request_json.value("stream", true);
+            bool stream = req.value(kStream, true);
 
-            auto openai_req = convert_ollama_to_openai_chat(request_json);
+            auto openai_req = convert_ollama_to_openai_chat(req);
 
-            bool has_tools = request_json.contains("tools") &&
-                             request_json["tools"].is_array() &&
-                             !request_json["tools"].empty();
+            bool has_tools = req.has(kTools) &&
+                             req.arg(kTools).is_array() &&
+                             !req.arg(kTools).empty();
 
             if (stream && has_tools) {
                 LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming requested with tools; using non-streaming backend call (model: " << model << ")" << std::endl;

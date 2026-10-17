@@ -18,6 +18,19 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidPolicy{400, "", "`policy` is invalid or internally inconsistent"};
 
+const RouteArg kPolicy{"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
+                       "A `collection.router` policy document. `model_name` is accepted but is not required "
+                       "for validation. See [Router Policies](../dev/router-policy.md)."};
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "The prompt text to route. Defaults to `\"\"`."};
+const RouteArg kHasImages{"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                          "Simulate a request carrying image input. Defaults to `false`."};
+const RouteArg kHasTools{"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                         "Simulate a request carrying tool definitions. Defaults to `false`."};
+const RouteArg kMetadata{"metadata", ArgIn::JsonBody,
+                         {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
+                         "String-valued metadata pairs matched by `metadata` conditions."};
+
 class RoutingValidateRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -96,20 +109,7 @@ public:
             "`routing.router` has no rules of its own, only the generated `__route_0`, "
             "`__route_1`, etc.",
         };
-        s.args = {
-            {"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
-             "A `collection.router` policy document. `model_name` is accepted but is not required "
-             "for validation. See [Router Policies](../dev/router-policy.md)."},
-            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The prompt text to route. Defaults to `\"\"`."},
-            {"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Simulate a request carrying image input. Defaults to `false`."},
-            {"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Simulate a request carrying tool definitions. Defaults to `false`."},
-            {"metadata", ArgIn::JsonBody,
-             {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
-             "String-valued metadata pairs matched by `metadata` conditions."},
-        };
+        s.args = {kPolicy, kPrompt, kHasImages, kHasTools, kMetadata};
 
         const ordered_json decision = {
             {"type", "object"},
@@ -158,15 +158,13 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const json& request_json = req.body;
-
-        const std::string prompt = request_json.value("prompt", std::string());
-        const bool has_images = request_json.value("has_images", false);
-        const bool has_tools = request_json.value("has_tools", false);
+        const std::string prompt = req.value(kPrompt, std::string());
+        const bool has_images = req.value(kHasImages, false);
+        const bool has_tools = req.value(kHasTools, false);
 
         std::map<std::string, std::string> metadata;
-        if (request_json.contains("metadata")) {
-            const json& metadata_json = request_json["metadata"];
+        if (req.has(kMetadata)) {
+            const json& metadata_json = req.arg(kMetadata);
             for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
                 metadata[it.key()] = it.value().get<std::string>();
             }
@@ -182,7 +180,7 @@ public:
             };
             json normalized_routing;
             RoutePolicy policy = parse_route_policy_collection(
-                request_json["policy"], options, &normalized_routing);
+                req.arg(kPolicy), options, &normalized_routing);
 
             ModelLoader* loader = ctx_.model_loader;
             ClassifierServices services = make_router_classifier_services(
@@ -207,7 +205,7 @@ public:
             // Echo the policy actually evaluated (routing.router desugared into explicit
             // classifiers and rules), so a caller can match decision.matched_rule against
             // a rule that exists.
-            json normalized_policy = request_json["policy"];
+            json normalized_policy = req.arg(kPolicy);
             normalized_policy["routing"] = std::move(normalized_routing);
 
             json response = {

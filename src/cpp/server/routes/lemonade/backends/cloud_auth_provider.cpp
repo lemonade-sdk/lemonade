@@ -13,6 +13,9 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 
+const RouteArg kProvider{"provider", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
+                         "The installed provider's name."};
+
 class CloudAuthProviderRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -28,10 +31,7 @@ public:
             "Clears the API key [`POST /v1/cloud/auth`](#post-v1cloudauth) set for a provider. A "
             "`LEMONADE_<PROVIDER>_API_KEY` in the environment stays in effect; without one, the "
             "provider's discovered models leave the catalog, since nothing can authenticate them.";
-        s.args = {
-            {"provider", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "The installed provider's name."},
-        };
+        s.args = {kProvider};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -64,7 +64,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const std::string provider = req.http.matches[1].str();
+            const std::string provider = req.value(kProvider, std::string());
 
             const bool cleared = ctx_.cloud_registry->clear_runtime_key(provider);
             // With the env var set, the models stay discovered because it still

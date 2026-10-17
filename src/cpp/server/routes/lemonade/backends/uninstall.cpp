@@ -19,6 +19,13 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kMissingProvider{400, "", "A cloud uninstall has no `provider`, or an empty one"};
 
+const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
+                       "The recipe of the local backend to remove."};
+const RouteArg kBackend{"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                        "Local backends: the backend within the recipe. Cloud providers: `\"cloud\"`."};
+const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                         "The installed cloud provider to remove."};
+
 class UninstallRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -39,14 +46,7 @@ public:
             "Removes the provider record from `config.json`, drops its in-memory API key, if any, "
             "and evicts every discovered model for that provider from the catalog.",
         };
-        s.args = {
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, false, Support::Available,
-             "The recipe of the local backend to remove."},
-            {"backend", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Local backends: the backend within the recipe. Cloud providers: `\"cloud\"`."},
-            {"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The installed cloud provider to remove."},
-        };
+        s.args = {kRecipe, kBackend, kProvider};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -103,11 +103,10 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
             Router& router = *ctx_.router;
 
-            if (request_json.value("backend", "") == "cloud") {
-                const std::string provider = request_json.value("provider", "");
+            if (req.value(kBackend, "") == "cloud") {
+                const std::string provider = req.value(kProvider, "");
                 if (provider.empty()) {
                     write_openai_error(res, kMissingProvider, "Cloud uninstall requires 'provider' string field");
                     return;
@@ -138,9 +137,9 @@ public:
                 return;
             }
 
-            std::string recipe;
-            std::string backend;
-            if (!read_local_backend(request_json, recipe, backend, res)) {
+            const std::string recipe = req.value(kRecipe, "");
+            const std::string backend = req.value(kBackend, "");
+            if (!require_local_recipe(recipe, res)) {
                 return;
             }
 

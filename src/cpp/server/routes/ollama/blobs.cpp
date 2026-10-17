@@ -3,6 +3,9 @@
 namespace lemon {
 namespace {
 
+const RouteArg kDigest{"digest", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::NotAvailable,
+                       "SHA256 digest of the blob."};
+
 class BlobsRoute : public OllamaUnsupportedRoute {
 public:
     using OllamaUnsupportedRoute::OllamaUnsupportedRoute;
@@ -14,10 +17,7 @@ public:
         s.paths = {"/api/blobs/{digest}"};
         s.prefixes = Prefixes::Root;
         s.summary = "Upload a blob";
-        s.args = {
-            {"digest", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::NotAvailable,
-             "SHA256 digest of the blob."},
-        };
+        s.args = {kDigest};
         s.errors = {kNotSupported};
         return s;
     }

@@ -10,6 +10,16 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kNotLlamaCpp{400, "", "`model` is not a llama.cpp model"};
 
+const RouteArg kQuery{"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "The search query text.", {}, true};
+const RouteArg kDocuments{"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
+                          true, Support::Available, "Documents to score against the query.", {}, true};
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "Reranker model to run; loaded on first use."};
+const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                        "Lemonade extension: context size to load the model with, when this request "
+                        "loads it."};
+
 class RerankRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -24,17 +34,7 @@ public:
         s.description =
             "Scores each document against a query. Only llama.cpp reranker models, such as "
             "`bge-reranker-v2-m3-GGUF`, serve this endpoint.";
-        s.args = {
-            {"query", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The search query text.", {}, true},
-            {"documents", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
-             true, Support::Available, "Documents to score against the query.", {}, true},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Reranker model to run; loaded on first use."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Lemonade extension: context size to load the model with, when this request "
-             "loads it."},
-        };
+        s.args = {kQuery, kDocuments, kModel, kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -85,6 +85,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return kModel; }
+
     void run(RouteRequest& req, httplib::Response& res) override {
         auto response = ctx_.router->reranking(req.body);
         if (response.contains("error")) {

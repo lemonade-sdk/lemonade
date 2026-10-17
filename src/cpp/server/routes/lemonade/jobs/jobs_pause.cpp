@@ -8,6 +8,8 @@ namespace {
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."};
+
 class JobsPauseRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -22,9 +24,7 @@ public:
         s.description =
             "Stops a job after its current step and releases the model slot, so queued requests "
             "run. A queued job pauses at once. Models the job loaded stay loaded for the resume.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
-        };
+        s.args = {kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -45,7 +45,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->pause(req.http.matches[1])) {
+        if (!ctx_.job_manager->pause(req.value(kId, std::string()))) {
             write_job_not_active(res, "pausable");
             return;
         }
