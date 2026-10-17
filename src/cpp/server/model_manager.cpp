@@ -1003,25 +1003,35 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
 }
 
 void ModelManager::build_cache() {
-    // Probed before taking the writer: publishing on a read that changes nothing
+    // Probed before taking the builder: publishing on a read that changes nothing
     // would leave the generation useless as a change signal.
+    std::uint64_t based_on = 0;
     {
         std::lock_guard<std::mutex> probe(models_cache_mutex_);
         if (cache_valid_) {
             return;
         }
+        based_on = store_generation_;
     }
 
-    StoreWrite store_write(*this);
-
-    if (cache_valid_) {
-        return;
+    // Composing reads catalogs, disk and backends without touching the published
+    // set, so it takes a builder lock rather than models_cache_mutex_: holding the
+    // store lock across it made every writer wait for work it guards nothing of.
+    std::lock_guard<std::mutex> composing(store_build_mutex_);
+    {
+        std::lock_guard<std::mutex> probe(models_cache_mutex_);
+        if (cache_valid_) {
+            return;  // Another rebuild published while this one waited.
+        }
+        based_on = store_generation_;
     }
 
     LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
 
-    models_cache_.clear();
-    // Collected as rows parse so build_recipe_options() never re-reads a document.
+    std::map<std::string, ModelInfo> composed;
+    std::shared_ptr<const models::FilterReasons> composed_reasons;
+
+    // Collected as rows parse so build_recipe_options() never re-read a document.
     std::map<std::string, json> json_recipe_options;
 
     models::CatalogSet built;
@@ -1086,9 +1096,10 @@ void ModelManager::build_cache() {
     }
 
     // Step 2: Filter by backend availability. This is the full-registry pass, so
-    // it also refreshes the recipe availability side table used to hide backends
-    // that have nothing runnable on this host.
-    all_models = filter_models_by_backend(all_models, /*track_recipe_availability=*/true);
+    // its reasons replace the recipe availability table wholesale.
+    models::HostFilter host = filter_for_host(all_models);
+    composed_reasons = host.reasons;
+    all_models = std::move(host.visible);
 
     // Step 3: Check download status for all models. Dynamic-discovery backends
     // (flm, cloud) already set downloaded during discovery; everyone else asks
@@ -1128,19 +1139,15 @@ void ModelManager::build_cache() {
         if (info.downloaded && download_policy(info) != backends::DownloadPolicy::SelfManaged) {
             refresh_on_disk_size(info);
         }
-        models_cache_[name] = info;
+        composed[name] = std::move(info);
     }
 
-    rebuild_public_model_aliases_locked();
-
-    catalog_set_->replace_with(built.snapshot());
-    cache_valid_ = true;
-
-    // Parse each collection.router model's routing policy while the cache and
-    // alias map are built and the lock is held (avoids re-locking via
-    // resolve_model_name()/get_model_info()). pre_filter_aliases is computed
-    // over all_models, a strict superset of models_cache_, so it alone
-    // covers everything public_model_aliases_ would (#2748).
+    // Parse each collection.router model's routing policy over the candidate. The
+    // resolver reads the candidate directly instead of going through
+    // resolve_model_name()/get_model_info(), which answer from the set this build
+    // has not published yet. pre_filter_aliases is computed over all_models, a
+    // strict superset of composed, so it alone covers everything the alias map
+    // would (#2748).
     //
     // Components only the pre-filter tier can resolve are unavailable on this
     // host: a classifier bound to one takes its on_error path on every
@@ -1154,9 +1161,9 @@ void ModelManager::build_cache() {
             if (it == pre_filter_aliases.end()) return std::nullopt;
             return it->second;
         },
-        [this](const std::string& name) -> std::optional<ModelType> {
-            auto it = models_cache_.find(name);
-            if (it == models_cache_.end()) return std::nullopt;
+        [&composed](const std::string& name) -> std::optional<ModelType> {
+            auto it = composed.find(name);
+            if (it == composed.end()) return std::nullopt;
             return it->second.type;
         },
         [&pre_filter_types, &unavailable_components](
@@ -1167,7 +1174,7 @@ void ModelManager::build_cache() {
             return it->second;
         },
     });
-    for (auto& [name, info] : models_cache_) {
+    for (auto& [name, info] : composed) {
         if (!is_router_collection_recipe(info.recipe)) {
             continue;
         }
@@ -1204,6 +1211,26 @@ void ModelManager::build_cache() {
                 << ". Any classifier bound to them will fall back to its on_error "
                 << "result on every request." << std::endl;
         }
+    }
+
+    {
+        std::lock_guard<std::mutex> commit(models_cache_mutex_);
+        if (store_generation_ != based_on) {
+            // A writer published while this composed, so the candidate predates
+            // that change and cannot simply land on top of it. Yield: the write
+            // stays published, the store stays invalid, and the next read asks
+            // again -- which reads the registries and disk the writer wrote.
+            LOG(INFO, "ModelManager")
+                << "Model set changed while composing a new one; the next read will rebuild"
+                << std::endl;
+            return;
+        }
+        models_cache_ = std::move(composed);
+        hardware_filter_ = std::move(composed_reasons);
+        rebuild_public_model_aliases_locked();
+        catalog_set_->replace_with(built.snapshot());
+        cache_valid_ = true;
+        publish_store_locked();
     }
 
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
@@ -1266,7 +1293,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     // Check if it should be filtered out by backend availability
     std::map<std::string, ModelInfo> temp_map = {{model_name, info}};
-    auto filtered = filter_models_by_backend(temp_map);
+    models::HostFilter host = filter_for_host(temp_map, hardware_filter_);
+    hardware_filter_ = std::move(host.reasons);
+    auto& filtered = host.visible;
 
     if (filtered.empty()) {
         LOG(INFO, "ModelManager") << "Model '" << model_name << "' filtered out by backend availability" << std::endl;
@@ -1625,26 +1654,26 @@ static models::BackendAvailability probe_backend_availability(
     return availability;
 }
 
-std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
+models::HostFilter ModelManager::filter_for_host(
     const std::map<std::string, ModelInfo>& models,
-    bool track_recipe_availability) {
-    FilterResult result = models::filter_hardware(models, probe_backend_availability(models));
+    const std::shared_ptr<const models::FilterReasons>& carried) const {
+    models::FilterResult result =
+        models::filter_hardware(models, probe_backend_availability(models));
 
-    std::map<std::string, ModelInfo> visible;
-    visible.swap(result.visible);
-
-    auto reasons = std::make_shared<FilterReasons>();
+    auto reasons = std::make_shared<models::FilterReasons>();
     reasons->rejected = std::move(result.rejected);
     reasons->empty_recipes = std::move(result.empty_recipes);
 
-    // Only the full-registry pass may commit the recipe availability table;
-    // incremental single-model passes would otherwise reduce it to one model.
-    if (!track_recipe_availability && hardware_filter_) {
-        reasons->empty_recipes = hardware_filter_->empty_recipes;
+    // An incremental pass would otherwise reduce the recipe availability table to
+    // the one model it looked at.
+    if (carried) {
+        reasons->empty_recipes = carried->empty_recipes;
     }
-    hardware_filter_ = std::const_pointer_cast<const FilterReasons>(reasons);
 
-    return visible;
+    models::HostFilter outcome;
+    outcome.visible = std::move(result.visible);
+    outcome.reasons = std::const_pointer_cast<const models::FilterReasons>(reasons);
+    return outcome;
 }
 
 std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {

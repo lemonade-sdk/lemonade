@@ -384,7 +384,8 @@ Rules:
 4. The store runs no thread. A rebuild runs on the executor of whoever requested it — the sync service's worker, the directory watcher, or the call that changed the model set — and publishes with `std::atomic_store` and one notification.
 5. The five steps are private methods of `StoreBuilder`. The pipeline is fixed, not a pluggable stage list: a new stage is an edit to `StoreBuilder`, which is exactly the friction wanted here.
 6. A read publishes nothing. `generation` is the signal clients watch for "the set changed", so a read answers from the published snapshot and never takes the store lock — a read that published would invalidate every watcher without changing anything.
-7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a draft with no lock held. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build makes every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
+7. The store lock covers the commit, not the computation. Catalog reads, hardware filtering, artifact status and metadata population run over a candidate that the published set cannot see, and one builder runs at a time. On a warm host with 141 models, 52 ms of a 53 ms rebuild needs no lock at all; holding it across the whole build made every other writer — a download completing, a delete, a config write that changes the set — wait for work that touches none of its state.
+8. A rebuild whose generation moved while it composed does not commit. Its candidate predates a write it never saw, so it yields: that write stays published, the set stays marked stale, and the next read composes again from the registries and disk the writer wrote to. Yielding costs one dropped composition; committing would cost the write.
 
 ## Hardware Filtering
 
@@ -411,6 +412,7 @@ Rules:
 1. Every build produces `StoreSnapshot::rejected` and `StoreSnapshot::empty_recipes` for the whole set. There is no build mode that skips them, and no side table for a caller to remember to consult.
 2. Memory-fit inputs are `ModelInfo::size` and `ModelInfo::min_resident_gb`, against the streaming pools in `BackendAvailability`. The working-set comparison — `streaming_working_set_gb()` and `streaming_model_exceeds_pool()` — are file-local helpers beside `filter_hardware()`.
 3. A rejection reason is retrieved from the snapshot by canonical id, so an error message and the set it describes are always the same generation.
+4. A filter pass writes nothing: it answers with the visible set and its reasons, and the caller that owns the published table keeps them. A pass over part of the registry passes that table in and gets it back, because recomputing it from one model would report every other recipe as having nothing runnable.
 
 ## Name Resolution
 

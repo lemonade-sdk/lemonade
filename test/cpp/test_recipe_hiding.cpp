@@ -2,18 +2,20 @@
 // from the recipe/backends listing) when every one of its built-in models was
 // dropped by the system-memory heuristic. Two layers are covered:
 //   * the pure set-difference at the heart of the rule, and
-//   * the stateful contract that only a full-registry filter pass may commit the
-//     availability side table, so incremental single-model updates cannot
-//     clobber it.
+//   * the contract that a pass over part of the registry carries the availability
+//     side table instead of reducing it to that part.
 
 #include "lemon/model_manager.h"
 #include "lemon/models/store_builder.h"
 #include "lemon/utils/path_utils.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 using lemon::ModelInfo;
 using lemon::ModelManager;
@@ -58,82 +60,67 @@ static constexpr double HUGE_GB = 1.0e6;
 
 // The memory heuristic only sees models that already cleared the hardware/OS
 // gate (check_recipe_supported) and only runs when system RAM is readable, so
-// the stateful tests cannot assume any particular recipe reaches it. Probe for
-// one that does: a tiny model must survive (recipe supported here) and a huge
-// one must not (size filter actually active). Probes pass
-// track_recipe_availability=false, so they never disturb the side table.
+// these tests cannot assume any particular recipe reaches it. Probe for one that
+// does: a tiny model must survive (recipe supported here) and a huge one must
+// not (size filter actually active).
 static std::string find_probe_recipe(ModelManager& manager) {
     for (const char* candidate : {"llamacpp", "whispercpp", "kokoro", "sd-cpp"}) {
         std::map<std::string, ModelInfo> tiny = {{"ProbeTiny", model(candidate, 0.01)}};
-        if (manager.filter_models_by_backend(tiny, false).empty()) continue;
+        if (manager.filter_for_host(tiny).visible.empty()) continue;
 
         std::map<std::string, ModelInfo> huge = {{"ProbeHuge", model(candidate, HUGE_GB)}};
-        if (!manager.filter_models_by_backend(huge, false).empty()) continue;
+        if (!manager.filter_for_host(huge).visible.empty()) continue;
 
         return candidate;
     }
     return "";
 }
 
-// A filter pass updates the writer's filter reasons; production runs it inside
-// a store write, which publishes them when it ends. Take a write here so each
-// pass is observable, including the untracked one that must carry the table over.
-static void publish(ModelManager& manager) {
-    ModelManager::StoreWrite write(manager);
+using Reasons = std::shared_ptr<const lemon::models::FilterReasons>;
+
+static bool reports(const std::vector<std::string>& empty_recipes, const std::string& recipe) {
+    return std::find(empty_recipes.begin(), empty_recipes.end(), recipe) != empty_recipes.end();
 }
 
-static void test_full_pass_commits_and_recomputes(ModelManager& manager,
-                                                  const std::string& recipe) {
-    // Every model of `recipe` is unfillable -> the recipe is recorded. This is
-    // the positive half: without it the "unchanged" assertions below would also
-    // hold if the full pass had committed nothing at all.
+static void test_full_pass_recomputes(ModelManager& manager, const std::string& recipe) {
+    // Every model of `recipe` is unfillable -> the recipe is reported. This is
+    // the positive half: without it the "not reported" assertions below would
+    // also hold if the pass reported nothing at all.
     std::map<std::string, ModelInfo> all_filtered = {{"Huge", model(recipe, HUGE_GB)}};
-    manager.filter_models_by_backend(all_filtered, /*track_recipe_availability=*/true);
-    publish(manager);
-    check("full pass records a recipe whose every model was size-filtered",
-          manager.recipes_all_models_filtered_snapshot().count(recipe) == 1);
+    const Reasons reported = manager.filter_for_host(all_filtered).reasons;
+    check("full pass reports a recipe whose every model was size-filtered",
+          reports(reported->empty_recipes, recipe));
 
-    // One model still fits -> partial filtering, so the recipe must not be
-    // recorded, and the recompute must drop the entry seeded above.
+    // One model still fits -> partial filtering, so the recipe is not reported
+    // even though the pass above reported it: each pass recomputes from scratch.
     std::map<std::string, ModelInfo> partial = {
         {"Huge", model(recipe, HUGE_GB)},
         {"Tiny", model(recipe, 0.01)},
     };
-    manager.filter_models_by_backend(partial, /*track_recipe_availability=*/true);
-    publish(manager);
-    check("full pass recomputes: partially-filtered recipe is dropped",
-          manager.recipes_all_models_filtered_snapshot().count(recipe) == 0);
-
-    // Nothing filtered at all -> still not recorded.
-    std::map<std::string, ModelInfo> all_fit = {{"Tiny", model(recipe, 0.01)}};
-    manager.filter_models_by_backend(all_fit, /*track_recipe_availability=*/true);
-    publish(manager);
-    check("full pass never records a recipe that kept a visible model",
-          manager.recipes_all_models_filtered_snapshot().count(recipe) == 0);
+    check("a pass that replaces the table drops a recipe with a visible model",
+          !reports(manager.filter_for_host(partial).reasons->empty_recipes, recipe));
 }
 
-static void test_incremental_pass_does_not_clobber(ModelManager& manager,
-                                                   const std::string& recipe) {
-    // Seed the side table with a full pass, then run an incremental single-model
-    // pass (as add_model_to_cache does). The incremental pass must leave the
-    // side table untouched.
+// add_model_to_cache looks at one model and passes the published table in, so a
+// single-model pass cannot reduce that table to what it happened to look at.
+static void test_incremental_pass_carries_the_table(ModelManager& manager,
+                                                    const std::string& recipe) {
     std::map<std::string, ModelInfo> full = {{"Huge", model(recipe, HUGE_GB)}};
-    manager.filter_models_by_backend(full, /*track_recipe_availability=*/true);
-    publish(manager);
-    std::set<std::string> seeded = manager.recipes_all_models_filtered_snapshot();
+    const Reasons seeded = manager.filter_for_host(full).reasons;
 
-    check("seeded side table actually holds the all-filtered recipe",
-          seeded.count(recipe) == 1);
+    check("seeded table actually holds the all-filtered recipe",
+          reports(seeded->empty_recipes, recipe));
 
     std::map<std::string, ModelInfo> one = {{"Tiny", model(recipe, 0.01)}};
-    manager.filter_models_by_backend(one, /*track_recipe_availability=*/false);
-    publish(manager);
-    std::set<std::string> after_incremental = manager.recipes_all_models_filtered_snapshot();
+    const Reasons carried = manager.filter_for_host(one, seeded).reasons;
 
     check("incremental pass leaves the availability side table unchanged",
-          after_incremental == seeded);
+          carried->empty_recipes == seeded->empty_recipes);
     check("incremental pass does not drop the recorded recipe",
-          after_incremental.count(recipe) == 1);
+          reports(carried->empty_recipes, recipe));
+
+    check("carrying the table does not hide the model that fits",
+          manager.filter_for_host(one, seeded).visible.count("Tiny") == 1);
 }
 
 int main() {
@@ -148,8 +135,8 @@ int main() {
         check("found a recipe that reaches the memory heuristic on this host", false);
     } else {
         std::printf("Using probe recipe: %s\n", probe.c_str());
-        test_full_pass_commits_and_recomputes(manager, probe);
-        test_incremental_pass_does_not_clobber(manager, probe);
+        test_full_pass_recomputes(manager, probe);
+        test_incremental_pass_carries_the_table(manager, probe);
     }
 
     if (g_failures == 0) {
