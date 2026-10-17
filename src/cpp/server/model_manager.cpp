@@ -73,7 +73,7 @@ static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std
     "auto_update"
 };
 
-// Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
+// Built-ins are keyed bare in the draft model set; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
 static std::string cache_key_to_canonical_id(const std::string& cache_key) {
@@ -236,11 +236,17 @@ json ModelManager::model_sources() {
 }
 
 ModelManager::StoreWrite::StoreWrite(ModelManager& manager)
-    : manager_(manager), lock_(manager.models_cache_mutex_) {}
+    : manager_(manager), lock_(manager.models_cache_mutex_) {
+    // The write works on a copy of the set readers hold and the publish moves that
+    // copy into the new snapshot: a published set is never mutated in place, and no
+    // second copy of it lives on between writes.
+    const auto published = std::atomic_load(&manager_.store_snapshot_);
+    if (published) manager_.draft_models_ = published->models;
+}
 
 ModelManager::StoreWrite::~StoreWrite() {
-    // Copying the model set can fail; readers keep the previous snapshot rather
-    // than unwinding an exception out of a destructor.
+    // Deriving the tables can fail; readers keep the previous snapshot rather than
+    // unwinding an exception out of a destructor.
     try {
         // A patch says nothing about hardware fit, so the table already published
         // is the one that carries forward.
@@ -298,8 +304,8 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.invalidate = [this] { invalidate_models_cache(); };
     deps.persist_size = [this](const std::string& canonical_model_name) {
         StoreWrite store_write(*this);
-        const auto model = models_cache_.find(canonical_model_name);
-        if (model == models_cache_.end()) {
+        const auto model = draft_models_.find(canonical_model_name);
+        if (model == draft_models_.end()) {
             return;
         }
         const bool wrote = registries_.update_user([&](json& user_models) {
@@ -659,7 +665,7 @@ void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
         return name == published->canonical_public_names.end() ? cache_key : name->second;
     };
 
-    for (auto& [name, info] : models_cache_) {
+    for (auto& [name, info] : draft_models_) {
         if (settled.verified.count(name) == 0) {
             continue;
         }
@@ -1224,14 +1230,15 @@ void ModelManager::build_cache() {
                 << std::endl;
             return;
         }
-        models_cache_ = std::move(composed);
+        draft_models_ = std::move(composed);  // committed as-is, then moved into the snapshot
         catalog_set_->replace_with(built.snapshot());
         cache_valid_ = true;
         publish_store_locked(std::move(composed_reasons));
     }
 
-    LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
-              << " total, " << downloaded_count << " downloaded" << std::endl;
+    LOG(INFO, "ModelManager") << "Cache built: "
+              << std::atomic_load(&store_snapshot_)->models.size() << " total, "
+              << downloaded_count << " downloaded" << std::endl;
 }
 
 void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
@@ -1239,8 +1246,8 @@ void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
         return; // Will rebuild on next access
     }
 
-    auto it = models_cache_.find(info.model_name);
-    if (it != models_cache_.end()) {
+    auto it = draft_models_.find(info.model_name);
+    if (it != draft_models_.end()) {
         it->second.recipe_options = info.recipe_options;
     } else {
         LOG(WARNING, "ModelManager") << "'" << info.model_name << "' not found in cache" << std::endl;
@@ -1285,15 +1292,15 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
     if (!cache_valid_) {
         return;  // Something else rebuilt while this ran, and it read the disk again
     }
-    if (auto it = models_cache_.find(model_name); it != models_cache_.end()) {
+    if (auto it = draft_models_.find(model_name); it != draft_models_.end()) {
         // Options are patched into the live row without invalidating, so a save that
         // landed while this read the disk keeps its answer.
         patched.recipe_options = it->second.recipe_options;
         it->second = std::move(patched);
     }
     for (const auto& [name, state] : dependents) {
-        auto it = models_cache_.find(name);
-        if (it == models_cache_.end() || it->second.downloaded == state) continue;
+        auto it = draft_models_.find(name);
+        if (it == draft_models_.end() || it->second.downloaded == state) continue;
         it->second.downloaded = state;
         LOG(INFO, "ModelManager") << "Collection '" << name << "' downloaded=" << state
                                  << " (dependent on " << model_name << ")" << std::endl;
@@ -1315,13 +1322,13 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
         return;
     }
 
-    auto it = models_cache_.find(model_name);
-    if (it != models_cache_.end()) {
+    auto it = draft_models_.find(model_name);
+    if (it != draft_models_.end()) {
         // User models and local uploads should be removed entirely from cache
         // (they're not in server_models.json, so keeping them makes no sense)
         bool is_user_model = is_user_model_name(model_name);
         if (is_user_model || it->second.source == "local_upload") {
-            models_cache_.erase(model_name);
+            draft_models_.erase(model_name);
             LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
@@ -1609,9 +1616,9 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     // Reseed: drop this provider's previously-registered entries before
     // inserting the fresh list, so a model the provider stopped exposing
     // disappears. Other providers' entries are untouched.
-    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+    for (auto it = draft_models_.begin(); it != draft_models_.end();) {
         if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = models_cache_.erase(it);
+            it = draft_models_.erase(it);
         } else {
             ++it;
         }
@@ -1631,7 +1638,7 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         // discover_models() populates name/checkpoint/labels/context/cost but
         // not recipe_options; Router needs it to construct CloudServer.
         info.recipe_options = RecipeOptions("cloud", json::object());
-        auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
+        auto [it, inserted] = draft_models_.emplace(info.model_name, std::move(info));
         if (!inserted) {
             LOG(INFO, "ModelManager")
                 << "Cloud discovery for '" << provider << "' skipping '"
@@ -1652,9 +1659,9 @@ size_t ModelManager::evict_cloud_models(const std::string& provider) {
     if (provider.empty()) return 0;
     StoreWrite store_write(*this);
     size_t removed = 0;
-    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+    for (auto it = draft_models_.begin(); it != draft_models_.end();) {
         if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = models_cache_.erase(it);
+            it = draft_models_.erase(it);
             ++removed;
         } else {
             ++it;
@@ -1817,8 +1824,8 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Files went missing since the cache was built. Nothing rebuilds on its own,
     // so record it through a store write for every other reader.
     StoreWrite store_write(*this);
-    auto it = models_cache_.find(canonical_name);
-    if (it != models_cache_.end()) {
+    auto it = draft_models_.find(canonical_name);
+    if (it != draft_models_.end()) {
         it->second.downloaded = false;
     }
     return false;
@@ -1966,7 +1973,10 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
     // Everything on disk is the artifact store's decision; this decides what the
     // caller hears and what the registry loses.
-    const models::DeleteReport report = artifacts_->delete_artifacts(info, all_models());
+    // Who else claims these bytes is a question about the published set, and that
+    // set stays valid for the whole disk walk because this holds it.
+    const auto published = std::atomic_load(&store_snapshot_);
+    const models::DeleteReport report = artifacts_->delete_artifacts(info, published->models);
 
     // Bytes outside the models directory belong to whoever placed them. A user
     // registration is the only record of such a model, so forgetting it is the
@@ -2019,7 +2029,9 @@ void ModelManager::forget_registered_model(const std::string& canonical_model_na
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();
 
-    const models::CleanupReport report = artifacts_->cleanup_orphaned_cache(all_models(), dry_run);
+    const auto published = std::atomic_load(&store_snapshot_);
+    const models::CleanupReport report =
+        artifacts_->cleanup_orphaned_cache(published->models, dry_run);
 
     json orphaned_files = json::array();
     for (const auto& orphan : report.orphaned) {
@@ -2252,13 +2264,13 @@ std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
 void ModelManager::publish_store_locked(
     std::shared_ptr<const models::FilterReasons> reasons) {
     auto next = std::make_shared<models::StoreSnapshot>();
-    next->models = models_cache_;
-    ModelAliasMaps aliases = compute_model_alias_maps(models_cache_);
+    next->models = std::move(draft_models_);
+    ModelAliasMaps aliases = compute_model_alias_maps(next->models);
     next->public_model_aliases = std::move(aliases.public_model_aliases);
     next->canonical_public_names = std::move(aliases.canonical_public_names);
     next->reasons = std::move(reasons);
     next->catalogs = catalog_set_->descriptors();
-    next->helper_models = collect_helper_models(models_cache_);
+    next->helper_models = collect_helper_models(next->models);
     next->valid = cache_valid_;
     next->generation = ++store_generation_;
     std::atomic_store(&store_snapshot_,

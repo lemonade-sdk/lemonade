@@ -396,8 +396,8 @@ public:
     void set_model_update_available_for_test(const std::string& model_name, bool available) {
         std::string canonical = resolve_model_name(model_name);
         StoreWrite store_write(*this);
-        auto it = models_cache_.find(canonical);
-        if (it != models_cache_.end()) {
+        auto it = draft_models_.find(canonical);
+        if (it != draft_models_.end()) {
             it->second.update_available = available;
         }
     }
@@ -554,15 +554,18 @@ private:
     std::unique_ptr<models::CatalogSet> catalog_set_;
     std::shared_ptr<const models::CatalogFetchClock> catalog_fetch_clock_ =
         std::make_shared<models::CatalogFetchClock>();
-    // The writer-side model set.
-    mutable std::map<std::string, ModelInfo> models_cache_;
+    // The writer-side model set. A write seeds it from the published snapshot and
+    // the publish moves it out, so outside a write the model set exists once: in
+    // the snapshot readers hold.
+    std::map<std::string, ModelInfo> draft_models_;
 
     // Immutable view of that set and the tables derived from it, read with an
     // atomic load rather than under the lock that guards the set.
     std::shared_ptr<const models::StoreSnapshot> store_snapshot_;
     std::uint64_t store_generation_ = 0;
 
-    // Publishes `models_cache_`; see its definition for what is derived there.
+    // Publishes the draft the write seeded; see its definition for what is derived
+    // there. The draft is moved out, so it is empty again until the next write.
     void publish_store_locked(std::shared_ptr<const models::FilterReasons> reasons);
 
   public:
