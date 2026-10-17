@@ -9,6 +9,19 @@
 
 namespace lemon_cli {
 
+// True when `path` is shaped like a local .json file argument (suffix check
+// only — existence is NOT verified). `pull` uses this to redirect file
+// arguments to `import` with a clear hint instead of falling through to the
+// model/registry flow.
+bool looks_like_json_file_argument(const std::string& path);
+
+// Validate a model/policy JSON file without registering anything: the local
+// structural checks import runs, plus the server-side routing-policy parse
+// (POST /routing/validate) for collection.router documents. Returns 0 when
+// valid. Component existence is not checked — that happens at registration.
+int validate_model_json_file(lemonade::LemonadeClient& client,
+                             const std::string& json_path);
+
 // Validate and normalize imported model JSON payload.
 bool validate_and_transform_model_json(nlohmann::json& model_data);
 
