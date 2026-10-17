@@ -271,6 +271,27 @@ static void test_classifier_capability_validation() {
               throws_with_options(doc, options, "cannot serve as a classifier"));
     }
     {
+        json doc = fixture("l3_classifier.json");
+        doc["routing"]["classifiers"][0]["type"] = "zero_shot";
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        check("zero_shot accepts a CLASSIFICATION model type", parses_ok(doc, options));
+    }
+    {
+        // Unlike `classifier`, zero_shot has no LLM-as-classifier fallback.
+        json doc = fixture("l3_classifier.json");
+        doc["routing"]["classifiers"][0]["type"] = "zero_shot";
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return ModelType::LLM;
+        };
+        check("zero_shot rejects a model typed LLM",
+              throws_with_options(doc, options, "cannot serve zero_shot"));
+    }
+    {
         json doc = fixture("l2_semantic.json");
         RoutingPolicyParseOptions options;
         options.get_model_type = [](const std::string&) -> std::optional<ModelType> {

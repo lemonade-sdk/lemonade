@@ -49,9 +49,9 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe. Both sequence-classification (one label set) and token-classification (aggregated span labels) models are supported.
+Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe. Sequence-classification (one label set), token-classification (aggregated span labels), and zero-shot classification (labels supplied per request) models are supported.
 
-**Supported architectures:** single-sequence encoder families — BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as-is.
+**Supported architectures:** single-sequence encoder families — BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as-is. Zero-shot models are a separate family (LFM2) with their own input convention.
 
 A servable model directory is `model.onnx` + `tokenizer.json` + `config.json`. The `config.json` is **always required**: it declares the architecture, which is checked against the list above so an unsupported family (e.g. XLNet, which uses different segment/special-token conventions) is **rejected at load time** rather than served with wrong scores. The output contract (labels, normalization, token budget) is read from that same config; an optional `manifest.json` overrides it but does not replace the config. Without a manifest, inference assumes **single-label softmax**; a multi-label (sigmoid) model must declare `problem_type: multi_label_classification` in its config or ship a `manifest.json`.
 
@@ -71,6 +71,7 @@ The endpoint is available at:
 | `model` | string | yes* | Classifier model id (a model with the `onnxruntime` recipe). *Optional when a classification model is already loaded; the loaded model is used and echoed in the response. |
 | `input` | string | yes | Text to classify. `text` is accepted as an alias. |
 | `top_k` | integer | no | Return only the highest-scoring `k` labels. |
+| `labels` | string[] | zero-shot only | The label set to score this input against. **Required** for a zero-shot model and **rejected** for every other kind. Entries must be non-empty and unique. |
 
 ### Example request
 
@@ -95,7 +96,27 @@ curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/
 
 Label names come from the model's `id2label` — from `config.json`, or from `manifest.json` when one is present to override it; some upstream models only declare generic `LABEL_<n>` names — see the model card for their meaning.
 
-Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
+### Zero-shot classification
+
+A zero-shot model has no per-label head: it reads the label list as part of its input, so the labels are supplied on every request and `id2label` is rejected for the model. Pass them in `labels`:
+
+```bash
+curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/json"   -d '{"model": "Prompt-Router-ONNX", "input": "I want to learn about baking so that I can make a cheesecake", "labels": ["coding", "pii", "cooking", "eating"]}'
+```
+
+```json
+{
+  "object": "classification",
+  "model": "Prompt-Router-ONNX",
+  "labels": { "cooking": 0.927, "eating": 0.024, "coding": 0.024, "pii": 0.024 }
+}
+```
+
+The response keys are the labels you sent, softmaxed across the set. Sending `labels` to a fixed-label model, or omitting them for a zero-shot one, is a `400`, only the backend knows which kind its model is.
+
+The router consumes the same capability through the `zero_shot` classifier type; see [Router Policies](../dev/router-policy.md).
+
+Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`, a `labels` list that is empty or holds a blank or duplicate entry) return `400` with an `error` object before any model is loaded.
 
 ## Routing (`collection.router`)
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>

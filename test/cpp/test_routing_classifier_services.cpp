@@ -1,5 +1,6 @@
 // Unit tests for Router-backed ClassifierServices wiring (#2384).
 
+#include "lemon/error_types.h"
 #include "lemon/routing_classifier_services.h"
 
 #include <cmath>
@@ -185,6 +186,83 @@ static void test_run_classifier_uses_classify_for_classification_model() {
           near(scores.at("BENIGN"), 0.1) && near(scores.at("MALICIOUS"), 0.9));
 }
 
+static void test_run_zero_shot_classifier_forwards_labels() {
+    bool chat_completion_called = false;
+    json seen_classify_request;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [&](const json&) -> json {
+            chat_completion_called = true;
+            return json::object();
+        },
+        {},
+        [&](const json& request) {
+            seen_classify_request = request;
+            return json{{"labels", {{"coding", 0.02}, {"cooking", 0.93}, {"pii", 0.05}}}};
+        },
+        [](const std::string&) { return lemon::ModelType::CLASSIFICATION; });
+
+    auto scores = services.run_zero_shot_classifier(
+        "router-model", "how do I bake a cheesecake", {"coding", "cooking", "pii"});
+    check("run_zero_shot_classifier never uses chat", !chat_completion_called);
+    check("run_zero_shot_classifier forwards model and input",
+          seen_classify_request.value("model", "") == "router-model" &&
+          seen_classify_request.value("input", "") == "how do I bake a cheesecake");
+    check("run_zero_shot_classifier puts the label list in the classify body",
+          seen_classify_request["labels"] ==
+              json::array({"coding", "cooking", "pii"}));
+    check("run_zero_shot_classifier parses classify label scores",
+          near(scores.at("cooking"), 0.93) && near(scores.at("coding"), 0.02));
+}
+
+static void test_run_zero_shot_classifier_loads_before_resolving_type() {
+    // Same cold-start ordering requirement as run_classifier: the resolver
+    // reports LLM until the backend is alive.
+    bool loaded = false;
+    bool classify_called = false;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) { return json::object(); },
+        [&](const std::string&) { loaded = true; },
+        [&](const json&) {
+            classify_called = true;
+            return json{{"labels", {{"a", 0.3}, {"b", 0.7}}}};
+        },
+        [&](const std::string&) {
+            return loaded ? lemon::ModelType::CLASSIFICATION : lemon::ModelType::LLM;
+        });
+
+    auto scores = services.run_zero_shot_classifier("router-model", "text", {"a", "b"});
+    check("run_zero_shot_classifier loads the model before resolving its type",
+          loaded && classify_called && near(scores.at("b"), 0.7));
+}
+
+static void test_run_zero_shot_classifier_rejects_non_classification_model() {
+    bool chat_called = false;
+    bool classify_called = false;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [&](const json&) -> json {
+            chat_called = true;
+            return json::object();
+        },
+        {},
+        [&](const json&) -> json {
+            classify_called = true;
+            return json::object();
+        },
+        [](const std::string&) { return lemon::ModelType::LLM; });
+
+    bool threw = false;
+    try {
+        services.run_zero_shot_classifier("chat-model", "text", {"a", "b"});
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("run_zero_shot_classifier errors instead of falling back to chat",
+          threw && !chat_called && !classify_called);
+}
+
 static void test_run_classifier_falls_back_to_chat_for_non_classification_model() {
     bool classify_called = false;
     auto services = lemon::make_classifier_services_from_router_calls(
@@ -318,6 +396,142 @@ static void test_out_of_range_scores_drive_on_error() {
     RoutingPolicyEngine engine(std::move(policy), services);
     Decision decision = engine.route(route_context("my ssn is 123"), false);
     check("out-of-range model scores become classifier failure and apply on_error",
+          decision.route_to == "local" && decision.matched_rule == "keep-private");
+}
+
+// A residency conflict must escape the whole engine, not just the classifier.
+// Each classifier sits behind two catch-alls that exist to turn backend
+// trouble into on_error (ClassifierBandCondition::score_for) and then into a
+// fail-open default (RoutingPolicyEngine::route). Both would otherwise report
+// a successful route and hide a conflict only the caller can resolve, so these
+// drive the engine end to end rather than calling evaluate() directly.
+static bool route_propagates_residency_conflict(const ClassifierPtr& classifier,
+                                                lemon::ClassifierServices services) {
+    RoutePolicy policy;
+    policy.candidates = {"local", "cloud"};
+    policy.default_model = "cloud";
+    policy.classifiers["probe"] = classifier;
+    policy.rules = {
+        rule("keep-private", leaf(json{{"classifier", "probe"}, {"min_score", 0.5}}), "local"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+    try {
+        (void)engine.route(route_context("my ssn is 123"), false);
+    } catch (const lemon::RouterResidencyConflictException&) {
+        return true;
+    } catch (...) {
+        return false;
+    }
+    return false;
+}
+
+static lemon::RouterResidencyConflictException residency_conflict() {
+    return lemon::RouterResidencyConflictException("probe-model", "resident-model",
+                                                   "the recipe requires exclusive NPU access");
+}
+
+static void test_zero_shot_residency_conflict_propagates_through_route() {
+    lemon::ClassifierServices services;
+    services.run_zero_shot_classifier =
+        [](const std::string&, const std::string&,
+           const std::vector<std::string>&) -> std::map<std::string, double> {
+        throw residency_conflict();
+    };
+
+    // on_error=match_true would otherwise swallow the conflict into a confident
+    // match on "local", which is exactly the silent success being guarded here.
+    ClassifierPtr zero_shot = lemon::make_classifier(json{
+        {"id", "probe"},
+        {"type", "zero_shot"},
+        {"model", "probe-model"},
+        {"labels", {"PII", "NO_PII"}},
+        {"default_label", "PII"},
+        {"on_error", "match_true"},
+    });
+
+    check("zero_shot: residency conflict propagates through engine.route",
+          route_propagates_residency_conflict(zero_shot, std::move(services)));
+}
+
+static void test_classifier_residency_conflict_propagates_through_route() {
+    lemon::ClassifierServices services;
+    services.run_classifier = [](const std::string&,
+                                 const std::string&) -> std::map<std::string, double> {
+        throw residency_conflict();
+    };
+
+    check("classifier: residency conflict propagates through engine.route",
+          route_propagates_residency_conflict(make_fail_closed_model_classifier(),
+                                              std::move(services)));
+}
+
+static void test_llm_residency_conflict_propagates_through_route() {
+    lemon::ClassifierServices services;
+    services.chat = [](const std::string&, const std::string&,
+                       const std::string&) -> std::string { throw residency_conflict(); };
+
+    ClassifierPtr llm = lemon::make_classifier(json{
+        {"id", "probe"},
+        {"type", "llm"},
+        {"model", "probe-model"},
+        {"prompt", "Pick a model."},
+        {"labels", {"local", "cloud"}},
+        {"default_label", "local"},
+        {"on_error", "match_true"},
+    });
+
+    check("llm: residency conflict propagates through engine.route",
+          route_propagates_residency_conflict(llm, std::move(services)));
+}
+
+static void test_semantic_similarity_residency_conflict_propagates_through_route() {
+    lemon::ClassifierServices services;
+    services.embed = [](const std::string&, const std::string&) -> std::vector<float> {
+        throw residency_conflict();
+    };
+
+    ClassifierPtr semantic = lemon::make_classifier(json{
+        {"id", "probe"},
+        {"type", "semantic_similarity"},
+        {"model", "probe-model"},
+        {"reference_phrases", {{"PII", {"my social security number"}}}},
+        {"default_label", "PII"},
+        {"on_error", "match_true"},
+    });
+
+    check("semantic_similarity: residency conflict propagates through engine.route",
+          route_propagates_residency_conflict(semantic, std::move(services)));
+}
+
+// The guard must stay narrow: an ordinary backend failure still becomes
+// on_error, so the re-throws above cannot be widened into "classifiers throw".
+static void test_ordinary_backend_failure_still_applies_on_error() {
+    lemon::ClassifierServices services;
+    services.run_zero_shot_classifier =
+        [](const std::string&, const std::string&,
+           const std::vector<std::string>&) -> std::map<std::string, double> {
+        throw std::runtime_error("backend down");
+    };
+
+    RoutePolicy policy;
+    policy.candidates = {"local", "cloud"};
+    policy.default_model = "cloud";
+    policy.classifiers["probe"] = lemon::make_classifier(json{
+        {"id", "probe"},
+        {"type", "zero_shot"},
+        {"model", "probe-model"},
+        {"labels", {"PII", "NO_PII"}},
+        {"default_label", "PII"},
+        {"on_error", "match_true"},
+    });
+    policy.rules = {
+        rule("keep-private", leaf(json{{"classifier", "probe"}, {"min_score", 0.5}}), "local"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+    Decision decision = engine.route(route_context("my ssn is 123"), false);
+    check("zero_shot: a non-residency backend failure still applies on_error",
           decision.route_to == "local" && decision.matched_rule == "keep-private");
 }
 
@@ -913,12 +1127,20 @@ int main() {
     test_semantic_similarity_loops_through_router_embeddings();
     test_run_classifier_uses_router_chat_completion();
     test_run_classifier_uses_classify_for_classification_model();
+    test_run_zero_shot_classifier_forwards_labels();
+    test_run_zero_shot_classifier_loads_before_resolving_type();
+    test_run_zero_shot_classifier_rejects_non_classification_model();
     test_run_classifier_falls_back_to_chat_for_non_classification_model();
     test_run_classifier_loads_before_resolving_type();
     test_run_classifier_ignores_openai_metadata();
     test_direct_score_payload_is_supported();
     test_out_of_range_scores_are_rejected();
     test_out_of_range_scores_drive_on_error();
+    test_zero_shot_residency_conflict_propagates_through_route();
+    test_classifier_residency_conflict_propagates_through_route();
+    test_llm_residency_conflict_propagates_through_route();
+    test_semantic_similarity_residency_conflict_propagates_through_route();
+    test_ordinary_backend_failure_still_applies_on_error();
     test_model_classifier_routes_with_router_services();
     test_chat_service_extracts_text();
     test_chat_service_is_constrained_invocation();

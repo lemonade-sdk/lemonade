@@ -141,6 +141,28 @@ class ClassifyTests(ServerTestBase):
         )
         self._assert_rejected(self._payload(top_k=0), "Zero top_k", expected_status=400)
 
+    def test_005_wrong_type_labels_error(self):
+        """A malformed zero-shot 'labels' list is rejected 400 before any load."""
+        for labels, context in [
+            ("coding", "Non-array labels"),
+            ([], "Empty labels"),
+            (["coding", 7], "Non-string label"),
+            (["coding", "   "], "Whitespace-only label"),
+            (["coding", "coding"], "Duplicate label"),
+        ]:
+            self._assert_rejected(
+                self._payload(labels=labels), context, expected_status=400
+            )
+
+    def test_505_labels_rejected_by_fixed_label_model(self):
+        """Only the backend knows its task: a fixed-label model refuses labels."""
+        self._ensure_model_pulled()
+        self._assert_rejected(
+            self._payload(labels=["spam", "ham"]),
+            "Labels sent to a fixed-label model",
+            expected_status=400,
+        )
+
     def test_501_missing_input_error(self):
         """A request with a valid model but no input text is a 400 error."""
         self._ensure_model_pulled()
