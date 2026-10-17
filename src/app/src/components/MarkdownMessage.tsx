@@ -5,7 +5,7 @@ import texmath from 'markdown-it-texmath';
 import katex from 'katex';
 import '../styles/hljs-styles.css';
 import DOMPurify from 'dompurify';
-import mermaid from 'mermaid';
+import { renderMermaidSvg } from '../mermaidRenderer';
 import 'katex/dist/katex.min.css';
 import { copyTextToClipboard } from '../clipboard';
 import { useI18n } from '../i18n';
@@ -70,21 +70,6 @@ function describeMermaidFailure(cause: unknown, source: string): MermaidFailure 
   };
 }
 
-/* ── Mermaid init ──────────────────────────────────────────── */
-
-let mermaidReady = false;
-function ensureMermaidInit() {
-  if (!mermaidReady) {
-    mermaid.initialize({
-      startOnLoad: false,
-      suppressErrorRendering: true,
-      theme: 'neutral',
-      securityLevel: 'strict',
-    });
-    mermaidReady = true;
-  }
-}
-
 /* ── DOMPurify config ─────────────────────────────────────── */
 
 const PURIFY_CONFIG: DOMPurify.Config = {
@@ -135,12 +120,7 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
 
     (async () => {
       try {
-        ensureMermaidInit();
-        const id = `mm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const { svg: rendered } = await mermaid.render(id, source);
-        if (typeof rendered !== 'string' || !rendered.trim()) {
-          throw new Error('Mermaid returned no diagram markup (check installed version and render API)');
-        }
+        const rendered = await renderMermaidSvg(source);
         if (!cancelled) setSvg(rendered);
       } catch (cause) {
         if (cancelled) return;
