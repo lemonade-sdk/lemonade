@@ -1421,7 +1421,7 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
-      - name: Install Lemonade (.deb)
+      - name: Extract Lemonade (.deb) and start server
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
@@ -1521,7 +1521,7 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME"
 
-      - name: Install Lemonade (.deb)
+      - name: Extract Lemonade (.deb) and start server
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
@@ -1998,7 +1998,7 @@ jobs:
 
   test-gui-playwright:
     name: GUI real-server smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-lemonade-deb
     timeout-minutes: 25
     env:
@@ -2011,7 +2011,23 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Install Lemonade (.deb)
+      - name: Enable the Ubuntu packaging PPA
+        shell: bash
+        env:
+          TARGET_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+        run: |
+          case "$TARGET_REF" in
+            refs/tags/v*)                  channel=stable ;;
+            release-v*|refs/heads/release-v*) channel=candidate ;;
+            *)                             channel=bleeding-edge ;;
+          esac
+
+          echo "Using PPA channel: $channel"
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y "ppa:lemonade-team/$channel"
+
+      - name: Extract Lemonade (.deb) and start server
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
@@ -2130,7 +2146,7 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME"
 
-      - name: Install Lemonade (.deb)
+      - name: Extract Lemonade (.deb) and start server
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
@@ -2686,7 +2702,7 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r test/requirements.txt
 
-      - name: Install Lemonade (.deb)
+      - name: Extract Lemonade (.deb) and start server
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
