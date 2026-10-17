@@ -338,8 +338,7 @@ public:
              {{"type", json::array({"boolean", "string"})},
               {"enum", json::array({true, false, "low", "medium", "high", "max"})}},
              false, Support::NotAvailable,
-             "`true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama "
-             "accepts for models that define none of their own. Not applied: reasoning models "
+             "`true`, `false`, `low`, `medium`, `high` or `max`. Not applied: reasoning models "
              "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
              "`/no_think`."},
             {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
