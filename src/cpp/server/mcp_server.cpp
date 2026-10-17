@@ -199,7 +199,7 @@ std::filesystem::path sanitize_sandboxed_path(const std::string& raw,
 }
 
 // Collision-resistant token for auto-generated artifact filenames. A single
-// lemond serves multiple concurrent clients (AGENTS.md invariant 11), so the
+// lemond serves multiple concurrent clients (AGENTS.md invariant 1), so the
 // old deterministic names (image_0.png, omni_0.png) silently clobbered each
 // other across calls. A millisecond timestamp plus a process-wide atomic
 // counter makes every generated file land on a fresh name — no overwrite, and
