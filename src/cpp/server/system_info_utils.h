@@ -7,13 +7,28 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <set>
-#include <system_error>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 namespace lemon::system_info_detail {
+
+inline std::string extract_compute_capability(const nlohmann::json& gpu) {
+    if (!gpu.is_object() || !gpu.contains("compute_capability")) {
+        return "";
+    }
+    const auto& val = gpu["compute_capability"];
+    if (val.is_string()) {
+        return val.get<std::string>();
+    }
+    if (val.is_number()) {
+        return val.dump();
+    }
+    return "";
+}
 
 inline const std::set<std::string>& cuda_supported_archs() {
     static const std::set<std::string> archs = {
