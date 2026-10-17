@@ -155,6 +155,8 @@ function loadListHelpers() {
       backendCompactLabel: recipe => recipe,
       backendLabel: recipe => recipe,
     };
+    if (request === '../features/backends/recipeMetadata') return { recipeBackendOptionName: () => null };
+    if (request === '../i18n') return { useI18n: () => ({ t: key => key }) };
     throw new Error(`Unexpected dependency while loading ModelListPanel helpers: ${request}`);
   };
   Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(
