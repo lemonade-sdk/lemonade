@@ -16,6 +16,7 @@
 #include <lemon/models/listed_catalog.h>
 #include <lemon/models/model_sources.h>
 #include <lemon/models/scan_catalog.h>
+#include <lemon/models/store.h>
 #include <lemon/models/store_builder.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/routing_parse_options.h>
@@ -232,30 +233,7 @@ std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& mod
 
 json ModelManager::model_sources() {
     build_cache();
-    return models::model_sources_json(*std::atomic_load(&store_snapshot_));
-}
-
-ModelManager::StoreWrite::StoreWrite(ModelManager& manager)
-    : manager_(manager), lock_(manager.models_cache_mutex_) {
-    // The write works on a copy of the set readers hold and the publish moves that
-    // copy into the new snapshot: a published set is never mutated in place, and no
-    // second copy of it lives on between writes.
-    const auto published = std::atomic_load(&manager_.store_snapshot_);
-    if (published) manager_.draft_models_ = published->models;
-}
-
-ModelManager::StoreWrite::~StoreWrite() {
-    // Deriving the tables can fail; readers keep the previous snapshot rather than
-    // unwinding an exception out of a destructor.
-    try {
-        // A patch says nothing about hardware fit, so the table already published
-        // is the one that carries forward.
-        const auto published = std::atomic_load(&manager_.store_snapshot_);
-        manager_.publish_store_locked(published ? published->reasons : nullptr);
-    } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "Could not publish model store: " << e.what() << std::endl;
-    }
-    lock_.unlock();
+    return models::model_sources_json(*store_.read());
 }
 
 // Scanning and syncing are the parts that read the store and write bytes, so
@@ -304,8 +282,8 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.invalidate = [this] { invalidate_models_cache(); };
     deps.persist_size = [this](const std::string& canonical_model_name) {
         StoreWrite store_write(*this);
-        const auto model = draft_models_.find(canonical_model_name);
-        if (model == draft_models_.end()) {
+        const auto model = store_write.draft().find(canonical_model_name);
+        if (model == store_write.draft().end()) {
             return;
         }
         const bool wrote = registries_.update_user([&](json& user_models) {
@@ -317,7 +295,7 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
             return true;
         });
         if (wrote) {
-            cache_valid_ = false;
+            store_write.invalidate_cache();
         }
     };
     deps.pin = [this] { return registries_.pin(); };
@@ -344,13 +322,9 @@ ModelManager::ModelManager(ModelManagerConfig config)
       })),
       ingest_(std::make_unique<models::ModelIngest>(make_ingest_deps())),
       sync_(make_sync_deps()) {
-    catalog_set_ = std::make_unique<models::CatalogSet>();
     cloud_registry_ = config_.cloud_providers;
     default_model_source_provider_ = std::move(config_.default_model_source);
 
-    // Readers must always have a snapshot; an invalid one tells them to build.
-    std::atomic_store(&store_snapshot_, std::shared_ptr<const models::StoreSnapshot>(
-                                            std::make_shared<models::StoreSnapshot>()));
     architecture_defaults_ = load_architecture_defaults();
 
     // Releases before canonical IDs keyed built-in options by bare name; the
@@ -380,7 +354,7 @@ std::string ModelManager::get_hf_cache_dir() const {
 
 void ModelManager::invalidate_models_cache() {
     StoreWrite store_write(*this);
-    cache_valid_ = false;
+    store_write.invalidate_cache();
 }
 
 void ModelManager::on_models_changed(std::function<void(std::uint64_t)> subscriber) {
@@ -392,19 +366,19 @@ void ModelManager::on_model_updated(std::function<void(const std::string&)> subs
 }
 
 std::uint64_t ModelManager::generation() {
-    return std::atomic_load(&store_snapshot_)->generation;
+    return store_.read()->generation;
 }
 
 std::set<std::string> ModelManager::active_helper_models() {
     build_cache();
-    return std::atomic_load(&store_snapshot_)->helper_models;
+    return store_.read()->helper_models;
 }
 
 void ModelManager::notify_models_changed() {
     // The snapshot a subscriber must read has to exist first. See
     // models/change_notifier.h for what the generation means to it.
     build_cache();
-    change_notifier_.models_changed(std::atomic_load(&store_snapshot_)->generation);
+    change_notifier_.models_changed(store_.read()->generation);
 }
 
 void ModelManager::set_extra_models_dir(const std::string& dir) {
@@ -425,7 +399,7 @@ void ModelManager::catalog_set_changed() {
     catalog_fetch_clock_->forget_all();
     {
         StoreWrite store_write(*this);
-        cache_valid_ = false;
+        store_write.invalidate_cache();
     }
     notify_models_changed();
 }
@@ -440,7 +414,7 @@ void ModelManager::start_directory_watcher() {
         LOG(DEBUG, "ModelManager") << "Extra models directory changed, invalidating cache" << std::endl;
         {
             StoreWrite store_write(*this);
-            cache_valid_ = false;
+            store_write.invalidate_cache();
         }
         notify_models_changed();
     });
@@ -515,7 +489,7 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     recipe_options_.replace(id, info.recipe_options.to_json());
 
     StoreWrite store_write(*this);
-    update_model_options_in_cache_locked(info);
+    update_model_options_in_cache_locked(store_write, info);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
@@ -562,7 +536,7 @@ json ModelManager::update_saved_model_options(const std::string& model_name, con
 // Read-modify-write of one model's recipe_options.json entry.
 //
 // recipe_options_write_mutex_ orders the whole-file rewrites, so two writers
-// can't land their snapshots out of order; models_cache_mutex_ covers the merge
+// can't land their snapshots out of order; the store's writer covers the merge
 // and the matching cache update together, so the cache can never end up holding
 // an older option set than the file. Only the first is held across disk I/O —
 // every request thread contends on the cache mutex.
@@ -594,7 +568,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
         // Same layering as build_cache(), so the two can't drift.
         info.recipe_options = build_recipe_options(
             info, registry_recipe_options(cache_key), id, json{{id, saved}});
-        update_model_options_in_cache_locked(info);
+        update_model_options_in_cache_locked(store_write, info);
     } else {
         invalidate_models_cache();
     }
@@ -607,7 +581,7 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     build_cache();
 
     // Return copy of cache (all models, including their download status)
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::map<std::string, ModelInfo> public_models;
     for (const auto& [name, info] : snapshot->models) {
         std::string public_name = snapshot->public_name_for(name);
@@ -631,7 +605,7 @@ ModelManager::UpdateCheckResult ModelManager::check_for_model_updates(const std:
 ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<std::string>& targets) {
     models::UpdateScanDeps deps;
     deps.ensure_store = [this] { build_cache(); };
-    deps.snapshot = [this] { return std::atomic_load(&store_snapshot_); };
+    deps.snapshot = [this] { return store_.read(); };
     deps.hf_cache_dir = [this] { return get_hf_cache_dir(); };
     deps.registry_source = [](const ModelInfo& info) { return models::registry_source_of(info); };
     deps.registry_for = config_.registry_for;
@@ -655,7 +629,7 @@ void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
                                        models::UpdateScanResult& result) {
     StoreWrite store_write(*this);
 
-    const auto published = std::atomic_load(&store_snapshot_);
+    const auto published = store_.read();
     if (!published) {
         return;  // Nothing published, so nothing was examined either
     }
@@ -666,7 +640,7 @@ void ModelManager::publish_update_scan(const models::ScanDetermination& settled,
         return name == published->canonical_public_names.end() ? cache_key : name->second;
     };
 
-    for (auto& [name, info] : draft_models_) {
+    for (auto& [name, info] : store_write.draft()) {
         if (settled.verified.count(name) == 0) {
             continue;
         }
@@ -738,7 +712,7 @@ json ModelManager::sync_models(const std::vector<std::string>& target_models, bo
                 ModelInfo info;
                 bool found = false;
                 {
-                    auto snapshot = std::atomic_load(&store_snapshot_);
+                    auto snapshot = store_.read();
                     if (const ModelInfo* cached = snapshot->find(canonical_name)) {
                         info = *cached;
                         found = true;
@@ -909,27 +883,9 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
 }
 
 void ModelManager::build_cache() {
-    // Probed before taking the builder: publishing on a read that changes nothing
-    // would leave the generation useless as a change signal.
-    std::uint64_t based_on = 0;
-    {
-        std::lock_guard<std::mutex> probe(models_cache_mutex_);
-        if (cache_valid_) {
-            return;
-        }
-        based_on = store_generation_;
-    }
-
-    // Composing reads catalogs, disk and backends without touching the published
-    // set, so it takes a builder lock rather than models_cache_mutex_: holding the
-    // store lock across it made every writer wait for work it guards nothing of.
-    std::lock_guard<std::mutex> composing(store_build_mutex_);
-    {
-        std::lock_guard<std::mutex> probe(models_cache_mutex_);
-        if (cache_valid_) {
-            return;  // Another rebuild published while this one waited.
-        }
-        based_on = store_generation_;
+    models::ModelStore::Build build(store_);
+    if (build.up_to_date()) {
+        return;
     }
 
     LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
@@ -1119,36 +1075,23 @@ void ModelManager::build_cache() {
         }
     }
 
-    {
-        std::lock_guard<std::mutex> commit(models_cache_mutex_);
-        if (store_generation_ != based_on) {
-            // A writer published while this composed, so the candidate predates
-            // that change and cannot simply land on top of it. Yield: the write
-            // stays published, the store stays invalid, and the next read asks
-            // again -- which reads the registries and disk the writer wrote.
-            LOG(INFO, "ModelManager")
-                << "Model set changed while composing a new one; the next read will rebuild"
-                << std::endl;
-            return;
-        }
-        draft_models_ = std::move(composed);  // committed as-is, then moved into the snapshot
-        catalog_set_->replace_with(built.snapshot());
-        cache_valid_ = true;
-        publish_store_locked(std::move(composed_reasons));
+    if (!build.commit(std::move(composed), std::move(composed_reasons), built.snapshot())) {
+        return;
     }
 
     LOG(INFO, "ModelManager") << "Cache built: "
-              << std::atomic_load(&store_snapshot_)->models.size() << " total, "
+              << store_.read()->models.size() << " total, "
               << downloaded_count << " downloaded" << std::endl;
 }
 
-void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
-    if (!cache_valid_) {
+void ModelManager::update_model_options_in_cache_locked(StoreWrite& store_write,
+                                                          const ModelInfo& info) {
+    if (!store_write.cache_valid()) {
         return; // Will rebuild on next access
     }
 
-    auto it = draft_models_.find(info.model_name);
-    if (it != draft_models_.end()) {
+    auto it = store_write.draft().find(info.model_name);
+    if (it != store_write.draft().end()) {
         it->second.recipe_options = info.recipe_options;
     } else {
         LOG(WARNING, "ModelManager") << "'" << info.model_name << "' not found in cache" << std::endl;
@@ -1158,7 +1101,7 @@ void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
     // Everything here is filesystem work, so it runs against the published view on
     // a private copy and only the rows it changed are committed.
-    auto view = std::atomic_load(&store_snapshot_);
+    auto view = store_.read();
     if (!view || !view->valid) {
         return;  // Will rebuild on next access
     }
@@ -1190,24 +1133,24 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
     const std::string resolved = patched.resolved_path();
 
     StoreWrite store_write(*this);
-    if (!cache_valid_) {
+    if (!store_write.cache_valid()) {
         return;  // Something else rebuilt while this ran, and it read the disk again
     }
-    if (auto it = draft_models_.find(model_name); it != draft_models_.end()) {
+    if (auto it = store_write.draft().find(model_name); it != store_write.draft().end()) {
         // Options are patched into the live row without invalidating, so a save that
         // landed while this read the disk keeps its answer.
         patched.recipe_options = it->second.recipe_options;
         it->second = std::move(patched);
     }
     for (const auto& [name, state] : dependents) {
-        auto it = draft_models_.find(name);
-        if (it == draft_models_.end() || it->second.downloaded == state) continue;
+        auto it = store_write.draft().find(name);
+        if (it == store_write.draft().end() || it->second.downloaded == state) continue;
         it->second.downloaded = state;
         LOG(INFO, "ModelManager") << "Collection '" << name << "' downloaded=" << state
                                  << " (dependent on " << model_name << ")" << std::endl;
     }
     if (backend_lists_models) {
-        cache_valid_ = false;
+        store_write.invalidate_cache();
         LOG(INFO, "ModelManager") << "Invalidated model cache after download for '" << model_name
                                  << "' (backend rebuilds its model list)" << std::endl;
         return;
@@ -1219,17 +1162,17 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
 void ModelManager::remove_model_from_cache(const std::string& model_name) {
     StoreWrite store_write(*this);
 
-    if (!cache_valid_) {
+    if (!store_write.cache_valid()) {
         return;
     }
 
-    auto it = draft_models_.find(model_name);
-    if (it != draft_models_.end()) {
+    auto it = store_write.draft().find(model_name);
+    if (it != store_write.draft().end()) {
         // User models and local uploads should be removed entirely from cache
         // (they're not in server_models.json, so keeping them makes no sense)
         bool is_user_model = is_user_model_name(model_name);
         if (is_user_model || it->second.source == "local_upload") {
-            draft_models_.erase(model_name);
+            store_write.draft().erase(model_name);
             LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
@@ -1249,7 +1192,7 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // for them (see CollectionOrchestrator), so they are genuine OpenAI-compatible
     // chat models and should appear in /v1/models and Ollama /api/tags. A collection's
     // `downloaded` flag already reflects component status (see build_cache).
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : snapshot->models) {
         if (info.downloaded) {
@@ -1289,7 +1232,7 @@ models::HostFilter ModelManager::filter_for_host(
 }
 
 std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     const std::vector<std::string> hidden = snapshot->empty_recipes();
     return std::set<std::string>(hidden.begin(), hidden.end());
 }
@@ -1311,9 +1254,9 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     // Reseed: drop this provider's previously-registered entries before
     // inserting the fresh list, so a model the provider stopped exposing
     // disappears. Other providers' entries are untouched.
-    for (auto it = draft_models_.begin(); it != draft_models_.end();) {
+    for (auto it = store_write.draft().begin(); it != store_write.draft().end();) {
         if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = draft_models_.erase(it);
+            it = store_write.draft().erase(it);
         } else {
             ++it;
         }
@@ -1333,7 +1276,7 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         // discover_models() populates name/checkpoint/labels/context/cost but
         // not recipe_options; Router needs it to construct CloudServer.
         info.recipe_options = RecipeOptions("cloud", json::object());
-        auto [it, inserted] = draft_models_.emplace(info.model_name, std::move(info));
+        auto [it, inserted] = store_write.draft().emplace(info.model_name, std::move(info));
         if (!inserted) {
             LOG(INFO, "ModelManager")
                 << "Cloud discovery for '" << provider << "' skipping '"
@@ -1354,9 +1297,9 @@ size_t ModelManager::evict_cloud_models(const std::string& provider) {
     if (provider.empty()) return 0;
     StoreWrite store_write(*this);
     size_t removed = 0;
-    for (auto it = draft_models_.begin(); it != draft_models_.end();) {
+    for (auto it = store_write.draft().begin(); it != store_write.draft().end();) {
         if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = draft_models_.erase(it);
+            it = store_write.draft().erase(it);
             ++removed;
         } else {
             ++it;
@@ -1371,7 +1314,7 @@ size_t ModelManager::evict_cloud_models(const std::string& provider) {
 }
 
 size_t ModelManager::count_cloud_models(const std::string& provider) const {
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     return std::count_if(snapshot->models.begin(), snapshot->models.end(),
                          [&](const auto& kv) {
                              return kv.second.recipe == "cloud" &&
@@ -1454,7 +1397,7 @@ void ModelManager::register_user_model(const std::string& model_name,
             user_models[clean_name] = model_entry;
             return true;
         });
-        cache_valid_ = false;
+        store_write.invalidate_cache();
     }
 
     // A router collection carries a routing policy, so its lifecycle affects the
@@ -1489,7 +1432,7 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
         if (!wrote) {
             return;
         }
-        cache_valid_ = false;
+        store_write.invalidate_cache();
     }
 
     if (was_router_collection) {
@@ -1501,7 +1444,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Build cache if needed
     build_cache();
     // O(1) lookup - download status is in cache
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::string canonical_name = snapshot->canonical_for(model_name);
     if (canonical_name.empty()) {
         canonical_name = model_name;
@@ -1519,8 +1462,8 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Files went missing since the cache was built. Nothing rebuilds on its own,
     // so record it through a store write for every other reader.
     StoreWrite store_write(*this);
-    auto it = draft_models_.find(canonical_name);
-    if (it != draft_models_.end()) {
+    auto it = store_write.draft().find(canonical_name);
+    if (it != store_write.draft().end()) {
         it->second.downloaded = false;
     }
     return false;
@@ -1581,7 +1524,7 @@ std::vector<std::pair<std::string, const ModelInfo*>> ModelManager::listing_rows
 
 std::optional<models::ResolvedModel> ModelManager::resolve(const std::string& requested) {
     build_cache();
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
 
     std::string name = utils::normalize_model_name(requested);
     constexpr const char kLatest[] = ":latest";
@@ -1670,7 +1613,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     // caller hears and what the registry loses.
     // Who else claims these bytes is a question about the published set, and that
     // set stays valid for the whole disk walk because this holds it.
-    const auto published = std::atomic_load(&store_snapshot_);
+    const auto published = store_.read();
     const models::DeleteReport report = artifacts_->delete_artifacts(info, published->models);
 
     // Bytes outside the models directory belong to whoever placed them. A user
@@ -1690,12 +1633,12 @@ void ModelManager::delete_model(const std::string& model_name) {
 }
 
 std::map<std::string, ModelInfo> ModelManager::all_models() const {
-    return std::atomic_load(&store_snapshot_)->models;
+    return store_.read()->models;
 }
 
 std::map<std::string, std::filesystem::path> ModelManager::resolved_paths_for(
     const std::string& canonical_model_name) const {
-    const ModelInfo* info = std::atomic_load(&store_snapshot_)->find(canonical_model_name);
+    const ModelInfo* info = store_.read()->find(canonical_model_name);
     std::map<std::string, std::filesystem::path> paths;
     if (info == nullptr) {
         return paths;
@@ -1717,14 +1660,14 @@ void ModelManager::forget_registered_model(const std::string& canonical_model_na
         user_models.erase(strip_user_model_prefix(canonical_model_name));
         return true;
     });
-    cache_valid_ = false;
+    store_write.invalidate_cache();
     LOG(INFO, "ModelManager") << "\u2713 Removed from user_models.json" << std::endl;
 }
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();
 
-    const auto published = std::atomic_load(&store_snapshot_);
+    const auto published = store_.read();
     const models::CleanupReport report =
         artifacts_->cleanup_orphaned_cache(published->models, dry_run);
 
@@ -1755,7 +1698,7 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in the published snapshot
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::string canonical_name = snapshot->canonical_for(model_name);
     if (canonical_name.empty()) {
         canonical_name = model_name;
@@ -1770,7 +1713,7 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
 std::string ModelManager::resolve_model_name(const std::string& model_name) {
     build_cache();
 
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::string canonical_name = snapshot->canonical_for(model_name);
     return canonical_name.empty() ? model_name : canonical_name;
 }
@@ -1778,7 +1721,7 @@ std::string ModelManager::resolve_model_name(const std::string& model_name) {
 std::string ModelManager::get_public_model_name(const std::string& model_name) {
     build_cache();
 
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::string public_name = snapshot->public_name_for(model_name);
     return public_name.empty() ? model_name : public_name;
 }
@@ -1789,7 +1732,7 @@ bool ModelManager::model_exists(const std::string& model_name) {
 
     // O(1) lookup in the published snapshot
     {
-        auto snapshot = std::atomic_load(&store_snapshot_);
+        auto snapshot = store_.read();
         std::string canonical_name = snapshot->canonical_for(model_name);
         if (canonical_name.empty()) {
             canonical_name = model_name;
@@ -1821,7 +1764,7 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
     // Ensure cache is built (this populates the filter reasons)
     build_cache();
 
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     std::string canonical_name = snapshot->canonical_for(model_name);
     if (canonical_name.empty()) {
         canonical_name = model_name;
@@ -1833,31 +1776,9 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 
 std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
     build_cache();
-    auto snapshot = std::atomic_load(&store_snapshot_);
+    auto snapshot = store_.read();
     const std::vector<std::string> hidden = snapshot->empty_recipes();
     return std::set<std::string>(hidden.begin(), hidden.end());
-}
-
-// Called by StoreWrite on scope exit, with models_cache_mutex_ held.
-//
-// Publishing derives the alias tables and the helper projection from the set
-// published beside them, so a name cannot outlive the model it points at.
-// `reasons` is the filter table the store ends with: a full build hands over the
-// one it composed, a patch the one already published.
-void ModelManager::publish_store_locked(
-    std::shared_ptr<const models::FilterReasons> reasons) {
-    auto next = std::make_shared<models::StoreSnapshot>();
-    next->models = std::move(draft_models_);
-    models::ModelAliasMaps aliases = models::compute_model_alias_maps(next->models);
-    next->public_model_aliases = std::move(aliases.public_model_aliases);
-    next->canonical_public_names = std::move(aliases.canonical_public_names);
-    next->reasons = std::move(reasons);
-    next->catalogs = catalog_set_->descriptors();
-    next->helper_models = collect_helper_models(next->models);
-    next->valid = cache_valid_;
-    next->generation = ++store_generation_;
-    std::atomic_store(&store_snapshot_,
-                      std::const_pointer_cast<const models::StoreSnapshot>(next));
 }
 
 } // namespace lemon

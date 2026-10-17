@@ -1059,6 +1059,7 @@ set(SOURCES_CORE
     src/cpp/server/models/configured_catalog.cpp
     src/cpp/server/models/registry_documents.cpp
     src/cpp/server/models/model_index.cpp
+    src/cpp/server/models/store.cpp
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/sync_service.cpp
     src/cpp/server/models/update_scan.cpp
@@ -3325,6 +3326,19 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
+endif()
+
+set(_STORE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_STORE_TEST_SRC}")
+    add_executable(test_store
+        test/cpp/test_store.cpp
+    )
+    target_link_libraries(test_store PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(StoreTest CI ON COMMAND test_store)
 endif()
 
 set(_STORE_BUILD_TEST_SRC

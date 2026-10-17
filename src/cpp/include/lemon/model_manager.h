@@ -28,6 +28,7 @@
 #include "models/ingest.h"
 #include "models/registry_documents.h"
 #include "models/recipe_options_store.h"
+#include "models/store.h"
 #include "models/sync_service.h"
 #include "models/update_scan.h"
 #include "recipe_options.h"
@@ -206,12 +207,29 @@ struct ModelManagerConfig {
 
 class ModelManager {
 public:
+// Locks the store and publishes on release, so a mutating path cannot forget to
+// publish and readers never see a half-built set.
+    class StoreWrite {
+      public:
+        explicit StoreWrite(ModelManager& manager) : write_(manager.store_) {}
+        StoreWrite(const StoreWrite&) = delete;
+        StoreWrite& operator=(const StoreWrite&) = delete;
+
+        // The published set, editable until this goes out of scope.
+        std::map<std::string, ModelInfo>& draft() { return write_.draft(); }
+        bool cache_valid() const { return write_.cache_valid(); }
+        void invalidate_cache() { write_.invalidate_cache(); }
+
+      private:
+        models::ModelStore::Write write_;
+    };
+
     explicit ModelManager(ModelManagerConfig config);
 
     // The paths-only shorthand.
     explicit ModelManager(const std::string& extra_models_dir = "");
 
-// Joins the watcher thread: its callback locks models_cache_mutex_, declared
+// Joins the watcher thread: its callback locks the store, declared
 // after directory_watcher_ and so freed first.
     ~ModelManager();
 
@@ -401,8 +419,8 @@ public:
     void set_model_update_available_for_test(const std::string& model_name, bool available) {
         std::string canonical = resolve_model_name(model_name);
         StoreWrite store_write(*this);
-        auto it = draft_models_.find(canonical);
-        if (it != draft_models_.end()) {
+        auto it = store_write.draft().find(canonical);
+        if (it != store_write.draft().end()) {
             it->second.update_available = available;
         }
     }
@@ -516,8 +534,8 @@ private:
     // The host reads a catalog set needs; see models::CatalogSetDeps.
     models::CatalogSetDeps make_catalog_deps(std::map<std::string, json>& json_recipe_options);
     std::vector<ModelInfo> scan_extra_models(const models::CatalogAccumulator& claimed);
-    // Caller must hold models_cache_mutex_.
-    void update_model_options_in_cache_locked(const ModelInfo& info);
+    void update_model_options_in_cache_locked(StoreWrite& store_write,
+                                              const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
@@ -541,12 +559,6 @@ private:
 
     models::ModelChangeNotifier change_notifier_;
 
-    // Serializes writers of the model set. Writers use StoreWrite, which
-    // publishes for them; snapshot readers need no lock.
-    mutable std::mutex models_cache_mutex_;
-    // One rebuild composes at a time, and it holds this rather than
-    // models_cache_mutex_ while it reads catalogs and disk.
-    std::mutex store_build_mutex_;
     // Serializes an options write end to end: store mutation plus the matching
     // cache patch. The store orders its own state; this keeps the two in step so
     // two concurrent writers cannot leave the cache holding the earlier entry.
@@ -556,40 +568,15 @@ private:
     std::function<UpdateCheckResult(const std::vector<std::string>&)> update_check_override_;
     std::function<void(const std::string&, const json&, bool, DownloadProgressCallback)> download_model_override_;
 
-    std::unique_ptr<models::CatalogSet> catalog_set_;
     std::shared_ptr<const models::CatalogFetchClock> catalog_fetch_clock_ =
         std::make_shared<models::CatalogFetchClock>();
-    // The writer-side model set. A write seeds it from the published snapshot and
-    // the publish moves it out, so outside a write the model set exists once: in
-    // the snapshot readers hold.
-    std::map<std::string, ModelInfo> draft_models_;
+    // The published model set, its catalogs and the rules for changing either. Declared
+    // before what reads it: destruction runs in reverse.
+    models::ModelStore store_;
 
-    // Immutable view of that set and the tables derived from it, read with an
-    // atomic load rather than under the lock that guards the set.
-    std::shared_ptr<const models::StoreSnapshot> store_snapshot_;
-    std::uint64_t store_generation_ = 0;
 
-    // Publishes the draft the write seeded; see its definition for what is derived
-    // there. The draft is moved out, so it is empty again until the next write.
-    void publish_store_locked(std::shared_ptr<const models::FilterReasons> reasons);
-
-  public:
-// Locks the store and publishes on release, so a mutating path cannot forget to
-// publish and readers never see a half-built set.
-    class StoreWrite {
-      public:
-        explicit StoreWrite(ModelManager& manager);
-        StoreWrite(const StoreWrite&) = delete;
-        StoreWrite& operator=(const StoreWrite&) = delete;
-        ~StoreWrite();
-
-      private:
-        ModelManager& manager_;
-        std::unique_lock<std::mutex> lock_;
-    };
 
   private:
-    mutable bool cache_valid_ = false;
 
     UpdateCheckResult run_update_scan(const std::vector<std::string>& targets);
     models::SyncService::Deps make_sync_deps();
