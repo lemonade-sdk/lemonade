@@ -5546,6 +5546,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (!parse_int_field("steps"))     return;
         if (!parse_float_field("cfg_scale")) return;
         if (!parse_int_field("seed"))      return;
+        if (!parse_float_field("strength")) return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
         if (!extract_image_from_form(req, res, request_json, /*allow_multiple=*/true)) return;
@@ -5643,9 +5644,55 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 
         // Extract common form fields
         if (req.form.has_field("model"))            request_json["model"]            = req.form.get_field("model");
+        if (req.form.has_field("prompt"))           request_json["prompt"]           = req.form.get_field("prompt");
         if (req.form.has_field("size"))             request_json["size"]             = req.form.get_field("size");
         if (req.form.has_field("response_format"))  request_json["response_format"]  = req.form.get_field("response_format");
         if (req.form.has_field("user"))             request_json["user"]             = req.form.get_field("user");
+
+        // Extract optional numeric inference parameters
+        auto parse_int_field = [&](const std::string& field) -> bool {
+            if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
+            try {
+                size_t pos;
+                int parsed = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                request_json[field] = parsed;
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for '" + field + "': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return false;
+            }
+            return true;
+        };
+        auto parse_float_field = [&](const std::string& field) -> bool {
+            if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
+            try {
+                size_t pos;
+                float parsed = std::stof(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                if (std::isnan(parsed) || std::isinf(parsed)) throw std::invalid_argument("nan/inf not allowed");
+                request_json[field] = parsed;
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for '" + field + "': must be a number"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return false;
+            }
+            return true;
+        };
+        if (!parse_int_field("steps"))      return;
+        if (!parse_float_field("cfg_scale")) return;
+        if (!parse_int_field("seed"))       return;
+        if (!parse_float_field("strength")) return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
         if (!extract_image_from_form(req, res, request_json)) return;

@@ -50,6 +50,11 @@
         "hrx-b99": {
           "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
         }
+      },
+      "lemonade-sdk/ryzenai-sd-server": {
+        "v1.8.0": {
+          "ryzenai-sd-server.zip": "sha256:0ac7580c0a8c8103c1e0504785c51b366bfd7e1b8988ad31fe2c5b2d95d05cfe"
+        }
       }
     }
   },
@@ -142,6 +147,9 @@
   },
   "ryzenai-llm": {
     "npu": "v1.7.0"
+  },
+  "ryzenai-sd": {
+    "npu": "v1.8.0"
   },
   "flm": {
     "npu": "v1.0.8"

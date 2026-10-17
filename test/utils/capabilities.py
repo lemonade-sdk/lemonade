@@ -187,9 +187,21 @@ CAPABILITIES = {
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
+                "image_edits": True,
             },
             "test_models": {
                 "image": "SD-Turbo",
+            },
+        },
+        "ryzenai-sd-server": {
+            "backends": ["npu"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+                "image_edits": True,
+            },
+            "test_models": {
+                "image": "SD-Turbo-NPU",
             },
         },
         "thenoise": {

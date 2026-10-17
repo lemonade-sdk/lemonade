@@ -204,6 +204,7 @@ set(LEMON_BACKENDS
     "moonshine|moonshine"
     "kokoro|kokoro"
     "sd-cpp|sdcpp"
+    "ryzenai-sd|ryzenaisd"
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"

@@ -630,6 +630,50 @@ WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) cons
     return nullptr;
 }
 
+WrappedServer* Router::resolve_npu_exclusivity_locked(
+    const std::string& canonical_model_name,
+    const std::string& recipe,
+    ResidencyClass requested_residency_class) {
+    // Hardware exclusivity is stronger than count-based pools. Never
+    // alternate a router helper and its candidate across the same NPU:
+    // reject the cross-residency combination deterministically instead.
+    for (const auto& server : loaded_servers_) {
+        if (server->is_backend_alive() &&
+            (server->get_device_type() & DEVICE_NPU) &&
+            should_reject_residency_displacement(
+                requested_residency_class,
+                server->get_residency_class())) {
+            throw RouterResidencyConflictException(
+                canonical_model_name,
+                server->get_model_name(),
+                recipe + " requires exclusive NPU access");
+        }
+    }
+
+    WrappedServer* hotswap_target = find_npu_server_by_recipe(recipe);
+    if (hotswap_target) {
+        LOG(INFO, "Router") << recipe
+                  << " already has an NPU server running, hot-swapping instead "
+                  << "of evicting: " << hotswap_target->get_model_name() << std::endl;
+        std::vector<WrappedServer*> other_npu_servers;
+        for (const auto& server : loaded_servers_) {
+            if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU) &&
+                server.get() != hotswap_target) {
+                other_npu_servers.push_back(server.get());
+            }
+        }
+        for (auto* server : other_npu_servers) {
+            LOG(INFO, "Router") << "Evicting NPU server: " << server->get_model_name() << std::endl;
+            evict_server(server);
+        }
+    } else if (has_npu_server()) {
+        LOG(INFO, "Router") << recipe
+                  << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
+        evict_all_npu_servers();
+    }
+    return hotswap_target;
+}
+
 WrappedServer* Router::find_coexisting_server_by_type(ModelType type) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
@@ -741,6 +785,53 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
                          << "', defaulting to LlamaCpp" << std::endl;
     return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+}
+
+WrappedServer* Router::create_or_reuse_backend_locked(
+    WrappedServer* hotswap_target,
+    const std::string& canonical_model_name,
+    const ModelInfo& model_info,
+    const RecipeOptions& effective_options,
+    ModelType model_type,
+    DeviceType device_type,
+    bool ctx_size_auto,
+    ResidencyClass requested_residency_class,
+    bool final_pinned,
+    std::unique_ptr<WrappedServer>& new_server) {
+    if (!hotswap_target) {
+        new_server = create_backend_server(model_info);
+        new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_ctx_size_auto(ctx_size_auto);
+        new_server->set_residency_class(requested_residency_class);
+        new_server->set_pinned(final_pinned);
+        new_server->update_access_time();
+        return new_server.get();
+    }
+    hotswap_target->set_ctx_size_auto(ctx_size_auto);
+    hotswap_target->set_residency_class(requested_residency_class);
+    return hotswap_target;
+}
+
+void Router::commit_loaded_server_locked(
+    WrappedServer* hotswap_target,
+    std::unique_ptr<WrappedServer> new_server,
+    const std::string& canonical_model_name,
+    const ModelInfo& model_info,
+    const RecipeOptions& effective_options,
+    ModelType model_type,
+    DeviceType device_type,
+    bool final_pinned) {
+    if (hotswap_target) {
+        // Publish the new identity only now that the swap has actually
+        // completed -- doing this before load() succeeds would let
+        // concurrent requests for the new model name route to a backend
+        // that's still mid-swap on its old model.
+        hotswap_target->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        hotswap_target->set_pinned(final_pinned);
+        return;
+    }
+    install_reclaim_notifier(new_server.get());
+    loaded_servers_.push_back(std::move(new_server));
 }
 
 bool Router::begin_exclusive(std::atomic<bool>* cancel) {
@@ -954,32 +1045,19 @@ void Router::load_model(const std::string& model_name,
 
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
-        //                evicting ALL NPU servers first.
+        //                evicting all NPU servers of OTHER recipes first. A
+        //                same-recipe NPU server already running is reused (hot-swap)
+        //                instead of evicted -- WrappedServer::load() detects the
+        //                live subprocess and switches models in place rather than
+        //                paying a full re-init cost.
         //   CoexistByType (flm): coexist with other FLM types (max 1 per type),
         //                but evict exclusive-NPU peers.
         // Standard/Unmetered backends share no device exclusivity.
+        WrappedServer* hotswap_target = nullptr;
         switch (slot_policy_for_recipe(model_info.recipe)) {
             case SlotPolicy::ExclusiveNpu: {
-                // Hardware exclusivity is stronger than count-based pools. Never
-                // alternate a router helper and its candidate across the same NPU:
-                // reject the cross-residency combination deterministically instead.
-                for (const auto& server : loaded_servers_) {
-                    if (server->is_backend_alive() &&
-                        (server->get_device_type() & DEVICE_NPU) &&
-                        should_reject_residency_displacement(
-                            requested_residency_class,
-                            server->get_residency_class())) {
-                        throw RouterResidencyConflictException(
-                            canonical_model_name,
-                            server->get_model_name(),
-                            model_info.recipe + " requires exclusive NPU access");
-                    }
-                }
-                if (has_npu_server()) {
-                    LOG(INFO, "Router") << model_info.recipe
-                              << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
-                    evict_all_npu_servers();
-                }
+                hotswap_target = resolve_npu_exclusivity_locked(
+                    canonical_model_name, model_info.recipe, requested_residency_class);
                 break;
             }
             case SlotPolicy::CoexistByType: {
@@ -1034,8 +1112,11 @@ void Router::load_model(const std::string& model_name,
         // Count-based LRU is scoped to (ModelType, ResidencyClass). A local
         // routing helper therefore does not consume or evict a normal candidate
         // slot of the same ModelType. Cloud remains unmetered and outside both pools.
+        // Reusing an existing NPU slot via hot-swap also skips this check: it
+        // doesn't consume an additional slot, and the capacity check could
+        // otherwise select hotswap_target itself as the LRU victim of its own pool.
         const bool is_unmetered_load = is_unmetered_recipe(model_info.recipe);
-        if (!is_unmetered_load) {
+        if (!hotswap_target && !is_unmetered_load) {
             ensure_residency_capacity(model_type, requested_residency_class,
                                       canonical_model_name);
         }
@@ -1071,15 +1152,12 @@ void Router::load_model(const std::string& model_name,
 
         LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
-        // Create new backend server
-        std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
-
-        // Set model metadata
-        new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
-        new_server->set_ctx_size_auto(ctx_size_auto);
-        new_server->set_residency_class(requested_residency_class);
-        new_server->set_pinned(final_pinned);
-        new_server->update_access_time();
+        // Create a new backend server, or reuse the hot-swap target found above.
+        std::unique_ptr<WrappedServer> new_server;
+        WrappedServer* target_server = create_or_reuse_backend_locked(
+            hotswap_target, canonical_model_name, model_info, effective_options,
+            model_type, device_type, ctx_size_auto, requested_residency_class,
+            final_pinned, new_server);
 
         // CRITICAL: Release lock before slow backend startup
         lock.unlock();
@@ -1090,21 +1168,21 @@ void Router::load_model(const std::string& model_name,
         std::string error_message;
         auto load_start = std::chrono::steady_clock::now();
 
-        new_server->set_load_cancel_flag(cancel_flag);
+        target_server->set_load_cancel_flag(cancel_flag);
 
         try {
-            new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
+            target_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
             auto load_end = std::chrono::steady_clock::now();
-            new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
-            LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
+            target_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
+            LOG(DEBUG, "Router") << "Backend started successfully in " << target_server->get_load_duration_ms() << "ms" << std::endl;
         } catch (const std::exception& e) {
             error_message = e.what();
             load_success = false;
             LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
         }
 
-        new_server->set_load_cancel_flag(nullptr);
+        target_server->set_load_cancel_flag(nullptr);
 
         lock.lock();
 
@@ -1115,11 +1193,11 @@ void Router::load_model(const std::string& model_name,
             // helper no active policy references is never committed.
             if (routing_helper_no_longer_needed(canonical_model_name,
                                                 requested_residency_class,
-                                                new_server->is_pinned())) {
+                                                final_pinned)) {
                 LOG(INFO, "Router") << "Routing helper " << canonical_model_name
                           << " no longer referenced by any active policy; "
                           << "discarding freshly loaded backend" << std::endl;
-                new_server->unload();
+                target_server->unload();
                 is_loading_ = false;
                 load_cv_.notify_all();
                 return;
@@ -1129,12 +1207,12 @@ void Router::load_model(const std::string& model_name,
             // get_most_recent_server() (the pre-load timestamp from line 316
             // may have been overtaken by other models serving requests while
             // the lock was released during the slow backend load).
-            new_server->update_access_time();
-            new_server->set_state(ModelState::READY);
+            target_server->update_access_time();
+            target_server->set_state(ModelState::READY);
 
-            // Add to loaded servers
-            install_reclaim_notifier(new_server.get());
-            loaded_servers_.push_back(std::move(new_server));
+            commit_loaded_server_locked(hotswap_target, std::move(new_server),
+                                        canonical_model_name, model_info, effective_options,
+                                        model_type, device_type, final_pinned);
 
             is_loading_ = false;
             load_cv_.notify_all();

@@ -19,6 +19,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
+| `ryzenai-sd` | Ryzen AI SD | no | no | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
@@ -57,6 +58,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `openmoss` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
+| `ryzenai-sd` | npu | core | native | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | core | native | macos | metal |
 | `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
@@ -140,6 +142,17 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+
+#### `ryzenai-sd` — Ryzen AI SD
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ryzenaisd_args` | `--ryzenaisd-args` | ARGS | "" | Custom arguments to pass to ryzenai-sd-server (must not conflict with managed args) |
+| `steps` | — | SIZE | 20 | Number of diffusion steps |
+| `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
+| `strength` | — | SIZE | 0.75 | Denoising strength for img2img/edits/variations (0-1) |
+| `width` | — | SIZE | 512 | Output image width |
+| `height` | — | SIZE | 512 | Output image height |
 
 #### `sd-cpp` — StableDiffusion.cpp
 

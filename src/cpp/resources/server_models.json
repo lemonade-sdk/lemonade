@@ -2877,5 +2877,19 @@
         ],
         "size": 81.0,
         "min_resident_gb": 16.0
+    },
+    "SD-Turbo-NPU": {
+        "checkpoint": "amd/sd-turbo-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": [
+            "image"
+        ],
+        "size": 2.49,
+        "image_defaults": {
+            "steps": 1,
+            "cfg_scale": 0.0,
+            "width": 512,
+            "height": 512
+        }
     }
 }

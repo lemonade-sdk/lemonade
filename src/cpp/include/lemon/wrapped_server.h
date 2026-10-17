@@ -672,6 +672,12 @@ protected:
     bool pinned_ = false;
     std::atomic<bool>* load_cancel_ = nullptr;
 
+    // Polls `endpoint` until the backend answers or the timeout elapses.
+    // start_server() calls this for a cold start; backends that switch models
+    // inside a live subprocess need it again after the swap, since the
+    // subprocess can ack a swap and then die re-initializing the accelerator.
+    bool wait_for_ready(const std::string& endpoint, long timeout_seconds);
+
 private:
     static uint64_t next_instance_id() {
         static std::atomic<uint64_t> counter{0};
@@ -685,7 +691,6 @@ private:
     bool has_backend_process_exited() const;
     bool process_running() const;
     std::unique_ptr<ServerProcess> take_process();
-    bool wait_for_ready(const std::string& endpoint, long timeout_seconds);
 
     mutable std::mutex watchdog_mutex_;
     std::condition_variable watchdog_cv_;

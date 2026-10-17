@@ -409,6 +409,12 @@ The following options are available depending on the recipe being used:
 | `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
 | `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 
+#### Ryzen AI SD (`ryzenai-sd` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ryzenaisd-args ARGS` | Custom arguments to pass to ryzenai-sd-server (must not conflict with managed args) | `""` |
+
 #### FastFlowLM NPU (`flm` recipe)
 
 | Option | Description | Default |
