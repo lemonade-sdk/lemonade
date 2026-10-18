@@ -51,6 +51,8 @@ namespace models {
 
 class ModelComposition;
 class ArtifactSource;
+class FetchableRepository;
+struct ArtifactRef;
 class CatalogAccumulator;
 class CatalogSet;
 class ModelArtifactStore;
@@ -79,6 +81,11 @@ struct ModelManagerConfig {
     // Which registry answers for a source when a scan looks for updates; empty uses the
     // configured ones. What it returns is not owned.
     std::function<const ModelRegistry&(models::RegistryId source)> registry_for;
+
+    // Which source a pull binds a checkpoint to; empty binds the real host. A test
+    // that watches a pull end to end answers here.
+    std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
+        repository_for;
 };
 
 class ModelManager {

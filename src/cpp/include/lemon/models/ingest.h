@@ -22,7 +22,9 @@ struct ModelInfo;
 
 namespace models {
 
+class FetchableRepository;
 class ModelStore;
+struct ArtifactRef;
 
 class ModelArtifactStore;
 
@@ -62,6 +64,9 @@ class ModelIngest : public ArtifactFetchService {
         std::function<RegistryDocuments::Pin()> pin;
         std::function<void(const ModelInfo&)> save_options;
         std::function<void(const std::string&)> model_updated;
+        // Which source answers for a checkpoint; empty binds the real host. A test
+        // that wants to watch a pull end to end answers here instead.
+        std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
     };
 
     explicit ModelIngest(Deps deps);

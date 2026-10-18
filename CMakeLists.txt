@@ -3159,6 +3159,19 @@ if(BUILD_TESTING AND EXISTS "${_FILE_TRANSFER_TEST_SRC}")
     add_cpp_ci_test(FileTransferTest CI ON COMMAND test_file_transfer)
 endif()
 
+set(_PULL_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pull_registry.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_PULL_REGISTRY_TEST_SRC}")
+    add_executable(test_pull_registry
+        test/cpp/test_pull_registry.cpp
+    )
+    target_link_libraries(test_pull_registry PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(PullRegistryTest CI ON COMMAND test_pull_registry)
+endif()
+
 set(_FILTER_HARDWARE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_filter_hardware.cpp"
 )

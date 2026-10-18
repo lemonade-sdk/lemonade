@@ -155,6 +155,7 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
 
 models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     models::ModelIngest::Deps deps;
+    deps.repository_for = config_.repository_for;
     deps.artifacts = artifacts_.get();
     deps.default_registry_source = [this] {
         if (!default_model_source_provider_) return std::optional<RegistryId>{};

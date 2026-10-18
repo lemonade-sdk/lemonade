@@ -10,7 +10,9 @@
 #include <lemon/model_types.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/artifact_transfer.h>
+#include <lemon/models/artifact_layout.h>
 #include <lemon/models/checkpoint_grammar.h>
+#include <lemon/models/fetchable_repository.h>
 #include <lemon/models/json_catalog.h>
 #include <lemon/models/registry_descriptors.h>
 #include <lemon/models/definition_labels.h>
@@ -251,85 +253,111 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
 
     const std::string source_name = models::registry_source_of(info);
     const auto source = parse_remote_registry_source(source_name);
-    const auto& registry = model_registry(source);
     const std::string source_display = remote_registry_display_name(source);
-    std::map<std::string, std::string> headers = registry.auth_headers();
 
     const fs::path cache_root = path_from_utf8(artifacts().root());
     ensure_create_directories(cache_root);
 
-    LOG(INFO, "ModelManager") << "Fetching repository file list from "
-                               << source_display << ": " << main_repo_id << std::endl;
-
-    std::map<std::string, RegistryRepository> repositories;
-    repositories.emplace(main_repo_id, registry.fetch_repository(main_repo_id));
-
-    std::map<std::string, std::vector<std::string>> files_to_download;
-    std::vector<std::string> main_repo_files;
-    for (const auto& file : repositories.at(main_repo_id).files) {
-        if (!file.directory) main_repo_files.push_back(file.path);
+    // Every checkpoint of this pull becomes a ref, and each ref is bound to one
+    // source here — the orchestrator never assembles a provider URL itself.
+    // Auxiliary checkpoints inherit the model-level registry source: intentional,
+    // a registration has one provenance and update domain. Pull rejects a
+    // malformed auxiliary checkpoint loudly, where the update check
+    // (group_aux_checkpoint_variants) silently skips it.
+    std::vector<ArtifactRef> refs;
+    {
+        ArtifactRef main_ref;
+        main_ref.registry = source;
+        main_ref.checkpoint_type = "main";
+        main_ref.repo_id = main_repo_id;
+        main_ref.variant = main_variant;
+        main_ref.recipe = info.recipe;
+        refs.push_back(std::move(main_ref));
     }
-    LOG(INFO, "ModelManager") << "Repository contains " << main_repo_files.size()
-                               << " files" << std::endl;
-
-    // The update check uses the same selection helper, so a file pull would
-    // download is always a file the check compares.
-    files_to_download[main_repo_id] = registry_files::select_main_repo_files(
-        main_repo_id, info.recipe, main_variant, main_repo_files);
-
-    // Auxiliary checkpoints inherit the model-level registry source. This is
-    // intentional: a registration has one provenance and update domain.
-    // Pull must reject a malformed auxiliary checkpoint loudly, where the
-    // update check (group_aux_checkpoint_variants) silently skips it.
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || backends::ops_for(info.recipe)->acquires_lazily(type)) continue;
         if (repo_id_from_checkpoint(checkpoint).empty() ||
             variant_from_checkpoint(checkpoint).empty()) {
             throw std::runtime_error("Additional checkpoints must contain an exact repository variant");
         }
+        ArtifactRef ref;
+        ref.registry = source;
+        ref.checkpoint_type = type;
+        ref.repo_id = repo_id_from_checkpoint(checkpoint);
+        ref.variant = variant_from_checkpoint(checkpoint);
+        ref.recipe = info.recipe;
+        refs.push_back(std::move(ref));
     }
-    for (const auto& [repo_id, variants] :
-         registry_files::group_aux_checkpoint_variants(info.recipe, info.checkpoints)) {
-        if (!repositories.count(repo_id)) {
-            repositories.emplace(repo_id, registry.fetch_repository(repo_id));
+
+    std::map<std::string, std::unique_ptr<FetchableRepository>> repositories;
+    std::map<std::string, RepoListing> listings;
+    for (const auto& ref : refs) {
+        if (listings.count(ref.repo_id)) continue;
+        std::unique_ptr<FetchableRepository> repository;
+        if (deps_.repository_for) {
+            repository = deps_.repository_for(ref);
+        } else {
+            repository = create_repository(source, ref, SourcePlacement{});
         }
-        const auto& repo = repositories.at(repo_id);
-        for (const auto& variant : variants) {
-            const bool exists = std::any_of(repo.files.begin(), repo.files.end(),
-                [&](const RegistryFile& file) { return !file.directory && file.path == variant; });
-            if (!exists) {
-                throw std::runtime_error("Additional checkpoint file not found on " +
-                                         source_display + ": " + repo_id + ":" + variant);
-            }
-            files_to_download[repo_id].push_back(variant);
+        if (repository == nullptr) {
+            throw std::runtime_error("No artifact source for host '" + source_name +
+                                     "' repository " + ref.repo_id);
+        }
+        listings.emplace(ref.repo_id, repository->list(ref.repo_id, ref.revision));
+        repositories.emplace(ref.repo_id, std::move(repository));
+    }
+
+    // The existence rule stays the pull's own: its words tell the user which
+    // host refused, where the plan builder's generic words do not.
+    for (const auto& ref : refs) {
+        if (ref.checkpoint_type == "main") continue;
+        const auto& listing = listings.at(ref.repo_id);
+        const bool exists = std::any_of(listing.files.begin(), listing.files.end(),
+            [&](const RegistryFile& file) { return !file.directory && file.path == ref.variant; });
+        if (!exists) {
+            throw std::runtime_error("Additional checkpoint file not found on " +
+                                     source_display + ": " + ref.repo_id + ":" + ref.variant);
         }
     }
 
-    for (auto& [repo_id, files] : files_to_download) {
-        (void)repo_id;
-        std::set<std::string> seen;
-        std::vector<std::string> unique_files;
-        for (auto& filename : files) {
-            if (seen.insert(filename).second) {
-                unique_files.push_back(filename);
+    // Selection lives in one builder. The update check calls the same selector,
+    // so a file pull would download is always a file the check compares.
+    struct PlannedFile {
+        std::string repo_id;
+        DownloadFile file;
+    };
+    std::vector<PlannedFile> selected;
+    std::set<std::pair<std::string, std::string>> seen;  // (repository, name)
+    for (const auto& ref : refs) {
+        const FetchableRepository& repository = *repositories.at(ref.repo_id);
+        const RepoListing& listing = listings.at(ref.repo_id);
+        Placement where;
+        where.cache_dir =
+            path_to_utf8(cache_root / repository.cache_dir_name(ref.repo_id));
+        where.revision =
+            listing.revision.id.empty() ? listing.download_revision : listing.revision.id;
+        const DownloadPlan part =
+            registry_download_plan(repository, ref, hf_hub_layout(), where, listing);
+        for (const DownloadFile& file : part.files) {
+            if (seen.insert({ref.repo_id, file.name}).second) {
+                selected.push_back(PlannedFile{ref.repo_id, file});
             }
         }
-        files = std::move(unique_files);
     }
 
-    int total_files = 0;
+    const int total_files = static_cast<int>(selected.size());
     LOG(INFO, "ModelManager") << "Identified files to download:" << std::endl;
-    for (const auto& [repo_id, files] : files_to_download) {
-        for (const auto& filename : files) {
-            ++total_files;
-            LOG(INFO, "ModelManager") << "  - " << source_name << ':' << repo_id
-                                       << ':' << filename << std::endl;
-        }
+    for (const auto& planned : selected) {
+        LOG(INFO, "ModelManager") << "  - " << source_name << ':' << planned.repo_id
+                                  << ':' << planned.file.name << std::endl;
     }
     if (total_files == 0) {
         throw std::runtime_error("No files selected for download from " + source_display +
                                  " repository " + main_repo_id);
     }
+
+    std::set<std::string> repo_ids;
+    for (const auto& planned : selected) repo_ids.insert(planned.repo_id);
 
     std::map<std::string, fs::path> repo_cache_paths;
     std::map<std::string, std::string> repo_previous_refs;
@@ -337,46 +365,57 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     std::map<std::string, std::string> repo_snapshot_ids;
     std::map<std::string, std::string> repo_download_paths;
 
-    for (const auto& [repo_id, files] : files_to_download) {
-        if (files.empty()) continue;
-        const auto& repo = repositories.at(repo_id);
-        fs::path repo_cache = cache_root / repo_id_to_cache_dir_name(repo_id, source_name);
+    for (const auto& repo_id : repo_ids) {
+        FetchableRepository& repository = *repositories.at(repo_id);
+        const RepoListing& listing = listings.at(repo_id);
+        fs::path repo_cache = cache_root / repository.cache_dir_name(repo_id);
         ensure_create_directories(repo_cache);
         const std::string previous_ref = artifacts().active_snapshot_ref(repo_cache);
-        fs::path snapshot = repo_cache / "snapshots" / repo.snapshot_id;
+        const std::string snapshot_id =
+            listing.revision.id.empty() ? listing.download_revision : listing.revision.id;
+        fs::path snapshot = repo_cache / "snapshots" / snapshot_id;
         ensure_create_directories(snapshot);
 
         repo_cache_paths[repo_id] = repo_cache;
         repo_previous_refs[repo_id] = previous_ref;
         repo_snapshot_paths[repo_id] = path_to_utf8(snapshot);
-        repo_snapshot_ids[repo_id] = repo.snapshot_id;
+        repo_snapshot_ids[repo_id] = snapshot_id;
         repo_download_paths[repo_id] = path_to_utf8(snapshot);
     }
+
+    // Headers are the host's fact; the source carries it.
+    std::map<std::string, std::string> headers = repositories.at(main_repo_id)->auth_headers();
 
     // Unchanged artifacts keep refs/main on the previous snapshot; ModelScope has no
     // commit pin, so its snapshots advance with the tree.
     std::set<std::string> repos_reusing_previous_snapshot;
     if (source == models::huggingface_descriptor().id) {
-        for (const auto& [repo_id, files] : files_to_download) {
-            if (files.empty()) continue;
+        for (const auto& repo_id : repo_ids) {
             const std::string current_ref = repo_snapshot_ids.at(repo_id);
             const std::string previous_ref = repo_previous_refs.at(repo_id);
             if (previous_ref.empty() || previous_ref == current_ref) continue;
 
             // Union with the previous revision's listing so a file it dropped
-            // isn't missed; files_to_download itself stays current-revision-only.
-            // Merge, not replace: files also carries same-repo aux checkpoints.
-            std::vector<std::string> comparison_files = files;
+            // isn't missed; the selection itself stays current-revision-only.
+            // Merge, not replace: the selection also carries same-repo aux checkpoints.
+            std::vector<std::string> comparison_files;
+            for (const auto& planned : selected) {
+                if (planned.repo_id == repo_id) comparison_files.push_back(planned.file.name);
+            }
             if (repo_id == main_repo_id) {
                 try {
-                    const RegistryRepository previous_repo =
-                        registry.fetch_repository(repo_id, previous_ref);
+                    const RepoListing previous_listing =
+                        repositories.at(repo_id)->list(repo_id, previous_ref);
                     std::vector<std::string> previous_repo_files;
-                    for (const auto& file : previous_repo.files) {
+                    for (const auto& file : previous_listing.files) {
                         if (!file.directory) previous_repo_files.push_back(file.path);
                     }
+                    std::vector<std::string> main_repo_files;
+                    for (const auto& file : listings.at(repo_id).files) {
+                        if (!file.directory) main_repo_files.push_back(file.path);
+                    }
                     comparison_files = registry_files::merge_reuse_comparison_files(
-                        files, repo_id, info.recipe, main_variant, previous_repo_files,
+                        comparison_files, repo_id, info.recipe, main_variant, previous_repo_files,
                         main_repo_files);
                 } catch (const std::exception& e) {
                     LOG(DEBUG, "ModelManager")
@@ -411,6 +450,8 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         }
     }
 
+    // The manifest is the merged plan, written for the resume and collection
+    // paths, then handed to the one place a plan is executed.
     json manifest;
     manifest["repo_id"] = main_repo_id;
     manifest["registry_source"] = source_name;
@@ -419,26 +460,20 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     manifest["files_count"] = total_files;
     manifest["files"] = json::array();
 
-    for (const auto& [repo_id, files] : files_to_download) {
-        const auto& repo = repositories.at(repo_id);
-        std::map<std::string, RegistryFile> metadata;
-        for (const auto& file : repo.files) metadata[file.path] = file;
-
-        for (const auto& filename : files) {
-            json entry;
-            entry["name"] = filename;
-            entry["url"] = registry.resolve_file_url(repo_id, repo.revision, filename);
-            entry["download_path"] = repo_download_paths.at(repo_id);
-            const auto it = metadata.find(filename);
-            entry["size"] = it == metadata.end() ? 0 : it->second.size;
-            if (it != metadata.end() && !it->second.hash.empty()) {
-                entry["hash"] = {
-                    {"algorithm", it->second.hash_algorithm},
-                    {"value", it->second.hash}
-                };
-            }
-            manifest["files"].push_back(std::move(entry));
+    for (auto& planned : selected) {
+        planned.file.download_path = repo_download_paths.at(planned.repo_id);
+        json entry;
+        entry["name"] = planned.file.name;
+        entry["url"] = planned.file.url;
+        entry["download_path"] = planned.file.download_path;
+        entry["size"] = planned.file.size;
+        if (!planned.file.expected_hash.empty()) {
+            entry["hash"] = {
+                {"algorithm", planned.file.expected_hash_algorithm},
+                {"value", planned.file.expected_hash}
+            };
         }
+        manifest["files"].push_back(std::move(entry));
     }
 
     const fs::path manifest_path =
@@ -462,11 +497,11 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
                 cache_path, repo_snapshot_paths.at(repo_id), active_snapshot_id);
         }
 
-        const auto& repo = repositories.at(repo_id);
+        const RepoListing& listing = listings.at(repo_id);
         artifacts().record_processed_model(cache_path, info, models::Provenance{
             source_name,
             repo_id,
-            repo.revision,
+            listing.download_revision,
             active_snapshot_id,
             snapshot_id,
         });
