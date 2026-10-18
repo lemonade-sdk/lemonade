@@ -1,4 +1,4 @@
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/models/recipe_option_layers.h>
 #include <lemon/utils/json_utils.h>
 

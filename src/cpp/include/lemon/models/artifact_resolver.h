@@ -31,8 +31,9 @@ class ArtifactSourceResolver {
   public:
     struct Hooks {
         std::function<backends::DownloadPolicy(const ModelInfo&)> download_policy;
-        std::function<std::unique_ptr<FetchableRepository>(const RegistryId& id,
-                                                           const ArtifactRef& ref)> repository_for;
+        std::function<std::unique_ptr<FetchableRepository>(
+            const RegistryId& id, const ArtifactRef& ref, const SourcePlacement& placement)>
+            repository_for;
         // default_model_source; empty is an error, not a default
         std::function<std::string()> default_registry_id;
     };
@@ -48,9 +49,11 @@ class ArtifactSourceResolver {
 
   private:
     FileValidator validator_for(const std::string& recipe) const;
-    void place(const ModelInfo& info, const std::string& checkpoint_type, ArtifactRef& ref) const;
+    SourcePlacement placement_for(const ModelInfo& info,
+                                  const std::string& checkpoint_type) const;
     std::unique_ptr<ArtifactSource> open_repository(const RegistryId& host,
-                                                    const ArtifactRef& ref) const;
+                                                    const ArtifactRef& ref,
+                                                    const SourcePlacement& placement) const;
 
     Hooks hooks_;
 };

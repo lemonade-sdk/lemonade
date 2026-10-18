@@ -1,7 +1,7 @@
 #include <lemon/models/update_scan.h>
 
 #include <lemon/backends/backend_registry.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/store.h>

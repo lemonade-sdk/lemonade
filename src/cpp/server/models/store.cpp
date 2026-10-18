@@ -1,6 +1,6 @@
 #include <lemon/models/store.h>
 
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/models/catalog_set.h>
 #include <lemon/models/entry_identity.h>
 #include <lemon/models/store_snapshot.h>

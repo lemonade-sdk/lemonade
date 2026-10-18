@@ -2,6 +2,7 @@
 #include "lemon/models/checkpoint_grammar.h"
 #include "lemon/models/listed_catalog.h"
 #include "lemon/models/model_index.h"
+#include "lemon/models/registry_id.h"
 
 #include <cstdio>
 #include <map>
@@ -10,8 +11,8 @@
 #include <string>
 #include <vector>
 
-using lemon::RegistryId;
 using lemon::models::ModelIndex;
+using lemon::models::RegistryId;
 
 static int g_failures = 0;
 

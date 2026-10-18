@@ -1,5 +1,6 @@
 #include <lemon/models/json_catalog.h>
 
+#include <lemon/canonical_id.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>

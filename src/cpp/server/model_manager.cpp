@@ -2,6 +2,8 @@
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
+#include <lemon/canonical_id.h>
+#include <lemon/directory_watcher.h>
 #include <lemon/models/artifact_resolver.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/artifact_transfer.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 
 #include <filesystem>
 #include <map>

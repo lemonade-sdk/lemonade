@@ -70,7 +70,8 @@ std::uint64_t size_of(const fs::path& path) {
 // src/cpp does.
 class FixtureHubRepository : public FetchableRepository {
   public:
-    explicit FixtureHubRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
+    FixtureHubRepository(ArtifactRef ref, SourcePlacement placement)
+        : FetchableRepository(std::move(ref), placement) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
 
@@ -215,12 +216,8 @@ class FixtureHubRepository : public FetchableRepository {
     Placement placement() const {
         Placement placement;
         placement.cache_dir = utils::path_to_utf8(cache_dir(ref_.repo_id));
-        placement.sibling = ref_.sibling;
+        placement.sibling = sibling();
         return placement;
-    }
-
-    const ArtifactLayout& layout() const {
-        return ref_.layout != nullptr ? *ref_.layout : hf_hub_layout();
     }
 };
 

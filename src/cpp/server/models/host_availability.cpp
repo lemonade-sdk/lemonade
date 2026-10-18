@@ -1,7 +1,7 @@
 #include <lemon/models/host_availability.h>
 
 #include <lemon/backends/backend_descriptor_registry.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/runtime_config.h>
 #include <lemon/system_info.h>
 #include <lemon/utils/aixlog.hpp>

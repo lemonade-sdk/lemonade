@@ -28,6 +28,7 @@ using lemon::models::RegistryId;
 using lemon::models::RepoListing;
 using lemon::models::RepoRef;
 using lemon::models::Revision;
+using lemon::models::SourcePlacement;
 using lemon::models::Staleness;
 
 static int g_failures = 0;
@@ -51,7 +52,8 @@ static RegistryDescriptor fake_descriptor() {
 // seam leaks something the host cannot supply.
 class FakeRepository : public FetchableRepository {
   public:
-    explicit FakeRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
+    FakeRepository(ArtifactRef ref, SourcePlacement placement)
+        : FetchableRepository(std::move(ref), placement) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
     std::string resolve() const override { return ""; }

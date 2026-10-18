@@ -2,10 +2,12 @@
 
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/hf_cache_util.h>
+#include <lemon/gguf_reader.h>
 #include <lemon/gguf_shard_utils.h>
 #include <lemon/hf_variants.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/path_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/safe_fs.h>

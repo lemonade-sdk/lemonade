@@ -48,9 +48,23 @@ struct Staleness {
     std::vector<std::string> changed_files;
 };
 
+// Where the resolver bound this checkpoint: the layout is the resolver's choice
+// (null means the snapshot layout), the sibling the file a side checkpoint sits
+// beside.
+struct SourcePlacement {
+    const ArtifactLayout* layout = nullptr;
+    std::string sibling;
+};
+
 // The pullable role, layered on an artifact source.
 class FetchableRepository : public ArtifactSource {
   public:
+    // The snapshot layout unless the resolver bound another.
+    const ArtifactLayout& layout() const {
+        return placement_.layout != nullptr ? *placement_.layout : hf_hub_layout();
+    }
+    const std::string& sibling() const { return placement_.sibling; }
+
     virtual RegistryId id() const = 0;
     virtual Revision default_revision() const = 0;
 
@@ -70,7 +84,11 @@ class FetchableRepository : public ArtifactSource {
     virtual bool supports_search() const { return false; }
 
   protected:
-    explicit FetchableRepository(ArtifactRef ref) : ArtifactSource(std::move(ref)) {}
+    FetchableRepository(ArtifactRef ref, SourcePlacement placement)
+        : ArtifactSource(std::move(ref)), placement_(placement) {}
+
+  private:
+    SourcePlacement placement_;
 };
 
 // The files the ref needs, placed by the layout.
@@ -78,13 +96,13 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
                                     const ArtifactLayout& layout, const Placement& placement,
                                     const RepoListing& listing);
 
-// A factory takes the ref its source will carry.
-using RepositoryFactory =
-    std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)>;
+// A factory takes the ref its source will carry and the placement bound to it.
+using RepositoryFactory = std::function<std::unique_ptr<FetchableRepository>(
+    const ArtifactRef& ref, const SourcePlacement& placement)>;
 
 // Null when no registration for the id.
-std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id,
-                                                       const ArtifactRef& ref);
+std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id, const ArtifactRef& ref,
+                                                       const SourcePlacement& placement = {});
 std::vector<RegistryId> registered_repository_ids();
 
 // Ids claimed twice; the first keeps serving.
@@ -103,9 +121,11 @@ void add_repository_factory(const RegistryId& id, RepositoryFactory factory);
         const ::lemon::models::RegistryDescriptor descriptor = descriptor_expr;   \
         ::lemon::models::detail::add_descriptor(descriptor);                      \
         ::lemon::models::detail::add_repository_factory(                          \
-            descriptor.id, [](const ::lemon::models::ArtifactRef& ref) {          \
+            descriptor.id,                                                        \
+            [](const ::lemon::models::ArtifactRef& ref,                           \
+               const ::lemon::models::SourcePlacement& placement) {               \
                 return std::unique_ptr<::lemon::models::FetchableRepository>(     \
-                    new ClassName(ref));                                          \
+                    new ClassName(ref, placement));                               \
             });                                                                   \
         return true;                                                              \
     }()

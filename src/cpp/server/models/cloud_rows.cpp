@@ -1,6 +1,6 @@
 #include <lemon/models/cloud_rows.h>
 
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/utils/aixlog.hpp>
 

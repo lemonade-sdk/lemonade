@@ -2,6 +2,7 @@
 
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/hf_variants.h"
 #include "lemon/models/model_index.h"

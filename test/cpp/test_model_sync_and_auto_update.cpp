@@ -8,6 +8,8 @@
 #include "lemon/runtime_config.h"
 #include "support/test_state_isolation.h"
 
+#include <lemon/utils/path_utils.h>
+
 #include <atomic>
 #include <cassert>
 #include <chrono>

@@ -14,11 +14,6 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include "canonical_id.h"
-#include "directory_watcher.h"
-#include "gguf_reader.h"
-#include "model_registry.h"
-#include "model_types.h"
 #include "models/alias_manager.h"
 #include "models/backend_availability.h"
 #include "models/store_patches.h"
@@ -28,7 +23,10 @@
 #include "models/cloud_rows.h"
 #include "models/download_progress.h"
 #include "models/ingest.h"
+#include "models/model_errors.h"
+#include "models/model_info.h"
 #include "models/registry_documents.h"
+#include "models/registry_id.h"
 #include "models/recipe_options_store.h"
 #include "models/store.h"
 #include "models/sync_service.h"
@@ -41,42 +39,12 @@ namespace backends {
 enum class DownloadPolicy : int;
 }  // namespace backends
 
+class CloudProviderRegistry;
+class DirectoryWatcher;
+class ModelRegistry;
+
 using json = nlohmann::json;
-
-// Thrown by ModelManager::download_model when a pull request names a model
-// that (a) is not registered, (b) is not in the filtered-out registry, and
-// (c) lacks the `user.` prefix that would make it a new-model registration
-// attempt.
-//
-// CONTRACT: the /pull HTTP handler catches this type and attaches
-// {"code": kUnknownModelErrorCode, ...} to the error response. The lemonade
-// CLI keys off that code to replace the message with a friendlier one that
-// points at `lemonade list` and `lemonade pull CHECKPOINT`. The CLI inlines
-// the "unknown_model" literal to avoid pulling this server header into the
-// CLI; update cli/lemonade_client.cpp in lockstep if this constant changes.
-class UnknownModelError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
-constexpr const char* kUnknownModelErrorCode = "unknown_model";
-
-// Thrown when a definition names a deployment mode its recipe's backend cannot
-// serve. Registering it would list the model as something it is not and then
-// fail at inference time. A definition naming *no* mode is not an error: the
-// recipe's default is stamped instead.
-//
-// CONTRACT: the /pull HTTP handler catches this type and returns 400. Loading an
-// already-persisted entry does not go through registration, so an entry written
-// by an older version is still normalized rather than blocking startup.
-class InvalidModelDefinitionError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
-
-// Parsed collection.router routing policy (defined in routing_policy.h). Only
-// forward-declared here so this widely-included header stays light; ModelInfo
-// holds it behind a shared_ptr, which supports incomplete types.
-struct RoutePolicy;
+using models::RegistryId;
 
 namespace models {
 
@@ -92,103 +60,6 @@ struct HostFilter;
 struct ResolvedModel;
 struct StoreSnapshot;
 }  // namespace models
-
-// Image generation defaults for SD models
-struct ImageDefaults {
-    int steps = 20;
-    float cfg_scale = 7.0f;
-    int width = 512;
-    int height = 512;
-    std::string sampling_method;
-    float flow_shift = 0.0f;
-    std::uint64_t soft_pixel_cap = 0;  // 0 uses the server's inferred edit-size cap
-
-    bool has_defaults = false;  // True if explicit defaults were provided in JSON
-};
-
-struct ModelInfo {
-    std::string model_name;
-    std::map<std::string, std::string> checkpoints;
-    std::map<std::string, std::string> resolved_paths; // Absolute path to model file/directory on disk
-    std::string recipe;
-    std::vector<std::string> labels;
-    std::vector<std::string> components;
-    std::vector<std::string> input_aliases;  // Names accepted in requests but hidden from /models
-    bool suggested = false;
-    std::string source;  // Local origin: local_upload/local_path/extra_models_dir
-    std::string registry_source;  // Remote registry: huggingface/modelscope; empty when unpinned
-    bool downloaded = false;     // Whether model is downloaded and available
-    bool update_available = false; // Whether a newer remote-registry version exists
-    std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
-    double size = 0.0;   // Model size in GB
-    // Resident working set for a streaming backend; 0 = filter on full `size`.
-    // See streaming_working_set_gb() / filter_for_host.
-    double min_resident_gb = 0.0;
-    int64_t max_context_window = 0;  // Static model-supported text context, when known
-    int64_t max_output_tokens = 0;    // Static model-supported completion/output token limit, when known
-
-    // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
-    GgufMetadata gguf;
-    RecipeOptions recipe_options;
-
-    // Multi-model support fields
-    ModelType type = ModelType::LLM;      // Model type for LRU cache management
-    DeviceType device = DEVICE_NONE;      // Target device(s) for this model
-
-    // Image generation defaults (for sd-cpp models)
-    ImageDefaults image_defaults;
-
-    // Per-collection system prompt template (collection.omni models only).
-    // When non-empty, overrides the global default in toolDefinitions.json.
-    // Stays a template — {tool_list} / {tool_guidance} are substituted at runtime.
-    std::string system_prompt;
-
-    // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
-    // (e.g., "fireworks"). Empty for non-cloud recipes.
-    std::string cloud_provider;
-    // Per-token price in USD per 1,000,000 tokens, when the provider reports it
-    // (OpenRouter, Together). <0 means unknown (e.g. Fireworks doesn't publish
-    // pricing in /v1/models). Surfaced on /v1/models for display, and (when a
-    // collection.router policy is evaluated) attached to the decision as
-    // illustrative outputs.estimated_cost — not a billing figure.
-    double cost_input_per_million = -1.0;
-    double cost_output_per_million = -1.0;
-
-    // Generic per-model fields a backend declares for itself. Any server_models.json
-    // key not consumed by a typed field above lands here, so a new backend can read
-    // custom per-model config in load() without editing this shared struct.
-    std::map<std::string, json> extras;
-
-    // Parsed routing policy for collection.router models. Populated once when the
-    // models cache is built (from recipe + components + the "routing" block in
-    // extras) so request-time dispatch reads it directly instead of re-parsing.
-    // Null for every other recipe. shared_ptr keeps ModelInfo copies cheap.
-    std::shared_ptr<const RoutePolicy> route_policy;
-
-    // Look up an extra field, returning a default when absent.
-    template <typename T>
-    T extra(const std::string& key, const T& fallback) const {
-        auto it = extras.find(key);
-        if (it == extras.end() || it->second.is_null()) return fallback;
-        try { return it->second.get<T>(); } catch (...) { return fallback; }
-    }
-
-    // Utility
-    std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
-    std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
-
-    std::string mmproj() const { return checkpoint("mmproj"); }
-};
-
-struct ModelFileInfo {
-    std::string name;
-    std::string path;
-    std::string role;
-    std::uint64_t size_bytes = 0;
-    bool exists = false;
-};
-
-class CloudProviderRegistry;
 
 // Everything the composition root needs. Server fills it in; a test points the
 // same struct at fixture paths and fixture catalogs.

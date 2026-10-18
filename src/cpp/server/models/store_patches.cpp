@@ -2,7 +2,7 @@
 
 #include <lemon/backends/backend_registry.h>
 #include <lemon/canonical_id.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/composition.h>
 #include <lemon/models/store_builder.h>

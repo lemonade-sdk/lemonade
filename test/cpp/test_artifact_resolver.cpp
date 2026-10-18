@@ -27,6 +27,7 @@ using lemon::models::RegistryId;
 using lemon::models::RepoListing;
 using lemon::models::RepoRef;
 using lemon::models::Revision;
+using lemon::models::SourcePlacement;
 using lemon::models::Staleness;
 
 static int g_failures = 0;
@@ -40,7 +41,8 @@ namespace {
 
 class SpyRepository : public FetchableRepository {
   public:
-    explicit SpyRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
+    SpyRepository(ArtifactRef ref, SourcePlacement placement)
+        : FetchableRepository(std::move(ref), placement) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
     std::string resolve() const override { return ""; }
@@ -72,11 +74,12 @@ ArtifactSourceResolver::Hooks base_hooks() {
         if (info.recipe == "flm") return DownloadPolicy::SelfManaged;
         return DownloadPolicy::Repository;
     };
-    hooks.repository_for = [](const RegistryId& id, const ArtifactRef& ref)
+    hooks.repository_for = [](const RegistryId& id, const ArtifactRef& ref,
+                               const SourcePlacement& placement)
         -> std::unique_ptr<FetchableRepository> {
         g_built_host = id;
         g_built_ref = ref;
-        return std::make_unique<SpyRepository>(ref);
+        return std::make_unique<SpyRepository>(ref, placement);
     };
     return hooks;
 }

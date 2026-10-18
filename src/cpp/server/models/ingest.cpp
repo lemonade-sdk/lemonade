@@ -4,7 +4,8 @@
 #include <lemon/routing_policy.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/canonical_id.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_errors.h>
+#include <lemon/models/model_info.h>
 #include <lemon/model_registry.h>
 #include <lemon/model_types.h>
 #include <lemon/models/artifact_store.h>
@@ -566,7 +567,7 @@ void ModelIngest::pull(const std::string& model_name,
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (!is_user_model_name(model_name)) {
-            // See UnknownModelError contract in include/lemon/model_manager.h.
+            // See UnknownModelError contract in models/model_errors.h.
             throw UnknownModelError(
                 "When registering a new model, the model name must include the "
                 "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +

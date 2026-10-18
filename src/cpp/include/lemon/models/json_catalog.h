@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/models/catalog.h>
 #include <lemon/models/catalog_locator.h>
 #include <lemon/models/registry_documents.h>

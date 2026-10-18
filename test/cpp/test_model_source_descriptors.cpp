@@ -3,6 +3,7 @@
 #include <lemon/models/model_sources.h>
 #include <lemon/models/registry_id.h>
 #include <lemon/models/store_snapshot.h>
+#include <lemon/utils/path_utils.h>
 
 #include "support/test_state_isolation.h"
 

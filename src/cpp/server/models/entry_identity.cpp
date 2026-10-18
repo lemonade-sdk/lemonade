@@ -1,6 +1,6 @@
 #include <lemon/models/entry_identity.h>
 
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 
 #include <algorithm>
 

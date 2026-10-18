@@ -2,7 +2,7 @@
 
 #include <lemon/backends/backend_ops.h>
 #include <lemon/backends/backend_registry.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/model_registry.h>
 #include <lemon/models/checkpoint_grammar.h>
 #include <lemon/models/fetchable_repository.h>
@@ -59,22 +59,24 @@ FileValidator ArtifactSourceResolver::validator_for(const std::string& recipe) c
 }
 
 std::unique_ptr<ArtifactSource> ArtifactSourceResolver::open_repository(
-    const RegistryId& host, const ArtifactRef& ref) const {
-    std::unique_ptr<FetchableRepository> repository = hooks_.repository_for != nullptr
-                                                            ? hooks_.repository_for(host, ref)
-                                                            : create_repository(host, ref);
+    const RegistryId& host, const ArtifactRef& ref, const SourcePlacement& placement) const {
+    std::unique_ptr<FetchableRepository> repository =
+        hooks_.repository_for != nullptr ? hooks_.repository_for(host, ref, placement)
+                                         : create_repository(host, ref, placement);
     if (repository == nullptr) {
         throw RegistrationError("no repository registered for host '" + host.str() + "'");
     }
     return repository;
 }
 
-void ArtifactSourceResolver::place(const ModelInfo& info, const std::string& checkpoint_type,
-                                   ArtifactRef& ref) const {
-    ref.layout = &layout_for(info, checkpoint_type);
-    if (ref.layout != &hf_hub_layout()) {
-        ref.sibling = info.resolved_path("main");
+SourcePlacement ArtifactSourceResolver::placement_for(const ModelInfo& info,
+                                                      const std::string& checkpoint_type) const {
+    SourcePlacement placement;
+    placement.layout = &layout_for(info, checkpoint_type);
+    if (placement.layout != &hf_hub_layout()) {
+        placement.sibling = info.resolved_path("main");
     }
+    return placement;
 }
 
 const ArtifactLayout& ArtifactSourceResolver::layout_for(const ModelInfo& info,
@@ -121,7 +123,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         ref.repo_id = checkpoint.substr(checkpoint.find("://") + 3);
         ref.variant = variant_from_checkpoint(ref.repo_id);
         ref.repo_id = repo_id_from_checkpoint(ref.repo_id);
-        return open_repository(scheme_host, ref);
+        return open_repository(scheme_host, ref, SourcePlacement{});
     }
 
     if (checkpoint.rfind(FILE_SCHEME, 0) == 0) {
@@ -164,8 +166,7 @@ std::unique_ptr<ArtifactSource> ArtifactSourceResolver::source_for(
         }
         ref.registry = host;
 
-        place(info, checkpoint_type, ref);
-        return open_repository(*host, ref);
+        return open_repository(*host, ref, placement_for(info, checkpoint_type));
     }
 
     throw RegistrationError("Model '" + info.model_name + "' checkpoint '" + checkpoint_type +

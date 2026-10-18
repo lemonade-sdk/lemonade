@@ -3,7 +3,7 @@
 #include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/canonical_id.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/model_types.h>
 #include <lemon/models/artifact_store.h>
 #include <lemon/models/catalog.h>

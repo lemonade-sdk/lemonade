@@ -15,8 +15,7 @@ struct ModelInfo;
 
 namespace models {
 
-// What a models header may name without pulling the manager back in: catalog.h needs a
-// complete ModelInfo, and model_manager.h is where that lives.
+// What a models header may name without pulling the value headers in.
 struct FilterReasons;
 struct StoreSnapshot;
 class CatalogSet;

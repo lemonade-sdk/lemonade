@@ -4,6 +4,7 @@
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
+#include "lemon/canonical_id.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"

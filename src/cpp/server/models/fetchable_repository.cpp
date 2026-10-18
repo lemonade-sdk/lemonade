@@ -21,15 +21,15 @@ std::vector<RegistryId>& conflicts() {
 
 }  // namespace
 
-std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id,
-                                                      const ArtifactRef& ref) {
+std::unique_ptr<FetchableRepository> create_repository(const RegistryId& id, const ArtifactRef& ref,
+                                                       const SourcePlacement& placement) {
     const auto it = factories().find(id);
     if (it == factories().end()) {
         return nullptr;
     }
     ArtifactRef stamped = ref;
     stamped.registry = id;
-    return it->second(stamped);
+    return it->second(stamped, placement);
 }
 
 std::vector<RegistryId> registered_repository_ids() {

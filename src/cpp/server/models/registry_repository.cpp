@@ -84,7 +84,8 @@ DownloadPlan registry_download_plan(const FetchableRepository& repository, const
 // ModelRegistry already holds the protocol difference; a diverging host subclasses.
 class RegistryBackedRepository : public FetchableRepository {
   public:
-    explicit RegistryBackedRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
+    RegistryBackedRepository(ArtifactRef ref, SourcePlacement placement)
+        : FetchableRepository(std::move(ref), placement) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
 
@@ -182,12 +183,8 @@ class RegistryBackedRepository : public FetchableRepository {
     Placement placement() const {
         Placement placement;
         placement.cache_dir = utils::path_to_utf8(cache_dir(ref_.repo_id));
-        placement.sibling = ref_.sibling;
+        placement.sibling = sibling();
         return placement;
-    }
-
-    const ArtifactLayout& layout() const {
-        return ref_.layout != nullptr ? *ref_.layout : hf_hub_layout();
     }
 
 // Falls back to the snapshot directory when no file is named.

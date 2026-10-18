@@ -1,6 +1,6 @@
 #include <lemon/models/sync_service.h>
 
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/runtime_config.h>
 #include <lemon/utils/aixlog.hpp>
 

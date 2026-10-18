@@ -32,6 +32,7 @@ using lemon::models::RepoListing;
 using lemon::models::RepoRef;
 using lemon::models::Revision;
 using lemon::models::sibling_layout;
+using lemon::models::SourcePlacement;
 using lemon::models::Staleness;
 
 static int g_failures = 0;
@@ -47,7 +48,8 @@ namespace fs = std::filesystem;
 
 class ListingRepository : public FetchableRepository {
   public:
-    explicit ListingRepository(ArtifactRef ref) : FetchableRepository(std::move(ref)) {}
+    ListingRepository(ArtifactRef ref, SourcePlacement placement = SourcePlacement{})
+        : FetchableRepository(std::move(ref), placement) {}
 
     ArtifactKind kind() const override { return ArtifactKind::Registry; }
     std::string resolve() const override { return ""; }
@@ -98,8 +100,6 @@ ArtifactRef ref(const std::string& variant) {
 ArtifactRef side_ref(const std::string& variant) {
     ArtifactRef artifact = ref(variant);
     artifact.checkpoint_type = "npu_cache";
-    artifact.layout = &sibling_layout();
-    artifact.sibling = "/models/whisper.bin";
     return artifact;
 }
 
@@ -260,10 +260,10 @@ static void test_a_sibling_source_resolves_beside_its_model() {
     const fs::path main_file = model_dir / "whisper.bin";
     std::ofstream(main_file) << "model";
 
-    ArtifactRef artifact = side_ref("whisper.bin.rai");
-    artifact.sibling = main_file.string();
-
-    const auto source = lemon::models::create_repository(RegistryId("huggingface"), artifact);
+    const SourcePlacement binding{&sibling_layout(), main_file.string()};
+    const auto source =
+        lemon::models::create_repository(RegistryId("huggingface"), side_ref("whisper.bin.rai"),
+                                         binding);
     const std::string expected = (model_dir / "whisper.bin.rai").string();
 
     check("a sibling source resolves beside its model", source->resolve() == expected);
@@ -295,12 +295,13 @@ static void test_the_model_layer_hands_a_source_the_backends_layout() {
     info.resolved_paths["main"] = main_file.string();
 
     const auto source = manager.source_for(info, "npu_cache");
+    const auto repository = dynamic_cast<const FetchableRepository*>(source.get());
     check("the side checkpoint binds to the default host's repository",
           source != nullptr && source->kind() == ArtifactKind::Registry);
     check("the source carries the layout the backend declared for that checkpoint",
-          source->ref().layout == &sibling_layout());
+          repository != nullptr && &repository->layout() == &sibling_layout());
     check("the source knows the file it must sit beside",
-          source->ref().sibling == main_file.string());
+          repository != nullptr && repository->sibling() == main_file.string());
     check("the source knows which checkpoint it is",
           source->ref().checkpoint_type == "npu_cache" && source->ref().variant == "whisper.bin.rai");
 

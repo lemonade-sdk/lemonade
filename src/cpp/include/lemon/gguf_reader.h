@@ -16,42 +16,10 @@
 #include <string>
 #include <vector>
 #include <lemon/gguf_capabilities.h>
+#include <lemon/models/model_info.h>
 #include <lemon/utils/path_utils.h>
 
 namespace lemon {
-
-/// Metadata extracted from a GGUF file's KV header.
-///
-/// Stored inside ModelInfo for llama.cpp models so that auto-tune and other
-/// subsystems can estimate KV-cache pressure and clamp context size.
-///
-/// Arrays that vary per-block (head_count_kv_per_layer, sliding_window_pattern)
-/// are stored as-is so that downstream code can perform precise per-layer
-/// computations (e.g. distinguishing SWA-layer head counts from full-layer
-/// head counts).  Scalar convenience fields (head_count_kv, swa_layer_count)
-/// are derived from the raw arrays after the header pass completes.
-struct GgufMetadata {
-    std::string architecture;
-    int64_t context_length = 0;
-    int64_t block_count = 0;
-    int64_t embedding_length = 0;
-    int64_t head_count_kv = 0;       // total across all blocks (derived)
-    int64_t key_length = 0;
-    int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
-    int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
-    int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
-    GgufCapabilities caps;
-
-    // ── Raw per-layer arrays (stored as read from GGUF) ───────────────
-    // Populated when the GGUF field is an array.  Empty when the field is
-    // a scalar (in which case the scalar is repeated for every block).
-    std::vector<int64_t> head_count_kv_per_layer;
-    std::vector<bool> sliding_window_pattern;
-
-    // Transient scalar held when head_count_kv GGUF field is a scalar.
-    // Converted to head_count_kv_per_layer in post-loop validation.
-    int64_t head_count_kv_scalar = 0;
-};
 
 // BERT encoders may omit KV-head dimensions in GGUF. Estimate full-width
 // F16 K/V storage from the hidden width and transformer layer count.

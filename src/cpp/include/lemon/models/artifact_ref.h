@@ -1,6 +1,5 @@
 #pragma once
 
-#include "artifact_layout.h"
 #include "registry_id.h"
 
 #include <optional>
@@ -9,6 +8,10 @@
 namespace lemon {
 namespace models {
 
+// A ref is an address, nothing more: two refs that compare equal name the same bytes.
+// Where those bytes land is a property of the source that reads them, not of the address,
+// so placement — layout and sibling — lives beside the ref instead of inside it.
+//
 // repo_id is a repository id, or a path when no host holds the bytes.
 struct ArtifactRef {
     std::optional<RegistryId> registry;  // set only when a host holds the bytes
@@ -18,10 +21,6 @@ struct ArtifactRef {
     std::string recipe;  // decides which files a repository provides
     std::string revision;
     bool required = true;
-
-    // see ArtifactLayout; null means the snapshot layout
-    const ArtifactLayout* layout = nullptr;
-    std::string sibling;
 
     bool operator==(const ArtifactRef& other) const;
     bool operator!=(const ArtifactRef& other) const { return !(*this == other); }
