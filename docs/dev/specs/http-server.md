@@ -165,6 +165,7 @@ public:
     using ApiRoute::ApiRoute;
     void handle(RouteRequest& req, httplib::Response& res) final;  // resolve, validate, load, run
 protected:
+    virtual const RouteArg& model_arg() const = 0;  // the argument that names the model
     virtual bool validate(RouteRequest& req, httplib::Response& res) { return true; }
     virtual void run(RouteRequest& req, httplib::Response& res) = 0;
 };
@@ -187,6 +188,7 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 - **Checks.** For a `Json` or `OptionalJson` route, `serve()` checks every `JsonBody` and `Query` argument, and for a `Form` route, `ModelRoute` checks every `Form` argument once it has built `req.body`. A `required` argument or file must be present, and a value must match its schema's `type`, `enum`, `const`, `minimum`, `maximum`, `minLength`, `maxLength` and `pattern`, as must each value nested in it under `items`, `properties` or `additionalProperties`. A `null` counts as absent, and `serve()` removes it unless the schema's `type` includes `null`. `integer` accepts an integral number such as `2048.0`, and keys that no `RouteArg` declares are ignored. A body that is not a JSON object fails as `kBodyNotJson`. `Raw` routes, such as MCP's JSON-RPC endpoint, are not checked.
 - **Aliases.** A client may send an argument under any of its `aliases`. An empty string is not a value when another spelling has one, and `serve()` removes it. `serve()` renames an alias to the argument's name, so a handler reads only the name, and the name wins when a request sends both. The docs list the aliases beside the name.
 - **Forwarded arguments.** lemond passes some arguments to the backend without acting on them, such as chat/completions' `temperature`. These are marked `forwarded` and are not checked, since the backend decides what it accepts.
+- **Reading arguments.** Each argument is a `RouteArg` constant beside its handler, and `spec()` lists it. Route code names an argument only through its constant: `req.has()`, `req.arg()` and `req.value()` read it, `req.file()` reads an uploaded file, and `req.body[kStream.name]` changes a value the route forwards. A `Query` or `Path` value is converted to its schema's type. A shared helper receives the values of the arguments it needs, not the request. A helper that uses the whole body, such as one that forwards it to a backend or saves it as a model definition, receives the body. An argument that several routes take alike is one constant in `shared_args.h` that they all list, such as `generation::kTemperature`. Routes take an argument alike when everything about it matches except how its description is worded, and they treat it the same way. When routes treat such an argument differently, such as Anthropic's `messages`, which lemond converts to OpenAI's, and chat/completions' `messages`, which it forwards, each route keeps its own constant, and the generator's `DISTINCT_ARGUMENTS` lists the group with how the routes differ. A route that builds another route's request, as the gateways do, names that route's arguments through its constants.
 - **Error responses.** The three failures are `ApiRoute::kBodyNotJson`, `kArgMissing` and `kArgInvalid`. Their codes are `invalid_json`, `missing_argument` and `invalid_argument`, and they are written in the route's `error_format`:
 
 | `ErrorFormat` | Body |
@@ -196,10 +198,13 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 | `Anthropic` | `{"type": "error", "error": {"type": "invalid_request_error", "message", "code"}}` |
 
 ```cpp
-{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
- "The model to delete.", {"model"}},
-{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
- "Sampling temperature.", {}, true},
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "The model to delete.", {"model"}};
+const RouteArg kTemperature{"temperature", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                            "Sampling temperature.", {}, true};
+
+s.args = {kModelName};                                     // in spec()
+const std::string model_name = req.value(kModelName, "");  // in handle()
 ```
 
 ### `ModelRoute`
@@ -207,7 +212,7 @@ This section defines how `ApiRoute::serve()` checks a request against the route'
 `ModelRoute` is the base for routes that run a loaded model: chat/completions, images/generations, etc. Its `handle()` is final and runs these steps:
 
 1. Builds `req.body`. For a `RequestFormat::Form` route, it copies each `ArgIn::Form` text field into `req.body`, converted to the arg's schema type, answers 400 when the request is not `multipart/form-data`, and checks the arguments as [Argument Validation](#argument-validation) describes. File parts stay on the httplib request. Registration rejects a `ModelRoute` whose `request_format` is `Raw`, since step 2 reads the model from `req.body`.
-2. Resolves the model name.
+2. Resolves the model name. It reads the argument `model_arg()` names and passes the value through `canonical_model_name()`.
 3. Calls `validate()`. Returning false means `validate()` already wrote the response.
 4. Requires a model. With no `model` in the request, it answers 400.
 5. Auto-loads the model through `ModelLoader`, unless `validate()` set `req.model_already_loaded` because it picked a model that is already loaded; loading it again would demote a routing helper to a standard model. On failure it writes the `create_model_error` response, the same shape for every model route.
@@ -219,7 +224,7 @@ Every other route extends `ApiRoute` directly, including `images/upscale`, which
 
 ### Request and Context
 
-`RouteRequest` holds one request's data: the httplib request, the parsed request body unless `request_format` is `Raw`, the resolved model name, and the router decision when there is one.
+`RouteRequest` holds one request's data: the httplib request, the parsed request body unless `request_format` is `Raw`, the `Query` and `Path` arguments, the resolved model name, and the router decision when there is one. Its `has()`, `arg()`, `value()` and `file()` read an argument through its constant, as [Argument Validation](#argument-validation) describes.
 
 `ServerContext` holds pointers to the subsystems (`Router`, `ModelManager`, `BackendManager`, `CloudProviderRegistry`, `AliasManager`, `RuntimeConfig`), to `HttpListener`, and to the services in [Core Components](#core-components). It holds no state of its own. Everything it points to lives as long as lemond, so it has no `WebSocketServer` pointer: a `host` or `websocket_port` change replaces that server, and `/health` reads its port from `HttpListener::websocket_port()`.
 
@@ -237,6 +242,7 @@ Routes call these helpers from their own code, so the flow stays visible in the 
 | `attach_route_decision()` | Adds the router decision to the response body and headers |
 | `record_usage()` | Records token usage and timings for telemetry |
 | `set_error_response()` | Maps a backend error body to its HTTP status, or to the given `RouteError`'s status when the body has none |
+| `canonical_model_name()` | Returns the name the registry knows for a model name a client sent, after stripping a `:latest` tag, unless the tagged name is itself a registered model or alias, and following model aliases |
 
 ### Response Schemas
 
@@ -354,6 +360,13 @@ nlohmann::json chat_completion_chunk_schema() {
     })");
 }
 
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "Model to run; loaded on first use."};
+const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available,
+                         "Conversation in OpenAI format."};
+const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable,
+                         "Return the log probability of each output token.", {}, true};
+
 class ChatCompletionsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -366,12 +379,7 @@ public:
         s.prefixes = Prefixes::Quad;
         s.summary = "Chat Completions";
         s.description = "Generates the next assistant message for a conversation.";
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available, "Model to run; loaded on first use."},
-            {"messages", ArgIn::JsonBody, {{"type", "array"}}, true, Support::Available, "Conversation in OpenAI format."},
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available, "Stream tokens as server-sent events."},
-            {"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::NotAvailable, "Return the log probability of each output token.", {}, true},
-        };
+        s.args = {kModel, kMessages, common::kStream, kLogprobs};
 
         s.responses = {
             {ResponseFormat::Json, chat_completion_schema()},
@@ -404,6 +412,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return kModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
         if (is_omni_collection(ctx_, req.model)) {
             run_omni_collection(ctx_, req, res);
@@ -414,7 +424,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        if (req.body.value("stream", false)) {
+        if (req.value(common::kStream, false)) {
             stream_response(req, res, [this](const std::string& body, httplib::DataSink& sink) {
                 ctx_.router->chat_completion_stream(body, sink);
             });
@@ -478,9 +488,10 @@ src/cpp/server/
 
 Registration follows these rules:
 
-- **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header.
+- **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header. The arguments of the OpenAI routes, whose requests the gateways build, are declared in `openai_args.h` there and defined in `routes/openai/`. Arguments that several routes take alike are declared in `shared_args.h` there and defined in `routes/shared_args.cpp`.
 - **One list per folder.** Each folder's `routes.cpp` declares its factories and adds them to the `RouteRegistry` in registration order. `Server` calls each folder's registration function. CMake collects `routes/` sources with `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`, as it does for `docs/api`, so adding a route edits no CMake file.
 - **Order.** httplib uses the first registered route that matches, so routes register in the order each folder's `routes.cpp` lists them, and a folder lists a specific path before a pattern that also matches it, such as `models/{id}/files` before `models/{id}`. `WebUi` registers its catch-all route after every API route.
+- **Path parameters.** Each `{name}` in a path becomes a capture group that matches its `Path` argument's `pattern`, digits for an `integer`, or one path segment otherwise. `RouteRequest` reads path parameters by group number, so registration rejects a route whose paths name different parameters or name them in a different order, and a `pattern` that has a group of its own.
 - **Gateways.** The Anthropic routes live in `routes/anthropic/`, separate from Ollama's. The OpenAI-to-gateway stream conversion both use lives in `services/`. `McpServer`'s HTTP route is a route class in `routes/mcp/`.
 
 ## Core Components
@@ -580,6 +591,9 @@ CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other ge
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
 - a JSON format has no `schema`, or another format has one, or a shape in a `oneOf` has no `title`
 - a file under `routes/` or `services/` assigns a literal error status to `res.status` or passes one to an error writer, or a route file uses a `RouteError` that its route's `errors` does not list, or leaves out one its base class writes for it or lists one its base class never writes for it
+- a route file declares an argument in `args` instead of as a `RouteArg` constant, names an argument or one of its aliases by a string literal, such as `req.body["stream"]`, writes another route's request with a string literal key, or uses a `RouteArg` that its route's `args` does not list
+- a helper under `routes/` or `services/` that takes a `RouteRequest` names a declared argument by a string literal on it, such as `req.body["model"]`
+- two `RouteArg` constants have the same name and aliases, location, schema and flags, whatever their descriptions say, unless the generator's `DISTINCT_ARGUMENTS` lists them with how their routes treat the argument differently, or that list names a group that no longer matches
 - a route's `description`, `notes` or argument descriptions name an error status, such as `404`
 - a `Raw` route other than MCP's JSON-RPC endpoint reads its request body
 - a route's text has an em dash, a placeholder outside backticks, the prefixes `/api/v0/`, `/api/v1/` or `/v0/`, a phrase the generator prints ("Also served at", "Requires `LEMONADE_API_KEY`") or a `> **Note:**` callout; a `summary` runs over 10 words; a `description` runs over 3 sentences; or a sentence of 40 or more characters appears twice in one route's region
