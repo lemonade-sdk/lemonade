@@ -1,0 +1,17 @@
+diff --git a/src/cpp/server/routes/openai/models/models.cpp b/src/cpp/server/routes/openai/models/models.cpp
+index 6e410a0..a7e3427 100644
+--- a/src/cpp/server/routes/openai/models/models.cpp
++++ b/src/cpp/server/routes/openai/models/models.cpp
+@@ -96,9 +96,10 @@ public:
+                 ultimate_target = *resolved;
+             }
+             std::string canonical_target = ctx_.model_manager->resolve_model_name(ultimate_target);
+-            if (models.count(canonical_target) > 0) {
++            std::string public_target = ctx_.model_manager->get_public_model_name(canonical_target);
++            if (models.count(public_target) > 0) {
+                 response["data"].push_back(
+-                    ctx_.model_json->to_json(alias_id, models.at(canonical_target)));
++                    ctx_.model_json->to_json(alias_id, models.at(public_target)));
+             } else if (models.count(ultimate_target) > 0) {
+                 response["data"].push_back(
+                     ctx_.model_json->to_json(alias_id, models.at(ultimate_target)));
