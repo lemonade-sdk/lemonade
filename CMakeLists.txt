@@ -2402,6 +2402,7 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_ARG_RESOLVER_TEST_SRC}")
     target_include_directories(test_recipe_arg_resolution PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
+    target_link_libraries(test_recipe_arg_resolution PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(RecipeArgResolutionTest CI ON COMMAND test_recipe_arg_resolution)
 endif()
 
@@ -3117,9 +3118,10 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
+    target_link_libraries(test_auto_tune PRIVATE nlohmann_json::nlohmann_json)
 
     include(CTest)
-    add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
+    add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
 set(_GPU_MEMORY_SELECTION_TEST_SRC
@@ -3133,6 +3135,27 @@ if(BUILD_TESTING AND EXISTS "${_GPU_MEMORY_SELECTION_TEST_SRC}")
     target_link_libraries(test_gpu_memory_selection PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_cpp_ci_test(GpuMemorySelectionTest CI ON COMMAND test_gpu_memory_selection)
+endif()
+
+# KV-cache quant tier vocabulary, safety table + eligibility gates,
+# and the ladder resolver. Pure arithmetic/logic over fabricated
+# metadata and options; no backend, GPU, or model file required. Links
+# lemonade-server-core (resolve_kv_cache takes a RecipeOptions).
+set(_KV_CACHE_QUANT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_kv_cache_quant.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_KV_CACHE_QUANT_TEST_SRC}")
+    add_executable(test_kv_cache_quant
+        test/cpp/test_kv_cache_quant.cpp
+    )
+    target_include_directories(test_kv_cache_quant PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_kv_cache_quant PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(KvCacheQuantTest CI ON COMMAND test_kv_cache_quant)
 endif()
 
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")

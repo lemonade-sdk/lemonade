@@ -115,6 +115,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+| `kv_cache_quantization` | `--kv-cache-quantization` | ARGS | auto | KV cache quantization: auto (default), off, q8_0, or q4_0 |
 
 #### `llamacpp-hrx` — HRX GPU
 

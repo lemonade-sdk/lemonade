@@ -81,6 +81,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "cpu_args": "",
     "cpu_bin": "builtin",
     "cuda_bin": "builtin",
+    "kv_cache_quantization": "auto",
     "prefer_system": true,
     "rocm_args": "",
     "rocm_bin": "builtin",

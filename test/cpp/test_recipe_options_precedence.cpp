@@ -253,6 +253,62 @@ int main() {
             !merged.has_option("cfg_scale"), "", "");
     }
 
+    // --- KV cache quantization config surface ---
+
+    // The option resolves to its documented default when unset
+    {
+        RecipeOptions defaults_only("llamacpp", json::object());
+        failures += fail("kv-cache: kv_cache_quantization defaults to auto",
+            defaults_only.get_option("kv_cache_quantization").get<std::string>() == "auto",
+            defaults_only.get_option("kv_cache_quantization").get<std::string>(), "auto");
+    }
+
+    // "auto" set at the saved-model layer survives merge and is readable —
+    // the regression the sentinel carve-out exists to prevent.
+    {
+        json saved_model_ro = {{"kv_cache_quantization", "auto"}};
+        RecipeOptions merged = RecipeOptions::merge_precedence_layers(
+            "llamacpp", json::object(), saved_model_ro, json(nullptr));
+        failures += fail("kv-cache: auto survives merge_precedence_layers",
+            merged.get_option("kv_cache_quantization").get<std::string>() == "auto",
+            merged.get_option("kv_cache_quantization").get<std::string>(), "auto");
+    }
+
+    // "auto" at a lower layer is overridden by an explicit q8_0 at a higher layer
+    {
+        json lower = {{"kv_cache_quantization", "auto"}};
+        json higher = {{"kv_cache_quantization", "q8_0"}};
+        RecipeOptions merged = RecipeOptions::merge_precedence_layers(
+            "llamacpp", lower, higher, json(nullptr));
+        failures += fail("kv-cache: explicit q8_0 overrides lower-layer auto",
+            merged.get_option("kv_cache_quantization").get<std::string>() == "q8_0",
+            merged.get_option("kv_cache_quantization").get<std::string>(), "q8_0");
+    }
+
+    // "off" set at the model layer survives rather than being treated as an
+    // unset marker, so a model can opt out while a global default says auto.
+    {
+        json global_opts = {{"kv_cache_quantization", "auto"}};
+        RecipeOptions global("llamacpp", global_opts);
+        RecipeOptions model("llamacpp", json{{"kv_cache_quantization", "off"}});
+        RecipeOptions merged = model.inherit(global);
+        failures += fail("kv-cache: model-layer off overrides global auto",
+            merged.get_option("kv_cache_quantization").get<std::string>() == "off",
+            merged.get_option("kv_cache_quantization").get<std::string>(), "off");
+    }
+
+    // An imported/round-tripped model definition carrying the key retains it —
+    // recipe_options is preserved wholesale by the import allowlist, and
+    // RecipeOptions' descriptor-driven key list is what makes the key survive
+    // construction rather than being silently dropped as unrecognized.
+    {
+        json imported_recipe_options = {{"kv_cache_quantization", "q4_0"}};
+        RecipeOptions ro("llamacpp", imported_recipe_options);
+        failures += fail("kv-cache: round-tripped kv_cache_quantization retained",
+            ro.get_option("kv_cache_quantization").get<std::string>() == "q4_0",
+            ro.get_option("kv_cache_quantization").get<std::string>(), "q4_0");
+    }
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }
