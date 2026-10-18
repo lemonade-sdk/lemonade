@@ -251,7 +251,7 @@ Serialization to a response body is the HTTP layer's job. `checkpoint_status` is
 
 This section defines the interface every source of model entries implements.
 
-A catalog enumerates model entries and reports when its enumeration changed. The second half is what makes change notification and auto-update source-independent.
+A catalog enumerates model entries. Change is not something a catalog is asked about in a probe round trip: a read hands back the state it observed, and invalidation arrives as an event — a watcher callback, a config edit, a fetched body.
 
 ```cpp
 using CatalogId = std::string;   // stable across restarts; keys CatalogState and the docs
@@ -268,9 +268,6 @@ public:
 
     // Add and override entries during a store build.
     virtual void enumerate(CatalogAccumulator&) const = 0;
-
-    // Did the ENUMERATION change? mtime, ETag, watcher event, listing digest.
-    virtual bool enumeration_changed(const CatalogState&) const { return false; }
 };
 ```
 
@@ -317,13 +314,18 @@ public:
 };
 ```
 
-The locator decides how a body is fetched and how a change is detected:
+The locator decides how a body is fetched and what the read reports having seen:
 
-| Locator | Read policy | `enumeration_changed()` | Failure policy |
+| Locator | Read policy | State the read observes | Failure policy |
 | --- | --- | --- | --- |
-| `FileLocator` | read the file | mtime or size differs | missing or unparseable contributes no entries when `required()` is false; throws when it is true |
-| `ResourceLocator` | `utils::get_resource_path()`, then read | contents digest differs | throws when `required()` |
-| `HttpLocator` | `GET url` with `If-None-Match` / `If-Modified-Since` from `cache_path`; a 304 keeps the cached body; a body over `max_body_bytes` aborts the transfer | ETag or Last-Modified differs from the cached pair | falls back to the cached body, then to no entries, when `required()` is false; with `required()` true and no cache, throws |
+| `FileLocator` | read the file | mtime and size | missing or unparseable contributes no entries when `required()` is false; throws when it is true |
+| `ResourceLocator` | `utils::get_resource_path()`, then read | contents digest | throws when `required()` |
+| `HttpLocator` | `GET url` with `If-None-Match` / `If-Modified-Since` from `cache_path`; a 304 keeps the cached body; a body over `max_body_bytes` aborts the transfer; inside `fresh_for` the cached body answers with no request at all | the ETag / Last-Modified pair | falls back to the cached body, then to no entries, when `required()` is false; with `required()` true and no cache, throws |
+
+Invalidation is event-driven and fetched bodies are windowed; a locator runs no
+standalone probe round trip. Whatever a read observed is what the next read asks
+conditionally, and whatever changed outside a read announces itself — a
+`DirectoryWatcher`, a settings write, a model download.
 
 Rules:
 
@@ -989,7 +991,7 @@ Rules:
 1. Two signals and one subscriber each, registered while `ModelManager` is constructed and living as long as lemond. There is no unsubscribe handle, no topic registry, and no event a subscriber must filter, because nothing here has a varying set of listeners.
 2. `StoreSnapshot::generation` is the change signal for everything else. A reader compares generations to decide whether to re-read, a rebuild coalesces on it, and `ModelManager::generation()` exposes it without a callback.
 3. Callbacks run outside every lock. A subscriber reads the snapshot published at the generation it was handed, never a draft: the notification follows the atomic swap.
-4. Producers of `models_changed`: a catalog whose `enumeration_changed()` returned true, a completed ingest, deletion or sync scan, and a config change that alters the catalog set. Producers of `model_updated`: a completed re-download whose resolved checkpoint paths differ from the paths in the published snapshot. An alias mutation produces neither.
+4. Producers of `models_changed`: a catalog a watcher or settings event named, a completed ingest, deletion or sync scan, and a config change that alters the catalog set. Producers of `model_updated`: a completed re-download whose resolved checkpoint paths differ from the paths in the published snapshot. An alias mutation produces neither.
 5. Catalog change detection is polled, not pushed. A file catalog answers from a stat of its document (`CatalogLocator::changed()`), and a fetched one answers from an in-process window over its cached body — `CatalogFetchClock`, one minute — because a rebuild is triggered by local events that cannot have changed what a remote host serves. The window is in-memory, so a restart always asks the origin, and a change to the catalog set clears it. A `DirectoryWatcher` callback holds no subscriber list and carries no data: it invalidates, and the rebuild that follows is what notifies.
 6. A subscriber is added only where the snapshot cannot carry the answer. A consumer that needs currency rather than a signal compares `generation()`.
 
@@ -1267,7 +1269,7 @@ This section states the coverage that protects the design and the tests that pro
 | --- | --- |
 | `test_store_snapshot` | build publishes atomically; a reader sees either generation in full; `rejected`, `empty_recipes` and rejection reasons present on every build |
 | `test_store_builder` | golden `StoreSnapshot` for a fixture catalog set: merge, precedence, alias maps, projection; `filter_hardware()` over the whole set and over one entry, with rejection reasons |
-| `test_model_catalog` | each `Locator` read policy, `required()` throw versus contribute-nothing, `enumeration_changed()` per signal |
+| `test_model_catalog` | each `Locator` read policy, `required()` throw versus contribute-nothing, the state each read observes |
 | `test_name_resolution` | snapshot beats alias, chains to `MAX_ALIAS_CHAIN_DEPTH`, a cycle yields no target, a chain still naming an alias at the limit yields no target, `:latest`, `input_aliases`, `wire_id` under an alias |
 | `test_model_manager_facade` | the facade constructed over a fixture `ModelManagerConfig` with temp paths; a static check that no consumer includes a `lemon/models/` header other than `model_manager.h` and `model_info.h` |
 | `test_artifact_resolver` | the seven selection rules, per-checkpoint independence, a model with two sources |

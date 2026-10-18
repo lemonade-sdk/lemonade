@@ -69,7 +69,6 @@ struct ServingDocument {
     std::mutex mutex;
     int port = 0;
     bool send_validators = true;
-    std::atomic<bool> refuses_head{false};
     std::atomic<int> conditional_reads{0};
     std::atomic<int> reads{0};
     std::string body = R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]}})";
@@ -84,12 +83,7 @@ struct ServingDocument {
             if (req.method != "HEAD") {
                 ++reads;
             }
-            if (req.method == "HEAD") {
-                if (refuses_head.load()) {
-                    res.status = 405;
-                    return;
-                }
-            } else if (req.has_header("If-None-Match")) {
+            if (req.has_header("If-None-Match")) {
                 ++conditional_reads;
             }
             const std::string match = req.get_header_value("If-None-Match");
@@ -168,22 +162,14 @@ static void http_catalog_tests(const fs::path& scratch) {
 
     check("a document answered with 304 is still enumerated", enumerate(*catalog(locator, false)) == 1);
     check("the second read asked with what it holds", document.conditional_reads == 1);
-    check("the same document is not a change", !locator->changed(first));
-
     const std::string rewritten =
         R"({"A":{"recipe":"llamacpp","labels":["chat"]},
             "B":{"recipe":"llamacpp","labels":["chat"]}})";
     document.rewrite(rewritten, "\"v2\"");
-    check("a rewritten document says it changed", locator->changed(first));
-
     CatalogState second;
     const json second_body = locator->read(&second).value_or(json::object());
     check("the rewritten document is read", second_body.size() == 2);
-    check("the new validators replace the old", second.etag != first.etag && !locator->changed(second));
-
-    document.refuses_head = true;
-    check("a probe the server refuses asks the document", locator->changed(second));
-    document.refuses_head = false;
+    check("the new validators replace the old", second.etag != first.etag);
 
     const auto opaque = http_catalog_locator(
         "opaque", serving(document, "/opaque.json", scratch / "http" / "opaque.json"));
@@ -201,7 +187,6 @@ static void http_catalog_tests(const fs::path& scratch) {
         check("an unreachable host serves the last good body", served_body.size() == 2);
         check("serving from the cache keeps the validators on record",
               served.present && served.etag == second.etag);
-        check("an unreachable host offers no change", !offline->changed(served));
     }
 
     {
@@ -233,20 +218,9 @@ static void http_catalog_tests(const fs::path& scratch) {
             "B":{"recipe":"llamacpp","labels":["chat"]},
             "C":{"recipe":"llamacpp","labels":["chat"]}})";
     document.rewrite(three_rows, "\"v4\"");
-    check("a document with no validators is compared by length", opaque->changed(sized));
     CatalogState grown;
     opaque->read(&grown);
-    check("the length it measured is its own", grown.size > sized.size && !opaque->changed(grown));
-
-    const auto relentless = http_catalog_locator(
-        "relentless", serving(document, "/always200.json", scratch / "http" / "always200.json"));
-    CatalogState answered;
-    relentless->read(&answered);
-    check("a host that ignores the condition is still a document that did not change",
-          answered.present && !relentless->changed(answered));
-    document.rewrite(three_rows, "\"v5\"");
-    check("a validator that moved is a change even to a host that always answers",
-          relentless->changed(answered));
+    check("the read records a size the next read can compare", grown.size > sized.size);
 
     document.stop();
 }
@@ -384,20 +358,20 @@ int main() {
     check("a catalog over a locator contributes its models",
           enumerate(*catalog(locator, false)) == 1);
 
-    check("nothing changed between two reads", !locator->changed(read));
     write_file(document, R"({"A":{"recipe":"llamacpp","labels":["chat"]},
                             "B":{"recipe":"llamacpp","labels":["chat"]}})");
-    check("a rewritten document says it changed", locator->changed(read));
-
     CatalogState refreshed;
-    locator->read(&refreshed);
-    check("the refreshed state is current again", !locator->changed(refreshed));
+    const json refreshed_body = locator->read(&refreshed).value_or(json::object());
+    check("a rewritten document is read as what it is now", refreshed_body.size() == 2);
+    check("the refreshed state is current again",
+          refreshed.present && (refreshed.size != read.size || refreshed.modified != read.modified));
 
     {
         const fs::path absent = scratch / "absent.json";
+        CatalogState absent_state;
         const auto missing = file_catalog_locator("missing", absent.string());
         check("an absent document reads as no body", !missing->read(nullptr).has_value());
-        check("absent and still absent is not a change", !missing->changed(CatalogState{}));
+        check("absent reads as an empty state", !missing->read(&absent_state) && !absent_state.present);
         check("an optional catalog contributes nothing",
               enumerate(*catalog(missing, false)) == 0);
         bool threw = false;

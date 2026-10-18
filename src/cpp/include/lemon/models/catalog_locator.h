@@ -34,10 +34,9 @@ class CatalogLocator {
     virtual const std::string& id() const = 0;
 
     // Throws when a body exists but is not readable as a document of model rows.
+    // `observed` receives what the read saw, so the next read can ask
+    // conditionally; invalidation itself is the caller's event, not a probe.
     virtual std::optional<nlohmann::json> read(CatalogState* observed) const = 0;
-
-    // True when the body differs from the one that produced `known`.
-    virtual bool changed(const CatalogState& known) const = 0;
 };
 
 std::shared_ptr<CatalogLocator> file_catalog_locator(std::string id, std::string path);

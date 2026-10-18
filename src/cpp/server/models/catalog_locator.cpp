@@ -73,16 +73,6 @@ class FileCatalogLocator final : public CatalogLocator {
         return document;
     }
 
-    bool changed(const CatalogState& known) const override {
-        std::error_code ec;
-        if (!fs::exists(path_, ec)) {
-            return known.present;
-        }
-        const std::int64_t modified = fs::last_write_time(path_, ec).time_since_epoch().count();
-        const std::uint64_t size = fs::file_size(path_, ec);
-        return !known.present || known.modified != modified || known.size != size;
-    }
-
   private:
     std::string id_;
     fs::path path_;
@@ -171,41 +161,6 @@ class HttpCatalogLocator final : public CatalogLocator {
             }
         }
         return serve_cache(observed, cached);
-    }
-
-    bool changed(const CatalogState& known) const override {
-        std::optional<utils::HttpResponse> response;
-        try {
-            response = utils::HttpClient::head(source_.url, conditional(known), 0, policy());
-        } catch (const std::exception& e) {
-            // Nothing to take: a rebuild would serve the cached body anyway.
-            LOG(DEBUG, kLog) << "'" << id_ << "' is not reachable: " << e.what() << std::endl;
-            return false;
-        }
-        if (!response) {
-            return false;
-        }
-        if (response->status_code == 304) {
-            return false;
-        }
-        // A server that refuses the probe gets the full question instead.
-        if (response->status_code == 405 || response->status_code == 501) {
-            return true;
-        }
-        if (response->status_code < 200 || response->status_code >= 300) {
-            return false;
-        }
-
-        const std::string etag = header_value(*response, "etag");
-        const std::string last_modified = header_value(*response, "last-modified");
-        if (!etag.empty() || !last_modified.empty()) {
-            return etag != known.etag || last_modified != known.last_modified;
-        }
-        const std::string length = header_value(*response, "content-length");
-        if (length.empty()) {
-            return true;
-        }
-        return std::strtoull(length.c_str(), nullptr, 10) != known.size;
     }
 
   private:
