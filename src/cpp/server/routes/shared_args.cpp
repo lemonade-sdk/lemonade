@@ -73,9 +73,6 @@ const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength
 } // namespace gateway
 
 namespace ollama {
-const RouteArg kCtxSize{"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                        "Lemonade extension: context size to load the model with, when this request loads "
-                        "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true};
 const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                        "`true` streams the response as newline-delimited JSON; `false` sends one response "
                        "once complete. Defaults to `true`."};
@@ -86,8 +83,8 @@ const RouteArg kKeepAlive{"keep_alive", ArgIn::JsonBody, json::object(), false, 
 
 namespace ollama::embed {
 const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
-                        "`num_ctx` sets the context size when this request loads the model. Other keys are "
-                        "ignored."};
+                        "`num_ctx` sets the context size when this request loads the model, unless "
+                        "`ctx_size` is sent. Other keys are ignored."};
 } // namespace ollama::embed
 
 namespace ollama::management {

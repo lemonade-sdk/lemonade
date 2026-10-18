@@ -225,7 +225,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
 
     // Authentication is decided by path, so a route cannot opt out of it. /mcp is the
     // one API route outside the /api/, /v0/ and /v1/ prefixes, so it is named here to
-    // keep LEMONADE_API_KEY enforcement on the MCP gateway (Invariant #2).
+    // keep LEMONADE_API_KEY enforcement on the MCP gateway.
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
                         (req.path.rfind("/v1/", 0) == 0) ||

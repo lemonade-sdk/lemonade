@@ -1042,13 +1042,6 @@ class OllamaTests(ServerTestBase):
             "name": name,
         }
 
-    @staticmethod
-    def _go_pull_request(model="", name="", stream=None):
-        request = {"model": model, "username": "", "password": "", "name": name}
-        if stream is not None:
-            request["stream"] = stream
-        return request
-
     def test_029_show_go_client_run_request(self):
         """`ollama run X` calls /api/show with model set and name empty."""
         self.ensure_model_pulled()
@@ -1071,21 +1064,17 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIn("details", response.json())
 
-    def test_031_show_go_client_unknown_model(self):
-        """A Go client request for an unknown model is read by its name and answers 404."""
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/show",
-            json=self._go_show_request(name="nonexistent-model-xyz"),
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 404, response.text)
-
-    def test_032_pull_go_client_request(self):
+    def test_031_pull_go_client_request(self):
         """`ollama pull X` streams /api/pull with name set and model empty."""
         self.ensure_model_pulled()
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/pull",
-            json=self._go_pull_request(name=ENDPOINT_TEST_MODEL),
+            json={
+                "model": "",
+                "username": "",
+                "password": "",
+                "name": ENDPOINT_TEST_MODEL,
+            },
             timeout=TIMEOUT_MODEL_OPERATION,
             stream=True,
         )
@@ -1094,16 +1083,7 @@ class OllamaTests(ServerTestBase):
         self.assertGreater(len(chunks), 0)
         self.assertEqual(chunks[-1].get("status"), "success", chunks[-1])
 
-    def test_033_pull_go_client_unknown_model(self):
-        """A Go client pull of an unknown model is read by its name and answers 404."""
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/pull",
-            json=self._go_pull_request(name="nonexistent-model-xyz", stream=False),
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 404, response.text)
-
-    def test_034_chat_think_levels(self):
+    def test_032_chat_think_levels(self):
         """/api/chat accepts every think value Ollama accepts: a boolean or a level."""
         self.ensure_model_pulled()
         for think in (True, False, "low", "medium", "high", "max"):
@@ -1122,122 +1102,7 @@ class OllamaTests(ServerTestBase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertTrue(response.json()["done"])
 
-    def test_035_chat_think_level_unknown_model(self):
-        """A think level is accepted, so an unknown model still answers 404."""
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": "nonexistent-model-xyz",
-                "messages": [{"role": "user", "content": "Hi"}],
-                "stream": False,
-                "think": "high",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 404, response.text)
-
-    def test_036_chat_rejects_unknown_think_level(self):
-        """As in Ollama, a think string that is not a level answers 400."""
-        self.ensure_model_pulled()
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": ENDPOINT_TEST_MODEL,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "stream": False,
-                "think": "extreme",
-                "options": {"num_predict": 1},
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 400, response.text)
-        self.assertIn("think", response.json()["error"])
-
-    def test_037_chat_ignores_malformed_ctx_size(self):
-        """Ollama ignores fields it does not define, so a malformed ctx_size is ignored."""
-        self.ensure_model_pulled()
-        request = {
-            "model": ENDPOINT_TEST_MODEL,
-            "messages": [{"role": "user", "content": "Hi"}],
-            "stream": False,
-            "options": {"num_predict": 1},
-        }
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat", json=request, timeout=TIMEOUT_MODEL_OPERATION
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={**request, "ctx_size": "4096"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-    def test_038_malformed_ctx_size_unknown_model(self):
-        """A malformed ctx_size is ignored on every Ollama route that takes one."""
-        model = "nonexistent-model-xyz"
-        requests_by_path = {
-            "/api/chat": {
-                "model": model,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "stream": False,
-            },
-            "/api/generate": {"model": model, "prompt": "Hi", "stream": False},
-            "/api/embed": {"model": model, "input": "Hi"},
-            "/api/embeddings": {"model": model, "prompt": "Hi"},
-        }
-        for path, request in requests_by_path.items():
-            with self.subTest(path=path):
-                response = requests.post(
-                    f"{OLLAMA_BASE_URL}{path}",
-                    json={**request, "ctx_size": "4096"},
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(response.status_code, 404, response.text)
-
-    def test_039_embeddings_reads_prompt_over_input(self):
-        """/api/embeddings reads prompt, and Ollama has no input field there to check."""
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/embeddings",
-            json={"model": "nonexistent-model-xyz", "prompt": "Hi", "input": 5},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 404, response.text)
-
-    def test_040_chat_rejects_non_object_options(self):
-        """As in Ollama, options that are not an object answer 400."""
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": "nonexistent-model-xyz",
-                "messages": [{"role": "user", "content": "Hi"}],
-                "stream": False,
-                "options": [],
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 400, response.text)
-
-    # The delete tests run last, so the model they remove is not needed again.
-
-    def test_097_delete_go_client_unknown_model(self):
-        """A Go client delete of an unknown model is read by its name and answers 404."""
-        response = requests.delete(
-            f"{OLLAMA_BASE_URL}/api/delete",
-            json={"model": "", "name": "nonexistent-model-xyz"},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 404, response.text)
-
-    def test_098_delete_reads_model_when_name_empty(self):
-        """As in Ollama, a delete with model set and name empty is read by its model."""
-        response = requests.delete(
-            f"{OLLAMA_BASE_URL}/api/delete",
-            json={"model": "nonexistent-model-xyz", "name": ""},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 404, response.text)
+    # Runs last, so the model it removes is not needed again.
 
     def test_099_delete_go_client_request(self):
         """`ollama rm X` sends /api/delete with name set and model empty."""

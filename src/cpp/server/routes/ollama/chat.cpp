@@ -79,8 +79,8 @@ const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false,
                         "Sampling options: `temperature`, `top_p`, `seed`, `stop`, `num_predict` (maximum "
                         "generated tokens) and `repeat_penalty`, which is sent as OpenAI's "
                         "`frequency_penalty`. These keys are also accepted at the top level, where they win. "
-                        "`num_ctx` sets the context size when this request loads the model. Other keys are "
-                        "ignored."};
+                        "`num_ctx` sets the context size when this request loads the model, unless "
+                        "`ctx_size` is sent. Other keys are ignored."};
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
                        Support::Partial,
                        "`json` constrains the reply to a JSON object. A JSON schema is accepted but not "
@@ -89,8 +89,7 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
                       {{"type", json::array({"boolean", "string"})},
                        {"enum", json::array({true, false, "low", "medium", "high", "max"})}},
                       false, Support::NotAvailable,
-                      "`true`, `false`, or a level: `low`, `medium`, `high` or `max`, the levels Ollama "
-                      "accepts for models that define none of their own. Not applied: reasoning models "
+                      "`true`, `false`, `low`, `medium`, `high` or `max`. Not applied: reasoning models "
                       "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
                       "`/no_think`."};
 
@@ -340,7 +339,7 @@ public:
         };
         s.args = {
             gateway::kModel, kMessages, ollama::kStream, kOptions, generation::kTools, kFormat,
-            kThink, ollama::kKeepAlive, ollama::kCtxSize
+            kThink, ollama::kKeepAlive, model_loading::kCtxSize
         };
 
         RouteResponse full;
@@ -403,7 +402,7 @@ public:
             }
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(req.arg(kOptions), req.arg(ollama::kCtxSize)),
+                                       gateway_load_options(req.arg(kOptions), req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Plain, res)) {
                 return;
             }

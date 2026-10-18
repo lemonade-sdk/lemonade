@@ -23,21 +23,18 @@ const RouteArg kOptions{"options", ArgIn::JsonBody, {{"type", "object"}}, false,
                         "generated tokens), `repeat_penalty`, which is sent as OpenAI's "
                         "`frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` "
                         "documented below. A key given at the top level wins. `num_ctx` sets the context "
-                        "size when this request loads the model. Other keys are ignored."};
+                        "size when this request loads the model, unless `ctx_size` is sent. Other keys "
+                        "are ignored."};
 const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                      "Image models only: image width in pixels. Defaults to `512`. Ignored unless an "
-                      "integer.", {}, false, true};
+                      "Image models only: image width in pixels. Defaults to `512`."};
 const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                       "Image models only: image height in pixels. Defaults to `512`. Ignored unless an "
-                       "integer.", {}, false, true};
+                       "Image models only: image height in pixels. Defaults to `512`."};
 const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                      "Image models only: inference steps. Defaults to the model's own. Ignored unless "
-                      "an integer.", {}, false, true};
+                      "Image models only: inference steps. Defaults to the model's own."};
 const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-                         "Image models only: classifier-free guidance scale. Defaults to the model's own. "
-                         "Ignored unless a number.", {}, false, true};
+                         "Image models only: classifier-free guidance scale. Defaults to the model's own."};
 const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                     "Random seed for reproducible output. Ignored unless an integer.", {}, false, true};
+                     "Random seed for reproducible output."};
 const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
                        "System prompt. Ignored."};
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
@@ -196,7 +193,7 @@ public:
         };
         s.args = {
             gateway::kModel, kPrompt, ollama::kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale,
-            kSeed, ollama::kKeepAlive, ollama::kCtxSize, kSystem, kFormat
+            kSeed, ollama::kKeepAlive, model_loading::kCtxSize, kSystem, kFormat
         };
 
         RouteResponse full;
@@ -260,7 +257,7 @@ public:
             }
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(req.arg(kOptions), req.arg(ollama::kCtxSize)),
+                                       gateway_load_options(req.arg(kOptions), req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Plain, res)) {
                 return;
             }

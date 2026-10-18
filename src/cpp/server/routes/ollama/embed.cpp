@@ -28,7 +28,7 @@ public:
         s.summary = "Embed one or more texts";
         s.description =
             "Returns one embedding per input text, loading the model on first use.";
-        s.args = {gateway::kModel, kInput, ollama::embed::kOptions, ollama::kCtxSize};
+        s.args = {gateway::kModel, kInput, ollama::embed::kOptions, model_loading::kCtxSize};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -64,7 +64,7 @@ public:
             std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
-                                       gateway_load_options(req.arg(ollama::embed::kOptions), req.arg(ollama::kCtxSize)),
+                                       gateway_load_options(req.arg(ollama::embed::kOptions), req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Plain, res)) {
                 return;
             }

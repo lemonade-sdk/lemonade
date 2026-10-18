@@ -529,6 +529,21 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Ollama's generate applies it only to image models",
+            [
+                "routes/ollama/generate.cpp:kCfgScale",
+                "routes/openai/images/images_generations.cpp:openai::images::kCfgScale",
+            ],
+        ),
+        (
+            "Ollama's generate applies it only to image models; audio and image generation "
+            "always run it",
+            [
+                "routes/ollama/generate.cpp:kSteps",
+                "routes/shared_args.cpp:inference::kSteps",
+            ],
+        ),
+        (
             "Each Ollama route honors a different set of option keys",
             [
                 "routes/ollama/chat.cpp:kOptions",
@@ -574,9 +589,10 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "sd.cpp turns a negative seed into a random one; the audio and 3D backends "
-            "forward it",
+            "Ollama's generate sends it to text and image models alike; sd.cpp turns a "
+            "negative seed into a random one; the audio and 3D backends forward it",
             [
+                "routes/ollama/generate.cpp:kSeed",
                 "routes/openai/images/images_generations.cpp:openai::images::kSeed",
                 "routes/shared_args.cpp:inference::kSeed",
             ],
@@ -628,11 +644,10 @@ def split_initializer(text: str) -> list[str]:
 
 def argument_signature(text: str, decl: re.Match) -> tuple:
     """What a RouteArg constant accepts and how it is handled, apart from its description:
-    its spellings, location, schema, and required, support, forwarded and drop_invalid
-    flags."""
+    its spellings, location, schema, and required, support and forwarded flags."""
     fields = split_initializer(decl.group(4))
-    fields += [""] * (7 - len(fields))
-    schema, required, supported, _, aliases, forwarded, drop_invalid = fields[:7]
+    fields += [""] * (6 - len(fields))
+    schema, required, supported, _, aliases, forwarded = fields[:6]
     local_schemas = {name: value for name, value in JSON_CONSTANT.findall(text)}
     schema = re.sub(r"\s+", " ", local_schemas.get(schema, schema))
     return (
@@ -642,7 +657,6 @@ def argument_signature(text: str, decl: re.Match) -> tuple:
         required or "false",
         supported or "Support::Available",
         forwarded or "false",
-        drop_invalid or "false",
     )
 
 

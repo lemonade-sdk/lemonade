@@ -174,7 +174,7 @@ std::string canonical_model_name(ServerContext& ctx, const std::string& name, bo
 std::string strip_latest_tag(const std::string& name);
 
 // Aborts the upstream backend request when the client disconnects during a non-streaming
-// request (Invariant #10), for as long as the returned scope lives.
+// request, for as long as the returned scope lives.
 std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const RouteRequest& req);
 
 // Adds the router decision to the response body and headers.

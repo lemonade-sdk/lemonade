@@ -47,7 +47,6 @@ extern const RouteArg kModel;
 } // namespace gateway
 
 namespace ollama {
-extern const RouteArg kCtxSize;
 extern const RouteArg kStream;
 extern const RouteArg kKeepAlive;
 } // namespace ollama
