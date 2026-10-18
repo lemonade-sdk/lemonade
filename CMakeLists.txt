@@ -3024,6 +3024,7 @@ set(_ROUTE_ARGS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_route_args.c
 if(BUILD_TESTING AND EXISTS "${_ROUTE_ARGS_TEST_SRC}")
     add_executable(test_route_args test/cpp/test_route_args.cpp)
     target_link_libraries(test_route_args PRIVATE lemonade-server-core)
+    add_dependencies(test_route_args copy_resources)
 
     include(CTest)
     add_cpp_ci_test(RouteArgsTest CI ON COMMAND test_route_args)

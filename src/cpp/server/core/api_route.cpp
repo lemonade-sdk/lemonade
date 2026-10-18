@@ -12,6 +12,7 @@
 #include "lemon/alias_manager.h"
 #include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
+#include "lemon/model_manager.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/model_loader.h"
@@ -752,7 +753,11 @@ std::string strip_latest_tag(const std::string& name) {
 }
 
 std::string canonical_model_name(ServerContext& ctx, const std::string& name, bool strip_latest) {
-    const std::string base = strip_latest ? strip_latest_tag(name) : name;
+    std::string base = strip_latest ? strip_latest_tag(name) : name;
+    if (base != name &&
+        (ctx.alias_manager->has_alias(name) || ctx.model_manager->model_exists(name))) {
+        base = name;
+    }
     if (auto target = ctx.alias_manager->resolve_alias(base)) {
         return *target;
     }

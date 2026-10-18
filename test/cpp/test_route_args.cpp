@@ -3,6 +3,7 @@
 // how query and path values are typed, and how a client's model name is canonicalized.
 
 #include "lemon/alias_manager.h"
+#include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 
 #include <cstdio>
@@ -180,14 +181,21 @@ int main() {
         lemon::AliasManager aliases;
         std::string error;
         aliases.set_alias("nickname", "Qwen3-0.6B-GGUF", error);
+        lemon::ModelManager models;
+        models.register_user_model("user.Tagged:latest",
+                                   json{{"model_name", "user.Tagged:latest"}, {"recipe", "llamacpp"},
+                                        {"checkpoint", "example/tagged-GGUF:Q4_K_M"}});
         lemon::ServerContext ctx;
         ctx.alias_manager = &aliases;
+        ctx.model_manager = &models;
         check(lemon::canonical_model_name(ctx, "Qwen3-0.6B-GGUF:latest") == "Qwen3-0.6B-GGUF",
               "canonical_model_name strips :latest");
         check(lemon::canonical_model_name(ctx, "nickname:latest") == "Qwen3-0.6B-GGUF",
               "canonical_model_name follows an alias after stripping :latest");
         check(lemon::canonical_model_name(ctx, "Qwen3-0.6B-GGUF:latest", false) == "Qwen3-0.6B-GGUF:latest",
               "canonical_model_name keeps :latest when asked to");
+        check(lemon::canonical_model_name(ctx, "user.Tagged:latest") == "user.Tagged:latest",
+              "canonical_model_name keeps :latest on a registered name that ends in it");
     }
 
     std::printf("%d failure(s)\n", failures);

@@ -169,7 +169,7 @@ private:
 };
 
 // Clients name models by aliases and, following Ollama, with a ":latest" tag; this returns
-// the name the registry knows.
+// the name the registry knows. A registered model or alias may itself end in ":latest".
 std::string canonical_model_name(ServerContext& ctx, const std::string& name, bool strip_latest = true);
 std::string strip_latest_tag(const std::string& name);
 
