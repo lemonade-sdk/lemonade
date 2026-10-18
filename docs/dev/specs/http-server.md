@@ -481,7 +481,6 @@ Registration follows these rules:
 - **One file per route.** A route is one `.cpp` file that defines its class and a `make_<name>_route()` factory. Headers for core components and services go in `src/cpp/include/lemon/server/`; route classes have no header.
 - **One list per folder.** Each folder's `routes.cpp` declares its factories and adds them to the `RouteRegistry` in registration order. `Server` calls each folder's registration function. CMake collects `routes/` sources with `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`, as it does for `docs/api`, so adding a route edits no CMake file.
 - **Order.** httplib uses the first registered route that matches, so routes register in the order each folder's `routes.cpp` lists them, and a folder lists a specific path before a pattern that also matches it, such as `models/{id}/files` before `models/{id}`. `WebUi` registers its catch-all route after every API route.
-- **Pages.** The [Router API](../../api/router.md) page documents the routing concepts and `/routing/validate`. The [Internal API](../../api/internal.md) page documents all 14 internal routes.
 - **Gateways.** The Anthropic routes live in `routes/anthropic/`, separate from Ollama's. The OpenAI-to-gateway stream conversion both use lives in `services/`. `McpServer`'s HTTP route is a route class in `routes/mcp/`.
 
 ## Core Components
