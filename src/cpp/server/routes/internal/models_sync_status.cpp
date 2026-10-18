@@ -14,7 +14,9 @@ const RouteError kInvalidSyncId{
     400, "", "`sync_id` does not start with a number, or is too large for 64 bits"};
 
 const RouteArg kSyncId{"sync_id", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
-                       "Sync to report. Defaults to the latest."};
+                       "Sync to report. Defaults to the latest. For a sync that has finished, the answer is "
+                       "the status recorded when it finished, `completed_sync_id` and `already_in_progress` "
+                       "included."};
 
 class ModelsSyncStatusRoute : public ApiRoute {
 public:
