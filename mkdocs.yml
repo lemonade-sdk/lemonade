@@ -68,6 +68,7 @@ nav:
       - Docker: guide/install/docker.md
       - macOS: guide/install/macos.md
     - Local Server Concepts: guide/concepts.md
+    - GUI3 app: guide/gui3.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md
     - Configuration:

@@ -1,0 +1,719 @@
+import api, { DownloadProgressEvent } from '../../api';
+
+export type DownloadStatus = 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | 'deleting';
+export type DownloadType = 'model' | 'backend';
+
+type NumericRecord = Record<string, number>;
+
+export interface DownloadListItem {
+  id: string;
+  downloadType: DownloadType;
+  modelName: string;
+  fileName: string;
+  fileIndex: number;
+  totalFiles: number;
+  bytesDownloaded: number;
+  bytesTotal: number;
+  bytesTotalIsLowerBound?: boolean;
+  percent: number;
+  status: DownloadStatus;
+  error?: string;
+  createdAt: number;
+  startTime: number;
+  bytesResumed: number;
+  running?: boolean;
+  speedBytesPerSecond?: number;
+  speedSampleTime?: number;
+  speedSampleBytes?: number;
+  collectionComponents?: string[];
+  declaredTotalBytes?: number;
+  completedFilesBytes?: number;
+  knownFileSizes?: NumericRecord;
+  preExistingBytes?: NumericRecord;
+  updatedAt: number;
+  terminalAt?: number;
+  raw?: DownloadProgressEvent;
+}
+
+type Listener = (downloads: DownloadListItem[]) => void;
+
+const DISMISSED_STORAGE_KEY = 'lemonade_download_manager_dismissed_v1';
+const POLL_MS = 1000;
+const WAKE_REFRESH_MIN_INTERVAL_MS = 500;
+const SPEED_SMOOTHING_ALPHA = 0.35;
+
+function now(): number { return Date.now(); }
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function timestampNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric)) {
+      const parsed = Date.parse(trimmed);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    }
+    value = numeric;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  // Server timestamps may be Unix seconds or milliseconds.
+  return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+}
+
+function creationTimeFromRaw(raw: DownloadProgressEvent): number | undefined {
+  const values = [
+    raw.created_at,
+    raw.createdAt,
+    raw.started_at,
+    raw.startedAt,
+    raw.start_time,
+    raw.startTime,
+  ];
+  for (const value of values) {
+    const timestamp = timestampNumber(value);
+    if (timestamp != null) return timestamp;
+  }
+  return undefined;
+}
+
+function positiveInt(value: unknown, fallback: number): number {
+  const n = Math.floor(finiteNumber(value, fallback));
+  return n > 0 ? n : fallback;
+}
+
+function clampPercent(value: unknown): number {
+  const n = finiteNumber(value, 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, n));
+}
+
+function sumRecord(values: NumericRecord | undefined): number {
+  if (!values) return 0;
+  return Object.values(values).reduce((sum, value) => sum + (Number.isFinite(value) && value > 0 ? value : 0), 0);
+}
+
+function recordSize(values: NumericRecord | undefined): number {
+  if (!values) return 0;
+  return Object.keys(values).length;
+}
+
+function getProgressDownloadedBytes(raw: DownloadProgressEvent): number {
+  const serverCumulativeBytes = optionalNumber(raw.cumulative_bytes_downloaded)
+    ?? optionalNumber(raw.overall_bytes_downloaded)
+    ?? optionalNumber((raw as any).cumulativeBytesDownloaded)
+    ?? optionalNumber((raw as any).overallBytesDownloaded);
+  if (serverCumulativeBytes != null) return Math.max(0, serverCumulativeBytes);
+
+  const completedFilesBytes = optionalNumber((raw as any).completed_files_bytes ?? (raw as any).completedFilesBytes) ?? 0;
+  const currentFileBytes = optionalNumber(raw.bytes_downloaded ?? (raw as any).bytesDownloaded) ?? 0;
+  return Math.max(0, completedFilesBytes + currentFileBytes);
+}
+
+export function isDownloadTerminal(download: Pick<DownloadListItem, 'status' | 'running'>): boolean {
+  return download.running !== true && (
+    download.status === 'completed'
+    || download.status === 'error'
+    || download.status === 'cancelled'
+  );
+}
+
+export function isDownloadActive(download: Pick<DownloadListItem, 'status' | 'running'>): boolean {
+  return download.running === true || download.status === 'downloading';
+}
+
+function normalizeDownloadType(raw: DownloadProgressEvent): DownloadType {
+  const type = String(raw.type || '').toLowerCase();
+  const id = String(raw.id || '').toLowerCase();
+  if (type === 'backend' || id.startsWith('backend:')) return 'backend';
+  return 'model';
+}
+
+function nameFromDownload(raw: DownloadProgressEvent, type: DownloadType): string {
+  const id = String(raw.id || '');
+  const name = String(raw.model_name || raw.name || '').trim();
+  if (name) return name;
+  if (type === 'model' && id.startsWith('model:')) return id.slice('model:'.length);
+  if (type === 'backend' && id.startsWith('backend:')) return id.slice('backend:'.length);
+  return id;
+}
+
+function idFromDownload(raw: DownloadProgressEvent, type: DownloadType, modelName: string): string {
+  const rawId = String(raw.id || '').trim();
+  const name = modelName.trim();
+  const stable = name ? `${type}:${name}` : '';
+
+  // Lemonade main keeps one logical row per model/backend. Some server/SSE
+  // payloads include per-file ids that still begin with model:/backend:; using
+  // those ids would split one pull into multiple UI rows and leave the model row
+  // progress on the raw per-file percentage. Prefer the caller/server model name
+  // whenever we have it, and only fall back to the raw id when there is no stable
+  // logical name to key by.
+  if (stable) return stable;
+  return rawId;
+}
+
+function payloadErrorMessage(raw: DownloadProgressEvent): string | undefined {
+  const statusValue = (raw as any).status;
+  const s = String(statusValue || '').toLowerCase();
+  const message = (raw as any).message || (raw as any).detail;
+  const httpStatus = optionalNumber(
+    (raw as any).status_code
+    ?? (raw as any).statusCode
+    ?? (raw as any).http_status
+    ?? (raw as any).httpStatus
+    ?? (raw as any).code
+    ?? (raw as any).error_code
+    ?? (raw as any).errorCode,
+  );
+  const numericStatus = typeof statusValue === 'number' ? statusValue : optionalNumber(/^\d{3}$/.test(s) ? s : undefined);
+  const code = httpStatus ?? numericStatus;
+  const messageText = typeof message === 'string' ? message.trim() : '';
+
+  const rawError = (raw as any).error;
+  let errorText = '';
+  if (typeof rawError === 'string' && rawError.trim()) {
+    errorText = rawError.trim();
+  } else if (rawError && typeof rawError === 'object' && !Array.isArray(rawError)) {
+    const nested = (rawError as any).message || (rawError as any).error || (rawError as any).detail;
+    if (typeof nested === 'string' && nested.trim()) errorText = nested.trim();
+  }
+
+  const failed = Boolean(errorText)
+    || (raw as any).ok === false
+    || (code != null && code >= 400)
+    || s === 'error'
+    || s === 'failed'
+    || s === 'failure'
+    || s === 'not_found'
+    || s === 'not-found'
+    || /(^|\D)404(\D|$)|not[ _-]?found/i.test(`${s} ${messageText} ${errorText}`);
+  if (!failed) return undefined;
+
+  const detail = errorText || messageText;
+  if (code != null && code >= 400) {
+    if (detail && !new RegExp(`(^|\\D)${code}(\\D|$)`).test(detail)) {
+      return `HTTP ${code}: ${detail}`;
+    }
+    return detail || `Download failed with HTTP ${code}.`;
+  }
+  return detail || 'Download failed.';
+}
+
+function statusFromDownload(raw: DownloadProgressEvent): DownloadStatus {
+  const statusValue = (raw as any).status;
+  const s = String(statusValue || '').toLowerCase();
+  if (payloadErrorMessage(raw)) return 'error';
+  if (raw.complete === true || s === 'completed' || s === 'complete' || s === 'success' || s === 'done') return 'completed';
+  if (s === 'paused' || s === 'pausing') return 'paused';
+  if (s === 'cancelled' || s === 'canceled' || s === 'canceling' || s === 'cancelling') return 'cancelled';
+  if (s === 'deleting') return 'deleting';
+  return 'downloading';
+}
+
+function normalizeCollectionComponents(raw: DownloadProgressEvent): string[] | undefined {
+  const values = (raw as any).collection_components ?? (raw as any).collectionComponents ?? (raw as any).components;
+  if (!Array.isArray(values)) return undefined;
+  const components = values.map(item => String(item || '').trim()).filter(Boolean);
+  return components.length > 0 ? components : undefined;
+}
+
+function calculateProgress(raw: DownloadProgressEvent, previous: DownloadListItem | undefined, status: DownloadStatus) {
+  const fileIndex = positiveInt(raw.file_index ?? (raw as any).fileIndex, previous?.fileIndex || 1);
+  const totalFiles = positiveInt(raw.total_files ?? (raw as any).totalFiles, previous?.totalFiles || 1);
+  const previousCurrentFileBytes = previous && fileIndex === previous.fileIndex ? finiteNumber(previous.raw?.bytes_downloaded, 0) : 0;
+  const currentFileBytes = Math.max(0, finiteNumber(raw.bytes_downloaded, previousCurrentFileBytes));
+  const currentFileTotal = optionalNumber(raw.bytes_total);
+  const rawFilePercent = optionalNumber(raw.percent);
+  const previousFilePercent = previous && fileIndex === previous.fileIndex ? optionalNumber(previous.raw?.percent) : undefined;
+  const currentFilePercent = rawFilePercent
+    ?? (currentFileTotal && currentFileTotal > 0 ? (currentFileBytes / currentFileTotal) * 100 : undefined)
+    ?? previousFilePercent;
+
+  const knownFileSizes: NumericRecord = { ...(previous?.knownFileSizes || {}) };
+  if (currentFileTotal && currentFileTotal > 0) knownFileSizes[String(fileIndex)] = currentFileTotal;
+
+  const preExistingBytes: NumericRecord = { ...(previous?.preExistingBytes || {}) };
+  const bytesPreviouslyDownloaded = optionalNumber((raw as any).bytes_previously_downloaded ?? (raw as any).bytesPreviouslyDownloaded);
+  if (bytesPreviouslyDownloaded && bytesPreviouslyDownloaded > 0 && preExistingBytes[String(fileIndex)] == null) {
+    preExistingBytes[String(fileIndex)] = bytesPreviouslyDownloaded;
+  }
+
+  const previousCompleted = Math.max(0, previous?.completedFilesBytes || 0);
+  const serverCompletedFilesBytes = optionalNumber((raw as any).completed_files_bytes ?? (raw as any).completedFilesBytes);
+  let completedFilesBytes = previousCompleted;
+  if (serverCompletedFilesBytes != null) {
+    completedFilesBytes = Math.max(previousCompleted, serverCompletedFilesBytes);
+  } else if (previous && fileIndex > previous.fileIndex) {
+    const previousFileSize = previous.knownFileSizes?.[String(previous.fileIndex)]
+      ?? optionalNumber(previous.raw?.bytes_total)
+      ?? 0;
+    completedFilesBytes = previousCompleted + previousFileSize;
+  }
+
+  const serverCumulativeBytes = optionalNumber(raw.cumulative_bytes_downloaded)
+    ?? optionalNumber(raw.overall_bytes_downloaded)
+    ?? optionalNumber((raw as any).cumulativeBytesDownloaded)
+    ?? optionalNumber((raw as any).overallBytesDownloaded);
+  const bytesDownloaded = Math.max(0, serverCumulativeBytes ?? (completedFilesBytes + currentFileBytes));
+
+  const declaredTotalBytes = optionalNumber((raw as any).declared_total_bytes ?? (raw as any).declaredTotalBytes) ?? previous?.declaredTotalBytes;
+  const serverTotalBytes = optionalNumber(raw.total_download_size ?? (raw as any).totalDownloadSize);
+  const knownSizesTotal = sumRecord(knownFileSizes);
+  const knowsEveryFileSize = totalFiles > 0 && recordSize(knownFileSizes) >= totalFiles;
+  const isMultiFile = totalFiles > 1;
+
+  let bytesTotal = 0;
+  let bytesTotalIsLowerBound = false;
+  let hasRealTotal = false;
+
+  if (serverTotalBytes && serverTotalBytes > 0) {
+    bytesTotal = serverTotalBytes;
+    hasRealTotal = true;
+  } else if (declaredTotalBytes && declaredTotalBytes > 0) {
+    bytesTotal = declaredTotalBytes;
+    hasRealTotal = true;
+  } else if (isMultiFile) {
+    if (knowsEveryFileSize && knownSizesTotal > 0) {
+      bytesTotal = knownSizesTotal;
+      hasRealTotal = true;
+    } else {
+      bytesTotal = Math.max(bytesDownloaded, knownSizesTotal, previous?.bytesTotal || 0);
+      bytesTotalIsLowerBound = bytesTotal > 0;
+    }
+  } else if (currentFileTotal && currentFileTotal > 0) {
+    bytesTotal = currentFileTotal;
+    hasRealTotal = true;
+  } else {
+    bytesTotal = Math.max(bytesDownloaded, previous?.bytesTotal || 0);
+    bytesTotalIsLowerBound = bytesTotal > 0;
+  }
+
+  let percent = 0;
+  if (status === 'completed') {
+    percent = 100;
+  } else if (hasRealTotal && bytesTotal > 0) {
+    percent = (bytesDownloaded / bytesTotal) * 100;
+  } else if (isMultiFile) {
+    const completedFiles = Math.max(0, fileIndex - 1);
+    const perFilePercent = clampPercent(currentFilePercent ?? 0) / 100;
+    percent = ((completedFiles + perFilePercent) / totalFiles) * 100;
+  } else if (currentFilePercent != null) {
+    percent = currentFilePercent;
+  } else if (bytesTotal > 0) {
+    percent = (bytesDownloaded / bytesTotal) * 100;
+  }
+
+  const progressIsTerminal = status === 'completed' || status === 'error' || status === 'cancelled' || raw.complete === true;
+  percent = clampPercent(percent);
+  if (!progressIsTerminal && percent >= 100) percent = 99;
+
+  const totalPreExistingBytes = sumRecord(preExistingBytes);
+  const restoredBaselineBytes = previous ? 0 : getProgressDownloadedBytes(raw);
+  const speedBaselineBytes = Math.max(previous?.bytesResumed || 0, totalPreExistingBytes, restoredBaselineBytes);
+  const displayBytesDownloaded = bytesTotal > 0 && hasRealTotal ? Math.min(bytesDownloaded, bytesTotal) : bytesDownloaded;
+  const speedEligibleBytes = Math.max(0, displayBytesDownloaded - speedBaselineBytes);
+  const timestamp = now();
+  let speedBytesPerSecond = previous?.speedBytesPerSecond || 0;
+  const previousSampleBytes = previous?.speedSampleBytes;
+  const previousSampleTime = previous?.speedSampleTime;
+  const baselineChanged = speedBaselineBytes !== (previous?.bytesResumed || 0);
+
+  if (status !== 'downloading' || progressIsTerminal) {
+    speedBytesPerSecond = 0;
+  } else if (baselineChanged) {
+    speedBytesPerSecond = 0;
+  } else if (typeof previousSampleBytes === 'number' && typeof previousSampleTime === 'number' && timestamp > previousSampleTime) {
+    const elapsedSeconds = (timestamp - previousSampleTime) / 1000;
+    const deltaBytes = Math.max(0, speedEligibleBytes - previousSampleBytes);
+    const instantSpeed = elapsedSeconds > 0 ? deltaBytes / elapsedSeconds : 0;
+    speedBytesPerSecond = speedBytesPerSecond > 0
+      ? (speedBytesPerSecond * (1 - SPEED_SMOOTHING_ALPHA)) + (instantSpeed * SPEED_SMOOTHING_ALPHA)
+      : instantSpeed;
+  }
+
+  return {
+    fileIndex,
+    totalFiles,
+    bytesDownloaded: displayBytesDownloaded,
+    bytesTotal,
+    bytesTotalIsLowerBound,
+    percent,
+    completedFilesBytes,
+    knownFileSizes,
+    preExistingBytes,
+    declaredTotalBytes,
+    bytesResumed: speedBaselineBytes,
+    speedBytesPerSecond,
+    speedSampleTime: timestamp,
+    speedSampleBytes: speedEligibleBytes,
+  };
+}
+
+export function normalizeDownload(raw: DownloadProgressEvent, previous?: DownloadListItem): DownloadListItem | null {
+  const type = normalizeDownloadType(raw);
+  const modelName = nameFromDownload(raw, type);
+  const id = idFromDownload(raw, type, modelName);
+  if (!id && !modelName) return null;
+  const timestamp = now();
+  const status = statusFromDownload(raw);
+  const progress = calculateProgress(raw, previous, status);
+  const hasExplicitRunning = typeof raw.running === 'boolean';
+  let running = hasExplicitRunning ? raw.running : previous?.running;
+  // The server may publish a terminal-looking status while its worker is still
+  // unwinding. Preserve an explicit running=true; only infer stopped when no
+  // running state exists at all. An explicit completion event is also terminal
+  // on older servers that predate the `running` field.
+  if (!hasExplicitRunning && (raw.complete === true || status === 'completed' || status === 'cancelled')) {
+    running = false;
+  } else if (running == null && (status === 'error')) {
+    running = false;
+  }
+  const terminalAt = isDownloadTerminal({ status, running })
+    ? (previous?.terminalAt || previous?.updatedAt || timestamp)
+    : undefined;
+  const createdAt = previous?.createdAt ?? creationTimeFromRaw(raw) ?? timestamp;
+  const startTime = previous?.startTime
+    ?? (status === 'downloading' ? timestamp : finiteNumber(raw.start_time ?? raw.startTime, timestamp));
+  const normalizedError = payloadErrorMessage(raw) || (typeof raw.error === 'string' ? raw.error : undefined);
+  const error = normalizedError && normalizedError !== 'Download failed.'
+    ? normalizedError
+    : (previous?.error || normalizedError);
+
+  return {
+    id: id || `${type}:${modelName}`,
+    downloadType: type,
+    modelName: modelName || id,
+    fileName: String(raw.file || (raw as any).file_name || (raw as any).filename || previous?.fileName || '').trim(),
+    fileIndex: progress.fileIndex,
+    totalFiles: progress.totalFiles,
+    bytesDownloaded: progress.bytesDownloaded,
+    bytesTotal: progress.bytesTotal,
+    bytesTotalIsLowerBound: progress.bytesTotalIsLowerBound,
+    percent: progress.percent,
+    status,
+    error,
+    createdAt,
+    startTime,
+    bytesResumed: progress.bytesResumed,
+    running,
+    speedBytesPerSecond: progress.speedBytesPerSecond,
+    speedSampleTime: progress.speedSampleTime,
+    speedSampleBytes: progress.speedSampleBytes,
+    collectionComponents: normalizeCollectionComponents(raw) || previous?.collectionComponents,
+    declaredTotalBytes: progress.declaredTotalBytes,
+    completedFilesBytes: progress.completedFilesBytes,
+    knownFileSizes: progress.knownFileSizes,
+    preExistingBytes: progress.preExistingBytes,
+    updatedAt: timestamp,
+    terminalAt,
+    raw,
+  };
+}
+
+function sortDownloads(downloads: DownloadListItem[]): DownloadListItem[] {
+  // Match browser download managers: newest-created item first, with a stable
+  // position for the lifetime of the row. Sorting by updatedAt made concurrent
+  // downloads swap places on every progress poll; status grouping also moved a
+  // row as soon as it completed. JavaScript's stable sort preserves insertion
+  // order when two server items have the same creation timestamp.
+  return [...downloads].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+type DismissedDownload = {
+  createdAt: number;
+  dismissedAt: number;
+};
+
+type DismissedDownloads = Record<string, DismissedDownload>;
+
+function readDismissed(): DismissedDownloads {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(DISMISSED_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const kept: DismissedDownloads = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([id, value]) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+      const record = value as Record<string, unknown>;
+      const createdAt = finiteNumber(record.createdAt, 0);
+      const dismissedAt = finiteNumber(record.dismissedAt, 0);
+      if (createdAt > 0 && dismissedAt > 0) kept[id] = { createdAt, dismissedAt };
+    });
+    return kept;
+  } catch {
+    return {};
+  }
+}
+
+function writeDismissed(dismissed: DismissedDownloads): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const serialized = JSON.stringify(dismissed);
+    if (localStorage.getItem(DISMISSED_STORAGE_KEY) !== serialized) {
+      localStorage.setItem(DISMISSED_STORAGE_KEY, serialized);
+    }
+  } catch {
+    // Ignore unavailable storage; dismissal remains presentation-only.
+  }
+}
+
+function isDismissedTerminal(download: DownloadListItem, dismissed: DismissedDownloads): boolean {
+  const record = dismissed[download.id];
+  return Boolean(
+    record
+    && Math.abs(record.createdAt - download.createdAt) < 1
+    && isDownloadTerminal(download),
+  );
+}
+
+class DownloadStore {
+  private downloads: DownloadListItem[] = [];
+  private listeners = new Set<Listener>();
+  private visibleListeners = new Set<Listener>();
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshInFlight: Promise<void> | null = null;
+  private wakeRefreshQueued = false;
+  private lastRefreshStartedAt = 0;
+  private started = false;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (event) => {
+        if (event.key === DISMISSED_STORAGE_KEY) this.emitVisible();
+      });
+      window.addEventListener('focus', () => { if (this.started) void this.refresh(); });
+      window.addEventListener('online', () => { if (this.started) void this.refresh(); });
+    }
+  }
+
+  snapshot(): DownloadListItem[] {
+    return this.downloads;
+  }
+
+  visibleSnapshot(): DownloadListItem[] {
+    const dismissed = readDismissed();
+    return this.downloads.filter(download => !isDismissedTerminal(download, dismissed));
+  }
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    listener(this.downloads);
+    this.start();
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  subscribeVisible(listener: Listener): () => void {
+    this.visibleListeners.add(listener);
+    listener(this.visibleSnapshot());
+    this.start();
+    return () => {
+      this.visibleListeners.delete(listener);
+    };
+  }
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    void this.refresh();
+  }
+
+  async refresh(): Promise<void> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+
+    // An explicit refresh also satisfies any queued SSE wake-up. Pull progress
+    // is deliberately coalesced so a fast SSE stream cannot turn into a burst
+    // of GET /downloads requests.
+    this.clearPollTimer();
+    this.clearWakeTimer();
+    this.wakeRefreshQueued = false;
+    this.lastRefreshStartedAt = now();
+    this.refreshInFlight = (async () => {
+      try {
+        const serverDownloads = await api.downloads();
+        const normalized = serverDownloads
+          .map(raw => {
+            const previous = this.findExisting(raw);
+            const serverCreatedAt = creationTimeFromRaw(raw);
+            const sameAttempt = !previous
+              || serverCreatedAt == null
+              || Math.abs(serverCreatedAt - previous.createdAt) < 1;
+            return normalizeDownload(raw, sameAttempt ? previous : undefined);
+          })
+          .filter((item): item is DownloadListItem => Boolean(item));
+        this.replaceFromServer(normalized);
+      } catch {
+        // A failed poll is not an empty authoritative snapshot. Keep the last
+        // successful /downloads snapshot and retry only when server-owned work
+        // or a coalesced wake-up asks for another refresh.
+      }
+    })();
+    try {
+      await this.refreshInFlight;
+    } finally {
+      this.refreshInFlight = null;
+      this.syncPolling();
+      this.scheduleWakeRefresh();
+    }
+  }
+
+  wake(modelName?: string, type: DownloadType = 'model'): DownloadListItem | null {
+    this.start();
+    this.wakeRefreshQueued = true;
+    this.scheduleWakeRefresh();
+    if (!modelName) return null;
+    return this.downloads.find(item => (
+      item.downloadType === type
+      && (item.modelName === modelName || item.id === `${type}:${modelName}`)
+    )) || null;
+  }
+
+  dismiss(downloadId: string): void {
+    this.dismissMany([downloadId]);
+  }
+
+  dismissMany(downloadIds: string[]): void {
+    const ids = new Set(downloadIds.filter(Boolean));
+    if (ids.size === 0) return;
+
+    // Dismissal is presentation-only and is tied to one concrete server
+    // attempt. It never expires on a wall-clock TTL: a failed server-side
+    // remove therefore cannot make old history mysteriously reappear later.
+    const dismissed = readDismissed();
+    const dismissedAt = now();
+    this.downloads.forEach(download => {
+      if (ids.has(download.id) && isDownloadTerminal(download)) {
+        dismissed[download.id] = { createdAt: download.createdAt, dismissedAt };
+      }
+    });
+    writeDismissed(dismissed);
+    this.emitVisible();
+  }
+
+  private findExisting(raw: DownloadProgressEvent): DownloadListItem | undefined {
+    const type = normalizeDownloadType(raw);
+    const modelName = nameFromDownload(raw, type);
+    const id = idFromDownload(raw, type, modelName);
+    return this.downloads.find(item => item.id === id || (modelName && item.downloadType === type && item.modelName === modelName));
+  }
+
+  private replaceFromServer(incoming: DownloadListItem[]): void {
+    const map = new Map<string, DownloadListItem>();
+    incoming.forEach(item => {
+      const existing = map.get(item.id);
+      if (!existing || item.updatedAt >= existing.updatedAt) map.set(item.id, item);
+    });
+
+    const dismissed = readDismissed();
+    Object.entries(dismissed).forEach(([id, record]) => {
+      const item = map.get(id);
+      // Missing rows, active rows, and a new attempt with the same stable id all
+      // invalidate an old presentation-only dismissal. This also handles a CLI
+      // retry that starts and finishes while GUI polling is idle.
+      if (!item
+        || isDownloadActive(item)
+        || Math.abs(item.createdAt - record.createdAt) >= 1) {
+        delete dismissed[id];
+      }
+    });
+    writeDismissed(dismissed);
+
+    this.downloads = sortDownloads(Array.from(map.values()));
+    this.emit();
+    this.emitVisible();
+    this.syncPolling();
+  }
+
+  private emit(): void {
+    const snapshot = this.downloads;
+    this.listeners.forEach(listener => listener(snapshot));
+  }
+
+  private emitVisible(): void {
+    const snapshot = this.visibleSnapshot();
+    this.visibleListeners.forEach(listener => listener(snapshot));
+  }
+
+  private hasActiveDownloads(): boolean {
+    return this.downloads.some(isDownloadActive);
+  }
+
+  private clearWakeTimer(): void {
+    if (!this.wakeTimer) return;
+    clearTimeout(this.wakeTimer);
+    this.wakeTimer = null;
+  }
+
+  private scheduleWakeRefresh(): void {
+    if (!this.started || !this.wakeRefreshQueued || this.wakeTimer || this.refreshInFlight) return;
+    const elapsed = now() - this.lastRefreshStartedAt;
+    const delay = Math.max(0, WAKE_REFRESH_MIN_INTERVAL_MS - elapsed);
+    if (delay === 0) {
+      this.wakeRefreshQueued = false;
+      void this.refresh();
+      return;
+    }
+    this.wakeTimer = setTimeout(() => {
+      this.wakeTimer = null;
+      if (!this.wakeRefreshQueued) return;
+      this.wakeRefreshQueued = false;
+      void this.refresh();
+    }, delay);
+  }
+
+  private clearPollTimer(): void {
+    if (!this.pollTimer) return;
+    clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  private syncPolling(): void {
+    // The initial start()/explicit refresh is enough to discover server-owned
+    // work. Once the authoritative snapshot is idle, do not keep hitting
+    // /downloads. Coalesced pull/install wakes, focus/online, and an explicitly
+    // opened download manager can wake the store again.
+    if (!this.started || !this.hasActiveDownloads()) {
+      this.clearPollTimer();
+      return;
+    }
+    if (this.refreshInFlight || this.pollTimer) return;
+
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.refresh();
+    }, POLL_MS);
+  }
+}
+export const downloadStore = new DownloadStore();
+
+export function downloadsForModel(downloads: DownloadListItem[], modelName: string): DownloadListItem[] {
+  const target = modelName.trim().toLowerCase();
+  return downloads.filter(download => {
+    if (download.downloadType !== 'model') return false;
+    const name = download.modelName.trim().toLowerCase();
+    const id = download.id.trim().toLowerCase();
+    return name === target || id === `model:${target}` || id.endsWith(`:${target}`);
+  });
+}
+
+export function activeDownloadForModel(downloads: DownloadListItem[], modelName: string): DownloadListItem | undefined {
+  return downloadsForModel(downloads, modelName).find(download => !isDownloadTerminal(download));
+}

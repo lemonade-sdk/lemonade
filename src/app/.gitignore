@@ -40,3 +40,6 @@ pnpm-lock.yaml
 # Temporary files
 *.tmp
 .temp/
+
+# Playwright test results
+test-results/
