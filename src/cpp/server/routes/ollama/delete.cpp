@@ -5,6 +5,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/model_registration.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -28,11 +29,7 @@ public:
         s.notes = {
             "Success answers `200` with an empty body, as Ollama does.",
         };
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "Model to delete.",
-             {"name"}},
-        };
+        s.args = {ollama::management::kModel};
 
         // Deleting a model the docs need would break later examples, so this deletes the
         // one its own setup pulls.
@@ -52,8 +49,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            const json& request_json = req.body;
-            std::string name = strip_latest_tag(request_json["model"].get<std::string>());
+            std::string name = strip_latest_tag(req.arg(ollama::management::kModel).get<std::string>());
 
             delete_model_files(ctx_, name);
 

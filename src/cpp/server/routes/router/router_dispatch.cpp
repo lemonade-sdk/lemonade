@@ -6,19 +6,21 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/routing_classifier_services.h"
-#include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/server_context.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/conversation_fingerprint.h"
 
 namespace lemon {
 
 using json = nlohmann::json;
 
-std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, RouteRequest& req) {
-    if (!req.body.contains("model") || !req.body["model"].is_string()) {
+std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
+                                                    bool want_trace, json& body) {
+    if (model.empty()) {
         return std::nullopt;
     }
-    const std::string requested_model = req.body["model"].get<std::string>();
+    const std::string requested_model = model;
     try {
         if (!ctx.model_manager->model_exists(requested_model)) {
             return std::nullopt;
@@ -47,22 +49,21 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, RouteReq
         RoutingPolicyEngine engine(std::move(policy), std::move(services),
                                    std::move(cost_services));
 
-        RouteContext route_context = build_route_context(req.body, info.model_name);
-        const bool want_trace = req.body.value("route_trace", false);
+        RouteContext route_context = build_route_context(body, info.model_name);
         Decision decision = engine.route(route_context, want_trace);
 
         RouterDispatchResult result;
         result.requested_model = requested_model;
         result.selected_model = decision.route_to;
         result.decision = std::move(decision);
-        ctx.router->note_route_decision(utils::conversation_fingerprint(req.body),
+        ctx.router->note_route_decision(utils::conversation_fingerprint(body),
                                         result.selected_model);
 
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
                             << result.selected_model << "'" << std::endl;
-        req.body["model"] = result.selected_model;
-        req.body.erase("route_trace");
-        req.model = result.selected_model;
+        body[model_loading::kModel.name] = result.selected_model;
+        body.erase(openai::text::kRouteTrace.name);
+        model = result.selected_model;
         return result;
     } catch (const RouterResidencyConflictException&) {
         // A hardware-policy conflict is not a routing miss: answering it with 409

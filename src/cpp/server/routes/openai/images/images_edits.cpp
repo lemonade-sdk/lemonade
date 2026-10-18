@@ -12,6 +12,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 #include "lemon/utils/json_utils.h"
 
 namespace lemon {
@@ -86,6 +87,36 @@ std::pair<int, int> cap_image_area(int width, int height, std::uint64_t max_pixe
     return {scaled_width, scaled_height};
 }
 
+const ordered_json kIntegerSchema = {{"type", "integer"}};
+const ordered_json kStringSchema = {{"type", "string"}};
+const ordered_json kFileSchema = {{"type", "string"}, {"format", "binary"}};
+
+const RouteArg kImage{"image", ArgIn::Form, kFileSchema, true, Support::Available,
+                      "PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files "
+                      "are forwarded without re-encoding.", {"image[]"}};
+const RouteArg kPrompt{"prompt", ArgIn::Form, kStringSchema, true, Support::Available,
+                       "A text description of the desired edit."};
+const RouteArg kMask{"mask", ArgIn::Form, kFileSchema, false, Support::Available,
+                     "A PNG mask: white areas are edited and black areas are kept."};
+const RouteArg kSize{"size", ArgIn::Form, kStringSchema, false, Support::Available,
+                     "Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference "
+                     "image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` "
+                     "(2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips "
+                     "that cap; backend limits still apply."};
+const RouteArg kSteps{"steps", ArgIn::Form, kIntegerSchema, false, Support::Available,
+                      "Number of inference steps. Defaults to the model's own."};
+const RouteArg kCfgScale{"cfg_scale", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
+                         "Classifier-free guidance scale. Defaults to the model's own."};
+const RouteArg kSeed{"seed", ArgIn::Form, kIntegerSchema, false, Support::Available, "Random seed for reproducible output."};
+const RouteArg kBackground{"background", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
+                           "Accepted for OpenAI compatibility and ignored."};
+const RouteArg kQuality{"quality", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
+                        "Accepted for OpenAI compatibility and ignored."};
+const RouteArg kInputFidelity{"input_fidelity", ArgIn::Form, kStringSchema, false, Support::NotAvailable,
+                              "Accepted for OpenAI compatibility and ignored."};
+const RouteArg kOutputCompression{"output_compression", ArgIn::Form, kIntegerSchema, false, Support::NotAvailable,
+                                  "Accepted for OpenAI compatibility and ignored."};
+
 class ImagesEditsRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -120,44 +151,10 @@ public:
             "    open(\"edited_image.png\", \"wb\").write(image_data)\n"
             "    ```",
         };
-        const ordered_json integer = {{"type", "integer"}};
-        const ordered_json text = {{"type", "string"}};
-        const ordered_json file = {{"type", "string"}, {"format", "binary"}};
         s.args = {
-            {"model", ArgIn::Form, text, true, Support::Available,
-             "The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`)."},
-            {"image", ArgIn::Form, file, true, Support::Available,
-             "PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files "
-             "are forwarded without re-encoding.", {"image[]"}},
-            {"prompt", ArgIn::Form, text, true, Support::Available,
-             "A text description of the desired edit."},
-            {"mask", ArgIn::Form, file, false, Support::Available,
-             "A PNG mask: white areas are edited and black areas are kept."},
-            {"size", ArgIn::Form, text, false, Support::Available,
-             "Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference "
-             "image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` "
-             "(2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips "
-             "that cap; backend limits still apply."},
-            {"n", ArgIn::Form, {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}, false, Support::Available,
-             "Number of images to generate, from `1` to `10`. "
-             "Defaults to `1`."},
-            {"response_format", ArgIn::Form, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
-            {"steps", ArgIn::Form, integer, false, Support::Available,
-             "Number of inference steps. Defaults to the model's own."},
-            {"cfg_scale", ArgIn::Form, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. Defaults to the model's own."},
-            {"seed", ArgIn::Form, integer, false, Support::Available, "Random seed for reproducible output."},
-            {"user", ArgIn::Form, text, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
-            {"background", ArgIn::Form, text, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
-            {"quality", ArgIn::Form, text, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
-            {"input_fidelity", ArgIn::Form, text, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
-            {"output_compression", ArgIn::Form, integer, false, Support::NotAvailable,
-             "Accepted for OpenAI compatibility and ignored."},
+            model_loading::kFormModel, kImage, kPrompt, kMask, kSize, openai::image_uploads::kN,
+            openai::image_uploads::kResponseFormat, kSteps, kCfgScale, kSeed,
+            openai::image_uploads::kUser, kBackground, kQuality, kInputFidelity, kOutputCompression
         };
 
         RouteResponse response;
@@ -186,32 +183,34 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kFormModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
-        if (!attach_form_image(req, res, /*allow_multiple=*/true)) {
+        if (!attach_form_image(req, res, kImage, /*allow_multiple=*/true)) {
             return false;
         }
 
         // The first uploaded image sets the output size unless explicitly provided.
-        if (!req.body.contains("size")) {
+        if (!req.has(kSize)) {
             std::uint64_t soft_pixel_cap = kDefaultMaxEditPixels;
             const auto model = ctx_.router->try_get_model_info(req.model);
             if (model && model->image_defaults.soft_pixel_cap > 0) {
                 soft_pixel_cap = model->image_defaults.soft_pixel_cap;
             }
-            const httplib::FormData* first = find_form_file(req.http, {"image", "image[]"});
+            const httplib::FormData* first = req.file(kImage);
             const auto original = image_dimensions_from_bytes(first->content);
             if (original) {
                 const auto [width, height] =
                     cap_image_area(original->first, original->second, soft_pixel_cap);
-                req.body["size"] = std::to_string(width) + "x" + std::to_string(height);
+                req.body[kSize.name] = std::to_string(width) + "x" + std::to_string(height);
             } else {
                 LOG(WARNING, "Server") << "Cannot determine source image dimensions; "
                     "using backend defaults" << std::endl;
             }
         }
 
-        if (const httplib::FormData* mask = find_form_file(req.http, {"mask"})) {
+        if (const httplib::FormData* mask = req.file(kMask)) {
             req.body["mask_data"] = utils::JsonUtils::base64_encode(mask->content);
             req.body["mask_filename"] = mask->filename;
             LOG(INFO, "Server") << "Mask file: " << mask->filename

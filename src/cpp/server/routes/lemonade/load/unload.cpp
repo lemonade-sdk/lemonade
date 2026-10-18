@@ -14,6 +14,9 @@ const RouteError kNotLoaded{
     "The named model is not loaded, which includes an omni collection, whose components are "
     "unloaded by their own names"};
 
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                          "The model to unload; omit it to unload every model.", {"model"}};
+
 class UnloadRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -26,10 +29,7 @@ public:
         s.summary = "Unload a model";
         s.description =
             "Unloads a model from memory, freeing it while `lemond` keeps running.";
-        s.args = {
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The model to unload; omit it to unload every model.", {"model"}},
-        };
+        s.args = {kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -61,9 +61,10 @@ public:
             LOG(DEBUG, "Server") << "Request method: " << http.method << ", body length: " << http.body.length() << std::endl;
             LOG(DEBUG, "Server") << "Content-Type: " << http.get_header_value("Content-Type") << std::endl;
 
-            json& request_json = req.body;
-            resolve_model_name(ctx_, request_json);
-            std::string model_name = request_json.value("model_name", "");
+            std::string model_name = req.value(kModelName, "");
+            if (!model_name.empty()) {
+                model_name = canonical_model_name(ctx_, model_name);
+            }
 
             ctx_.router->unload_model(model_name);  // Empty string = unload all
 

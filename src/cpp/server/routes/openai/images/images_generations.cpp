@@ -4,6 +4,8 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/image_responses.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -11,6 +13,30 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+} // namespace
+
+namespace openai::images {
+
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                       "The text description of the image to generate."};
+const RouteArg kSize{"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                     "Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to the model's own, else `512x512`."};
+const RouteArg kN{"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                  "Number of images to generate. Defaults to `1`."};
+const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
+                               "Only `b64_json`, a base64-encoded image, is supported.", {}, true};
+const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                         "Classifier-free guidance scale. Defaults to the model's own, else `7.0`."};
+const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+                     "Random seed for reproducible output; a negative value picks a random seed. Defaults "
+                     "to the backend's fixed seed."};
+
+} // namespace openai::images
+
+namespace {
+
+using namespace openai::images;
 
 class ImagesGenerationsRoute : public ModelRoute {
 public:
@@ -26,23 +52,8 @@ public:
         s.description =
             "Generates an image from a text prompt. CPU inference takes minutes per image; a GPU backend is much faster.";
         s.args = {
-            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The text description of the image to generate."},
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`)."},
-            {"size", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Image size as `WIDTHxHEIGHT`, such as `256x256`. Defaults to the model's own, else `512x512`."},
-            {"n", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of images to generate. Defaults to `1`."},
-            {"response_format", ArgIn::JsonBody, {{"const", "b64_json"}}, false, Support::Partial,
-             "Only `b64_json`, a base64-encoded image, is supported.", {}, true},
-            {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of inference steps. Defaults to the model's own, else `20`."},
-            {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance scale. Defaults to the model's own, else `7.0`."},
-            {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducible output; a negative value picks a random seed. Defaults "
-             "to the backend's fixed seed."},
+            kPrompt, model_loading::kModel, kSize, kN, kResponseFormat, inference::kSteps,
+            kCfgScale, kSeed
         };
 
         RouteResponse response;
@@ -68,6 +79,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
+
     bool validate(RouteRequest&, httplib::Response&) override {
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
         return true;

@@ -19,11 +19,11 @@ using ModelOptionsMutation =
 // The saved, effective and default options that every models/{id}/options route returns.
 nlohmann::ordered_json model_options_schema();
 
-// The three options routes resolve the model from the path, apply their mutation
+// The three options routes resolve the model their path's id names, apply their mutation
 // (none for GET), and answer with the saved, effective and default options. The
 // mutation updates info to the state the response describes; returning false means
 // it already wrote an error.
-void respond_with_model_options(ServerContext& ctx, const httplib::Request& http,
+void respond_with_model_options(ServerContext& ctx, const std::string& id,
                                 httplib::Response& res, const ModelOptionsMutation& mutation);
 std::vector<RouteError> model_options_errors();
 

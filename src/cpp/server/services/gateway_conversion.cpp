@@ -11,6 +11,7 @@
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -84,17 +85,16 @@ static std::string extract_quantization_level(const std::string& checkpoint) {
 } // namespace
 
 
-json gateway_load_options(const json& request) {
+json gateway_load_options(const json& options, const json& ctx_size) {
     json result = json::object();
 
-    if (request.contains("options") && request["options"].is_object() &&
-        request["options"].contains("num_ctx")) {
-        result["ctx_size"] = request["options"]["num_ctx"];
+    if (options.is_object() && options.contains("num_ctx")) {
+        result["ctx_size"] = options["num_ctx"];
     }
 
     // Top-level wins over options.num_ctx, matching map_ollama_options precedence.
-    if (request.contains("ctx_size")) {
-        result["ctx_size"] = request["ctx_size"];
+    if (!ctx_size.is_null()) {
+        result["ctx_size"] = ctx_size;
     }
 
     return result;
@@ -129,33 +129,31 @@ ordered_json ollama_details_schema() {
 
 namespace {
 
-struct OptionMapping { const char* ollama_key; const char* openai_key; };
-
-const OptionMapping OPTION_MAPPINGS[] = {
-    {"temperature",    "temperature"},
-    {"top_p",          "top_p"},
-    {"seed",           "seed"},
-    {"stop",           "stop"},
-    {"num_predict",    "max_tokens"},
-    {"repeat_penalty", "frequency_penalty"},
-};
+struct OptionMapping { const char* ollama_key; const RouteArg& openai_arg; };
 
 } // namespace
 
-// Ollama accepts these both inside "options" and at the top level; top-level wins.
-void map_ollama_options(const json& ollama_request, json& openai_req) {
-    if (ollama_request.contains("options") && ollama_request["options"].is_object()) {
-        const auto& opts = ollama_request["options"];
-        for (const auto& m : OPTION_MAPPINGS) {
-            if (opts.contains(m.ollama_key)) {
-                openai_req[m.openai_key] = opts[m.ollama_key];
+// Ollama accepts these both inside options and at the top level; top-level wins.
+void map_ollama_options(const json& options, const json& ollama_request, json& openai_req) {
+    const OptionMapping mappings[] = {
+        {"temperature",    generation::kTemperature},
+        {"top_p",          generation::kTopP},
+        {"seed",           openai::text::kSeed},
+        {"stop",           openai::text::kStop},
+        {"num_predict",    openai::text::kMaxTokens},
+        {"repeat_penalty", openai::text::kFrequencyPenalty},
+    };
+    if (options.is_object()) {
+        for (const auto& m : mappings) {
+            if (options.contains(m.ollama_key)) {
+                openai_req[m.openai_arg.name] = options[m.ollama_key];
             }
         }
     }
 
-    for (const auto& m : OPTION_MAPPINGS) {
+    for (const auto& m : mappings) {
         if (ollama_request.contains(m.ollama_key)) {
-            openai_req[m.openai_key] = ollama_request[m.ollama_key];
+            openai_req[m.openai_arg.name] = ollama_request[m.ollama_key];
         }
     }
 }
@@ -193,10 +191,10 @@ void write_residency_conflict(const std::exception& error, ErrorFormat format,
 
 } // namespace
 
-bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model, const json& request,
+bool gateway_ensure_loaded(ModelLoader& loader, const std::string& model, const json& load_options,
                            ErrorFormat format, httplib::Response& res) {
     try {
-        loader.ensure_loaded(model, gateway_load_options(request));
+        loader.ensure_loaded(model, load_options);
         return true;
     } catch (const RouterResidencyConflictException& e) {
         write_residency_conflict(e, format, res);

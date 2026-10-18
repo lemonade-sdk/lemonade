@@ -9,6 +9,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -46,6 +47,46 @@ ordered_json load_schema() {
         ]
     })");
 }
+
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "[Lemonade Server model name](https://lemonade-server.ai/models.html) to load."};
+const RouteArg kPinned{"pinned", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
+                       "If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. "
+                       "When omitted, a loaded model keeps its pin state and a new load uses the model's "
+                       "saved `pinned` option, else `false`."};
+const RouteArg kSaveOptions{"save_options", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                            "If `true`, saves the options sent in this request as the model's "
+                            "`recipe_options.json` entry, replacing the stored one, so an option the request "
+                            "omits is no longer saved; one sent as `null` keeps its stored value. To "
+                            "save options without loading, or to change one option without resending the rest, "
+                            "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
+                            "`false`."};
+const RouteArg kLlamacppBackend{"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
+                                "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
+                                "or `system` for a `llama-server` already installed where supported."};
+const RouteArg kLlamacppArgs{"llamacpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
+                             "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
+                             "with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, "
+                             "`--model-draft`, `--embeddings`, `--reranking` and `--metrics`."};
+const RouteArg kWhispercppBackend{"whispercpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
+                                  "`whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or "
+                                  "`metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports."};
+const RouteArg kWhispercppArgs{"whispercpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
+                               "`whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, "
+                               "`--model` and `--port` are rejected."};
+const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
+                      "`sd-cpp`: inference steps per image. Defaults to the model's own, else `20`."};
+const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", json::array({"number", "null"})}}, false, Support::Available,
+                         "`sd-cpp`: classifier-free guidance scale. Defaults to the model's own, else `7.0`."};
+const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
+                      "`sd-cpp`: image width in pixels. Defaults to the model's own, else `512`."};
+const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
+                       "`sd-cpp`: image height in pixels. Defaults to the model's own, else `512`."};
+const RouteArg kMergeArgs{"merge_args", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
+                          "If `true`, server-wide `*_args` still apply when the request sends `*_args`. If "
+                          "`false`, the request's `*_args` are the only arguments passed: server-wide, saved "
+                          "and architecture `*_args` are dropped, as are the arguments Lemonade adds to "
+                          "`llama-server` by default, such as `--parallel 1`. Defaults to `true`."};
 
 class LoadRoute : public ApiRoute {
 public:
@@ -99,48 +140,9 @@ public:
             "```",
         };
         s.args = {
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to load."},
-            {"pinned", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
-             "If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. "
-             "When omitted, a loaded model keeps its pin state and a new load uses the model's "
-             "saved `pinned` option, else `false`."},
-            {"save_options", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If `true`, saves the options sent in this request as the model's "
-             "`recipe_options.json` entry, replacing the stored one, so an option the request "
-             "omits is no longer saved; one sent as `null` keeps its stored value. To "
-             "save options without loading, or to change one option without resending the rest, "
-             "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
-             "`false`."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-             "Recipes that take a context size, such as `llamacpp`, `flm`, `ryzenai-llm` and "
-             "`vllm`: context size, or `-1` to size it automatically."},
-            {"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
-             "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
-             "or `system` for a `llama-server` already installed where supported."},
-            {"llamacpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
-             "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
-             "with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, "
-             "`--model-draft`, `--embeddings`, `--reranking` and `--metrics`."},
-            {"whispercpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
-             "`whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or "
-             "`metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports."},
-            {"whispercpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
-             "`whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, "
-             "`--model` and `--port` are rejected."},
-            {"steps", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-             "`sd-cpp`: inference steps per image. Defaults to the model's own, else `20`."},
-            {"cfg_scale", ArgIn::JsonBody, {{"type", json::array({"number", "null"})}}, false, Support::Available,
-             "`sd-cpp`: classifier-free guidance scale. Defaults to the model's own, else `7.0`."},
-            {"width", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-             "`sd-cpp`: image width in pixels. Defaults to the model's own, else `512`."},
-            {"height", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-             "`sd-cpp`: image height in pixels. Defaults to the model's own, else `512`."},
-            {"merge_args", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
-             "If `true`, server-wide `*_args` still apply when the request sends `*_args`. If "
-             "`false`, the request's `*_args` are the only arguments passed: server-wide, saved "
-             "and architecture `*_args` are dropped, as are the arguments Lemonade adds to "
-             "`llama-server` by default, such as `--parallel 1`. Defaults to `true`."},
+            kModelName, kPinned, kSaveOptions, model_options::kCtxSize, kLlamacppBackend,
+            kLlamacppArgs, kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale, kWidth, kHeight,
+            kMergeArgs
         };
 
         RouteResponse response;
@@ -170,9 +172,10 @@ public:
 
         ModelManager& model_manager = *ctx_.model_manager;
 
+        req.body[kModelName.name] =
+            canonical_model_name(ctx_, req.arg(kModelName).get<std::string>(), /*strip_latest=*/false);
+        const std::string model_name = req.arg(kModelName).get<std::string>();
         json& request_json = req.body;
-        resolve_model_name(ctx_, request_json, /*strip_latest=*/false);
-        const std::string model_name = request_json["model_name"].get<std::string>();
 
         try {
             // Cloud models are registered at cache build, cloud auth and install, so an
@@ -195,10 +198,10 @@ public:
                 }
             }
 
-            bool save_options = request_json.value("save_options", false);
+            bool save_options = req.value(kSaveOptions, false);
             std::optional<bool> pinned_opt = std::nullopt;
-            if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
-                pinned_opt = request_json["pinned"].get<bool>();
+            if (req.arg(kPinned).is_boolean()) {
+                pinned_opt = req.arg(kPinned).get<bool>();
             }
 
             LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
