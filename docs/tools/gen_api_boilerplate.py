@@ -2002,6 +2002,33 @@ def update_page(
     return text, problems
 
 
+MKDOCS = REPO_ROOT / "mkdocs.yml"
+NAV_PAGE_RE = re.compile(r"^\s*- [^:\n]+: api/([\w-]+)\.md\s*$", re.MULTILINE)
+INDEX_ROW_RE = re.compile(r"^\| \[[^\]]+\]\(\./([\w-]+)\.md\)", re.MULTILINE)
+
+
+def page_listing_problems(pages: set[str]) -> list[str]:
+    """Every page with routes is in the site nav and the API reference's page table,
+    and neither lists a page that has none."""
+    problems = []
+    listings = {
+        "mkdocs.yml nav": set(NAV_PAGE_RE.findall(MKDOCS.read_text(encoding="utf-8")))
+        - {"README"},
+        "docs/api/README.md page table": set(
+            INDEX_ROW_RE.findall((API_DOCS / "README.md").read_text(encoding="utf-8"))
+        ),
+    }
+    for where, listed in listings.items():
+        problems += [
+            f"{where} has no entry for api/{page}.md" for page in sorted(pages - listed)
+        ]
+        problems += [
+            f"{where} lists api/{page}.md, which has no routes"
+            for page in sorted(listed - pages)
+        ]
+    return problems
+
+
 # --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
@@ -2106,6 +2133,7 @@ def main() -> int:
     for spec in route_list:
         pages.setdefault(page_of(spec["id"]), []).append(spec)
 
+    problems += page_listing_problems(set(pages))
     stale_pages = []
     for page, page_specs in pages.items():
         path = API_DOCS / f"{page}.md"
