@@ -74,8 +74,9 @@ const RouteArg kEmbedding{"embedding", ArgIn::JsonBody, {{"type", "boolean"}}, f
 const RouteArg kReranking{"reranking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                           "`true` adds the `reranking` label. Defaults to `false`."};
 const RouteArg kMmproj{"mmproj", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                       "Multimodal projector file for a vision model, in the `checkpoint` repository. The "
-                       "same as `checkpoints.mmproj`."};
+                       "Multimodal projector file for a vision model, as a filename in the "
+                       "`checkpoint` repository, such as `mmproj-model-f16.gguf`. "
+                       "`checkpoints.mmproj` takes the same file as `repository:filename`."};
 const RouteArg kComponents{"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
                            "Required for an omni collection registered without a `checkpoint`: the component "
                            "model names, in order; each must be a regular model, not a collection."};

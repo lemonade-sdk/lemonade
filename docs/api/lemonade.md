@@ -341,7 +341,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `vision` | No | `true` adds the `vision` label, for a model that accepts images. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `embedding` | No | `true` adds the `embeddings` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `reranking` | No | `true` adds the `reranking` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `mmproj` | No | Multimodal projector file for a vision model, in the `checkpoint` repository. The same as `checkpoints.mmproj`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mmproj` | No | Multimodal projector file for a vision model, as a filename in the `checkpoint` repository, such as `mmproj-model-f16.gguf`. `checkpoints.mmproj` takes the same file as `repository:filename`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `components` | No | Required for an omni collection registered without a `checkpoint`: the component model names, in order; each must be a regular model, not a collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `models` | No | Full model definitions, one per `components` entry, with the same fields as a single registration. Components not yet registered are registered from them; registered ones keep their local definition. Without `models`, every component must already be registered. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `labels` | No | Registering only: model labels; see [Model Labels](./openai.md#model-labels). Omitting the deployment label applies the recipe's default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2200,7 +2200,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `wire_format` | No | Cloud providers: `"openai"` or `"anthropic"`. An `"anthropic"` provider is served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults to `"openai"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `subscribe` | No | Only applies when `stream` is `true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A local install's errors carry an `error` string, and a cloud provider's invalid field an `error` object.
+A cloud provider's errors for an invalid `provider`, `base_url`, `auth_header_name` or `auth_header_prefix` value carry an `error` object. Every other error carries an `error` string, including a value of the wrong type.
 
 ### Install a Cloud Provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>

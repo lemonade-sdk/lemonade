@@ -4,7 +4,7 @@ Internal endpoints control and configure `lemond`. The clients bundled with the 
 
 Apps that talk to a system-wide Lemonade Server install must not use these endpoints: that server belongs to its bundled clients, and these endpoints may change without notice. An app that embeds its own `lemond` owns that instance and should use them to manage it; see [Embeddable Lemonade: Runtime](../embeddable/runtime.md).
 
-> **Warning:** When `lemond` is bound to a non-loopback host such as `0.0.0.0`, these endpoints, including shutdown and config, are reachable from the network. `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints under `/v1/` open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without `LEMONADE_API_KEY`.
+> **Warning:** When `lemond` is bound to a non-loopback host such as `0.0.0.0`, these endpoints, including shutdown and config, are reachable from the network. `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves every other endpoint open, including inference, model management, the Ollama and Anthropic routes and `/mcp`, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without `LEMONADE_API_KEY`.
 
 <!-- BEGIN GENERATED: internal.summary -->
 | Method | Endpoint | Description |
@@ -448,7 +448,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 |-----------|----------|-------------|--------|
 | `pct` | No | Simulated fraction of VRAM in use, such as `0.95`. Defaults to `0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above `auto_evict_threshold_pct` runs the idle-timeout checks and then unloads at most one model for pressure, `-1` runs only the idle-timeout checks, and any other value does nothing.
+Only unpinned models with `auto_evict` enabled are candidates, and a model in use is never chosen. One evaluation unloads at most one model: the first, in load order, past its `evict_idle_timeout`, or when there is none and `pct` is at or above `auto_evict_threshold_pct`, the one with the highest [eviction score](../guide/configuration/multi-model.md#dynamic-vram-management-opt-in). It also downsizes ready models past their `downsize_idle_timeout`. `-1` runs only the idle-timeout checks, and any other value below the threshold does nothing.
 
 The answer comes after the evaluation finishes, so a test can check the outcome right away. While an exclusive job session is active no evaluation runs, and the answer is still `200`.
 

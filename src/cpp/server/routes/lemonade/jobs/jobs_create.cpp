@@ -89,7 +89,7 @@ public:
         try {
             // Parsed again as ordered_json, so `GET jobs/{id}` echoes the keys in the client's order.
             auto body = lemon::jobs::json::parse(req.http.body);
-            const std::string name = body.value(kName.name, "");
+            const std::string name = req.value(kName, std::string());
             lemon::jobs::json steps_json = lemon::jobs::json::array();
             if (body.contains(kDefinition.name) && body[kDefinition.name].is_object()
                 && body[kDefinition.name].contains("steps")) {
