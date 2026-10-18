@@ -1,6 +1,7 @@
-// The facade's job is orchestration. Every rule below is a ratchet: the ceiling is what
-// the file does today, and a count under it fails too, so the number can only travel in
-// one direction. Adding to the facade is allowed only by naming what moved in.
+// The facade's job is orchestration. Most rules below are exact-count ratchets: a count
+// under the ceiling fails too, so a number only travels in a commit that names what moved.
+// The rows that carry a known debt — the line budget, the models layer's references to the
+// facade header — bind one way: shrinking them is the goal, so it must not first edit here.
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -49,6 +50,21 @@ std::vector<Hit> find_in(const std::string& relative, const std::string& needle)
     while (std::getline(in, line)) {
         ++number;
         if (line.find(needle) != std::string::npos) hits.push_back({relative, number});
+    }
+    return hits;
+}
+
+// Both include spellings: a rule over one is a rule that misses files.
+std::vector<Hit> find_includes_in(const std::string& relative, const std::string& path) {
+    std::vector<Hit> hits;
+    std::ifstream in(kRoot / relative, std::ios::binary);
+    std::string line;
+    int number = 0;
+    while (std::getline(in, line)) {
+        ++number;
+        if (line.find("include <" + path) != std::string::npos ||
+            line.find("include \"" + path) != std::string::npos)
+            hits.push_back({relative, number});
     }
     return hits;
 }
@@ -129,27 +145,59 @@ int main() {
     check("the public hooks are the four already named (" + std::to_string(total_hooks) + ")",
           total_hooks == declared_hooks);
 
+    // The facade header is what consumers include; a models-layer header reaching a consumer
+    // is named here with the fact it reads, and each name retires by deletion.
     std::vector<std::string> escaping;
     for (const auto& file : repo_files("src/cpp")) {
         if (in_models_layer(file) || file == kFacade || file == kFacadeHeader) continue;
-        if (!find_in(file, "include <lemon/models/").empty()) escaping.push_back(file);
+        if (!find_includes_in(file, "lemon/models/").empty()) escaping.push_back(file);
     }
-    const std::vector<std::string> allowed_escaping = {"src/cpp/server/registry_files.cpp"};
-    check("only registry_files.cpp reaches past the facade header",
+    const std::vector<std::string> allowed_escaping = {
+        "src/cpp/include/lemon/backends/backend_ops.h",              // ArtifactFetchService
+        "src/cpp/server/backends/backend_ops.cpp",                   // ArtifactRef, artifacts
+        "src/cpp/server/backends/whispercpp/whispercpp_server.cpp",  // the lazy side cache
+        "src/cpp/server/model_registry.cpp",                         // RegistryId
+        "src/cpp/server/registry_files.cpp",                         // checkpoint grammar
+        "src/cpp/server/runtime_config.cpp",                         // configured catalogs
+        "src/cpp/server/server.cpp",                                 // snapshot reads
+    };
+    check("consumers outside the whitelist include no models-layer header",
           escaping == allowed_escaping);
     if (escaping != allowed_escaping) {
-        for (const auto& file : escaping) std::printf("    %s\n", file.c_str());
+        for (const auto& file : escaping)
+            if (std::find(allowed_escaping.begin(), allowed_escaping.end(), file) ==
+                allowed_escaping.end())
+                std::printf("    unexpected: %s\n", file.c_str());
+        for (const auto& file : allowed_escaping)
+            if (std::find(escaping.begin(), escaping.end(), file) == escaping.end())
+                std::printf("    retired, delete the name: %s\n", file.c_str());
     }
 
-    // The measure this refactor was opened for, kept as a ceiling rather than a target.
+    // ModelInfo lives in the facade header today, so the models layer includes it and the
+    // dependency graph reads bottom-up. The model_info.h carve-out drives this to zero;
+    // the ceiling only bites upward, so progress never edits here.
+    int facade_includes = 0;
+    std::ostringstream facade_hits;
+    for (const std::string& dir : {"src/cpp/server/models", "src/cpp/include/lemon/models"}) {
+        for (const auto& file : repo_files(dir)) {
+            for (const auto& hit : find_includes_in(file, "lemon/model_manager.h")) {
+                ++facade_includes;
+                facade_hits << "\n    " << hit.file << ":" << hit.line;
+            }
+        }
+    }
+    constexpr int kFacadeIncludeCeiling = 17;
+    check("the models layer names the facade header " + std::to_string(facade_includes) +
+              " times, ceiling " + std::to_string(kFacadeIncludeCeiling) +
+              (facade_includes > kFacadeIncludeCeiling ? facade_hits.str() : std::string()),
+          facade_includes <= kFacadeIncludeCeiling);
+
+    // The measure this refactor was opened for: a ceiling, not a target.
     const int lines = static_cast<int>(std::count(facade.begin(), facade.end(), '\n'));
     constexpr int kLineCeiling = 1103;
     check("the facade is " + std::to_string(lines) + " lines, ceiling " +
               std::to_string(kLineCeiling),
           lines <= kLineCeiling);
-    if (lines < kLineCeiling) {
-        check("its line ceiling is stale, tighten to " + std::to_string(lines), false);
-    }
 
     if (g_failures > 0) {
         std::printf("\n%d check(s) failed\n", g_failures);
