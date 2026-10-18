@@ -586,6 +586,7 @@ A recorded response shows the shape of the route's response. Its values can fall
 CI runs `gen_api_boilerplate.py --check` on a hosted runner, beside the other generators, without loading any model. It fails when:
 
 - a route has no region, or a region has no route
+- a page that has routes has no entry in the `mkdocs.yml` nav or no row in the page table in `docs/api/README.md`, or either one lists a page under `docs/api/` that has no routes, other than `README.md` itself
 - any generated text is stale
 - any cache entry is invalid
 - a recorded response does not match its entry's format, or a JSON body, NDJSON line or SSE event's data does not match its schema, validated with `jsonschema` (OpenAI's closing `[DONE]` event is skipped)
