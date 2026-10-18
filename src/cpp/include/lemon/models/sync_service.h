@@ -56,9 +56,7 @@ class SyncService {
                      bool attach_if_running = false);
     UpdateScanResult scan_for_updates(const std::vector<std::string>& targets = {});
 
-    // The request a client makes: report what a sync would change, or run one and wait.
-    // The report asks the same questions the worker will, so the two cannot disagree
-    // about what is out of date.
+    // Report what a sync would change, or run one and wait for it.
     nlohmann::json sync(const std::vector<std::string>& target_models = {}, bool dry_run = false,
                         bool attach_if_running = false);
     nlohmann::json status(uint64_t sync_id = 0) const;

@@ -385,8 +385,6 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
 }
 
 
-// Publishing what a pass settled, in the one store write that does it. Membership is
-// untouched, so the published tables still name the models this scan examined.
 void publish_scan_flags(ModelStore& store, const ScanDetermination& settled,
                         UpdateScanResult& result) {
     ModelStore::Write store_write(store);

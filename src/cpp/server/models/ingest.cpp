@@ -1363,12 +1363,9 @@ void ModelIngest::register_user_model(const std::string& model_name,
         store_write.invalidate_cache();
     }
 
-    // A router collection carries a routing policy, so its lifecycle affects the
-    // routing-helper working set. Notify when the new entry is a router
-    // collection, but also when a router collection is being *replaced* by a
-    // non-router recipe — otherwise the old policy silently disappears without a
-    // reconcile. Registering ordinary models (e.g. a collection's helper
-    // components) still must not trigger one.
+    // A router collection's policy also retires when a plain recipe replaces it, and
+    // only a reconcile notices that. An ordinary model — the collection's own component
+    // included — must not trigger one.
     if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
         deps_.models_changed();
     }

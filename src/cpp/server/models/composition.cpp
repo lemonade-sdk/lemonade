@@ -156,17 +156,11 @@ CompositionResult ModelComposition::run() {
         composed[name] = std::move(info);
     }
 
-    // Parse each collection.router model's routing policy over the candidate. The
-    // resolver reads the candidate directly instead of going through
-    // resolve_model_name()/get_model_info(), which answer from the set this build
-    // has not published yet. pre_filter_aliases is computed over all_models, a
-    // strict superset of composed, so it alone covers everything the alias map
-    // would (#2748).
-    //
-    // Components only the pre-filter tier can resolve are unavailable on this
-    // host: a classifier bound to one takes its on_error path on every
-    // request. Recorded here, where that is known, and reported per collection
-    // below so the operator sees degraded routing instead of silence (#2748).
+    // A policy resolves against the candidate, not the store: the set this build
+    // publishes is not published yet. Its aliases come from before the host filter
+    // on purpose, so a component that exists but cannot run here is reported as
+    // unavailable — a classifier bound to it takes its on_error path on every
+    // request — rather than as a typo (#2748).
     std::set<std::string> unavailable_components;
 
     RoutingPolicyParseOptions policy_options = make_routing_parse_options({

@@ -973,11 +973,6 @@ std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const
 }
 
 
-// Whether the persisted user-model entry under `key` is a router collection.
-// Both register (checking the entry being overwritten) and unregister (checking
-// the entry being removed) must decide whether a routing policy is disappearing,
-// so the recipe lookup lives in one place.
-
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
     build_cache();
 

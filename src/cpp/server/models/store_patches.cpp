@@ -40,7 +40,6 @@ void StorePatches::removed(const std::string& model_name) {
             store_write.draft().erase(model_name);
             LOG(INFO, "StorePatches") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
-            // Registered model - just mark as not downloaded
             it->second.downloaded = false;
             it->second.update_available = false;
             LOG(INFO, "StorePatches") << "Marked '" << model_name << "' as not downloaded" << std::endl;
@@ -64,7 +63,7 @@ void StorePatches::download_status(const std::string& model_name, bool downloade
     ModelInfo patched = *found;
     patched.downloaded = downloaded;
     if (downloaded) {
-        // Up to date, and the path resolves now that the files exist.
+        // What just arrived cannot also be behind.
         patched.update_available = false;
         deps_.artifacts->resolve_all(patched);
     } else {

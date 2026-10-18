@@ -44,8 +44,7 @@ static void publish(ModelStore& store, std::map<std::string, ModelInfo> rows) {
     build.commit(std::move(rows), nullptr, {});
 }
 
-// A store, and an artifact store pointed at a directory with nothing in it: a patch may
-// ask where bytes would live, and must find none.
+// An artifact store pointed at a directory with nothing in it.
 struct Fixture {
     std::filesystem::path cache_dir = std::filesystem::temp_directory_path() / "store_patch_cache";
     ModelArtifactStore artifacts{ModelArtifactStore::Hooks{
