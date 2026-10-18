@@ -1,6 +1,7 @@
 #include "job_errors.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -22,9 +23,7 @@ public:
         s.description =
             "Cancels a job's current step now, aborting an in-flight load or chat. The step "
             "returns to pending, so resuming re-runs it, and the models the job loaded are unloaded.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available, "Job id, from [`POST /v1/jobs`](#post-v1jobs)."},
-        };
+        s.args = {job_routes::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -45,7 +44,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->interrupt(req.http.matches[1])) {
+        if (!ctx_.job_manager->interrupt(req.value(job_routes::kId, std::string()))) {
             write_job_not_active(res, "interruptible");
             return;
         }

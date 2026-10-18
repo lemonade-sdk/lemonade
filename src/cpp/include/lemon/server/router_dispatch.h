@@ -4,12 +4,13 @@
 #include <set>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 #include "lemon/routing_policy.h"
 
 namespace lemon {
 
 class ModelManager;
-struct RouteRequest;
 struct ServerContext;
 
 struct RouterDispatchResult {
@@ -19,12 +20,12 @@ struct RouterDispatchResult {
 };
 
 // Naming a collection.router model makes a completion request route itself: this
-// runs the collection's policy, rewrites req.body["model"] and req.model to the
-// selected candidate, and returns the decision. Returns std::nullopt, leaving the
-// request untouched, for any other model or when routing fails. A residency
-// conflict is the one failure it rethrows, since falling back would load the
-// collection itself.
-std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, RouteRequest& req);
+// runs the collection's policy on body, rewrites model and the body's model to the
+// selected candidate, and returns the decision. Returns std::nullopt, leaving both
+// untouched, for any other model or when routing fails. A residency conflict is the
+// one failure it rethrows, since falling back would load the collection itself.
+std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
+                                                    bool want_trace, nlohmann::json& body);
 
 // Router::reconcile_routing_helpers() needs the routing helpers that every active
 // collection.router policy keeps resident, so it can reclaim the rest.

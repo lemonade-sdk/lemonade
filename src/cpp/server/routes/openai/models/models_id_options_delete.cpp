@@ -3,6 +3,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_options.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -24,10 +25,7 @@ public:
         s.description =
             "Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults "
             "from its registry entry and the server's configuration still apply.";
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
-        };
+        s.args = {openai::models::kId};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -45,7 +43,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager* model_manager = ctx_.model_manager;
-        respond_with_model_options(ctx_, req.http, res,
+        respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res,
             [model_manager](const std::string& model_key, ModelInfo& info, httplib::Response&) {
                 if (!model_manager->get_saved_model_options(model_key).empty()) {
                     model_manager->set_saved_model_options(model_key, json::object());

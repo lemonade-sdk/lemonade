@@ -6,6 +6,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -41,8 +42,7 @@ void run_omni_collection(ServerContext& ctx, RouteRequest& req, httplib::Respons
     ModelManager* model_manager = ctx.model_manager;
     auto ensure_loaded = [loader](const std::string& model) { loader->ensure_loaded(model); };
 
-    const bool is_streaming = req.body.contains("stream") && req.body["stream"].is_boolean() &&
-                              req.body["stream"].get<bool>();
+    const bool is_streaming = req.value(common::kStream, false);
     if (is_streaming) {
         LOG(INFO, "Server") << "POST /api/v1/chat/completions - Collection (streaming): "
                             << info.model_name << std::endl;

@@ -5,6 +5,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/audio_formats.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -14,6 +15,25 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kNotAudioModel{
     400, "model_not_applicable", "`model` is not an audio-generation model"};
+
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                       "Text description of the music or sound effect to generate. For music, this is the "
+                       "style description: genre, mood, tempo, instruments, and voice."};
+const RouteArg kLyrics{"lyrics", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Lyrics to sing (ACE-Step only). When present and not empty, the track is generated "
+                       "with vocals singing these lyrics. Omitting the field, an empty string, or the "
+                       "sentinel `[Instrumental]` (any case) produces an instrumental track. See "
+                       "[Lyrics](#lyrics) below for the expected format."};
+const RouteArg kVocalLanguage{"vocal_language", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                              "BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Defaults "
+                              "to `en`."};
+const RouteArg kDuration{"duration", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                         "Length of the clip in seconds. Defaults to the backend's own default."};
+const RouteArg kCfg{"cfg", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
+                    "Classifier-free guidance strength (ThinkSound only)."};
+const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                               "Output encoding. Only `wav`, the format the backend produces, is accepted. "
+                               "Defaults to `wav`."};
 
 class AudioGenerationsRoute : public ModelRoute {
 public:
@@ -51,30 +71,8 @@ public:
             "- Lyrics may be in any supported language; set `vocal_language` to match.",
         };
         s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "The audio-generation model."},
-            {"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "Text description of the music or sound effect to generate. For music, this is the "
-             "style description: genre, mood, tempo, instruments, and voice."},
-            {"lyrics", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Lyrics to sing (ACE-Step only). When present and not empty, the track is generated "
-             "with vocals singing these lyrics. Omitting the field, an empty string, or the "
-             "sentinel `[Instrumental]` (any case) produces an instrumental track. See "
-             "[Lyrics](#lyrics) below for the expected format."},
-            {"vocal_language", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Defaults "
-             "to `en`."},
-            {"duration", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Length of the clip in seconds. Defaults to the backend's own default."},
-            {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Number of inference steps. Lower is faster, higher can improve quality."},
-            {"cfg", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Classifier-free guidance strength (ThinkSound only)."},
-            {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducibility."},
-            {"response_format", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Output encoding. Only `wav`, the format the backend produces, is accepted. "
-             "Defaults to `wav`."},
+            model_loading::kModel, kPrompt, kLyrics, kVocalLanguage, kDuration, inference::kSteps,
+            kCfg, inference::kSeed, kResponseFormat
         };
 
         RouteResponse response;
@@ -113,6 +111,8 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return model_loading::kModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
         if (auto info = ctx_.router->try_get_model_info(req.model);
             info && info->type != ModelType::AUDIO_GENERATION) {
@@ -124,7 +124,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
-        AudioFormat format = negotiate_audio_generation_format(*ctx_.router, req.model, req.body);
+        AudioFormat format = negotiate_audio_generation_format(*ctx_.router, req.model, req.arg(kResponseFormat));
         if (!apply_audio_format(format, res)) {
             return;
         }

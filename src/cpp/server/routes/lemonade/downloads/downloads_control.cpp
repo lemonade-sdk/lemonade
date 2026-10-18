@@ -8,6 +8,12 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 
+const RouteArg kId{"id", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                   "The job's `id`, for example `model:Qwen3-0.6B-GGUF`."};
+const RouteArg kAction{"action", ArgIn::JsonBody, {{"enum", json::array({"pause", "cancel", "remove"})}}, true,
+                       Support::Available,
+                       "What to do with the job; see [Actions](#actions)."};
+
 class DownloadsControlRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -37,13 +43,7 @@ public:
             "job. Removing a stopped job answers `{\"status\": \"ok\"}`, with `\"missing\": true` when "
             "the job was already gone.",
         };
-        s.args = {
-            {"id", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "The job's `id`, for example `model:Qwen3-0.6B-GGUF`."},
-            {"action", ArgIn::JsonBody, {{"enum", json::array({"pause", "cancel", "remove"})}}, true,
-             Support::Available,
-             "What to do with the job; see [Actions](#actions)."},
-        };
+        s.args = {kId, kAction};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -83,8 +83,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const std::string id = req.body["id"].get<std::string>();
-        const std::string action = req.body["action"].get<std::string>();
+        const std::string id = req.arg(kId).get<std::string>();
+        const std::string action = req.arg(kAction).get<std::string>();
 
 
         int status = 200;

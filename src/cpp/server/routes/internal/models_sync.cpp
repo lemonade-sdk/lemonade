@@ -7,6 +7,7 @@
 #include "lemon/server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_sync.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -15,6 +16,15 @@ using ordered_json = nlohmann::ordered_json;
 
 namespace {
 
+
+const RouteArg kModels{"models", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
+                       "Models to sync. Defaults to every downloaded model."};
+const RouteArg kAsync{"async", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                      "Run in the background and answer immediately. Defaults to `true`."};
+const RouteArg kAttachIfRunning{"attach_if_running", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                                "`true` reports a running sync, or with `async: false` waits for it, without adding "
+                                "this request's models to it. Defaults to `false`, which queues the models into the "
+                                "running sync."};
 
 class ModelsSyncRoute : public ApiRoute {
 public:
@@ -41,18 +51,7 @@ public:
             "See Model Synchronization & Auto-Updates in "
             "[Server Configuration](../guide/configuration/README.md).",
         };
-        s.args = {
-            {"models", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
-             "Models to sync. Defaults to every downloaded model."},
-            {"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Check for updates without downloading them. Defaults to `false`."},
-            {"async", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Run in the background and answer immediately. Defaults to `true`."},
-            {"attach_if_running", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` reports a running sync, or with `async: false` waits for it, without adding "
-             "this request's models to it. Defaults to `false`, which queues the models into the "
-             "running sync."},
-        };
+        s.args = {kModels, common::kDryRun, kAsync, kAttachIfRunning};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -80,19 +79,18 @@ public:
         bool async_specified = false;
         bool attach_if_running = false;
 
-        const json& body = req.body;
-        if (body.contains("models")) {
-            target_models = body["models"].get<std::vector<std::string>>();
+        if (req.has(kModels)) {
+            target_models = req.arg(kModels).get<std::vector<std::string>>();
         }
-        if (body.contains("dry_run")) {
-            dry_run = body["dry_run"].get<bool>();
+        if (req.has(common::kDryRun)) {
+            dry_run = req.arg(common::kDryRun).get<bool>();
         }
-        if (body.contains("async")) {
-            async_dispatch = body["async"].get<bool>();
+        if (req.has(kAsync)) {
+            async_dispatch = req.arg(kAsync).get<bool>();
             async_specified = true;
         }
-        if (body.contains("attach_if_running")) {
-            attach_if_running = body["attach_if_running"].get<bool>();
+        if (req.has(kAttachIfRunning)) {
+            attach_if_running = req.arg(kAttachIfRunning).get<bool>();
         }
 
         ModelManager* model_manager = ctx_.model_manager;

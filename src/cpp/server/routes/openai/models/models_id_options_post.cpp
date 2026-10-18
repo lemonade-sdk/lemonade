@@ -6,6 +6,7 @@
 #include "lemon/recipe_options.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_options.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 
@@ -63,6 +64,9 @@ const RouteError kInvalidOptionValue{
     400, "",
     "`ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value"};
 
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                          "Ignored; the URL names the model. Accepted so `effective` can be posted back as is."};
+
 class ModelsIdOptionsPostRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -84,24 +88,15 @@ public:
             "[priority chain](./lemonade.md#post-v1load). [`DELETE`](#delete-v1modelsidoptions) "
             "removes every saved option at once.",
             "A request that fails validation saves nothing.",
+            "With `dry_run`, the request is validated and resolved as a save would be, but nothing "
+            "is persisted: `effective` and `resolved_ctx_size` describe the state the save would "
+            "produce, while `saved` keeps reporting the entry on disk.",
             "A running model keeps its current options until it is next loaded.",
             "`pinned` is omitted from `effective` and `defaults`; it belongs to "
             "[`/v1/load`](./lemonade.md#post-v1load) and "
             "[`/internal/pin`](./internal.md#post-internalpin).",
         };
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-             "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."},
-            {"ctx_size", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
-             "Context size to save: a positive whole number, or `-1` to pin the model to automatic "
-             "sizing even when the server-wide `ctx_size` is a specific number."},
-            {"dry_run", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` validates and resolves the request identically but persists nothing: "
-             "`effective` and `resolved_ctx_size` describe the state the save would produce, while "
-             "`saved` keeps reporting the entry on disk. Use it to preview a change."},
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Ignored; the URL names the model. Accepted so `effective` can be posted back as is."},
-        };
+        s.args = {openai::models::kId, model_options::kCtxSize, common::kDryRun, kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -121,12 +116,12 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager* model_manager = ctx_.model_manager;
-        respond_with_model_options(ctx_, req.http, res,
+        respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res,
             [model_manager, &req](const std::string& model_key, ModelInfo& info,
                                   httplib::Response& r) {
                 json body = req.body;
-                const bool dry_run = body.contains("dry_run") && body["dry_run"] == true;
-                body.erase("dry_run");
+                const bool dry_run = req.value(common::kDryRun, false);
+                body.erase(common::kDryRun.name);
 
                 const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
                 const std::set<std::string> allowed(keys.begin(), keys.end());
@@ -136,7 +131,7 @@ public:
                 // change as set-or-erase so the merge can happen atomically.
                 json changes = json::object();
                 for (const auto& [key, value] : body.items()) {
-                    if (key == "model_name") continue;
+                    if (key == kModelName.name) continue;
                     if (!allowed.count(key)) {
                         write_plain_error(r, kUnknownOption, "Unknown option '" + key +
                                           "' for recipe '" + info.recipe + "'");
@@ -152,7 +147,7 @@ public:
                     // except ctx_size, where -1 is a value and a malformed size is
                     // an error rather than an absence.
                     const bool clears = value.is_null() ||
-                        (key != "ctx_size" && RecipeOptions::is_default_sentinel(key, value));
+                        (key != model_options::kCtxSize.name && RecipeOptions::is_default_sentinel(key, value));
                     if (clears) {
                         changes[key] = nullptr;
                         continue;

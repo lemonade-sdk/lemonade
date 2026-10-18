@@ -4,6 +4,7 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_registration.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -33,11 +34,7 @@ public:
             "A file still held open, for example by a download that was just cancelled, is retried "
             "up to 3 times, 5 seconds apart.",
         };
-        s.args = {
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "[Lemonade Server model name](https://lemonade-server.ai/models.html) to delete.",
-             {"model"}},
-        };
+        s.args = {model_management::kModelName};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -62,9 +59,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const json& request_json = req.body;
         try {
-            std::string model_name = request_json["model_name"].get<std::string>();
+            std::string model_name = req.arg(model_management::kModelName).get<std::string>();
 
             LOG(INFO, "Server") << "Deleting model: " << model_name << std::endl;
 

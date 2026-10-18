@@ -41,7 +41,7 @@ std::string unsupported_message(const std::string& format,
 } // namespace
 
 AudioFormat negotiate_speech_format(Router& router, const std::string& model,
-                                    const json& request, bool streaming) {
+                                    const json& response_format, bool streaming) {
     AudioFormat result;
     auto supported_formats = router.audio_speech_supported_formats(model);
     if (streaming) {
@@ -51,8 +51,8 @@ AudioFormat negotiate_speech_format(Router& router, const std::string& model,
         }
     }
 
-    if (request.contains("response_format") && request["response_format"].is_string()) {
-        result.format = request["response_format"].get<std::string>();
+    if (response_format.is_string()) {
+        result.format = response_format.get<std::string>();
     } else {
         result.format = streaming ? "pcm" : "mp3";
         if (!supported_formats.empty() && !contains(supported_formats, result.format)) {
@@ -77,11 +77,11 @@ AudioFormat negotiate_speech_format(Router& router, const std::string& model,
 }
 
 AudioFormat negotiate_audio_generation_format(Router& router, const std::string& model,
-                                              const json& request) {
+                                              const json& response_format) {
     AudioFormat result;
     result.format = "wav";
-    if (request.contains("response_format") && request["response_format"].is_string()) {
-        result.format = request["response_format"].get<std::string>();
+    if (response_format.is_string()) {
+        result.format = response_format.get<std::string>();
     }
     const auto supported_formats = router.audio_generation_supported_formats(model);
     if (!supported_formats.empty() && !contains(supported_formats, result.format)) {

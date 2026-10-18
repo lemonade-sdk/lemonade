@@ -21,7 +21,7 @@ public:
     ModelLoader(Router* router, ModelManager* model_manager);
 
     // load_options apply only to a first load, so options set by an explicit /v1/load win.
-    // Pass load_options(request), never a raw request body, so request-scoped fields stay
+    // Pass load_options(), never a raw request body, so request-scoped fields stay
     // out of persistent recipe options.
     void ensure_loaded(const std::string& model,
                        const nlohmann::json& load_options = nlohmann::json::object(),
@@ -30,8 +30,8 @@ public:
     // A collection has no backend of its own, so loading one loads each component.
     void ensure_collection_loaded(const ModelInfo& info);
 
-    // The load-level options an inference request may carry: only ctx_size.
-    static nlohmann::json load_options(const nlohmann::json& request);
+    // The load-level options for a request's ctx_size value, null when it sent none.
+    static nlohmann::json load_options(const nlohmann::json& ctx_size);
 
     // An actionable error for a model that is filtered out on this system, not in the
     // registry, or failed to load.

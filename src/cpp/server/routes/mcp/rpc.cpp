@@ -15,6 +15,17 @@ const RouteError kInternalError{
     "An exception escapes the JSON-RPC handling, such as a number too large for a double or "
     "invalid UTF-8 in the body"};
 
+const RouteArg kJsonrpc{"jsonrpc", ArgIn::JsonBody, {{"const", "2.0"}}, true, Support::Available,
+                        "JSON-RPC version: `\"2.0\"`."};
+const RouteArg kId{"id", ArgIn::JsonBody, {{"type", json::array({"string", "integer"})}}, false, Support::Available,
+                   "Request id, echoed in the reply. Omit it to send a notification, which gets no "
+                   "reply."};
+const RouteArg kMethod{"method", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                       "One of the [supported methods](#supported-methods), e.g. `initialize`, "
+                       "`tools/list` or `tools/call`."};
+const RouteArg kParams{"params", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+                       "Method parameters; `tools/call` takes `name` and `arguments`."};
+
 class McpRpcRoute : public ApiRoute {
 public:
     explicit McpRpcRoute(ServerContext& ctx)
@@ -70,18 +81,7 @@ public:
             "[`/v1/embeddings`](./openai.md#post-v1embeddings) and "
             "[`/v1/audio/speech`](./openai.md#post-v1audiospeech).",
         };
-        s.args = {
-            {"jsonrpc", ArgIn::JsonBody, {{"const", "2.0"}}, true, Support::Available,
-             "JSON-RPC version: `\"2.0\"`."},
-            {"id", ArgIn::JsonBody, {{"type", json::array({"string", "integer"})}}, false, Support::Available,
-             "Request id, echoed in the reply. Omit it to send a notification, which gets no "
-             "reply."},
-            {"method", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "One of the [supported methods](#supported-methods), e.g. `initialize`, "
-             "`tools/list` or `tools/call`."},
-            {"params", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "Method parameters; `tools/call` takes `name` and `arguments`."},
-        };
+        s.args = {kJsonrpc, kId, kMethod, kParams};
 
         RouteResponse reply;
         reply.format = ResponseFormat::Json;

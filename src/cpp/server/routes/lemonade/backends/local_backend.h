@@ -3,7 +3,6 @@
 #include <string>
 
 #include <httplib.h>
-#include <nlohmann/json.hpp>
 
 #include "lemon/server/route_error.h"
 
@@ -13,9 +12,7 @@ namespace lemon {
 // backend.
 extern const RouteError kMissingRecipe;
 
-// Reads `recipe` and `backend` from body. Returns false after writing kMissingRecipe when
-// `recipe` is missing.
-bool read_local_backend(const nlohmann::json& body, std::string& recipe, std::string& backend,
-                        httplib::Response& res);
+// Returns false after writing kMissingRecipe when recipe is empty.
+bool require_local_recipe(const std::string& recipe, httplib::Response& res);
 
 } // namespace lemon

@@ -1,3 +1,5 @@
+#include <limits>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/router.h"
@@ -11,6 +13,15 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidSlotId{400, "", "`id` is too large for a 32-bit integer"};
+
+const RouteArg kId{"id", ArgIn::Path, {{"type", "integer"}}, true, Support::Available,
+                   "The slot to act on."};
+const RouteArg kFilename{"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                         "File to save to or restore from, relative to `--slot-save-path`. Required for "
+                         "`save` and `restore`.", {}, true};
+const RouteArg kAction{"action", ArgIn::Query, {{"enum", json::array({"save", "restore", "erase"})}}, true, Support::Available,
+                       "`save` writes the slot's prompt cache to `filename`, `restore` reads it back from "
+                       "`filename`, and `erase` clears the slot."};
 
 class SlotsActionRoute : public ApiRoute {
 public:
@@ -33,16 +44,7 @@ public:
             "[Server Configuration](../guide/configuration/README.md)), or for one load with "
             "`llamacpp_args` on [`POST /v1/load`](./lemonade.md#post-v1load).",
         };
-        s.args = {
-            {"id", ArgIn::Path, {{"type", "integer"}}, true, Support::Available,
-             "The slot to act on."},
-            {"filename", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "File to save to or restore from, relative to `--slot-save-path`. Required for "
-             "`save` and `restore`.", {}, true},
-            {"action", ArgIn::Query, {{"enum", json::array({"save", "restore", "erase"})}}, true, Support::Available,
-             "`save` writes the slot's prompt cache to `filename`, `restore` reads it back from "
-             "`filename`, and `erase` clears the slot."},
-        };
+        s.args = {kId, kFilename, kAction};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -104,17 +106,18 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        std::string slot_id_str = req.http.matches[1];
-        int slot_id;
-        try {
-            slot_id = std::stoi(slot_id_str);
-        } catch (const std::exception& e) {
+        const json& slot_id_arg = req.arg(kId);
+        if (!slot_id_arg.is_number_integer() ||
+            slot_id_arg.get<long long>() > std::numeric_limits<int>::max()) {
+            const std::string slot_id_str =
+                slot_id_arg.is_string() ? slot_id_arg.get<std::string>() : slot_id_arg.dump();
             LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
             write_plain_error(res, kInvalidSlotId, std::string("Invalid slot ID: ") + slot_id_str);
             return;
         }
+        const int slot_id = slot_id_arg.get<int>();
 
-        auto action_param = req.http.get_param_value("action");
+        auto action_param = req.value(kAction, std::string());
         RecentLlamaCpp::serve(*ctx_.router, res, "slots " + action_param + " operation", [&] {
             return ctx_.router->slots_action(slot_id, action_param, req.body);
         });

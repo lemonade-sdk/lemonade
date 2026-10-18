@@ -6,6 +6,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/cloud_providers.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -17,6 +18,11 @@ const RouteError kAuthConflict{
     409, "",
     "`LEMONADE_<PROVIDER>_API_KEY` is set and takes precedence, so the key is not stored; "
     "`error.type` is `auth_conflict` and `error.env_var` names the variable"};
+
+const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                         "The installed provider's name."};
+const RouteArg kApiKey{"api_key", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
+                       "The API key."};
 
 class CloudAuthRoute : public ApiRoute {
 public:
@@ -34,15 +40,7 @@ public:
             "discovered models. The key is held in `lemond`'s memory only, never written to disk, "
             "and is gone after a restart; for a key that persists, set "
             "`LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.";
-        s.args = {
-            {"provider", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "The installed provider's name."},
-            {"api_key", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
-             "The API key."},
-            {"allow_insecure_http", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Opt in to sending the key to a provider whose base URL is `http://`; the opt-in is "
-             "saved with the provider. Defaults to `false`."},
-        };
+        s.args = {kProvider, kApiKey, backend_routes::kAllowInsecureHttp};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -85,10 +83,9 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         CloudProviderRegistry& registry = *ctx_.cloud_registry;
         try {
-            const json& body = req.body;
-            const auto provider = body["provider"].get<std::string>();
-            const auto api_key = body["api_key"].get<std::string>();
-            const bool allow_insecure_http = body.value("allow_insecure_http", false);
+            const auto provider = req.arg(kProvider).get<std::string>();
+            const auto api_key = req.arg(kApiKey).get<std::string>();
+            const bool allow_insecure_http = req.value(backend_routes::kAllowInsecureHttp, false);
 
             if (!registry.is_installed(provider)) {
                 write_provider_not_installed(res, provider);

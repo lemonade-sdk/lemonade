@@ -7,6 +7,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/download_manager.h"
 #include "lemon/server/model_registration.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -49,6 +50,55 @@ ordered_json pull_schema() {
     return {{"oneOf", ordered_json::array({success, job})}};
 }
 
+const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                          "A [registered model](https://lemonade-server.ai/models.html) to install, or a new "
+                          "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
+                          "registered models from colliding with built-in ones.", {"model"}};
+const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Required when registering: the recipe that loads and runs the model, such as `llamacpp`, "
+                       "or `collection.omni` for an omni collection."};
+const RouteArg kCheckpoint{"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                           "The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to "
+                           "`owner/repo` and selects its registry."};
+const RouteArg kCheckpoints{"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
+                            "Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, "
+                            "`draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for "
+                            "image generation, each when `main` does not embed it."};
+const RouteArg kReasoning{"reasoning", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                          "`true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults "
+                          "to `false`."};
+const RouteArg kVision{"vision", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "`true` adds the `vision` label, for a model that accepts images. Defaults to `false`."};
+const RouteArg kEmbedding{"embedding", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                          "`true` adds the `embeddings` label. Defaults to `false`."};
+const RouteArg kReranking{"reranking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                          "`true` adds the `reranking` label. Defaults to `false`."};
+const RouteArg kMmproj{"mmproj", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Multimodal projector file for a vision model, in the `checkpoint` repository. The "
+                       "same as `checkpoints.mmproj`."};
+const RouteArg kComponents{"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+                           "Required for an omni collection registered without a `checkpoint`: the component "
+                           "model names, in order; each must be a regular model, not a collection."};
+const RouteArg kModels{"models", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+                       "Full model definitions, one per `components` entry, with the same fields as a single "
+                       "registration. Components not yet registered are registered from them; registered "
+                       "ones keep their local definition. Without `models`, every component must already be "
+                       "registered."};
+const RouteArg kLabels{"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
+                       "Registering only: model labels; see [Model Labels](./openai.md#model-labels). "
+                       "Omitting the deployment label applies the recipe's default."};
+const RouteArg kSource{"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Registry to download from: `huggingface` or `modelscope`. Defaults to the server's "
+                       "`default_model_source`."};
+const RouteArg kRegistrySource{"registry_source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                               "Same as `source`; when both are given they must name the same registry."};
+const RouteArg kDoNotUpgrade{"do_not_upgrade", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                             "`true` skips checking an already-downloaded model's registry for updates. Defaults "
+                             "to `false`."};
+const RouteArg kLocalImport{"local_import", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                            "Register model files a client already copied into the Hugging Face cache, without "
+                            "downloading. Defaults to `false`."};
+
 class PullRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -84,62 +134,9 @@ public:
             "for the file format and workflows.",
         };
         s.args = {
-            {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to "
-             "`false`."},
-            {"subscribe", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Only applies when `stream=true`. If `false`, the server owns the download and answers "
-             "at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and "
-             "[`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. "
-             "With `true`, closing the stream cancels the download. Defaults to `true`."},
-            {"model_name", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-             "A [registered model](https://lemonade-server.ai/models.html) to install, or a new "
-             "`user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps "
-             "registered models from colliding with built-in ones.", {"model"}},
-            {"recipe", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Required when registering: the recipe that loads and runs the model, such as `llamacpp`, "
-             "or `collection.omni` for an omni collection."},
-            {"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to "
-             "`owner/repo` and selects its registry."},
-            {"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
-             "Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, "
-             "`draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for "
-             "image generation, each when `main` does not embed it."},
-            {"reasoning", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults "
-             "to `false`."},
-            {"vision", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` adds the `vision` label, for a model that accepts images. Defaults to `false`."},
-            {"embedding", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` adds the `embeddings` label. Defaults to `false`."},
-            {"reranking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` adds the `reranking` label. Defaults to `false`."},
-            {"mmproj", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Multimodal projector file for a vision model, in the `checkpoint` repository. The "
-             "same as `checkpoints.mmproj`."},
-            {"components", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Required for an omni collection registered without a `checkpoint`: the component "
-             "model names, in order; each must be a regular model, not a collection."},
-            {"models", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Full model definitions, one per `components` entry, with the same fields as a single "
-             "registration. Components not yet registered are registered from them; registered "
-             "ones keep their local definition. Without `models`, every component must already be "
-             "registered."},
-            {"labels", ArgIn::JsonBody, {{"type", "array"}}, false, Support::Available,
-             "Registering only: model labels; see [Model Labels](./openai.md#model-labels). "
-             "Omitting the deployment label applies the recipe's default."},
-            {"source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Registry to download from: `huggingface` or `modelscope`. Defaults to the server's "
-             "`default_model_source`."},
-            {"registry_source", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "Same as `source`; when both are given they must name the same registry."},
-            {"do_not_upgrade", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "`true` skips checking an already-downloaded model's registry for updates. Defaults "
-             "to `false`."},
-            {"local_import", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-             "Register model files a client already copied into the Hugging Face cache, without "
-             "downloading. Defaults to `false`."},
+            common::kStream, downloads::kSubscribe, kModelName, kRecipe, kCheckpoint, kCheckpoints,
+            kReasoning, kVision, kEmbedding, kReranking, kMmproj, kComponents, kModels, kLabels,
+            kSource, kRegistrySource, kDoNotUpgrade, kLocalImport
         };
 
         RouteResponse job;
@@ -208,27 +205,26 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        json& request_json = req.body;
         try {
-            std::string model_name = request_json["model_name"].get<std::string>();
+            std::string model_name = req.arg(kModelName).get<std::string>();
 
-            std::string checkpoint = request_json.value("checkpoint", "");
-            std::string recipe = request_json.value("recipe", "");
-            bool do_not_upgrade = request_json.value("do_not_upgrade", false);
-            bool stream = request_json.value("stream", false);
-            bool subscribe = request_json.value("subscribe", true);
-            bool local_import = request_json.value("local_import", false);
+            std::string checkpoint = req.value(kCheckpoint, "");
+            std::string recipe = req.value(kRecipe, "");
+            bool do_not_upgrade = req.value(kDoNotUpgrade, false);
+            bool stream = req.value(common::kStream, false);
+            bool subscribe = req.value(downloads::kSubscribe, true);
+            bool local_import = req.value(kLocalImport, false);
 
             // The registry is resolved once, up front, so download, cache layout and
             // later refresh agree on it.
             try {
-                lemon::apply_default_pull_source(request_json, ctx_.config->default_model_source());
+                lemon::apply_default_pull_source(req.body, ctx_.config->default_model_source());
             } catch (const std::invalid_argument& e) {
                 write_plain_error(res, kInvalidSource, e.what());
                 return;
             }
             // The helper may have rewritten a provider URL into an owner/repo id.
-            checkpoint = request_json.value("checkpoint", "");
+            checkpoint = req.value(kCheckpoint, "");
 
             LOG(INFO, "Server") << "Pulling model: " << model_name << std::endl;
             if (!checkpoint.empty()) {
@@ -238,13 +234,12 @@ public:
                 LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
             }
 
-            const bool collection_file_import =
-                request_json.contains("models") && request_json["models"].is_array();
+            const bool collection_file_import = req.arg(kModels).is_array();
 
             if (!try_register_model_definition(
                     ctx_,
                     model_name,
-                    request_json,
+                    req.body,
                     /*require_definition=*/false,
                     /*allow_embedded_models=*/true,
                     local_import,
@@ -266,10 +261,10 @@ public:
                 return;
             }
 
-            json download_request = collection_file_import ? request_json : json::object();
-            for (const char* field : {"source", "registry_source"}) {
-                if (request_json.contains(field)) {
-                    download_request[field] = request_json[field];
+            json download_request = collection_file_import ? req.body : json::object();
+            for (const RouteArg* field : {&kSource, &kRegistrySource}) {
+                if (req.has(*field)) {
+                    download_request[field->name] = req.arg(*field);
                 }
             }
 

@@ -16,6 +16,14 @@ const RouteError kBackendRejected{
     "The backend rejects the request, for example because `model` is not a classification "
     "model, which is found only after it loads"};
 
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                      "The classifier model. Optional when exactly one classification model is loaded; that "
+                      "model is used."};
+const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern", "\\S"}}, true, Support::Available,
+                      "Text to classify.", {"text"}};
+const RouteArg kTopK{"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
+                     "Return only the highest-scoring `k` labels. Defaults to every label."};
+
 class ClassifyRoute : public ModelRoute {
 public:
     using ModelRoute::ModelRoute;
@@ -50,15 +58,7 @@ public:
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };
-        s.args = {
-            {"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-             "The classifier model. Optional when exactly one classification model is loaded; that "
-             "model is used."},
-            {"input", ArgIn::JsonBody, {{"type", "string"}, {"pattern", "\\S"}}, true, Support::Available,
-             "Text to classify.", {"text"}},
-            {"top_k", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", 1000000}}, false, Support::Available,
-             "Return only the highest-scoring `k` labels. Defaults to every label."},
-        };
+        s.args = {kModel, kInput, kTopK};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -95,16 +95,18 @@ public:
     }
 
 protected:
+    const RouteArg& model_arg() const override { return kModel; }
+
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        if (req.body.contains("top_k")) {
-            const double top_k = req.body["top_k"].get<double>();
+        if (req.has(kTopK)) {
+            const double top_k = req.arg(kTopK).get<double>();
             // The validator accepts 2.0 as an integer; the backend expects 2.
-            req.body["top_k"] = static_cast<long long>(top_k);
+            req.body[kTopK.name] = static_cast<long long>(top_k);
         }
 
         // The router requires a model on every request, so an omitted one is resolved
         // here, which is only possible when exactly one classifier is loaded.
-        if (!req.body.contains("model")) {
+        if (!req.has(kModel)) {
             req.model = ctx_.router->get_sole_loaded_model_of_type(ModelType::CLASSIFICATION);
             if (req.model.empty()) {
                 write_openai_error(res, kNoSoleClassifier,
@@ -112,7 +114,7 @@ protected:
                     "is loaded (load one, or name it in the request)");
                 return false;
             }
-            req.body["model"] = req.model;
+            req.body[kModel.name] = req.model;
             req.model_already_loaded = true;
         }
         return true;
