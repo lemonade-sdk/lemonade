@@ -128,7 +128,7 @@ const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"type", "ob
                                "The format the model must output, in OpenAI's format, such as "
                                "`{\"type\": \"json_object\"}`.", {}, true};
 const RouteArg kMaxCompletionTokens{"max_completion_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-                                    "OpenAI's name for `max_tokens`, which wins when both are sent.", {}, true};
+                                    "OpenAI's name for `max_tokens`; `max_tokens` wins when both are sent.", {}, true};
 const RouteArg kEnableThinking{"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                                "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
                                "false` does the same, and `enable_thinking` wins when both are sent."};

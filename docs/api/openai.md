@@ -51,7 +51,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `tool_choice` | No | Which tool the model must call, in OpenAI's format: `auto`, `none`, `required` or an object naming a function. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | The format the model must output, in OpenAI's format, such as `{"type": "json_object"}`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_completion_tokens` | No | OpenAI's name for `max_tokens`, which wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_completion_tokens` | No | OpenAI's name for `max_tokens`; `max_tokens` wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `enable_thinking` | No | Lemonade extension: `false` turns off reasoning on models that think. `thinking: false` does the same, and `enable_thinking` wins when both are sent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `route_trace` | No | Lemonade extension for `collection.router` models: `true` adds the per-condition `trace` to `x_lemonade_route`. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
