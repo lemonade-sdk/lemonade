@@ -2200,7 +2200,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `wire_format` | No | Cloud providers: `"openai"` or `"anthropic"`. An `"anthropic"` provider is served only through [`POST /v1/messages`](./anthropic.md#post-v1messages). Defaults to `"openai"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `subscribe` | No | Only applies when `stream` is `true`. If `false`, the server owns the download and answers at once with a snapshot of its job, which [`GET /v1/downloads`](#get-v1downloads) and [`POST /v1/downloads/control`](#post-v1downloadscontrol) then report and control. With `true`, closing the stream cancels the download. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A cloud provider's errors for an invalid `provider`, `base_url`, `auth_header_name` or `auth_header_prefix` value carry an `error` object. Every other error carries an `error` string, including a value of the wrong type.
+Errors carry an `error` string, except a cloud provider's field that has the right type but fails the provider checks, which carries an `error` object: a missing or empty `provider` or `base_url`, an invalid `provider`, `base_url`, `auth_header_name` or `auth_header_prefix`, or an `http://` base URL without `allow_insecure_http`.
 
 ### Install a Cloud Provider
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>

@@ -26,7 +26,7 @@ This page documents Lemonade's implementation of the [OpenAI API](https://develo
 
 <!-- BEGIN GENERATED: openai.chat_completions -->
 ## `POST /v1/chat/completions`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Generates the next assistant message for a conversation, downloading and loading the model if it is not loaded.
 
@@ -48,7 +48,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Cumulative probability of the top tokens to consider during nucleus sampling, from `0.0` to `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tools` | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `tool_choice` | No | Which tool the model must call, in OpenAI's format: `auto`, `none`, `required` or an object naming a function. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `tool_choice` | No | Which tool the model must call, in OpenAI's format: `auto`, `none` or `required`. vLLM and cloud models also take an object naming a function, which llama.cpp models treat as `auto`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | The format the model must output, in OpenAI's format, such as `{"type": "json_object"}`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | OpenAI's name for `max_tokens`. Send one of the two: when both are sent, the backend picks, and llama.cpp uses `max_tokens` while vLLM uses `max_completion_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -393,7 +393,7 @@ A chunk of the assistant's message.
     - `reasoning_content` - Reasoning models only: the next part of the model's thinking.
     - `tool_calls` - Parts of calls to the request's tools, matched by `index`: a call's first part carries its `id` and `function.name`, and later parts carry the next piece of `function.arguments`.
   - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it.
-- `usage` - Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`.
+- `usage` - Token counts for the request, on an extra last chunk with an empty `choices`. Sent when the request sets `stream_options.include_usage`, and always by vLLM models.
 - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 

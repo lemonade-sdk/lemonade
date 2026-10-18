@@ -554,7 +554,7 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 
 ### Response format
 
-- `status` - `idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`.
+- `status` - `idle` before any sync, and after a sync other than a dry run that found no models to check; `in_progress` while one runs; `success` or `failed` once it finishes; and `not_found` for an unknown `sync_id`.
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
 - `already_in_progress` - Whether a sync this request did not start is running.
@@ -602,7 +602,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `sync_id` (query) | No | Sync to report. Defaults to the latest. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `sync_id` (query) | No | Sync to report. Defaults to the latest. For a sync that has finished, the answer is the status recorded when it finished, `completed_sync_id` and `already_in_progress` included. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A `sync_id` that is neither running nor recorded answers `200` with `status: "not_found"`.
 
@@ -643,7 +643,7 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 ### Response format
 
-- `status` - `idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`.
+- `status` - `idle` before any sync, and after a sync other than a dry run that found no models to check; `in_progress` while one runs; `success` or `failed` once it finishes; and `not_found` for an unknown `sync_id`.
 - `sync_id` - The sync this status describes; `0` before any sync.
 - `completed_sync_id` - The most recent sync that finished.
 - `already_in_progress` - Whether a sync this request did not start is running.

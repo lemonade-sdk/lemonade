@@ -22,7 +22,7 @@ ordered_json model_sync_status_schema() {
         "type": "object",
         "required": ["status", "sync_id", "completed_sync_id", "already_in_progress"],
         "properties": {
-            "status": {"enum": ["idle", "in_progress", "success", "failed", "not_found"], "description": "`idle` before any sync, `in_progress` while one runs, `success` or `failed` once it finishes, and `not_found` for an unknown `sync_id`."},
+            "status": {"enum": ["idle", "in_progress", "success", "failed", "not_found"], "description": "`idle` before any sync, and after a sync other than a dry run that found no models to check; `in_progress` while one runs; `success` or `failed` once it finishes; and `not_found` for an unknown `sync_id`."},
             "sync_id": {"type": "integer", "description": "The sync this status describes; `0` before any sync."},
             "completed_sync_id": {"type": "integer", "description": "The most recent sync that finished."},
             "already_in_progress": {"type": "boolean", "description": "Whether a sync this request did not start is running."},

@@ -99,7 +99,7 @@ ordered_json chat_completion_chunk_schema() {
                     "finish_reason": {"type": ["string", "null"], "description": "Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it."}
                 }
             }},
-            "usage": {"type": "object", "description": "Token counts for the request, on an extra last chunk with an empty `choices`, when the request sets `stream_options.include_usage`."},
+            "usage": {"type": "object", "description": "Token counts for the request, on an extra last chunk with an empty `choices`. Sent when the request sets `stream_options.include_usage`, and always by vLLM models."},
             "timings": {"type": "object", "description": "Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");
@@ -121,9 +121,10 @@ const RouteArg kMessages{"messages", ArgIn::JsonBody, {{"type", "array"}}, true,
                          "`content`."};
 const RouteArg kLogprobs{"logprobs", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                          "`true` returns the log probability of each output token. Defaults to `false`.", {}, true};
-const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false, Support::Available,
-                           "Which tool the model must call, in OpenAI's format: `auto`, `none`, `required` or an "
-                           "object naming a function.", {}, true};
+const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false, Support::Partial,
+                           "Which tool the model must call, in OpenAI's format: `auto`, `none` or "
+                           "`required`. vLLM and cloud models also take an object naming a function, "
+                           "which llama.cpp models treat as `auto`.", {}, true};
 const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
                                "The format the model must output, in OpenAI's format, such as "
                                "`{\"type\": \"json_object\"}`.", {}, true};
