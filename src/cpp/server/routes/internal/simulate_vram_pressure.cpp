@@ -25,10 +25,13 @@ public:
             "Hands the eviction engine a simulated global VRAM usage, so tests can exercise "
             "pressure eviction without filling a GPU.";
         s.notes = {
-            "Only unpinned models with `auto_evict` enabled are candidates. A `pct` at or above "
-            "`auto_evict_threshold_pct` runs the idle-timeout checks and then unloads at most one "
-            "model for pressure, `-1` runs only the idle-timeout checks, and any other value does "
-            "nothing.",
+            "Only unpinned models with `auto_evict` enabled are candidates, and a model in use is "
+            "never chosen. One evaluation unloads at most one model: the first, in load order, past "
+            "its `evict_idle_timeout`, or when there is none and `pct` is at or above "
+            "`auto_evict_threshold_pct`, the one with the highest [eviction "
+            "score](../guide/configuration/multi-model.md#dynamic-vram-management-opt-in). It also "
+            "downsizes ready models past their `downsize_idle_timeout`. `-1` runs only the "
+            "idle-timeout checks, and any other value below the threshold does nothing.",
             "The answer comes after the evaluation finishes, so a test can check the outcome "
             "right away. While an exclusive job session is active no evaluation runs, and the "
             "answer is still `200`.",

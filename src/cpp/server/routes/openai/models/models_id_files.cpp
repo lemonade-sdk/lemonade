@@ -11,7 +11,8 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kFilesUnreadable{404, "model_load_error", "Resolving or listing `id`'s files fails"};
 
 const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-                   "Model id, as listed by [`GET /v1/models`](#get-v1models)."};
+                   "Model id, as listed by [`GET /v1/models`](#get-v1models). An alias's id is not "
+                   "accepted here; use its target."};
 const RouteArg kIncludePaths{"include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
                              "`true` adds each file's absolute `path`, which can reveal local usernames and the "
                              "cache layout. Defaults to `false`."};
