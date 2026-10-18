@@ -1063,7 +1063,6 @@ set(SOURCES_CORE
     src/cpp/server/models/cloud_rows.cpp
     src/cpp/server/models/recipe_option_layers.cpp
     src/cpp/server/models/composition.cpp
-    src/cpp/server/models/store_patches.cpp
     src/cpp/server/models/store.cpp
     src/cpp/server/models/store_builder.cpp
     src/cpp/server/models/sync_service.cpp

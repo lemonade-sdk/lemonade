@@ -16,7 +16,6 @@
 #include <nlohmann/json.hpp>
 #include "models/alias_manager.h"
 #include "models/backend_availability.h"
-#include "models/store_patches.h"
 #include "models/catalog_descriptor.h"
 #include "models/catalog_fetch_clock.h"
 #include "models/change_notifier.h"
@@ -476,7 +475,6 @@ private:
     // A provider's rows in that store, for the moments that cannot wait for a build.
     models::CloudRows cloud_rows_;
     // One row moved is not worth composing a set over.
-    models::StorePatches store_patches_;
 };
 
 } // namespace lemon

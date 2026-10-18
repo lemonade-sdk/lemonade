@@ -3,6 +3,7 @@
 #include <lemon/models/catalog_descriptor.h>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -15,7 +16,8 @@ struct ModelInfo;
 
 namespace models {
 
-// What a models header may name without pulling the value headers in.
+class ModelArtifactStore;
+struct CompositionResult;
 struct FilterReasons;
 struct StoreSnapshot;
 class CatalogSet;
@@ -89,7 +91,24 @@ public:
         std::unique_lock<std::mutex> builder_;
     };
 
-private:
+    // The compose loop, where "build the set if it is stale" lives. A compose that a
+    // concurrent write predated yields and tries again rather than clobbering it.
+    void ensure_current(const std::function<CompositionResult()>& compose);
+
+    // Patches: bringing the published set in line with one thing that changed. Each
+    // reads disk against the published view and takes the writer only for the rows.
+
+    // A model's bytes appeared or went away; collections routing through it follow.
+    void patch_download(const ModelArtifactStore& artifacts, const std::string& model_name,
+                        bool downloaded);
+
+    // Gone rather than misplaced: a registration leaves the set, a built-in stays.
+    void patch_removed(const std::string& model_name);
+
+    // Onto the caller's write scope, so a saved file and its row are never apart.
+    static void patch_options(std::map<std::string, ModelInfo>& draft, const ModelInfo& info);
+
+  private:
     friend class ModelStoreTest;
 
     // Derives the tables beside the set. The source is emptied: a published set is

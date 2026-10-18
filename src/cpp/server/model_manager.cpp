@@ -23,7 +23,6 @@
 #include <lemon/models/scan_catalog.h>
 #include <lemon/models/store.h>
 #include <lemon/models/store_builder.h>
-#include <lemon/models/store_patches.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/routing_parse_options.h>
 #include <lemon/models/model_index.h>
@@ -219,7 +218,6 @@ ModelManager::ModelManager(ModelManagerConfig config)
       })),
       ingest_(std::make_unique<models::ModelIngest>(make_ingest_deps())),
       composition_(make_composition()),
-      store_patches_(models::StorePatches::Deps{&store_, artifacts_.get()}),
       sync_(make_sync_deps()),
       cloud_rows_(store_, [this](const std::string& provider) {
           return backends::CloudServer::discover_provider_models(*cloud_registry_, provider);
@@ -391,7 +389,7 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     recipe_options_.replace(id, info.recipe_options.to_json());
 
     StoreWrite store_write(*this);
-    models::StorePatches::options(store_write.draft(), info);
+    models::ModelStore::patch_options(store_write.draft(), info);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
@@ -470,7 +468,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
         // Same layering as build_cache(), so the two can't drift.
         info.recipe_options = models::build_recipe_options(
             info, registry_recipe_options(cache_key), id, json{{id, saved}});
-        models::StorePatches::options(store_write.draft(), info);
+        models::ModelStore::patch_options(store_write.draft(), info);
     } else {
         invalidate_models_cache();
     }
@@ -677,43 +675,18 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
 }
 
 void ModelManager::build_cache() {
-    // A compose that a concurrent write predated yields rather than clobbering it, and
-    // the caller asked about state the writer already persisted. Composing again answers
-    // that; returning here would hand back a set that predates the write.
-    constexpr int kComposeAttempts = 4;
-    for (int attempt = 0; attempt < kComposeAttempts; ++attempt) {
-        models::ModelStore::Build build(store_);
-        if (build.up_to_date()) {
-            return;
-        }
-
-        LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
-
-        models::CompositionResult composed = composition_->run();
-
-        if (build.commit(std::move(composed.models), std::move(composed.reasons),
-                         std::move(composed.catalogs))) {
-            LOG(INFO, "ModelManager") << "Cache built: " << store_.read()->models.size()
-                                      << " total, " << composed.downloaded << " downloaded"
-                                      << std::endl;
-            return;
-        }
-    }
-
-    LOG(WARNING, "ModelManager")
-        << "Model set kept changing mid-compose; the store stays invalid for the next read"
-        << std::endl;
+    store_.ensure_current([this] { return composition_->run(); });
 }
 
 
 
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    store_patches_.download_status(model_name, downloaded);
+    store_.patch_download(*artifacts_, model_name, downloaded);
 }
 
 void ModelManager::remove_model_from_cache(const std::string& model_name) {
-    store_patches_.removed(model_name);
+    store_.patch_removed(model_name);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
