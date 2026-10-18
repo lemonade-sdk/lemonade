@@ -3333,6 +3333,68 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
     add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
 endif()
 
+set(_REPOSITORY_FIXTURE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_repository_fixture.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_REPOSITORY_FIXTURE_TEST_SRC}")
+    # The fixture host is one translation unit that registers itself; the test drives it
+    # through the same factory, layout and transfer the shipped hosts use.
+    add_executable(test_repository_fixture
+        test/cpp/test_repository_fixture.cpp
+        test/cpp/fixtures/fixture_hub_repository.cpp
+    )
+    target_link_libraries(test_repository_fixture PRIVATE lemonade-server-core)
+    target_compile_definitions(test_repository_fixture PRIVATE
+        LEMONADE_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_dependencies(test_repository_fixture copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RepositoryFixtureTest CI ON COMMAND test_repository_fixture)
+endif()
+
+set(_FACADE_SHAPE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_facade_shape.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_FACADE_SHAPE_TEST_SRC}")
+    # Reads source text, so it needs no library and no fixture.
+    add_executable(test_facade_shape
+        test/cpp/test_facade_shape.cpp
+    )
+    target_compile_definitions(test_facade_shape PRIVATE
+        LEMONADE_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+
+    include(CTest)
+    add_cpp_ci_test(FacadeShapeTest CI ON COMMAND test_facade_shape)
+endif()
+
+set(_IDENTITY_ROUND_TRIP_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_identity_round_trip.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_IDENTITY_ROUND_TRIP_TEST_SRC}")
+    add_executable(test_identity_round_trip
+        test/cpp/test_identity_round_trip.cpp
+    )
+    target_link_libraries(test_identity_round_trip PRIVATE lemonade-server-core)
+    add_dependencies(test_identity_round_trip copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(IdentityRoundTripTest CI ON COMMAND test_identity_round_trip)
+endif()
+
+set(_NAME_RESOLUTION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_name_resolution.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_NAME_RESOLUTION_TEST_SRC}")
+    add_executable(test_name_resolution
+        test/cpp/test_name_resolution.cpp
+    )
+    target_link_libraries(test_name_resolution PRIVATE lemonade-server-core)
+    add_dependencies(test_name_resolution copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(NameResolutionTest CI ON COMMAND test_name_resolution)
+endif()
+
 set(_COMPOSE_RETRY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_compose_retry.cpp"
 )

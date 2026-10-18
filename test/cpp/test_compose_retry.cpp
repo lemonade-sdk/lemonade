@@ -32,6 +32,7 @@ ModelInfo row(const std::string& name) {
     info.recipe = "llamacpp";
     info.checkpoints["main"] = "org/" + name + ":a.gguf";
     info.suggested = true;
+    info.labels = {"chat"};
     return info;
 }
 
@@ -74,6 +75,13 @@ int main() {
     ModelManagerConfig config;
     config.cache_dir = scratch.string();
     config.extra_catalogs = {racy};
+    // The compose protocol is the question, not what this machine can run.
+    config.availability = [](const std::map<std::string, ModelInfo>&) {
+        lemon::models::BackendAvailability declared;
+        declared.system_ram_gb = 64.0;
+        declared.largest_mem_pool_gb = 48.0;
+        return declared;
+    };
     ModelManager manager(std::move(config));
     late.manager = &manager;
 
