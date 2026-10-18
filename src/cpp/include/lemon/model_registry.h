@@ -23,8 +23,7 @@ public:
 };
 
 // Throttling or an upstream outage, as opposed to a repository that does not
-// exist. Callers that already hold the requested files locally can continue;
-// the rest should retry after retry_after_seconds().
+// exist, so the caller should retry after retry_after_seconds().
 class RegistryRateLimitError : public std::runtime_error {
 public:
     RegistryRateLimitError(int status_code, int retry_after_seconds, const std::string& message)
@@ -40,9 +39,8 @@ private:
     int retry_after_seconds_;
 };
 
-// CONTRACT: /pull attaches {"code": kRegistryUnavailableErrorCode, ...} on both
-// the JSON and SSE error paths. Clients key off it to retry rather than treat
-// the pull as permanently broken.
+// /pull attaches this on both its JSON and SSE error paths, so
+// clients can retry instead of treating the pull as permanently broken.
 constexpr const char* kRegistryUnavailableErrorCode = "registry_unavailable";
 
 class RegistrySearchError : public std::runtime_error {

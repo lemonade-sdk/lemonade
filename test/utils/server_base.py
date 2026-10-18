@@ -306,9 +306,15 @@ def _pull_model_streaming(model_name, port):
                 event = line[len("event:") :].strip()
             elif line.startswith("data:") and event == "error":
                 body = line[len("data:") :].strip()[:1000]
-                if "unknown_model" in body:
+                # Match on the error code, not the message: the message embeds
+                # the repo id, which could contain any of these words.
+                try:
+                    code = json.loads(body).get("code")
+                except (ValueError, TypeError, AttributeError):
+                    code = None
+                if code == "unknown_model":
                     status = 400
-                elif "registry_unavailable" in body:
+                elif code == "registry_unavailable":
                     status = 503
                 else:
                     status = 500
@@ -369,7 +375,11 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT, rate_limit_budget=6
         last_status = status
         last_body = body
 
-        if status == 503 and rate_limit_budget > 0:
+        if status == 503:
+            # This is the whole 503 allowance: falling through to the generic
+            # backoff below would stack extra waits on top of it.
+            if rate_limit_budget <= 0:
+                break
             delay = min(_retry_after_seconds(body) or 10, rate_limit_budget)
             rate_limit_budget -= delay
             next_delay = delay
