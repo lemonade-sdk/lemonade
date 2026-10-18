@@ -13,10 +13,11 @@
 namespace lemon {
 
 struct ModelInfo;
-class ModelRegistry;
 
 namespace models {
 
+struct ArtifactRef;
+class FetchableRepository;
 struct StoreSnapshot;
 class ModelStore;
 
@@ -44,8 +45,8 @@ struct UpdateScanDeps {
     std::function<std::string(const std::filesystem::path& model_cache_dir,
                               const std::string& model_name,
                               const ModelInfo& info)> processed_snapshot_id;
-    // Which registry answers for a source. Empty means the configured ones.
-    std::function<const ModelRegistry&(RegistryId source)> registry_for;
+    // Which source answers for a checkpoint's repository. Empty means the real host.
+    std::function<std::unique_ptr<FetchableRepository>(const ArtifactRef& ref)> repository_for;
     std::function<bool()> cancel_requested;
     std::function<void(const ScanDetermination&, UpdateScanResult&)> publish;
     std::function<void(const std::string& phase)> phase;

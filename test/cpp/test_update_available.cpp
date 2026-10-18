@@ -5,6 +5,7 @@
 
 #include <lemon/model_manager.h>
 #include <lemon/model_registry.h>
+#include <lemon/models/fetchable_repository.h>
 #include <lemon/models/registry_id.h>
 #include <lemon/utils/path_utils.h>
 
@@ -85,19 +86,42 @@ void make_hf_repo(const fs::path& models_dir,
     }
 }
 
-// One repository's answers, remembering what it was asked. `unreachable` and `fail_repo`
+// One source's answers, remembering what it was asked. `unreachable` and `fail_repo`
 // fail the way a down registry does, so the failure paths belong to the fixture.
-class StubRegistry : public ModelRegistry {
-  public:
-    RegistryId source() const override { return lemon::models::huggingface_descriptor().id; }
-    std::string default_revision() const override { return "main"; }
-    std::map<std::string, std::string> auth_headers() const override { return {}; }
+struct StubState {
+    mutable std::vector<std::string> asked;
+    std::string latest_snapshot = "snap-new";
+    std::map<std::string, std::string> latest_by_repo;
+    std::string fail_repo;
+    bool unreachable = false;
+    bool can_go_stale = true;
+};
 
-    RegistryRepository fetch_repository(const std::string& repo_id,
-                                        const std::string& revision = "") const override {
-        asked.push_back(revision.empty() ? repo_id : repo_id + "@" + revision);
-        if (unreachable) throw std::runtime_error("the stub registry is unreachable");
-        if (!fail_repo.empty() && fail_repo == repo_id)
+class StubRepository : public lemon::models::FetchableRepository {
+  public:
+    StubRepository(const lemon::models::ArtifactRef& ref, StubState* state)
+        : FetchableRepository(ref, lemon::models::SourcePlacement{}), state_(state) {}
+
+    lemon::models::ArtifactKind kind() const override {
+        return lemon::models::ArtifactKind::Registry;
+    }
+    std::string resolve() const override { return ""; }
+    lemon::models::Presence present() const override { return {}; }
+    lemon::models::Acquisition acquisition() const override { return {}; }
+    lemon::models::Deletion deletion() const override {
+        return lemon::models::Deletion{lemon::models::Deletion::Kind::CacheDir, ""};
+    }
+
+    lemon::models::RegistryId id() const override {
+        return ref_.registry.value_or(lemon::models::huggingface_descriptor().id);
+    }
+    lemon::models::Revision default_revision() const override { return {"main", false}; }
+
+    lemon::models::RepoListing list(const std::string& repo_id,
+                                    const std::string& revision) const override {
+        state_->asked.push_back(revision.empty() ? repo_id : repo_id + "@" + revision);
+        if (state_->unreachable) throw std::runtime_error("the stub registry is unreachable");
+        if (!state_->fail_repo.empty() && state_->fail_repo == repo_id)
             throw std::runtime_error("the stub cannot reach " + repo_id);
 
         if (!revision.empty()) {
@@ -106,28 +130,47 @@ class StubRegistry : public ModelRegistry {
             throw std::runtime_error("the stub has no listing for " + revision);
         }
 
-        RegistryRepository latest;
-        latest.repo_id = repo_id;
-        latest.revision = "main";
-        const auto per_repo = latest_by_repo.find(repo_id);
-        latest.snapshot_id = per_repo == latest_by_repo.end() ? latest_snapshot : per_repo->second;
+        lemon::models::RepoListing listing;
+        listing.repo_id = repo_id;
+        const auto per_repo = state_->latest_by_repo.find(repo_id);
+        listing.revision = {per_repo == state_->latest_by_repo.end() ? state_->latest_snapshot
+                                                                      : per_repo->second,
+                            false};
+        listing.download_revision = "main";
         RegistryFile file;
         file.path = "main.gguf";
         file.size = 4;
-        latest.files = {file};
-        return latest;
+        listing.files = {file};
+        return listing;
     }
 
-    std::string resolve_file_url(const std::string& repo_id, const std::string& revision,
-                                 const std::string& file) const override {
-        return "https://stub.invalid/" + repo_id + "/" + revision + "/" + file;
+    std::string file_url(const lemon::models::RepoRef& ref) const override {
+        return "https://stub.invalid/" + ref.repo_id + "/" + ref.revision.id + "/" + ref.path;
     }
 
-    mutable std::vector<std::string> asked;
-    std::string latest_snapshot = "snap-new";
-    std::map<std::string, std::string> latest_by_repo;
-    std::string fail_repo;
-    bool unreachable = false;
+    bool can_go_stale() const override { return state_->can_go_stale; }
+    lemon::models::Revision active_revision(const lemon::models::LocalRef&) const override {
+        return {};
+    }
+    void set_active_revision(const lemon::models::LocalRef&,
+                             const lemon::models::Revision&) override {}
+    lemon::models::Staleness compare(const lemon::models::LocalRef&,
+                                     const lemon::models::RepoListing&) const override {
+        return {};
+    }
+    void commit(const lemon::models::LocalRef&, const lemon::models::Revision&) override {}
+
+    std::string cache_dir_name(const std::string& repo_id) const override {
+        std::string slug = "models--";
+        for (char c : repo_id) {
+            if (c == '/') slug += "--";
+            else slug += c;
+        }
+        return slug;
+    }
+
+  private:
+    StubState* state_;
 };
 
 struct Fixture {
@@ -183,10 +226,10 @@ int main() {
     lemon::utils::set_config_dir(path_to_utf8(fx.root));
     lemon::utils::set_models_dir(path_to_utf8(fx.models_dir));
 
-    StubRegistry registry;
+    StubState registry;
     ModelManagerConfig config;
-    config.registry_for = [&registry](lemon::models::RegistryId) -> const ModelRegistry& {
-        return registry;
+    config.repository_for = [&registry](const lemon::models::ArtifactRef& ref) {
+        return std::make_unique<StubRepository>(ref, &registry);
     };
     ModelManager manager(std::move(config));
 
@@ -249,6 +292,19 @@ int main() {
     check("and it is still reported as failed", partial_unchanged.failed_models.count("zz-multi") == 1);
     registry.latest_by_repo.clear();
     registry.fail_repo.clear();
+
+    // A source that says its bytes cannot go stale is skipped before it is asked:
+    // checking it could only lie.
+    registry.asked.clear();
+    registry.can_go_stale = false;
+    const bool flag_before = flagged(manager, "user.zz-updatable");
+    const auto frozen = manager.check_for_model_updates({});
+    check("a source that cannot go stale is never listed", registry.asked.empty());
+    check("a source that cannot go stale reports nothing", frozen.updated_models.empty() &&
+          frozen.up_to_date_models.empty() && frozen.failed_models.empty());
+    check("a source that cannot go stale moves no flag",
+          flagged(manager, "user.zz-updatable") == flag_before);
+    registry.can_go_stale = true;
 
     const auto every = manager.check_for_model_updates({});
     check("a local-path model is never asked about", !asked_about(registry.asked, "zz/local"));

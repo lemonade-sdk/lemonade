@@ -3,8 +3,9 @@
 #include <lemon/backends/backend_registry.h>
 #include <lemon/models/model_info.h>
 #include <lemon/model_registry.h>
+#include <lemon/models/artifact_layout.h>
 #include <lemon/models/checkpoint_grammar.h>
-#include <lemon/models/store.h>
+#include <lemon/models/fetchable_repository.h>
 #include <lemon/models/store.h>
 #include <lemon/models/store_snapshot.h>
 #include <lemon/registry_files.h>
@@ -154,8 +155,20 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
         try {
             const auto source =
                 parse_remote_registry_source(entry.registry_source);
-            const ModelRegistry& registry =
-                deps.registry_for ? deps.registry_for(source) : model_registry(source);
+            ArtifactRef probe;
+            probe.registry = source;
+            probe.repo_id = entry.repo_id;
+            probe.recipe = candidate_models.at(entry.model_names.front()).recipe;
+            probe.checkpoint_type = "main";
+            const std::unique_ptr<FetchableRepository> repository =
+                deps.repository_for
+                    ? deps.repository_for(probe)
+                    : create_repository(probe.registry.value_or(source), probe,
+                                        SourcePlacement{});
+
+            // A source whose bytes cannot go stale has nothing to check; skipping
+            // it changes no flag either way.
+            if (!repository->can_go_stale()) continue;
 
             LOG(DEBUG, "ModelManager")
                 << "Checking for updates on "
@@ -168,10 +181,9 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                 }
             }
 
-            const RegistryRepository latest =
-                registry.fetch_repository(entry.repo_id);
+            const RepoListing latest = repository->list(entry.repo_id, "");
 
-            if (latest.snapshot_id.empty()) {
+            if (latest.revision.id.empty()) {
                 for (const auto& model_name : entry.model_names) {
                     std::string pub_name = public_name(model_name);
                     result.failed_models[pub_name] = "Empty snapshot returned from registry";
@@ -184,7 +196,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                 utils::path_from_utf8(deps.hf_cache_dir()) /
                 registry_repo_cache_dir_name(entry.repo_id, parse_remote_registry_source(entry.registry_source));
             const auto headers =
-                artifact_aware ? registry.auth_headers()
+                artifact_aware ? repository->auth_headers()
                                : std::map<std::string, std::string>{};
 
             std::vector<std::string> latest_files;
@@ -211,7 +223,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                     const auto processed_it = processed_snapshots.find(model_name);
                     if (processed_it != processed_snapshots.end() &&
                         !processed_it->second.empty() &&
-                        processed_it->second == latest.snapshot_id) {
+                        processed_it->second == latest.revision.id) {
                         determination_tracker.mark_determined(model_name);
                         continue;
                     }
@@ -237,7 +249,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
 
                 const std::string active =
                     registry_files::active_local_snapshot(resolved, cache_path);
-                if (!active.empty() && active == latest.snapshot_id) {
+                if (!active.empty() && active == latest.revision.id) {
                     determination_tracker.mark_determined(model_name);
                     continue;
                 }
@@ -259,10 +271,10 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                             auto previous_it = previous_files_by_ref.find(active);
                             if (previous_it == previous_files_by_ref.end()) {
                                 try {
-                                    const RegistryRepository previous_repo =
-                                        registry.fetch_repository(entry.repo_id, active);
+                                    const RepoListing previous_listing =
+                                        repository->list(entry.repo_id, active);
                                     std::vector<std::string> previous_files;
-                                    for (const auto& file : previous_repo.files) {
+                                    for (const auto& file : previous_listing.files) {
                                         if (!file.directory) previous_files.push_back(file.path);
                                     }
                                     previous_it = previous_files_by_ref
@@ -288,14 +300,14 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
 
                         if (!selected.empty() &&
                             registry_files::selected_artifacts_unchanged(
-                                entry.repo_id, active, latest.snapshot_id,
+                                entry.repo_id, active, latest.revision.id,
                                 cache_path / "snapshots" / active, selected, headers,
                                 &tree_cache)) {
                             changed = false;
                             LOG(DEBUG, "ModelManager")
                                 << "Skipping update for " << model_name
                                 << ": artifacts unchanged in "
-                                << latest.snapshot_id.substr(0, 18) << ", keeping "
+                                << latest.revision.id.substr(0, 18) << ", keeping "
                                 << active.substr(0, 18) << std::endl;
                         }
                     } catch (const std::exception& e) {
@@ -326,7 +338,7 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                 LOG(INFO, "ModelManager")
                     << "Update available for " << entry.repo_id
                     << " on " << remote_registry_display_name(source)
-                    << ": latest=" << latest.snapshot_id.substr(0, 18)
+                    << ": latest=" << latest.revision.id.substr(0, 18)
                     << " (" << updated_variants << " variant(s))" << std::endl;
             }
 

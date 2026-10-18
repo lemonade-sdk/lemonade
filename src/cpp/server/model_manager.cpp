@@ -509,7 +509,7 @@ ModelManager::UpdateCheckResult ModelManager::run_update_scan(const std::vector<
     deps.snapshot = [this] { return store_.read(); };
     deps.hf_cache_dir = [this] { return get_hf_cache_dir(); };
     deps.registry_source = [](const ModelInfo& info) { return models::registry_source_of(info); };
-    deps.registry_for = config_.registry_for;
+    deps.repository_for = config_.repository_for;
     deps.processed_snapshot_id = [this](const fs::path& model_cache_dir,
                                         const std::string& model_name,
                                         const ModelInfo& info) {

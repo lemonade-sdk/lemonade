@@ -78,12 +78,8 @@ struct ModelManagerConfig {
     // hardware. A caller that means a particular machine says so here.
     std::function<models::BackendAvailability(const std::map<std::string, ModelInfo>&)> availability;
 
-    // Which registry answers for a source when a scan looks for updates; empty uses the
-    // configured ones. What it returns is not owned.
-    std::function<const ModelRegistry&(models::RegistryId source)> registry_for;
-
-    // Which source a pull binds a checkpoint to; empty binds the real host. A test
-    // that watches a pull end to end answers here.
+    // Which source answers for a checkpoint's repository, in a pull and in a scan
+    // alike; empty binds the real host.
     std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
         repository_for;
 };
