@@ -44,7 +44,6 @@ struct RouteArg {
     std::string description;
     std::vector<std::string> aliases;  // other names clients send it under, e.g. "model" for "model_name"
     bool forwarded = false;            // lemond passes it to the backend without acting on it
-    bool drop_invalid = false;         // a value that fails the schema is ignored instead of answered with 400
 };
 
 // Each format a route returns gets its own schema in the docs.
@@ -174,7 +173,7 @@ void resolve_model_name(ServerContext& ctx, nlohmann::json& request, bool strip_
 std::string strip_latest_tag(const std::string& name);
 
 // Aborts the upstream backend request when the client disconnects during a non-streaming
-// request (Invariant #10), for as long as the returned scope lives.
+// request, for as long as the returned scope lives.
 std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const RouteRequest& req);
 
 // Adds the router decision to the response body and headers.

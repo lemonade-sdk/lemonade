@@ -179,25 +179,21 @@ public:
              "documented below. A key given at the top level wins. `num_ctx` sets the context "
              "size when this request loads the model. Other keys are ignored."},
             {"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: image width in pixels. Defaults to `512`. Ignored unless an "
-             "integer.", {}, false, true},
+             "Image models only: image width in pixels. Defaults to `512`."},
             {"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: image height in pixels. Defaults to `512`. Ignored unless an "
-             "integer.", {}, false, true},
+             "Image models only: image height in pixels. Defaults to `512`."},
             {"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Image models only: inference steps. Defaults to the model's own. Ignored unless "
-             "an integer.", {}, false, true},
+             "Image models only: inference steps. Defaults to the model's own."},
             {"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
-             "Image models only: classifier-free guidance scale. Defaults to the model's own. "
-             "Ignored unless a number.", {}, false, true},
+             "Image models only: classifier-free guidance scale. Defaults to the model's own."},
             {"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
-             "Random seed for reproducible output. Ignored unless an integer.", {}, false, true},
+             "Random seed for reproducible output."},
             {"keep_alive", ArgIn::JsonBody, json::object(), false, Support::Available,
              "`0` with an empty `prompt` unloads the model, answering with "
              "`done_reason: \"unload\"`. Other values are ignored."},
             {"ctx_size", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
              "Lemonade extension: context size to load the model with, when this request loads "
-             "it. Wins over `options.num_ctx`. Ignored unless an integer.", {}, false, true},
+             "it. Wins over `options.num_ctx`."},
             {"system", ArgIn::JsonBody, {{"type", "string"}}, false, Support::NotAvailable,
              "System prompt. Ignored."},
             {"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
