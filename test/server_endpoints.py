@@ -7432,6 +7432,73 @@ class EndpointTests(ServerTestBase):
             self.assertTrue(info["downloaded"], f"moved Krea files not found: {info}")
             self.assertNotEqual(info.get("source"), "extra_models_dir")
 
+    def test_021ylb_incomplete_auxiliary_keeps_single_gguf(self):
+        """Missing companion must not hide an otherwise usable external GGUF."""
+        suffix = uuid.uuid4().hex[:8]
+        repo_name = f"MissingAux-{suffix}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        main_file = "Model-Q4_K_M.gguf"
+        mmproj_file = "mmproj-F16.gguf"
+        name = f"user.MissingAux-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "main": f"lemon-test/{repo_name}:{main_file}",
+                    "mmproj": f"lemon-test/{repo_name}:{mmproj_file}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}"], refs={repo: "active"}
+            ) as extra_dir:
+                self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(extra_dir, {repo_name: f"{snap}/"})
+                extra = self._get_model(repo_name)
+                self.assertTrue(extra["downloaded"])
+                self.assertEqual(extra["recipe"], "llamacpp")
+
+            # When the companion is present, the registered model owns both files.
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}", f"{snap}/{mmproj_file}"],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(extra_dir, {})
+        finally:
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021ylc_incomplete_flux_gguf_stays_visible(self):
+        """A FLUX image registration without its encoder must not claim its GGUF."""
+        name = "Flux-2-Klein-9B-GGUF"
+        catalog = self._listed_models()
+        if name not in catalog or catalog[name]["downloaded"]:
+            self.skipTest("FLUX image recipe unavailable or installed in managed cache")
+
+        repo = "models--unsloth--FLUX.2-klein-9B-GGUF"
+        snap = f"{repo}/snapshots/active"
+        main_file = "flux-2-klein-9b-Q8_0.gguf"
+        with self._extra_models_dir(
+            ggufs=[f"{snap}/{main_file}"], refs={repo: "active"}
+        ) as extra_dir:
+            registered = self._get_model(name)
+            self.assertEqual(registered["recipe"], "sd-cpp")
+            self.assertFalse(registered["downloaded"])
+            self.assertExtraModelsListed(
+                extra_dir, {"FLUX.2-klein-9B-GGUF": f"{snap}/"}
+            )
+
     def test_021ym_registered_shards_and_unrelated_quantization(self):
         """Every registered shard stays out of extra.*, other variants remain."""
         name = f"user.Shards-{uuid.uuid4().hex[:8]}"
@@ -7509,6 +7576,67 @@ class EndpointTests(ServerTestBase):
                     )
         finally:
             # Restore the original extra directory before removing registration.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021ymb_empty_draft_does_not_expose_main_shards(self):
+        """An invalid auxiliary role must not expose registered main shards."""
+        suffix = uuid.uuid4().hex[:8]
+        model_base = f"EarlyAux-{suffix}"
+        repo_name = f"{model_base}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        first = f"{model_base}-Q4_K_M-00001-of-00002.gguf"
+        second = f"{model_base}-Q4_K_M-00002-of-00002.gguf"
+        other = f"{model_base}-Q8_0.gguf"
+        unrelated = f"{model_base}-Q5_K_M.gguf"
+        name = f"user.{model_base}"
+
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "draft": "",
+                    "main": f"lemon-test/{repo_name}:{first}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            for main_files in ([first, second], [first]):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{file}" for file in [*main_files, other, unrelated]
+                    ],
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            f"{model_base}-Q8_0": f"{snap}/{other}",
+                            f"{model_base}-Q5_K_M": f"{snap}/{unrelated}",
+                        },
+                    )
+        finally:
+            # A blank draft checkpoint makes the registration undeletable.
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": name,
+                    "recipe": "llamacpp",
+                    "checkpoint": f"lemon-test/{repo_name}:{first}",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
             response = requests.post(
                 f"{self.base_url}/delete",
                 json={"model_name": name},

@@ -3333,6 +3333,20 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_SHIM_TEST_SRC}")
     add_cpp_ci_test(ModelManagerShimTest CI ON COMMAND test_model_manager_shim)
 endif()
 
+set(_COMPOSE_RETRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_compose_retry.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_COMPOSE_RETRY_TEST_SRC}")
+    add_executable(test_compose_retry
+        test/cpp/test_compose_retry.cpp
+    )
+    target_link_libraries(test_compose_retry PRIVATE lemonade-server-core)
+    add_dependencies(test_compose_retry copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ComposeRetryTest CI ON COMMAND test_compose_retry)
+endif()
+
 set(_STORE_PATCHES_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_store_patches.cpp"
 )

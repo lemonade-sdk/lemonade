@@ -673,22 +673,32 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
 }
 
 void ModelManager::build_cache() {
-    models::ModelStore::Build build(store_);
-    if (build.up_to_date()) {
-        return;
+    // A compose that a concurrent write predated yields rather than clobbering it, and
+    // the caller asked about state the writer already persisted. Composing again answers
+    // that; returning here would hand back a set that predates the write.
+    constexpr int kComposeAttempts = 4;
+    for (int attempt = 0; attempt < kComposeAttempts; ++attempt) {
+        models::ModelStore::Build build(store_);
+        if (build.up_to_date()) {
+            return;
+        }
+
+        LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
+
+        models::CompositionResult composed = composition_->run();
+
+        if (build.commit(std::move(composed.models), std::move(composed.reasons),
+                         std::move(composed.catalogs))) {
+            LOG(INFO, "ModelManager") << "Cache built: " << store_.read()->models.size()
+                                      << " total, " << composed.downloaded << " downloaded"
+                                      << std::endl;
+            return;
+        }
     }
 
-    LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
-
-    models::CompositionResult composed = composition_->run();
-
-    if (!build.commit(std::move(composed.models), std::move(composed.reasons),
-                      std::move(composed.catalogs))) {
-        return;
-    }
-
-    LOG(INFO, "ModelManager") << "Cache built: " << store_.read()->models.size() << " total, "
-                              << composed.downloaded << " downloaded" << std::endl;
+    LOG(WARNING, "ModelManager")
+        << "Model set kept changing mid-compose; the store stays invalid for the next read"
+        << std::endl;
 }
 
 

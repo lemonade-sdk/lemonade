@@ -157,6 +157,17 @@ static void test_a_write_under_a_build_wins() {
     check("and nothing of the refused set landed", settled->models.count("user.Stale") == 0);
     check("the store stays out of date, so the next read reads the disk again",
           !settled->valid);
+
+    ModelStore::Build retry(store);
+    std::map<std::string, ModelInfo> recomposed;
+    recomposed["user.Alpha"] = *settled->find("user.Alpha");
+    recomposed["user.Fresh"] = model("user.Fresh");
+    check("a compose asked again lands on the write",
+          retry.commit(std::move(recomposed), nullptr, no_catalogs()));
+    const auto landed = store.read();
+    check("and carries the write with it",
+          landed->valid && landed->find("user.Alpha")->downloaded &&
+              landed->models.count("user.Fresh") == 1);
 }
 
 static void test_a_build_holds_only_the_builder() {

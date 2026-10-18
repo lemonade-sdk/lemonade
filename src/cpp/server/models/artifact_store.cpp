@@ -1052,42 +1052,56 @@ bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
     }
 
     ModelInfo candidate = info;
-    // Discovery must also exclude matched shards when the family is incomplete.
-    // Resolved model paths are still only committed after full validation.
-    std::set<fs::path> local_owned_paths;
-    std::set<fs::path>& owned_paths = registered_paths ? *registered_paths : local_owned_paths;
-    try {
-        for (const auto& [type, checkpoint] : info.checkpoints) {
-            if (acquired_lazily(info, type)) continue;
-            const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
-            if (checkpoint_repo.empty()) return false;
-            const fs::path expected_repo = root /
-                backends::hf_cache::repo_id_to_cache_dir_name(checkpoint_repo, registry_source_of(info));
-            candidate.resolved_paths[type] =
-                resolve_path_in(info, type, checkpoint, extra_dir);
-            const std::string& resolved = candidate.resolved_paths[type];
-            if (info.recipe == "llamacpp" && type == "main" &&
-                (safe_is_directory(utils::path_from_utf8(resolved)) ||
-                 !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
-                return false;
+    std::set<fs::path> matched_paths;
+    const bool all_complete = [&]() -> bool {
+        try {
+            // Main first: a later role may invalidate the registration, and the
+            // shard rule below still needs the main family to have been matched.
+            for (bool main_pass : {true, false}) {
+                for (const auto& [type, checkpoint] : info.checkpoints) {
+                    if (acquired_lazily(info, type) || (type == "main") != main_pass) continue;
+                    const std::string checkpoint_repo = repo_id_from_checkpoint(checkpoint);
+                    if (checkpoint_repo.empty()) return false;
+                    const fs::path expected_repo = root /
+                        backends::hf_cache::repo_id_to_cache_dir_name(checkpoint_repo, registry_source_of(info));
+                    candidate.resolved_paths[type] =
+                        resolve_path_in(info, type, checkpoint, extra_dir);
+                    const std::string& resolved = candidate.resolved_paths[type];
+                    if (info.recipe == "llamacpp" && type == "main" &&
+                        (safe_is_directory(utils::path_from_utf8(resolved)) ||
+                         !gguf_reader_detail::ends_with_ignore_case(resolved, ".gguf"))) {
+                        return false;
+                    }
+                    // Reject escaped refs/main entries and symlinks, including redirects
+                    // into a *different* repository under the same extra models root.
+                    const fs::path resolved_path = utils::path_from_utf8(resolved);
+                    const bool own_repo = path_inside(expected_repo, root) &&
+                        path_inside(resolved_path, expected_repo);
+                    const bool legacy_main_repo = type != "main" &&
+                        path_inside(resolved_path, main_repo);
+                    if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
+                        !collect_registered_shards(resolved_path,
+                            own_repo ? expected_repo : main_repo, matched_paths)) {
+                        return false;
+                    }
+                }
             }
-            // Reject escaped refs/main entries and symlinks, including redirects
-            // into a *different* repository under the same extra models root.
-            const fs::path resolved_path = utils::path_from_utf8(resolved);
-            const bool own_repo = path_inside(expected_repo, root) &&
-                path_inside(resolved_path, expected_repo);
-            const bool legacy_main_repo = type != "main" &&
-                path_inside(resolved_path, main_repo);
-            if (resolved.empty() || (!own_repo && !legacy_main_repo) ||
-                !collect_registered_shards(resolved_path,
-                    own_repo ? expected_repo : main_repo, owned_paths)) {
-                return false;
+            return complete(candidate);
+        } catch (const std::exception&) {
+            return false;  // An optional directory must never break catalog discovery.
+        }
+    }();
+
+    if (registered_paths) {
+        for (const auto& path : matched_paths) {
+            // A partial shard family stays excluded: loose shards would each
+            // surface as their own unusable extra.* model.
+            if (all_complete || is_gguf_shard_filename(path.filename().string(), nullptr)) {
+                registered_paths->insert(path);
             }
         }
-        if (!complete(candidate)) return false;
-    } catch (const std::exception&) {
-        return false;  // An optional directory must never break catalog discovery.
     }
+    if (!all_complete) return false;
     info.resolved_paths = std::move(candidate.resolved_paths);
     return true;
 }
