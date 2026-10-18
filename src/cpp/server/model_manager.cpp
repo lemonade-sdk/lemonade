@@ -558,7 +558,7 @@ json ModelManager::wait_for_sync() {
 
 void ModelManager::download_from_huggingface_engine(
         const ModelInfo& info, DownloadProgressCallback progress_callback) {
-    ingest_->fetch_registry_artifacts(info, progress_callback);
+    ingest_->fetch_registry_artifacts(info, progress_callback, {});
 }
 
 std::vector<ModelInfo> ModelManager::scan_extra_models(
@@ -791,12 +791,13 @@ void ModelManager::register_model(const std::string& model_name,
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
-                                 DownloadProgressCallback progress_callback) {
+                                 DownloadProgressCallback progress_callback,
+                                 const utils::CancelToken& cancel) {
     if (download_model_override_) {
         download_model_override_(model_name, model_data, do_not_upgrade, progress_callback);
         return;
     }
-    ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback);
+    ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback, cancel);
 }
 
 std::string ModelManager::canonical_for_request(const std::string& requested) {

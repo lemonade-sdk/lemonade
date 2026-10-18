@@ -151,7 +151,8 @@ ArtifactTransfer ArtifactTransfer::with_default_transfers() {
 
 void ArtifactTransfer::execute(const DownloadPlan& plan,
                                const std::map<std::string, std::string>& headers,
-                               DownloadProgressCallback progress) const {
+                               DownloadProgressCallback progress,
+                               const utils::CancelToken& cancel) const {
     const int total_files = static_cast<int>(plan.files.size());
 
     // Dispatch is settled before anything is written, so a file no transfer
@@ -192,9 +193,26 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         total_download_size += file.size;
     }
 
+    // A progress callback that returns false closes the update channel; only
+    // the token stops a plan.
+    bool updates_open = (progress != nullptr);
+    auto emit = [&](DownloadProgress& update) {
+        if (!updates_open) {
+            return;
+        }
+        if (!progress(update)) {
+            updates_open = false;
+        }
+    };
+
     int file_index = 0;
     for (const auto& file : plan.files) {
         file_index++;
+        if (cancel.cancelled()) {
+            LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
+            throw TransferError("Download cancelled", true);
+        }
+
         const std::string target_dir =
             file.download_path.empty() ? plan.download_path : file.download_path;
         const std::string output_path = target_dir + "/" + file.name;
@@ -205,20 +223,15 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
 
         LOG(INFO, "ModelManager") << "Downloading: " << file.name << "..." << std::endl;
 
-        if (progress) {
-            DownloadProgress update;
-            update.file = file.name;
-            update.file_index = file_index;
-            update.total_files = total_files;
-            update.bytes_downloaded = 0;
-            update.bytes_total = static_cast<size_t>(file.size);
-            update.total_download_size = static_cast<size_t>(total_download_size);
-            update.percent = 0;
-            if (!progress(update)) {
-                LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
-                throw std::runtime_error("Download cancelled");
-            }
-        }
+        DownloadProgress update;
+        update.file = file.name;
+        update.file_index = file_index;
+        update.total_files = total_files;
+        update.bytes_downloaded = 0;
+        update.bytes_total = static_cast<size_t>(file.size);
+        update.total_download_size = static_cast<size_t>(total_download_size);
+        update.percent = 0;
+        emit(update);
 
         // GGUF models are consumed directly by llama-server. If a previous
         // download saved an HTML or error page under a .gguf name, reject that
@@ -244,9 +257,9 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         }
 
         ByteProgress byte_progress;
-        if (progress) {
+        if (updates_open) {
             byte_progress = [&, file_index, bytes_on_disk](std::size_t downloaded,
-                                                           std::size_t total) -> bool {
+                                                           std::size_t total) {
                 DownloadProgress update;
                 update.file = file.name;
                 update.file_index = file_index;
@@ -256,14 +269,14 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
                 update.total_download_size = static_cast<size_t>(total_download_size);
                 update.bytes_previously_downloaded = static_cast<size_t>(bytes_on_disk);
                 update.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
-                return progress(update);
+                emit(update);
             };
         }
 
         std::uint64_t bytes_moved = 0;
         try {
-            bytes_moved =
-                chosen[file_index - 1]->transfer(file, target_dir, headers, byte_progress);
+            bytes_moved = chosen[file_index - 1]->transfer(file, target_dir, headers,
+                                                           byte_progress, cancel);
         } catch (const TransferError& error) {
             if (error.cancelled) {
                 LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
@@ -292,18 +305,16 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         if (bytes_moved == 0) {
             // Report a skipped file as complete so a resumed download still
             // reaches 100%.
-            if (progress) {
-                DownloadProgress update;
-                update.file = file.name;
-                update.file_index = file_index;
-                update.total_files = total_files;
-                update.bytes_downloaded = static_cast<size_t>(file.size);
-                update.bytes_total = static_cast<size_t>(file.size);
-                update.total_download_size = static_cast<size_t>(total_download_size);
-                update.bytes_previously_downloaded = static_cast<size_t>(file.size);
-                update.percent = 100;
-                (void)progress(update);
-            }
+            DownloadProgress update;
+            update.file = file.name;
+            update.file_index = file_index;
+            update.total_files = total_files;
+            update.bytes_downloaded = static_cast<size_t>(file.size);
+            update.bytes_total = static_cast<size_t>(file.size);
+            update.total_download_size = static_cast<size_t>(total_download_size);
+            update.bytes_previously_downloaded = static_cast<size_t>(file.size);
+            update.percent = 100;
+            emit(update);
         }
     }
 
@@ -378,7 +389,8 @@ bool HttpFileTransfer::handles(const std::string& url) const {
 std::uint64_t HttpFileTransfer::transfer(const DownloadFile& file,
                                          const std::string& target_dir,
                                          const std::map<std::string, std::string>& headers,
-                                         const ByteProgress& progress) const {
+                                         const ByteProgress& progress,
+                                         const utils::CancelToken& cancel) const {
     utils::DownloadOptions options;
     options.max_retries = 10;
     options.initial_retry_delay_ms = 2000;
@@ -390,17 +402,22 @@ std::uint64_t HttpFileTransfer::transfer(const DownloadFile& file,
     options.expected_hash_algorithm = file.expected_hash_algorithm;
     options.expected_hash = file.expected_hash;
 
-    utils::ProgressCallback http_progress = nullptr;
-    if (progress) {
-        http_progress = [&progress](std::size_t downloaded, std::size_t total) -> bool {
-            return progress(downloaded, total);
+    // The tick always exists — it is where the transport learns to abort on
+    // the token, inside the HTTP client — even when nobody is watching bytes.
+    const utils::ProgressCallback throttle = utils::create_throttled_progress_callback();
+    const utils::ProgressCallback http_progress =
+        [&](std::size_t downloaded, std::size_t total) -> bool {
+            if (progress) {
+                progress(downloaded, total);
+            } else {
+                throttle(downloaded, total);
+            }
+            return true;
         };
-    } else {
-        http_progress = utils::create_throttled_progress_callback();
-    }
 
     const auto result = HttpClient::download_file(file.url, target_dir + "/" + file.name,
-                                                 http_progress, headers, options);
+                                                  http_progress, headers, options, policy_,
+                                                  cancel);
     if (result.cancelled) {
         throw TransferError("Download cancelled", true);
     }
@@ -417,7 +434,12 @@ bool LocalCopyFileTransfer::handles(const std::string& url) const {
 std::uint64_t LocalCopyFileTransfer::transfer(const DownloadFile& file,
                                               const std::string& target_dir,
                                               const std::map<std::string, std::string>&,
-                                              const ByteProgress& progress) const {
+                                              const ByteProgress& progress,
+                                              const utils::CancelToken& cancel) const {
+    if (cancel.cancelled()) {
+        throw TransferError("Download cancelled", true);
+    }
+
     const std::string source_path = path_from_file_url(file.url);
     const std::string output_path = target_dir + "/" + file.name;
     const std::string partial_path = output_path + ".partial";
@@ -461,8 +483,10 @@ std::uint64_t LocalCopyFileTransfer::transfer(const DownloadFile& file,
             throw TransferError("Could not write staged file: " + partial_path);
         }
         copied += static_cast<std::uint64_t>(read);
-        if (progress && !progress(static_cast<std::size_t>(copied),
-                                  static_cast<std::size_t>(source_size))) {
+        if (progress) {
+            progress(static_cast<std::size_t>(copied), static_cast<std::size_t>(source_size));
+        }
+        if (cancel.cancelled()) {
             staged.close();
             throw TransferError("Download cancelled", true);
         }

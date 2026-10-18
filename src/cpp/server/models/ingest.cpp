@@ -233,14 +233,16 @@ RegistryId ModelIngest::download_source_for(const ModelInfo& info) const {
 }
 
 void ModelIngest::fetch_registry_artifacts(const ModelInfo& info,
-                                            DownloadProgressCallback progress) {
-    download_from_registry(info, progress);
+                                           DownloadProgressCallback progress,
+                                           const utils::CancelToken& cancel) {
+    download_from_registry(info, progress, cancel);
 }
 
 // Always queries the registry for the current file tree: offline and
 // do_not_upgrade policy are the caller's, settled before this runs.
 void ModelIngest::download_from_registry(const ModelInfo& info,
-                                         DownloadProgressCallback progress_callback) const {
+                                         DownloadProgressCallback progress_callback,
+                                         const utils::CancelToken& cancel) const {
     const std::string main_repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
     const std::string main_variant = variant_from_checkpoint(info.checkpoint("main"));
     if (main_repo_id.empty()) {
@@ -442,7 +444,7 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     const fs::path manifest_path =
         path_from_utf8(repo_snapshot_paths.at(main_repo_id)) / ".download_manifest.json";
     JsonUtils::save_to_file(manifest, path_to_utf8(manifest_path));
-    download_from_manifest(manifest, headers, progress_callback);
+    download_from_manifest(manifest, headers, progress_callback, cancel);
     std::error_code manifest_ec;
     fs::remove(manifest_path, manifest_ec);
 
@@ -487,10 +489,11 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
 
 void ModelIngest::download_from_manifest(const json& manifest,
                                          std::map<std::string, std::string>& headers,
-                                         DownloadProgressCallback progress_callback) const {
+                                         DownloadProgressCallback progress_callback,
+                                         const utils::CancelToken& cancel) const {
     const DownloadPlan plan = download_plan_from_manifest(manifest);
     ArtifactTransfer transfer = ArtifactTransfer::with_default_transfers();
-    transfer.execute(plan, headers, progress_callback);
+    transfer.execute(plan, headers, progress_callback, cancel);
 }
 
 
@@ -506,10 +509,11 @@ void ModelIngest::register_model(const std::string& model_name,
 void ModelIngest::pull(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
-                                 DownloadProgressCallback progress_callback) {
+                                 DownloadProgressCallback progress_callback,
+                                 const utils::CancelToken& cancel) {
     std::set<std::string> visited;
     pull(model_name, model_data, do_not_upgrade, progress_callback, visited,
-         false, false, false);
+         false, false, false, cancel);
 }
 
 void ModelIngest::pull(const std::string& model_name,
@@ -519,7 +523,8 @@ void ModelIngest::pull(const std::string& model_name,
                                  std::set<std::string>& visited,
                                  bool register_only,
                                  bool allow_missing_checkpoint,
-                                 bool replace_existing) {
+                                 bool replace_existing,
+                                 const utils::CancelToken& cancel) {
     // Keep a mutable registration payload so legacy re-pulls that omit the
     // registry retain the source recorded on the existing model. The original
     // request remains untouched for validation and download semantics.
@@ -781,7 +786,8 @@ void ModelIngest::pull(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
-            pull(component, comp_data, do_not_upgrade, forward, visited, false, false, false);
+            pull(component, comp_data, do_not_upgrade, forward, visited, false, false, false,
+                 cancel);
         }
 
         // A startup build saw no manifest and published an empty list with no
@@ -879,7 +885,7 @@ void ModelIngest::pull(const std::string& model_name,
 
     const auto resolved_paths_before = deps_.resolved_paths(model_info.model_name);
 
-    fetch_model(model_info, do_not_upgrade, progress_callback);
+    fetch_model(model_info, do_not_upgrade, progress_callback, cancel);
 
     const auto resolved_paths_after = deps_.resolved_paths(model_info.model_name);
 
@@ -889,7 +895,9 @@ void ModelIngest::pull(const std::string& model_name,
 
 }
 
-void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
+                                 DownloadProgressCallback progress_callback,
+                                 const utils::CancelToken& cancel) {
     // Serialize downloads per checkpoint repo. A second request for the same
     // repo (e.g. a client that timed out and retried /pull while the first
     // download is still running) must wait for the in-flight download instead
@@ -911,6 +919,7 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade, Downlo
     backends::BackendOpsContext octx;
     octx.fetch = this;
     octx.artifacts = deps_.artifacts;
+    octx.cancel = cancel;
     backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, progress_callback, octx);
 
     // Update cache after successful download
@@ -960,7 +969,7 @@ json ModelIngest::fetch_collection_manifest(const std::string& repo_id,
         manifest_info.checkpoints["main"] = repo_id;
         try {
             manifest_info.registry_source = source;
-            fetch_registry_artifacts(manifest_info, nullptr);
+            fetch_registry_artifacts(manifest_info, nullptr, {});
             manifest = read_cached_collection_manifest(artifacts(), cache_dir);
         } catch (const std::exception& e) {
             if (!have_cache) throw;

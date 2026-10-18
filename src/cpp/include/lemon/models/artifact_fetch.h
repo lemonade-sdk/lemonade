@@ -2,6 +2,7 @@
 
 #include <lemon/models/download_progress.h>
 #include <lemon/models/registry_id.h>
+#include <lemon/utils/cancel_token.h>
 
 namespace lemon {
 
@@ -23,7 +24,8 @@ class ArtifactFetchService {
 
     // The shared registry download: space check, transfer, verify, progress.
     virtual void fetch_registry_artifacts(const ModelInfo& info,
-                                          DownloadProgressCallback progress) = 0;
+                                          DownloadProgressCallback progress,
+                                          const utils::CancelToken& cancel) = 0;
 };
 
 }  // namespace models

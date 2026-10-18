@@ -162,7 +162,7 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
         LOG(INFO, "WhisperServer")
             << "Downloading NPU cache into: " << acquisition.plan.download_path << std::endl;
         lemon::models::ArtifactTransfer::with_default_transfers().execute(
-            acquisition.plan, source->auth_headers(), nullptr);
+            acquisition.plan, source->auth_headers(), nullptr, {});
         LOG(INFO, "WhisperServer") << "NPU cache ready beside: " << model_path << std::endl;
     } catch (const std::exception& e) {
         LOG(WARNING, "WhisperServer") << "Failed to download NPU cache: " << e.what() << std::endl;

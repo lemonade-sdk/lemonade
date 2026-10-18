@@ -23,6 +23,7 @@
 #include "router.h"
 #include "routing_policy.h"
 #include "model_manager.h"
+#include "utils/cancel_token.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
 #include "upgradable_http_server.h"
@@ -233,7 +234,7 @@ private:
     // remains tied to this response for backwards compatibility.
     void stream_download_operation(
         httplib::Response& res,
-        std::function<void(DownloadProgressCallback)> operation);
+        std::function<void(DownloadProgressCallback, utils::CancelToken)> operation);
 
     struct DownloadJob {
         std::string id;
@@ -247,6 +248,10 @@ private:
         uint64_t current_file_bytes_total = 0;
         int current_file_index = -1;
         bool cancel_requested = false;
+        // The worker hands this flag to the transfer as a CancelToken, so a
+        // cancel stops bytes on the next socket tick, not only at the next
+        // progress report.
+        std::atomic<bool> cancel_flag{false};
         // Set by the worker's progress callback once the downloader has actually
         // observed a pause/cancel request and stopped before completion. This
         // prevents a late UI request from overriding a successful operation that
@@ -269,7 +274,7 @@ private:
         const std::string& download_id,
         const std::string& download_type,
         const std::string& display_name,
-        std::function<void(DownloadProgressCallback)> operation);
+        std::function<void(DownloadProgressCallback, utils::CancelToken)> operation);
     void join_download_job(const std::shared_ptr<DownloadJob>& job);
     void cancel_download_jobs();
 

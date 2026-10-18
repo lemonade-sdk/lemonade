@@ -32,6 +32,7 @@
 #include "models/sync_service.h"
 #include "models/update_scan.h"
 #include "recipe_options.h"
+#include "utils/cancel_token.h"
 
 namespace lemon {
 
@@ -189,7 +190,8 @@ public:
     void download_model(const std::string& model_name,
                        const json& model_data,
                        bool do_not_upgrade = false,
-                       DownloadProgressCallback progress_callback = nullptr);
+                       DownloadProgressCallback progress_callback = nullptr,
+                       const utils::CancelToken& cancel = utils::CancelToken());
 
     // Download a model
     void download_registered_model(const ModelInfo& info,

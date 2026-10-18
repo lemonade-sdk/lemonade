@@ -3146,6 +3146,19 @@ if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_PLAN_TEST_SRC}")
     add_cpp_ci_test(DownloadPlanTest CI ON COMMAND test_download_plan)
 endif()
 
+set(_FILE_TRANSFER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_file_transfer.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_FILE_TRANSFER_TEST_SRC}")
+    add_executable(test_file_transfer
+        test/cpp/test_file_transfer.cpp
+    )
+    target_link_libraries(test_file_transfer PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(FileTransferTest CI ON COMMAND test_file_transfer)
+endif()
+
 set(_FILTER_HARDWARE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_filter_hardware.cpp"
 )

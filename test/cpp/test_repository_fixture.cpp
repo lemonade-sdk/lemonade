@@ -101,8 +101,8 @@ ArtifactRef side_ref(const RegistryId& host, const std::string& repo, const std:
 // The second FileTransfer the spec's second rule prescribes for a protocol the shipped
 // transfers decline. It owns one scheme and nothing else: dispatch, disk-space
 // accounting and the progress total stay in ArtifactTransfer, which is the whole point.
-// The shipped HttpFileTransfer refuses plaintext HTTP because its policy is
-// ExternalHttpsOnly and a FileTransfer has no policy seam to pass one through.
+// The shipped HttpFileTransfer is policy-seamed, but this fixture keeps its own
+// transfer to prove the registration seam stays open to a second implementation.
 class LoopbackHttpTransfer : public FileTransfer {
   public:
     bool handles(const std::string& url) const override {
@@ -111,7 +111,11 @@ class LoopbackHttpTransfer : public FileTransfer {
 
     std::uint64_t transfer(const DownloadFile& file, const std::string& target_dir,
                            const std::map<std::string, std::string>& headers,
-                           const ByteProgress& progress) const override {
+                           const ByteProgress& progress,
+                           const lemon::utils::CancelToken& cancel) const override {
+        if (cancel.cancelled()) {
+            throw TransferError("Download cancelled", true);
+        }
         const std::string rest = file.url.substr(std::strlen("http://127.0.0.1:"));
         const std::size_t slash = rest.find('/');
         httplib::Client client("http://127.0.0.1:" + rest.substr(0, slash));
@@ -163,7 +167,7 @@ void check_runs(const std::string& name, const ArtifactTransfer& transfer,
                 const DownloadPlan& plan, const std::map<std::string, std::string>& headers,
                 DownloadProgressCallback progress) {
     try {
-        transfer.execute(plan, headers, progress);
+        transfer.execute(plan, headers, progress, {});
         check(name, true);
     } catch (const std::exception& error) {
         check(name, false);
@@ -281,7 +285,7 @@ int main() {
     tampered.files[0].expected_hash = std::string(64, '0');
     bool refused = false;
     try {
-        ArtifactTransfer::with_default_transfers().execute(tampered, {}, nullptr);
+        ArtifactTransfer::with_default_transfers().execute(tampered, {}, nullptr, {});
     } catch (const std::exception&) {
         refused = true;
     }
@@ -356,7 +360,7 @@ int main() {
     bool plaintext_refused = false;
     try {
         ArtifactTransfer::with_default_transfers().execute(fetched.plan, over_http->auth_headers(),
-                                                          nullptr);
+                                                          nullptr, {});
     } catch (const std::exception&) {
         plaintext_refused = true;
     }

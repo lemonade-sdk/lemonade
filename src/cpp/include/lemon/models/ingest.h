@@ -68,8 +68,8 @@ class ModelIngest : public ArtifactFetchService {
 
     RegistryId download_source_for(const ModelInfo& info) const override;
 
-    void fetch_registry_artifacts(const ModelInfo& info,
-                                  DownloadProgressCallback progress) override;
+    void fetch_registry_artifacts(const ModelInfo& info, DownloadProgressCallback progress,
+                                  const utils::CancelToken& cancel) override;
 
     // Why a `collection.omni` / `collection.router` definition cannot be registered,
     // in the words the caller returns; empty when it can.
@@ -91,11 +91,13 @@ class ModelIngest : public ArtifactFetchService {
     // Register if needed, then fetch. A `collection.omni` entry resolves its
     // components and fetches each one.
     void pull(const std::string& model_name, const nlohmann::json& model_data,
-              bool do_not_upgrade, DownloadProgressCallback progress);
+              bool do_not_upgrade, DownloadProgressCallback progress,
+              const utils::CancelToken& cancel = utils::CancelToken());
 
     // Fetch an already-registered model, serialized per checkpoint repository.
     void fetch_model(const ModelInfo& info, bool do_not_upgrade,
-                     DownloadProgressCallback progress);
+                     DownloadProgressCallback progress,
+                     const utils::CancelToken& cancel = utils::CancelToken());
 
     // Disk state only: no request, no registration.
     void populate_from_cached_manifest(ModelInfo& info);
@@ -106,7 +108,8 @@ class ModelIngest : public ArtifactFetchService {
     void pull(const std::string& model_name, const nlohmann::json& model_data,
               bool do_not_upgrade, DownloadProgressCallback progress,
               std::set<std::string>& visited, bool register_only,
-              bool allow_missing_checkpoint, bool replace_existing);
+              bool allow_missing_checkpoint, bool replace_existing,
+              const utils::CancelToken& cancel = utils::CancelToken());
 
     nlohmann::json fetch_collection_manifest(const std::string& repo_id,
                                              const std::string& registry_source,
@@ -121,11 +124,12 @@ class ModelIngest : public ArtifactFetchService {
                                                               const std::string& registry_source,
                                                               bool do_not_upgrade);
 
-    void download_from_registry(const ModelInfo& info,
-                                DownloadProgressCallback progress_callback) const;
+    void download_from_registry(const ModelInfo& info, DownloadProgressCallback progress_callback,
+                                const utils::CancelToken& cancel) const;
     void download_from_manifest(const nlohmann::json& manifest,
                                 std::map<std::string, std::string>& headers,
-                                DownloadProgressCallback progress_callback) const;
+                                DownloadProgressCallback progress_callback,
+                                const utils::CancelToken& cancel) const;
 
     const ModelArtifactStore& artifacts() const;
 

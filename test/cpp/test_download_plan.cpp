@@ -1,6 +1,7 @@
 #include "lemon/models/artifact_transfer.h"
 #include "lemon/utils/path_utils.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -65,6 +66,10 @@ static void write_file(const fs::path& path, const std::string& content) {
 static std::string read_file(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+static fs::path source_of(const fs::path& dir) {
+    return dir / "source.bin";
 }
 
 static std::string file_url(const fs::path& path) {
@@ -204,7 +209,7 @@ static void test_copies_without_http() {
     plan.files.push_back(DownloadFile{"model.bin", file_url(source), content.size(), {}, {}, {}});
 
     const ArtifactTransfer transfer = local_only_transfer();
-    transfer.execute(plan, {}, nullptr);
+    transfer.execute(plan, {}, nullptr, {});
 
     check_eq("bytes land in the cache", read_file(dir / "cache" / "model.bin"), content);
     check_eq("the source is left in place", read_file(source), content);
@@ -222,7 +227,7 @@ static void test_creates_parent_directories() {
     plan.files.push_back(
         DownloadFile{"deep/inner/model.gguf", file_url(dir / "src.gguf"), 12, {}, {}, {}});
 
-    local_only_transfer().execute(plan, {}, nullptr);
+    local_only_transfer().execute(plan, {}, nullptr, {});
     check("parent directories are created for a nested name",
           fs::exists(dir / "cache" / "deep" / "inner" / "model.gguf"));
 
@@ -238,7 +243,7 @@ static void test_unknown_scheme_fails_before_bytes() {
 
     bool threw = false;
     try {
-        local_only_transfer().execute(plan, {}, nullptr);
+        local_only_transfer().execute(plan, {}, nullptr, {});
     } catch (const std::exception& e) {
         threw = true;
         const std::string message = e.what();
@@ -251,6 +256,8 @@ static void test_unknown_scheme_fails_before_bytes() {
 }
 
 static void test_cancellation() {
+    // The token is the cancel channel. Before the first file it stops the
+    // plan without moving a byte; mid-copy it abandons the staged file.
     const fs::path dir = make_temp_dir("cancel");
     const std::string content = "payload that should never be copied";
     write_file(dir / "source.bin", content);
@@ -260,11 +267,14 @@ static void test_cancellation() {
     plan.files.push_back(DownloadFile{"model.bin", file_url(dir / "source.bin"), content.size(),
                                       {}, {}, {}});
 
+    std::atomic<bool> cancelled{true};
+    lemon::utils::CancelToken token;
+    token.flag = &cancelled;
+
     bool threw = false;
     std::string message;
     try {
-        local_only_transfer().execute(
-            plan, {}, [](const lemon::DownloadProgress&) { return false; });
+        local_only_transfer().execute(plan, {}, nullptr, token);
     } catch (const std::exception& e) {
         threw = true;
         message = e.what();
@@ -272,7 +282,63 @@ static void test_cancellation() {
     check("a cancelled download throws", threw);
     check_eq("the cancellation message is stable", message, std::string("Download cancelled"));
     check("no target file was created", !fs::exists(dir / "cache" / "model.bin"));
-    check_eq("the source survived the cancelled copy", read_file(dir / "source.bin"), content);
+    check_eq("the source survived the cancelled copy", read_file(source_of(dir)), content);
+
+    fs::remove_all(dir);
+}
+
+static void test_cancellation_mid_copy() {
+    const fs::path dir = make_temp_dir("cancel_mid");
+    std::string big(3u * 1024u * 1024u, 'x');
+    write_file(dir / "source.bin", big);
+
+    DownloadPlan plan;
+    plan.download_path = lemon::utils::path_to_utf8(dir / "cache");
+    plan.files.push_back(
+        DownloadFile{"model.bin", file_url(dir / "source.bin"), big.size(), {}, {}, {}});
+
+    std::atomic<bool> cancelled{false};
+    lemon::utils::CancelToken token;
+    token.flag = &cancelled;
+
+    bool threw = false;
+    std::string message;
+    try {
+        local_only_transfer().execute(
+            plan, {},
+            [&](const lemon::DownloadProgress&) {
+                cancelled.store(true);
+                return true;
+            },
+            token);
+    } catch (const std::exception& e) {
+        threw = true;
+        message = e.what();
+    }
+    check("a cancel during the copy throws", threw);
+    check_eq("the mid-copy message is stable", message, std::string("Download cancelled"));
+    check("no final file is put in place mid-copy", !fs::exists(dir / "cache" / "model.bin"));
+    check_eq("the source survived the interrupted copy", read_file(source_of(dir)), big);
+
+    fs::remove_all(dir);
+}
+
+static void test_progress_false_is_not_cancellation() {
+    // A closed update channel closes the channel; it does not stop the bytes.
+    const fs::path dir = make_temp_dir("mute");
+    const std::string content = "a deaf listener still gets a copy";
+    write_file(dir / "source.bin", content);
+
+    DownloadPlan plan;
+    plan.download_path = lemon::utils::path_to_utf8(dir / "cache");
+    plan.files.push_back(DownloadFile{"model.bin", file_url(dir / "source.bin"), content.size(),
+                                      {}, {}, {}});
+
+    local_only_transfer().execute(plan, {}, [](const lemon::DownloadProgress&) { return false; },
+                                  {});
+
+    check_eq("the copy completed despite the silent listener",
+             read_file(dir / "cache" / "model.bin"), content);
 
     fs::remove_all(dir);
 }
@@ -294,7 +360,7 @@ static void test_skips_completed_file() {
         ++events;
         final_percent = progress.percent;
         return true;
-    });
+    }, {});
 
     check("a skipped file still reports completion", events >= 2);
     check_num("the final report is 100 percent", static_cast<std::uint64_t>(final_percent), 100);
@@ -314,7 +380,7 @@ static void test_hash_verification() {
     good.files.push_back(
         DownloadFile{"model.bin", file_url(dir / "source.bin"), content.size(), "sha256", digest,
                      {}});
-    local_only_transfer().execute(good, {}, nullptr);
+    local_only_transfer().execute(good, {}, nullptr, {});
     check("a matching digest accepts the file", fs::exists(dir / "cache" / "model.bin"));
 
     fs::remove_all(dir / "cache");
@@ -326,7 +392,7 @@ static void test_hash_verification() {
     bool threw = false;
     std::string message;
     try {
-        local_only_transfer().execute(bad, {}, nullptr);
+        local_only_transfer().execute(bad, {}, nullptr, {});
     } catch (const std::exception& e) {
         threw = true;
         message = e.what();
@@ -357,7 +423,7 @@ static void test_gguf_magic_rejected() {
     bool threw = false;
     std::string message;
     try {
-        local_only_transfer().execute(plan, {}, nullptr);
+        local_only_transfer().execute(plan, {}, nullptr, {});
     } catch (const std::exception& e) {
         threw = true;
         message = e.what();
@@ -379,7 +445,7 @@ static void test_gguf_with_magic_accepted() {
     plan.files.push_back(
         DownloadFile{"model.gguf", file_url(dir / "source.gguf"), 20, {}, {}, {}});
 
-    local_only_transfer().execute(plan, {}, nullptr);
+    local_only_transfer().execute(plan, {}, nullptr, {});
     check("a .gguf with GGUF magic is accepted", fs::exists(dir / "cache" / "model.gguf"));
 
     fs::remove_all(dir);
@@ -396,7 +462,7 @@ static void test_removes_invalid_cached_gguf_before_download() {
     plan.files.push_back(
         DownloadFile{"model.gguf", file_url(dir / "source.gguf"), 12, {}, {}, {}});
 
-    local_only_transfer().execute(plan, {}, nullptr);
+    local_only_transfer().execute(plan, {}, nullptr, {});
     check_eq("the poisoned cache entry is overwritten",
              read_file(dir / "cache" / "model.gguf").substr(0, 4), std::string("GGUF"));
 
@@ -411,6 +477,8 @@ int main() {
     test_creates_parent_directories();
     test_unknown_scheme_fails_before_bytes();
     test_cancellation();
+    test_cancellation_mid_copy();
+    test_progress_false_is_not_cancellation();
     test_skips_completed_file();
     test_hash_verification();
     test_gguf_magic_rejected();

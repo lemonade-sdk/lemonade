@@ -133,7 +133,7 @@ void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
     if (ctx.fetch == nullptr) {
         throw std::runtime_error("No fetch service for " + info.checkpoint());
     }
-    ctx.fetch->fetch_registry_artifacts(info, progress);
+    ctx.fetch->fetch_registry_artifacts(info, progress, ctx.cancel);
 }
 
 const BackendOps* default_backend_ops() {

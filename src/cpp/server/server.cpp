@@ -5891,8 +5891,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
 
         if (stream) {
-            auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {
-                model_manager_->download_model(model_name, download_request, do_not_upgrade, progress_cb);
+            auto operation = [this, model_name, download_request,
+                              do_not_upgrade](DownloadProgressCallback progress_cb,
+                                              utils::CancelToken cancel) {
+                model_manager_->download_model(model_name, download_request, do_not_upgrade,
+                                               progress_cb, cancel);
             };
 
             if (!subscribe) {
@@ -7516,7 +7519,7 @@ std::shared_ptr<Server::DownloadJob> Server::start_download_job(
     const std::string& download_id,
     const std::string& download_type,
     const std::string& display_name,
-    std::function<void(DownloadProgressCallback)> operation) {
+    std::function<void(DownloadProgressCallback, utils::CancelToken)> operation) {
 
     std::shared_ptr<DownloadJob> old_job;
     auto job = std::make_shared<DownloadJob>();
@@ -7607,7 +7610,8 @@ std::shared_ptr<Server::DownloadJob> Server::start_download_job(
                 return true;
             };
 
-            operation(progress_cb);
+            const utils::CancelToken cancel_token{&job->cancel_flag, nullptr};
+            operation(progress_cb, cancel_token);
 
             std::lock_guard<std::mutex> lock(downloads_mutex_);
             if (job->cancel_requested && job->stop_acknowledged) {
@@ -7680,7 +7684,7 @@ std::shared_ptr<Server::DownloadJob> Server::start_download_job(
 
 void Server::stream_download_operation(
     httplib::Response& res,
-    std::function<void(DownloadProgressCallback)> operation) {
+    std::function<void(DownloadProgressCallback, utils::CancelToken)> operation) {
 
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
@@ -7693,10 +7697,14 @@ void Server::stream_download_operation(
                 return false; // Already sent everything
             }
 
+            auto disconnected = std::make_shared<std::atomic<bool>>(false);
             try {
                 // Create progress callback that emits SSE events
                 bool complete_sent = false;
-                DownloadProgressCallback progress_cb = [&sink, &complete_sent](const DownloadProgress& p) -> bool {
+                // A failed socket write kills the update channel and the
+                // transfer: the token answers on curl's next tick.
+                DownloadProgressCallback progress_cb =
+                    [&sink, &complete_sent, disconnected](const DownloadProgress& p) -> bool {
                     nlohmann::json event_data;
                     event_data["file"] = p.file;
                     event_data["file_index"] = p.file_index;
@@ -7717,12 +7725,15 @@ void Server::stream_download_operation(
 
                     if (!sink.write(event.c_str(), event.size())) {
                         LOG(INFO, "Server") << "Client disconnected, cancelling download" << std::endl;
+                        disconnected->store(true);
                         return false;
                     }
                     return true;
                 };
 
-                operation(progress_cb);
+                const utils::CancelToken cancel_token{nullptr,
+                                                      [disconnected] { return disconnected->load(); }};
+                operation(progress_cb, cancel_token);
 
                 // If operation completed without sending a "complete" event
                 // (e.g. backend was already installed), send one now
@@ -7832,6 +7843,7 @@ void Server::handle_download_control(const httplib::Request& req, httplib::Respo
 
                 if (!terminal) {
                     job->cancel_requested = true;
+                    job->cancel_flag.store(true);
                     job->cancel_action = action;
                     job->status = action == "cancel" ? "cancelled" : "paused";
                     // Paused jobs remain visible until resumed/removed. A cancel
@@ -7850,6 +7862,7 @@ void Server::handle_download_control(const httplib::Request& req, httplib::Respo
                     // worker may still hold file handles. Convert it to a cancel
                     // request and keep the job visible until running=false.
                     job->cancel_requested = true;
+                    job->cancel_flag.store(true);
                     job->cancel_action = "cancel";
                     if (job->status != "completed" && job->status != "error") {
                         job->status = "cancelled";
@@ -7883,6 +7896,7 @@ void Server::cancel_download_jobs() {
         std::lock_guard<std::mutex> lock(downloads_mutex_);
         for (auto& [id, job] : download_jobs_) {
             job->cancel_requested = true;
+            job->cancel_flag.store(true);
             job->cancel_action = "cancel";
             jobs.push_back(job);
         }
@@ -8103,7 +8117,8 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            auto operation = [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+            auto operation = [this, recipe, backend,
+                              force](DownloadProgressCallback progress_cb, utils::CancelToken) {
                 backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();

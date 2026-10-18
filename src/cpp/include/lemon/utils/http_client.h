@@ -1,5 +1,8 @@
 #pragma once
 
+#include <lemon/utils/cancel_token.h>
+#include <lemon/utils/http_security_policy.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -66,40 +69,13 @@ public:
         : HttpClientException(curl_code, message) {}
 };
 
-// Cancellation state for a non-streaming request. The flag is an atomic a
-// caller may share; the checker is a predicate consulted on each curl progress
-// tick, which is how a client disconnect aborts an in-flight transfer.
-struct RequestCancelToken {
-    std::atomic<bool>* flag = nullptr;
-    std::function<bool()> should_cancel = nullptr;
-
-    bool cancelled() const {
-        return (flag != nullptr && flag->load()) ||
-               (should_cancel != nullptr && should_cancel());
-    }
-};
+// The cancellation state lives in utils/cancel_token.h, where the model
+// transfer path can name it without naming HTTP.
+using RequestCancelToken = CancelToken;
 
 // Progress callback returns bool: true = continue, false = cancel download
 using ProgressCallback = std::function<bool(size_t downloaded, size_t total)>;
 using StreamCallback = std::function<bool(const char* data, size_t length)>;
-
-// Trust boundary for outgoing HTTP requests. Selects which URL schemes are
-// allowed for the initial request and, for request types that follow redirects,
-// which schemes are allowed for redirect targets.
-enum class HttpSecurityPolicy {
-    // External hosts (Hugging Face, GitHub, release CDNs). Require https for the
-    // initial request and every redirect hop; bound the redirect chain. This is
-    // the default so untrusted destinations are HTTPS-only unless a caller opts
-    // out for a specific trust boundary.
-    ExternalHttpsOnly,
-    // Lemonade-managed backends reached over loopback http://127.0.0.1. Require
-    // http and never follow redirects.
-    TrustedLoopback,
-    // User-configured plaintext endpoints that explicitly opted in via
-    // allow_insecure_http. Permit http and https; when redirects are enabled,
-    // bound the redirect chain.
-    AllowInsecureHttp,
-};
 
 // Download configuration options
 struct DownloadOptions {
@@ -216,12 +192,15 @@ public:
                                    const std::string& value,
                                    std::string& error);
 
+    // A cancelled token stops the transfer between attempts and on the next
+    // progress tick; the partial file survives for a later resume.
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,
                                         const std::map<std::string, std::string>& headers = {},
                                         const DownloadOptions& options = DownloadOptions(),
-                                        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+                                        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+                                        const CancelToken& cancel = CancelToken());
 
     // Check if URL is reachable. Redirects are never followed.
     static bool is_reachable(
@@ -241,7 +220,8 @@ private:
                                            const std::map<std::string, std::string>& headers,
                                            const DownloadOptions& options,
                                            bool initial_range_request,
-                                           HttpSecurityPolicy policy);
+                                           HttpSecurityPolicy policy,
+                                           const CancelToken& cancel);
 };
 
 // Creates a throttled progress callback that prints at most once per second.

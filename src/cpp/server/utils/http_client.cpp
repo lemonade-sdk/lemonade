@@ -306,10 +306,73 @@ static size_t response_header_callback(char* buffer, size_t size, size_t nitems,
     return total;
 }
 
-// Callback for writing to file
-static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
-    size_t written = fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
-    return written;
+struct ProgressData;
+
+// Where downloaded bytes land, and whether the current response is a hop
+// whose body must never reach the file.
+struct DownloadSink {
+    FILE* file = nullptr;
+    ProgressData* prog = nullptr;
+};
+
+// Lowercased scheme://host[:port] with the default port made explicit; the
+// comparison behind "same origin" when a redirect decides credentials.
+static std::string url_origin(const std::string& url) {
+    const size_t scheme_end = url.find("://");
+    if (scheme_end == std::string::npos) {
+        return "";
+    }
+    std::string scheme = url.substr(0, scheme_end);
+    std::transform(scheme.begin(), scheme.end(), scheme.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    const size_t host_start = scheme_end + 3;
+    const size_t path_start = url.find_first_of("/?#", host_start);
+    std::string authority = url.substr(host_start,
+                                       path_start == std::string::npos ? std::string::npos
+                                                                       : path_start - host_start);
+    const size_t at = authority.rfind('@');
+    if (at != std::string::npos) {
+        authority = authority.substr(at + 1);
+    }
+
+    std::string host;
+    std::string port;
+    if (!authority.empty() && authority[0] == '[') {
+        const size_t close = authority.find(']');
+        host = authority.substr(0, close == std::string::npos ? std::string::npos : close + 1);
+        const std::string rest = close == std::string::npos ? "" : authority.substr(close + 1);
+        if (!rest.empty() && rest[0] == ':') {
+            port = rest.substr(1);
+        }
+    } else {
+        const size_t colon = authority.rfind(':');
+        host = colon == std::string::npos ? authority : authority.substr(0, colon);
+        port = colon == std::string::npos ? "" : authority.substr(colon + 1);
+    }
+    std::transform(host.begin(), host.end(), host.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (port.empty()) {
+        port = (scheme == "https") ? "443" : "80";
+    }
+    return scheme + "://" + host + ":" + port;
+}
+
+static bool is_redirect_status(long status) {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+}
+
+// The schemes a policy lets a redirect land on. Following hops by hand means
+// nobody else enforces this, so an unlisted scheme fails the transfer.
+static bool redirect_target_allowed(HttpSecurityPolicy policy, const std::string& url) {
+    const std::string origin = url_origin(url);
+    if (origin.empty()) {
+        return false;
+    }
+    if (origin.rfind("https://", 0) == 0) {
+        return true;
+    }
+    return policy == HttpSecurityPolicy::AllowInsecureHttp && origin.rfind("http://", 0) == 0;
 }
 
 static int post_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
@@ -343,6 +406,8 @@ static int stream_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t
 
 struct ProgressData {
     ProgressCallback callback;
+    const CancelToken* cancel = nullptr;
+    bool redirecting_body = false;
     bool cancelled = false;
     bool stalled = false;
     long stalled_after = 0;
@@ -352,6 +417,17 @@ struct ProgressData {
     curl_off_t last_downloaded = 0;
     std::chrono::steady_clock::time_point last_progress_time = std::chrono::steady_clock::now();
 };
+
+// Callback for writing to file
+static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
+    auto* sink = static_cast<DownloadSink*>(stream);
+    if (sink->prog != nullptr && sink->prog->redirecting_body) {
+        return size * nmemb;
+    }
+    size_t written = fwrite(ptr, size, nmemb, sink->file);
+    return written;
+}
+
 
 static fs::path get_disk_space_probe_path(const fs::path& output_path) {
     fs::path probe_path = output_path.parent_path();
@@ -387,6 +463,7 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
         long status_code = 0;
         iss >> http_version >> status_code;
         data->current_response_code = status_code;
+        data->redirecting_body = status_code >= 300 && status_code < 400 && status_code != 304;
         return total;
     }
 
@@ -419,6 +496,11 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
     if (!data) return 0;
 
     if (data->cancelled) {
+        return 1;
+    }
+
+    if (data->cancel != nullptr && data->cancel->cancelled()) {
+        data->cancelled = true;
         return 1;
     }
 
@@ -932,7 +1014,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                                             const std::map<std::string, std::string>& headers,
                                             const DownloadOptions& options,
                                             bool initial_range_request,
-                                            HttpSecurityPolicy policy) {
+                                            HttpSecurityPolicy policy,
+                                            const CancelToken& cancel) {
     DownloadResult result;
 
     CURL* curl = curl_easy_init();
@@ -955,14 +1038,20 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         return result;
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
     if (!apply_http_security_policy(curl, policy, true)) {
         result.error_message = "Failed to apply HTTP security policy";
         fclose(fp);
         curl_easy_cleanup(curl);
         return result;
+    }
+    // Redirect hops are walked one request at a time. libcurl would re-send the
+    // request's custom headers to any host a Location names; the repository's
+    // credentials are only owed to the origin that produced them, so each hop
+    // is chosen here and the header list is cut at a cross-origin boundary.
+    const bool follow_hops = policy != HttpSecurityPolicy::TrustedLoopback;
+    if (follow_hops) {
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
     }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
@@ -982,18 +1071,20 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     }
 
     const int no_progress_timeout = static_cast<int>(effective_timeout(options.no_progress_timeout));
-    std::unique_ptr<ProgressData> prog_data;
-    if (callback || no_progress_timeout > 0) {
-        prog_data = std::make_unique<ProgressData>();
-        prog_data->callback = callback;
-        prog_data->no_progress_timeout = no_progress_timeout;
-        prog_data->last_progress_time = std::chrono::steady_clock::now();
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
-        curl_easy_setopt(curl, CURLOPT_HEADERDATA, prog_data.get());
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    }
+    auto prog_data = std::make_unique<ProgressData>();
+    prog_data->callback = callback;
+    prog_data->cancel = &cancel;
+    prog_data->no_progress_timeout = no_progress_timeout;
+    prog_data->last_progress_time = std::chrono::steady_clock::now();
+    DownloadSink sink;
+    sink.file = fp;
+    sink.prog = prog_data.get();
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, prog_data.get());
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
     // Add custom headers including authentication
     struct curl_slist* header_list = nullptr;
@@ -1005,10 +1096,52 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
     }
 
-    CURLcode res = curl_easy_perform(curl);
+    const std::string auth_origin = url_origin(url);
+    bool credentials_live = (header_list != nullptr);
+    const int kMaxRedirectHops = 5;
+    int hops = 0;
+    std::string current_url = url;
+    std::string redirect_error;
+    CURLcode res = CURLE_OK;
+    for (;;) {
+        curl_easy_setopt(curl, CURLOPT_URL, current_url.c_str());
+        res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            break;
+        }
 
-    bool was_cancelled = (prog_data && prog_data->cancelled);
-    bool was_stalled = (prog_data && prog_data->stalled);
+        long status = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+        if (!follow_hops || !is_redirect_status(status)) {
+            break;
+        }
+
+        char* location = nullptr;
+        curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &location);
+        const std::string target = (location != nullptr) ? location : "";
+        if (target.empty()) {
+            redirect_error = "Redirect response without a usable Location";
+            break;
+        }
+        if (!redirect_target_allowed(policy, target)) {
+            redirect_error = "Redirect to a disallowed scheme: " + target.substr(0, target.find("://"));
+            break;
+        }
+        if (++hops > kMaxRedirectHops) {
+            redirect_error = "Too many redirects";
+            break;
+        }
+        if (credentials_live && url_origin(target) != auth_origin) {
+            curl_slist_free_all(header_list);
+            header_list = nullptr;
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, static_cast<struct curl_slist*>(nullptr));
+            credentials_live = false;
+        }
+        current_url = std::move(target);
+    }
+
+    bool was_cancelled = prog_data->cancelled;
+    bool was_stalled = prog_data->stalled;
 
     curl_off_t downloaded = 0;
     curl_off_t total = 0;
@@ -1050,6 +1183,16 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         result.cancelled = true;
         result.error_message = "Download cancelled by user";
         result.can_resume = true;  // Partial file can be resumed later
+        return result;
+    }
+
+    if (!redirect_error.empty()) {
+        // A doomed Location does not get better on retry.
+        result.permanent = true;
+        result.can_resume = false;
+        std::ostringstream oss;
+        oss << "Download failed: " << redirect_error << " (URL: " << current_url << ")";
+        result.error_message = oss.str();
         return result;
     }
 
@@ -1131,7 +1274,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             // Do a HEAD request to get the actual file size
             CURL* head_curl = curl_easy_init();
             if (head_curl) {
-                curl_easy_setopt(head_curl, CURLOPT_URL, url.c_str());
+                curl_easy_setopt(head_curl, CURLOPT_URL, current_url.c_str());
                 curl_easy_setopt(head_curl, CURLOPT_NOBODY, 1L);  // HEAD request
                 if (!apply_http_security_policy(head_curl, policy, true)) {
                     curl_easy_cleanup(head_curl);
@@ -1139,13 +1282,16 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                     result.can_resume = false;
                     return result;
                 }
+                curl_easy_setopt(head_curl, CURLOPT_FOLLOWLOCATION, 0L);
                 curl_easy_setopt(head_curl, CURLOPT_TIMEOUT, 30L);
 
-                // Add headers
+                // Add headers, but only those still owed to this origin
                 struct curl_slist* head_headers = nullptr;
-                for (const auto& header : headers) {
-                    std::string header_str = header.first + ": " + header.second;
-                    head_headers = curl_slist_append(head_headers, header_str.c_str());
+                if (credentials_live) {
+                    for (const auto& header : headers) {
+                        std::string header_str = header.first + ": " + header.second;
+                        head_headers = curl_slist_append(head_headers, header_str.c_str());
+                    }
                 }
                 if (head_headers) {
                     curl_easy_setopt(head_curl, CURLOPT_HTTPHEADER, head_headers);
@@ -1230,7 +1376,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                          ProgressCallback callback,
                                          const std::map<std::string, std::string>& headers,
                                          const DownloadOptions& options,
-                                         HttpSecurityPolicy policy) {
+                                         HttpSecurityPolicy policy,
+                                         const CancelToken& cancel) {
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
     const ExpectedHash expected_hash = parse_expected_hash(options);
@@ -1317,6 +1464,13 @@ DownloadResult HttpClient::download_file(const std::string& url,
     }
 
     for (int attempt = 0; attempt <= options.max_retries; ++attempt) {
+        if (cancel.cancelled()) {
+            final_result.cancelled = true;
+            final_result.can_resume = true;
+            final_result.error_message = "Download cancelled by user";
+            return final_result;
+        }
+
         if (attempt > 0) {
             LOG(INFO, "Download") << " Retry " << attempt << "/" << options.max_retries
                       << " after " << (retry_delay_ms / 1000.0) << "s..." << std::endl;
@@ -1360,7 +1514,7 @@ DownloadResult HttpClient::download_file(const std::string& url,
             }
             final_result = download_attempt(url, partial_path, resume_offset,
                                             adjusted_callback, headers, options,
-                                            initial_range_request, policy);
+                                            initial_range_request, policy, cancel);
         }
 
         // If cancelled by user, return immediately without retrying

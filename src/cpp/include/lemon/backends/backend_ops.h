@@ -5,6 +5,7 @@
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
 #include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
+#include "lemon/utils/cancel_token.h"     // CancelToken
 
 namespace lemon {
 
@@ -35,6 +36,8 @@ struct BackendOpsContext {
     // Fetching mutates the models directory, so the service is not const.
     models::ArtifactFetchService* fetch = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
+    // Who may stop this download, if anyone.
+    utils::CancelToken cancel;
 };
 
 // Inputs for resolving a checkpoint's on-disk path.

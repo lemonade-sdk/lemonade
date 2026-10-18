@@ -1,6 +1,8 @@
 #pragma once
 
 #include <lemon/models/download_progress.h>
+#include <lemon/utils/cancel_token.h>
+#include <lemon/utils/http_security_policy.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -32,7 +34,9 @@ struct DownloadPlan {
 // Reads the manifest written by the registry download path.
 DownloadPlan download_plan_from_manifest(const nlohmann::json& manifest);
 
-// `cancelled` distinguishes a client cancel from a transfer failure.
+// `cancelled` distinguishes a client cancel from a transfer failure. A token
+// answered before or during a file throws this; the token is the only thing
+// that can stop a plan.
 class TransferError : public std::runtime_error {
 public:
     explicit TransferError(const std::string& message, bool cancelled = false)
@@ -41,8 +45,9 @@ public:
     bool cancelled;
 };
 
-// Returns false to cancel.
-using ByteProgress = std::function<bool(std::size_t downloaded, std::size_t total)>;
+// Reports bytes, nothing else. Cancellation is the token's job; a progress
+// callback has never had the power to stop a transfer.
+using ByteProgress = std::function<void(std::size_t downloaded, std::size_t total)>;
 
 // One scheme per implementation; space, progress and cancel live in ArtifactTransfer.
 class FileTransfer {
@@ -52,19 +57,31 @@ public:
     virtual bool handles(const std::string& url) const = 0;
 
     // Returns the bytes moved, zero when the target was already complete.
+    // A cancellation throws TransferError with cancelled set.
     virtual std::uint64_t transfer(const DownloadFile& file,
                                    const std::string& target_dir,
                                    const std::map<std::string, std::string>& headers,
-                                   const ByteProgress& progress) const = 0;
+                                   const ByteProgress& progress,
+                                   const utils::CancelToken& cancel) const = 0;
 };
 
 class HttpFileTransfer : public FileTransfer {
 public:
+    // The trust boundary for every URL this transfer reads. Tests stand a
+    // loopback server in for a registry; production stays HTTPS-only.
+    explicit HttpFileTransfer(
+        utils::HttpSecurityPolicy policy = utils::HttpSecurityPolicy::ExternalHttpsOnly)
+        : policy_(policy) {}
+
     bool handles(const std::string& url) const override;
     std::uint64_t transfer(const DownloadFile& file,
                            const std::string& target_dir,
                            const std::map<std::string, std::string>& headers,
-                           const ByteProgress& progress) const override;
+                           const ByteProgress& progress,
+                           const utils::CancelToken& cancel) const override;
+
+  private:
+    utils::HttpSecurityPolicy policy_;
 };
 
 // No retries: a short read is a disk error. The source is never modified.
@@ -74,7 +91,8 @@ public:
     std::uint64_t transfer(const DownloadFile& file,
                            const std::string& target_dir,
                            const std::map<std::string, std::string>& headers,
-                           const ByteProgress& progress) const override;
+                           const ByteProgress& progress,
+                           const utils::CancelToken& cancel) const override;
 };
 
 // One filesystem that a plan writes to, and what it still needs.
@@ -94,10 +112,14 @@ public:
 
     static ArtifactTransfer with_default_transfers();
 
-// Per call, never on the plan, so credentials cannot be logged with it.
+    // Per call, never on the plan, so credentials cannot be logged with it.
+    // A cancellation — checked before each file and inside every transfer —
+    // throws TransferError with cancelled set. A progress callback that
+    // returns false only closes the update channel.
     void execute(const DownloadPlan& plan,
                  const std::map<std::string, std::string>& headers,
-                 DownloadProgressCallback progress) const;
+                 DownloadProgressCallback progress,
+                 const utils::CancelToken& cancel) const;
 
 private:
     std::vector<std::unique_ptr<FileTransfer>> transfers_;

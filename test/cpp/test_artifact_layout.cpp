@@ -325,7 +325,7 @@ static void test_a_sibling_plan_moves_bytes_where_the_layout_says() {
     file.url = "file://" + staged.string();
     plan.files.push_back(file);
 
-    lemon::models::ArtifactTransfer::with_default_transfers().execute(plan, {}, nullptr);
+    lemon::models::ArtifactTransfer::with_default_transfers().execute(plan, {}, nullptr, {});
 
     check("a sibling plan writes into the model's own directory",
           fs::exists(model_dir / "whisper.bin.rai"));

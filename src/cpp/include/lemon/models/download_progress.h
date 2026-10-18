@@ -19,8 +19,10 @@ struct DownloadProgress {
     std::string error;          // Error message if failed
 };
 
-// Callback for download progress updates
-// Returns bool: true = continue download, false = cancel download
+// Callback for download progress updates.
+// Returning false closes the update channel — no further updates are sent for
+// this plan. It does not stop the transfer; the CancelToken is the only thing
+// that stops a plan.
 using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
 }  // namespace lemon
